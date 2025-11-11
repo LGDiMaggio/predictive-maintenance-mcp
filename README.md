@@ -399,9 +399,7 @@ If you use this server in your research or projects:
 ## Support
 
 - **Issues**: https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues
-- **Discussions**: https://github.com/LGDiMaggio/predictive-maintenance-mcp/discussions _(Enable in repo Settings → Features → Discussions)_
-
-> 💬 **GitHub Discussions not yet enabled.** Repository owner can enable in Settings to allow community Q&A and feature requests.
+- **Discussions**: https://github.com/LGDiMaggio/predictive-maintenance-mcp/discussions
 
 ---
 
