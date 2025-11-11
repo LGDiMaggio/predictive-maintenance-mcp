@@ -3374,7 +3374,7 @@ This saves an interactive HTML report to the reports/ directory showing:
 - Color-coded ISO zone chart with marker on measured RMS velocity
 - Time-domain signal plot
 - Detailed severity assessment
-The tool returns the file path. Tell user: "Open {file_path} in your browser to view the interactive report."
+The tool returns the file path. Tell user to open the returned HTML file path in their browser to view the interactive report.
 
 ═══════════════════════════════════════════════════════════════════════════════
 STEP 2 — Statistical Screening
@@ -3405,7 +3405,7 @@ This saves an interactive HTML report to the reports/ directory showing:
 - FFT spectrum in dB scale with automatic peak detection
 - Harmonic markers (if rotation frequency provided)
 - Top frequency peaks table
-The tool returns the file path. Tell user: "Open {file_path} in your browser to view the interactive FFT analysis."
+The tool returns the file path. Tell user to open the returned HTML file path in their browser to view the interactive FFT analysis.
 
 ═══════════════════════════════════════════════════════════════════════════════
 STEP 4 — ENVELOPE ANALYSIS (PRIMARY DIAGNOSTIC EVIDENCE)
@@ -3434,7 +3434,7 @@ This saves an interactive HTML report to the reports/ directory showing:
 - Filtered signal with envelope overlay (time domain)
 - Envelope spectrum in dB scale with bearing frequency markers
 - Automatic bearing fault detection with confidence levels
-The tool returns the file path. Tell user: "Open {file_path} in your browser to view the interactive envelope analysis with bearing fault markers."
+The tool returns the file path. Tell user to open the returned HTML file path in their browser to view the interactive envelope analysis with bearing fault markers.
 
 ═══════════════════════════════════════════════════════════════════════════════
 STEP 5 — DIAGNOSTIC DECISION (EVIDENCE-BASED)
@@ -3584,7 +3584,7 @@ Report top 5 peaks only (brief).
 Optional visualization:
 Call: generate_fft_report("{signal_file}", max_freq=5000, num_peaks=15)
 This saves an interactive HTML report to the reports/ directory showing FFT spectrum with automatic peak detection.
-Tell user: "Open {{file_path}} in your browser to view the interactive FFT analysis."
+Tell user to open the returned HTML file path in their browser to view the interactive FFT analysis.
 
 STEP 4 — OPTIONAL ENVELOPE (if strong modulation or impacts)
 If stats suggest impulsiveness OR sideband pattern partial: 
