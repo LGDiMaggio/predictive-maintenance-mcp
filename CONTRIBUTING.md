@@ -1,4 +1,4 @@
-# Contributing to Machinery Diagnostics MCP Server
+# Contributing to Predictive Maintenance MCP Server
 
 Thank you for your interest in contributing! This document provides guidelines and instructions for contributing to the project.
 
@@ -238,7 +238,7 @@ black --check src/
 
 Use **flake8** to check code quality:
 ```bash
-flake8 src/ --max-line-length=88 --extend-ignore=E203
+flake8 src/ --max-line-length=120 --max-complexity=20
 ```
 
 ### Type Checking
@@ -504,10 +504,12 @@ Closes #42
 
 ### Review Process
 
-1. **Automated checks** run automatically
-2. **Maintainer review** (typically within 1-3 days)
+1. **Automated checks** run automatically (pytest, flake8, mypy, black)
+2. **Maintainer review** (typically weekly, may be faster for urgent fixes)
 3. **Address feedback** if requested
 4. **Approval and merge** once approved
+
+> 📅 **Review Timeline**: PRs are typically reviewed on a weekly basis. Critical bug fixes may receive faster attention.
 
 ## Adding New Analysis Tools
 
@@ -573,15 +575,20 @@ def new_analysis_tool(
 
 ## Questions?
 
-- **General questions**: Open a [Discussion](https://github.com/LGDiMaggio/predictive-maintenance-mcp/discussions)
+- **General questions**: Open a [Discussion](https://github.com/LGDiMaggio/predictive-maintenance-mcp/discussions) (enable in Settings if not available)
 - **Bug reports**: Open an [Issue](https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues)
-- **Security issues**: Email directly (see SECURITY.md)
+- **Security issues**: Email directly to the repository owner (contact information in GitHub profile)
 
 ## Recognition
 
 Contributors will be:
-- Listed in CONTRIBUTORS.md
-- Mentioned in release notes
-- Credited in relevant documentation
+- Acknowledged in release notes for the version including their contribution
+- Mentioned in relevant documentation sections they contributed to
+- Credited in commit history with proper attribution
 
-Thank you for contributing to Machinery Diagnostics MCP Server! 🚀
+**Major Contributors** (significant features or sustained contributions) may receive:
+- Highlighted mention in README.md
+- Co-authorship on research publications using this work (if applicable)
+- Invitation to join as project collaborator
+
+Thank you for contributing to Predictive Maintenance MCP Server! 🚀
