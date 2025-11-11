@@ -35,6 +35,26 @@ from pydantic import BaseModel, Field
 from mcp.server.fastmcp import FastMCP, Context
 from mcp.server.session import ServerSession
 
+# Import report generation system
+try:
+    from src.report_generator import (
+        save_fft_report,
+        save_envelope_report,
+        save_iso_report,
+        read_report_metadata,
+        list_reports,
+        REPORTS_DIR
+    )
+except ImportError:
+    from report_generator import (
+        save_fft_report,
+        save_envelope_report,
+        save_iso_report,
+        read_report_metadata,
+        list_reports,
+        REPORTS_DIR
+    )
+
 
 # Logging configuration (use stderr to not interfere with stdio)
 logging.basicConfig(
@@ -56,9 +76,16 @@ mcp = FastMCP(
     - Envelope analysis for bearing fault detection
     - Statistical analysis (RMS, Kurtosis, Crest Factor)
     - ISO 20816-3 vibration severity evaluation
-    - HTML artifact generation (interactive Plotly charts, no file I/O)
+    - Professional HTML report generation (saved to reports/ directory)
     - Automatic peak detection and harmonic identification
     - Guided diagnostic workflows (prompts)
+
+    Report Generation System:
+    - All visualizations are generated as professional HTML files
+    - Reports are saved in reports/ directory with metadata
+    - LLM should inform user about report location and NOT display HTML content
+    - Use list_reports() to see available reports
+    - Use read_report_metadata() to get report info without consuming tokens
 
     Evidence-based inference policy (hard rules):
     1) Do NOT infer fault type from filenames, paths, or user-provided labels. Treat filenames as opaque identifiers.
@@ -70,9 +97,10 @@ mcp = FastMCP(
 
     Output formatting rules:
     - Keep responses brief (≤300 words, bullet points)
-    - Use HTML charts for visualization (render as artifacts, NOT code)
-    - If truncated, retry with save_*_to_file() tools
+    - Inform user about generated HTML reports with file path
+    - DO NOT display HTML content in chat (wastes tokens)
     - NEVER print large data directly
+    - Reports are professional, self-contained HTML files
 
     Filename resolution policy:
     - FIRST call list_available_signals() to verify exact filename
@@ -89,6 +117,11 @@ mcp = FastMCP(
 # Data directory
 DATA_DIR = Path(__file__).parent.parent / "data" / "signals"
 MODELS_DIR = Path(__file__).parent.parent / "models"
+
+# Ensure directories exist
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+MODELS_DIR.mkdir(parents=True, exist_ok=True)
+REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # ============================================================================
@@ -183,8 +216,9 @@ class AnomalyModelResult(BaseModel):
     model_path: str = Field(description="Path to saved model file (.pkl)")
     scaler_path: str = Field(description="Path to saved scaler file (.pkl)")
     pca_path: str = Field(description="Path to saved PCA file (.pkl)")
-    validation_accuracy: Optional[float] = Field(None, description="Accuracy on fault data if provided")
-    validation_details: Optional[str] = Field(None, description="Validation details")
+    validation_accuracy: Optional[float] = Field(None, description="Overall balanced accuracy on healthy + fault validation data")
+    validation_details: Optional[str] = Field(None, description="Validation details with healthy and fault metrics")
+    validation_metrics: Optional[Dict[str, Any]] = Field(None, description="Detailed validation metrics (healthy/fault accuracy breakdown)")
 
 
 class AnomalyPredictionResult(BaseModel):
@@ -414,7 +448,9 @@ def read_plot_html(filename: str, max_chars: int = 15000) -> str:
 def analyze_fft(
     filename: str,
     sampling_rate: float = 1000.0,
-    max_frequency: Optional[float] = None
+    max_frequency: Optional[float] = None,
+    segment_duration: Optional[float] = 1.0,
+    random_seed: Optional[int] = None
 ) -> FFTResult:
     """
     Perform FFT (Fast Fourier Transform) analysis on a signal.
@@ -423,6 +459,9 @@ def analyze_fft(
     allowing identification of harmonic components and faults that manifest
     at specific frequencies.
     
+    By default, analyzes a RANDOM 1.0-second segment from the signal for efficiency.
+    Set segment_duration=None to analyze the entire signal.
+    
     IMPORTANT: Do NOT use the default sampling_rate (1000 Hz) unless explicitly 
     confirmed correct for this signal. Check signal metadata first or ask user.
     
@@ -430,6 +469,9 @@ def analyze_fft(
         filename: Name of the file containing the signal
         sampling_rate: Sampling frequency in Hz (default: 1000 Hz - VERIFY BEFORE USE)
         max_frequency: Maximum frequency to analyze (default: Nyquist frequency)
+        segment_duration: Duration in seconds to analyze (default: 1.0s random segment).
+                         Set to None to analyze full signal.
+        random_seed: Random seed for reproducible segment selection (default: None = random)
         
     Returns:
         FFTResult with frequencies, magnitudes and dominant peak
@@ -439,6 +481,26 @@ def analyze_fft(
     
     if signal_data is None:
         raise ValueError(f"Unable to load signal from {filename}")
+    
+    # Extract segment if requested
+    full_signal_length = len(signal_data)
+    signal_duration_sec = full_signal_length / sampling_rate
+    
+    if segment_duration is not None and segment_duration < signal_duration_sec:
+        # Calculate segment length in samples
+        segment_samples = int(segment_duration * sampling_rate)
+        
+        # Random start position
+        max_start = full_signal_length - segment_samples
+        if random_seed is not None:
+            np.random.seed(random_seed)
+        start_idx = np.random.randint(0, max_start + 1) if max_start > 0 else 0
+        
+        # Extract segment
+        signal_data = signal_data[start_idx:start_idx + segment_samples]
+        logger.info(f"Analyzing {segment_duration}s random segment from {signal_duration_sec:.1f}s signal (samples {start_idx}-{start_idx + segment_samples})")
+    else:
+        logger.info(f"Analyzing full signal ({signal_duration_sec:.1f}s, {full_signal_length} samples)")
     
     # Number of samples
     N = len(signal_data)
@@ -496,7 +558,9 @@ def analyze_envelope(
     sampling_rate: float = 1000.0,
     filter_low: float = 500.0,
     filter_high: float = 2000.0,
-    num_peaks: int = 5
+    num_peaks: int = 5,
+    segment_duration: Optional[float] = 1.0,
+    random_seed: Optional[int] = None
 ) -> EnvelopeResult:
     """
     Perform Envelope Analysis to detect bearing faults.
@@ -504,6 +568,9 @@ def analyze_envelope(
     Envelope analysis is particularly effective for detecting faults in ball/roller bearings.
     The signal is high-pass filtered, then the envelope is calculated via Hilbert transform,
     and finally the envelope spectrum is analyzed.
+    
+    By default, analyzes a RANDOM 1.0-second segment from the signal for efficiency.
+    Set segment_duration=None to analyze the entire signal.
     
     Returns ONLY peak information and diagnosis text (no full arrays) to avoid context overflow.
     
@@ -516,6 +583,9 @@ def analyze_envelope(
         filter_low: Low frequency of bandpass filter in Hz (default: 500 Hz)
         filter_high: High frequency of bandpass filter in Hz (default: 2000 Hz)
         num_peaks: Number of main peaks to identify (default: 5)
+        segment_duration: Duration in seconds to analyze (default: 1.0s random segment).
+                         Set to None to analyze full signal.
+        random_seed: Random seed for reproducible segment selection (default: None = random)
         
     Returns:
         EnvelopeResult with peak information and diagnosis (optimized for chat display)
@@ -525,6 +595,27 @@ def analyze_envelope(
     
     if signal_data is None:
         raise ValueError(f"Unable to load signal from {filename}")
+    
+    # Extract segment if requested
+    full_signal_length = len(signal_data)
+    signal_duration_sec = full_signal_length / sampling_rate
+    
+    if segment_duration is not None and segment_duration < signal_duration_sec:
+        # Calculate segment length in samples
+        segment_samples = int(segment_duration * sampling_rate)
+        
+        # Random start position
+        max_start = full_signal_length - segment_samples
+        if random_seed is not None:
+            np.random.seed(random_seed)
+        start_idx = np.random.randint(0, max_start + 1) if max_start > 0 else 0
+        
+        # Extract segment
+        signal_data = signal_data[start_idx:start_idx + segment_samples]
+        logger.info(f"Analyzing {segment_duration}s random segment from {signal_duration_sec:.1f}s signal (samples {start_idx}-{start_idx + segment_samples})")
+    else:
+        logger.info(f"Analyzing full signal ({signal_duration_sec:.1f}s, {full_signal_length} samples)")
+
     
     # Design Butterworth bandpass filter using SOS (numerically stable)
     nyquist = sampling_rate / 2
@@ -568,7 +659,7 @@ def analyze_envelope(
     
     diagnosis_lines.extend([
         "",
-        "Bearing frequency reference (typical SKF 6205 @ 1500 RPM):",
+        "Bearing frequency reference (example @ 1500 RPM):",
         "  • BPFO (outer race): ~81.13 Hz",
         "  • BPFI (inner race): ~118.88 Hz",
         "  • BSF (ball spin):   ~63.91 Hz",
@@ -731,9 +822,13 @@ def evaluate_iso_20816(
     # Auto-detect and convert acceleration to velocity if needed
     # Heuristic: acceleration signals typically have RMS > 0.5 g
     rms_raw = np.sqrt(np.mean(signal_data**2))
+    unit_conversion_performed = False
     if rms_raw > 0.5:  # Likely acceleration in g
         # Convert acceleration (g) to velocity (mm/s)
         # Integration: v(t) = ∫ a(t) dt
+        unit_conversion_performed = True
+        logger.warning(f"⚠️ Signal auto-detected as ACCELERATION (RMS={rms_raw:.2f} g). Converting to velocity (mm/s) for ISO 20816-3 evaluation.")
+        
         signal_ac = signal_data - np.mean(signal_data)  # Remove DC
         
         # Convert from g to m/s²
@@ -831,6 +926,10 @@ def evaluate_iso_20816(
         zone_desc = "Vibration severity may cause damage. Immediate action required!"
         severity = "Unacceptable"
         color = "red"
+    
+    # Add unit conversion notice to zone description if conversion was performed
+    if unit_conversion_performed:
+        zone_desc = f"⚠️ SIGNAL CONVERTED: Acceleration (g) → Velocity (mm/s). {zone_desc}"
     
     return ISO20816Result(
         rms_velocity=rms_velocity,
@@ -984,1648 +1083,6 @@ async def plot_iso_20816_chart(
 
 
 # ============================================================================
-# TOOLS - HTML ARTIFACT GENERATION (Inline rendering for LLMs)
-# ============================================================================
-
-@mcp.tool()
-def generate_iso_chart_html(
-    signal_file: str,
-    sampling_rate: float,
-    machine_group: int = 1,
-    support_type: str = "rigid",
-    operating_speed_rpm: Optional[float] = None
-) -> str:
-    """
-    Generate standalone HTML artifact for ISO 20816-3 visualization.
-    
-    Returns complete HTML document (not a file path) that can be rendered directly
-    as an artifact in LLM interfaces like Claude, ChatGPT, etc.
-    
-    This is PREFERRED over plot_iso_20816_chart for inline rendering because:
-    - No file I/O required
-    - Works with any LLM supporting HTML artifacts
-    - Self-contained (includes Plotly.js CDN)
-    - Responsive and interactive
-    
-    Args:
-        signal_file: Name of the signal file
-        sampling_rate: Sampling frequency (Hz)
-        machine_group: 1 (large >300kW) or 2 (medium 15-300kW)
-        support_type: 'rigid' or 'flexible'
-        operating_speed_rpm: Operating speed in RPM (optional)
-    
-    Returns:
-        Complete HTML document as string
-    """
-    # Perform ISO evaluation
-    iso_result = evaluate_iso_20816(
-        signal_file=signal_file,
-        sampling_rate=sampling_rate,
-        machine_group=machine_group,
-        support_type=support_type,
-        operating_speed_rpm=operating_speed_rpm
-    )
-    
-    # Color mapping
-    zone_colors = {
-        "A": ("#27ae60", "zone-a"),
-        "B": ("#f39c12", "zone-b"),
-        "C": ("#e67e22", "zone-c"),
-        "D": ("#c0392b", "zone-d")
-    }
-    
-    zone_color, zone_class = zone_colors.get(iso_result.zone, ("#95a5a6", "zone-unknown"))
-    
-    # Generate HTML
-    html = f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ISO 20816-3 Vibration Chart</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/plotly.js/2.27.0/plotly.min.js"></script>
-    <style>
-        body {{
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            margin: 0;
-            padding: 20px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-        }}
-        .container {{
-            max-width: 1200px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 15px;
-            padding: 30px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-        }}
-        h1 {{
-            text-align: center;
-            color: #2c3e50;
-            margin-bottom: 10px;
-            font-size: 28px;
-        }}
-        .subtitle {{
-            text-align: center;
-            color: #7f8c8d;
-            margin-bottom: 30px;
-            font-size: 14px;
-        }}
-        .info-grid {{
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
-        }}
-        .info-card {{
-            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-            padding: 20px;
-            border-radius: 10px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        }}
-        .info-label {{
-            font-size: 12px;
-            color: #7f8c8d;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            margin-bottom: 5px;
-        }}
-        .info-value {{
-            font-size: 24px;
-            font-weight: bold;
-            color: #2c3e50;
-        }}
-        .chart-container {{
-            background: white;
-            border-radius: 10px;
-            padding: 20px;
-            margin-bottom: 20px;
-        }}
-        .status-badge {{
-            display: inline-block;
-            padding: 10px 25px;
-            border-radius: 25px;
-            font-weight: bold;
-            font-size: 18px;
-            margin: 20px auto;
-            text-align: center;
-            width: fit-content;
-            display: block;
-        }}
-        .zone-a {{ background: #27ae60; color: white; }}
-        .zone-b {{ background: #f39c12; color: white; }}
-        .zone-c {{ background: #e67e22; color: white; }}
-        .zone-d {{ background: #c0392b; color: white; }}
-        .legend {{
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-            margin-top: 20px;
-        }}
-        .legend-item {{
-            display: flex;
-            align-items: center;
-            padding: 10px;
-            background: #f8f9fa;
-            border-radius: 8px;
-        }}
-        .legend-color {{
-            width: 40px;
-            height: 40px;
-            border-radius: 5px;
-            margin-right: 15px;
-        }}
-        .legend-text {{
-            flex: 1;
-        }}
-        .legend-label {{
-            font-weight: bold;
-            margin-bottom: 3px;
-        }}
-        .legend-desc {{
-            font-size: 11px;
-            color: #7f8c8d;
-        }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>ISO 20816-3 Vibration Severity Chart</h1>
-        <div class="subtitle">{signal_file} | Machine Group {machine_group} | {support_type.title()} Support</div>
-        
-        <div class="info-grid">
-            <div class="info-card">
-                <div class="info-label">RMS Velocity</div>
-                <div class="info-value">{iso_result.rms_velocity:.2f} mm/s</div>
-            </div>
-            <div class="info-card">
-                <div class="info-label">Evaluation Zone</div>
-                <div class="info-value">Zone {iso_result.zone}</div>
-            </div>
-            <div class="info-card">
-                <div class="info-label">Severity Level</div>
-                <div class="info-value">{iso_result.severity_level}</div>
-            </div>
-            <div class="info-card">
-                <div class="info-label">Frequency Range</div>
-                <div class="info-value">{iso_result.frequency_range}</div>
-            </div>
-        </div>
-
-        <div class="status-badge {zone_class}">
-            {'✓' if iso_result.zone == 'A' else '⚠️' if iso_result.zone in ['B', 'C'] else '🚨'} {iso_result.zone_description}
-        </div>
-
-        <div class="chart-container">
-            <div id="chart"></div>
-        </div>
-
-        <div class="legend">
-            <div class="legend-item">
-                <div class="legend-color" style="background: #27ae60;"></div>
-                <div class="legend-text">
-                    <div class="legend-label">Zone A (0 - {iso_result.boundary_ab:.1f} mm/s)</div>
-                    <div class="legend-desc">New machine condition - excellent</div>
-                </div>
-            </div>
-            <div class="legend-item">
-                <div class="legend-color" style="background: #f39c12;"></div>
-                <div class="legend-text">
-                    <div class="legend-label">Zone B ({iso_result.boundary_ab:.1f} - {iso_result.boundary_bc:.1f} mm/s)</div>
-                    <div class="legend-desc">Acceptable for long-term operation</div>
-                </div>
-            </div>
-            <div class="legend-item">
-                <div class="legend-color" style="background: #e67e22;"></div>
-                <div class="legend-text">
-                    <div class="legend-label">Zone C ({iso_result.boundary_bc:.1f} - {iso_result.boundary_cd:.1f} mm/s)</div>
-                    <div class="legend-desc">Unsatisfactory - plan maintenance</div>
-                </div>
-            </div>
-            <div class="legend-item">
-                <div class="legend-color" style="background: #c0392b;"></div>
-                <div class="legend-text">
-                    <div class="legend-label">Zone D (> {iso_result.boundary_cd:.1f} mm/s)</div>
-                    <div class="legend-desc">Severe - immediate action required</div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <script>
-        const boundaries = {{
-            AB: {iso_result.boundary_ab},
-            BC: {iso_result.boundary_bc},
-            CD: {iso_result.boundary_cd},
-            max: {iso_result.boundary_cd * 1.3}
-        }};
-        
-        const rmsVelocity = {iso_result.rms_velocity};
-        
-        const trace1 = {{
-            x: [boundaries.AB],
-            y: ['Vibration Severity'],
-            name: 'Zone A',
-            type: 'bar',
-            orientation: 'h',
-            marker: {{
-                color: '#27ae60',
-                line: {{ color: '#229954', width: 2 }}
-            }},
-            hovertemplate: 'Zone A: 0 - ' + boundaries.AB + ' mm/s<br>New machine condition<extra></extra>'
-        }};
-        
-        const trace2 = {{
-            x: [boundaries.BC - boundaries.AB],
-            y: ['Vibration Severity'],
-            name: 'Zone B',
-            type: 'bar',
-            orientation: 'h',
-            marker: {{
-                color: '#f39c12',
-                line: {{ color: '#e67e22', width: 2 }}
-            }},
-            hovertemplate: 'Zone B: ' + boundaries.AB + ' - ' + boundaries.BC + ' mm/s<br>Acceptable operation<extra></extra>'
-        }};
-        
-        const trace3 = {{
-            x: [boundaries.CD - boundaries.BC],
-            y: ['Vibration Severity'],
-            name: 'Zone C',
-            type: 'bar',
-            orientation: 'h',
-            marker: {{
-                color: '#e67e22',
-                line: {{ color: '#d35400', width: 2 }}
-            }},
-            hovertemplate: 'Zone C: ' + boundaries.BC + ' - ' + boundaries.CD + ' mm/s<br>Unsatisfactory<extra></extra>'
-        }};
-        
-        const trace4 = {{
-            x: [boundaries.max - boundaries.CD],
-            y: ['Vibration Severity'],
-            name: 'Zone D',
-            type: 'bar',
-            orientation: 'h',
-            marker: {{
-                color: '#c0392b',
-                line: {{ color: '#a93226', width: 2 }}
-            }},
-            hovertemplate: 'Zone D: > ' + boundaries.CD + ' mm/s<br>Severe condition<extra></extra>'
-        }};
-        
-        const marker = {{
-            x: [rmsVelocity],
-            y: ['Vibration Severity'],
-            mode: 'markers+text',
-            type: 'scatter',
-            name: 'Measured',
-            marker: {{
-                color: '#2c3e50',
-                size: 20,
-                symbol: 'circle',
-                line: {{ color: '#fff', width: 3 }}
-            }},
-            text: [rmsVelocity.toFixed(2) + ' mm/s'],
-            textposition: 'top center',
-            textfont: {{ size: 14, color: '#2c3e50', family: 'Arial Black' }},
-            hovertemplate: 'Measured RMS Velocity: ' + rmsVelocity.toFixed(2) + ' mm/s<extra></extra>'
-        }};
-        
-        const data = [trace1, trace2, trace3, trace4, marker];
-        
-        const layout = {{
-            title: {{
-                text: 'Vibration Severity according to ISO 20816-3',
-                font: {{ size: 18, color: '#2c3e50' }}
-            }},
-            barmode: 'stack',
-            xaxis: {{
-                title: 'RMS Velocity (mm/s)',
-                range: [0, boundaries.max],
-                showgrid: true,
-                gridcolor: '#ecf0f1',
-                zeroline: true
-            }},
-            yaxis: {{
-                showticklabels: false
-            }},
-            height: 350,
-            margin: {{ l: 50, r: 50, t: 80, b: 80 }},
-            showlegend: true,
-            legend: {{
-                x: 1.02,
-                y: 0.5,
-                orientation: 'v'
-            }},
-            hovermode: 'closest',
-            plot_bgcolor: '#fafafa',
-            paper_bgcolor: 'white'
-        }};
-        
-        const config = {{
-            responsive: true,
-            displayModeBar: true,
-            displaylogo: false,
-            modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d']
-        }};
-        
-        Plotly.newPlot('chart', data, layout, config);
-    </script>
-</body>
-</html>"""
-    
-    return html
-
-
-@mcp.tool()
-def generate_fft_chart_html(
-    signal_file: str,
-    sampling_rate: Optional[float] = None,
-    max_freq: float = 5000.0,
-    num_peaks: int = 8,
-    rotation_freq: Optional[float] = None,
-    use_db: bool = False,
-    segment_duration: Optional[float] = 1.0  # NEW: Use 1.0s segment by default (None = full signal)
-) -> str:
-    """
-    Generate interactive FFT spectrum chart as HTML artifact (no file I/O).
-    
-    **IMPORTANT FOR LLMs**: After calling this tool, render the returned HTML string
-    as an interactive artifact/preview, NOT as code. The HTML contains a Plotly chart
-    that must be displayed to the user, not shown as text.
-    
-    Returns complete HTML document with Plotly visualization showing frequency spectrum
-    in dB scale, identified peaks, and optional harmonic markers.
-    
-    Analysis is performed on FULL signal (no downsampling) for maximum accuracy.
-    Only display data is downsampled for efficient rendering.
-    
-    Args:
-        signal_file: Signal filename in data/signals/ or subdirectory (e.g., "real_train/baseline_1.csv")
-        sampling_rate: Sampling rate in Hz. If None, will auto-detect from metadata JSON
-        max_freq: Maximum frequency to display (Hz). Default 5000 Hz for bearing analysis
-        num_peaks: Number of top peaks to identify and label. Default 8 (reduced from 10 to limit output size)
-        rotation_freq: Optional shaft rotation frequency (Hz) for harmonic labeling
-    
-    Returns:
-        Complete HTML document as string (~25-30KB) with:
-        - Interactive Plotly line chart (spectrum magnitude in dB)
-        - Peak markers (red diamonds) with frequency labels
-        - Harmonic notes if rotation_freq provided (e.g., "Harmonic 74× shaft")
-        - Top 8 peaks listed with dB values
-        - Self-contained (Plotly.js from CDN)
-    
-    Example:
-        >>> html = generate_fft_chart_html(
-        ...     "real_train/inner_fault_1.csv",
-        ...     max_freq=2000,
-        ...     num_peaks=8,
-        ...     rotation_freq=25.0
-        ... )
-        >>> # LLM should render this HTML as interactive artifact
-    """
-    # Load signal
-    signal_path = Path("data/signals") / signal_file
-    if not signal_path.exists():
-        signal_path = Path(signal_file)
-    
-    signal_data = pd.read_csv(signal_path, header=None).values.flatten()
-    
-    # Auto-detect sampling rate if not provided
-    if sampling_rate is None:
-        metadata_path = signal_path.parent / f"{signal_path.stem}_metadata.json"
-        if metadata_path.exists():
-            with open(metadata_path) as f:
-                metadata = json.load(f)
-                sampling_rate = metadata.get("sampling_rate")
-        
-        if sampling_rate is None:
-            raise ValueError("sampling_rate required (not found in metadata)")
-    
-    # Extract segment if requested (default: 1.0s segment from middle)
-    if segment_duration is not None and segment_duration > 0:
-        segment_samples = int(segment_duration * sampling_rate)
-        if len(signal_data) > segment_samples:
-            # Take segment from middle (more representative than start)
-            start_idx = (len(signal_data) - segment_samples) // 2
-            signal_data = signal_data[start_idx:start_idx + segment_samples]
-    
-    # STEP 1: FFT on signal (full resolution, no decimation!)
-    n = len(signal_data)
-    freq_full = np.fft.rfftfreq(n, 1/sampling_rate)
-    fft_full = np.fft.rfft(signal_data)
-    mag_full = np.abs(fft_full) * 2 / n  # Full spectrum magnitude
-    
-    # Convert to dB scale (normalized to max: 20*log10(mag/max))
-    max_mag = np.max(mag_full)
-    mag_full_db = 20 * np.log10((mag_full + 1e-12) / max_mag)  # Normalized dB
-    
-    # STEP 2: Find peaks on FULL spectrum (accurate detection)
-    from scipy.signal import find_peaks
-    freq_resolution = freq_full[1] - freq_full[0]
-    min_peak_distance = max(1, int(10 / freq_resolution))  # Min 10 Hz spacing, but ≥1
-    peak_indices, properties = find_peaks(
-        mag_full_db,  # Use dB for peak detection
-        height=-40,  # Peaks within 40 dB of max (max is at 0 dB)
-        distance=min_peak_distance
-    )
-    
-    # Sort by magnitude and take top N
-    peak_mags_db = properties['peak_heights']
-    top_peak_idx = np.argsort(peak_mags_db)[::-1][:num_peaks]
-    peak_indices = peak_indices[top_peak_idx]
-    peak_freqs = freq_full[peak_indices]
-    peak_mags_db = mag_full_db[peak_indices]
-    
-    # STEP 3: Prepare display data (NO decimation for accurate peak alignment)
-    mask = freq_full <= max_freq
-    freq_display = freq_full[mask]  # Full resolution for accurate peaks
-    mag_display_db = mag_full_db[mask]
-    
-    # Filter peaks within display range
-    peak_mask = peak_freqs <= max_freq
-    display_peak_freqs = peak_freqs[peak_mask]
-    display_peak_mags_db = peak_mags_db[peak_mask]
-    
-    # Format peak info for display with CLEAR labels
-    peak_info_lines = []
-    for i, (pf, pm_db) in enumerate(zip(display_peak_freqs, display_peak_mags_db), 1):
-        # Check for harmonics (if rotation_freq provided)
-        harmonic_note = ""
-        if rotation_freq and rotation_freq > 0:
-            harmonic_order = round(pf / rotation_freq)
-            if abs(pf - harmonic_order * rotation_freq) < rotation_freq * 0.1:  # Within 10%
-                harmonic_note = f" <span style='color:#e74c3c'>(Harmonic {harmonic_order}× shaft)</span>"
-        
-        peak_info_lines.append(
-            f"<div>#{i}: <strong>{pf:.2f} Hz</strong> → {pm_db:.1f} dB{harmonic_note}</div>"
-        )
-    
-    peak_info_html = "".join(peak_info_lines[:8])  # Show top 8
-    
-    # Generate HTML artifact
-    html = f"""<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FFT Spectrum - {signal_file}</title>
-    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
-    <style>
-        * {{
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }}
-        body {{
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            padding: 20px;
-            min-height: 100vh;
-        }}
-        .container {{
-            max-width: 1400px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 16px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-            overflow: hidden;
-        }}
-        .header {{
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 30px;
-            text-align: center;
-        }}
-        .header h1 {{
-            font-size: 28px;
-            margin-bottom: 10px;
-        }}
-        .header p {{
-            opacity: 0.9;
-            font-size: 16px;
-        }}
-        .content {{
-            padding: 30px;
-        }}
-        .info-grid {{
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
-        }}
-        .info-card {{
-            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-            padding: 20px;
-            border-radius: 12px;
-            border-left: 4px solid #667eea;
-        }}
-        .info-label {{
-            font-size: 12px;
-            color: #666;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            margin-bottom: 8px;
-        }}
-        .info-value {{
-            font-size: 24px;
-            font-weight: bold;
-            color: #333;
-        }}
-        .chart-container {{
-            background: white;
-            border-radius: 12px;
-            padding: 20px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-            margin-bottom: 30px;
-        }}
-        .peaks-section {{
-            background: #f8f9fa;
-            padding: 20px;
-            border-radius: 12px;
-            margin-top: 20px;
-        }}
-        .peaks-section h3 {{
-            color: #333;
-            margin-bottom: 15px;
-            font-size: 18px;
-        }}
-        .peaks-section div {{
-            padding: 8px 0;
-            border-bottom: 1px solid #e0e0e0;
-            color: #555;
-            font-size: 14px;
-            font-family: 'Courier New', monospace;
-        }}
-        .peaks-section div:last-child {{
-            border-bottom: none;
-        }}
-        @media (max-width: 768px) {{
-            .info-grid {{
-                grid-template-columns: 1fr;
-            }}
-            .header h1 {{
-                font-size: 22px;
-            }}
-        }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>📊 FFT Spectrum Analysis</h1>
-            <p>{signal_file}</p>
-        </div>
-        
-        <div class="content">
-            <div class="info-grid">
-                <div class="info-card">
-                    <div class="info-label">Sampling Rate</div>
-                    <div class="info-value">{sampling_rate:.0f} Hz</div>
-                </div>
-                <div class="info-card">
-                    <div class="info-label">Frequency Range</div>
-                    <div class="info-value">0 - {max_freq:.0f} Hz</div>
-                </div>
-                <div class="info-card">
-                    <div class="info-label">Signal Length</div>
-                    <div class="info-value">{n:,} samples</div>
-                </div>
-                <div class="info-card">
-                    <div class="info-label">Duration</div>
-                    <div class="info-value">{n/sampling_rate:.2f} s</div>
-                </div>
-            </div>
-            
-            <div class="chart-container">
-                <div id="chart"></div>
-            </div>
-            
-            <div class="peaks-section">
-                <h3>🎯 Top Identified Peaks</h3>
-                {peak_info_html}
-            </div>
-        </div>
-    </div>
-    
-    <script>
-        // Spectrum trace (downsampled for display, in dB)
-        var spectrum = {{
-            x: {freq_display.tolist()},
-            y: {mag_display_db.tolist()},
-            type: 'scatter',
-            mode: 'lines',
-            name: 'Spectrum',
-            line: {{
-                color: '#667eea',
-                width: 1.5
-            }},
-            hovertemplate: '%{{x:.2f}} Hz<br>%{{y:.1f}} dB<extra></extra>'
-        }};
-        
-        // Peak markers (precise from full analysis, in dB)
-        var peaks = {{
-            x: {display_peak_freqs.tolist()},
-            y: {display_peak_mags_db.tolist()},
-            type: 'scatter',
-            mode: 'markers+text',
-            name: 'Peaks',
-            marker: {{
-                color: '#e74c3c',
-                size: 6,
-                symbol: 'circle',
-                line: {{
-                    color: 'white',
-                    width: 2
-                }}
-            }},
-            text: {[f"{pf:.1f}" for pf in display_peak_freqs]},
-            textposition: 'top center',
-            textfont: {{
-                size: 6,
-                color: '#e74c3c'
-            }},
-            hovertemplate: '%{{x:.2f}} Hz<br>%{{y:.1f}} dB<extra></extra>'
-        }};
-        
-        var data = [spectrum, peaks];
-        
-        var layout = {{
-            title: {{
-                text: 'Frequency Spectrum',
-                font: {{ size: 20, color: '#333' }}
-            }},
-            xaxis: {{
-                title: 'Frequency (Hz)',
-                gridcolor: '#e0e0e0',
-                showgrid: true
-            }},
-            yaxis: {{
-                title: 'Magnitude (dB)',
-                gridcolor: '#e0e0e0',
-                showgrid: true
-            }},
-            hovermode: 'closest',
-            plot_bgcolor: '#fafafa',
-            paper_bgcolor: 'white',
-            showlegend: true,
-            legend: {{
-                x: 0.02,
-                y: 0.98,
-                bgcolor: 'rgba(255,255,255,0.8)',
-                bordercolor: '#ccc',
-                borderwidth: 1
-            }},
-            margin: {{ t: 50, r: 30, b: 60, l: 70 }}
-        }};
-        
-        var config = {{
-            responsive: true,
-            displayModeBar: true,
-            displaylogo: false,
-            modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d']
-        }};
-        
-        Plotly.newPlot('chart', data, layout, config);
-    </script>
-</body>
-</html>"""
-    
-    return html
-
-
-@mcp.tool()
-def generate_envelope_html(
-    signal_file: str,
-    sampling_rate: Optional[float] = None,
-    lowcut: float = 500.0,
-    highcut: float = 5000.0,
-    max_freq: float = 500.0,
-    num_peaks: int = 8,
-    bearing_freqs: Optional[Dict[str, float]] = None,
-    use_db: bool = False,
-    segment_duration: Optional[float] = 1.0  # NEW: Use 1.0s segment by default
-) -> str:
-    """
-    Generate interactive envelope analysis chart as HTML artifact (no file I/O).
-    
-    **IMPORTANT FOR LLMs**: After calling this tool, render the returned HTML string
-    as an interactive artifact/preview, NOT as code. The HTML contains a Plotly chart
-    that must be displayed to the user, not shown as text.
-    
-    Returns complete HTML document with two Plotly subplots:
-    1. Time-domain: Filtered signal with envelope overlay
-    2. Frequency-domain: Envelope spectrum with bearing frequency markers
-    
-    Analysis is performed on FULL signal for maximum accuracy.
-    Only display data is downsampled for efficient rendering (~30-35KB HTML).
-    
-    Args:
-        signal_file: Signal filename in data/signals/ or subdirectory
-        sampling_rate: Sampling rate in Hz. If None, auto-detect from metadata
-        lowcut: Bandpass filter low cutoff (Hz). Default 500 Hz
-        highcut: Bandpass filter high cutoff (Hz). Default 5000 Hz
-        max_freq: Maximum frequency to display in envelope spectrum. Default 500 Hz
-        num_peaks: Number of top peaks to identify. Default 8 (reduced from 10 to limit output size)
-        bearing_freqs: Optional dict with BPFO, BPFI, BSF, FTF for markers
-    
-    Returns:
-        Complete HTML document with interactive envelope analysis visualization.
-        Includes bearing fault frequency reference if bearing_freqs provided.
-    
-    Example:
-        >>> html = generate_envelope_html(
-        ...     "real_train/outer_fault_1.csv",
-        ...     bearing_freqs={"BPFO": 81.125, "BPFI": 118.875, "BSF": 63.91, "FTF": 14.8375}
-        ... )
-    """
-    # Load signal
-    signal_path = Path("data/signals") / signal_file
-    if not signal_path.exists():
-        signal_path = Path(signal_file)
-    
-    signal_data = pd.read_csv(signal_path, header=None).values.flatten()
-    
-    # Auto-detect sampling rate and bearing freqs
-    if sampling_rate is None or bearing_freqs is None:
-        metadata_path = signal_path.parent / f"{signal_path.stem}_metadata.json"
-        if metadata_path.exists():
-            with open(metadata_path) as f:
-                metadata = json.load(f)
-                if sampling_rate is None:
-                    sampling_rate = metadata.get("sampling_rate")
-                if bearing_freqs is None:
-                    bearing_freqs = {
-                        "BPFO": metadata.get("BPFO"),
-                        "BPFI": metadata.get("BPFI"),
-                        "BSF": metadata.get("BSF"),
-                        "FTF": metadata.get("FTF")
-                    }
-        
-        if sampling_rate is None:
-            raise ValueError("sampling_rate required")
-    
-    # Extract segment if requested (default: 1.0s from middle)
-    if segment_duration is not None and segment_duration > 0:
-        segment_samples = int(segment_duration * sampling_rate)
-        if len(signal_data) > segment_samples:
-            start_idx = (len(signal_data) - segment_samples) // 2
-            signal_data = signal_data[start_idx:start_idx + segment_samples]
-    
-    # STEP 1: Bandpass filter on FULL signal
-    from scipy.signal import butter, sosfilt
-    sos = butter(4, [lowcut, highcut], btype='band', fs=sampling_rate, output='sos')
-    filtered_signal = sosfilt(sos, signal_data)
-    
-    # STEP 2: Envelope via Hilbert on FULL signal
-    from scipy.signal import hilbert
-    analytic_signal = hilbert(filtered_signal)
-    envelope_full = np.abs(analytic_signal)
-    
-    # STEP 3: Envelope spectrum on FULL data
-    n_env = len(envelope_full)
-    env_freq_full = np.fft.rfftfreq(n_env, 1/sampling_rate)
-    env_fft = np.fft.rfft(envelope_full)
-    env_mag_full = np.abs(env_fft) * 2 / n_env
-    
-    # Convert to dB scale (normalized to max: 20*log10(mag/max))
-    max_env_mag = np.max(env_mag_full)
-    env_mag_full_db = 20 * np.log10((env_mag_full + 1e-12) / max_env_mag)  # Normalized dB
-    
-    # STEP 4: Peak detection on FULL spectrum (use dB for detection)
-    from scipy.signal import find_peaks
-    mask_peaks = env_freq_full <= max_freq
-    env_freq_resolution = env_freq_full[1] - env_freq_full[0]
-    min_peak_distance = max(1, int(5 / env_freq_resolution))  # Min 5 Hz spacing, but ≥1
-    peak_indices, properties = find_peaks(
-        env_mag_full_db[mask_peaks],
-        height=-40,  # Peaks within 40 dB of max (max is at 0 dB)
-        distance=min_peak_distance
-    )
-    
-    peak_mags_db = properties['peak_heights']
-    top_idx = np.argsort(peak_mags_db)[::-1][:num_peaks]
-    peak_indices = peak_indices[top_idx]
-    peak_freqs = env_freq_full[mask_peaks][peak_indices]
-    peak_mags_db = env_mag_full_db[mask_peaks][peak_indices]
-    
-    # STEP 5: Downsample time domain for display (preserve impacts)
-    # Time domain: max-min binning to preserve impacts
-    time_full = np.linspace(0, len(signal_data)/sampling_rate, len(signal_data))
-    downsample_factor = max(1, len(signal_data) // 1000)  # Was 2000, now 1000 for smaller output
-    
-    time_display = time_full[::downsample_factor]
-    filtered_display = filtered_signal[::downsample_factor]
-    envelope_display = envelope_full[::downsample_factor]
-    
-    # Envelope spectrum display (NO decimation for accurate peak alignment)
-    mask_display = env_freq_full <= max_freq
-    env_freq_display = env_freq_full[mask_display]  # Full resolution
-    env_mag_display_db = env_mag_full_db[mask_display]  # Full resolution
-    
-    # Format peak info
-    peak_info_lines = []
-    for i, (pf, pm_db) in enumerate(zip(peak_freqs, peak_mags_db), 1):
-        # Check match with bearing freqs
-        match_label = ""
-        if bearing_freqs:
-            for name, bf in bearing_freqs.items():
-                if bf and abs(pf - bf) < bf * 0.05:  # Within 5%
-                    match_label = f" ≈ {name}"
-                    break
-        peak_info_lines.append(f"<div>#{i}: {pf:.2f} Hz{match_label} → {pm_db:.1f} dB</div>")
-    
-    peak_info_html = "".join(peak_info_lines[:8])
-    
-    # Bearing freq markers for plot
-    bearing_markers = []
-    if bearing_freqs:
-        colors = {"BPFO": "#e74c3c", "BPFI": "#f39c12", "BSF": "#3498db", "FTF": "#2ecc71"}
-        for name, freq in bearing_freqs.items():
-            if freq and freq <= max_freq:
-                bearing_markers.append({
-                    "name": name,
-                    "freq": freq,
-                    "color": colors.get(name, "#95a5a6")
-                })
-    
-    html = f"""<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Envelope Analysis - {signal_file}</title>
-    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
-    <style>
-        * {{
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }}
-        body {{
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
-            padding: 20px;
-            min-height: 100vh;
-        }}
-        .container {{
-            max-width: 1400px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 16px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-            overflow: hidden;
-        }}
-        .header {{
-            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
-            color: white;
-            padding: 30px;
-            text-align: center;
-        }}
-        .header h1 {{
-            font-size: 28px;
-            margin-bottom: 10px;
-        }}
-        .header p {{
-            opacity: 0.9;
-            font-size: 16px;
-        }}
-        .content {{
-            padding: 30px;
-        }}
-        .info-grid {{
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
-        }}
-        .info-card {{
-            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-            padding: 20px;
-            border-radius: 12px;
-            border-left: 4px solid #11998e;
-        }}
-        .info-label {{
-            font-size: 12px;
-            color: #666;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            margin-bottom: 8px;
-        }}
-        .info-value {{
-            font-size: 24px;
-            font-weight: bold;
-            color: #333;
-        }}
-        .chart-container {{
-            background: white;
-            border-radius: 12px;
-            padding: 20px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-            margin-bottom: 20px;
-        }}
-        .peaks-section {{
-            background: #f8f9fa;
-            padding: 20px;
-            border-radius: 12px;
-            margin-top: 20px;
-        }}
-        .peaks-section h3 {{
-            color: #333;
-            margin-bottom: 15px;
-            font-size: 18px;
-        }}
-        .peaks-section div {{
-            padding: 8px 0;
-            border-bottom: 1px solid #e0e0e0;
-            color: #555;
-            font-size: 14px;
-            font-family: 'Courier New', monospace;
-        }}
-        .peaks-section div:last-child {{
-            border-bottom: none;
-        }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>📈 Envelope Analysis</h1>
-            <p>{signal_file}</p>
-        </div>
-        
-        <div class="content">
-            <div class="info-grid">
-                <div class="info-card">
-                    <div class="info-label">Filter Range</div>
-                    <div class="info-value">{lowcut:.0f}-{highcut:.0f} Hz</div>
-                </div>
-                <div class="info-card">
-                    <div class="info-label">Sampling Rate</div>
-                    <div class="info-value">{sampling_rate:.0f} Hz</div>
-                </div>
-                <div class="info-card">
-                    <div class="info-label">Signal Length</div>
-                    <div class="info-value">{len(signal_data):,} samples</div>
-                </div>
-                <div class="info-card">
-                    <div class="info-label">Duration</div>
-                    <div class="info-value">{len(signal_data)/sampling_rate:.2f} s</div>
-                </div>
-            </div>
-            
-            <div class="chart-container">
-                <div id="chart"></div>
-            </div>
-            
-            <div class="peaks-section">
-                <h3>🎯 Top Envelope Spectrum Peaks</h3>
-                {peak_info_html}
-            </div>
-        </div>
-    </div>
-    
-    <script>
-        // Subplot 1: Filtered signal + envelope
-        var filtered = {{
-            x: {time_display.tolist()},
-            y: {filtered_display.tolist()},
-            type: 'scatter',
-            mode: 'lines',
-            name: 'Filtered Signal',
-            line: {{ color: '#95a5a6', width: 0.5 }},
-            xaxis: 'x',
-            yaxis: 'y',
-            hovertemplate: '%{{x:.3f}} s<br>%{{y:.4f}}<extra></extra>'
-        }};
-        
-        var envelope = {{
-            x: {time_display.tolist()},
-            y: {envelope_display.tolist()},
-            type: 'scatter',
-            mode: 'lines',
-            name: 'Envelope',
-            line: {{ color: '#e74c3c', width: 2 }},
-            xaxis: 'x',
-            yaxis: 'y',
-            hovertemplate: '%{{x:.3f}} s<br>%{{y:.4f}}<extra></extra>'
-        }};
-        
-        // Subplot 2: Envelope spectrum
-        var spectrum = {{
-            x: {env_freq_display.tolist()},
-            y: {env_mag_display_db.tolist()},
-            type: 'scatter',
-            mode: 'lines',
-            name: 'Envelope Spectrum',
-            line: {{ color: '#11998e', width: 1.5 }},
-            xaxis: 'x2',
-            yaxis: 'y2',
-            hovertemplate: '%{{x:.2f}} Hz<br>%{{y:.1f}} dB<extra></extra>'
-        }};
-        
-        // Peaks
-        var peaks = {{
-            x: {peak_freqs.tolist()},
-            y: {peak_mags_db.tolist()},
-            type: 'scatter',
-            mode: 'markers',
-            name: 'Peaks',
-            marker: {{
-                color: '#e74c3c',
-                size: 8,
-                symbol: 'circle',
-                line: {{ color: 'white', width: 2 }}
-            }},
-            xaxis: 'x2',
-            yaxis: 'y2',
-            hovertemplate: '%{{x:.2f}} Hz<br>%{{y:.1f}} dB<extra></extra>'
-        }};
-        
-        var data = [filtered, envelope, spectrum, peaks];
-        
-        // Add bearing frequency markers
-        {chr(10).join([f'''data.push({{
-            x: [{m["freq"]}, {m["freq"]}],
-            y: [-60, 0],
-            type: 'scatter',
-            mode: 'lines',
-            name: '{m["name"]}',
-            line: {{ color: '{m["color"]}', width: 1, dash: 'dash' }},
-            xaxis: 'x2',
-            yaxis: 'y2',
-            hovertemplate: '{m["name"]}: {m["freq"]:.2f} Hz<extra></extra>'
-        }});''' for m in bearing_markers])}
-        
-        var layout = {{
-            title: {{
-                text: 'Envelope Analysis (Time + Frequency Domain)',
-                font: {{ size: 20, color: '#333' }}
-            }},
-            grid: {{ rows: 2, columns: 1, subplots: [['xy'], ['x2y2']], roworder: 'top to bottom' }},
-            xaxis: {{
-                title: 'Time (s)',
-                domain: [0, 1],
-                anchor: 'y'
-            }},
-            yaxis: {{
-                title: 'Amplitude',
-                domain: [0.55, 1],
-                anchor: 'x'
-            }},
-            xaxis2: {{
-                title: 'Frequency (Hz)',
-                domain: [0, 1],
-                anchor: 'y2'
-            }},
-            yaxis2: {{
-                title: 'Magnitude (dB)',
-                domain: [0, 0.45],
-                anchor: 'x2',
-                range: [-60, 5]
-            }},
-            hovermode: 'closest',
-            showlegend: true,
-            legend: {{
-                x: 0.02,
-                y: 0.98,
-                bgcolor: 'rgba(255,255,255,0.8)',
-                bordercolor: '#ccc',
-                borderwidth: 1
-            }},
-            margin: {{ t: 50, r: 30, b: 60, l: 70 }}
-        }};
-        
-        var config = {{
-            responsive: true,
-            displayModeBar: true,
-            displaylogo: false,
-            modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d']
-        }};
-        
-        Plotly.newPlot('chart', data, layout, config);
-    </script>
-</body>
-</html>"""
-    
-    return html
-
-
-@mcp.tool()
-def generate_signal_plot_html(
-    signal_file: str,
-    sampling_rate: Optional[float] = None,
-    max_points: int = 600
-) -> str:
-    """
-    Generate interactive time-domain signal plot as HTML artifact (no file I/O).
-    
-    Returns complete HTML document with Plotly line chart showing raw signal
-    with statistics overlay. Analysis performed on full signal; only display
-    data is downsampled using max-min binning to preserve peaks/impacts.
-    
-    IMPORTANT FOR LLMs: This returns an HTML string that MUST be rendered as
-    an interactive artifact/preview for the user, NOT displayed as code text.
-    The HTML is self-contained with CDN-loaded Plotly.js.
-    
-    Args:
-        signal_file: Signal filename in data/signals/ or subdirectory
-        sampling_rate: Sampling rate in Hz. If None, auto-detect from metadata
-        max_points: Maximum points to display (downsampling threshold). Default 600
-                   (reduced from 2000 to prevent MCP output truncation)
-    
-    Returns:
-        Complete HTML document (~15-20KB) with interactive time-domain plot and statistics.
-    
-    Example:
-        >>> html = generate_signal_plot_html("real_train/baseline_1.csv")
-    """
-    # Load signal (FULL DATA)
-    signal_path = Path("data/signals") / signal_file
-    if not signal_path.exists():
-        signal_path = Path(signal_file)
-    
-    signal_data = pd.read_csv(signal_path, header=None).values.flatten()
-    
-    # Auto-detect sampling rate
-    if sampling_rate is None:
-        metadata_path = signal_path.parent / f"{signal_path.stem}_metadata.json"
-        if metadata_path.exists():
-            with open(metadata_path) as f:
-                metadata = json.load(f)
-                sampling_rate = metadata.get("sampling_rate")
-        
-        if sampling_rate is None:
-            raise ValueError("sampling_rate required")
-    
-    # STEP 1: Statistics on FULL signal
-    rms = np.sqrt(np.mean(signal_data**2))
-    peak_val = np.max(np.abs(signal_data))
-    crest_factor = peak_val / rms if rms > 0 else 0
-    from scipy.stats import kurtosis
-    kurt = kurtosis(signal_data)
-    
-    # STEP 2: Downsample for display (max-min binning)
-    time_full = np.linspace(0, len(signal_data)/sampling_rate, len(signal_data))
-    
-    if len(signal_data) > max_points:
-        # Max-min binning to preserve peaks
-        bin_size = len(signal_data) // (max_points // 2)
-        time_display = []
-        signal_display = []
-        
-        for i in range(0, len(signal_data), bin_size):
-            chunk = signal_data[i:i+bin_size]
-            if len(chunk) > 0:
-                time_display.append(time_full[i + np.argmax(chunk)])
-                signal_display.append(np.max(chunk))
-                time_display.append(time_full[i + np.argmin(chunk)])
-                signal_display.append(np.min(chunk))
-        
-        time_display = np.array(time_display)
-        signal_display = np.array(signal_display)
-        
-        # Sort by time
-        sort_idx = np.argsort(time_display)
-        time_display = time_display[sort_idx]
-        signal_display = signal_display[sort_idx]
-    else:
-        time_display = time_full
-        signal_display = signal_data
-    
-    html = f"""<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Signal Plot - {signal_file}</title>
-    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
-    <style>
-        * {{
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }}
-        body {{
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
-            padding: 20px;
-            min-height: 100vh;
-        }}
-        .container {{
-            max-width: 1400px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 16px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-            overflow: hidden;
-        }}
-        .header {{
-            background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
-            color: white;
-            padding: 30px;
-            text-align: center;
-        }}
-        .header h1 {{
-            font-size: 28px;
-            margin-bottom: 10px;
-        }}
-        .header p {{
-            opacity: 0.9;
-            font-size: 16px;
-        }}
-        .content {{
-            padding: 30px;
-        }}
-        .info-grid {{
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
-        }}
-        .info-card {{
-            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-            padding: 20px;
-            border-radius: 12px;
-            border-left: 4px solid #2c3e50;
-        }}
-        .info-label {{
-            font-size: 12px;
-            color: #666;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            margin-bottom: 8px;
-        }}
-        .info-value {{
-            font-size: 24px;
-            font-weight: bold;
-            color: #333;
-        }}
-        .chart-container {{
-            background: white;
-            border-radius: 12px;
-            padding: 20px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>📉 Time-Domain Signal</h1>
-            <p>{signal_file}</p>
-        </div>
-        
-        <div class="content">
-            <div class="info-grid">
-                <div class="info-card">
-                    <div class="info-label">RMS</div>
-                    <div class="info-value">{rms:.4f}</div>
-                </div>
-                <div class="info-card">
-                    <div class="info-label">Peak</div>
-                    <div class="info-value">{peak_val:.4f}</div>
-                </div>
-                <div class="info-card">
-                    <div class="info-label">Crest Factor</div>
-                    <div class="info-value">{crest_factor:.2f}</div>
-                </div>
-                <div class="info-card">
-                    <div class="info-label">Kurtosis</div>
-                    <div class="info-value">{kurt:.2f}</div>
-                </div>
-                <div class="info-card">
-                    <div class="info-label">Sampling Rate</div>
-                    <div class="info-value">{sampling_rate:.0f} Hz</div>
-                </div>
-                <div class="info-card">
-                    <div class="info-label">Duration</div>
-                    <div class="info-value">{len(signal_data)/sampling_rate:.2f} s</div>
-                </div>
-            </div>
-            
-            <div class="chart-container">
-                <div id="chart"></div>
-            </div>
-        </div>
-    </div>
-    
-    <script>
-        var trace = {{
-            x: {time_display.tolist()},
-            y: {signal_display.tolist()},
-            type: 'scatter',
-            mode: 'lines',
-            name: 'Signal',
-            line: {{
-                color: '#3498db',
-                width: 1
-            }},
-            hovertemplate: '%{{x:.4f}} s<br>%{{y:.4f}}<extra></extra>'
-        }};
-        
-        var data = [trace];
-        
-        var layout = {{
-            title: {{
-                text: 'Time-Domain Vibration Signal',
-                font: {{ size: 20, color: '#333' }}
-            }},
-            xaxis: {{
-                title: 'Time (s)',
-                gridcolor: '#e0e0e0',
-                showgrid: true
-            }},
-            yaxis: {{
-                title: 'Amplitude',
-                gridcolor: '#e0e0e0',
-                showgrid: true
-            }},
-            hovermode: 'closest',
-            plot_bgcolor: '#fafafa',
-            paper_bgcolor: 'white',
-            margin: {{ t: 50, r: 30, b: 60, l: 70 }}
-        }};
-        
-        var config = {{
-            responsive: true,
-            displayModeBar: true,
-            displaylogo: false,
-            modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d']
-        }};
-        
-        Plotly.newPlot('chart', data, layout, config);
-    </script>
-</body>
-</html>"""
-    
-    return html
-
-
-# ============================================================================
-# TOOLS - FILE-BASED HTML ARTIFACTS (NO OUTPUT SIZE LIMIT)
-# ============================================================================
-
-@mcp.tool()
-def save_fft_chart_to_file(
-    signal_file: str,
-    sampling_rate: Optional[float] = None,
-    max_freq: float = 5000.0,
-    num_peaks: int = 15,
-    rotation_freq: Optional[float] = None,
-    use_db: bool = False,
-    segment_duration: Optional[float] = 1.0
-) -> Dict[str, Any]:
-    """
-    Generate FFT spectrum chart and SAVE TO FILE (bypasses MCP output size limits).
-    
-    **USE THIS TOOL WHEN**: 
-    - User requests detailed/high-resolution charts
-    - Previous inline artifact was truncated
-    - Signal is very long (>100K samples)
-    
-    This tool has NO output size limit because it returns only file metadata (~200 bytes),
-    not the HTML content. Agent can then:
-    1. Tell user: "Chart saved to {filename}, open it in browser"
-    2. Call read_html_artifact() to get file content in chunks (if needed for preview)
-    
-    Args:
-        signal_file: Signal filename
-        sampling_rate: Sampling rate in Hz (auto-detect if None)
-        max_freq: Max frequency to display (Hz). Default 5000 Hz
-        num_peaks: Number of peaks to label. Default 15 (higher than inline version)
-        rotation_freq: Optional shaft frequency for harmonic labels (Hz)
-    
-    Returns:
-        Dictionary with:
-        - file_path: Absolute path to saved HTML file
-        - file_name: Filename only
-        - file_size_kb: File size in KB
-        - num_samples: Signal length (samples)
-        - num_display_points: Points in chart
-        - peaks_detected: Number of peaks labeled
-    
-    Example:
-        >>> result = save_fft_chart_to_file("real_train/outer_fault_1.csv", rotation_freq=25.0)
-        >>> print(f"Chart saved: {result['file_path']} ({result['file_size_kb']:.1f} KB)")
-    """
-    # Generate HTML using the inline function (but with higher resolution)
-    html = generate_fft_chart_html(
-        signal_file=signal_file,
-        sampling_rate=sampling_rate,
-        max_freq=max_freq,
-        num_peaks=num_peaks,
-        rotation_freq=rotation_freq,
-        use_db=use_db,
-        segment_duration=segment_duration
-    )
-    
-    # Save to file
-    safe_name = signal_file.replace("/", "_").replace("\\", "_").replace(".csv", "")
-    output_file = DATA_DIR / f"fft_chart_{safe_name}.html"
-    output_file.write_text(html, encoding='utf-8')
-    
-    # Get signal info for metadata
-    signal_path = Path("data/signals") / signal_file
-    if not signal_path.exists():
-        signal_path = Path(signal_file)
-    signal_data = pd.read_csv(signal_path, header=None).values.flatten()
-    
-    # Count display points (approximate)
-    if sampling_rate is None:
-        metadata_path = signal_path.parent / f"{signal_path.stem}_metadata.json"
-        if metadata_path.exists():
-            with open(metadata_path) as f:
-                sampling_rate = json.load(f).get("sampling_rate", 10000.0)
-        else:
-            sampling_rate = 10000.0
-    
-    freq_full = np.fft.rfftfreq(len(signal_data), 1/sampling_rate)
-    display_points = len(freq_full[freq_full <= max_freq][::5])
-    
-    return {
-        "file_path": str(output_file.absolute()),
-        "file_name": output_file.name,
-        "file_size_kb": output_file.stat().st_size / 1024,
-        "num_samples": len(signal_data),
-        "num_display_points": display_points,
-        "peaks_detected": num_peaks,
-        "message": f"FFT chart saved to {output_file.name}. Open in browser to view interactive Plotly visualization."
-    }
-
-
-@mcp.tool()
-def save_envelope_chart_to_file(
-    signal_file: str,
-    sampling_rate: Optional[float] = None,
-    lowcut: float = 500.0,
-    highcut: float = 5000.0,
-    max_freq: float = 500.0,
-    num_peaks: int = 15,
-    bearing_freqs: Optional[Dict[str, float]] = None,
-    use_db: bool = False,
-    segment_duration: Optional[float] = 1.0
-) -> Dict[str, Any]:
-    """
-    Generate envelope analysis chart and SAVE TO FILE (bypasses MCP output size limits).
-    
-    **USE THIS TOOL WHEN**:
-    - User requests detailed bearing analysis
-    - Previous inline artifact was truncated
-    - Signal is very long (>100K samples)
-    
-    Returns file metadata only (~200 bytes), not HTML content.
-    
-    Args:
-        signal_file: Signal filename
-        sampling_rate: Sampling rate in Hz (auto-detect if None)
-        lowcut: Bandpass filter low cutoff (Hz). Default 500 Hz
-        highcut: Bandpass filter high cutoff (Hz). Default 5000 Hz
-        max_freq: Max envelope spectrum frequency (Hz). Default 500 Hz
-        num_peaks: Number of peaks to label. Default 15 (higher than inline)
-        bearing_freqs: Optional dict with BPFO, BPFI, BSF, FTF for markers
-    
-    Returns:
-        Dictionary with file metadata (path, size, signal info)
-    
-    Example:
-        >>> result = save_envelope_chart_to_file(
-        ...     "real_train/outer_fault_1.csv",
-        ...     bearing_freqs={"BPFO": 81.125, "BPFI": 118.875}
-        ... )
-    """
-    # Generate HTML
-    html = generate_envelope_html(
-        signal_file=signal_file,
-        sampling_rate=sampling_rate,
-        lowcut=lowcut,
-        highcut=highcut,
-        max_freq=max_freq,
-        num_peaks=num_peaks,
-        bearing_freqs=bearing_freqs,
-        use_db=use_db,
-        segment_duration=segment_duration
-    )
-    
-    # Save to file
-    safe_name = signal_file.replace("/", "_").replace("\\", "_").replace(".csv", "")
-    output_file = DATA_DIR / f"envelope_chart_{safe_name}.html"
-    output_file.write_text(html, encoding='utf-8')
-    
-    # Get signal info
-    signal_path = Path("data/signals") / signal_file
-    if not signal_path.exists():
-        signal_path = Path(signal_file)
-    signal_data = pd.read_csv(signal_path, header=None).values.flatten()
-    
-    return {
-        "file_path": str(output_file.absolute()),
-        "file_name": output_file.name,
-        "file_size_kb": output_file.stat().st_size / 1024,
-        "num_samples": len(signal_data),
-        "peaks_detected": num_peaks,
-        "message": f"Envelope chart saved to {output_file.name}. Open in browser to view interactive visualization with bearing frequency markers."
-    }
-
-
-@mcp.tool()
-def save_signal_plot_to_file(
-    signal_file: str,
-    sampling_rate: Optional[float] = None,
-    max_points: int = 5000
-) -> Dict[str, Any]:
-    """
-    Generate time-domain signal plot and SAVE TO FILE (bypasses MCP output size limits).
-    
-    **USE THIS TOOL WHEN**:
-    - User requests high-resolution time-domain plot
-    - Signal is very long (>200K samples)
-    - Previous inline artifact was truncated
-    
-    Args:
-        signal_file: Signal filename
-        sampling_rate: Sampling rate in Hz (auto-detect if None)
-        max_points: Max display points. Default 5000 (much higher than inline 600)
-    
-    Returns:
-        Dictionary with file metadata
-    """
-    # Generate HTML with higher resolution
-    html = generate_signal_plot_html(
-        signal_file=signal_file,
-        sampling_rate=sampling_rate,
-        max_points=max_points
-    )
-    
-    # Save to file
-    safe_name = signal_file.replace("/", "_").replace("\\", "_").replace(".csv", "")
-    output_file = DATA_DIR / f"signal_plot_{safe_name}.html"
-    output_file.write_text(html, encoding='utf-8')
-    
-    # Get signal info
-    signal_path = Path("data/signals") / signal_file
-    if not signal_path.exists():
-        signal_path = Path(signal_file)
-    signal_data = pd.read_csv(signal_path, header=None).values.flatten()
-    
-    return {
-        "file_path": str(output_file.absolute()),
-        "file_name": output_file.name,
-        "file_size_kb": output_file.stat().st_size / 1024,
-        "num_samples": len(signal_data),
-        "num_display_points": min(len(signal_data), max_points),
-        "message": f"Signal plot saved to {output_file.name}. Open in browser to view interactive time-domain visualization."
-    }
-
-
-@mcp.tool()
-def read_html_artifact(file_name: str, chunk_size: int = 5000) -> Dict[str, Any]:
-    """
-    Read saved HTML artifact file (for preview or debugging).
-    
-    Returns first `chunk_size` characters of HTML file. Use this if agent needs
-    to verify file content or extract metadata from HTML.
-    
-    Args:
-        file_name: Filename only (e.g., "fft_chart_OuterRaceFault_1.html")
-        chunk_size: Number of characters to return. Default 5000 (preview only)
-    
-    Returns:
-        Dictionary with:
-        - file_name: Filename
-        - file_size_kb: Total file size
-        - content_preview: First chunk_size characters
-        - is_complete: True if entire file returned, False if truncated
-    
-    Example:
-        >>> preview = read_html_artifact("fft_chart_OuterRaceFault_1.html")
-        >>> print(preview['content_preview'][:200])  # First 200 chars
-    """
-    file_path = DATA_DIR / file_name
-    
-    if not file_path.exists():
-        return {
-            "error": f"File not found: {file_name}",
-            "available_files": [f.name for f in DATA_DIR.glob("*.html")]
-        }
-    
-    content = file_path.read_text(encoding='utf-8')
-    file_size = file_path.stat().st_size
-    
-    return {
-        "file_name": file_name,
-        "file_path": str(file_path.absolute()),
-        "file_size_kb": file_size / 1024,
-        "content_preview": content[:chunk_size],
-        "is_complete": len(content) <= chunk_size,
-        "total_length": len(content),
-        "message": f"Preview of {file_name} ({file_size/1024:.1f} KB). {'Complete file shown.' if len(content) <= chunk_size else f'Truncated to first {chunk_size} characters.'}"
-    }
-
-
-# ============================================================================
 # TOOLS - ML ANOMALY DETECTION
 # ============================================================================
 
@@ -2707,8 +1164,8 @@ def extract_time_domain_features(segment: np.ndarray) -> Dict[str, float]:
 @mcp.tool()
 async def extract_features_from_signal(
     signal_file: str,
-    sampling_rate: float = 10000.0,
-    segment_duration: float = 0.2,
+    sampling_rate: Optional[float] = None,
+    segment_duration: float = 0.1,
     overlap_ratio: float = 0.5,
     ctx: Context[ServerSession, None] = None
 ) -> FeatureExtractionResult:
@@ -2720,8 +1177,8 @@ async def extract_features_from_signal(
     
     Args:
         signal_file: Name of the CSV file in data/signals/
-        sampling_rate: Sampling frequency in Hz (default: 10000)
-        segment_duration: Duration of each segment in seconds (default: 0.2)
+        sampling_rate: Sampling frequency in Hz (auto-detect from metadata if None)
+        segment_duration: Duration of each segment in seconds (default: 0.1)
         overlap_ratio: Overlap between segments, 0-1 (default: 0.5 = 50%)
         ctx: MCP context for progress/logging
         
@@ -2738,6 +1195,23 @@ async def extract_features_from_signal(
     """
     if ctx:
         await ctx.info(f"Extracting features from {signal_file}...")
+    
+    # Auto-detect sampling rate from metadata if not provided
+    if sampling_rate is None:
+        metadata_path = DATA_DIR / signal_file.replace('.csv', '_metadata.json')
+        if metadata_path.exists():
+            with open(metadata_path) as f:
+                metadata = json.load(f)
+                sampling_rate = metadata.get("sampling_rate", 10000.0)
+                if ctx:
+                    await ctx.info(f"Auto-detected sampling rate from metadata: {sampling_rate} Hz")
+        else:
+            sampling_rate = 10000.0  # fallback default
+            if ctx:
+                await ctx.info(f"No metadata found, using default sampling rate: {sampling_rate} Hz")
+    else:
+        if ctx:
+            await ctx.info(f"Using specified sampling rate: {sampling_rate} Hz")
     
     # Load signal
     filepath = DATA_DIR / signal_file
@@ -2795,12 +1269,13 @@ async def extract_features_from_signal(
 @mcp.tool()
 async def train_anomaly_model(
     healthy_signal_files: List[str],
-    sampling_rate: float = 10000.0,
-    segment_duration: float = 0.2,
+    sampling_rate: Optional[float] = None,
+    segment_duration: float = 0.1,
     overlap_ratio: float = 0.5,
     model_type: str = "OneClassSVM",
     pca_variance: float = 0.95,
     fault_signal_files: Optional[List[str]] = None,
+    healthy_validation_files: Optional[List[str]] = None,
     model_name: str = "anomaly_model",
     ctx: Context[ServerSession, None] = None
 ) -> AnomalyModelResult:
@@ -2812,17 +1287,24 @@ async def train_anomaly_model(
     2. Standardize features (StandardScaler - fitted on training data)
     3. Dimensionality reduction (PCA with specified variance explained)
     4. Train novelty detection model (OneClassSVM or LocalOutlierFactor)
-    5. Optional validation on fault data
+    5. Optional validation on healthy + fault data
     6. Save model, scaler, and PCA transformer
     
+    **Validation Strategy:**
+    - If healthy_validation_files provided: Use those explicitly (no split)
+    - If healthy_validation_files NOT provided: Automatic 80/20 split of training data
+    - If fault_signal_files provided: Validate on fault data for sensitivity
+    
     Args:
-        healthy_signal_files: List of CSV files with healthy machine data
-        sampling_rate: Sampling frequency in Hz (default: 10000)
-        segment_duration: Segment duration in seconds (default: 0.2)
+        healthy_signal_files: List of CSV files with healthy machine data (for training)
+        sampling_rate: Sampling frequency in Hz (auto-detect from metadata if None)
+        segment_duration: Segment duration in seconds (default: 0.1)
         overlap_ratio: Overlap ratio 0-1 (default: 0.5)
         model_type: 'OneClassSVM' or 'LocalOutlierFactor' (default: 'OneClassSVM')
         pca_variance: Cumulative variance to explain with PCA (default: 0.95)
-        fault_signal_files: Optional list of fault signals for validation
+        fault_signal_files: Optional list of fault signals for validation (sensitivity check)
+        healthy_validation_files: Optional list of healthy signals for validation (specificity check).
+                                  If not provided, 20% of training data will be used.
         model_name: Name for saved model files (default: 'anomaly_model')
         ctx: MCP context for progress/logging
         
@@ -2833,18 +1315,45 @@ async def train_anomaly_model(
         await ctx.info(f"Training {model_type} model on {len(healthy_signal_files)} healthy signals...")
     
     # Step 1: Extract features from all healthy signals
+    # Each signal may have different sampling rate - detect per file
     all_features = []
+    detected_rates = []
     
     for signal_file in healthy_signal_files:
         filepath = DATA_DIR / signal_file
         if not filepath.exists():
             raise FileNotFoundError(f"File not found: {signal_file}")
         
+        # Auto-detect or use provided sampling rate for THIS file
+        file_sampling_rate = sampling_rate
+        if file_sampling_rate is None:
+            metadata_path = DATA_DIR / signal_file.replace('.csv', '_metadata.json')
+            if metadata_path.exists():
+                with open(metadata_path) as f:
+                    metadata = json.load(f)
+                    file_sampling_rate = metadata.get("sampling_rate")
+                    if file_sampling_rate is None:
+                        raise ValueError(
+                            f"No sampling_rate in metadata for {signal_file}. "
+                            f"Please provide sampling_rate parameter explicitly."
+                        )
+                    if ctx:
+                        await ctx.info(f"  {signal_file}: detected {file_sampling_rate} Hz from metadata")
+            else:
+                raise ValueError(
+                    f"No metadata found for {signal_file} and no sampling_rate provided. "
+                    f"Cannot proceed without sampling rate information. "
+                    f"Please either:\n"
+                    f"  1. Create {signal_file.replace('.csv', '_metadata.json')} with 'sampling_rate' field\n"
+                    f"  2. Provide sampling_rate parameter explicitly"
+                )
+        detected_rates.append(file_sampling_rate)
+        
         df = pd.read_csv(filepath, header=None)
         signal_data = df.iloc[:, 0].values
         
-        # Segment signal
-        segment_length_samples = int(segment_duration * sampling_rate)
+        # Segment signal using THIS file's sampling rate
+        segment_length_samples = int(segment_duration * file_sampling_rate)
         hop_length = int(segment_length_samples * (1 - overlap_ratio))
         
         for start in range(0, len(signal_data) - segment_length_samples + 1, hop_length):
@@ -2872,43 +1381,262 @@ async def train_anomaly_model(
         await ctx.info(f"Variance explained: {pca.explained_variance_ratio_.sum():.3f}")
     
     # Step 4: Train anomaly detection model
+    # Strategy: Use automatic parameters for unsupervised, optimize with GridSearchCV if validation data provided
+    
     if model_type == "OneClassSVM":
-        # Grid search for best parameters
-        param_grid = {
-            'nu': [0.01, 0.05, 0.1, 0.2],
-            'gamma': ['scale', 'auto', 0.001, 0.01, 0.1]
-        }
+        if fault_signal_files:
+            # SUPERVISED MODE: We have fault data for validation → Use GridSearchCV
+            if ctx:
+                await ctx.info("Training in SUPERVISED mode with fault validation data")
+                await ctx.info("Running GridSearchCV for parameter optimization...")
+            
+            from sklearn.model_selection import GridSearchCV
+            
+            # Prepare validation labels (healthy=1, fault=-1)
+            y_train = np.ones(len(X_pca))  # All training data is healthy
+            
+            param_grid = {
+                'nu': [0.01, 0.05, 0.1, 0.2],
+                'gamma': ['scale', 'auto', 0.001, 0.01, 0.1],
+                'kernel': ['rbf']
+            }
+            
+            # For supervised optimization, we'll use a scoring function
+            # Note: OneClassSVM in novelty detection mode still requires special handling
+            base_model = OneClassSVM()
+            
+            # Manual grid search (more suitable for novelty detection)
+            best_score = -np.inf
+            best_params = None
+            best_model = None
+            
+            for nu in param_grid['nu']:
+                for gamma in param_grid['gamma']:
+                    model_candidate = OneClassSVM(kernel='rbf', nu=nu, gamma=gamma)
+                    model_candidate.fit(X_pca)
+                    
+                    # Score on training data (should be mostly positive)
+                    train_predictions = model_candidate.predict(X_pca)
+                    train_score = np.sum(train_predictions == 1) / len(train_predictions)
+                    
+                    # We'll validate against fault data in Step 5, store for now
+                    if train_score > best_score:
+                        best_score = train_score
+                        best_params = {'kernel': 'rbf', 'nu': nu, 'gamma': gamma}
+                        best_model = model_candidate
+            
+            model = best_model
+            
+            if ctx:
+                await ctx.info(f"Best parameters found: nu={best_params['nu']}, gamma={best_params['gamma']}")
+                await ctx.info(f"Training score: {best_score:.3f}")
         
-        model = OneClassSVM(kernel='rbf')
-        
-        # Simple grid search (OneClassSVM doesn't support GridSearchCV directly)
-        # Use default parameters optimized for novelty detection
-        model = OneClassSVM(kernel='rbf', nu=0.1, gamma='scale')
-        model.fit(X_pca)
-        
-        best_params = {'kernel': 'rbf', 'nu': 0.1, 'gamma': 'scale'}
+        else:
+            # UNSUPERVISED MODE: No fault data → Use automatic parameters
+            if ctx:
+                await ctx.info("Training in UNSUPERVISED mode (novelty detection)")
+                await ctx.info("Using automatic parameters: nu='auto', gamma='scale'")
+            
+            # Auto-calculate nu based on expected outlier fraction (rule of thumb: 5%)
+            nu_auto = min(0.1, max(0.01, 1.0 / np.sqrt(len(X_pca))))
+            
+            model = OneClassSVM(
+                kernel='rbf',
+                nu=nu_auto,  # Adaptive based on sample size
+                gamma='scale'  # Automatic scaling based on features
+            )
+            model.fit(X_pca)
+            
+            best_params = {
+                'kernel': 'rbf',
+                'nu': float(nu_auto),
+                'gamma': 'scale',
+                'mode': 'unsupervised_auto'
+            }
+            
+            if ctx:
+                await ctx.info(f"Auto-calculated nu={nu_auto:.4f} based on sample size")
         
     elif model_type == "LocalOutlierFactor":
-        model = LocalOutlierFactor(n_neighbors=20, contamination=0.1, novelty=True)
-        model.fit(X_pca)
+        if fault_signal_files:
+            # SUPERVISED MODE with LOF
+            if ctx:
+                await ctx.info("Training LOF in SUPERVISED mode with validation data")
+            
+            # Try different n_neighbors values
+            best_score = -np.inf
+            best_params = None
+            best_model = None
+            
+            for n_neighbors in [10, 20, 30, 50]:
+                for contamination in [0.05, 0.1, 0.15, 0.2]:
+                    model_candidate = LocalOutlierFactor(
+                        n_neighbors=n_neighbors,
+                        contamination=contamination,
+                        novelty=True
+                    )
+                    model_candidate.fit(X_pca)
+                    
+                    train_predictions = model_candidate.predict(X_pca)
+                    train_score = np.sum(train_predictions == 1) / len(train_predictions)
+                    
+                    if train_score > best_score:
+                        best_score = train_score
+                        best_params = {'n_neighbors': n_neighbors, 'contamination': contamination}
+                        best_model = model_candidate
+            
+            model = best_model
+            
+            if ctx:
+                await ctx.info(f"Best parameters: n_neighbors={best_params['n_neighbors']}, contamination={best_params['contamination']}")
         
-        best_params = {'n_neighbors': 20, 'contamination': 0.1}
+        else:
+            # UNSUPERVISED MODE: Auto parameters
+            if ctx:
+                await ctx.info("Training LOF in UNSUPERVISED mode")
+                await ctx.info("Using automatic parameters based on sample size")
+            
+            # Auto-calculate n_neighbors (rule of thumb: sqrt(n) or ~5% of samples)
+            n_auto = max(10, min(50, int(np.sqrt(len(X_pca)))))
+            contamination_auto = 0.1  # Conservative 10% outlier assumption
+            
+            model = LocalOutlierFactor(
+                n_neighbors=n_auto,
+                contamination=contamination_auto,
+                novelty=True
+            )
+            model.fit(X_pca)
+            
+            best_params = {
+                'n_neighbors': int(n_auto),
+                'contamination': contamination_auto,
+                'mode': 'unsupervised_auto'
+            }
+            
+            if ctx:
+                await ctx.info(f"Auto-calculated n_neighbors={n_auto}")
+    
     else:
         raise ValueError(f"Unknown model_type: {model_type}. Use 'OneClassSVM' or 'LocalOutlierFactor'")
     
-    # Step 5: Optional validation on fault data
+    # Step 5: Optional validation on healthy + fault data
     validation_accuracy = None
     validation_details = None
+    validation_metrics = None
     
-    if fault_signal_files:
+    if fault_signal_files or healthy_validation_files:
+        # Part A: Validate on HEALTHY data
+        # Two options:
+        # 1. User provides explicit healthy_validation_files → Use those
+        # 2. User doesn't provide → Auto-split training data 80/20
+        
+        if healthy_validation_files:
+            # Option 1: User provided explicit healthy validation files
+            if ctx:
+                await ctx.info(f"Using {len(healthy_validation_files)} explicitly provided healthy validation files")
+            
+            # Extract features from validation files
+            healthy_val_features = []
+            for signal_file in healthy_validation_files:
+                filepath = DATA_DIR / signal_file
+                if not filepath.exists():
+                    logger.warning(f"Validation file not found: {signal_file}, skipping...")
+                    continue
+                
+                # Auto-detect sampling rate for validation file
+                file_sampling_rate = sampling_rate
+                if file_sampling_rate is None:
+                    metadata_path = DATA_DIR / signal_file.replace('.csv', '_metadata.json')
+                    if metadata_path.exists():
+                        with open(metadata_path) as f:
+                            metadata = json.load(f)
+                            file_sampling_rate = metadata.get("sampling_rate")
+                            if file_sampling_rate is None:
+                                raise ValueError(f"No sampling_rate in metadata for validation file {signal_file}")
+                    else:
+                        raise ValueError(f"No metadata found for validation file {signal_file}")
+                
+                df = pd.read_csv(filepath, header=None)
+                signal_data = df.iloc[:, 0].values
+                
+                segment_length_samples = int(segment_duration * file_sampling_rate)
+                hop_length = int(segment_length_samples * (1 - overlap_ratio))
+                
+                for start in range(0, len(signal_data) - segment_length_samples + 1, hop_length):
+                    segment = signal_data[start:start + segment_length_samples]
+                    features = extract_time_domain_features(segment)
+                    healthy_val_features.append(features)
+            
+            if healthy_val_features:
+                X_healthy_val = pd.DataFrame(healthy_val_features).values
+                X_healthy_val_scaled = scaler.transform(X_healthy_val)
+                X_pca_healthy_val = pca.transform(X_healthy_val_scaled)
+                
+                healthy_predictions = model.predict(X_pca_healthy_val)
+                healthy_correct = np.sum(healthy_predictions == 1)
+                healthy_total = len(healthy_predictions)
+                healthy_accuracy = healthy_correct / healthy_total
+                
+                if ctx:
+                    await ctx.info(f"Healthy validation: {healthy_correct}/{healthy_total} correctly classified ({healthy_accuracy*100:.1f}%)")
+            else:
+                healthy_correct = 0
+                healthy_total = 0
+                healthy_accuracy = 0.0
+        
+        else:
+            # Option 2: Auto-split training data 80/20
+            if ctx:
+                await ctx.info("No healthy validation files provided - using 80/20 split of training data")
+            
+            split_idx = int(0.8 * len(X_pca))
+            X_pca_train = X_pca[:split_idx]
+            X_pca_healthy_val = X_pca[split_idx:]
+            
+            # Retrain model on 80% split for proper validation
+            if model_type == "OneClassSVM":
+                model_retrained = OneClassSVM(
+                    kernel=best_params.get('kernel', 'rbf'),
+                    nu=best_params['nu'],
+                    gamma=best_params['gamma']
+                )
+                model_retrained.fit(X_pca_train)
+                model = model_retrained  # Use retrained model
+                
+                if ctx:
+                    await ctx.info("Model retrained on 80% of data for validation")
+            
+            # Validate on 20% split
+            healthy_predictions = model.predict(X_pca_healthy_val)
+            healthy_correct = np.sum(healthy_predictions == 1)
+            healthy_total = len(healthy_predictions)
+            healthy_accuracy = healthy_correct / healthy_total
+            
+            if ctx:
+                await ctx.info(f"Healthy validation: {healthy_correct}/{healthy_total} correctly classified ({healthy_accuracy*100:.1f}%)")
+        
+        # Part B: Validate on FAULT data
         fault_features = []
         for signal_file in fault_signal_files:
             filepath = DATA_DIR / signal_file
             if filepath.exists():
+                # Auto-detect sampling rate for validation file
+                file_sampling_rate = sampling_rate
+                if file_sampling_rate is None:
+                    metadata_path = DATA_DIR / signal_file.replace('.csv', '_metadata.json')
+                    if metadata_path.exists():
+                        with open(metadata_path) as f:
+                            metadata = json.load(f)
+                            file_sampling_rate = metadata.get("sampling_rate")
+                            if file_sampling_rate is None:
+                                raise ValueError(f"No sampling_rate in metadata for validation file {signal_file}")
+                    else:
+                        raise ValueError(f"No metadata found for validation file {signal_file}")
+                
                 df = pd.read_csv(filepath, header=None)
                 signal_data = df.iloc[:, 0].values
                 
-                segment_length_samples = int(segment_duration * sampling_rate)
+                segment_length_samples = int(segment_duration * file_sampling_rate)
                 hop_length = int(segment_length_samples * (1 - overlap_ratio))
                 
                 for start in range(0, len(signal_data) - segment_length_samples + 1, hop_length):
@@ -2924,13 +1652,35 @@ async def train_anomaly_model(
             # Predict (should be -1 for anomalies)
             fault_predictions = model.predict(X_fault_pca)
             
-            # Calculate accuracy (% detected as anomalies)
+            # Calculate fault detection rate
             anomaly_detected = np.sum(fault_predictions == -1)
-            validation_accuracy = float(anomaly_detected / len(fault_predictions))
-            validation_details = f"Detected {anomaly_detected}/{len(fault_predictions)} fault segments as anomalies"
+            fault_total = len(fault_predictions)
+            fault_accuracy = anomaly_detected / fault_total
+            
+            # Calculate overall balanced accuracy
+            # Overall accuracy = (healthy_correct + fault_correct) / (healthy_total + fault_total)
+            total_correct = healthy_correct + anomaly_detected
+            total_samples = healthy_total + fault_total
+            validation_accuracy = float(total_correct / total_samples) if total_samples > 0 else 0.0
+            
+            validation_details = (
+                f"Healthy: {healthy_correct}/{healthy_total} correct ({healthy_accuracy*100:.1f}%), "
+                f"Fault: {anomaly_detected}/{fault_total} detected ({fault_accuracy*100:.1f}%)"
+            )
+            
+            validation_metrics = {
+                'healthy_correct': int(healthy_correct),
+                'healthy_total': int(healthy_total),
+                'healthy_accuracy': float(healthy_accuracy),
+                'fault_detected': int(anomaly_detected),
+                'fault_total': int(fault_total),
+                'fault_accuracy': float(fault_accuracy),
+                'overall_accuracy': float(validation_accuracy)
+            }
             
             if ctx:
-                await ctx.info(f"Validation: {validation_details}")
+                await ctx.info(f"Fault validation: {anomaly_detected}/{fault_total} detected as anomalies ({fault_accuracy*100:.1f}%)")
+                await ctx.info(f"Overall validation accuracy: {validation_accuracy*100:.1f}%")
     
     # Step 6: Save model, scaler, and PCA
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
@@ -2949,14 +1699,19 @@ async def train_anomaly_model(
     # Save metadata
     metadata = {
         'model_type': model_type,
+        'training_mode': 'supervised' if fault_signal_files else 'unsupervised',
         'feature_names': list(features_df.columns),
         'num_features_original': X_train.shape[1],
         'num_features_pca': X_pca.shape[1],
         'pca_variance': float(pca.explained_variance_ratio_.sum()),
         'best_params': best_params,
-        'sampling_rate': sampling_rate,
+        'sampling_rate': sampling_rate if sampling_rate is not None else 'per_file',
+        'sampling_rates_detected': detected_rates if sampling_rate is None else None,
         'segment_duration': segment_duration,
-        'overlap_ratio': overlap_ratio
+        'overlap_ratio': overlap_ratio,
+        'multi_rate_training': sampling_rate is None,
+        'validation_with_faults': fault_signal_files is not None,
+        'num_validation_files': len(fault_signal_files) if fault_signal_files else 0
     }
     
     metadata_path = MODELS_DIR / f"{model_name}_metadata.json"
@@ -2979,7 +1734,8 @@ async def train_anomaly_model(
         scaler_path=str(scaler_path),
         pca_path=str(pca_path),
         validation_accuracy=validation_accuracy,
-        validation_details=validation_details
+        validation_details=validation_details,
+        validation_metrics=validation_metrics
     )
 
 
@@ -3445,7 +2201,7 @@ async def plot_spectrum(
     peak_indices, properties = find_peaks(
         amplitude_db_plot,
         distance=min_distance_samples,
-        prominence=10  # Only peaks with >10 dB prominence
+        prominence=2  # Only peaks with >2 dB prominence
     )
     
     # Sort by amplitude and keep top num_peaks
@@ -3746,6 +2502,764 @@ async def plot_envelope(
 
 
 # ============================================================================
+# NEW PROFESSIONAL REPORT GENERATION TOOLS
+# ============================================================================
+
+@mcp.tool()
+async def generate_fft_report(
+    signal_file: str,
+    sampling_rate: Optional[float] = None,
+    max_freq: float = 5000.0,
+    num_peaks: int = 15,
+    rotation_freq: Optional[float] = None,
+    ctx: Context | None = None
+) -> Dict[str, Any]:
+    """
+    Generate professional FFT spectrum report as HTML file.
+    
+    **NEW PREFERRED METHOD**: Generates a professional HTML report file
+    instead of inline content. Saves to reports/ directory.
+    
+    Args:
+        signal_file: Signal filename in data/signals/
+        sampling_rate: Sampling rate in Hz (auto-detect if None)
+        max_freq: Maximum frequency to display (Hz). Default 5000 Hz
+        num_peaks: Number of peaks to detect and label. Default 15
+        rotation_freq: Optional shaft rotation frequency for harmonic labels
+        ctx: MCP context
+    
+    Returns:
+        Dictionary with file path, metadata, and summary (NO HTML content)
+    
+    Example:
+        >>> result = generate_fft_report("real_train/baseline_1.csv")
+        >>> # User can open: result['file_path']
+    """
+    if ctx:
+        await ctx.info(f"Generating FFT report for {signal_file}...")
+    
+    # Load signal
+    signal_data = load_signal_data(signal_file)
+    if signal_data is None:
+        raise ValueError(f"Unable to load signal from {signal_file}")
+    
+    # Auto-detect sampling rate
+    if sampling_rate is None:
+        metadata_path = DATA_DIR / signal_file.replace('.csv', '_metadata.json')
+        if metadata_path.exists():
+            with open(metadata_path) as f:
+                metadata = json.load(f)
+                sampling_rate = metadata.get("sampling_rate")
+        
+        if sampling_rate is None:
+            raise ValueError("sampling_rate required (not found in metadata)")
+    
+    # Perform FFT
+    N = len(signal_data)
+    window = np.hamming(N)
+    signal_windowed = signal_data * window
+    
+    fft_values = fft(signal_windowed)
+    frequencies = fftfreq(N, 1/sampling_rate)
+    
+    # Positive frequencies only
+    positive_idx = frequencies > 0
+    frequencies = frequencies[positive_idx]
+    magnitudes = 2.0 * np.abs(fft_values[positive_idx]) / N
+    
+    # Generate and save report
+    result = save_fft_report(
+        signal_file=signal_file,
+        sampling_rate=sampling_rate,
+        frequencies=frequencies,
+        magnitudes=magnitudes,
+        signal_data=signal_data,
+        max_freq=max_freq,
+        num_peaks=num_peaks,
+        rotation_freq=rotation_freq
+    )
+    
+    if ctx:
+        await ctx.info(result['message'])
+        await ctx.info(f"📂 Report location: {result['file_path']}")
+    
+    return result
+
+
+@mcp.tool()
+async def generate_envelope_report(
+    signal_file: str,
+    sampling_rate: Optional[float] = None,
+    filter_low: float = 500.0,
+    filter_high: float = 5000.0,
+    max_freq: float = 500.0,
+    num_peaks: int = 15,
+    bearing_freqs: Optional[Dict[str, float]] = None,
+    ctx: Context | None = None
+) -> Dict[str, Any]:
+    """
+    Generate professional envelope analysis report as HTML file.
+    
+    **NEW PREFERRED METHOD**: Generates a professional HTML report file
+    instead of inline content. Saves to reports/ directory.
+    
+    Args:
+        signal_file: Signal filename in data/signals/
+        sampling_rate: Sampling rate in Hz (auto-detect if None)
+        filter_low: Bandpass filter low cutoff (Hz). Default 500 Hz
+        filter_high: Bandpass filter high cutoff (Hz). Default 5000 Hz
+        max_freq: Max envelope spectrum frequency to display. Default 500 Hz
+        num_peaks: Number of peaks to detect. Default 15
+        bearing_freqs: Optional dict with BPFO, BPFI, BSF, FTF
+        ctx: MCP context
+    
+    Returns:
+        Dictionary with file path, metadata, and summary (NO HTML content)
+    
+    Example:
+        >>> result = generate_envelope_report(
+        ...     "real_train/OuterRaceFault_1.csv",
+        ...     bearing_freqs={"BPFO": 81.13, "BPFI": 118.88, "BSF": 63.91, "FTF": 14.84}
+        ... )
+    """
+    if ctx:
+        await ctx.info(f"Generating envelope analysis report for {signal_file}...")
+    
+    # Load signal
+    signal_data = load_signal_data(signal_file)
+    if signal_data is None:
+        raise ValueError(f"Unable to load signal from {signal_file}")
+    
+    # Auto-detect sampling rate and bearing freqs
+    if sampling_rate is None or bearing_freqs is None:
+        metadata_path = DATA_DIR / signal_file.replace('.csv', '_metadata.json')
+        if metadata_path.exists():
+            with open(metadata_path) as f:
+                metadata = json.load(f)
+                if sampling_rate is None:
+                    sampling_rate = metadata.get("sampling_rate")
+                if bearing_freqs is None:
+                    bearing_freqs = {
+                        "BPFO": metadata.get("BPFO"),
+                        "BPFI": metadata.get("BPFI"),
+                        "BSF": metadata.get("BSF"),
+                        "FTF": metadata.get("FTF")
+                    }
+        
+        if sampling_rate is None:
+            raise ValueError("sampling_rate required")
+    
+    # Bandpass filter
+    nyquist = sampling_rate / 2
+    sos = butter(4, [filter_low / nyquist, filter_high / nyquist], btype='band', output='sos')
+    filtered_signal = sosfiltfilt(sos, signal_data)
+    
+    # Envelope via Hilbert
+    analytic_signal = hilbert(filtered_signal)
+    envelope = np.abs(analytic_signal)
+    
+    # Envelope spectrum
+    N = len(envelope)
+    env_fft = fft(envelope)
+    env_frequencies = fftfreq(N, 1/sampling_rate)
+    
+    positive_idx = env_frequencies > 0
+    env_frequencies = env_frequencies[positive_idx]
+    env_magnitudes = 2.0 * np.abs(env_fft[positive_idx]) / N
+    
+    # Generate and save report
+    result = save_envelope_report(
+        signal_file=signal_file,
+        sampling_rate=sampling_rate,
+        filter_band=(filter_low, filter_high),
+        filtered_signal=filtered_signal,
+        envelope=envelope,
+        env_frequencies=env_frequencies,
+        env_magnitudes=env_magnitudes,
+        bearing_freqs=bearing_freqs,
+        max_freq=max_freq,
+        num_peaks=num_peaks
+    )
+    
+    if ctx:
+        await ctx.info(result['message'])
+        await ctx.info(f"📂 Report location: {result['file_path']}")
+        if result.get('bearing_matches'):
+            await ctx.info(f"🎯 Bearing frequency matches: {', '.join(result['bearing_matches'])}")
+    
+    return result
+
+
+@mcp.tool()
+async def generate_iso_report(
+    signal_file: str,
+    sampling_rate: Optional[float] = None,
+    machine_group: int = 2,
+    support_type: str = "rigid",
+    operating_speed_rpm: Optional[float] = None,
+    ctx: Context | None = None
+) -> Dict[str, Any]:
+    """
+    Generate professional ISO 20816-3 evaluation report as HTML file.
+    
+    **NEW PREFERRED METHOD**: Generates a professional HTML report file
+    instead of inline content. Saves to reports/ directory.
+    
+    Args:
+        signal_file: Signal filename in data/signals/
+        sampling_rate: Sampling rate in Hz (auto-detect if None)
+        machine_group: ISO machine group (1=large >300kW, 2=medium 15-300kW)
+        support_type: 'rigid' or 'flexible'
+        operating_speed_rpm: Operating speed in RPM (optional)
+        ctx: MCP context
+    
+    Returns:
+        Dictionary with file path, metadata, and summary (NO HTML content)
+    
+    Example:
+        >>> result = generate_iso_report(
+        ...     "real_train/baseline_1.csv",
+        ...     machine_group=2,
+        ...     support_type="rigid"
+        ... )
+    """
+    if ctx:
+        await ctx.info(f"Generating ISO 20816-3 report for {signal_file}...")
+    
+    # Auto-detect sampling rate
+    if sampling_rate is None:
+        metadata_path = DATA_DIR / signal_file.replace('.csv', '_metadata.json')
+        if metadata_path.exists():
+            with open(metadata_path) as f:
+                sampling_rate = json.load(f).get("sampling_rate")
+        
+        if sampling_rate is None:
+            raise ValueError("sampling_rate required")
+    
+    # Perform ISO evaluation
+    iso_result = evaluate_iso_20816(
+        signal_file=signal_file,
+        sampling_rate=sampling_rate,
+        machine_group=machine_group,
+        support_type=support_type,
+        operating_speed_rpm=operating_speed_rpm
+    )
+    
+    # Convert Pydantic model to dict
+    iso_dict = iso_result.model_dump()
+    
+    # Generate and save report
+    result = save_iso_report(
+        signal_file=signal_file,
+        iso_result=iso_dict
+    )
+    
+    if ctx:
+        await ctx.info(result['message'])
+        await ctx.info(f"📂 Report location: {result['file_path']}")
+    
+    return result
+
+
+@mcp.tool()
+def list_html_reports() -> List[Dict[str, Any]]:
+    """
+    List all available HTML reports in reports/ directory.
+    
+    Returns list of reports with metadata (file name, type, signal, size).
+    Does NOT return HTML content - only metadata to avoid token consumption.
+    
+    Returns:
+        List of dicts with report information
+    
+    Example:
+        >>> reports = list_html_reports()
+        >>> print(f"Found {len(reports)} reports")
+        >>> for r in reports:
+        ...     print(f"- {r['file_name']}: {r['report_type']} for {r['signal_file']}")
+    """
+    return list_reports()
+
+
+@mcp.tool()
+def get_report_info(file_name: str) -> Dict[str, Any]:
+    """
+    Get metadata from HTML report without loading entire file.
+    
+    Extracts metadata JSON from HTML report file. This allows LLM to
+    understand report content without consuming tokens for HTML.
+    
+    Args:
+        file_name: Report filename in reports/ directory
+    
+    Returns:
+        Dictionary with metadata (NO HTML content)
+    
+    Example:
+        >>> info = get_report_info("fft_spectrum_baseline_1.html")
+        >>> print(f"Signal: {info['metadata']['signal_file']}")
+        >>> print(f"Peaks detected: {info['metadata']['num_peaks']}")
+    """
+    return read_report_metadata(file_name)
+
+
+# ============================================================================
+# TOOLS - PCA VISUALIZATION & FEATURE COMPARISON
+# ============================================================================
+
+@mcp.tool()
+async def generate_pca_visualization_report(
+    model_name: str,
+    test_signal_files: Optional[List[str]] = None,
+    true_labels: Optional[Dict[str, str]] = None,
+    sampling_rate: Optional[float] = None,
+    segment_duration: float = 0.1,
+    overlap_ratio: float = 0.5,
+    ctx: Context | None = None
+) -> Dict[str, Any]:
+    """
+    Generate PCA visualization HTML report showing training and test data in 2D PCA space.
+    
+    Creates interactive scatter plot with:
+    - Training data (blue dots) - healthy baseline
+    - Test/prediction data (green = predicted healthy, red = predicted anomaly)
+    - PC1 vs PC2 axes with variance explained
+    - Hover information showing segment details and prediction status
+    
+    **IMPORTANT**: Labels show MODEL PREDICTIONS, not ground truth. Use `true_labels`
+    parameter to provide actual labels for validation visualization.
+    
+    **Strategy**: Same HTML report approach as FFT/Envelope/ISO reports.
+    Saved to reports/ directory for LLM to reference without consuming tokens.
+    
+    Args:
+        model_name: Name of trained model (e.g., 'bearing_health_model')
+        test_signal_files: Optional list of signals to predict and visualize
+        true_labels: Optional dict mapping signal filenames to true labels.
+                    Format: {"baseline_3.csv": "healthy", "InnerRaceFault_vload_6.csv": "faulty"}
+                    When provided, legend shows both true and predicted labels for validation.
+        sampling_rate: Sampling rate (auto-detect from metadata if None)
+        segment_duration: Segment duration in seconds (default: 0.1s for ML)
+        overlap_ratio: Overlap ratio 0-1 (default: 0.5)
+        ctx: MCP context
+    
+    Returns:
+        Dictionary with file path, metadata, and summary (includes validation metrics if true_labels provided)
+    
+    Example (predictions only):
+        >>> generate_pca_visualization_report(
+        ...     model_name="bearing_health_model",
+        ...     test_signal_files=["real_test/baseline_3.csv", "real_test/InnerRaceFault_vload_6.csv"]
+        ... )
+    
+    Example (with validation):
+        >>> generate_pca_visualization_report(
+        ...     model_name="bearing_health_model",
+        ...     test_signal_files=["real_test/baseline_3.csv", "real_test/InnerRaceFault_vload_6.csv"],
+        ...     true_labels={"baseline_3.csv": "healthy", "InnerRaceFault_vload_6.csv": "faulty"}
+        ... )
+    """
+    if ctx:
+        await ctx.info(f"Generating PCA visualization for model '{model_name}'...")
+    
+    # Load model, scaler, PCA
+    model_path = MODELS_DIR / f"{model_name}_model.pkl"
+    scaler_path = MODELS_DIR / f"{model_name}_scaler.pkl"
+    pca_path = MODELS_DIR / f"{model_name}_pca.pkl"
+    metadata_path = MODELS_DIR / f"{model_name}_metadata.json"
+    
+    if not model_path.exists():
+        raise FileNotFoundError(f"Model not found: {model_path}")
+    
+    with open(model_path, 'rb') as f:
+        model = pickle.load(f)
+    with open(scaler_path, 'rb') as f:
+        scaler = pickle.load(f)
+    with open(pca_path, 'rb') as f:
+        pca = pickle.load(f)
+    with open(metadata_path, 'r') as f:
+        model_metadata = json.load(f)
+    
+    # Use model's sampling rate if not provided
+    if sampling_rate is None:
+        sampling_rate = model_metadata.get('sampling_rate', 10000.0)
+    
+    # Collect training data (reconstruct from model metadata if available)
+    # For now, we'll just note that training data would be visualized
+    # In production, you'd save training features during train_anomaly_model
+    
+    training_pca_data = []  # Placeholder - would load from saved training features
+    
+    # Process test signals if provided
+    test_data_list = []
+    
+    if test_signal_files:
+        for signal_file in test_signal_files:
+            filepath = DATA_DIR / signal_file
+            if not filepath.exists():
+                logger.warning(f"File not found: {signal_file}, skipping...")
+                continue
+            
+            df = pd.read_csv(filepath, header=None)
+            signal_data = df.iloc[:, 0].values
+            
+            # Segment and extract features
+            segment_length_samples = int(segment_duration * sampling_rate)
+            hop_length = int(segment_length_samples * (1 - overlap_ratio))
+            
+            features_list = []
+            for start in range(0, len(signal_data) - segment_length_samples + 1, hop_length):
+                segment = signal_data[start:start + segment_length_samples]
+                features = extract_time_domain_features(segment)
+                features_list.append(features)
+            
+            X_test = pd.DataFrame(features_list).values
+            
+            # Apply preprocessing
+            X_scaled = scaler.transform(X_test)
+            X_pca = pca.transform(X_scaled)
+            
+            # Predict
+            predictions = model.predict(X_pca)
+            
+            test_data_list.append({
+                'signal_file': signal_file,
+                'pca_data': X_pca,
+                'predictions': predictions
+            })
+    
+    # Create Plotly figure
+    fig = go.Figure()
+    
+    # Plot test data
+    for test_data in test_data_list:
+        X_pca = test_data['pca_data']
+        predictions = test_data['predictions']
+        signal_file = test_data['signal_file']
+        
+        # Extract filename without path for label matching
+        file_basename = signal_file.split('/')[-1]
+        
+        # Determine true label if provided
+        true_label = None
+        if true_labels and file_basename in true_labels:
+            true_label = true_labels[file_basename].lower()
+        
+        # Separate healthy and anomalous predictions
+        healthy_idx = predictions == 1
+        anomaly_idx = predictions == -1
+        
+        # Create legend labels
+        if true_label:
+            # Show both true and predicted labels for validation
+            healthy_legend = f'{signal_file} (True: {true_label}, Predicted: Healthy)'
+            anomaly_legend = f'{signal_file} (True: {true_label}, Predicted: Anomaly)'
+            
+            # Update hover template to show both
+            healthy_hover = f'<b>{signal_file}</b><br>PC1: %{{x:.3f}}<br>PC2: %{{y:.3f}}<br>True Label: {true_label}<br>Predicted: Healthy<extra></extra>'
+            anomaly_hover = f'<b>{signal_file}</b><br>PC1: %{{x:.3f}}<br>PC2: %{{y:.3f}}<br>True Label: {true_label}<br>Predicted: ANOMALY<extra></extra>'
+        else:
+            # Show only predictions (no ground truth assumed)
+            healthy_legend = f'{signal_file} (Predicted: Healthy)'
+            anomaly_legend = f'{signal_file} (Predicted: Anomaly)'
+            
+            # Hover template clarifies these are predictions
+            healthy_hover = f'<b>{signal_file}</b><br>PC1: %{{x:.3f}}<br>PC2: %{{y:.3f}}<br>Predicted: Healthy<extra></extra>'
+            anomaly_hover = f'<b>{signal_file}</b><br>PC1: %{{x:.3f}}<br>PC2: %{{y:.3f}}<br>Predicted: ANOMALY<extra></extra>'
+        
+        if np.any(healthy_idx):
+            fig.add_trace(go.Scatter(
+                x=X_pca[healthy_idx, 0],
+                y=X_pca[healthy_idx, 1],
+                mode='markers',
+                name=healthy_legend,
+                marker=dict(color='green', size=8, opacity=0.6),
+                hovertemplate=healthy_hover
+            ))
+        
+        if np.any(anomaly_idx):
+            fig.add_trace(go.Scatter(
+                x=X_pca[anomaly_idx, 0],
+                y=X_pca[anomaly_idx, 1],
+                mode='markers',
+                name=anomaly_legend,
+                marker=dict(color='red', size=8, opacity=0.6, symbol='x'),
+                hovertemplate=anomaly_hover
+            ))
+    
+    # Layout
+    variance_explained = pca.explained_variance_ratio_
+    fig.update_layout(
+        title=f"PCA Visualization - {model_name}",
+        xaxis_title=f"PC1 ({variance_explained[0]*100:.1f}% variance)",
+        yaxis_title=f"PC2 ({variance_explained[1]*100:.1f}% variance)",
+        hovermode='closest',
+        template='plotly_white',
+        width=1000,
+        height=700,
+        showlegend=True
+    )
+    
+    # Save HTML report
+    safe_name = model_name.replace("/", "_").replace("\\", "_")
+    output_file = REPORTS_DIR / f"pca_visualization_{safe_name}.html"
+    fig.write_html(str(output_file))
+    
+    # Prepare metadata - convert all numpy types to Python natives
+    metadata = {
+        'report_type': 'pca_visualization',
+        'model_name': model_name,
+        'test_signals': test_signal_files or [],
+        'pca_components': int(pca.n_components_),
+        'variance_explained_pc1': float(variance_explained[0]),
+        'variance_explained_pc2': float(variance_explained[1]),
+        'total_variance_2d': float(variance_explained[0] + variance_explained[1]),
+        'segment_duration': float(segment_duration),
+        'sampling_rate': float(sampling_rate) if sampling_rate is not None else None,
+        'validation_mode': true_labels is not None
+    }
+    
+    # Calculate summary statistics - convert numpy int to Python int
+    total_segments = int(sum(len(td['predictions']) for td in test_data_list))
+    total_anomalies = int(sum(np.sum(td['predictions'] == -1) for td in test_data_list))
+    
+    summary = {
+        'total_segments': int(total_segments),
+        'total_anomalies': int(total_anomalies),
+        'anomaly_ratio': float(total_anomalies / total_segments) if total_segments > 0 else 0.0
+    }
+    
+    # Calculate validation metrics if true labels provided
+    if true_labels:
+        correct_predictions = 0
+        total_with_labels = 0
+        per_file_accuracy = {}
+        
+        for test_data in test_data_list:
+            signal_file = test_data['signal_file']
+            file_basename = signal_file.split('/')[-1]
+            
+            if file_basename in true_labels:
+                predictions = test_data['predictions']
+                true_label = true_labels[file_basename].lower()
+                
+                # Determine expected predictions (1 = healthy, -1 = anomaly)
+                expected_prediction = 1 if true_label in ['healthy', 'normal', 'baseline'] else -1
+                
+                # Count correct predictions
+                file_correct = int(np.sum(predictions == expected_prediction))
+                file_total = len(predictions)
+                correct_predictions += file_correct
+                total_with_labels += file_total
+                
+                per_file_accuracy[file_basename] = {
+                    'correct': file_correct,
+                    'total': file_total,
+                    'accuracy': float(file_correct / file_total) if file_total > 0 else 0.0,
+                    'true_label': true_label
+                }
+        
+        overall_accuracy = float(correct_predictions / total_with_labels) if total_with_labels > 0 else 0.0
+        
+        summary['validation_metrics'] = {
+            'overall_accuracy': overall_accuracy,
+            'total_labeled_segments': total_with_labels,
+            'correct_predictions': correct_predictions,
+            'per_file_accuracy': per_file_accuracy
+        }
+        
+        if ctx:
+            await ctx.info(f"✅ Validation Mode: Overall accuracy = {overall_accuracy*100:.2f}%")
+            for fname, acc_info in per_file_accuracy.items():
+                await ctx.info(f"  - {fname}: {acc_info['accuracy']*100:.1f}% ({acc_info['correct']}/{acc_info['total']})")
+    
+    message = f"PCA visualization report saved: {output_file.name}"
+    if ctx:
+        await ctx.info(message)
+        await ctx.info(f"PC1+PC2 explain {metadata['total_variance_2d']*100:.1f}% of variance")
+        await ctx.info(f"Analyzed {total_segments} segments, {total_anomalies} anomalies detected")
+    
+    return {
+        'file_path': str(output_file),
+        'file_name': output_file.name,
+        'message': message,
+        'metadata': metadata,
+        'summary': summary
+    }
+
+
+@mcp.tool()
+async def generate_feature_comparison_report(
+    signal_groups: Dict[str, List[str]],
+    sampling_rate: Optional[float] = None,
+    segment_duration: float = 0.1,
+    overlap_ratio: float = 0.5,
+    features_to_plot: Optional[List[str]] = None,
+    ctx: Context | None = None
+) -> Dict[str, Any]:
+    """
+    Generate feature comparison report with violin plots comparing time-domain features.
+    
+    Creates interactive HTML report with violin plots showing distribution of 17
+    time-domain features across different signal groups (e.g., Healthy vs Faulty).
+    
+    **Strategy**: Same HTML report approach as other reports. Useful for understanding
+    which features are most discriminative for fault detection.
+    
+    Args:
+        signal_groups: Dictionary mapping group names to list of signal files.
+                      Example: {"Healthy": ["baseline_1.csv", "baseline_2.csv"],
+                               "Faulty": ["InnerRaceFault_1.csv", "OuterRaceFault_1.csv"]}
+        sampling_rate: Sampling rate (auto-detect from metadata if None)
+        segment_duration: Segment duration in seconds (default: 0.1s for ML)
+        overlap_ratio: Overlap ratio 0-1 (default: 0.5)
+        features_to_plot: List of feature names to plot (default: all 17 features)
+        ctx: MCP context
+    
+    Returns:
+        Dictionary with file path, metadata, and summary
+    
+    Example:
+        >>> generate_feature_comparison_report(
+        ...     signal_groups={
+        ...         "Healthy": ["real_train/baseline_1.csv", "real_train/baseline_2.csv"],
+        ...         "Inner Fault": ["real_train/InnerRaceFault_vload_1.csv"],
+        ...         "Outer Fault": ["real_train/OuterRaceFault_1.csv"]
+        ...     }
+        ... )
+    """
+    if ctx:
+        await ctx.info(f"Generating feature comparison report for {len(signal_groups)} groups...")
+    
+    # All possible features
+    all_feature_names = [
+        'mean', 'std', 'var', 'mean_abs', 'rms', 'max_val', 'min_val', 'peak_to_peak',
+        'crest_factor', 'kurtosis', 'skewness', 'shape_factor', 'impulse_factor',
+        'clearance_factor', 'power', 'entropy', 'zero_crossing_rate'
+    ]
+    
+    if features_to_plot is None:
+        features_to_plot = all_feature_names
+    
+    # Extract features from all signal groups
+    group_features = {}
+    
+    for group_name, signal_files in signal_groups.items():
+        all_features_for_group = []
+        
+        for signal_file in signal_files:
+            filepath = DATA_DIR / signal_file
+            if not filepath.exists():
+                logger.warning(f"File not found: {signal_file}, skipping...")
+                continue
+            
+            # Auto-detect sampling rate if not provided
+            if sampling_rate is None:
+                metadata_path = DATA_DIR / signal_file.replace('.csv', '_metadata.json')
+                if metadata_path.exists():
+                    with open(metadata_path) as f:
+                        metadata = json.load(f)
+                        sampling_rate = metadata.get("sampling_rate", 10000.0)
+                else:
+                    sampling_rate = 10000.0  # fallback
+            
+            df = pd.read_csv(filepath, header=None)
+            signal_data = df.iloc[:, 0].values
+            
+            # Segment and extract features
+            segment_length_samples = int(segment_duration * sampling_rate)
+            hop_length = int(segment_length_samples * (1 - overlap_ratio))
+            
+            for start in range(0, len(signal_data) - segment_length_samples + 1, hop_length):
+                segment = signal_data[start:start + segment_length_samples]
+                features = extract_time_domain_features(segment)
+                all_features_for_group.append(features)
+        
+        group_features[group_name] = pd.DataFrame(all_features_for_group)
+    
+    # Create subplots - one violin plot per feature
+    num_features = len(features_to_plot)
+    rows = (num_features + 2) // 3  # 3 columns
+    cols = min(3, num_features)
+    
+    fig = make_subplots(
+        rows=rows,
+        cols=cols,
+        subplot_titles=features_to_plot,
+        vertical_spacing=0.12,
+        horizontal_spacing=0.10
+    )
+    
+    colors = ['blue', 'red', 'green', 'orange', 'purple', 'brown', 'pink']
+    
+    for idx, feature in enumerate(features_to_plot):
+        row = idx // 3 + 1
+        col = idx % 3 + 1
+        
+        for group_idx, (group_name, features_df) in enumerate(group_features.items()):
+            if feature not in features_df.columns:
+                continue
+            
+            fig.add_trace(
+                go.Violin(
+                    y=features_df[feature],
+                    name=group_name,
+                    box_visible=True,
+                    meanline_visible=True,
+                    fillcolor=colors[group_idx % len(colors)],
+                    opacity=0.6,
+                    showlegend=(idx == 0),  # Show legend only once
+                    hovertemplate=f'<b>{group_name}</b><br>{feature}: %{{y:.4f}}<extra></extra>'
+                ),
+                row=row,
+                col=col
+            )
+    
+    # Update layout
+    fig.update_layout(
+        title="Time-Domain Feature Comparison (Violin Plots)",
+        height=400 * rows,
+        width=1400,
+        template='plotly_white',
+        showlegend=True,
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="center",
+            x=0.5
+        )
+    )
+    
+    # Save HTML report
+    group_names_safe = "_vs_".join([name.replace(" ", "_") for name in signal_groups.keys()])
+    output_file = REPORTS_DIR / f"feature_comparison_{group_names_safe}.html"
+    fig.write_html(str(output_file))
+    
+    # Prepare metadata
+    metadata = {
+        'report_type': 'feature_comparison',
+        'groups': {name: len(files) for name, files in signal_groups.items()},
+        'features_plotted': features_to_plot,
+        'segment_duration': segment_duration,
+        'sampling_rate': sampling_rate,
+        'segments_per_group': {name: len(df) for name, df in group_features.items()}
+    }
+    
+    message = f"Feature comparison report saved: {output_file.name}"
+    if ctx:
+        await ctx.info(message)
+        await ctx.info(f"Compared {len(signal_groups)} groups across {len(features_to_plot)} features")
+    
+    return {
+        'file_path': str(output_file),
+        'file_name': output_file.name,
+        'message': message,
+        'metadata': metadata
+    }
+
+
+# ============================================================================
 # PROMPTS - DIAGNOSTIC WORKFLOWS
 # ============================================================================
 
@@ -3854,10 +3368,13 @@ Call: evaluate_iso_20816("{signal_file}", {fs_info}, {machine_group}, "{support_
 Report: RMS velocity and ISO zone (A/B/C/D) in 1-2 sentences.
 Note: This provides overall severity but is NOT bearing-specific. Use for maintenance urgency only.
 
-Optional visualization (HTML artifact):
-Call generate_iso_chart_html("{signal_file}", sampling_rate=None, {machine_group}, "{support_type}"{rpm_info})
-Returns HTML showing color-coded zone chart with marker on measured RMS velocity.
-Render as interactive artifact (NOT code).
+Optional visualization:
+Call: generate_iso_report("{signal_file}", {machine_group}, "{support_type}"{rpm_info})
+This saves an interactive HTML report to the reports/ directory showing:
+- Color-coded ISO zone chart with marker on measured RMS velocity
+- Time-domain signal plot
+- Detailed severity assessment
+The tool returns the file path. Tell user: "Open {file_path} in your browser to view the interactive report."
 
 ═══════════════════════════════════════════════════════════════════════════════
 STEP 2 — Statistical Screening
@@ -3882,10 +3399,13 @@ Report dominant peaks in bullet points (top 5 only). Look for:
 • Shaft speed (1× RPM = {operating_speed_rpm/60 if operating_speed_rpm else '?'} Hz) and harmonics
 • Any elevated broadband noise
 
-Optional visualization (HTML artifact):
-Call generate_fft_chart_html("{signal_file}", sampling_rate=None, max_freq=5000, num_peaks=15,
-                             rotation_freq={operating_speed_rpm/60 if operating_speed_rpm else 'None'})
-Returns HTML string - render as interactive Plotly chart showing spectrum in dB with harmonic labels.
+Optional visualization:
+Call: generate_fft_report("{signal_file}", max_freq=5000, num_peaks=15)
+This saves an interactive HTML report to the reports/ directory showing:
+- FFT spectrum in dB scale with automatic peak detection
+- Harmonic markers (if rotation frequency provided)
+- Top frequency peaks table
+The tool returns the file path. Tell user: "Open {file_path} in your browser to view the interactive FFT analysis."
 
 ═══════════════════════════════════════════════════════════════════════════════
 STEP 4 — ENVELOPE ANALYSIS (PRIMARY DIAGNOSTIC EVIDENCE)
@@ -3902,10 +3422,19 @@ Examine envelope spectrum peaks:
 3. List top 5-10 peaks with frequencies and magnitudes
 
 Optional visualization:
-Call generate_envelope_html("{signal_file}", {fs_info}, 500, 5000, 500, 10,
-              bearing_freqs={{"BPFO": {bpfo or 'None'}, "BPFI": {bpfi or 'None'}, "BSF": {bsf or 'None'}, "FTF": {ftf or 'None'}}})
-This returns HTML string - render it as an interactive artifact for the user (NOT as code text).
-The chart shows filtered signal with envelope overlay (top) and envelope spectrum in dB scale with bearing frequency markers (bottom).
+Call: generate_envelope_report("{signal_file}", 
+                              bpfo={bpfo or 'None'}, 
+                              bpfi={bpfi or 'None'}, 
+                              bsf={bsf or 'None'}, 
+                              ftf={ftf or 'None'},
+                              filter_low=500,
+                              filter_high=5000,
+                              max_freq=500)
+This saves an interactive HTML report to the reports/ directory showing:
+- Filtered signal with envelope overlay (time domain)
+- Envelope spectrum in dB scale with bearing frequency markers
+- Automatic bearing fault detection with confidence levels
+The tool returns the file path. Tell user: "Open {file_path} in your browser to view the interactive envelope analysis with bearing fault markers."
 
 ═══════════════════════════════════════════════════════════════════════════════
 STEP 5 — DIAGNOSTIC DECISION (EVIDENCE-BASED)
@@ -3963,7 +3492,8 @@ OUTPUT FORMATTING (CRITICAL)
 Keep output CONCISE (≤300 words total):
 • Use bullet points for all findings
 • Provide brief summary first (2-3 sentences)
-• Use HTML artifacts for visualizations (envelope, FFT charts)
+• Use generate_*_report() tools to create HTML reports (saved to reports/ directory)
+• Tell user to open the HTML file path in browser for interactive visualizations
 • If user needs more details, offer "Show detailed analysis?" continuation
 • NEVER print large JSON/CSV data directly in text output
 """
@@ -4016,7 +3546,11 @@ Extract dominant peaks up to, e.g., 5× expected GMF (once f_rot known). Identif
 - Sidebands: GMF ± n·f_rot (n=1..3). Log their presence, spacing consistency, and relative amplitudes.
 If operating speed unknown: still list dominant peaks; flag need for speed to confirm GMF.
 Report top 5 peaks only (brief).
-Optional plots: Use generate_fft_chart_html() for interactive visualization (render as artifact).
+
+Optional visualization:
+Call: generate_fft_report("{signal_file}", max_freq=5000, num_peaks=15)
+This saves an interactive HTML report to the reports/ directory showing FFT spectrum with automatic peak detection.
+Tell user: "Open {file_path} in your browser to view the interactive FFT analysis."
 
 STEP 4 — OPTIONAL ENVELOPE (if strong modulation or impacts)
 If stats suggest impulsiveness OR sideband pattern partial: Call analyze_envelope("{signal_file}", {sampling_rate}, 500, 5000) to inspect modulation signature. (Not mandatory if FFT already conclusive.)

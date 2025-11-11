@@ -51,6 +51,10 @@ models/*.pkl
 models/*.json
 !models/.gitkeep
 
+# HTML Reports (generated output files)
+reports/*.html
+!reports/.gitkeep
+
 # Temporary files
 *.tmp
 *.log

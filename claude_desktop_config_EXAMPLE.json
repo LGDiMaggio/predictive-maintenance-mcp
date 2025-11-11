@@ -1,12 +1,12 @@
 {
   "mcpServers": {
-    "machinery-diagnostics": {
+    "predictive-maintenance": {
       "command": "uv",
       "args": [
         "--directory",
         "C:\\path\\to\\predictive-maintenance-mcp",
         "run",
-        "machinery-diagnostics"
+        "predictive-maintenance-mcp"
       ]
     }
   }

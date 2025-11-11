@@ -30,20 +30,20 @@ if (Test-Path $claudeConfigFile) {
     $existingConfig = Get-Content $claudeConfigFile -Raw | ConvertFrom-Json
     
     # Check if our server is already configured
-    if ($existingConfig.mcpServers.PSObject.Properties.Name -contains "machinery-diagnostics") {
-        Write-Host "✓ machinery-diagnostics server already configured!" -ForegroundColor Green
+    if ($existingConfig.mcpServers.PSObject.Properties.Name -contains "predictive-maintenance") {
+        Write-Host "✓ predictive-maintenance server already configured!" -ForegroundColor Green
         Write-Host "  No changes needed." -ForegroundColor Gray
     } else {
-        Write-Host "⚠️  Adding machinery-diagnostics server to existing config..." -ForegroundColor Yellow
+        Write-Host "⚠️  Adding predictive-maintenance server to existing config..." -ForegroundColor Yellow
         
         # Add our server
-        $existingConfig.mcpServers | Add-Member -MemberType NoteProperty -Name "machinery-diagnostics" -Value @{
+        $existingConfig.mcpServers | Add-Member -MemberType NoteProperty -Name "predictive-maintenance" -Value @{
             command = "uv"
             args = @(
                 "--directory",
                 "C:\\path\\to\\predictive-maintenance-mcp",
                 "run",
-                "machinery-diagnostics"
+                "predictive-maintenance-mcp"
             )
         }
         
@@ -58,13 +58,13 @@ if (Test-Path $claudeConfigFile) {
     # Create new config from example
     $newConfig = @{
         mcpServers = @{
-            "machinery-diagnostics" = @{
+            "predictive-maintenance" = @{
                 command = "uv"
                 args = @(
                     "--directory",
                     "C:\\path\\to\\predictive-maintenance-mcp",
                     "run",
-                    "machinery-diagnostics"
+                    "predictive-maintenance-mcp"
                 )
             }
         }

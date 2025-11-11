@@ -1,154 +1,318 @@
-# 🎯 Quick Start Guide - Machinery Diagnostics MCP Server# 🎯 Quick Start Guide - Machinery Diagnostics MCP Server
+# 🎯 Quick Start Guide - Machinery Diagnostics MCP Server
 
+Get started with machinery diagnostics in under 5 minutes! This guide uses the real bearing dataset included with the server.
 
+---
 
-## 🚀 Quick Start## 🚀 Quick Start
+## 🚀 Quick Start
 
+### 1. Installation & Setup
 
+```bash
+# Clone the repository
+cd "C:\\path\\to\\predictive-maintenance-mcp"
 
-### 1. Installation & Setup### 1. Server Testing
+# Install dependencies
+uv sync
 
+# Verify installation
+uv run python tests/verify.py
+```
 
+### 2. Test the Server
 
-```bash```bash
-
-# Clone the repository# From the project directory
-
-cd "C:\\path\\to\\predictive-maintenance-mcp"cd "C:\\path\\to\\predictive-maintenance-mcp"
-
-
-
-# Install dependencies# Run tests
-
-uv syncuv run python test_suite.py
-
-
-
-# Verify installation# Start MCP Inspector for interactive testing
-
-uv run python tests/verify.pyuv run mcp dev src/machinery_diagnostics_server.py
-
-``````
-
-
-
-### 2. Test the Server### 2. Claude Desktop Configuration
-
-
-
-```bashCopy the content of `claude_desktop_config.json` into Claude Desktop's configuration file:
-
+```bash
 # Run comprehensive tests with real bearing data
+uv run python tests/test_real_data.py
 
-uv run python tests/test_real_data.py**Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+# Or run the full test suite
+uv run python tests/test_suite.py
 
+# Start MCP Inspector for interactive testing
+uv run mcp dev src/machinery_diagnostics_server.py
+```
 
+### 3. Claude Desktop Configuration
 
-# Or run the full test suiteOr copy manually:
+Add to `%APPDATA%\Claude\claude_desktop_config.json`:
 
-uv run python tests/test_suite.py```json
-
+```json
 {
-
-# Start MCP Inspector for interactive testing  "mcpServers": {
-
-uv run mcp dev src/machinery_diagnostics_server.py    "machinery-diagnostics": {
-
-```      "command": "uv",
-
+  "mcpServers": {
+    "machinery-diagnostics": {
+      "command": "uv",
       "args": [
-
-### 3. Claude Desktop Configuration        "--directory",
-
+        "--directory",
         "C:\\path\\to\\predictive-maintenance-mcp",
-
-Add to `%APPDATA%\Claude\claude_desktop_config.json`:        "run",
-
+        "run",
         "src/machinery_diagnostics_server.py"
-
-```json      ]
-
-{    }
-
-  "mcpServers": {  }
-
-    "machinery-diagnostics": {}
-
-      "command": "uv",```
-
-      "args": [
-
-        "--directory",Restart Claude Desktop to apply changes.
-
-        "C:\\path\\to\\predictive-maintenance-mcp",
-
-        "run",## 📖 Usage Examples
-
-        "src/machinery_diagnostics_server.py"
-
-      ]### Example 1: Generate a Test Signal
-
+      ]
     }
-
-  }**Prompt in Claude Desktop:**
-
-}```
-
-```Generate a test signal for a faulty bearing
-
+  }
+}
 ```
 
 **Restart Claude Desktop** to apply changes.
 
-**What happens:**
+---
 
----- Claude calls the `generate_test_signal` tool
+## 🎓 Real-World Dataset
 
-- A CSV file is created in `data/signals/`
+The server includes a real bearing fault dataset for testing:
 
-## 🎓 Real-World Dataset- The file contains a synthetic signal with bearing defect characteristics
-
-
-
-The server includes a real bearing fault dataset for testing:---
-
-
-
-**Dataset:** Rolling Element Bearing Fault Diagnosis  ### Example 2: List Available Signals
-
+**Dataset:** Rolling Element Bearing Fault Diagnosis  
 **Source:** [MathWorks Repository](https://github.com/mathworks/RollingElementBearingFaultDiagnosis-Data)  
+**License:** CC BY-NC-SA 4.0
 
-**License:** CC BY-NC-SA 4.0**Prompt:**
-
-```
-
-**Available Files:**What signals do I have available for analysis?
-
-- 📁 `data/signals/real_train/` - 14 training files (2 baseline, 5 inner fault, 7 outer fault)```
-
+**Available Files:**
+- 📁 `data/signals/real_train/` - 14 training files (2 baseline, 5 inner fault, 7 outer fault)
 - 📁 `data/signals/real_test/` - 6 test files (1 baseline, 2 inner fault, 3 outer fault)
 
-**What happens:**
-
-**Signal Characteristics:**- Claude reads the `signal://list` resource
-
-- Acceleration signals (g units)- Shows all files in the `data/signals/` directory
-
-- Sampling rates: 97656 Hz (baseline) or 48828 Hz (vload files)- Includes name, size, file type
-
+**Signal Characteristics:**
+- Acceleration signals (g units)
+- Sampling rates: 97656 Hz (baseline) or 48828 Hz (vload files)
 - Duration: 3-6 seconds per file
+- Bearing frequencies: BPFI=118.875 Hz, BPFO=81.125 Hz, FTF=14.8375 Hz, BSF=63.91 Hz
 
-- Bearing frequencies: BPFI=118.88 Hz, BPFO=81.13 Hz, FTF=14.84 Hz, BSF=63.91 Hz---
+---
 
+## 📖 Usage Examples
 
+### Example 1: List Available Signals
 
----### Example 3: Complete FFT Analysis
-
-
-
-## 📖 Usage Examples**Prompt:**
-
+**Prompt in Claude Desktop:**
 ```
+What signals do I have available for analysis?
+```
+
+**What happens:**
+- Claude reads the `signal://list` resource
+- Shows all files in the `data/signals/` directory
+- Includes name, size, file type
+
+---
+
+### Example 2: Generate FFT Report for Baseline Signal
+
+**Prompt:**
+```
+Generate an FFT report for real_train/baseline_1.csv
+```
+
+**What happens:**
+1. Claude calls `generate_fft_report` tool
+2. Server performs FFT analysis (sampling rate auto-detected: 97,656 Hz)
+3. Creates two files in `reports/`:
+   - **HTML file** (interactive Plotly chart): `fft_spectrum_real_train_baseline_1.html`
+   - **PNG file** (static image): `fft_spectrum_real_train_baseline_1.png`
+
+**Claude's response includes:**
+```
+✓ FFT spectrum report saved: fft_spectrum_real_train_baseline_1.html (42.3 KB)
+✓ PNG image saved: fft_spectrum_real_train_baseline_1.png (128.5 KB)
+
+Report Details:
+- Signal: real_train/baseline_1.csv
+- Sampling Rate: 97,656 Hz
+- 15 peaks detected
+- Dominant peak: 29.95 Hz (shaft frequency, 1797 RPM)
+
+Open the HTML file in your browser for interactive exploration!
+Use the PNG file for presentations and documentation.
+```
+
+**Open the HTML file** in your browser to:
+- Zoom into frequency regions
+- Hover over peaks for exact values
+- Identify shaft frequency harmonics
+
+---
+
+### Example 3: Detect Outer Race Fault
+
+**Prompt:**
+```
+Generate envelope analysis report for real_train/OuterRaceFault_1.csv with bearing frequencies BPFO=81.13 Hz
+```
+
+**What happens:**
+1. Claude calls `generate_envelope_report` tool
+2. Server performs:
+   - Bandpass filtering (2000-8000 Hz)
+   - Hilbert transform envelope extraction
+   - FFT of envelope signal
+   - Peak detection with bearing frequency matching
+3. Creates professional reports (HTML + PNG)
+
+**Claude's response:**
+```
+✓ Envelope analysis report saved: envelope_analysis_real_train_OuterRaceFault_1.html (68.2 KB)
+✓ PNG image saved: envelope_analysis_real_train_OuterRaceFault_1.png (145.7 KB)
+
+Report Details:
+- Signal: real_train/OuterRaceFault_1.csv
+- Filter Band: 2000-8000 Hz
+- 12 peaks detected
+- Bearing matches found: ≈ BPFO (81.13 Hz), ≈ 2×BPFO, ≈ 3×BPFO
+
+🔴 OUTER RACE FAULT DETECTED
+- Strong peak at BPFO (81.13 Hz)
+- Clear harmonics present (2×, 3×)
+- Severity: Advanced stage
+
+Recommendation: Schedule bearing replacement within 1-2 weeks
+```
+
+**The HTML report shows:**
+- Filtered signal and envelope in time domain
+- Envelope spectrum with automatic BPFO markers
+- Peak annotations with bearing frequency matches
+
+---
+
+### Example 4: ISO 20816-3 Compliance Check
+
+**Prompt:**
+```
+Generate ISO 20816-3 report for real_train/baseline_1.csv with machine group 3 and rigid support
+```
+
+**What happens:**
+1. Claude calls `generate_iso_report` tool
+2. Server evaluates vibration severity per ISO 20816-3
+3. Creates zone visualization (HTML + PNG)
+
+**Claude's response:**
+```
+✓ ISO 20816-3 report saved: iso_20816_real_train_baseline_1.html - Zone A (Good)
+✓ PNG image saved: iso_20816_real_train_baseline_1.png (95.3 KB)
+
+Evaluation Result:
+- RMS Velocity: 1.8 mm/s
+- Severity Zone: A (Green)
+- Machine Group: 3 (Small machine)
+- Support Type: Rigid
+
+Status: NEW MACHINE CONDITION ✅
+- Within acceptable limits
+- Suitable as baseline reference
+- No action required
+```
+
+**The report displays:**
+- Color-coded zones (A=Green, B=Yellow, C=Orange, D=Red)
+- Current RMS velocity marker
+- Severity interpretation
+
+---
+
+### Example 5: Complete Bearing Diagnostic
+
+**Prompt:**
+```
+Run complete bearing diagnosis on real_train/InnerRaceFault_vload_1.csv
+```
+
+**What happens:**
+1. Claude uses the `diagnose_bearing` prompt (guided workflow)
+2. Automatically performs 6 diagnostic steps:
+   - Parameter validation
+   - ISO 20816-3 severity evaluation
+   - FFT analysis for frequency identification
+   - Envelope analysis for fault localization
+   - Fault pattern recognition
+   - Recommendations generation
+3. Generates all reports (FFT + Envelope + ISO)
+
+**Claude's comprehensive response:**
+```
+📋 BEARING DIAGNOSTIC REPORT
+Signal: real_train/InnerRaceFault_vload_1.csv
+
+📊 ISO 20816-3 EVALUATION
+- RMS Velocity: 4.2 mm/s
+- Zone: C (Orange) - Unsatisfactory
+- Action required: Plan maintenance
+
+🔍 FFT ANALYSIS
+- Shaft frequency: 28.83 Hz (1730 RPM)
+- BPFI detected: 138.87 Hz ⚠️
+- Harmonics: 2×BPFI, 3×BPFI present
+
+📈 ENVELOPE ANALYSIS
+- Strong peak at BPFI: 138.87 Hz (magnitude: 0.91)
+- Harmonics confirmed: 2×, 3×BPFI
+- Modulation sidebands at ±28.83 Hz (shaft frequency)
+
+🎯 DIAGNOSIS: INNER RACE BEARING FAULT
+- Severity: HIGH/URGENT
+- Pattern: Localized defect with load-dependent modulation
+- Zone C + Strong BPFI + Harmonics = Advanced stage
+
+💡 RECOMMENDATIONS
+Immediate (1 week):
+- ⚠️ URGENT: Schedule bearing replacement
+- Reduce speed and load immediately
+- Implement daily monitoring
+- Prepare spare bearing and crew
+
+Long-term:
+- Investigate root cause (lubrication, alignment, overload)
+- Improve predictive maintenance procedures
+- Consider automated monitoring system
+
+📁 REPORTS GENERATED:
+✓ fft_spectrum_real_train_InnerRaceFault_vload_1.html + PNG
+✓ envelope_analysis_real_train_InnerRaceFault_vload_1.html + PNG
+✓ iso_20816_real_train_InnerRaceFault_vload_1.html + PNG
+```
+
+---
+
+## 💡 Pro Tips
+
+### Tip 1: Explore Reports Interactively
+- **HTML files**: Open in browser for interactive Plotly charts (zoom, hover, pan)
+- **PNG files**: Use in presentations, Word docs, or GitHub README
+
+### Tip 2: List All Generated Reports
+```
+Show me all generated reports
+```
+Claude calls `list_html_reports()` to show metadata without loading HTML content.
+
+### Tip 3: View Report Details
+```
+Get details for envelope_analysis_real_train_OuterRaceFault_1.html
+```
+Claude calls `get_report_info()` to extract embedded metadata (signal info, peaks, bearing matches).
+
+### Tip 4: Compare Baseline vs Fault
+Generate reports for both:
+- `real_train/baseline_1.csv` (healthy)
+- `real_train/OuterRaceFault_1.csv` (faulty)
+
+Compare PNG images side-by-side in documentation!
+
+### Tip 5: Auto-Detection
+The server automatically detects:
+- Sampling rate (from `_metadata.json` files)
+- Signal duration
+- File format (acceleration vs velocity)
+
+You don't need to specify sampling rate for real dataset files!
+
+---
+
+## 🎯 Next Steps
+
+1. **Try the examples above** with different fault types
+2. **Generate reports** for training and test datasets
+3. **Compare spectra** between baseline and fault signals
+4. **Read EXAMPLES.md** for advanced workflows
+5. **Star the repository** ⭐ if you find it useful!
+
+---
 
 ### Example 1: Complete Bearing Diagnostic with Real DataRun an FFT analysis on the test_bearing_fault_10000Hz.csv signal
 

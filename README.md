@@ -1,25 +1,39 @@
-# Predictive Maintenance MCP Server
+# 🏭 Predictive Maintenance MCP Server
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![Tests](https://github.com/LGDiMaggio/predictive-maintenance-mcp/actions/workflows/tests.yml/badge.svg)](https://github.com/LGDiMaggio/predictive-maintenance-mcp/actions/workflows/tests.yml)
+[![codecov](https://codecov.io/gh/LGDiMaggio/predictive-maintenance-mcp/branch/main/graph/badge.svg)](https://codecov.io/gh/LGDiMaggio/predictive-maintenance-mcp)
 [![FastMCP](https://img.shields.io/badge/FastMCP-powered-green.svg)](https://github.com/jlowin/fastmcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-Luigi%20Di%20Maggio-0077B5?logo=linkedin)](https://www.linkedin.com/in/luigi-gianpio-di-maggio)
 
-A Model Context Protocol server that enables AI assistants like Claude to perform professional vibration analysis, bearing diagnostics, and anomaly detection for industrial machinery.
+A Model Context Protocol server that brings **industrial machinery diagnostics** directly to LLMs like Claude, enabling AI-powered vibration analysis, bearing fault detection, and predictive maintenance—all through natural conversation.
 
-> 🏭 **Industrial AI Made Accessible**: Connect Claude to real machinery diagnostics—from vibration analysis to predictive maintenance—without writing code.
+> 🔧 **From Vibration Data to Actionable Insights**: Transform raw sensor data into professional diagnostics reports with FFT analysis, envelope analysis, ISO compliance checks, and ML anomaly detection—no engineering degree required.
 
-## Features
+## ✨ What Makes This Special
 
-- **FFT Analysis** - Spectrum analysis with automatic peak detection
-- **Envelope Analysis** - Advanced bearing fault detection (BPFO, BPFI, BSF, FTF)
-- **ISO 20816-3 Compliance** - Industry-standard vibration severity evaluation
-- **Machine Learning** - Anomaly detection with OneClassSVM/LocalOutlierFactor
-- **Feature Extraction** - 17 time-domain statistical features (RMS, Kurtosis, Crest Factor, etc.)
-- **Interactive Visualizations** - Plotly charts with peak markers and frequency annotations
-- **Sample Datasets** - Real bearing fault data included (baseline, inner race, outer race faults)
-- **Safety Features** - Evidence-based inference policy prevents AI hallucination
+- **🎯 Real Bearing Fault Data Included** - 15 production-quality vibration signals from real machinery tests
+- **📊 Professional HTML Reports** - Interactive Plotly visualizations with automatic peak detection and frequency markers
+- **🤖 ML Anomaly Detection** - Train OneClassSVM/LocalOutlierFactor models with automatic parameter optimization
+- **📏 ISO 20816-3 Compliance** - Industry-standard vibration severity assessment built-in
+- **🔍 Advanced Diagnostics** - FFT spectrum analysis, envelope analysis for bearing faults, time-domain feature extraction
+- **🚀 Zero Configuration** - Works out of the box with sample data, auto-detects sampling rates from metadata
 
-## Installation
+## 🎬 Quick Example
+
+```
+Generate envelope report for real_train/OuterRaceFault_1.csv
+```
+
+**Result**: AI automatically:
+1. Detects sampling rate from metadata (97,656 Hz)
+2. Applies bandpass filter (500-5000 Hz)
+3. Generates interactive HTML report with bearing fault frequencies marked
+4. Identifies outer race fault at ~81 Hz with harmonics
+5. Saves report to `reports/envelope_OuterRaceFault_1_*.html`
+
+## 🚀 Installation
 
 ### NPM (Recommended)
 
@@ -117,92 +131,127 @@ Create `.vscode/mcp.json` in your workspace
 }
 ```
 
-## Quick Start
+## 🔧 Available Tools
 
-### Test with Sample Data
+<details>
+<summary><b>📊 Analysis & Diagnostics</b></summary>
 
-The server includes real bearing vibration signals from MathWorks. After restarting Claude Desktop:
+- **`analyze_fft`** - FFT spectrum analysis with automatic peak detection
+- **`analyze_envelope`** - Envelope analysis for bearing fault detection
+- **`analyze_statistics`** - Time-domain statistical indicators (RMS, Crest Factor, Kurtosis, etc.)
+- **`evaluate_iso_20816`** - ISO 20816-3 vibration severity assessment
+- **`diagnose_bearing`** - Guided 6-step bearing diagnostic workflow
+- **`diagnose_gear`** - Evidence-based gear fault diagnostic workflow
 
-```
-Diagnose bearing fault in real_train/OuterRaceFault_1.csv with 97656 Hz sampling rate.
-The bearing has BPFO=81.13 Hz, BPFI=118.88 Hz, BSF=63.91 Hz, FTF=14.84 Hz.
-```
+</details>
 
-**Expected result:** ✅ Outer race fault detected with harmonics at ~81 Hz, 162 Hz, 243 Hz
+<details>
+<summary><b>🤖 Machine Learning</b></summary>
 
-### Available Tools
+- **`extract_features_from_signal`** - Extract 17+ statistical features from vibration data
+- **`train_anomaly_model`** - Train OneClassSVM/LocalOutlierFactor on healthy baseline
+- **`predict_anomalies`** - Detect anomalies in new signals with confidence scores
 
-#### Analysis Tools
+</details>
 
-- `analyze_fft` - FFT spectrum analysis with peak detection
-- `analyze_envelope` - Envelope analysis for bearing fault detection
-- `evaluate_iso_20816` - ISO 20816-3 vibration severity evaluation
-- `diagnose_bearing` - Complete 6-step bearing diagnostic workflow
+<details>
+<summary><b>📄 Professional Report Generation</b></summary>
 
-#### Machine Learning Tools
+- **`generate_fft_report`** - Interactive FFT spectrum HTML report with peak table
+- **`generate_envelope_report`** - Envelope analysis report with bearing fault markers
+- **`generate_iso_report`** - ISO 20816-3 evaluation with zone visualization
+- **`list_html_reports`** - List all generated reports with metadata
+- **`get_report_info`** - Get report details without loading full HTML
 
-- `extract_features_from_signal` - Extract 17 statistical features
-- `train_anomaly_model` - Train ML model on healthy baseline data
-- `predict_anomalies` - Detect anomalies in new signals
+> 💡 **All reports are interactive Plotly visualizations saved to `reports/` directory**
 
-#### Visualization Tools
+</details>
 
-- `generate_fft_chart_html` - Interactive FFT spectrum chart
-- `generate_envelope_html` - Interactive envelope spectrum chart
-- `save_fft_chart_to_file` - Save FFT chart to HTML file
-- `save_envelope_chart_to_file` - Save envelope chart to HTML file
+<details>
+<summary><b>🔍 Data Management</b></summary>
 
-#### Utility Tools
+- **`list_signals`** - Browse available signal files with metadata
+- **`generate_test_signal`** - Create synthetic signals for testing
 
-- `list_signals` - List all available signal files
-- `generate_test_signal` - Generate synthetic test signals
-- `read_plot_html` - Read HTML plot files for rendering
+</details>
 
-## Sample Datasets
+## 📊 Sample Dataset
 
-**Training Set** (`data/signals/real_train/`):
-- `baseline_1.csv`, `baseline_2.csv` - Healthy bearing operation
-- `OuterRaceFault_1.csv`, `OuterRaceFault_2.csv` - Outer race defects
-- `InnerRaceFault_vload_1-5.csv` - Inner race defects (variable load)
+The server includes **15 real bearing vibration signals** from production machinery:
 
-**Test Set** (`data/signals/real_test/`):
-- `baseline_3.csv` - Healthy bearing
-- `OuterRaceFault_3.csv` - Outer race fault
-- `InnerRaceFault_vload_6-7.csv` - Inner race faults
+- ✅ **3 Healthy Baselines** - Normal operation data
+- ⚠️ **7 Outer Race Faults** - Various severity levels  
+- 🔴 **5 Inner Race Faults** - Variable load conditions
 
-**Specifications:**
-- **Sampling Rate**: 97,656 Hz (~98 kHz)
-- **Duration**: 6.0 seconds each
-- **Bearing Frequencies**: BPFO=81.13 Hz, BPFI=118.88 Hz, BSF=63.91 Hz, FTF=14.84 Hz
+**Specifications**: 97.7 kHz sampling rate, 6-second duration, BPFO=81.13 Hz
 
-**Data Source**: [MathWorks RollingElementBearingFaultDiagnosis-Data](https://github.com/mathworks/RollingElementBearingFaultDiagnosis-Data)  
-**License**: CC BY-NC-SA 4.0 (Non-commercial use only)
+📖 **Full dataset documentation**: [data/README.md](data/README.md)
 
-## Examples
+## 💡 Usage Examples
 
-### Example 1: Detect Outer Race Fault
+### Quick Fault Detection
 
-```
-Analyze envelope spectrum of real_train/OuterRaceFault_1.csv at 97656 Hz.
-Compare peaks with BPFO = 81.13 Hz.
-```
+## 💡 Usage Examples
 
-### Example 2: Train ML Model
+### Quick Fault Detection
 
 ```
-Train anomaly model on real_train/baseline_1.csv and real_train/baseline_2.csv.
-Validate on real_train/OuterRaceFault_1.csv.
+Diagnose bearing fault in real_train/OuterRaceFault_1.csv
+BPFO=81.13 Hz, BPFI=118.88 Hz, BSF=63.91 Hz, FTF=14.84 Hz
 ```
 
-### Example 3: Compare Healthy vs Faulty
+**Result:** ✅ Outer race fault detected at ~81 Hz with harmonics
+
+### Generate Professional Report
 
 ```
-Compare FFT spectra of real_train/baseline_1.csv and real_train/OuterRaceFault_1.csv
-at 97656 Hz sampling rate.
+Generate envelope report for real_train/OuterRaceFault_1.csv
 ```
 
-📚 **Full workflows**: See [EXAMPLES.md](EXAMPLES.md) for complete diagnostic procedures  
-🚀 **Quick start guide**: See [QUICKSTART.md](QUICKSTART.md) for step-by-step tutorials
+**Result:** Interactive HTML saved to `reports/` with bearing fault markers
+
+### Train ML Anomaly Detector
+
+```
+Train anomaly model on baseline_1.csv and baseline_2.csv
+Validate on OuterRaceFault_1.csv
+```
+
+**Result:** Model detects fault with 95%+ confidence
+
+📚 **More examples**: [EXAMPLES.md](EXAMPLES.md) | **Step-by-step tutorial**: [QUICKSTART.md](QUICKSTART.md)
+
+## 📊 Professional Reports
+
+All analysis tools generate **interactive HTML reports** with Plotly visualizations:
+
+### Why HTML Reports?
+
+✅ **Universal** - Works with any LLM (Claude, ChatGPT, local models)  
+✅ **Zero tokens** - Files saved locally, not in chat  
+✅ **Interactive** - Pan, zoom, hover for details  
+✅ **Professional** - Publication-ready visualizations  
+✅ **Persistent** - Save for documentation and sharing
+
+### Report Types
+
+| Report | Tool | Contents |
+|--------|------|----------|
+| 🔊 **FFT Spectrum** | `generate_fft_report()` | Frequency analysis, peak detection, harmonic markers |
+| 🎯 **Envelope Analysis** | `generate_envelope_report()` | Bearing fault frequencies, modulation detection |
+| 📏 **ISO 20816-3** | `generate_iso_report()` | Vibration severity zones, compliance assessment |
+
+All reports include:
+- Interactive Plotly charts (pan/zoom/hover)
+- Automatic peak detection with frequency tables
+- Metadata (signal info, analysis parameters)
+- Timestamp and file references
+
+**Usage:**
+```
+Generate FFT report for baseline_1.csv
+```
+→ Opens `reports/fft_spectrum_baseline_1_20251111_143022.html` in browser
 
 ## Documentation
 
@@ -225,18 +274,40 @@ Or from source:
 uv run mcp dev src/machinery_diagnostics_server.py
 ```
 
-## Development
+## 🧪 Testing
+
+This project includes a comprehensive test suite covering all analysis tools:
+
+```bash
+# Run all tests
+pytest
+
+# Run with coverage report
+pytest --cov=src --cov-report=html
+
+# Run specific test file
+pytest tests/test_fft_analysis.py
+
+# Run with verbose output
+pytest -v
+```
+
+**Test coverage includes:**
+- ✅ FFT analysis and peak detection
+- ✅ Envelope analysis and bearing fault detection
+- ✅ ISO 20816-3 evaluation and zone classification
+- ✅ ML tools (feature extraction, training, prediction)
+- ✅ Report generation system (HTML outputs)
+- ✅ Real bearing fault data validation
+
+See [tests/README.md](tests/README.md) for detailed testing documentation.
+
+## 🛠️ Development
 
 ### Install Development Dependencies
 
 ```bash
 pip install -e ".[dev]"
-```
-
-### Run Tests
-
-```bash
-pytest tests/
 ```
 
 ### Code Quality
@@ -265,7 +336,7 @@ If you use this server in your research or projects:
 ```bibtex
 @software{machinery_diagnostics_mcp,
   title = {Predictive Maintenance MCP Server},
-  author = {Di Maggio, Luigi},
+  author = {Di Maggio, Luigi Gianpio},
   year = {2025},
   url = {https://github.com/LGDiMaggio/predictive-maintenance-mcp}
 }

@@ -3,7 +3,8 @@ include README.md
 include LICENSE
 include CONTRIBUTING.md
 include EXAMPLES.md
-include GITHUB_MARKETING.md
+include CHANGELOG.md
+include QUICKSTART.md
 
 # Include configuration files
 include pytest.ini

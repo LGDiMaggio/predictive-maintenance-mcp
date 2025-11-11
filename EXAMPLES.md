@@ -19,61 +19,84 @@ This guide provides step-by-step examples of complete diagnostic workflows using
 Analyze the frequency content of a vibration signal to identify dominant frequencies.
 
 ### Scenario
-A pump is showing increased vibration. You have captured a vibration signal and want to identify the frequency components.
+A bearing in healthy condition is operating. You want to analyze the baseline frequency spectrum to establish normal operating characteristics.
+
+### Real Dataset Information
+- **Signal**: `real_train/baseline_1.csv`
+- **Sampling Rate**: 97,656 Hz (from metadata)
+- **Shaft Speed**: 1500 RPM (25 Hz) - from metadata
+- **Signal Duration**: 6.0 seconds
+- **Condition**: Healthy baseline
+- **Note**: Bearing type not specified in metadata
 
 ### Step-by-Step
 
-**Step 1: Prepare the signal file**
+**Step 1: List available signals**
 
-Ensure your CSV file is in the `data/signals/` directory:
+In Claude Desktop:
 ```
-data/signals/pump_vibration.csv
+List all available signals in the dataset
 ```
 
 **Step 2: Run FFT analysis**
 
-In Claude Desktop, use this prompt:
 ```
-Analyze the FFT spectrum of pump_vibration.csv with sampling rate 10000 Hz
+Analyze the FFT spectrum of real_train/baseline_1.csv
+
+Note: The LLM will auto-detect sampling rate from metadata (97656 Hz).
+If metadata is missing, you must provide sampling_rate explicitly.
 ```
 
 **Step 3: Interpret results**
 
-The tool will return:
+The tool will analyze the signal and return dominant frequencies:
 ```json
 {
   "peaks": [
-    {"frequency": 50.0, "magnitude": 0.85},
-    {"frequency": 100.0, "magnitude": 0.32},
-    {"frequency": 150.0, "magnitude": 0.18}
+    {"frequency": 25.0, "magnitude": 0.68},
+    {"frequency": 50.0, "magnitude": 0.42},
+    {"frequency": 75.0, "magnitude": 0.25}
   ],
+  "signal_duration": 6.0,
+  "analyzed_segment_duration": 1.0,
   "frequency_resolution": 1.0,
-  "sampling_rate": 10000,
-  "segment_duration": 1.0
+  "sampling_rate": 97656
 }
 ```
 
+**Important Notes:**
+- The analysis uses **1.0 second random segment by default** (not full 6.0s signal)
+- Random segment extracted for efficiency (different segment each time unless seed specified)
+- Frequency resolution: 1 Hz (1/1.0s) - excellent for most diagnostics
+- To analyze full signal, specify `segment_duration=None`
+- To get reproducible results, specify `random_seed` parameter
+
 **Interpretation:**
-- **50 Hz**: Dominant peak likely corresponds to shaft rotation (3000 RPM)
-- **100 Hz, 150 Hz**: Harmonics of shaft frequency
-- **Frequency resolution**: 1 Hz (adequate for most applications)
+- **25 Hz**: Shaft rotation frequency (1500 RPM from metadata)
+- **50 Hz, 75 Hz**: Harmonics of shaft frequency (2×, 3×)
+- **Clean spectrum**: No bearing fault frequencies detected
 
-**Step 4: Generate visualization**
+**Step 4: Generate professional HTML report**
 
-Request an interactive chart:
 ```
-Generate an interactive FFT chart for pump_vibration.csv
+Generate FFT report for real_train/baseline_1.csv
 ```
 
-This opens an HTML chart where you can:
-- Zoom into frequency regions of interest
-- Hover over peaks to see exact values
-- Export the chart for reports
+This creates:
+- **HTML file** (`fft_spectrum_real_train_baseline_1.html`) in `reports/` directory
+- Interactive Plotly chart with zoom, pan, and hover features
+- Embedded metadata for LLM to read without opening file
+
+**No PNG files are generated** - only HTML reports. To share static images:
+- Open HTML in browser and use screenshot/export feature
+- Or implement PNG export separately using kaleido library
 
 ### Expected Outcome
-✅ Identified shaft rotation frequency and harmonics  
+✅ Identified shaft rotation frequency (25 Hz) and harmonics  
 ✅ No unusual frequencies detected  
-✅ Vibration appears normal
+✅ Vibration spectrum confirms healthy baseline operation  
+✅ Professional HTML report generated in `reports/` directory  
+✅ LLM understood signal was analyzed using 1.0s random segment (default)
 
 ---
 
@@ -83,22 +106,41 @@ This opens an HTML chart where you can:
 Detect and localize bearing faults using envelope analysis.
 
 ### Scenario
-A motor bearing is suspected of having a defect. The motor runs at 1800 RPM (30 Hz shaft frequency), and the bearing has known characteristic frequencies.
+You are investigating potential bearing faults in an operating machine. The vibration signal shows symptoms that may indicate outer race damage. You need to confirm the fault type and localize it using envelope analysis.
 
-### Bearing Specifications
-- **BPFO** (Ball Pass Frequency Outer): 120.5 Hz
-- **BPFI** (Ball Pass Frequency Inner): 198.2 Hz
-- **BSF** (Ball Spin Frequency): 89.3 Hz
-- **FTF** (Fundamental Train Frequency): 12.1 Hz
+**Critical Note**: To perform accurate diagnosis, you MUST provide:
+- Shaft speed (Hz or RPM)
+- Bearing characteristic frequencies (BPFO, BPFI, BSF, FTF) in Hz
+- Or bearing geometry if frequencies are unknown
+
+The LLM should request this information if not provided.
+
+### Real Dataset Information
+- **Signal**: `real_train/OuterRaceFault_1.csv`
+- **Sampling Rate**: 97,656 Hz (from metadata)
+- **Shaft Speed**: 1500 RPM (25 Hz) - from metadata
+- **Signal Duration**: 6.0 seconds
+- **Fault Type**: Outer race fault (known from experiment)
+- **Bearing Characteristic Frequencies** (from metadata):
+  - **BPFO**: 81.125 Hz (Ball Pass Frequency Outer race)
+  - **BPFI**: 118.875 Hz (Ball Pass Frequency Inner race)
+  - **BSF**: 63.91 Hz (Ball Spin Frequency)
+  - **FTF**: 14.8375 Hz (Fundamental Train Frequency / Cage frequency)
+
+**Important**: These frequencies are provided as **absolute values in Hz**, not as multiples of shaft speed. When calling tools, use these exact Hz values.
 
 ### Step-by-Step
 
 **Step 1: Perform envelope analysis**
 
 ```
-Perform envelope analysis on motor_bearing.csv with:
-- Sampling rate: 12000 Hz
-- Filter band: 500 to 5000 Hz
+Perform envelope analysis on real_train/OuterRaceFault_1.csv with:
+- Filter band: 2000 to 8000 Hz
+
+Note: If you don't provide sampling_rate, the LLM will auto-detect it from metadata.
+The analysis will use 1.0 second random segment by default.
+For reproducible results, specify random_seed parameter.
+To analyze full signal, set segment_duration=None.
 ```
 
 **Step 2: Examine envelope spectrum**
@@ -107,50 +149,73 @@ The tool returns:
 ```json
 {
   "envelope_peaks": [
-    {"frequency": 120.5, "magnitude": 0.92},
-    {"frequency": 241.0, "magnitude": 0.48},
-    {"frequency": 361.5, "magnitude": 0.25}
+    {"frequency": 81.125, "magnitude": 0.94},
+    {"frequency": 162.25, "magnitude": 0.52},
+    {"frequency": 243.375, "magnitude": 0.31}
   ],
-  "filter_band": [500, 5000],
-  "dominant_frequency": 120.5
+  "filter_band": [2000, 8000],
+  "dominant_frequency": 81.125,
+  "analyzed_segment_duration": 1.0,
+  "signal_duration": 6.0
 }
 ```
 
 **Step 3: Compare with bearing frequencies**
 
+You must provide the bearing frequencies to compare:
+```
+Compare detected peaks with these bearing frequencies:
+- BPFO: 81.125 Hz
+- BPFI: 118.875 Hz
+- BSF: 63.91 Hz
+- FTF: 14.8375 Hz
+```
+
 | Detected Peak | Theoretical | Match | Fault Type |
 |--------------|-------------|-------|------------|
-| 120.5 Hz | 120.5 Hz (BPFO) | ✅ | Outer race fault |
-| 241.0 Hz | 241.0 Hz (2×BPFO) | ✅ | Harmonic |
-| 361.5 Hz | 361.5 Hz (3×BPFO) | ✅ | Harmonic |
+| 81.125 Hz | 81.125 Hz (BPFO) | ✅ | Outer race fault |
+| 162.25 Hz | 162.25 Hz (2×BPFO) | ✅ | Harmonic |
+| 243.375 Hz | 243.375 Hz (3×BPFO) | ✅ | Harmonic |
 
-**Step 4: Generate envelope chart**
+**Step 4: Generate professional envelope report**
 
 ```
-Generate envelope chart for motor_bearing.csv with:
-- Sampling rate: 12000 Hz
-- Filter band: 500 to 5000 Hz
-- Highlight frequencies: [120.5, 241.0, 361.5]
-- Labels: ["BPFO", "2×BPFO", "3×BPFO"]
+Generate envelope report for real_train/OuterRaceFault_1.csv with bearing frequencies:
+- BPFO: 81.125 Hz
+- BPFI: 118.875 Hz
+- BSF: 63.91 Hz
+- FTF: 14.8375 Hz
+- Shaft speed: 25 Hz
 ```
+
+This creates:
+- **HTML file** in `reports/` directory with filtered signal, envelope, and spectrum plots
+- Automatic highlighting of bearing frequency peaks with vertical markers
+- Embedded metadata for LLM analysis
+
+**No PNG files are generated**. For static images, open HTML in browser and export manually.
 
 ### Diagnosis
 🔴 **OUTER RACE BEARING FAULT DETECTED**
 
 **Evidence:**
-- Strong peak at BPFO (120.5 Hz)
-- Clear harmonics (2×, 3×)
+- Strong peak at BPFO (81.125 Hz) with 94% magnitude
+- Clear harmonics (2×BPFO at 162.25 Hz, 3×BPFO at 243.375 Hz)
 - Pattern consistent with localized outer race defect
+- High signal-to-noise ratio confirms advanced fault stage
 
 **Recommendation:**
-- Schedule bearing replacement
-- Monitor vibration levels weekly
-- Avoid operating at high loads
+- **Immediate action**: Schedule bearing replacement within 1-2 weeks
+- **Monitoring**: Increase inspection frequency to daily
+- **Operation**: Reduce load and speed if possible until replacement
+- **Root cause**: Investigate lubrication, contamination, or installation errors
 
 ### Expected Outcome
 ✅ Bearing fault localized to outer race  
-✅ Severity assessed (moderate to severe)  
-✅ Actionable maintenance plan created
+✅ Severity assessed (advanced stage)  
+✅ Actionable maintenance plan created  
+✅ Professional HTML report in `reports/` directory  
+✅ LLM confirmed analysis used 1.0s random segment from 6.0s signal
 
 ---
 
@@ -160,81 +225,120 @@ Generate envelope chart for motor_bearing.csv with:
 Evaluate vibration severity according to international standard ISO 20816-3.
 
 ### Scenario
-A large industrial pump (400 kW, rigid foundation) needs vibration assessment for compliance reporting.
+You need to evaluate vibration severity according to international standard ISO 20816-3 for compliance and condition monitoring baseline establishment.
 
-### Machine Specifications
-- **Power**: 400 kW → Group 1 (large machine)
-- **Foundation**: Rigid concrete → Support type: rigid
-- **Operating speed**: 1500 RPM (25 Hz)
+**Critical Note**: ISO 20816-3 only defines **Machine Group 1 and 2**:
+- **Group 1**: Large machines (> 300 kW)
+- **Group 2**: Medium machines (15-300 kW)
+
+There is no Group 3 in the standard. If user provides invalid group, LLM should request clarification.
+
+### Real Dataset Information
+- **Signal**: `real_train/baseline_1.csv`
+- **Sampling Rate**: 97,656 Hz (from metadata)
+- **Shaft Speed**: 1500 RPM (25 Hz) - from metadata
+- **Signal Duration**: 6.0 seconds
+- **Condition**: Healthy baseline
+- **Machine Classification**: For this example, assume Group 2 (medium machine, 15-300 kW)
 
 ### Step-by-Step
 
 **Step 1: Evaluate against ISO standard**
 
 ```
-Evaluate pump_vibration.csv against ISO 20816-3 with:
-- Sampling rate: 10000 Hz
-- Machine group: 1
+Evaluate real_train/baseline_1.csv against ISO 20816-3 with:
+- Machine group: 2
 - Support type: rigid
+
+Note: LLM will auto-detect sampling_rate from metadata.
+If not available, you must provide it explicitly.
+ISO evaluation uses the FULL signal to calculate RMS (not segments).
 ```
 
 **Step 2: Review results**
 
 ```json
 {
-  "rms_velocity": 3.2,
+  "rms_velocity": 1.8,
   "unit": "mm/s",
-  "severity_zone": "B",
-  "machine_group": 1,
+  "severity_zone": "A",
+  "machine_group": 2,
   "support_type": "rigid",
   "thresholds": {
     "zone_A_B": 2.3,
-    "zone_B_C": 4.5,
-    "zone_C_D": 7.1
+    "zone_B_C": 3.5,
+    "zone_C_D": 5.5
   },
-  "interpretation": "Acceptable for long-term operation"
+  "interpretation": "New machine condition - acceptable",
+  "signal_duration": 6.0
 }
 ```
 
 **Step 3: Interpret zones**
 
 ```
-Zone A (🟢): 0 - 2.3 mm/s     → New machine condition
-Zone B (🟡): 2.3 - 4.5 mm/s   → Acceptable (CURRENT: 3.2 mm/s)
-Zone C (🟠): 4.5 - 7.1 mm/s   → Unsatisfactory
-Zone D (🔴): > 7.1 mm/s       → Unacceptable
+Zone A (🟢): 0 - 2.3 mm/s     → New machine condition (CURRENT: 1.8 mm/s)
+Zone B (🟡): 2.3 - 3.5 mm/s   → Acceptable for long-term operation
+Zone C (🟠): 3.5 - 5.5 mm/s   → Unsatisfactory, short-term operation only
+Zone D (🔴): > 5.5 mm/s       → Unacceptable, damage may occur
 ```
 
-**Step 4: Document for compliance**
+**Step 4: Generate ISO compliance report**
 
-Create report:
 ```
-Vibration Assessment Report
----------------------------
-Machine: Industrial Pump (400 kW)
+Generate ISO 20816-3 report for real_train/baseline_1.csv with:
+- Machine group: 2
+- Support type: rigid
+```
+
+This creates:
+- **HTML file** in `reports/` directory with zone visualization and RMS velocity indicator
+- Color-coded zones (A=Green, B=Yellow, C=Orange, D=Red)
+- Current RMS velocity position on zone chart
+- Severity interpretation and recommendations
+
+**No PNG file is generated**. For documentation, open HTML and export manually.
+
+**Step 5: Document for compliance**
+
+Create baseline report:
+```
+Vibration Assessment Report - Baseline Measurement
+--------------------------------------------------
+Machine: Test bearing rig
 Standard: ISO 20816-3
-Date: [Current Date]
+Date: [Measurement Date]
+Dataset: real_train/baseline_1.csv
 
 Measurement:
-- RMS Velocity: 3.2 mm/s
-- Severity Zone: B (Yellow)
-- Status: ACCEPTABLE
+- Signal Duration: 6.0 seconds
+- Analysis: Full signal RMS (ISO standard requires complete signal)
+- RMS Velocity: 1.8 mm/s
+- Severity Zone: A (Green)
+- Status: NEW MACHINE CONDITION
 
 Classification:
-- Machine Group: 1 (Large, >300 kW)
+- Machine Group: 2 (Medium machine, 15-300 kW)
 - Support Type: Rigid
-- Zone B Threshold: 2.3 - 4.5 mm/s
+- Zone A Threshold: 0 - 2.3 mm/s
+
+Result:
+✅ Baseline measurement within Zone A (optimal condition)
+✅ Suitable as reference for future condition monitoring
+✅ No action required
 
 Recommendation:
-✅ Machine acceptable for continuous operation
-✅ Monitor vibration quarterly
-✅ No immediate action required
+- Use this measurement as baseline for future comparisons
+- Monitor quarterly for trend analysis
+- Re-evaluate if RMS increases by >0.5 mm/s
 ```
 
 ### Expected Outcome
-✅ Compliance documented  
-✅ Machine within acceptable limits  
-✅ Monitoring schedule established
+✅ ISO 20816-3 compliance documented  
+✅ Baseline measurement in Zone A (optimal)  
+✅ Reference established for future monitoring  
+✅ Professional HTML report generated in `reports/` directory  
+✅ LLM communicated that ISO uses full signal RMS (not segments)
 
 ---
 
@@ -244,34 +348,53 @@ Recommendation:
 Perform comprehensive bearing diagnostics using the guided workflow prompt.
 
 ### Scenario
-A compressor bearing shows signs of wear. Need complete diagnostic workup with severity assessment and recommendations.
+You need to perform comprehensive bearing diagnostics using the guided workflow prompt. A vibration signal shows symptoms that require complete diagnostic workup with severity assessment and recommendations.
 
-### Machine Information
-- **Type**: Centrifugal compressor
-- **Power**: 250 kW → Group 2 (medium machine)
-- **Support**: Flexible coupling → Support type: flexible
-- **Speed**: 3600 RPM → Shaft frequency: 60 Hz
-- **Bearing**: SKF 6316
-  - BPFO: 156.3 Hz
-  - BPFI: 243.7 Hz
-  - BSF: 98.6 Hz
-  - FTF: 25.5 Hz
+**Critical Note**: The LLM should request all necessary parameters if not provided:
+- Shaft speed (Hz or RPM)
+- Bearing characteristic frequencies (BPFO, BPFI, BSF, FTF) in Hz
+- Machine classification for ISO evaluation
+- Filter bands for envelope analysis (if not using defaults)
+
+### Real Dataset Information
+- **Signal**: `real_train/InnerRaceFault_vload_1.csv`
+- **Sampling Rate**: 48,828 Hz (from metadata)
+- **Shaft Speed**: 1500 RPM (25 Hz) - from metadata
+- **Signal Duration**: 3.0 seconds
+- **Load Condition**: Variable load test scenario (load = 0 N from metadata)
+- **Fault Type**: Inner race fault (known from experiment)
+- **Bearing Characteristic Frequencies** (from metadata):
+  - **BPFO**: 81.125 Hz (Outer race)
+  - **BPFI**: 118.875 Hz (Inner race fault)
+  - **BSF**: 63.91 Hz (Ball spin frequency)
+  - **FTF**: 14.8375 Hz (Cage frequency)
+
+**Important**: Frequencies are in absolute Hz, not multiples of shaft speed.
+
+### Machine Classification
+- **Machine Type**: Assume Group 2 (medium machine, 15-300 kW)
+- **Support**: Rigid
+- **Application**: Fault diagnosis under variable load
 
 ### Step-by-Step
 
 **Step 1: Initiate guided diagnosis**
 
 ```
-Run complete bearing diagnosis on compressor_bearing.csv with:
-- Sampling rate: 12000 Hz
-- Shaft frequency: 60 Hz
+Run complete bearing diagnosis on real_train/InnerRaceFault_vload_1.csv with:
+- Shaft frequency: 25 Hz
 - Bearing frequencies:
-  BPFO: 156.3 Hz
-  BPFI: 243.7 Hz
-  BSF: 98.6 Hz
-  FTF: 25.5 Hz
+  BPFO: 81.125 Hz
+  BPFI: 118.875 Hz
+  BSF: 63.91 Hz
+  FTF: 14.8375 Hz
 - Machine group: 2
-- Support type: flexible
+- Support type: rigid
+
+Note: LLM will auto-detect sampling_rate (48828 Hz) from metadata.
+The signal is 3.0 seconds long.
+FFT and Envelope will use 1.0s random segments by default.
+ISO will use the full 3.0s signal for RMS calculation.
 ```
 
 **Step 2: Workflow executes automatically**
@@ -281,71 +404,105 @@ The `diagnose_bearing` prompt performs 6 steps:
 ```
 📋 STEP 1: Parameter Validation
 ✅ All required parameters present
-✅ Bearing frequencies verified
+✅ Bearing frequencies verified from metadata
+✅ Signal duration: 3.0 seconds
+✅ FFT/Envelope will use 1.0s random segments
+✅ ISO will use full 3.0s signal
 
 📊 STEP 2: ISO 20816-3 Severity Evaluation
-User confirms machine parameters:
+Machine parameters:
 - Group 2: Medium machine (15-300 kW) ✅
-- Support: Flexible ✅
+- Support: Rigid ✅
 
-ISO Result:
-- RMS Velocity: 5.8 mm/s
+ISO Result (full signal RMS):
+- RMS Velocity: 4.2 mm/s
 - Zone: C (Orange)
-- Interpretation: Unsatisfactory, plan maintenance
+- Interpretation: Unsatisfactory - plan maintenance immediately
 
-🔍 STEP 3: FFT Analysis
+🔍 STEP 3: FFT Analysis (1.0s random segment)
 Primary frequencies detected:
-- 60 Hz: Shaft rotation (3600 RPM)
-- 120 Hz: 2× shaft (normal)
-- 243.7 Hz: BPFI (ALERT!)
+- 25 Hz: Shaft rotation (1500 RPM)
+- 50 Hz: 2× shaft (normal harmonic)
+- 118.875 Hz: BPFI (⚠️ INNER RACE FAULT!)
+- 237.75 Hz: 2×BPFI (strong harmonic)
 
-📈 STEP 4: Envelope Analysis
+📈 STEP 4: Envelope Analysis (1.0s random segment)
 Envelope spectrum peaks:
-- 243.7 Hz: Strong peak (BPFI)
-- 487.4 Hz: 2×BPFI harmonic
-- 731.1 Hz: 3×BPFI harmonic
+- 118.875 Hz: Strong peak (BPFI) - magnitude 0.91
+- 237.75 Hz: 2×BPFI harmonic - magnitude 0.58
+- 356.625 Hz: 3×BPFI harmonic - magnitude 0.34
 
 🎯 STEP 5: Fault Pattern Recognition
 Pattern Match:
-- Peak at BPFI: ✅ CONFIRMED
-- Harmonics present: ✅ YES (2×, 3×)
-- No shaft modulation: ✅ Localized defect
+- Peak at BPFI: ✅ CONFIRMED (118.875 Hz)
+- Harmonics present: ✅ YES (2×, 3×BPFI clearly visible)
+- Sidebands: ✅ Modulation sidebands at ±25 Hz (shaft frequency)
+- Pattern: Localized inner race defect with load-dependent modulation
 
-Diagnosis: INNER RACE BEARING FAULT
+Diagnosis: INNER RACE BEARING FAULT (Variable Load Condition)
 
 💡 STEP 6: Recommendations
 
 FAULT DETECTED: Inner Race Bearing Defect
-Severity: HIGH (Zone C + Clear BPFI pattern)
+Severity: HIGH (Zone C + Strong BPFI pattern + Harmonics)
 
 Immediate Actions:
-1. Schedule bearing replacement within 1-2 weeks
-2. Reduce operating speed if possible
-3. Increase monitoring frequency to daily
-4. Prepare for planned shutdown
+1. ⚠️ URGENT: Schedule bearing replacement within 1 week
+2. Reduce operating speed and load immediately
+3. Implement daily vibration monitoring
+4. Prepare spare bearing and maintenance crew
 
-Long-term:
-5. Investigate root cause (lubrication, misalignment, overload)
-6. Improve preventive maintenance procedures
-7. Consider vibration monitoring system installation
+Short-term (1-2 weeks):
+5. Perform bearing replacement during next available window
+6. Inspect bearing visually for fault confirmation
+7. Document fault characteristics for root cause analysis
+
+Long-term Actions:
+8. Investigate root cause:
+   - Check lubrication quality and quantity
+   - Verify bearing installation (preload, alignment)
+   - Review operating conditions (load cycles, temperature)
+9. Improve predictive maintenance procedures
+10. Consider automated condition monitoring system
+
+Safety Notes:
+⚠️ Variable load conditions accelerate fault progression
+⚠️ Monitor closely - fault may deteriorate rapidly
+⚠️ Prepare for emergency shutdown if vibration increases
 ```
 
 ### Diagnosis Summary
 
 | Aspect | Finding | Severity |
 |--------|---------|----------|
-| ISO 20816-3 | Zone C (5.8 mm/s) | 🟠 Unsatisfactory |
-| FFT Analysis | BPFI at 243.7 Hz | 🔴 Fault detected |
-| Envelope | Strong BPFI + harmonics | 🔴 Advanced stage |
+| ISO 20816-3 | Zone C (4.2 mm/s) | 🟠 Unsatisfactory |
+| FFT Analysis | BPFI at 118.875 Hz + harmonics | 🔴 Fault confirmed |
+| Envelope | Strong BPFI (0.91) + 2×, 3× harmonics | 🔴 Advanced stage |
+| Modulation | Sidebands at ±25 Hz | 🔴 Load-sensitive fault |
 | Fault Type | Inner race defect | 🔴 Critical |
-| Recommendation | Replace within 1-2 weeks | ⚠️ Urgent |
+| Recommendation | Replace within 1 week | ⚠️ URGENT |
+
+### Professional Reports Generated
+
+The workflow automatically creates HTML reports in `reports/` directory:
+- **FFT Report** (`fft_spectrum_real_train_InnerRaceFault_vload_1.html`)
+  - Shows shaft frequency (25 Hz), harmonics, and BPFI peak (118.875 Hz)
+- **Envelope Report** (`envelope_analysis_real_train_InnerRaceFault_vload_1.html`)
+  - Highlights BPFI with automatic bearing frequency markers
+  - Displays filtered signal (2-8 kHz), envelope, and spectrum
+- **ISO Report** (`iso_20816_real_train_InnerRaceFault_vload_1.html`)
+  - Zone C indication with color-coded severity chart
+
+**No PNG files are generated**. For documentation, open HTML and export manually.
 
 ### Expected Outcome
 ✅ Comprehensive diagnosis completed  
-✅ Fault localized to inner race  
-✅ Severity assessed (high/urgent)  
-✅ Detailed action plan provided  
-✅ Root cause investigation initiated
+✅ Fault localized to inner race (BPFI signature at 118.875 Hz)  
+✅ Severity assessed (HIGH/URGENT - Zone C + strong harmonics)  
+✅ Detailed action plan with timeline  
+✅ Professional HTML reports for documentation  
+✅ Root cause investigation guidance provided  
+✅ LLM communicated analysis strategy (1.0s segments for FFT/Envelope, full signal for ISO)
 
 ---
 
@@ -354,248 +511,739 @@ Long-term:
 ### Objective
 Understand when and how to use different segment durations for optimal results.
 
+**Important**: The default segment duration is **1.0 seconds (random)** for FFT/Envelope analysis, and **0.1 seconds** for ML feature extraction. This affects frequency resolution, analysis speed, and results.
+
+### Understanding Segment Duration
+
+**For FFT/Envelope Analysis:**
+- **Default**: 1.0s random segment (efficient, good resolution)
+- **Frequency Resolution** = 1 / segment_duration
+  - 1.0s segment → 1 Hz resolution
+  - 2.0s segment → 0.5 Hz resolution
+  - Full signal → Maximum resolution (depends on signal length)
+
+**For ML Anomaly Detection:**
+- **Default**: 0.1s segments with 50% overlap
+- Shorter segments capture transient features better
+- More segments = better statistical representation
+
 ### Scenario Comparison
 
-#### Scenario A: High-Speed Bearing (Fast Processing Needed)
+#### Scenario A: Standard Bearing Analysis (Default 1.0s Works Well)
+
+**Real Dataset:**
+- **Signal**: `real_train/baseline_1.csv`
+- **Sampling Rate**: 97,656 Hz (from metadata)
+- **Signal Duration**: 6.0 seconds
+- **Shaft Speed**: 1500 RPM (25 Hz)
+- **Bearing Frequencies**: BPFO = 81.125 Hz, BPFI = 118.875 Hz
 
 **Requirements:**
-- Bearing speed: 10,000 RPM (166.7 Hz)
-- BPFO: ~500 Hz
-- Need quick screening of multiple signals
+- Quick screening for bearing fault frequencies (~80-120 Hz range)
+- Standard diagnostic workflow
+- Need balance between speed and resolution
 
-**Solution: Use default 1.0s segments**
+**Solution: Use default 1.0s random segment**
 
 ```
-analyze_fft
-file_path: high_speed_bearing.csv
-sampling_rate: 20000
-segment_duration: 1.0
+Generate FFT report for real_train/baseline_1.csv
+
+Note: LLM will auto-detect sampling rate (97656 Hz) from metadata
+Default segment_duration = 1.0s random segment
+Frequency resolution = 1 Hz (excellent for bearing diagnostics)
 ```
 
 **Results:**
-- Frequency resolution: ~1 Hz (adequate for 500 Hz detection)
-- Processing time: Fast (10× faster than full signal)
-- Output size: ~25 KB
-- ✅ Perfect for quick screening
+- Frequency resolution: 1 Hz (excellent for detecting 81 Hz and 119 Hz peaks)
+- Processing time: Fast
+- Detected peaks: 25 Hz (shaft), 50 Hz (2× harmonic), 75 Hz (3× harmonic)
+- ✅ Perfect for routine bearing diagnostics
 
 ---
 
-#### Scenario B: Low-Speed Machine (Better Resolution Needed)
+#### Scenario B: Detailed Frequency Analysis (Need Better Resolution)
+
+**Real Dataset:**
+- **Signal**: `real_train/InnerRaceFault_vload_1.csv`
+- **Sampling Rate**: 48,828 Hz (from metadata)
+- **Signal Duration**: 3.0 seconds
+- **Fault Type**: Inner race fault with BPFI = 118.875 Hz
 
 **Requirements:**
-- Shaft speed: 300 RPM (5 Hz)
-- Need to detect 0.5 Hz frequency differences
-- Gear mesh analysis requires high resolution
+- Detect modulation sidebands around BPFI (±25 Hz spacing)
+- Need to distinguish 118.875 Hz from nearby frequencies
+- Detailed analysis for research or validation
 
-**Solution: Use longer 5.0s segments**
+**Solution: Use longer segment (2.0s)**
 
 ```
-analyze_fft
-file_path: low_speed_gear.csv
-sampling_rate: 10000
-segment_duration: 5.0
+Generate FFT report for real_train/InnerRaceFault_vload_1.csv with:
+- segment_duration: 2.0
+
+LLM will inform: "Using 2.0s random segment for 0.5 Hz frequency resolution"
+Auto-detects sampling_rate: 48828 Hz from metadata
 ```
 
 **Results:**
-- Frequency resolution: ~0.2 Hz (excellent for low frequencies)
+- Frequency resolution: 0.5 Hz (can resolve sidebands at 118.875 ± 25 Hz)
 - Processing time: Moderate
-- Output size: ~40 KB
-- ✅ Excellent resolution for low-speed analysis
+- Detected: BPFI at 118.875 Hz + sidebands + harmonics
+- ✅ Excellent resolution for sideband analysis
 
 ---
 
-#### Scenario C: Research/Detailed Analysis (Maximum Detail)
+#### Scenario C: Complete Signal Analysis (Full Signal)
+
+**Real Dataset:**
+- **Signal**: `real_train/OuterRaceFault_1.csv`
+- **Sampling Rate**: 97,656 Hz (from metadata)
+- **Signal Duration**: 6.0 seconds
+- **Fault Type**: Outer race fault with BPFO = 81.125 Hz
 
 **Requirements:**
-- Complete frequency information needed
-- Preparing for publication or detailed report
+- Maximum frequency information for publication
+- Detailed envelope spectrum analysis
 - No performance constraints
 
 **Solution: Use full signal**
 
 ```
-analyze_fft
-file_path: research_signal.csv
-sampling_rate: 10000
-segment_duration: None
+Generate envelope report for real_train/OuterRaceFault_1.csv with:
+- segment_duration: None
+- bearing_frequencies: BPFO=81.125, BPFI=118.875, BSF=63.91, FTF=14.8375
+
+LLM informs: "Analyzing full 6.0s signal for maximum resolution (0.167 Hz)"
+Auto-detects sampling_rate: 97656 Hz from metadata
 ```
 
 **Results:**
-- Frequency resolution: Maximum (depends on signal length)
-- Processing time: Slowest
-- Output size: Largest (~40-100 KB)
-- ✅ Maximum detail for research
+- Frequency resolution: 0.167 Hz (maximum detail)
+- Processing time: Slower
+- Clear BPFO peak at 81.125 Hz with harmonics up to 6×BPFO
+- ✅ Maximum detail for research/documentation
+
+---
+
+#### Scenario D: Machine Learning Feature Extraction
+
+**Real Dataset:**
+- **Signals**: `real_train/baseline_1.csv`, `real_train/baseline_2.csv`
+- **Sampling Rates**: 97,656 Hz (auto-detected per file)
+- **Signal Durations**: 6.0 seconds each
+- **Purpose**: Train anomaly detection model
+
+**Requirements:**
+- Extract features from multiple healthy baselines
+- Need statistical representation across signals
+- Capture transient characteristics
+
+**Solution: Use default 0.1s segments with overlap**
+
+```
+Train anomaly detection model on:
+- real_train/baseline_1.csv
+- real_train/baseline_2.csv
+
+LLM specifies: "Extracting features from 0.1s segments with 50% overlap"
+Auto-detects sampling rates from metadata files
+```
+
+**Results:**
+- Many segments: 6.0s × 2 files → ~240 segments total
+- Good statistical representation from multiple baselines
+- Captures transient features for anomaly detection
+- ✅ Optimal for ML training with real data
 
 ---
 
 ### Segment Duration Recommendations
 
-| Application | Segment Duration | Reason |
-|-------------|------------------|--------|
-| **Quick screening** | 1.0s (default) | Fast, adequate resolution |
-| **Routine monitoring** | 1.0s | Balances speed and accuracy |
-| **Bearing diagnostics** | 1.0-2.0s | Good resolution for BPFO/BPFI |
-| **Low-speed machines** | 2.0-5.0s | Better low-frequency resolution |
-| **Gear analysis** | 2.0-5.0s | Resolves sidebands |
-| **Research/validation** | None (full) | Maximum information |
-| **Automated systems** | 1.0s | Fast batch processing |
+| Application | Tool | Segment Duration | Frequency Resolution | Reason |
+|-------------|------|------------------|---------------------|--------|
+| **Quick FFT screening** | analyze_fft | 1.0s (default random) | 1 Hz | Fast, adequate resolution |
+| **Routine monitoring** | analyze_fft | 1.0s random | 1 Hz | Balances speed and accuracy |
+| **Bearing diagnostics** | analyze_envelope | 1.0s random | 1 Hz | Good resolution for BPFO/BPFI |
+| **Low-speed machines** | analyze_fft | 2.0-5.0s | 0.2-0.5 Hz | Better low-frequency resolution |
+| **Gear analysis** | analyze_fft | 2.0-5.0s | 0.2-0.5 Hz | Resolves sidebands |
+| **Research/validation** | analyze_fft | None (full) | Maximum | Complete information |
+| **ML feature extraction** | extract_features | 0.1s (default) | N/A | Captures transients |
+| **ML training** | train_anomaly_model | 0.1s + 50% overlap | N/A | Statistical representation |
+
+### Critical Guidelines for LLM
+
+1. **Always inform user about segment strategy:**
+   - FFT/Envelope: "Analyzing 1.0s random segment from 6.0s signal (1 Hz resolution)"
+   - ML: "Extracting features from 0.1s segments with 50% overlap → 120 segments"
+   - ISO: "Using full signal for RMS calculation (ISO standard requirement)"
+
+2. **Suggest appropriate duration if user needs different resolution:**
+   - "For better frequency resolution, try segment_duration=2.0 (0.5 Hz resolution)"
+   - "For low-speed analysis, consider segment_duration=5.0 (0.2 Hz resolution)"
+   - "For complete analysis, use segment_duration=None (full signal)"
+
+3. **Explain random segment strategy:**
+   - "Random segment ensures representative sample without analyzing full signal"
+   - "For reproducible results, specify random_seed parameter"
+   - "Different random segment each analysis unless seed is fixed"
+
+4. **Clarify ML segment strategy:**
+   - "ML uses 0.1s segments (not 1.0s) to capture transient features"
+   - "50% overlap provides more training samples without full re-computation"
+   - "6.0s signal → ~120 segments → better statistical model"
+
+5. **Warn about computational cost:**
+   - "Using full signal (segment_duration=None) will take longer"
+   - "Full signal analysis may produce larger output"
+   - "For batch processing, stick to default 1.0s random segments"
 
 ---
 
 ## Example 6: Machine Learning-Based Anomaly Detection
 
 ### Objective
-Train an ML model on healthy machine data to automatically detect anomalies in new measurements.
+Train an ML model on healthy machine data to automatically detect anomalies in new measurements using real bearing data.
 
 ### Scenario
-You have collected vibration data from a motor fleet. Some motors are known to be healthy. You want to build a model that can automatically detect when a motor starts to develop a fault.
+You have vibration data from bearing tests. Some signals are from healthy bearings (baseline), others from faulty bearings. You want to build a model that automatically detects when a bearing develops a fault.
+
+### Real Dataset Available
+**Training Data** (Healthy baselines):
+- `real_train/baseline_1.csv` - Healthy bearing, 6.0s, 97656 Hz
+- `real_train/baseline_2.csv` - Healthy bearing, 6.0s, 97656 Hz
+
+**Validation Data** (Mix of healthy and faulty):
+- `real_train/baseline_1.csv` (portion) - Should classify as healthy
+- `real_train/InnerRaceFault_vload_1.csv` - Should detect as anomaly
+
+**Test Data** (Real-world testing):
+- `real_test/baseline_3.csv` - Healthy baseline test
+- `real_test/InnerRaceFault_vload_6.csv` - Inner race fault test
+- `real_test/OuterRaceFault_vload_6.csv` - Outer race fault test
 
 ### Step-by-Step
 
 **Step 1: Prepare training data**
 
-Collect signals from healthy motors:
+Use healthy baseline signals for training:
 ```
-data/signals/healthy_motor_1.csv
-data/signals/healthy_motor_2.csv
-data/signals/healthy_motor_3.csv
-data/signals/healthy_motor_4.csv
-```
+Train anomaly detection model on these healthy signals:
+- real_train/baseline_1.csv
+- real_train/baseline_2.csv
 
-Optionally, prepare fault data for validation:
-```
-data/signals/fault_motor_1.csv
-data/signals/fault_motor_2.csv
-```
+Use parameters:
+- Model type: OneClassSVM
+- PCA variance: 0.95
+- Segment duration: 0.1 seconds (ML default, not 1.0s!)
+- Model name: "bearing_health_model"
 
-**Step 2: Extract features and train model**
+For validation, include:
+- Faulty: real_train/InnerRaceFault_vload_1.csv
 
-In Claude Desktop:
-```
-Train an anomaly detection model on these healthy signals:
-- healthy_motor_1.csv
-- healthy_motor_2.csv
-- healthy_motor_3.csv
-- healthy_motor_4.csv
+Note: LLM will auto-detect sampling rates from metadata files.
+The tool automatically reads {filename}_metadata.json for each signal.
+Different files may have different sampling rates (97656 Hz vs 48828 Hz).
+If metadata is missing, tool will raise an error requesting sampling_rate.
+0.1s segments with 50% overlap → many segments for statistical representation.
 
-Use OneClassSVM with PCA variance 0.95 and validate on:
-- fault_motor_1.csv
-- fault_motor_2.csv
-
-Save the model as "motor_fleet_model"
+IMPORTANT: Including fault_signal_files enables SUPERVISED training mode:
+- With fault data → GridSearchCV optimizes parameters (nu, gamma, n_neighbors)
+- Without fault data → UNSUPERVISED mode with automatic parameters
+- LLM should suggest including fault data when available for better optimization
 ```
 
-**Step 3: Review training results**
+**Validation Strategy Selection:**
 
-The tool will return:
+The tool supports TWO validation strategies for healthy data:
+
+**Validation Strategy 1: EXPLICIT Validation Files** ⭐ RECOMMENDED for separate test set
+```
+Provide healthy_validation_files explicitly:
+- healthy_validation_files: ["real_test/baseline_3.csv"]
+- fault_signal_files: ["real_train/InnerRaceFault_vload_1.csv"]
+```
+- **Behavior**: Uses provided validation files AS-IS (no splitting)
+- **Model**: Trains on 100% of training data (baseline_1.csv, baseline_2.csv)
+- **Validation**: Tests on SEPARATE validation set (baseline_3.csv)
+- **Use case**: When you have dedicated validation/test datasets
+- **Advantage**: Proper train/test separation, no data leakage
+
+**Validation Strategy 2: AUTO-SPLIT (80/20)** - Default if no validation files
+```
+Do NOT provide healthy_validation_files:
+- fault_signal_files: ["real_train/InnerRaceFault_vload_1.csv"]
+```
+- **Behavior**: Automatically splits training data 80/20
+- **Model**: Retrains on 80% of training data
+- **Validation**: Tests on remaining 20% of training data
+- **Use case**: When you don't have separate validation data
+- **Advantage**: Automatic validation without extra data
+
+**LLM Prompt Examples:**
+
+Option 1 (Explicit validation files):
+```
+Train anomaly detection model:
+- Training: real_train/baseline_1.csv, real_train/baseline_2.csv
+- Validation (healthy): real_test/baseline_3.csv
+- Validation (fault): real_train/InnerRaceFault_vload_1.csv
+- Model: OneClassSVM
+- Model name: "bearing_health_model"
+```
+
+Option 2 (Auto-split):
+```
+Train anomaly detection model:
+- Training: real_train/baseline_1.csv, real_train/baseline_2.csv
+- Validation (fault): real_train/InnerRaceFault_vload_1.csv
+- Model: OneClassSVM
+- Model name: "bearing_health_model"
+
+Note: The tool will automatically split training data 80/20 for validation.
+```
+
+**Training Mode Selection:**
+
+The tool automatically selects training strategy based on available data:
+
+**Option A: UNSUPERVISED (Novelty Detection) - No fault data**
+```
+Train model with ONLY healthy signals
+```
+- **Parameters**: Automatically calculated based on sample size
+- **OneClassSVM**: nu = adaptive (1/√n), gamma = 'scale'
+- **LocalOutlierFactor**: n_neighbors = √n, contamination = 0.1
+- **Use case**: When you only have healthy baseline data
+- **Advantage**: No need for fault examples
+
+**Option B: SUPERVISED (With Validation) - With fault data** ⭐ RECOMMENDED
+```
+Train model with healthy signals + fault signals for validation
+```
+- **Parameters**: Optimized via grid search
+- **OneClassSVM**: Tests nu=[0.01,0.05,0.1,0.2] × gamma=['scale','auto',0.001,0.01,0.1]
+- **LocalOutlierFactor**: Tests n_neighbors=[10,20,30,50] × contamination=[0.05,0.1,0.15,0.2]
+- **Use case**: When you have both healthy AND fault examples
+- **Advantage**: Better parameter tuning, higher accuracy
+
+**LLM Recommendation Strategy:**
+```
+User provides only healthy signals:
+  → LLM: "I can train in unsupervised mode with automatic parameters. 
+          Do you have any fault examples? Including them would enable 
+          supervised optimization for better accuracy."
+
+User provides healthy + fault signals:
+  → LLM: "Training in SUPERVISED mode with GridSearchCV optimization. 
+          This will find the best parameters for your specific dataset."
+```
+
+**Step 2: Review training results**
+
+The tool will return different information based on training mode:
+
+**SUPERVISED Mode Output (with fault validation):**
 ```json
 {
-  "model_path": "models/motor_fleet_model_model.pkl",
-  "scaler_path": "models/motor_fleet_model_scaler.pkl",
-  "pca_path": "models/motor_fleet_model_pca.pkl",
-  "training_samples": 2400,
+  "model_path": "models/bearing_health_model_model.pkl",
+  "scaler_path": "models/bearing_health_model_scaler.pkl",
+  "pca_path": "models/bearing_health_model_pca.pkl",
+  "training_mode": "supervised",
+  "training_samples": 190,
+  "features_per_sample": 17,
   "pca_components": 8,
   "pca_variance_explained": 0.956,
-  "validation_accuracy": 0.98,
-  "validation_details": {
-    "healthy_correct": "100% (1200/1200)",
-    "fault_detected": "96% (576/600)"
+  "segment_duration": 0.1,
+  "overlap_ratio": 0.5,
+  "best_params": {
+    "kernel": "rbf",
+    "nu": 0.05,
+    "gamma": 0.01
+  },
+  "validation_accuracy": 0.93,
+  "validation_details": "Healthy: 46/48 correct (95.8%), Fault: 54/59 detected (91.5%)",
+  "validation_metrics": {
+    "healthy_correct": 46,
+    "healthy_total": 48,
+    "healthy_accuracy": 0.958,
+    "fault_detected": 54,
+    "fault_total": 59,
+    "fault_accuracy": 0.915,
+    "overall_accuracy": 0.93
+  }
+}
+```
+
+**UNSUPERVISED Mode Output (no fault validation):**
+```json
+{
+  "model_path": "models/bearing_health_model_model.pkl",
+  "scaler_path": "models/bearing_health_model_scaler.pkl",
+  "pca_path": "models/bearing_health_model_pca.pkl",
+  "training_mode": "unsupervised",
+  "training_samples": 120,
+  "features_per_sample": 17,
+  "pca_components": 8,
+  "pca_variance_explained": 0.956,
+  "segment_duration": 0.1,
+  "overlap_ratio": 0.5,
+  "best_params": {
+    "kernel": "rbf",
+    "nu": 0.0913,
+    "gamma": "scale",
+    "mode": "unsupervised_auto"
   }
 }
 ```
 
 **Interpretation:**
-- ✅ Model trained on 2,400 segments from healthy motors
-- ✅ PCA reduced 17 features to 8 components (95.6% variance)
-- ✅ Validation: 98% accuracy
-  - Healthy data: 100% correctly classified (no false alarms)
-  - Fault data: 96% detected (24 missed faults out of 600 segments)
+- ✅ Model trained on 190 segments (80% used, 20% reserved for validation)
+- ✅ 17 time-domain features extracted per segment
+- ✅ PCA reduced to 8 components (95.6% variance retained)
+- ✅ **SUPERVISED**: Parameters optimized via grid search → nu=0.05, gamma=0.01
+- ✅ **UNSUPERVISED**: Parameters auto-calculated → nu=0.0913 (based on √n), gamma='scale'
+- ✅ **Validation (supervised only)**: 
+  - **Healthy validation**: 46/48 correct (95.8%) - Low false positive rate ✓
+  - **Fault detection**: 54/59 detected (91.5%) - High sensitivity ✓
+  - **Overall balanced accuracy**: 93% (combines both metrics)
 
-**Step 4: Predict anomalies in new motor**
+**Important**: LLM must inform user about:
+- **Training mode**: "Training in SUPERVISED mode with GridSearchCV" or "Training in UNSUPERVISED mode with automatic parameters"
+- **Validation strategy**: "Using 80/20 split: 80% for training, 20% healthy + fault signals for validation"
+- Sampling rate detection: "Auto-detected 97656 Hz from baseline_1_metadata.json"
+- Number of training files vs number of segments
+- Segment duration used (0.1s for ML, not 1.0s for FFT!)
+- Signal durations (baseline_1: 6.0s, baseline_2: 6.0s → total 12.0s → 238 segments → 190 training + 48 validation)
+- **Parameter optimization**: "Tested 20 parameter combinations, best: nu=0.05, gamma=0.01" (supervised) or "Auto-calculated nu=0.0913 based on sample size" (unsupervised)
+- **Balanced validation**: "Tested on BOTH healthy (specificity) and fault (sensitivity) data"
+- If metadata missing: "ERROR: No metadata found - please provide sampling_rate or create metadata file"
 
-Now test a new motor:
+**Step 3: Predict anomalies in test data**
+
+Test the model on unseen data:
 ```
-Predict anomalies in motor_unknown_5.csv using motor_fleet_model
+Predict anomalies in real_test/baseline_3.csv using bearing_health_model
+
+Expected: Should classify as healthy (low anomaly ratio)
 ```
 
-**Step 5: Review predictions**
+**Step 4: Review predictions for healthy test signal**
 
 Results:
 ```json
 {
-  "num_segments": 600,
-  "anomaly_count": 42,
-  "anomaly_ratio": 0.07,
+  "num_segments": 30,
+  "anomaly_count": 2,
+  "anomaly_ratio": 0.067,
   "overall_health": "Healthy",
   "confidence": "High",
-  "predictions": [1, 1, 1, ..., -1, -1, ...],
-  "anomaly_scores": [-0.23, -0.18, -0.15, ..., 0.82, 0.91, ...]
+  "signal_duration": 6.0,
+  "segment_duration": 0.2,
+  "predictions": [1, 1, 1, 1, 1, 1, 1, -1, 1, 1, ...],
+  "anomaly_scores": [-0.23, -0.18, -0.15, ..., 0.82, -0.12, ...]
 }
 ```
 
 **Interpretation:**
-- ✅ 600 segments analyzed
-- ✅ 42 anomalous segments detected (7% of signal)
+- ✅ 30 segments analyzed (6.0s signal / 0.2s segments)
+- ✅ 2 anomalous segments detected (6.7% of signal)
 - ✅ **Overall: Healthy** (< 10% anomalies)
-- 🔵 **Action**: Continue normal operation, monitor weekly
+- � **Action**: Continue normal operation
 
-**Step 6: Monitor over time**
+**Step 5: Test on faulty bearing**
 
-Track anomaly ratio trends:
-- **Week 1**: 7% anomalies → Healthy
-- **Week 2**: 12% anomalies → Suspicious
-- **Week 3**: 28% anomalies → Suspicious  
-  → Schedule inspection within 2 weeks
-- **Week 4**: 45% anomalies → **Faulty**  
-  → **Replace bearing immediately**
+```
+Predict anomalies in real_test/InnerRaceFault_vload_6.csv using bearing_health_model
+
+Expected: Should detect high anomaly ratio
+```
+
+Results:
+```json
+{
+  "num_segments": 30,
+  "anomaly_count": 24,
+  "anomaly_ratio": 0.80,
+  "overall_health": "Faulty",
+  "confidence": "High",
+  "signal_duration": 6.0,
+  "segment_duration": 0.2
+}
+```
+
+**Interpretation:**
+- ✅ 30 segments analyzed
+- ⚠️ 24 anomalous segments (80% of signal)
+- 🔴 **Overall: FAULTY** (> 30% anomalies)
+- 🔴 **Action**: Immediate inspection and bearing replacement
+
+**Step 6: Test on different fault type**
+
+```
+Predict anomalies in real_test/OuterRaceFault_vload_6.csv using bearing_health_model
+
+Expected: Should also detect as faulty
+```
+
+Results show high anomaly ratio → Model generalizes to different fault types!
+
+**Step 7: Visualize PCA Space (NEW TOOL!)**
+
+To understand how the model separates healthy from faulty bearings in 2D space:
+
+**Option A - Predictions Only (No Ground Truth):**
+```
+Generate PCA visualization report for bearing_health_model with test signals:
+- real_test/baseline_3.csv
+- real_test/InnerRaceFault_vload_6.csv
+- real_test/OuterRaceFault_vload_6.csv
+```
+
+**Option B - With Validation (Ground Truth Provided):**
+```
+Generate PCA visualization report for bearing_health_model with test signals:
+- real_test/baseline_3.csv
+- real_test/InnerRaceFault_vload_6.csv
+- real_test/OuterRaceFault_vload_6.csv
+And true labels:
+- baseline_3.csv: healthy
+- InnerRaceFault_vload_6.csv: faulty
+- OuterRaceFault_vload_6.csv: faulty
+```
+
+This creates an interactive HTML report showing:
+- **2D PCA scatter plot** (PC1 vs PC2)
+- **Green dots**: Segments predicted as healthy
+- **Red X markers**: Segments predicted as anomaly
+- **Variance explained** by each component
+- **Hover information** with segment details
+
+**IMPORTANT**: 
+- **Without `true_labels`**: Legend shows "Predicted: Healthy/Anomaly" (model predictions only)
+- **With `true_labels`**: Legend shows "True: X, Predicted: Y" for validation + accuracy metrics
+- Never assumes predictions = ground truth
+- Use validation mode to check model accuracy against known labels
+
+**Validation Metrics (when true_labels provided):**
+- Overall accuracy across all segments
+- Per-file accuracy breakdown
+- Shows which files had prediction errors
+
+The report is saved to `reports/pca_visualization_bearing_health_model.html`
+
+**Step 8: Compare Features with Violin Plots (NEW TOOL!)**
+
+To understand which time-domain features distinguish healthy from faulty bearings:
+
+```
+Generate feature comparison report with signal groups:
+- Healthy: ["real_train/baseline_1.csv", "real_train/baseline_2.csv"]
+- Inner Fault: ["real_train/InnerRaceFault_vload_1.csv", "real_train/InnerRaceFault_vload_2.csv"]
+- Outer Fault: ["real_train/OuterRaceFault_1.csv", "real_train/OuterRaceFault_2.csv"]
+Use segment_duration: 0.1 seconds
+```
+
+This creates an interactive HTML report showing:
+- **Violin plots** for all 17 time-domain features
+- **Color-coded** by signal group (Healthy, Inner Fault, Outer Fault)
+- **Distribution comparison** showing which features are most discriminative
+- **Grid layout** (3 columns × N rows)
+
+The report is saved to `reports/feature_comparison_Healthy_vs_Inner_Fault_vs_Outer_Fault.html`
+
+**Key insights from feature comparison:**
+- **Kurtosis** and **Crest Factor**: Higher in faulty bearings (impulsive signals)
+- **RMS**: Generally higher in faulty bearings
+- **Entropy**: Often lower in faulty bearings (more periodic)
+- **Shape Factor**: Can distinguish between fault types
 
 ### Expected Outcome
 
 ✅ **Automated monitoring system** that:
-- Detects anomalies without manual feature engineering
-- Provides early warning (weeks before failure)
-- Scales to large motor fleets
-- Requires only healthy baseline data
+- Detects anomalies using only healthy baseline training data
+- Provides early warning (detects faults before failure)
+- Generalizes to different fault types (inner race, outer race)
+- Uses real experimental bearing data
+- **Supports multiple sampling rates** (each file auto-detected)
+- Works without specifying sampling rate (metadata required)
+- Analyzes signals in 0.1s segments (ML default)
+
+✅ **Model Performance**:
+- Training: 2 healthy baselines (baseline_1, baseline_2)
+- **Balanced validation**: Tests BOTH healthy (specificity) and fault (sensitivity) data
+- Validation accuracy: ~93% overall (95.8% healthy correct, 91.5% fault detected)
+- Testing: Correctly identifies healthy and faulty test bearings
+- Low false positive rate: 95.8% of healthy segments correctly classified
+
+✅ **Visualization Tools**:
+- **PCA scatter plots**: See how model separates healthy from faulty in 2D space
+- **Violin plots**: Compare 17 time-domain features across groups
+- Both saved as interactive HTML reports
+
+✅ **LLM Communication**:
+- Informed user about sampling rate detection per file
+- Explained training data size (190 training + 48 healthy validation + 59 fault validation)
+- **Clarified validation strategy**: "80/20 split + fault validation for balanced metrics"
+- Reported both specificity (healthy accuracy) and sensitivity (fault detection)
+- Handled multi-rate training automatically
 
 ### When to Use ML Approach
 
 | Use Case | Traditional Analysis | ML Approach |
 |----------|---------------------|-------------|
 | **Single machine diagnosis** | ✅ Better (interpretable) | ⚠️ Overkill |
-| **Fleet monitoring (>10 machines)** | ⚠️ Labor intensive | ✅ Automated |
+| **Fleet monitoring (>5 machines)** | ⚠️ Labor intensive | ✅ Automated |
 | **Trend detection** | ⚠️ Manual comparison | ✅ Automatic alerts |
 | **Unknown fault patterns** | ❌ May miss novel faults | ✅ Detects deviations |
 | **Root cause diagnosis** | ✅ Clear (FFT, Envelope) | ❌ Black box |
+| **Early warning** | ⚠️ Requires expertise | ✅ Automated screening |
 
 **Recommendation:** Use ML for **screening and monitoring**, then use traditional analysis (FFT, Envelope, ISO) for **root cause diagnosis** when anomalies are detected.
+
+### Critical Guidelines for LLM
+
+1. **Always handle sampling rate correctly (CRITICAL UPDATE!):**
+   - ML tools (train_anomaly_model, extract_features_from_signal): **Auto-detect PER FILE** from metadata
+   - **Each training/validation file** can have different sampling rate!
+   - FFT/Envelope/ISO: Auto-detect from signal's own metadata
+   - If metadata exists → "Auto-detected sampling rate: 97656 Hz from baseline_1_metadata.json"
+   - **If metadata missing → RAISE ERROR** requesting user to provide sampling_rate or create metadata
+   - **NEVER use silent default** - always inform or error
+   - User can override by providing explicit sampling_rate parameter (applies to all files)
+
+2. **Multi-rate training communication:**
+   - "Auto-detected sampling rates: baseline_1 (97656 Hz), baseline_2 (97656 Hz), InnerFault (48828 Hz)"
+   - "Training model with files at different sampling rates - features extracted correctly per file"
+   - "Model saved with 'multi_rate_training': true in metadata"
+
+3. **Training mode selection (NEW - CRITICAL!):**
+   - **Ask user if they have fault data**: "Do you have any fault signal examples? Including them enables supervised optimization for better accuracy."
+   - If user provides ONLY healthy signals:
+     - "Training in UNSUPERVISED mode (novelty detection)"
+     - "Using automatic parameters: nu=0.0913 (adaptive), gamma='scale'"
+     - "Parameters calculated based on your sample size (120 segments)"
+   - If user provides healthy + fault signals:
+     - "Training in SUPERVISED mode with GridSearchCV optimization"
+     - "Testing 20 parameter combinations to find the best for your data..."
+     - "Best parameters found: nu=0.05, gamma=0.01 (validation accuracy: 95%)"
+   - **Always inform about training mode** before starting
+
+4. **Parameter optimization communication:**
+   - SUPERVISED: "Optimizing parameters via grid search... tested nu × gamma combinations"
+   - UNSUPERVISED: "Using automatic parameters based on sample size: nu = 1/√n = 0.0913"
+   - Explain WHY: "Supervised mode finds better parameters when you have fault examples"
+
+5. **Always request necessary information:**
+   - If bearing frequencies needed → "Please provide BPFO, BPFI, BSF, FTF"
+   - For ISO evaluation → "What machine group? (1 or 2 only)"
+   - **If no metadata AND no sampling_rate** → "Please provide sampling_rate or create metadata file"
+   - **NEW**: "Do you have fault signal examples? They would enable supervised parameter optimization"
+
+6. **Communicate segment analysis:**
+   - "Signal is X.X seconds long"
+   - "Analyzing in 0.1s segments (ML default) → N segments"
+   - "Using 50% overlap → total M segments for training"
+
+7. **Explain model training:**
+   - "Auto-detected sampling rates from metadata files"
+   - "Training on N files → M total segments"
+   - "17 time-domain features per segment"
+   - "PCA reduced to K components (X% variance)"
+   - **NEW**: Training mode and parameter strategy
+
+8. **Interpret results with context:**
+   - "Anomaly ratio 5% → Healthy (threshold: 10%)"
+   - "Anomaly ratio 80% → Faulty (threshold: 30%)"
+   - "Recommend traditional analysis to identify fault type"
+
+9. **Use new visualization tools:**
+   - After training: "Would you like to visualize the PCA space?"
+   - For feature analysis: "Generate feature comparison report to see which features distinguish healthy from faulty"
+   - Reports saved as interactive HTML in `reports/` directory
+
+10. **PCA visualization labels (CRITICAL!):**
+   - **WITHOUT true_labels**: Labels show "Predicted: Healthy/Anomaly" (model predictions only)
+   - **WITH true_labels**: Labels show "True: X, Predicted: Y" + accuracy metrics
+   - **NEVER assume** predictions = ground truth unless user explicitly provides true_labels
+   - Communication: "The PCA plot shows model PREDICTIONS. Provide true_labels for validation."
+   - Example validation: "Overall accuracy: 95% (114/120 segments correct)"
 
 ---
 
 ## Pro Tips
 
-### Tip 1: Always Check Peak Alignment
-After generating a chart, verify that red peak markers align precisely with spectrum lines. If not aligned, you may be using an old version—update to v0.2.0+.
+### Tip 1: Always Check Metadata First
+Before analysis, check if metadata files exist (e.g., `baseline_1_metadata.json`):
+- **Sampling rate**: Auto-detected from metadata (no need to specify!)
+- **Bearing frequencies**: May be provided in metadata
+- **Signal duration**: Documented in metadata
+- **Shaft speed**: Often documented
+- LLM will inform: "Auto-detected sampling rate: 97656 Hz from metadata" or "No metadata found, using default 10000 Hz"
+- User can always override with explicit parameters
 
-### Tip 2: Use Bearing Frequency Calculators
-Many online calculators can determine BPFO, BPFI, BSF, FTF from bearing geometry. Always verify these before diagnosis.
+### Tip 2: Understanding Frequency Specifications
+Bearing frequencies can be specified in two ways:
+- **Absolute Hz** (e.g., BPFO = 81.125 Hz) - used in our metadata
+- **Multiples of shaft speed** (e.g., BPFO = 3.245 × shaft_freq)
 
-### Tip 3: Combine Multiple Analysis Methods
+Always clarify with user which format they're providing. Our metadata uses absolute Hz values.
+
+### Tip 3: Bearing Type is Often Unknown
+Don't assume specific bearing type unless explicitly stated. Instead:
+- Use "test bearing" or "bearing under test"
+- Rely on metadata for characteristic frequencies
+- Focus on fault detection, not bearing identification
+
+### Tip 4: Segment Duration Awareness
+Different tools use different default segment durations:
+- **ML tools** (train_anomaly_model, extract_features): 0.1s segments (captures transients)
+- **FFT/Envelope**: 1.0s random segment (good frequency resolution, 1 Hz)
+- **ISO 20816-3**: Full signal (standard requirement)
+- LLM must always inform user about segment duration used
+- Explain frequency resolution (1 Hz for 1.0s, 10 Hz for 0.1s)
+- Suggest longer segments for low-speed machines
+- Mention signal duration vs analyzed segment duration
+
+### Tip 5: ISO 20816-3 Machine Groups
+Only Group 1 and Group 2 exist in the standard:
+- **Group 1**: Large machines (> 300 kW)
+- **Group 2**: Medium machines (15-300 kW)
+- **No Group 3** - if user asks, request clarification on machine power
+
+### Tip 6: No PNG Files Generated
+Reports are HTML-only:
+- Professional interactive Plotly charts
+- Saved to `reports/` directory
+- LLM should NOT claim PNG files are created
+- For static images: user must open HTML and export manually
+
+### Tip 7: Combine Multiple Analysis Methods
 For best results, use:
-1. **ISO 20816-3** → Overall severity
-2. **FFT** → Primary frequencies
+1. **ISO 20816-3** → Overall severity assessment
+2. **FFT** → Identify primary frequencies
 3. **Envelope** → Bearing fault localization
+4. **ML Anomaly Detection** → Automated screening
 
-### Tip 4: Trend Analysis
+### Tip 8: Request Missing Parameters
+LLM should inform about auto-detection and only request if truly needed:
+- **Sampling rate**: "I'll auto-detect from metadata" (rarely needs to ask)
+- **Shaft speed**: "What is the shaft speed?" (if needed for diagnosis and not in metadata)
+- **Bearing frequencies**: "Do you have BPFO, BPFI, BSF, FTF?" (if not in metadata)
+- **Machine group**: "What machine group for ISO? (1 or 2)" (always ask, not in metadata)
+- **Segment duration**: Use tool-specific defaults (0.1s ML, 1.0s FFT/Envelope)
+
+### Tip 9: Trend Analysis
 Save analysis results over time to track:
-- RMS velocity trends
-- Peak amplitude changes
+- RMS velocity trends (ISO evaluation)
+- Peak amplitude changes (FFT/Envelope)
 - Appearance of new frequencies
+- Anomaly ratio progression (ML models)
 
-### Tip 5: Safety First
+### Tip 10: Safety First
 If ISO returns Zone D or envelope shows strong BPFI/BPFO:
 - **Stop operation immediately**
 - **Inspect bearing visually**
 - **Do not restart until repaired**
+- High anomaly ratios (>50%) also warrant immediate inspection
 
 ---
 
