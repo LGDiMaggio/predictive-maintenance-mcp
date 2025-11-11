@@ -102,14 +102,12 @@ Generate an FFT report for real_train/baseline_1.csv
 **What happens:**
 1. Claude calls `generate_fft_report` tool
 2. Server performs FFT analysis (sampling rate auto-detected: 97,656 Hz)
-3. Creates two files in `reports/`:
-   - **HTML file** (interactive Plotly chart): `fft_spectrum_real_train_baseline_1.html`
-   - **PNG file** (static image): `fft_spectrum_real_train_baseline_1.png`
+3. Creates HTML file in `reports/`:
+   - **Interactive Plotly chart**: `fft_spectrum_real_train_baseline_1.html`
 
 **Claude's response includes:**
 ```
-✓ FFT spectrum report saved: fft_spectrum_real_train_baseline_1.html (42.3 KB)
-✓ PNG image saved: fft_spectrum_real_train_baseline_1.png (128.5 KB)
+✓ FFT spectrum report saved: fft_spectrum_real_train_baseline_1.html (150.9 KB)
 
 Report Details:
 - Signal: real_train/baseline_1.csv
@@ -118,7 +116,6 @@ Report Details:
 - Dominant peak: 29.95 Hz (shaft frequency, 1797 RPM)
 
 Open the HTML file in your browser for interactive exploration!
-Use the PNG file for presentations and documentation.
 ```
 
 **Open the HTML file** in your browser to:
@@ -142,22 +139,21 @@ Generate envelope analysis report for real_train/OuterRaceFault_1.csv with beari
    - Hilbert transform envelope extraction
    - FFT of envelope signal
    - Peak detection with bearing frequency matching
-3. Creates professional reports (HTML + PNG)
+3. Creates professional HTML report
 
 **Claude's response:**
 ```
-✓ Envelope analysis report saved: envelope_analysis_real_train_OuterRaceFault_1.html (68.2 KB)
-✓ PNG image saved: envelope_analysis_real_train_OuterRaceFault_1.png (145.7 KB)
+✓ Envelope analysis report saved: envelope_analysis_real_train_OuterRaceFault_1.html (199.8 KB)
 
 Report Details:
 - Signal: real_train/OuterRaceFault_1.csv
-- Filter Band: 2000-8000 Hz
-- 12 peaks detected
-- Bearing matches found: ≈ BPFO (81.13 Hz), ≈ 2×BPFO, ≈ 3×BPFO
+- Filter Band: 500-5000 Hz
+- 10 peaks detected
+- Bearing matches found: ≈ BPFO (81.13 Hz), ≈ BPFI
 
 🔴 OUTER RACE FAULT DETECTED
-- Strong peak at BPFO (81.13 Hz)
-- Clear harmonics present (2×, 3×)
+- Strong peak at ~80 Hz (BPFO: 81.13 Hz)
+- Clear harmonics present
 - Severity: Advanced stage
 
 Recommendation: Schedule bearing replacement within 1-2 weeks
@@ -180,12 +176,11 @@ Generate ISO 20816-3 report for real_train/baseline_1.csv with machine group 3 a
 **What happens:**
 1. Claude calls `generate_iso_report` tool
 2. Server evaluates vibration severity per ISO 20816-3
-3. Creates zone visualization (HTML + PNG)
+3. Creates zone visualization HTML report
 
 **Claude's response:**
 ```
 ✓ ISO 20816-3 report saved: iso_20816_real_train_baseline_1.html - Zone A (Good)
-✓ PNG image saved: iso_20816_real_train_baseline_1.png (95.3 KB)
 
 Evaluation Result:
 - RMS Velocity: 1.8 mm/s
@@ -262,9 +257,9 @@ Long-term:
 - Consider automated monitoring system
 
 📁 REPORTS GENERATED:
-✓ fft_spectrum_real_train_InnerRaceFault_vload_1.html + PNG
-✓ envelope_analysis_real_train_InnerRaceFault_vload_1.html + PNG
-✓ iso_20816_real_train_InnerRaceFault_vload_1.html + PNG
+✓ fft_spectrum_real_train_InnerRaceFault_vload_1.html
+✓ envelope_analysis_real_train_InnerRaceFault_vload_1.html
+✓ iso_20816_real_train_InnerRaceFault_vload_1.html
 ```
 
 ---
@@ -273,7 +268,7 @@ Long-term:
 
 ### Tip 1: Explore Reports Interactively
 - **HTML files**: Open in browser for interactive Plotly charts (zoom, hover, pan)
-- **PNG files**: Use in presentations, Word docs, or GitHub README
+- View reports directly or drag them into your browser
 
 ### Tip 2: List All Generated Reports
 ```
@@ -292,7 +287,7 @@ Generate reports for both:
 - `real_train/baseline_1.csv` (healthy)
 - `real_train/OuterRaceFault_1.csv` (faulty)
 
-Compare PNG images side-by-side in documentation!
+Compare HTML reports side-by-side in your browser to spot differences!
 
 ### Tip 5: Auto-Detection
 The server automatically detects:

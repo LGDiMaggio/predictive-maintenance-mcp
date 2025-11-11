@@ -5,10 +5,12 @@ include CONTRIBUTING.md
 include EXAMPLES.md
 include CHANGELOG.md
 include QUICKSTART.md
+include INSTALL.md
 
 # Include configuration files
 include pytest.ini
 include pyproject.toml
+include setup_venv.py
 
 # Include data files
 recursive-include data *.csv *.json *.txt

@@ -65,6 +65,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Roadmap
 
 ### Planned for v0.3.0
+- **🤖 AI-Powered Machine Documentation Reader**
+  - Automatic extraction of bearing/gear specifications from equipment manuals (PDF)
+  - Parse technical datasheets to identify characteristic frequencies (BPFO, BPFI, BSF, FTF)
+  - Extract machine parameters: power rating, operating speeds, bearing types
+  - Integration with LLM for natural language understanding of technical specs
+  - Support for common formats: maintenance manuals, bearing catalogs, OEM documentation
 - Multi-signal comparison tools
 - Advanced trending and monitoring
 - Additional diagnostic workflows (pumps, motors, gearboxes)
@@ -77,3 +83,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dashboard for multi-asset monitoring
 - Mobile-friendly report viewing
 - Integration with industrial IoT platforms
+- **Multimodal diagnostics**: Combine vibration, temperature, acoustic data

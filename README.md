@@ -35,19 +35,27 @@ Generate envelope report for real_train/OuterRaceFault_1.csv
 
 ## 🚀 Installation
 
-### NPM (Recommended)
+### Quick Start (Python Package)
 
 ```bash
-npx predictive-maintenance-mcp
+# 1. Clone repository
+git clone https://github.com/LGDiMaggio/predictive-maintenance-mcp.git
+cd predictive-maintenance-mcp
+
+# 2. Run automated setup
+python setup_venv.py
+
+# 3. Activate environment
+.venv\Scripts\activate  # Windows
+source .venv/bin/activate  # Linux/macOS
+
+# 4. Verify installation
+python validate_server.py
 ```
 
-### UV
+📖 **Detailed Installation Guide**: See [INSTALL.md](INSTALL.md) for troubleshooting, Claude Desktop setup, and developer instructions.
 
-```bash
-uvx predictive-maintenance-mcp
-```
-
-### From Source
+### From Source (Advanced)
 
 ```bash
 git clone https://github.com/LGDiMaggio/predictive-maintenance-mcp.git
@@ -323,6 +331,45 @@ mypy src/
 flake8 src/
 ```
 
+## 🚀 Roadmap
+
+### Coming in v0.3.0
+
+#### 🤖 AI-Powered Machine Documentation Reader
+**Automatic extraction of machine specifications from manuals and datasheets**
+
+The next major feature will enable LLMs to automatically read and extract critical parameters from:
+- 📄 **Equipment Manuals** (PDF) - Bearing specifications, operating speeds, power ratings
+- 📊 **Bearing Catalogs** - Automatic BPFO/BPFI/BSF/FTF calculation from bearing geometry
+- 🔧 **Technical Datasheets** - Machine parameters for ISO 20816-3 evaluation
+- 📖 **OEM Documentation** - Parts specifications and maintenance requirements
+
+**Benefits:**
+- ✅ Eliminate manual parameter entry
+- ✅ Reduce diagnostic errors from incorrect specifications
+- ✅ Enable diagnostics on unknown equipment (just upload the manual!)
+- ✅ Automatic bearing frequency calculations from geometry (pitch diameter, ball diameter, contact angle)
+
+**Example workflow:**
+```
+"Upload the bearing datasheet and diagnose the vibration signal"
+→ LLM extracts: Z=9 balls, Bd=7.94mm, Pd=34.55mm, α=0°
+→ Calculates: BPFO=81.13 Hz, BPFI=118.88 Hz, BSF=63.91 Hz
+→ Performs envelope analysis automatically
+```
+
+**Technical approach:** Combine LLM vision capabilities (Claude 3.5 Sonnet) with structured data extraction and validation.
+
+### Future Enhancements
+- Real-time signal streaming support
+- Multi-signal comparison and trending
+- Dashboard for multi-asset monitoring
+- Mobile-friendly report viewing
+- Cloud integration options
+- Multimodal diagnostics (vibration + temperature + acoustic data)
+
+💡 **Have ideas?** Open an issue or discussion to suggest features!
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
@@ -351,7 +398,9 @@ If you use this server in your research or projects:
 ## Support
 
 - **Issues**: https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues
-- **Discussions**: https://github.com/LGDiMaggio/predictive-maintenance-mcp/discussions
+- **Discussions**: https://github.com/LGDiMaggio/predictive-maintenance-mcp/discussions _(Enable in repo Settings → Features → Discussions)_
+
+> 💬 **GitHub Discussions not yet enabled.** Repository owner can enable in Settings to allow community Q&A and feature requests.
 
 ---
 

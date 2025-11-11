@@ -3500,25 +3500,60 @@ Keep output CONCISE (≤300 words total):
 
 
 @mcp.prompt()
-def diagnose_gear(signal_file: str, sampling_rate: float = 10000.0, num_teeth: int = 20) -> str:
+def diagnose_gear(
+    signal_file: str, 
+    sampling_rate: Optional[float] = None,
+    num_teeth: Optional[int] = None,
+    rotation_speed_rpm: Optional[float] = None
+) -> str:
     """
     Evidence-based guided workflow for gear diagnostics with strict anti-speculation rules.
 
     Args:
         signal_file: Name of the signal file
-        sampling_rate: Sampling frequency (Hz)
-        num_teeth: Number of gear teeth
+        sampling_rate: Sampling frequency in Hz (if None, will check metadata or ask user)
+        num_teeth: Number of gear teeth (REQUIRED for GMF calculation)
+        rotation_speed_rpm: Shaft rotation speed in RPM (REQUIRED for GMF and sideband identification)
     """
-    return f"""Perform an evidence-based gear diagnostic on signal "{signal_file}" (Z={num_teeth} teeth):
+    fs_info = f"{sampling_rate}" if sampling_rate else "UNKNOWN"
+    teeth_info = f"{num_teeth}" if num_teeth else "NOT PROVIDED"
+    rpm_info = f"{rotation_speed_rpm}" if rotation_speed_rpm else "NOT PROVIDED"
+    
+    return f"""Perform an evidence-based gear diagnostic on signal "{signal_file}":
 
-STEP 0 — FILENAME RESOLUTION
-Call list_available_signals() to verify exact filename.
-If "{signal_file}" not found or multiple matches, ASK USER to clarify.
-Do NOT guess or auto-correct filenames.
+═══════════════════════════════════════════════════════════════════════════════
+STEP 0 — FILENAME RESOLUTION & MANDATORY PARAMETER CHECK
+═══════════════════════════════════════════════════════════════════════════════
+
+1. Verify signal file existence:
+   Call list_available_signals() to get exact filename.
+   If "{signal_file}" not found or multiple matches exist, ASK USER to clarify.
+   Do NOT guess or auto-correct filenames.
+
+2. Required parameters:
+   ✓ Signal file: {signal_file}
+   {'✓' if sampling_rate else '✗'} Sampling rate: {fs_info} Hz
+   {'✓' if num_teeth else '✗'} Number of teeth (Z): {teeth_info}
+   {'✓' if rotation_speed_rpm else '✗'} Rotation speed: {rpm_info} RPM
+
+   CRITICAL RULE: If sampling_rate is UNKNOWN, check signal metadata JSON first.
+   If still missing OR if num_teeth OR rotation_speed_rpm are NOT PROVIDED:
+   → STOP and ASK USER for these parameters before proceeding.
+   → Explain: "Cannot perform gear diagnosis without [missing parameters]. Please provide: ..."
+   
+   Example response when parameters are missing:
+   "I cannot proceed with the gear diagnosis because the following required 
+   parameters are missing:
+   - Number of gear teeth (Z): needed to calculate Gear Mesh Frequency (GMF)
+   - Rotation speed (RPM): needed to identify GMF and sidebands
+   Please provide these values so I can complete the spectral analysis and 
+   identify gear faults."
+
+   Do NOT use placeholder/default values. Do NOT proceed with incomplete data.
+   Do NOT attempt diagnosis without num_teeth and rotation_speed_rpm.
 
 GUARDRAILS (apply throughout):
 - Do NOT infer faults from filename, path, or labels.
-- Ask for missing operating speed (rotation_speed_rpm) instead of guessing. If unknown, mark results as provisional.
 - A gear tooth fault (localized damage) requires BOTH:
   • Clear Gear Mesh Frequency (GMF) harmonics AND
   • Sidebands spaced by shaft rotation frequency (f_rot) around GMF or its harmonics
@@ -3526,9 +3561,9 @@ GUARDRAILS (apply throughout):
 - Without sidebands: DO NOT claim tooth damage; consider uniform wear only if GMF elevated but stable statistics.
 
 STEP 1 — INPUT & CONTEXT
-If rotation_speed_rpm provided by user: f_rot = rotation_speed_rpm / 60
-Else: request it politely before final classification (you may proceed with screening but mark conclusions "inconclusive").
-Compute theoretical GMF = f_rot × {num_teeth} (once f_rot known).
+Once all parameters confirmed:
+- f_rot = rotation_speed_rpm / 60 = {f"{rotation_speed_rpm/60:.2f}" if rotation_speed_rpm else "?"} Hz
+- Theoretical GMF = f_rot × Z = {f"{rotation_speed_rpm/60 * num_teeth:.2f}" if (rotation_speed_rpm and num_teeth) else "?"} Hz
 
 STEP 2 — STATISTICS (screening only)
 Call: analyze_statistics("{signal_file}")
@@ -3540,38 +3575,47 @@ Indicators:
 (Do NOT diagnose from stats alone.)
 
 STEP 3 — SPECTRUM (frequency evidence)
-Call: analyze_fft("{signal_file}", {sampling_rate})
-Extract dominant peaks up to, e.g., 5× expected GMF (once f_rot known). Identify:
+Call: analyze_fft("{signal_file}", {fs_info})
+Extract dominant peaks up to, e.g., 5× expected GMF. Identify:
 - GMF and its harmonics: GMF, 2×GMF, 3×GMF
 - Sidebands: GMF ± n·f_rot (n=1..3). Log their presence, spacing consistency, and relative amplitudes.
-If operating speed unknown: still list dominant peaks; flag need for speed to confirm GMF.
 Report top 5 peaks only (brief).
 
 Optional visualization:
 Call: generate_fft_report("{signal_file}", max_freq=5000, num_peaks=15)
 This saves an interactive HTML report to the reports/ directory showing FFT spectrum with automatic peak detection.
-Tell user: "Open {file_path} in your browser to view the interactive FFT analysis."
+Tell user: "Open {{file_path}} in your browser to view the interactive FFT analysis."
 
 STEP 4 — OPTIONAL ENVELOPE (if strong modulation or impacts)
-If stats suggest impulsiveness OR sideband pattern partial: Call analyze_envelope("{signal_file}", {sampling_rate}, 500, 5000) to inspect modulation signature. (Not mandatory if FFT already conclusive.)
+If stats suggest impulsiveness OR sideband pattern partial: 
+Call: analyze_envelope("{signal_file}", {fs_info}, 500, 5000) 
+to inspect modulation signature. (Not mandatory if FFT already conclusive.)
 
 STEP 5 — CLASSIFICATION (apply confirmation rule)
 Decision categories (choose exactly one):
 - "Gear tooth fault CONFIRMED" → Requires: (GMF harmonics present) AND (≥1 clear sideband pair with spacing ≈ f_rot) AND (supporting stat: Kurtosis>5 or CF>4)
 - "Possible localized tooth damage" → Partial sidebands OR ambiguous spacing; list missing evidence required for confirmation.
 - "Uniform wear / increased load" → Elevated GMF amplitude WITHOUT sidebands, normal/low impulsiveness.
-- "Inconclusive" → Lacking rotation speed, or frequency pattern insufficient; request speed or higher-resolution data.
 
 Each conclusion MUST cite: tools used (statistics, FFT, envelope), specific numeric peaks (frequencies & magnitudes), sideband spacing vs expected f_rot (difference in Hz), and any supporting statistical thresholds.
 
 STEP 6 — RECOMMENDATIONS (brief bullet points)
 Provide actionable items aligned with category:
 - Confirmed fault: plan inspection, tooth visual check, lubrication review, short-term monitoring interval suggestion.
-- Possible fault: acquire operating speed, higher-resolution spectrum, trend GMF amplitude.
+- Possible fault: higher-resolution spectrum, trend GMF amplitude.
 - Uniform wear: continue monitoring; schedule routine inspection.
-- Inconclusive: list exact missing parameters/data.
 
-OUTPUT FORMATTING: Keep output ≤300 words. Use bullet points. Offer "Show more?" if user needs detailed explanation.
+═══════════════════════════════════════════════════════════════════════════════
+OUTPUT FORMATTING (CRITICAL)
+═══════════════════════════════════════════════════════════════════════════════
+
+Keep output CONCISE (≤300 words total):
+• Use bullet points for all findings
+• Provide brief summary first (2-3 sentences)
+• Use generate_fft_report() tool to create HTML reports (saved to reports/ directory)
+• Tell user to open the HTML file path in browser for interactive visualizations
+• If user needs more details, offer "Show detailed analysis?" continuation
+• NEVER print large JSON/CSV data directly in text output
 """
 
 
