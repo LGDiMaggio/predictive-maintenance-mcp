@@ -641,8 +641,32 @@ def analyze_envelope(
     envelope_frequencies = envelope_frequencies[positive_idx]
     envelope_magnitudes = np.abs(envelope_fft[positive_idx])
     
-    # Find main peaks
-    peak_indices = np.argsort(envelope_magnitudes)[-num_peaks:][::-1]
+    # Find main peaks using scipy.signal.find_peaks (same method as HTML reports)
+    from scipy.signal import find_peaks
+    
+    # Convert to dB for prominence calculation
+    max_magnitude = np.max(envelope_magnitudes)
+    envelope_magnitudes_db = 20 * np.log10(np.maximum(envelope_magnitudes / max_magnitude, 1e-10))
+    
+    # Find peaks with minimum prominence (at least 2 dB above surroundings)
+    # and minimum distance (avoid adjacent FFT bins of same peak)
+    freq_resolution = sampling_rate / N
+    min_distance_samples = max(1, int(1.0 / freq_resolution))  # At least 1 Hz spacing
+    
+    peak_indices, _ = find_peaks(
+        envelope_magnitudes_db,
+        distance=min_distance_samples,
+        prominence=2  # At least 2 dB prominence
+    )
+    
+    # Sort by magnitude and keep top num_peaks
+    if len(peak_indices) > num_peaks:
+        sorted_indices = np.argsort(envelope_magnitudes[peak_indices])[::-1]
+        peak_indices = peak_indices[sorted_indices[:num_peaks]]
+    elif len(peak_indices) == 0:
+        # Fallback: if no peaks found with find_peaks, use simple sorting
+        peak_indices = np.argsort(envelope_magnitudes)[-num_peaks:][::-1]
+    
     peak_frequencies = envelope_frequencies[peak_indices].tolist()
     peak_magnitudes = envelope_magnitudes[peak_indices].tolist()
     
