@@ -1,0 +1,11 @@
+{
+  "sampling_rate": 97656.0,
+  "shaft_speed": 25.0,
+  "load": 270.0,
+  "BPFI": 118.875,
+  "BPFO": 81.125,
+  "FTF": 14.8375,
+  "BSF": 63.91,
+  "num_samples": 585936,
+  "duration_sec": 6.0
+}

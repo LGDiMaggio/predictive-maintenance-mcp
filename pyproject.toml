@@ -1,0 +1,112 @@
+[project]
+name = "predictive-maintenance-mcp"
+version = "0.2.0"
+description = "AI-Powered Predictive Maintenance & Fault Diagnosis MCP Server - Industrial machinery condition monitoring, vibration analysis, bearing diagnostics, and ML-based anomaly detection through Model Context Protocol"
+readme = "README.md"
+authors = [
+    { name = "Luigi Di Maggio", email = "luigi.dimaggio@example.com" }
+]
+license = { text = "MIT" }
+keywords = [
+    "predictive-maintenance",
+    "condition-monitoring",
+    "fault-diagnosis",
+    "vibration-analysis",
+    "mcp-server",
+    "claude-ai",
+    "machine-learning",
+    "anomaly-detection",
+    "bearing-diagnostics",
+    "fft",
+    "envelope-analysis",
+    "iso-20816",
+    "industrial-iot",
+    "industry-4-0"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Manufacturing",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+requires-python = ">=3.11"
+dependencies = [
+    "mcp[cli]>=1.16.0",
+    "numpy>=2.3.3",
+    "pandas>=2.3.3",
+    "plotly>=5.24.0",
+    "pydantic>=2.12.0",
+    "scikit-learn>=1.7.2",
+    "scipy>=1.16.2",
+]
+
+[project.urls]
+Homepage = "https://github.com/LGDiMaggio/predictive-maintenance-mcp"
+Repository = "https://github.com/LGDiMaggio/predictive-maintenance-mcp"
+Documentation = "https://github.com/LGDiMaggio/predictive-maintenance-mcp/blob/main/README.md"
+Issues = "https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues"
+Discussions = "https://github.com/LGDiMaggio/predictive-maintenance-mcp/discussions"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.1.0",
+    "pytest-asyncio>=0.23.0",
+    "black>=24.0.0",
+    "flake8>=7.0.0",
+    "mypy>=1.8.0",
+    "types-requests>=2.31.0",
+]
+
+[tool.black]
+line-length = 88
+target-version = ["py311", "py312"]
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.git
+  | \.mypy_cache
+  | \.pytest_cache
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+strict_equality = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+addopts = "-v --cov=src --cov-report=term-missing --cov-report=html"
+
+[tool.coverage.run]
+source = ["src"]
+omit = ["*/tests/*", "*/__pycache__/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+]

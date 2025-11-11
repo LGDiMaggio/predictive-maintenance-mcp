@@ -1,0 +1,31 @@
+# Include documentation
+include README.md
+include LICENSE
+include CONTRIBUTING.md
+include EXAMPLES.md
+include GITHUB_MARKETING.md
+
+# Include configuration files
+include pytest.ini
+include pyproject.toml
+
+# Include data files
+recursive-include data *.csv *.json *.txt
+recursive-include data/signals/samples README.md
+
+# Include tests
+recursive-include tests *.py
+
+# Exclude unwanted files
+global-exclude *.py[cod]
+global-exclude __pycache__
+global-exclude *.so
+global-exclude .DS_Store
+
+# Exclude generated files
+prune htmlcov
+prune .pytest_cache
+prune .mypy_cache
+prune build
+prune dist
+prune *.egg-info

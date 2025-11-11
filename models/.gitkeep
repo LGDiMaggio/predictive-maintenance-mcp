@@ -1,0 +1,2 @@
+# This directory is used to store trained ML models
+# Models are generated during runtime and should not be committed to git
