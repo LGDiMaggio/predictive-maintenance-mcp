@@ -394,6 +394,7 @@ If you use this server in your research or projects:
 - **FastMCP** framework by [@jlowin](https://github.com/jlowin)
 - **Model Context Protocol** by [Anthropic](https://www.anthropic.com/)
 - **Sample Data** from [MathWorks](https://github.com/mathworks/RollingElementBearingFaultDiagnosis-Data)
+- **Development Assistance**: Project infrastructure, testing framework, and CI/CD pipeline developed with assistance from [Claude](https://claude.ai) by Anthropic
 
 ## Support
 
