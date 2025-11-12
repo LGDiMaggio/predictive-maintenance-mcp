@@ -7,9 +7,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-Luigi%20Di%20Maggio-0077B5?logo=linkedin)](https://www.linkedin.com/in/luigi-gianpio-di-maggio)
 
-A Model Context Protocol server that brings **industrial machinery diagnostics** directly to LLMs like Claude, enabling AI-powered vibration analysis, bearing fault detection, and predictive maintenance—all through natural conversation.
+A Model Context Protocol server that brings **industrial machinery diagnostics** directly to LLMs like Claude, enabling AI-powered vibration analysis, bearing fault detection, and predictive maintenance all through natural conversation.
 
-> 🔧 **From Vibration Data to Actionable Insights**: Transform raw sensor data into professional diagnostics reports with FFT analysis, envelope analysis, ISO compliance checks, and ML anomaly detection—no engineering degree required.
+> 🔧 **From Vibration Data to Actionable Insights**: Transform raw sensor data into professional diagnostics reports with FFT analysis, envelope analysis, ISO compliance checks, and ML anomaly detection.
 
 ## ✨ What Makes This Special
 
@@ -139,7 +139,37 @@ Create `.vscode/mcp.json` in your workspace
 }
 ```
 
-## 🔧 Available Tools
+## 🔧 Available Tools & Resources
+
+### MCP Resources (Direct Data Access)
+
+Resources provide **direct read access** for Claude to examine data:
+
+<details>
+<summary><b>📊 Vibration Signals</b></summary>
+
+- **`signal://list`** - Browse all available signal files with metadata
+- **`signal://read/{filename}`** - Read signal data directly (first 1000 samples preview)
+
+**Usage:** Claude can directly read signals without calling tools first.
+
+</details>
+
+<details>
+<summary><b>📖 Machine Manuals</b></summary>
+
+- **`manual://list`** - Browse available equipment manuals (PDF)
+- **`manual://read/{filename}`** - Read manual text (first 20 pages)
+
+**Usage:** Claude can answer ANY question about manual content by reading directly.
+
+</details>
+
+---
+
+### MCP Tools (Analysis & Processing)
+
+Tools perform **computations and generate outputs**:
 
 <details>
 <summary><b>📊 Analysis & Diagnostics</b></summary>
@@ -176,7 +206,23 @@ Create `.vscode/mcp.json` in your workspace
 </details>
 
 <details>
-<summary><b>🔍 Data Management</b></summary>
+<summary><b>� Machine Documentation Reader (New!)</b></summary>
+
+- **`list_machine_manuals`** - List available equipment manuals (PDF)
+- **`extract_manual_specs`** - Extract bearings, RPM, power from manual (with caching)
+- **`calculate_bearing_characteristic_frequencies`** - Calculate BPFO/BPFI/BSF/FTF from geometry
+- **`read_manual_excerpt`** - Read manual text excerpt (configurable page limit)
+
+**MCP Resources:**
+- `manual://list` - Browse available manuals
+- `manual://read/{filename}` - Read manual for LLM context
+
+> 🎯 **Upload pump manual → Extract bearing specs → Auto-calculate frequencies → Diagnose signal**
+
+</details>
+
+<details>
+<summary><b>�🔍 Data Management</b></summary>
 
 - **`list_signals`** - Browse available signal files with metadata
 - **`generate_test_signal`** - Create synthetic signals for testing
@@ -331,42 +377,140 @@ mypy src/
 flake8 src/
 ```
 
-## 🚀 Roadmap
+## 🚀 Roadmap & Recent Updates
 
-### Coming in v0.3.0
+### ✨ New in v0.2.1: Machine Documentation Reader (Beta)
 
-#### 🤖 AI-Powered Machine Documentation Reader
-**Automatic extraction of machine specifications from manuals and datasheets**
+**AI-powered extraction of machine specifications from equipment manuals** 🎉
 
-The next major feature will enable LLMs to automatically read and extract critical parameters from:
-- 📄 **Equipment Manuals** (PDF) - Bearing specifications, operating speeds, power ratings
-- 📊 **Bearing Catalogs** - Automatic BPFO/BPFI/BSF/FTF calculation from bearing geometry
-- 🔧 **Technical Datasheets** - Machine parameters for ISO 20816-3 evaluation
-- 📖 **OEM Documentation** - Parts specifications and maintenance requirements
+The system now includes a hybrid documentation reader that combines:
+- 📄 **Direct PDF Access** - MCP Resources for full manual text reading
+- 🔍 **Smart Extraction** - Regex patterns for bearings, RPM, power ratings
+- 🧮 **Auto-Calculation** - Bearing fault frequencies from geometry (ISO 15243:2017)
+- 💾 **Caching System** - Fast repeated queries with JSON caching
 
-**Benefits:**
-- ✅ Eliminate manual parameter entry
-- ✅ Reduce diagnostic errors from incorrect specifications
-- ✅ Enable diagnostics on unknown equipment (just upload the manual!)
-- ✅ Automatic bearing frequency calculations from geometry (pitch diameter, ball diameter, contact angle)
-
-**Example workflow:**
+**What it can do:**
 ```
-"Upload the bearing datasheet and diagnose the vibration signal"
-→ LLM extracts: Z=9 balls, Bd=7.94mm, Pd=34.55mm, α=0°
-→ Calculates: BPFO=81.13 Hz, BPFI=118.88 Hz, BSF=63.91 Hz
-→ Performs envelope analysis automatically
+"What bearings are used in this pump?"
+→ Extracts: Drive end: SKF 6205-2RS, Non-drive end: NSK 6206
+
+"Calculate bearing fault frequencies at 1475 RPM"
+→ BPFO: 85.20 Hz, BPFI: 136.05 Hz, BSF: 101.32 Hz, FTF: 9.47 Hz
+
+"What type of mechanical seal is used?"
+→ Type 21, carbon/ceramic faces (extracted from manual text)
 ```
 
-**Technical approach:** Combine LLM vision capabilities (Claude 3.5 Sonnet) with structured data extraction and validation.
+**Architecture:**
 
-### Future Enhancements
-- Real-time signal streaming support
-- Multi-signal comparison and trending
-- Dashboard for multi-asset monitoring
-- Mobile-friendly report viewing
-- Cloud integration options
-- Multimodal diagnostics (vibration + temperature + acoustic data)
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    CLAUDE / LLM CLIENT                      │
+└────────────────────┬────────────────────────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────────────────────────┐
+│                   MCP SERVER (FastMCP)                      │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │  RESOURCES (Direct Data Access)                      │  │
+│  │  ┌────────────────────────────────────────────────┐  │  │
+│  │  │  Vibration Signals                             │  │  │
+│  │  │  • signal://list                               │  │  │
+│  │  │  • signal://read/{filename}                    │  │  │
+│  │  └────────────────────────────────────────────────┘  │  │
+│  │  ┌────────────────────────────────────────────────┐  │  │
+│  │  │  Machine Manuals (NEW!)                        │  │  │
+│  │  │  • manual://list                               │  │  │
+│  │  │  • manual://read/{filename}                    │  │  │
+│  │  └────────────────────────────────────────────────┘  │  │
+│  └──────────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │  TOOLS (Analysis & Processing)                       │  │
+│  │  • FFT, Envelope, ISO 20816-3                        │  │
+│  │  • ML Anomaly Detection                              │  │
+│  │  • Report Generation (HTML)                          │  │
+│  │  • Manual Spec Extraction (NEW!)                     │  │
+│  │  • Bearing Frequency Calculation (NEW!)              │  │
+│  └──────────────────────────────────────────────────────┘  │
+└────────────────────┬────────────────────────────────────────┘
+                     │
+        ┌────────────┴────────────┐
+        ▼                         ▼
+┌──────────────────┐   ┌──────────────────────────────────┐
+│  SIGNAL ANALYSIS │   │  DOCUMENT READER MODULE (NEW!)   │
+│  MODULE          │   │  ┌────────────┐  ┌────────────┐  │
+│  • FFT Engine    │   │  │ PDF Extract│  │ ISO Formulas│  │
+│  • Envelope      │   │  │ (PyPDF2)   │  │ BPFO/BPFI   │  │
+│  • Filters       │   │  └────────────┘  └────────────┘  │
+│  • Statistics    │   │  ┌─────────────────────────────┐  │
+│  • ML Models     │   │  │  Bearing Catalog DB         │  │
+│  • Plotly Charts │   │  │  • 6205, 6206, ...          │  │
+│                  │   │  └─────────────────────────────┘  │
+└────────┬─────────┘   └────────┬─────────────────────────┘
+         │                      │
+         ▼                      ▼
+┌─────────────────────────────────────────────────────────────┐
+│                   LOCAL FILE SYSTEM                         │
+│  ┌──────────────────────┐   ┌──────────────────────────┐   │
+│  │  data/signals/       │   │  resources/              │   │
+│  │  ├── real_train/     │   │  ├── machine_manuals/    │   │
+│  │  ├── real_test/      │   │  ├── bearing_catalogs/   │   │
+│  │  └── samples/        │   │  ├── datasheets/         │   │
+│  └──────────────────────┘   │  └── cache/ (auto)       │   │
+│  ┌──────────────────────┐   └──────────────────────────┘   │
+│  │  reports/            │   ┌──────────────────────────┐   │
+│  │  • FFT reports       │   │  models/                 │   │
+│  │  • Envelope reports  │   │  • Trained ML models     │   │
+│  │  • ISO reports       │   │  • Scalers, PCA          │   │
+│  └──────────────────────┘   └──────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Key Features:**
+- ✅ **4 MCP Resources** - Direct read access to signals and manuals
+- ✅ **25+ MCP Tools** - Complete diagnostic workflow
+- ✅ **Hybrid Architecture** - Resources for reading, Tools for processing
+- ✅ **Local-First** - All data stays on your machine (privacy-preserving)
+
+**Status:** ✅ Core functionality working, comprehensive tests passing
+
+**Known Limitations:**
+- PDF reading requires PyPDF2 (optional dependency)
+- Limited bearing catalog (extensible)
+- No OCR for scanned PDFs (planned for v0.3.0)
+
+See [resources/machine_manuals/README.md](resources/machine_manuals/README.md) for usage guide.
+
+---
+
+### 🔮 Planned for v0.3.0
+
+#### 🔍 Vector Search for Large Documents
+For manuals >100 pages, semantic search will be more efficient:
+- **ChromaDB/FAISS integration** - Embed PDF chunks for semantic search
+- **Query examples**: "bearing specifications", "maintenance schedule", "lubrication requirements"
+- **Benefit**: Faster than sequential reading, context-aware retrieval
+
+#### 📷 OCR Support for Scanned Manuals
+Many older manuals are image-based PDFs:
+- **Tesseract integration** - Extract text from scanned pages
+- **Preprocessing** - Image enhancement for better accuracy
+- **Fallback**: Graceful degradation if OCR unavailable
+
+#### 🌐 Online Bearing Catalog Integration (Future)
+- **Optional feature**: Web search for unknown bearings
+- **Privacy-first**: User must enable explicitly
+- **Sources**: SKF/FAG public catalogs (no API required)
+
+---
+
+### 📈 Additional Future Enhancements
+- **Real-time streaming**: Live vibration signal monitoring
+- **Multi-signal trending**: Compare historical data across assets
+- **Dashboard**: Multi-asset fleet monitoring interface
+- **Mobile reports**: Responsive HTML reports for field use
+- **Cloud integration**: Optional Azure/AWS storage for large datasets
+- **Multimodal fusion**: Vibration + temperature + acoustic + oil analysis
 
 💡 **Have ideas?** Open an issue or discussion to suggest features!
 
@@ -381,7 +525,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 If you use this server in your research or projects:
 
 ```bibtex
-@software{machinery_diagnostics_mcp,
+@software{predictive_maintenance_mcp,
   title = {Predictive Maintenance MCP Server},
   author = {Di Maggio, Luigi Gianpio},
   year = {2025},

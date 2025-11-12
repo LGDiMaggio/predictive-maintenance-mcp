@@ -1,0 +1,168 @@
+CENTRIFUGAL PUMP TECHNICAL MANUAL
+Model: XYZ-300
+Manufacturer: Industrial Pumps Inc.
+Date: November 2025
+
+========================================
+SECTION 1: TECHNICAL SPECIFICATIONS
+========================================
+
+Bearings:
+- Drive end: SKF 6205-2RS deep groove ball bearing
+- Non-drive end: NSK 6206 deep groove ball bearing
+
+Operating Conditions:
+- Rated speed: 1475 RPM
+- Maximum speed: 3000 RPM
+- Motor power: 15 kW (400V, 3-phase, 50 Hz)
+- Motor rating: 20 HP
+
+Mechanical Components:
+- Mechanical seal: Type 21, carbon/ceramic seal faces
+- Impeller: Bronze, closed type, 5 vanes
+- Shaft: Stainless steel 316, diameter 25 mm
+- Housing: Cast iron, ASTM A48 Class 30
+
+Dimensions:
+- Overall length: 450 mm
+- Overall width: 300 mm
+- Overall height: 280 mm
+- Weight: 45 kg
+
+========================================
+SECTION 2: BEARING SPECIFICATIONS
+========================================
+
+Drive End Bearing (SKF 6205-2RS):
+- Type: Deep groove ball bearing
+- Bore diameter: 25 mm
+- Outer diameter: 52 mm
+- Width: 15 mm
+- Number of balls: 9
+- Ball diameter: 7.94 mm
+- Pitch diameter: 34.55 mm
+- Contact angle: 0° (radial bearing)
+- Lubrication: Lithium grease, filled at factory
+- Seals: 2RS (double rubber seals, both sides)
+
+Non-Drive End Bearing (NSK 6206):
+- Type: Deep groove ball bearing
+- Bore diameter: 30 mm
+- Outer diameter: 62 mm
+- Width: 16 mm
+- Number of balls: 9
+- Ball diameter: 9.53 mm
+- Pitch diameter: 42.50 mm
+- Contact angle: 0° (radial bearing)
+- Lubrication: Lithium grease, filled at factory
+
+========================================
+SECTION 3: MAINTENANCE SCHEDULE
+========================================
+
+Regular Maintenance:
+- Bearing lubrication: Every 6 months (use lithium-based grease)
+- Mechanical seal inspection: Every 12 months
+- Impeller inspection: Annually
+- Shaft alignment check: Every 18 months
+- Complete overhaul: Every 5 years
+
+Lubrication Specifications:
+- Grease type: Lithium complex, NLGI Grade 2
+- Temperature range: -20°C to +120°C
+- Grease quantity: 5 grams per bearing
+- Re-lubrication interval: 2000 operating hours
+
+========================================
+SECTION 4: TROUBLESHOOTING
+========================================
+
+Excessive Vibration:
+- Check bearing condition (listen for noise)
+- Verify shaft alignment
+- Inspect impeller for damage or imbalance
+- Check foundation bolts for looseness
+
+Bearing Noise:
+- Normal bearing life: 15,000 hours at rated speed
+- Replace bearings if continuous noise detected
+- Check for contamination in bearing housing
+- Verify proper lubrication
+
+High Temperature:
+- Check cooling system
+- Verify bearing lubrication
+- Inspect mechanical seal for excessive friction
+- Check motor load
+
+========================================
+SECTION 5: SPARE PARTS LIST
+========================================
+
+Critical Spare Parts:
+1. SKF 6205-2RS bearing (drive end) - Part #: B6205-2RS
+2. NSK 6206 bearing (non-drive end) - Part #: B6206
+3. Mechanical seal Type 21 - Part #: MS21-25
+4. Impeller assembly - Part #: IMP-XYZ300
+5. O-rings set - Part #: OR-XYZ300
+6. Shaft sleeve - Part #: SS-25-316
+
+Recommended Stock:
+- Keep 2 sets of bearings in stock
+- Keep 1 mechanical seal as backup
+- Keep 1 complete O-ring set
+
+========================================
+SECTION 6: SAFETY INFORMATION
+========================================
+
+Warnings:
+- Always disconnect power before maintenance
+- Use proper lifting equipment (45 kg weight)
+- Wear safety glasses and gloves
+- Follow lockout/tagout procedures
+- Ensure proper grounding
+
+Operating Limits:
+- Maximum pressure: 10 bar
+- Maximum temperature: 80°C
+- Minimum flow: 10 m³/h (to prevent overheating)
+- Maximum flow: 150 m³/h
+
+========================================
+SECTION 7: INSTALLATION GUIDE
+========================================
+
+Foundation Requirements:
+- Concrete foundation, minimum 150 mm thick
+- Anchor bolts: M16, grade 8.8
+- Vibration isolation: Rubber pads recommended
+- Level tolerance: ±0.1 mm per meter
+
+Alignment Procedure:
+1. Install pump on foundation
+2. Check baseplate level
+3. Align motor and pump shaft (max offset: 0.05 mm)
+4. Tighten foundation bolts evenly
+5. Recheck alignment after tightening
+6. Run pump and verify no excessive vibration
+
+========================================
+APPENDIX: WARRANTY INFORMATION
+========================================
+
+Warranty Period: 24 months from date of installation
+Coverage: Manufacturing defects, material defects
+Not Covered: Normal wear, improper maintenance, misuse
+
+Contact Information:
+Industrial Pumps Inc.
+123 Industrial Drive
+Manufacturing City, XX 12345
+Phone: +1-555-PUMP-123
+Email: support@industrialpumps.com
+Web: www.industrialpumps.com
+
+========================================
+END OF MANUAL
+========================================

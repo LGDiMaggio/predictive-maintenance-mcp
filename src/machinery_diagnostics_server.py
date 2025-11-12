@@ -45,6 +45,14 @@ try:
         list_reports,
         REPORTS_DIR
     )
+    from src.document_reader import (
+        calculate_bearing_frequencies,
+        extract_machine_specs,
+        extract_bearing_designation,
+        extract_rpm_values,
+        extract_power_ratings,
+        extract_text_from_pdf
+    )
 except ImportError:
     from report_generator import (
         save_fft_report,
@@ -53,6 +61,14 @@ except ImportError:
         read_report_metadata,
         list_reports,
         REPORTS_DIR
+    )
+    from document_reader import (
+        calculate_bearing_frequencies,
+        extract_machine_specs,
+        extract_bearing_designation,
+        extract_rpm_values,
+        extract_power_ratings,
+        extract_text_from_pdf
     )
 
 
@@ -117,11 +133,16 @@ mcp = FastMCP(
 # Data directory
 DATA_DIR = Path(__file__).parent.parent / "data" / "signals"
 MODELS_DIR = Path(__file__).parent.parent / "models"
+RESOURCES_DIR = Path(__file__).parent.parent / "resources"
 
 # Ensure directories exist
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 MODELS_DIR.mkdir(parents=True, exist_ok=True)
 REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+RESOURCES_DIR.mkdir(parents=True, exist_ok=True)
+(RESOURCES_DIR / "machine_manuals").mkdir(parents=True, exist_ok=True)
+(RESOURCES_DIR / "bearing_catalogs").mkdir(parents=True, exist_ok=True)
+(RESOURCES_DIR / "datasheets").mkdir(parents=True, exist_ok=True)
 
 
 # ============================================================================
@@ -311,6 +332,81 @@ def read_signal_file(filename: str) -> str:
     except Exception as e:
         logger.error(f"Error reading signal {filename}: {e}")
         return f'{{"error": "{str(e)}"}}'
+
+
+@mcp.resource("manual://list")
+def list_manuals_resource() -> str:
+    """
+    List all available machine manuals as MCP resource.
+    
+    Returns:
+        JSON with list of available manuals
+    
+    Example usage in Claude:
+        "Show me what machine manuals are available"
+    """
+    manuals_dir = RESOURCES_DIR / "machine_manuals"
+    manuals = []
+    
+    for pdf_file in manuals_dir.glob("*.pdf"):
+        stat = pdf_file.stat()
+        manuals.append({
+            "filename": pdf_file.name,
+            "size_mb": round(stat.st_size / (1024 * 1024), 2),
+            "uri": f"manual://read/{pdf_file.name}"
+        })
+    
+    result = {
+        "total_manuals": len(manuals),
+        "manuals": sorted(manuals, key=lambda x: x['filename']),
+        "directory": str(manuals_dir.relative_to(RESOURCES_DIR.parent))
+    }
+    
+    return json.dumps(result, indent=2)
+
+
+@mcp.resource("manual://read/{filename}")
+def read_manual_resource(filename: str) -> str:
+    """
+    Read machine manual PDF as text (MCP resource).
+    
+    Extracts text from first 20 pages to avoid token overflow.
+    For full manual, use read_manual_excerpt() tool with custom max_pages.
+    
+    Args:
+        filename: PDF filename in resources/machine_manuals/
+    
+    Returns:
+        Extracted text from manual
+    
+    Example usage in Claude:
+        "Read the pump manual and tell me what bearings are specified"
+    """
+    try:
+        manual_path = RESOURCES_DIR / "machine_manuals" / filename
+        
+        if not manual_path.exists():
+            return json.dumps({
+                "error": f"Manual not found: {filename}",
+                "available": [f.name for f in (RESOURCES_DIR / "machine_manuals").glob("*.pdf")]
+            }, indent=2)
+        
+        # Extract text (limit to 20 pages to avoid token overflow)
+        text = extract_text_from_pdf(manual_path, max_pages=20)
+        
+        result = {
+            "filename": filename,
+            "pages_read": 20,
+            "text_length": len(text),
+            "text": text[:10000],  # First 10K chars
+            "note": "First 20 pages only. Use read_manual_excerpt() tool for full access."
+        }
+        
+        return json.dumps(result, indent=2)
+    
+    except Exception as e:
+        logger.error(f"Error reading manual {filename}: {e}")
+        return json.dumps({"error": str(e)}, indent=2)
 
 
 # ============================================================================
@@ -1874,6 +1970,206 @@ async def predict_anomalies(
         overall_health=overall_health,
         confidence=confidence
     )
+
+
+# ============================================================================
+# TOOLS - MACHINE DOCUMENTATION READER
+# ============================================================================
+
+@mcp.tool()
+async def list_machine_manuals(ctx: Context | None = None) -> List[Dict[str, Any]]:
+    """
+    List all available machine manuals in resources/machine_manuals/.
+    
+    Returns list of PDFs with filename, size, and modification date.
+    Use this to see what manuals are available before extracting specs.
+    
+    Returns:
+        List of dictionaries with manual information
+    
+    Example:
+        >>> manuals = list_machine_manuals()
+        >>> print(f"Found {len(manuals)} manuals")
+        >>> for m in manuals:
+        ...     print(f"- {m['filename']}: {m['size_mb']:.2f} MB")
+    """
+    manuals_dir = RESOURCES_DIR / "machine_manuals"
+    manuals = []
+    
+    for pdf_file in manuals_dir.glob("*.pdf"):
+        stat = pdf_file.stat()
+        manuals.append({
+            "filename": pdf_file.name,
+            "size_mb": stat.st_size / (1024 * 1024),
+            "modified": stat.st_mtime,
+            "path": str(pdf_file.relative_to(RESOURCES_DIR))
+        })
+    
+    if ctx:
+        await ctx.info(f"Found {len(manuals)} machine manuals in resources/machine_manuals/")
+    
+    return sorted(manuals, key=lambda x: x['filename'])
+
+
+@mcp.tool()
+async def extract_manual_specs(
+    manual_filename: str,
+    use_cache: bool = True,
+    ctx: Context | None = None
+) -> Dict[str, Any]:
+    """
+    Extract machine specifications from equipment manual PDF.
+    
+    Automatically extracts:
+    - Bearing designations (e.g., SKF 6205, FAG NU2205)
+    - Operating speeds (RPM values)
+    - Power ratings (kW, HP, MW)
+    - Text excerpt for LLM context
+    
+    Results are cached for fast repeated access.
+    
+    Args:
+        manual_filename: PDF filename in resources/machine_manuals/
+        use_cache: Use cached extraction if available (default: True)
+        ctx: MCP context
+    
+    Returns:
+        Dictionary with extracted specifications and text excerpt
+    
+    Example:
+        >>> specs = extract_manual_specs("pump_XYZ_manual.pdf")
+        >>> print(f"Bearings: {specs['bearings']}")
+        >>> print(f"RPM: {specs['rpm_values']}")
+        >>> print(f"Power: {specs['power_ratings']}")
+    """
+    if ctx:
+        await ctx.info(f"Extracting specifications from: {manual_filename}")
+    
+    manual_path = RESOURCES_DIR / "machine_manuals" / manual_filename
+    
+    if not manual_path.exists():
+        raise FileNotFoundError(
+            f"Manual not found: {manual_filename}\n"
+            f"Available manuals: {[f.name for f in (RESOURCES_DIR / 'machine_manuals').glob('*.pdf')]}"
+        )
+    
+    # Extract specs (with caching)
+    specs = extract_machine_specs(manual_path, use_cache=use_cache)
+    
+    if ctx:
+        await ctx.info(f"Found {len(specs['bearings'])} bearing designations")
+        await ctx.info(f"Found {len(specs['rpm_values'])} RPM values")
+        if specs['bearings']:
+            await ctx.info(f"Bearings: {', '.join(specs['bearings'][:5])}")
+    
+    return specs
+
+
+@mcp.tool()
+async def calculate_bearing_characteristic_frequencies(
+    num_balls: int,
+    ball_diameter_mm: float,
+    pitch_diameter_mm: float,
+    contact_angle_deg: float = 0.0,
+    shaft_speed_rpm: float = 1500.0,
+    ctx: Context | None = None
+) -> Dict[str, float]:
+    """
+    Calculate bearing characteristic frequencies from geometry.
+    
+    Uses formulas from ISO 15243:2017 and SKF bearing handbook.
+    Essential for bearing fault diagnosis when you know bearing geometry
+    but don't have pre-calculated frequencies.
+    
+    Args:
+        num_balls: Number of rolling elements (Z)
+        ball_diameter_mm: Ball/roller diameter (Bd) in mm
+        pitch_diameter_mm: Pitch circle diameter (Pd) in mm
+        contact_angle_deg: Contact angle (α) in degrees (0° for deep groove ball bearings)
+        shaft_speed_rpm: Shaft rotation speed in RPM
+        ctx: MCP context
+    
+    Returns:
+        Dictionary with BPFO, BPFI, BSF, FTF in Hz
+    
+    Example:
+        >>> # For SKF 6205 bearing at 1797 RPM
+        >>> freqs = calculate_bearing_characteristic_frequencies(
+        ...     num_balls=9,
+        ...     ball_diameter_mm=7.94,
+        ...     pitch_diameter_mm=34.55,
+        ...     contact_angle_deg=0.0,
+        ...     shaft_speed_rpm=1797
+        ... )
+        >>> print(f"BPFO: {freqs['BPFO']:.2f} Hz")
+        BPFO: 81.13 Hz
+    
+    Common bearing geometries:
+    - Deep groove ball bearings: contact_angle = 0°
+    - Angular contact bearings: contact_angle = 15-40°
+    - Cylindrical roller bearings: contact_angle = 0°
+    """
+    if ctx:
+        await ctx.info(f"Calculating bearing frequencies for {num_balls} balls at {shaft_speed_rpm} RPM")
+    
+    freqs = calculate_bearing_frequencies(
+        num_balls=num_balls,
+        ball_diameter_mm=ball_diameter_mm,
+        pitch_diameter_mm=pitch_diameter_mm,
+        contact_angle_deg=contact_angle_deg,
+        shaft_speed_rpm=shaft_speed_rpm
+    )
+    
+    if ctx:
+        await ctx.info(f"BPFO (outer race): {freqs['BPFO']:.2f} Hz")
+        await ctx.info(f"BPFI (inner race): {freqs['BPFI']:.2f} Hz")
+        await ctx.info(f"BSF (ball spin): {freqs['BSF']:.2f} Hz")
+        await ctx.info(f"FTF (cage): {freqs['FTF']:.2f} Hz")
+    
+    return freqs
+
+
+@mcp.tool()
+async def read_manual_excerpt(
+    manual_filename: str,
+    max_pages: int = 10,
+    ctx: Context | None = None
+) -> str:
+    """
+    Read text excerpt from machine manual PDF.
+    
+    Useful for providing context to LLM for questions about
+    specific machine parameters, maintenance procedures, etc.
+    
+    **Token Warning**: Reading many pages can consume significant tokens.
+    Start with max_pages=10 and increase if needed.
+    
+    Args:
+        manual_filename: PDF filename in resources/machine_manuals/
+        max_pages: Maximum number of pages to extract (default: 10)
+        ctx: MCP context
+    
+    Returns:
+        Extracted text from PDF
+    
+    Example:
+        >>> text = read_manual_excerpt("pump_manual.pdf", max_pages=5)
+        >>> # LLM can now answer: "What bearings are recommended for this pump?"
+    """
+    if ctx:
+        await ctx.info(f"Reading {max_pages} pages from: {manual_filename}")
+    
+    manual_path = RESOURCES_DIR / "machine_manuals" / manual_filename
+    
+    if not manual_path.exists():
+        raise FileNotFoundError(f"Manual not found: {manual_filename}")
+    
+    text = extract_text_from_pdf(manual_path, max_pages=max_pages)
+    
+    if ctx:
+        await ctx.info(f"Extracted {len(text)} characters from {max_pages} pages")
+    
+    return text
 
 
 # ============================================================================
