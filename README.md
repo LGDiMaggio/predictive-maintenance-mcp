@@ -69,6 +69,8 @@ pip install -e .
 
 Add to your Claude Desktop config (`%APPDATA%\Claude\claude_desktop_config.json` on Windows, `~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
 
+> 📋 **Example configs**: See [`claude_desktop_config_EXAMPLE.json`](claude_desktop_config_EXAMPLE.json) (using UV) and [`claude_desktop_config_PYTHON_VENV.json`](claude_desktop_config_PYTHON_VENV.json) (using Python virtual environment)
+
 <details>
 <summary>Using NPX</summary>
 
@@ -108,13 +110,14 @@ Add to your Claude Desktop config (`%APPDATA%\Claude\claude_desktop_config.json`
 {
   "mcpServers": {
     "predictive-maintenance": {
-      "command": "python",
-      "args": ["-m", "machinery_diagnostics_server"],
-      "cwd": "C:/path/to/predictive-maintenance-mcp"
+      "command": "C:/path/to/predictive-maintenance-mcp/.venv/Scripts/python.exe",
+      "args": ["C:/path/to/predictive-maintenance-mcp/src/machinery_diagnostics_server.py"]
     }
   }
 }
 ```
+
+> **Note**: Replace `C:/path/to/predictive-maintenance-mcp` with your actual project path. Use **absolute paths** for both command and args.
 
 </details>
 

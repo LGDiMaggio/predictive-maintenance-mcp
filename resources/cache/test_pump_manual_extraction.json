@@ -1,0 +1,32 @@
+{
+  "manual_file": "test_pump_manual.pdf",
+  "bearings": [
+    "12345",
+    "1475",
+    "2000",
+    "2025",
+    "3000",
+    "6205",
+    "6206",
+    "NSK 6206",
+    "SKF 6205",
+    "XX 12345"
+  ],
+  "rpm_values": [
+    1475.0,
+    3000.0
+  ],
+  "power_ratings": [
+    {
+      "value": 15.0,
+      "unit": "KW"
+    },
+    {
+      "value": 20.0,
+      "unit": "HP"
+    }
+  ],
+  "text_excerpt": "CENTRIFUGAL PUMP TECHNICAL MANUAL  \nModel: XYZ -300 \nManufacturer: Industrial Pumps Inc.  \nDate: November 2025  \n \n========================================  \nSECTION 1: TECHNICAL SPECIFICATIONS  \n========================================  \n \nBearings:  \n- Drive end : SKF 6205 -2RS deep groove ball bearing  \n- Non-drive end: NSK 6206 deep groove ball bearing  \n \nOperating Conditions:  \n- Rated speed: 1475 RPM  \n- Maximum speed: 3000 RPM  \n- Motor power: 15 kW (400V, 3 -phase, 50 Hz)  \n- Motor rating: 20 HP  \n \nMechanical Compo nents: \n- Mechanical seal: Type 21, carbon/ceramic seal faces  \n- Impeller: Bronze, closed type, 5 vanes  \n- Shaft: Stainless steel 316, diameter 25 mm  \n- Housing: Cast iron, ASTM A48 Class 30  \n \nDimensions:  \n- Overall length: 450 mm  \n- Overall width: 300 mm  \n- Overall height: 280 mm  \n- Weight: 45 kg  \n \n========================================  \nSECTION 2: BEARING SPECIFICATIONS  \n========================================  \n \nDrive End Bearing (SKF 6205 -2RS): \n- Type: Deep groove ball bearing  \n- Bore diameter: 25  mm \n- Outer diameter: 52 mm  \n- Width: 15 mm  \n- Number of balls: 9  \n- Ball diameter: 7.94 mm  \n- Pitch diameter: 34.55 mm  \n- Contact angle: 0\u00b0 (radial bearing)  \n- Lubrication: Lithium grease, filled at factory  \n- Seals: 2RS (double rubber seals, both sides)  \n \nNon-Drive End Bearing (NSK 6206):  \n- Type: Deep groove ball bearing  \n- Bore diameter: 30 mm  \n- Outer diameter: 62 mm  \n- Width: 16 mm  \n- Number of balls: 9  \n- Ball diameter: 9.53 mm  \n\n- Pitch diameter: 42.50 mm  \n- Contact angle: 0\u00b0 (radial bearing)  \n- Lubrication: Lithium grease, filled at factory  \n \n========================================  \nSECTION 3: MAINTENANCE SCHEDULE  \n========================================  \n \nRegular Maintenance:  \n- Bearing lubrication: Every 6 months (use lithium -based grease)  \n- Mechanical seal inspection: Every 12 months  \n- Impeller inspection: Annually  \n- Shaft alignment check: Every 18 months  \n- Complete overhaul: Ever",
+  "extraction_date": "2025-11-12",
+  "pages_analyzed": 4
+}

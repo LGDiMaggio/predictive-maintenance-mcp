@@ -227,12 +227,11 @@ def extract_power_ratings(text: str) -> List[Dict[str, any]]:
 
 def lookup_bearing_in_catalog(bearing_designation: str) -> Optional[Dict]:
     """
-    Look up bearing specifications in cached catalog or online.
+    Look up bearing specifications in local catalog.
     
     Search order:
-    1. Local cache (JSON database)
-    2. Online bearing catalogs (web scraping - future)
-    3. SKF/FAG/NSK APIs (if available)
+    1. JSON catalog in resources/bearing_catalogs/
+    2. In-memory fallback (6205, 6206)
     
     Args:
         bearing_designation: Bearing designation (e.g., "6205", "SKF 6205-2RS")
@@ -241,7 +240,7 @@ def lookup_bearing_in_catalog(bearing_designation: str) -> Optional[Dict]:
         Dictionary with bearing specifications if found:
         {
             "designation": "6205",
-            "manufacturer": "Generic ISO",
+            "type": "Deep Groove Ball Bearing",
             "num_balls": 9,
             "ball_diameter_mm": 7.94,
             "pitch_diameter_mm": 34.55,
@@ -249,18 +248,43 @@ def lookup_bearing_in_catalog(bearing_designation: str) -> Optional[Dict]:
             "bore_mm": 25,
             "outer_diameter_mm": 52,
             "width_mm": 15,
-            "source": "local_cache" | "web_search" | "api"
+            "source": "catalog_json" | "local_cache"
         }
     
     Note:
         This is a FALLBACK for when manual doesn't contain geometry.
-        LLM should always try to extract from manual first.
+        LLM should ALWAYS try these sources first:
+        1. Machine manual (resources/machine_manuals/)
+        2. Bearing catalogs (resources/bearing_catalogs/)
+        3. This function (in-memory cache)
+        4. Ask user for specifications
     """
-    # Common bearings database (partial - real implementation would be larger)
+    # Clean designation (remove suffix, prefix)
+    clean_designation = bearing_designation.strip()
+    for prefix in ["SKF", "FAG", "NSK", "NTN", "TIMKEN", "KOYO", "INA"]:
+        clean_designation = clean_designation.replace(prefix, "").strip()
+    clean_designation = clean_designation.split("-")[0].strip()  # Remove -2RS, -ZZ
+    
+    # Try loading from JSON catalog first
+    catalog_path = RESOURCES_DIR / "bearing_catalogs" / "common_bearings_catalog.json"
+    if catalog_path.exists():
+        try:
+            with open(catalog_path, 'r', encoding='utf-8') as f:
+                catalog = json.load(f)
+            
+            if clean_designation in catalog.get("bearings", {}):
+                bearing_data = catalog["bearings"][clean_designation].copy()
+                bearing_data["source"] = "catalog_json"
+                logger.info(f"Found bearing {clean_designation} in JSON catalog")
+                return bearing_data
+        except Exception as e:
+            logger.warning(f"Error reading JSON catalog: {e}")
+    
+    # Fallback to in-memory cache (legacy, minimal)
     COMMON_BEARINGS = {
         "6205": {
             "designation": "6205",
-            "manufacturer": "Generic ISO",
+            "type": "Deep Groove Ball Bearing",
             "num_balls": 9,
             "ball_diameter_mm": 7.94,
             "pitch_diameter_mm": 34.55,
@@ -272,9 +296,9 @@ def lookup_bearing_in_catalog(bearing_designation: str) -> Optional[Dict]:
         },
         "6206": {
             "designation": "6206",
-            "manufacturer": "Generic ISO",
+            "type": "Deep Groove Ball Bearing",
             "num_balls": 9,
-            "ball_diameter_mm": 9.53,
+            "ball_diameter_mm": 9.525,
             "pitch_diameter_mm": 42.50,
             "contact_angle_deg": 0.0,
             "bore_mm": 30,
@@ -284,27 +308,15 @@ def lookup_bearing_in_catalog(bearing_designation: str) -> Optional[Dict]:
         }
     }
     
-    # Clean designation (remove suffix, prefix)
-    clean_designation = bearing_designation.strip()
-    for prefix in ["SKF", "FAG", "NSK", "NTN", "TIMKEN"]:
-        clean_designation = clean_designation.replace(prefix, "").strip()
-    clean_designation = clean_designation.split("-")[0].strip()  # Remove -2RS, -ZZ
-    
-    # Check local cache
+    # Check in-memory cache
     if clean_designation in COMMON_BEARINGS:
-        logger.info(f"Found bearing {clean_designation} in local cache")
+        logger.info(f"Found bearing {clean_designation} in legacy cache")
         return COMMON_BEARINGS[clean_designation]
     
-    # TODO: Web search implementation
-    # Could use:
-    # 1. SKF bearing finder API (if available)
-    # 2. Web scraping from bearing-catalog websites
-    # 3. Google search for "{bearing} specifications datasheet"
-    
+    # Not found anywhere
     logger.warning(
-        f"Bearing {bearing_designation} not found in local cache. "
-        "Web search not yet implemented. "
-        "Suggestion: Add bearing specs manually or upload catalog PDF."
+        f"Bearing {bearing_designation} (cleaned: {clean_designation}) not found in catalog. "
+        f"LLM should: 1) Check machine manual, 2) Check bearing_catalogs/ PDFs, 3) Ask user."
     )
     return None
 
@@ -358,9 +370,9 @@ def save_extraction_cache(manual_file: str, data: Dict):
 # HIGH-LEVEL EXTRACTION FUNCTION
 # ============================================================================
 
-def extract_machine_specs(pdf_path: Path, use_cache: bool = True) -> Dict:
+def extract_machine_specs(manual_path: Path, use_cache: bool = True) -> Dict:
     """
-    Extract machine specifications from manual PDF.
+    Extract machine specifications from manual (PDF or TXT).
     
     Extracts:
     - Bearing designations
@@ -369,13 +381,13 @@ def extract_machine_specs(pdf_path: Path, use_cache: bool = True) -> Dict:
     - Machine type hints
     
     Args:
-        pdf_path: Path to manual PDF
+        manual_path: Path to manual file (PDF or TXT)
         use_cache: Use cached results if available
     
     Returns:
         Dictionary with extracted specifications
     """
-    manual_name = pdf_path.stem
+    manual_name = manual_path.stem
     
     # Check cache
     if use_cache:
@@ -384,19 +396,27 @@ def extract_machine_specs(pdf_path: Path, use_cache: bool = True) -> Dict:
             logger.info(f"Using cached extraction for: {manual_name}")
             return cached
     
-    # Extract text
-    logger.info(f"Extracting text from: {pdf_path.name}")
-    text = extract_text_from_pdf(pdf_path, max_pages=50)  # Limit to first 50 pages
+    # Extract text based on file type
+    logger.info(f"Extracting text from: {manual_path.name}")
+    if manual_path.suffix.lower() == '.txt':
+        # Read text file directly
+        with open(manual_path, 'r', encoding='utf-8') as f:
+            text = f.read()
+        pages_analyzed = 1
+    else:
+        # Extract from PDF
+        text = extract_text_from_pdf(manual_path, max_pages=50)  # Limit to first 50 pages
+        pages_analyzed = min(50, len(text.split('\n\n')))
     
     # Extract structured data
     specs = {
-        "manual_file": pdf_path.name,
+        "manual_file": manual_path.name,
         "bearings": extract_bearing_designation(text),
         "rpm_values": extract_rpm_values(text),
         "power_ratings": extract_power_ratings(text),
         "text_excerpt": text[:2000],  # First 2000 chars for LLM context
         "extraction_date": "2025-11-12",
-        "pages_analyzed": min(50, len(text.split('\n\n')))
+        "pages_analyzed": pages_analyzed
     }
     
     # Save to cache

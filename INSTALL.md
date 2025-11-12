@@ -67,20 +67,19 @@ This will:
 {
   "mcpServers": {
     "predictive-maintenance": {
-      "command": "python",
+      "command": "C:/path/to/predictive-maintenance-mcp/.venv/Scripts/python.exe",
       "args": [
-        "-m",
-        "mcp",
-        "run",
         "C:/path/to/predictive-maintenance-mcp/src/machinery_diagnostics_server.py"
-      ],
-      "env": {
-        "PYTHONPATH": "C:/path/to/predictive-maintenance-mcp/src"
-      }
+      ]
     }
   }
 }
 ```
+
+> **Important**: 
+> - Replace `C:/path/to/predictive-maintenance-mcp` with your actual project path
+> - Use **absolute paths** for both `command` and `args`
+> - On macOS/Linux, use `.venv/bin/python` instead of `.venv/Scripts/python.exe`
 
 4. Restart Claude Desktop
 
@@ -142,10 +141,35 @@ pip install -e .
 ```
 
 ### Claude Desktop doesn't see the server
-1. Check `claude_desktop_config.json` paths are absolute
-2. Restart Claude Desktop completely
-3. Check Python path: `where python` (Windows) or `which python` (Linux/macOS)
-4. Verify virtual environment is activated
+
+1. **Use absolute paths**: Both `command` and `args` must use full absolute paths
+   ```json
+   {
+     "mcpServers": {
+       "predictive-maintenance": {
+         "command": "C:/full/path/to/.venv/Scripts/python.exe",
+         "args": ["C:/full/path/to/src/machinery_diagnostics_server.py"]
+       }
+     }
+   }
+   ```
+
+2. **Don't use `cwd`**: Claude Desktop may ignore it, use absolute paths instead
+
+3. **Avoid `python` command**: Use the full path to your virtual environment's Python:
+   - ❌ `"command": "python"` (won't work if not in PATH)
+   - ✅ `"command": "C:/path/.venv/Scripts/python.exe"` (Windows)
+   - ✅ `"command": "/path/.venv/bin/python"` (macOS/Linux)
+
+4. **Don't use `-m` module import**: The package isn't installed as a module:
+   - ❌ `"args": ["-m", "machinery_diagnostics_server"]`
+   - ✅ `"args": ["C:/path/src/machinery_diagnostics_server.py"]`
+
+5. **Restart Claude Desktop completely** after config changes
+
+6. **Check logs**: 
+   - Windows: `%LOCALAPPDATA%\AnthropicClaude\logs`
+   - Look for errors like "spawn python ENOENT" or "No module named"
 
 ### Tests failing
 ```bash

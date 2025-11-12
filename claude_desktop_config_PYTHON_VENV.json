@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "predictive-maintenance": {
+      "command": "C:/path/to/predictive-maintenance-mcp/.venv/Scripts/python.exe",
+      "args": [
+        "C:/path/to/predictive-maintenance-mcp/src/machinery_diagnostics_server.py"
+      ]
+    }
+  }
+}

@@ -2,13 +2,13 @@ cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
 title: "Predictive Maintenance MCP Server"
 version: 0.2.0
-date-released: 2025-01-15
+date-released: 2025-11-12
 authors:
   - family-names: Di Maggio
     given-names: Luigi Gianpio
-    orcid: "https://orcid.org/0000-0000-0000-0000"  # Sostituisci con il tuo ORCID se ce l'hai
+    orcid: "https://orcid.org/0000-0002-2295-8944"
     affiliation: "Politecnico di Torino"
-    email: luigi.dimaggio@example.com  # Sostituisci con la tua email
+    email: luigi.dimaggio@polito.it
 repository-code: "https://github.com/LGDiMaggio/predictive-maintenance-mcp"
 url: "https://github.com/LGDiMaggio/predictive-maintenance-mcp"
 abstract: >
@@ -31,7 +31,7 @@ keywords:
   - machine-learning
   - anomaly-detection
 license: MIT
-# Zenodo DOI - Aggiungi dopo la pubblicazione su Zenodo
+# Zenodo DOI
 # identifiers:
 #   - type: doi
 #     value: "10.5281/zenodo.XXXXXXX"

@@ -2,6 +2,21 @@
 
 This directory contains equipment manuals and technical documentation for analysis.
 
+## Test Example Available
+
+A **test pump manual** is included for demonstration:
+- **File**: `test_pump_manual.pdf` (also available as `.txt`)
+- **Content**: Complete pump specifications with bearings, RPM, power, seals, maintenance
+- **Purpose**: Test and learn the documentation reader features
+- **Usage**: Try asking Claude about this manual to see how the system works
+
+Example prompts to try:
+```
+"What bearings are used in the test pump manual?"
+"Calculate bearing frequencies for the bearings in test_pump_manual.pdf"
+"What is the maintenance schedule in the test manual?"
+```
+
 ## How to Use
 
 1. **Upload PDF manuals** to this directory

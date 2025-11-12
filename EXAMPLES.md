@@ -10,6 +10,7 @@ This guide provides step-by-step examples of complete diagnostic workflows using
 - [Example 4: Complete Bearing Diagnosis](#example-4-complete-bearing-diagnosis)
 - [Example 5: Working with Different Segment Durations](#example-5-working-with-different-segment-durations)
 - [Example 6: Machine Learning-Based Anomaly Detection](#example-6-machine-learning-based-anomaly-detection)
+- [Example 7: Machine Documentation Reader](#example-7-machine-documentation-reader)
 
 ---
 
@@ -1166,6 +1167,263 @@ The report is saved to `reports/feature_comparison_Healthy_vs_Inner_Fault_vs_Out
    - **NEVER assume** predictions = ground truth unless user explicitly provides true_labels
    - Communication: "The PCA plot shows model PREDICTIONS. Provide true_labels for validation."
    - Example validation: "Overall accuracy: 95% (114/120 segments correct)"
+
+---
+
+## Example 7: Machine Documentation Reader
+
+### Objective
+Extract bearing specifications and technical data from equipment manuals to enable accurate fault diagnosis.
+
+### Scenario
+You have a vibration signal showing potential bearing faults, but you don't know the bearing specifications (type, geometry, characteristic frequencies). You have the equipment manual as a PDF. You need to extract this information to perform accurate diagnosis.
+
+### Test Manual Available
+A **test pump manual** is included in `resources/machine_manuals/`:
+- **File**: `test_pump_manual.pdf` (also available as `.txt` for testing)
+- **Content**: Complete pump specifications including:
+  - Bearings: SKF 6205-2RS (drive end), NSK 6206 (non-drive end)
+  - Bearing geometry: 9 balls, ball diameter, pitch diameter
+  - Operating speeds: 1475 RPM (rated), 3000 RPM (max)
+  - Power: 15 kW, 20 HP
+  - Mechanical seal: Type 21
+  - Maintenance schedules
+
+### Step-by-Step
+
+**Step 1: List available manuals**
+
+```
+List all available machine manuals
+```
+
+Expected response:
+```json
+{
+  "manuals": [
+    {
+      "filename": "test_pump_manual.pdf",
+      "type": "PDF",
+      "size_mb": 0.08,
+      "uri": "manual://read/test_pump_manual.pdf"
+    }
+  ],
+  "total_manuals": 1
+}
+```
+
+**Step 2: Extract structured specifications**
+
+```
+Extract specifications from test_pump_manual.pdf
+```
+
+**IMPORTANT - LLM Guidelines:**
+- The tool returns ONLY data extracted from the manual
+- DO NOT add information not present in the extraction results
+- If a specification is not found, state "Not found in manual"
+- DO NOT invent bearing geometries or frequencies
+
+Response:
+```json
+{
+  "manual_file": "test_pump_manual.pdf",
+  "bearings": [
+    "SKF 6205-2RS",
+    "NSK 6206",
+    "6205",
+    "6206"
+  ],
+  "rpm_values": [1475.0, 3000.0],
+  "power_ratings": "15.0 KW, 20.0 HP",
+  "text_excerpt": "CENTRIFUGAL PUMP MANUAL\nModel: CP-150..."
+}
+```
+
+**Interpretation:**
+- ✅ Found 2 bearing types: SKF 6205-2RS (drive end), NSK 6206 (non-drive end)
+- ✅ Operating speeds: 1475 RPM (rated), 3000 RPM (maximum)
+- ✅ Power ratings: 15 kW (20 HP)
+
+**Step 3: Calculate bearing frequencies (Option A - Known Geometry)**
+
+If bearing geometry is in the manual:
+```
+Calculate bearing frequencies for SKF 6205 at 1475 RPM with:
+- Number of balls: 9
+- Ball diameter: 7.94 mm
+- Pitch diameter: 34.55 mm
+- Contact angle: 0° (deep groove bearing)
+```
+
+**IMPORTANT - LLM Guidelines:**
+- This tool REQUIRES exact bearing geometry
+- DO NOT guess or estimate geometry
+- ONLY calculate with geometry from manual or user
+- If geometry unknown, suggest checking manual or catalog
+
+Result:
+```json
+{
+  "shaft_frequency_hz": 24.58,
+  "BPFO": 85.20,
+  "BPFI": 136.05,
+  "BSF": 101.32,
+  "FTF": 9.47
+}
+```
+
+**Step 4: Calculate frequencies (Option B - Catalog Lookup)**
+
+If geometry is NOT in manual but bearing designation is known:
+```
+Look up bearing 6205 in catalog and calculate frequencies at 1475 RPM
+```
+
+The system has a local catalog with common bearings (6205, 6206):
+```json
+{
+  "6205": {
+    "num_balls": 9,
+    "ball_diameter_mm": 7.94,
+    "pitch_diameter_mm": 34.55,
+    "bore_mm": 25,
+    "outer_diameter_mm": 52,
+    "width_mm": 15
+  }
+}
+```
+
+**Step 5: Read full manual for additional context**
+
+For questions not answered by structured extraction:
+```
+Read the maintenance section from test_pump_manual.pdf
+```
+
+**IMPORTANT - LLM Guidelines:**
+- Base ALL answers EXCLUSIVELY on returned text
+- DO NOT add information not in the text
+- If not found, state "Not found in manual"
+- ALWAYS cite: "According to test_pump_manual.pdf..."
+
+Response (excerpt):
+```
+MAINTENANCE SCHEDULE
+-------------------
+- Bearing lubrication: Every 6 months (lithium-based grease)
+- Mechanical seal inspection: Every 3 months
+- Impeller check: Annually
+- Alignment check: Every 12 months
+...
+```
+
+**Step 6: Answer specific questions**
+
+User can now ask:
+```
+"What type of mechanical seal is used?"
+→ "According to test_pump_manual.pdf, the pump uses a Type 21 mechanical seal 
+   with carbon/ceramic seal faces."
+
+"How often should I lubricate the bearings?"
+→ "According to the manual, bearing lubrication should be performed every 
+   6 months using lithium-based grease."
+
+"How many impeller vanes?"
+→ "According to test_pump_manual.pdf, the impeller is a closed-type bronze 
+   impeller with 5 vanes."
+```
+
+**Step 7: Complete workflow integration**
+
+Now combine manual data with signal analysis:
+```
+1. Extract bearing info from manual: SKF 6205-2RS at 1475 RPM
+2. Calculate characteristic frequencies: BPFO = 85.20 Hz, BPFI = 136.05 Hz
+3. Analyze vibration signal: real_train/OuterRaceFault_1.csv
+4. Compare envelope spectrum peaks with bearing frequencies
+5. Diagnose: Peak at 81.125 Hz matches BPFO → Outer race fault confirmed
+```
+
+### Architecture: Hybrid Approach
+
+The system uses **3 complementary methods**:
+
+#### 1. MCP Resources (Primary - Full Text Access)
+```
+"Read the pump manual and tell me about the bearings"
+```
+- Claude reads FULL PDF text directly via `manual://read/{filename}`
+- Can answer ANY question (not limited to pre-defined patterns)
+- Understands context: "nominal" vs "maximum" RPM, "drive end" vs "non-drive end"
+
+#### 2. Structured Extraction (Hints - Fast Lookup)
+```
+extract_manual_specs("test_pump_manual.pdf")
+```
+- Regex-based extraction provides quick hints
+- Bearings: SKF 6205-2RS, NSK 6206
+- RPM: 1475, 3000
+- Power: 15 kW, 20 HP
+- Cached for repeated access
+
+#### 3. Catalog Lookup (Fallback - Missing Geometry)
+```
+lookup_bearing_in_catalog("6205")
+```
+- Local database with common bearings
+- Provides geometry when not in manual
+- Extensible: add more bearings to catalog
+
+### Expected Outcome
+
+✅ **Zero-knowledge diagnosis enabled**
+- No need to know bearing type beforehand
+- Extract specs automatically from manual
+- Calculate frequencies from geometry
+- Complete diagnostic workflow
+
+✅ **Flexible question answering**
+- ANY question about manual content
+- Not limited to pre-defined patterns
+- Multiple RPM values handled correctly
+- Context-aware (rated vs maximum speed)
+
+✅ **LLM stays grounded in data**
+- Answers based ONLY on manual content
+- No hallucinations or assumptions
+- Clear when information is missing
+- Always cites source: "According to manual..."
+
+### Critical Guidelines for LLM
+
+1. **NEVER invent specifications:**
+   - If bearing geometry not in manual → "Bearing geometry not found in manual. Check manufacturer catalog or measure physically."
+   - If RPM not specified → "Operating speed not found in manual."
+   - DO NOT use "typical" or "standard" values without user confirmation
+
+2. **ALWAYS cite the manual:**
+   - ✅ "According to test_pump_manual.pdf, the bearing is SKF 6205-2RS"
+   - ❌ "The bearing is probably a 6205 based on the pump size"
+
+3. **Distinguish between different RPM values:**
+   - Manual may list: rated speed, maximum speed, minimum speed
+   - Ask user which to use: "Manual shows 1475 RPM (rated) and 3000 RPM (max). Which operating speed should I use?"
+
+4. **Request missing information:**
+   - "Bearing designation found (SKF 6205-2RS) but geometry not in manual. Should I look it up in the catalog or would you prefer to provide the geometry?"
+
+5. **Use structured extraction as hints, not truth:**
+   - Regex extraction may find false positives (e.g., page numbers)
+   - Always verify by reading full text if critical
+   - Structured extraction is for quick screening only
+
+6. **Combine methods intelligently:**
+   - Start with structured extraction (fast)
+   - Use full text for ambiguous cases
+   - Fall back to catalog for missing geometry
+   - Ask user if catalog doesn't have bearing
 
 ---
 

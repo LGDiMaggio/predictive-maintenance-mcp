@@ -337,7 +337,14 @@ def read_signal_file(filename: str) -> str:
 @mcp.resource("manual://list")
 def list_manuals_resource() -> str:
     """
-    List all available machine manuals as MCP resource.
+    List all available machine manuals (PDF and TXT) as MCP resource.
+    
+    **IMPORTANT - LLM Usage Guidelines:**
+    - This resource returns ONLY the list of available files
+    - DO NOT make assumptions about manual content without reading it
+    - DO NOT infer specifications from filenames alone
+    - To access manual content, use manual://read/{filename} resource
+    - If user asks about manual content, read it first before answering
     
     Returns:
         JSON with list of available manuals
@@ -348,12 +355,14 @@ def list_manuals_resource() -> str:
     manuals_dir = RESOURCES_DIR / "machine_manuals"
     manuals = []
     
-    for pdf_file in manuals_dir.glob("*.pdf"):
-        stat = pdf_file.stat()
+    # Include both PDF and TXT files
+    for manual_file in list(manuals_dir.glob("*.pdf")) + list(manuals_dir.glob("*.txt")):
+        stat = manual_file.stat()
         manuals.append({
-            "filename": pdf_file.name,
+            "filename": manual_file.name,
+            "type": manual_file.suffix.upper()[1:],  # PDF or TXT
             "size_mb": round(stat.st_size / (1024 * 1024), 2),
-            "uri": f"manual://read/{pdf_file.name}"
+            "uri": f"manual://read/{manual_file.name}"
         })
     
     result = {
@@ -368,13 +377,22 @@ def list_manuals_resource() -> str:
 @mcp.resource("manual://read/{filename}")
 def read_manual_resource(filename: str) -> str:
     """
-    Read machine manual PDF as text (MCP resource).
+    Read machine manual (PDF or TXT) as text (MCP resource).
     
-    Extracts text from first 20 pages to avoid token overflow.
+    Extracts text from first 20 pages (PDF) or full text (TXT) to avoid token overflow.
     For full manual, use read_manual_excerpt() tool with custom max_pages.
     
+    **IMPORTANT - LLM Usage Guidelines:**
+    - This resource returns ONLY the text from the manual file
+    - Base ALL answers EXCLUSIVELY on the returned text content
+    - DO NOT add information not present in the text
+    - DO NOT make assumptions about missing information
+    - If something is not in the text, say "Not found in the manual"
+    - ALWAYS cite the manual when answering: "According to {filename}..."
+    - If user needs complete manual, use read_manual_excerpt() tool
+    
     Args:
-        filename: PDF filename in resources/machine_manuals/
+        filename: Manual filename in resources/machine_manuals/ (PDF or TXT)
     
     Returns:
         Extracted text from manual
@@ -388,18 +406,27 @@ def read_manual_resource(filename: str) -> str:
         if not manual_path.exists():
             return json.dumps({
                 "error": f"Manual not found: {filename}",
-                "available": [f.name for f in (RESOURCES_DIR / "machine_manuals").glob("*.pdf")]
+                "available": [f.name for f in (RESOURCES_DIR / "machine_manuals").glob("*.pdf")] + 
+                            [f.name for f in (RESOURCES_DIR / "machine_manuals").glob("*.txt")]
             }, indent=2)
         
-        # Extract text (limit to 20 pages to avoid token overflow)
-        text = extract_text_from_pdf(manual_path, max_pages=20)
+        # Read based on file type
+        if manual_path.suffix.lower() == '.txt':
+            with open(manual_path, 'r', encoding='utf-8') as f:
+                text = f.read()
+            pages_info = "full text file"
+        else:
+            # Extract text (limit to 20 pages to avoid token overflow)
+            text = extract_text_from_pdf(manual_path, max_pages=20)
+            pages_info = "first 20 pages"
         
         result = {
             "filename": filename,
-            "pages_read": 20,
+            "content_type": manual_path.suffix.lower(),
+            "pages_info": pages_info,
             "text_length": len(text),
             "text": text[:10000],  # First 10K chars
-            "note": "First 20 pages only. Use read_manual_excerpt() tool for full access."
+            "note": f"Showing {pages_info}. Use read_manual_excerpt() tool for full access."
         }
         
         return json.dumps(result, indent=2)
@@ -1981,8 +2008,15 @@ async def list_machine_manuals(ctx: Context | None = None) -> List[Dict[str, Any
     """
     List all available machine manuals in resources/machine_manuals/.
     
-    Returns list of PDFs with filename, size, and modification date.
+    Returns list of PDFs and text files with filename, size, and modification date.
     Use this to see what manuals are available before extracting specs.
+    
+    **IMPORTANT - LLM Usage Guidelines:**
+    - This tool returns ONLY the list of available files
+    - DO NOT make assumptions about manual content without reading it
+    - DO NOT infer specifications without using extract_manual_specs() or read_manual_excerpt()
+    - ALWAYS use the returned filenames exactly as-is when calling other tools
+    - If user asks about manual content, use read_manual_excerpt() or extract_manual_specs()
     
     Returns:
         List of dictionaries with manual information
@@ -1996,17 +2030,19 @@ async def list_machine_manuals(ctx: Context | None = None) -> List[Dict[str, Any
     manuals_dir = RESOURCES_DIR / "machine_manuals"
     manuals = []
     
-    for pdf_file in manuals_dir.glob("*.pdf"):
-        stat = pdf_file.stat()
+    # Support both PDF and TXT files
+    for manual_file in list(manuals_dir.glob("*.pdf")) + list(manuals_dir.glob("*.txt")):
+        stat = manual_file.stat()
         manuals.append({
-            "filename": pdf_file.name,
+            "filename": manual_file.name,
             "size_mb": stat.st_size / (1024 * 1024),
             "modified": stat.st_mtime,
-            "path": str(pdf_file.relative_to(RESOURCES_DIR))
+            "path": str(manual_file.relative_to(RESOURCES_DIR))
         })
     
     if ctx:
         await ctx.info(f"Found {len(manuals)} machine manuals in resources/machine_manuals/")
+
     
     return sorted(manuals, key=lambda x: x['filename'])
 
@@ -2027,6 +2063,22 @@ async def extract_manual_specs(
     - Text excerpt for LLM context
     
     Results are cached for fast repeated access.
+    
+    **IMPORTANT - LLM Usage Guidelines:**
+    - This tool returns ONLY data extracted from the manual text
+    - DO NOT add information not present in the extraction results
+    - DO NOT make assumptions about missing specifications
+    - If a specification is not in the results, tell the user it was not found
+    - ALWAYS base your response exclusively on the returned dictionary
+    - If user needs more detail, suggest using read_manual_excerpt() to read full text
+    - DO NOT invent bearing geometries, frequencies, or other technical data
+    
+    **WORKFLOW for missing bearing geometry:**
+    1. Check if bearing geometry is in extraction results (rare in manuals)
+    2. If not found, use search_bearing_catalog(bearing_designation) tool
+    3. If bearing not in catalog, ask user to provide:
+       - All geometric parameters (num_balls, ball_diameter_mm, pitch_diameter_mm, contact_angle_deg)
+       - OR upload manufacturer catalog to bearing_catalogs/ directory
     
     Args:
         manual_filename: PDF filename in resources/machine_manuals/
@@ -2080,6 +2132,18 @@ async def calculate_bearing_characteristic_frequencies(
     Uses formulas from ISO 15243:2017 and SKF bearing handbook.
     Essential for bearing fault diagnosis when you know bearing geometry
     but don't have pre-calculated frequencies.
+    
+    **IMPORTANT - LLM Usage Guidelines:**
+    - This tool REQUIRES exact bearing geometry parameters
+    - DO NOT guess or estimate bearing geometry if not provided
+    - DO NOT use "typical" or "standard" values without user confirmation
+    - If geometry is unknown, tell user to:
+      1. Check manual using read_manual_excerpt()
+      2. Look up bearing in manufacturer catalog (e.g., SKF, FAG, NSK)
+      3. Use lookup_bearing_in_catalog() if bearing designation is known
+      4. Measure the bearing physically if necessary
+    - ONLY calculate with geometry explicitly provided by user or found in manual
+    - DO NOT make assumptions about contact angle (use 0° if unknown and inform user)
     
     Args:
         num_balls: Number of rolling elements (Z)
@@ -2136,7 +2200,7 @@ async def read_manual_excerpt(
     ctx: Context | None = None
 ) -> str:
     """
-    Read text excerpt from machine manual PDF.
+    Read text excerpt from machine manual (PDF or TXT).
     
     Useful for providing context to LLM for questions about
     specific machine parameters, maintenance procedures, etc.
@@ -2144,32 +2208,121 @@ async def read_manual_excerpt(
     **Token Warning**: Reading many pages can consume significant tokens.
     Start with max_pages=10 and increase if needed.
     
+    **IMPORTANT - LLM Usage Guidelines:**
+    - This tool returns ONLY the text extracted from the manual
+    - Base your answers EXCLUSIVELY on the returned text
+    - DO NOT add information not present in the extracted text
+    - If information is not found in the text, clearly state "Not found in manual"
+    - DO NOT make assumptions or fill gaps with general knowledge
+    - If user needs more pages, suggest increasing max_pages parameter
+    - ALWAYS cite the manual when answering: "According to the manual..."
+    
     Args:
-        manual_filename: PDF filename in resources/machine_manuals/
-        max_pages: Maximum number of pages to extract (default: 10)
+        manual_filename: Manual filename in resources/machine_manuals/ (PDF or TXT)
+        max_pages: Maximum number of pages to extract (default: 10, ignored for TXT files)
         ctx: MCP context
     
     Returns:
-        Extracted text from PDF
+        Extracted text from manual
     
     Example:
         >>> text = read_manual_excerpt("pump_manual.pdf", max_pages=5)
         >>> # LLM can now answer: "What bearings are recommended for this pump?"
     """
     if ctx:
-        await ctx.info(f"Reading {max_pages} pages from: {manual_filename}")
+        await ctx.info(f"Reading from: {manual_filename}")
     
     manual_path = RESOURCES_DIR / "machine_manuals" / manual_filename
     
     if not manual_path.exists():
         raise FileNotFoundError(f"Manual not found: {manual_filename}")
     
-    text = extract_text_from_pdf(manual_path, max_pages=max_pages)
-    
-    if ctx:
-        await ctx.info(f"Extracted {len(text)} characters from {max_pages} pages")
+    # Read based on file type
+    if manual_path.suffix.lower() == '.txt':
+        with open(manual_path, 'r', encoding='utf-8') as f:
+            text = f.read()
+        if ctx:
+            await ctx.info(f"Extracted {len(text)} characters from text file")
+    else:
+        text = extract_text_from_pdf(manual_path, max_pages=max_pages)
+        if ctx:
+            await ctx.info(f"Extracted {len(text)} characters from {max_pages} pages")
     
     return text
+
+
+@mcp.tool()
+async def search_bearing_catalog(
+    bearing_designation: str,
+    ctx: Context | None = None
+) -> Dict[str, Any]:
+    """
+    Search for bearing specifications in local bearing catalogs.
+    
+    This is a FALLBACK tool. LLM should use this ONLY when:
+    1. Bearing designation found in machine manual
+    2. Bearing geometry NOT found in machine manual
+    3. Need geometry to calculate characteristic frequencies
+    
+    **IMPORTANT - LLM Usage Guidelines:**
+    - Use this tool ONLY after checking machine manual first
+    - DO NOT use this as primary source - manual takes precedence
+    - If bearing not found here, ask user for specifications
+    - DO NOT guess or estimate if bearing not in catalog
+    - This catalog contains ~20 common ISO bearings (6200-6210, 6300-6310 series)
+    - For uncommon bearings, tell user: "Bearing {X} not in catalog. Please provide geometry or upload manufacturer catalog to bearing_catalogs/"
+    
+    Search order:
+    1. JSON catalog (common_bearings_catalog.json) - 20 common bearings
+    2. In-memory fallback (legacy 6205, 6206)
+    3. Returns None if not found
+    
+    Args:
+        bearing_designation: Bearing designation (e.g., "6205", "SKF 6205-2RS", "FAG 6206")
+        ctx: MCP context
+    
+    Returns:
+        Dictionary with bearing specifications if found, None otherwise
+    
+    Example:
+        >>> specs = search_bearing_catalog("SKF 6205-2RS")
+        >>> print(f"Balls: {specs['num_balls']}, Diameter: {specs['ball_diameter_mm']} mm")
+        Balls: 9, Diameter: 7.94 mm
+    """
+    if ctx:
+        await ctx.info(f"Searching catalog for bearing: {bearing_designation}")
+    
+    try:
+        # Import here to avoid circular dependency
+        from document_reader import lookup_bearing_in_catalog
+        
+        bearing_specs = lookup_bearing_in_catalog(bearing_designation)
+        
+        if bearing_specs:
+            if ctx:
+                await ctx.info(f"✓ Found {bearing_specs['designation']} in catalog (source: {bearing_specs.get('source', 'unknown')})")
+                await ctx.info(f"  Type: {bearing_specs.get('type', 'N/A')}")
+                await ctx.info(f"  Balls: {bearing_specs['num_balls']}, Ball diameter: {bearing_specs['ball_diameter_mm']} mm")
+                await ctx.info(f"  Pitch diameter: {bearing_specs['pitch_diameter_mm']} mm")
+            return bearing_specs
+        else:
+            if ctx:
+                await ctx.warning(f"✗ Bearing {bearing_designation} not found in catalog")
+                await ctx.warning("  LLM should ask user for bearing geometry or suggest uploading manufacturer catalog")
+            return {
+                "error": f"Bearing {bearing_designation} not found in catalog",
+                "suggestion": "Ask user for bearing geometry (num_balls, ball_diameter_mm, pitch_diameter_mm, contact_angle_deg) or upload manufacturer catalog PDF to resources/bearing_catalogs/",
+                "catalog_contains": "Common ISO bearings: 6200-6210, 6300-6310 series"
+            }
+    
+    except Exception as e:
+        logger.error(f"Error searching bearing catalog: {e}")
+        if ctx:
+            await ctx.error(f"Error searching catalog: {str(e)}")
+        return {
+            "error": str(e),
+            "suggestion": "Check that bearing_catalogs directory exists and contains common_bearings_catalog.json"
+        }
 
 
 # ============================================================================
