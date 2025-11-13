@@ -585,6 +585,13 @@ def analyze_fft(
     By default, analyzes a RANDOM 1.0-second segment from the signal for efficiency.
     Set segment_duration=None to analyze the entire signal.
     
+    **CRITICAL - LLM Inference Policy:**
+    - **NEVER infer fault type from filename** (e.g., "OuterRaceFault_1.csv" does NOT mean outer race fault exists)
+    - **NEVER assume signal characteristics from filename** (e.g., "baseline" does NOT mean healthy)
+    - Treat ALL filenames as opaque identifiers
+    - Base analysis ONLY on frequency spectrum data returned by this tool
+    - If filename suggests a characteristic but data shows otherwise, report the data findings
+    
     IMPORTANT: Do NOT use the default sampling_rate (1000 Hz) unless explicitly 
     confirmed correct for this signal. Check signal metadata first or ask user.
     
@@ -696,6 +703,13 @@ def analyze_envelope(
     Set segment_duration=None to analyze the entire signal.
     
     Returns ONLY peak information and diagnosis text (no full arrays) to avoid context overflow.
+    
+    **CRITICAL - LLM Inference Policy:**
+    - **NEVER infer fault type from filename** (e.g., "OuterRaceFault_1.csv" does NOT mean outer race fault exists)
+    - **NEVER assume signal characteristics from filename** (e.g., "baseline" does NOT mean healthy)
+    - Treat ALL filenames as opaque identifiers
+    - Base diagnosis ONLY on frequency-domain evidence (peaks matching BPFO/BPFI/BSF/FTF)
+    - If filename suggests a fault but analysis shows no evidence, report "No fault detected despite filename"
     
     IMPORTANT: Do NOT use the default sampling_rate (1000 Hz) unless explicitly 
     confirmed correct for this signal. Check signal metadata first or ask user.
@@ -848,6 +862,14 @@ def analyze_statistics(filename: str) -> StatisticalResult:
     - Kurtosis: Measures impulsiveness (>3 = presence of impulses)
     - Peak-to-Peak: Signal range
     
+    **CRITICAL - LLM Inference Policy:**
+    - **NEVER infer fault type from filename** (e.g., "OuterRaceFault_1.csv" does NOT mean outer race fault exists)
+    - **NEVER assume signal characteristics from filename** (e.g., "baseline" does NOT mean healthy)
+    - Treat ALL filenames as opaque identifiers
+    - Statistical parameters (RMS/CF/Kurtosis) are indicators ONLY - NOT definitive diagnostics
+    - High kurtosis indicates "possible fault" - NOT "confirmed fault"
+    - Must be combined with frequency-domain evidence for diagnosis
+    
     Args:
         filename: Name of the file containing the signal
         
@@ -900,6 +922,13 @@ def evaluate_iso_20816(
     
     ISO 20816-3 defines vibration severity zones for rotating machinery based on
     broadband RMS velocity measurements on non-rotating parts (bearings, housings).
+    
+    **CRITICAL - LLM Inference Policy:**
+    - **NEVER infer fault type or severity from filename** (e.g., "OuterRaceFault_1.csv" does NOT mean outer race fault)
+    - **NEVER assume baseline/healthy from filename** (e.g., "baseline" does NOT guarantee Zone A)
+    - Treat ALL filenames as opaque identifiers
+    - Report ONLY the ISO zone returned by measurement, regardless of filename
+    - If filename suggests "baseline" but measurement shows Zone C/D, report Zone C/D
     
     **DEFAULTS** (use if user doesn't specify):
     - machine_group = 2 (medium-sized machines, most common)
@@ -3785,6 +3814,24 @@ def diagnose_bearing(
     
     return f"""Perform evidence-based bearing diagnostic on "{signal_file}":
 
+⚠️  CRITICAL INFERENCE POLICY ⚠️
+═══════════════════════════════════════════════════════════════════════════════
+**NEVER INFER FAULT TYPE OR CONDITION FROM FILENAME**
+
+- Filename "{signal_file}" is an OPAQUE IDENTIFIER ONLY
+- "OuterRaceFault" in filename ≠ outer race fault exists
+- "baseline" in filename ≠ healthy signal
+- "InnerRaceFault" in filename ≠ inner race fault exists
+
+**BASE DIAGNOSIS EXCLUSIVELY ON:**
+1. Envelope spectrum peaks matching BPFO/BPFI/BSF/FTF (±5% tolerance)
+2. Statistical indicators (CF, Kurtosis) as SECONDARY confirmation
+3. ISO 20816-3 zone measurement
+
+**IF FILENAME CONTRADICTS ANALYSIS:**
+Report: "Despite filename suggesting [X], analysis shows [Y]"
+Example: "Despite 'OuterRaceFault' in filename, envelope analysis shows NO peaks at BPFO"
+
 ═══════════════════════════════════════════════════════════════════════════════
 STEP 0 — FILENAME RESOLUTION & MANDATORY PARAMETER CHECK
 ═══════════════════════════════════════════════════════════════════════════════
@@ -3993,6 +4040,24 @@ def diagnose_gear(
     rpm_info = f"{rotation_speed_rpm}" if rotation_speed_rpm else "NOT PROVIDED"
     
     return f"""Perform an evidence-based gear diagnostic on signal "{signal_file}":
+
+⚠️  CRITICAL INFERENCE POLICY ⚠️
+═══════════════════════════════════════════════════════════════════════════════
+**NEVER INFER FAULT TYPE OR CONDITION FROM FILENAME**
+
+- Filename "{signal_file}" is an OPAQUE IDENTIFIER ONLY
+- "GearFault" in filename ≠ gear fault exists
+- "baseline" in filename ≠ healthy signal
+- "ToothDamage" in filename ≠ tooth damage exists
+
+**BASE DIAGNOSIS EXCLUSIVELY ON:**
+1. FFT spectrum showing GMF harmonics
+2. Sidebands spaced by shaft rotation frequency (f_rot)
+3. Statistical indicators (Kurtosis) as SECONDARY confirmation
+
+**IF FILENAME CONTRADICTS ANALYSIS:**
+Report: "Despite filename suggesting [X], analysis shows [Y]"
+Example: "Despite 'GearFault' in filename, FFT analysis shows NO GMF harmonics or sidebands"
 
 ═══════════════════════════════════════════════════════════════════════════════
 STEP 0 — FILENAME RESOLUTION & MANDATORY PARAMETER CHECK
