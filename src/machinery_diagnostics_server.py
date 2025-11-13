@@ -12,7 +12,7 @@ Features:
 
 import logging
 from pathlib import Path
-from typing import Any, Optional, List, Dict
+from typing import Any, Optional
 from dataclasses import dataclass
 import pickle
 import json
@@ -110,6 +110,14 @@ mcp = FastMCP(
     4) Use cautious language: say "possible" or "consistent with" when evidence is partial; say "confirmed" only if multiple independent analyses agree.
     5) Always cite which analyses and thresholds support each conclusion. If data or parameters are missing, ask for them instead of guessing.
     6) NEVER suggest parameters, thresholds, or recommendations not explicitly provided in tool outputs or prompt workflows. Do NOT invent frequency ranges, filter settings, or maintenance actions. Only use guidance from STEP 6 of diagnostic prompts.
+
+    Signal unit confirmation policy (CRITICAL):
+    - When calling evaluate_iso_20816(), ALWAYS ask user to confirm signal units before proceeding
+    - Use analyze_statistics() first to check detected_unit field
+    - If user doesn't explicitly provide signal_unit parameter, auto-detection will be used (RMS > 0.5 → 'g', else 'mm/s')
+    - ALWAYS inform user about detected unit and ask: "Is this correct? The signal appears to be in [detected unit]"
+    - Only proceed with ISO evaluation after user confirms units
+    - Wrong unit conversion (g ↔ mm/s) completely invalidates ISO 20816-3 results!
 
     Output formatting rules:
     - Keep responses brief (≤300 words, bullet points)
@@ -223,9 +231,9 @@ class FeatureExtractionResult(BaseModel):
     segment_length_samples: int = Field(description="Samples per segment")
     segment_duration_s: float = Field(description="Duration of each segment in seconds")
     overlap_ratio: float = Field(description="Overlap ratio between segments")
-    features_shape: List[int] = Field(description="Shape of feature matrix [num_segments, num_features]")
-    feature_names: List[str] = Field(description="Names of extracted features")
-    features_preview: List[Dict[str, float]] = Field(description="First 5 segments features (preview)")
+    features_shape: list[int] = Field(description="Shape of feature matrix [num_segments, num_features]")
+    feature_names: list[str] = Field(description="Names of extracted features")
+    features_preview: list[dict[str, float]] = Field(description="First 5 segments features (preview)")
 
 
 class AnomalyModelResult(BaseModel):
@@ -235,13 +243,13 @@ class AnomalyModelResult(BaseModel):
     num_features_original: int = Field(description="Number of original features")
     num_features_pca: int = Field(description="Number of PCA components (features after dimensionality reduction)")
     variance_explained: float = Field(description="Cumulative variance explained by PCA components")
-    model_params: Dict[str, Any] = Field(description="Best model hyperparameters")
+    model_params: dict[str, Any] = Field(description="Best model hyperparameters")
     model_path: str = Field(description="Path to saved model file (.pkl)")
     scaler_path: str = Field(description="Path to saved scaler file (.pkl)")
     pca_path: str = Field(description="Path to saved PCA file (.pkl)")
     validation_accuracy: Optional[float] = Field(None, description="Overall balanced accuracy on healthy + fault validation data")
     validation_details: Optional[str] = Field(None, description="Validation details with healthy and fault metrics")
-    validation_metrics: Optional[Dict[str, Any]] = Field(None, description="Detailed validation metrics (healthy/fault accuracy breakdown)")
+    validation_metrics: Optional[dict[str, Any]] = Field(None, description="Detailed validation metrics (healthy/fault accuracy breakdown)")
 
 
 class AnomalyPredictionResult(BaseModel):
@@ -249,8 +257,8 @@ class AnomalyPredictionResult(BaseModel):
     num_segments: int = Field(description="Number of segments analyzed")
     anomaly_count: int = Field(description="Number of anomalies detected")
     anomaly_ratio: float = Field(description="Ratio of anomalies (0-1)")
-    predictions: List[int] = Field(description="Predictions per segment: 1=normal, -1=anomaly")
-    anomaly_scores: Optional[List[float]] = Field(None, description="Anomaly scores if available")
+    predictions: list[int] = Field(description="Predictions per segment: 1=normal, -1=anomaly")
+    anomaly_scores: Optional[list[float]] = Field(None, description="Anomaly scores if available")
     overall_health: str = Field(description="Overall health status: 'Healthy', 'Suspicious', 'Faulty'")
     confidence: str = Field(description="Confidence level: 'High', 'Medium', 'Low'")
 
@@ -1043,7 +1051,8 @@ async def evaluate_iso_20816(
     sampling_rate: float = 10000.0,
     machine_group: int = 2,  # CHANGED: Default 2 (medium) - most common industrial case
     support_type: str = "rigid",  # Default rigid - most common for horizontal machines
-    operating_speed_rpm: Optional[float] = None
+    operating_speed_rpm: Optional[float] = None,
+    signal_unit: Optional[str] = None  # NEW: 'g' for acceleration, 'mm/s' for velocity, None for auto-detect
 ) -> ISO20816Result:
     """
     Evaluate vibration severity according to ISO 20816-3 standard.
@@ -1093,6 +1102,9 @@ async def evaluate_iso_20816(
         machine_group: Machine group 1 (large) or 2 (medium) (default: 2 - medium)
         support_type: 'rigid' or 'flexible' (default: 'rigid')
         operating_speed_rpm: Operating speed in RPM (optional, for frequency range selection)
+        signal_unit: Signal unit - 'g' (acceleration) or 'mm/s' (velocity). 
+                     If None, auto-detection will be attempted (RMS > 0.5 → 'g', else 'mm/s').
+                     **IMPORTANT**: Please specify explicitly to avoid conversion errors!
     
     Returns:
         ISO20816Result with evaluation zone, severity level, and recommendations
@@ -1104,7 +1116,8 @@ async def evaluate_iso_20816(
             sampling_rate=10000,
             machine_group=2,
             support_type="rigid",
-            operating_speed_rpm=1500
+            operating_speed_rpm=1500,
+            signal_unit="g"  # Explicitly specify: 'g' or 'mm/s'
         )
     """
     # Load signal
@@ -1159,19 +1172,41 @@ async def evaluate_iso_20816(
     # Heuristic: acceleration signals typically have RMS > 0.5 g
     rms_raw = np.sqrt(np.mean(signal_data**2))
     unit_conversion_performed = False
-    if rms_raw > 0.5:  # Likely acceleration in g
+    
+    # Determine actual signal unit (user-provided or auto-detected)
+    if signal_unit is not None:
+        # User explicitly provided unit
+        detected_unit = signal_unit.lower()
+        if ctx:
+            await ctx.info(f"✅ User specified signal_unit = '{signal_unit}'")
+    else:
+        # Auto-detect based on RMS heuristic
+        if rms_raw > 0.5:
+            detected_unit = 'g'
+            if ctx:
+                await ctx.info(f"⚠️  AUTO-DETECTION: Signal appears to be ACCELERATION (RMS={rms_raw:.2f} > 0.5)")
+                await ctx.info(f"   Detected unit: 'g' (acceleration)")
+                await ctx.info(f"   If this is incorrect, please re-run with signal_unit='mm/s' parameter")
+        else:
+            detected_unit = 'mm/s'
+            if ctx:
+                await ctx.info(f"⚠️  AUTO-DETECTION: Signal appears to be VELOCITY (RMS={rms_raw:.2f} < 0.5)")
+                await ctx.info(f"   Detected unit: 'mm/s' (velocity)")
+                await ctx.info(f"   If this is incorrect, please re-run with signal_unit='g' parameter")
+    
+    # Convert if necessary (g → mm/s)
+    if detected_unit == 'g':
         # Convert acceleration (g) to velocity (mm/s)
         # Integration: v(t) = ∫ a(t) dt
         unit_conversion_performed = True
         
         if ctx:
-            await ctx.info(f"⚠️ UNIT CONVERSION DETECTED")
-            await ctx.info(f"   Signal auto-detected as ACCELERATION (RMS={rms_raw:.2f} g)")
-            await ctx.info(f"   Converting to VELOCITY (mm/s) for ISO 20816-3 compliance")
-            await ctx.info(f"   ISO 20816-3 requires velocity measurements, not acceleration")
-            await ctx.info(f"💡 If signal is already in mm/s velocity, please verify units!")
+            await ctx.info(f"")
+            await ctx.info(f"🔄 UNIT CONVERSION: Acceleration (g) → Velocity (mm/s)")
+            await ctx.info(f"   ISO 20816-3 requires velocity measurements")
+            await ctx.info(f"   Performing frequency-domain integration...")
         
-        logger.warning(f"⚠️ Signal auto-detected as ACCELERATION (RMS={rms_raw:.2f} g). Converting to velocity (mm/s) for ISO 20816-3 evaluation.")
+        logger.info(f"Converting acceleration (g) to velocity (mm/s) for ISO 20816-3 evaluation. RMS={rms_raw:.2f} g")
         
         signal_ac = signal_data - np.mean(signal_data)  # Remove DC
         
@@ -1196,6 +1231,16 @@ async def evaluate_iso_20816(
         
         # Convert to mm/s
         signal_data = vel_ms * 1000.0
+        
+        if ctx:
+            rms_converted = np.sqrt(np.mean(signal_data**2))
+            await ctx.info(f"✅ Conversion complete: {rms_raw:.2f} g → {rms_converted:.2f} mm/s RMS")
+    elif detected_unit == 'mm/s':
+        # Already in correct units
+        if ctx:
+            await ctx.info(f"✅ Signal already in velocity (mm/s) - no conversion needed")
+    else:
+        raise ValueError(f"Invalid signal_unit: '{signal_unit}'. Must be 'g' or 'mm/s'")
     
     # Determine frequency range based on operating speed
     # ISO 20816-3: 10-1000 Hz for speeds ≥ 600 rpm
@@ -1431,7 +1476,7 @@ async def plot_iso_20816_chart(
 # TOOLS - ML ANOMALY DETECTION
 # ============================================================================
 
-def extract_time_domain_features(segment: np.ndarray) -> Dict[str, float]:
+def extract_time_domain_features(segment: np.ndarray) -> dict[str, float]:
     """
     Extract comprehensive time-domain features from a signal segment.
     
@@ -1613,14 +1658,14 @@ async def extract_features_from_signal(
 
 @mcp.tool()
 async def train_anomaly_model(
-    healthy_signal_files: List[str],
+    healthy_signal_files: list[str],
     sampling_rate: Optional[float] = None,
     segment_duration: float = 0.1,
     overlap_ratio: float = 0.5,
     model_type: str = "OneClassSVM",
     pca_variance: float = 0.95,
-    fault_signal_files: Optional[List[str]] = None,
-    healthy_validation_files: Optional[List[str]] = None,
+    fault_signal_files: Optional[list[str]] = None,
+    healthy_validation_files: Optional[list[str]] = None,
     model_name: str = "anomaly_model",
     ctx: Context[ServerSession, None] = None
 ) -> AnomalyModelResult:
@@ -2202,7 +2247,7 @@ async def predict_anomalies(
 # ============================================================================
 
 @mcp.tool()
-async def list_machine_manuals(ctx: Context | None = None) -> List[Dict[str, Any]]:
+async def list_machine_manuals(ctx: Context | None = None) -> list[dict[str, Any]]:
     """
     List all available machine manuals in resources/machine_manuals/.
     
