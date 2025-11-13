@@ -263,6 +263,15 @@ def list_available_signals() -> str:
     """
     List all available signals in the data/signals directory.
     
+    ⚠️ **CRITICAL - LLM Inference Policy:**
+    - Filenames are OPAQUE IDENTIFIERS ONLY
+    - NEVER infer signal content, fault type, or condition from filename
+    - "baseline" in filename ≠ healthy signal
+    - "InnerRaceFault" in filename ≠ inner race fault exists
+    - "OuterRaceFault" in filename ≠ outer race fault exists
+    - Filenames may be misleading or incorrect
+    - Base ALL analysis on signal data evidence ONLY
+    
     Returns:
         JSON with the list of available signal files
     """
@@ -281,7 +290,15 @@ def list_available_signals() -> str:
                     "extension": file_path.suffix
                 })
         
-        return pd.DataFrame(signals).to_json(orient="records", indent=2)
+        # Prepend critical warning to output
+        warning = (
+            "\n⚠️  CRITICAL: Filenames are OPAQUE IDENTIFIERS ONLY\n"
+            "DO NOT infer fault type, condition, or signal characteristics from filenames.\n"
+            "Filenames like 'baseline', 'InnerRaceFault', 'OuterRaceFault' may be MISLEADING.\n"
+            "Base ALL diagnostics on signal data analysis ONLY.\n\n"
+        )
+        
+        return warning + pd.DataFrame(signals).to_json(orient="records", indent=2)
     
     except Exception as e:
         logger.error(f"Error listing signals: {e}")
