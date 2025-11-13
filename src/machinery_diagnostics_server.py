@@ -514,55 +514,6 @@ def list_signals() -> str:
         return f"Error: {str(e)}"
 
 
-@mcp.tool()
-def read_plot_html(filename: str, max_chars: int = 15000) -> str:
-    """
-    Read and return the content of an HTML plot file for inline rendering in clients.
-    
-    This tool allows clients like Claude to display interactive plots inline by retrieving
-    the HTML content. The content is truncated if it exceeds max_chars to avoid context overflow.
-    
-    Args:
-        filename: Name of the plot file (e.g., "plot_envelope_baseline_1.html")
-        max_chars: Maximum characters to return (default: 15000)
-    
-    Returns:
-        HTML content of the plot file (truncated if necessary) or an error message
-    
-    Example:
-        read_plot_html("plot_envelope_baseline_1.html")
-    """
-    try:
-        # Check in data/signals directory first
-        plot_path = DATA_DIR / filename
-        
-        # If not found, check in project root
-        if not plot_path.exists():
-            plot_path = Path(__file__).parent.parent / filename
-        
-        # If still not found, return error
-        if not plot_path.exists():
-            return f"Error: Plot file '{filename}' not found in data/signals/ or project root."
-        
-        # Read HTML content
-        with open(plot_path, 'r', encoding='utf-8') as f:
-            html_content = f.read()
-        
-        # Get file size info
-        file_size = len(html_content)
-        
-        # Truncate if necessary
-        if file_size > max_chars:
-            html_content = html_content[:max_chars]
-            truncation_note = f"\n\n<!-- TRUNCATED: File is {file_size} chars, showing first {max_chars} chars. -->\n"
-            html_content += truncation_note
-        
-        return html_content
-    
-    except Exception as e:
-        return f"Error reading plot file '{filename}': {str(e)}"
-
-
 # ============================================================================
 # # TOOLS - FFT ANALYSIS
 # ============================================================================
@@ -1253,9 +1204,9 @@ async def plot_iso_20816_chart(
     
     if ctx:
         await ctx.info(f"ISO chart saved to {output_file.name}")
-        await ctx.info(f"💡 To view inline, use: read_plot_html('{output_file.name}')")
+        await ctx.info(f"💡 To view report metadata: list_html_reports() or get_report_info()")
     
-    return f"ISO 20816-3 chart saved to: {output_file}\n💡 For inline rendering: read_plot_html('{output_file.name}')"
+    return f"ISO 20816-3 chart saved to: {output_file}\n💡 Use list_html_reports() to see all reports, or open file in browser"
 
 
 # ============================================================================
@@ -2605,9 +2556,9 @@ async def plot_signal(
     
     if ctx:
         await ctx.info(f"Plot saved to {output_file.name}")
-        await ctx.info(f"💡 To view inline, use: read_plot_html('{output_file.name}')")
+        await ctx.info(f"💡 To view report metadata: list_html_reports() or get_report_info()")
     
-    return f"Interactive plot saved to: {output_file}\n💡 For inline rendering: read_plot_html('{output_file.name}')"
+    return f"Interactive plot saved to: {output_file}\n💡 Use list_html_reports() to see all reports, or open file in browser"
 
 
 @mcp.tool()
@@ -2775,9 +2726,9 @@ async def plot_spectrum(
     if ctx:
         await ctx.info(f"Plot saved to {output_file.name}")
         await ctx.info(f"Detected {len(peak_indices)} significant peaks")
-        await ctx.info(f"💡 To view inline, use: read_plot_html('{output_file.name}')")
+        await ctx.info(f"💡 To view report metadata: list_html_reports() or get_report_info()")
     
-    return f"Interactive plot saved to: {output_file}\n💡 For inline rendering: read_plot_html('{output_file.name}')"
+    return f"Interactive plot saved to: {output_file}\n💡 Use list_html_reports() to see all reports, or open file in browser"
 
 
 @mcp.tool()
@@ -2998,9 +2949,9 @@ async def plot_envelope(
     
     if ctx:
         await ctx.info(f"Plot saved to {output_file.name}")
-        await ctx.info(f"💡 To view inline, use: read_plot_html('{output_file.name}')")
+        await ctx.info(f"💡 To view report metadata: list_html_reports() or get_report_info()")
     
-    return f"Interactive plot saved to: {output_file}\n💡 For inline rendering: read_plot_html('{output_file.name}')"
+    return f"Interactive plot saved to: {output_file}\n💡 Use list_html_reports() to see all reports, or open file in browser"
 
 
 # ============================================================================
