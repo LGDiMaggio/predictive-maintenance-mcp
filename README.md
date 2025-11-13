@@ -11,6 +11,27 @@ A Model Context Protocol server that brings **industrial machinery diagnostics**
 
 > 🔧 **From Vibration Data to Actionable Insights**: Transform raw sensor data into professional diagnostics reports with FFT analysis, envelope analysis, ISO compliance checks, and ML anomaly detection.
 
+## 📑 Table of Contents
+
+- [✨ What Makes This Special](#-what-makes-this-special)
+- [🎬 Quick Examples](#-quick-examples)
+- [🚀 Installation](#-installation)
+- [Configuration](#configuration)
+- [🔧 Available Tools & Resources](#-available-tools--resources)
+- [Architecture](#architecture)
+- [📊 Sample Dataset](#-sample-dataset)
+- [💡 Usage Examples](#-usage-examples)
+- [📊 Professional Reports](#-professional-reports)
+- [Documentation](#documentation)
+- [Debugging](#debugging)
+- [🧪 Testing](#-testing)
+- [🛠️ Development](#️-development)
+- [🚀 Roadmap & Recent Updates](#-roadmap--recent-updates)
+- [License](#license)
+- [Citation](#citation)
+- [Acknowledgments](#acknowledgments)
+- [Support](#support)
+
 ## ✨ What Makes This Special
 
 - **🎯 Real Bearing Fault Data Included** - 15 production-quality vibration signals from real machinery tests
@@ -20,7 +41,9 @@ A Model Context Protocol server that brings **industrial machinery diagnostics**
 - **🔍 Advanced Diagnostics** - FFT spectrum analysis, envelope analysis for bearing faults, time-domain feature extraction
 - **🚀 Zero Configuration** - Works out of the box with sample data, auto-detects sampling rates from metadata
 
-## 🎬 Quick Example
+## 🎬 Quick Examples
+
+### Example 1: Bearing Fault Detection
 
 ```
 Generate envelope report for real_train/OuterRaceFault_1.csv
@@ -33,7 +56,198 @@ Generate envelope report for real_train/OuterRaceFault_1.csv
 4. Identifies outer race fault at ~81 Hz with harmonics
 5. Saves report to `reports/envelope_OuterRaceFault_1_*.html`
 
-## 🚀 Installation
+### Example 2: ISO 20816-3 Vibration Assessment
+
+```
+Evaluate real_train/OuterRaceFault_1.csv against ISO 20816-3 standard
+```
+
+**Result**: 
+- RMS velocity: 4.5 mm/s → Zone B (Acceptable for long-term operation)
+- Interactive HTML report with zone visualization
+- Compliance assessment and recommendations
+
+### Example 3: Machine Manual Integration + Diagnosis
+
+```
+1. Extract specifications from test_pump_manual.pdf
+2. Calculate bearing frequencies for SKF 6205-2RS at 1475 RPM
+3. Diagnose bearing fault in signal_from_pump.csv using calculated frequencies
+```
+
+**Result**: Complete zero-knowledge diagnosis:
+- Extracts: Drive end bearing SKF 6205-2RS, operating speed 1475 RPM
+- Calculates: BPFO=85.20 Hz, BPFI=136.05 Hz, BSF=101.32 Hz
+- Diagnoses: Outer race fault detected with 3 harmonics
+
+📚 **More examples**: See [Usage Examples](#-usage-examples) section below or [EXAMPLES.md](EXAMPLES.md) for complete workflows
+
+## � Available Tools & Resources
+
+### MCP Resources (Direct Data Access)
+
+Resources provide **direct read access** for Claude to examine data:
+
+<details>
+<summary><b>📊 Vibration Signals</b></summary>
+
+- **`signal://list`** - Browse all available signal files with metadata
+- **`signal://read/{filename}`** - Read signal data directly (first 1000 samples preview)
+
+**Usage:** Claude can directly read signals without calling tools first.
+
+</details>
+
+<details>
+<summary><b>📖 Machine Manuals</b></summary>
+
+- **`manual://list`** - Browse available equipment manuals (PDF/TXT)
+- **`manual://read/{filename}`** - Read manual text (first 20 pages)
+
+**Usage:** Claude can answer ANY question about manual content by reading directly.
+
+</details>
+
+---
+
+### MCP Tools (Analysis & Processing)
+
+Tools perform **computations and generate outputs**:
+
+<details>
+<summary><b>📊 Analysis & Diagnostics</b></summary>
+
+- **`analyze_fft`** - FFT spectrum analysis with automatic peak detection
+- **`analyze_envelope`** - Envelope analysis for bearing fault detection
+- **`analyze_statistics`** - Time-domain statistical indicators (RMS, Crest Factor, Kurtosis, etc.)
+- **`evaluate_iso_20816`** - ISO 20816-3 vibration severity assessment
+- **`diagnose_bearing`** - Guided 6-step bearing diagnostic workflow
+- **`diagnose_gear`** - Evidence-based gear fault diagnostic workflow
+
+</details>
+
+<details>
+<summary><b>🤖 Machine Learning</b></summary>
+
+- **`extract_features_from_signal`** - Extract 17+ statistical features from vibration data
+- **`train_anomaly_model`** - Train OneClassSVM/LocalOutlierFactor on healthy baseline
+- **`predict_anomalies`** - Detect anomalies in new signals with confidence scores
+
+</details>
+
+<details>
+<summary><b>📄 Professional Report Generation</b></summary>
+
+- **`generate_fft_report`** - Interactive FFT spectrum HTML report with peak table
+- **`generate_envelope_report`** - Envelope analysis report with bearing fault markers
+- **`generate_iso_report`** - ISO 20816-3 evaluation with zone visualization
+- **`list_html_reports`** - List all generated reports with metadata
+- **`get_report_info`** - Get report details without loading full HTML
+
+> 💡 **All reports are interactive Plotly visualizations saved to `reports/` directory**
+
+</details>
+
+<details>
+<summary><b>📖 Machine Documentation Reader</b></summary>
+
+- **`list_machine_manuals`** - List available equipment manuals (PDF/TXT)
+- **`extract_manual_specs`** - Extract bearings, RPM, power from manual (with caching)
+- **`calculate_bearing_characteristic_frequencies`** - Calculate BPFO/BPFI/BSF/FTF from geometry
+- **`read_manual_excerpt`** - Read manual text excerpt (configurable page limit)
+- **`search_bearing_catalog`** - Search bearing geometry in local catalog (20+ common bearings)
+
+**MCP Resources:**
+- `manual://list` - Browse available manuals
+- `manual://read/{filename}` - Read manual for LLM context
+
+> 🎯 **Upload pump manual → Extract bearing specs → Auto-calculate frequencies → Diagnose signal**
+
+</details>
+
+<details>
+<summary><b>🔍 Data Management</b></summary>
+
+- **`list_signals`** - Browse available signal files with metadata
+- **`generate_test_signal`** - Create synthetic signals for testing
+
+</details>
+
+## Architecture
+
+The system follows a **hybrid MCP architecture** combining Resources (direct data access) and Tools (computational processing):
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    CLAUDE / LLM CLIENT                      │
+└────────────────────┬────────────────────────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────────────────────────┐
+│                   MCP SERVER (FastMCP)                      │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │  RESOURCES (Direct Data Access)                      │  │
+│  │  ┌────────────────────────────────────────────────┐  │  │
+│  │  │  Vibration Signals                             │  │  │
+│  │  │  • signal://list                               │  │  │
+│  │  │  • signal://read/{filename}                    │  │  │
+│  │  └────────────────────────────────────────────────┘  │  │
+│  │  ┌────────────────────────────────────────────────┐  │  │
+│  │  │  Machine Manuals                               │  │  │
+│  │  │  • manual://list                               │  │  │
+│  │  │  • manual://read/{filename}                    │  │  │
+│  │  └────────────────────────────────────────────────┘  │  │
+│  └──────────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │  TOOLS (Analysis & Processing)                       │  │
+│  │  • FFT, Envelope, ISO 20816-3                        │  │
+│  │  • ML Anomaly Detection                              │  │
+│  │  • Report Generation (HTML)                          │  │
+│  │  • Manual Spec Extraction                            │  │
+│  │  • Bearing Frequency Calculation                     │  │
+│  │  • Bearing Catalog Search                            │  │
+│  └──────────────────────────────────────────────────────┘  │
+└────────────────────┬────────────────────────────────────────┘
+                     │
+        ┌────────────┴────────────┐
+        ▼                         ▼
+┌──────────────────┐   ┌──────────────────────────────────┐
+│  SIGNAL ANALYSIS │   │  DOCUMENT READER MODULE          │
+│  MODULE          │   │  ┌────────────┐  ┌────────────┐  │
+│  • FFT Engine    │   │  │ PDF Extract│  │ ISO Formulas│  │
+│  • Envelope      │   │  │ (PyPDF2)   │  │ BPFO/BPFI   │  │
+│  • Filters       │   │  └────────────┘  └────────────┘  │
+│  • Statistics    │   │  ┌─────────────────────────────┐  │
+│  • ML Models     │   │  │  Bearing Catalog DB         │  │
+│  • Plotly Charts │   │  │  • 20+ ISO bearings         │  │
+│                  │   │  └─────────────────────────────┘  │
+└────────┬─────────┘   └────────┬─────────────────────────┘
+         │                      │
+         ▼                      ▼
+┌─────────────────────────────────────────────────────────────┐
+│                   LOCAL FILE SYSTEM                         │
+│  ┌──────────────────────┐   ┌──────────────────────────┐   │
+│  │  data/signals/       │   │  resources/              │   │
+│  │  ├── real_train/     │   │  ├── machine_manuals/    │   │
+│  │  ├── real_test/      │   │  ├── bearing_catalogs/   │   │
+│  │  └── samples/        │   │  ├── datasheets/         │   │
+│  └──────────────────────┘   │  └── cache/ (auto)       │   │
+│  ┌──────────────────────┐   └──────────────────────────┘   │
+│  │  reports/            │   ┌──────────────────────────┐   │
+│  │  • FFT reports       │   │  models/                 │   │
+│  │  • Envelope reports  │   │  • Trained ML models     │   │
+│  │  • ISO reports       │   │  • Scalers, PCA          │   │
+│  └──────────────────────┘   └──────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Key Features:**
+- ✅ **4 MCP Resources** - Direct read access to signals and manuals
+- ✅ **25+ MCP Tools** - Complete diagnostic workflow
+- ✅ **Hybrid Architecture** - Resources for reading, Tools for processing
+- ✅ **Local-First** - All data stays on your machine (privacy-preserving)
+
+##  Installation
 
 ### Quick Start (Python Package)
 
@@ -142,97 +356,7 @@ Create `.vscode/mcp.json` in your workspace
 }
 ```
 
-## 🔧 Available Tools & Resources
-
-### MCP Resources (Direct Data Access)
-
-Resources provide **direct read access** for Claude to examine data:
-
-<details>
-<summary><b>📊 Vibration Signals</b></summary>
-
-- **`signal://list`** - Browse all available signal files with metadata
-- **`signal://read/{filename}`** - Read signal data directly (first 1000 samples preview)
-
-**Usage:** Claude can directly read signals without calling tools first.
-
-</details>
-
-<details>
-<summary><b>📖 Machine Manuals</b></summary>
-
-- **`manual://list`** - Browse available equipment manuals (PDF)
-- **`manual://read/{filename}`** - Read manual text (first 20 pages)
-
-**Usage:** Claude can answer ANY question about manual content by reading directly.
-
-</details>
-
----
-
-### MCP Tools (Analysis & Processing)
-
-Tools perform **computations and generate outputs**:
-
-<details>
-<summary><b>📊 Analysis & Diagnostics</b></summary>
-
-- **`analyze_fft`** - FFT spectrum analysis with automatic peak detection
-- **`analyze_envelope`** - Envelope analysis for bearing fault detection
-- **`analyze_statistics`** - Time-domain statistical indicators (RMS, Crest Factor, Kurtosis, etc.)
-- **`evaluate_iso_20816`** - ISO 20816-3 vibration severity assessment
-- **`diagnose_bearing`** - Guided 6-step bearing diagnostic workflow
-- **`diagnose_gear`** - Evidence-based gear fault diagnostic workflow
-
-</details>
-
-<details>
-<summary><b>🤖 Machine Learning</b></summary>
-
-- **`extract_features_from_signal`** - Extract 17+ statistical features from vibration data
-- **`train_anomaly_model`** - Train OneClassSVM/LocalOutlierFactor on healthy baseline
-- **`predict_anomalies`** - Detect anomalies in new signals with confidence scores
-
-</details>
-
-<details>
-<summary><b>📄 Professional Report Generation</b></summary>
-
-- **`generate_fft_report`** - Interactive FFT spectrum HTML report with peak table
-- **`generate_envelope_report`** - Envelope analysis report with bearing fault markers
-- **`generate_iso_report`** - ISO 20816-3 evaluation with zone visualization
-- **`list_html_reports`** - List all generated reports with metadata
-- **`get_report_info`** - Get report details without loading full HTML
-
-> 💡 **All reports are interactive Plotly visualizations saved to `reports/` directory**
-
-</details>
-
-<details>
-<summary><b>� Machine Documentation Reader (New!)</b></summary>
-
-- **`list_machine_manuals`** - List available equipment manuals (PDF)
-- **`extract_manual_specs`** - Extract bearings, RPM, power from manual (with caching)
-- **`calculate_bearing_characteristic_frequencies`** - Calculate BPFO/BPFI/BSF/FTF from geometry
-- **`read_manual_excerpt`** - Read manual text excerpt (configurable page limit)
-
-**MCP Resources:**
-- `manual://list` - Browse available manuals
-- `manual://read/{filename}` - Read manual for LLM context
-
-> 🎯 **Upload pump manual → Extract bearing specs → Auto-calculate frequencies → Diagnose signal**
-
-</details>
-
-<details>
-<summary><b>�🔍 Data Management</b></summary>
-
-- **`list_signals`** - Browse available signal files with metadata
-- **`generate_test_signal`** - Create synthetic signals for testing
-
-</details>
-
-## 📊 Sample Dataset
+##  Sample Dataset
 
 The server includes **15 real bearing vibration signals** from production machinery:
 
@@ -243,10 +367,6 @@ The server includes **15 real bearing vibration signals** from production machin
 **Specifications**: 97.7 kHz sampling rate, 6-second duration, BPFO=81.13 Hz
 
 📖 **Full dataset documentation**: [data/README.md](data/README.md)
-
-## 💡 Usage Examples
-
-### Quick Fault Detection
 
 ## 💡 Usage Examples
 
@@ -404,77 +524,6 @@ The system now includes a hybrid documentation reader that combines:
 → Type 21, carbon/ceramic faces (extracted from manual text)
 ```
 
-**Architecture:**
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    CLAUDE / LLM CLIENT                      │
-└────────────────────┬────────────────────────────────────────┘
-                     │
-                     ▼
-┌─────────────────────────────────────────────────────────────┐
-│                   MCP SERVER (FastMCP)                      │
-│  ┌──────────────────────────────────────────────────────┐  │
-│  │  RESOURCES (Direct Data Access)                      │  │
-│  │  ┌────────────────────────────────────────────────┐  │  │
-│  │  │  Vibration Signals                             │  │  │
-│  │  │  • signal://list                               │  │  │
-│  │  │  • signal://read/{filename}                    │  │  │
-│  │  └────────────────────────────────────────────────┘  │  │
-│  │  ┌────────────────────────────────────────────────┐  │  │
-│  │  │  Machine Manuals (NEW!)                        │  │  │
-│  │  │  • manual://list                               │  │  │
-│  │  │  • manual://read/{filename}                    │  │  │
-│  │  └────────────────────────────────────────────────┘  │  │
-│  └──────────────────────────────────────────────────────┘  │
-│  ┌──────────────────────────────────────────────────────┐  │
-│  │  TOOLS (Analysis & Processing)                       │  │
-│  │  • FFT, Envelope, ISO 20816-3                        │  │
-│  │  • ML Anomaly Detection                              │  │
-│  │  • Report Generation (HTML)                          │  │
-│  │  • Manual Spec Extraction (NEW!)                     │  │
-│  │  • Bearing Frequency Calculation (NEW!)              │  │
-│  └──────────────────────────────────────────────────────┘  │
-└────────────────────┬────────────────────────────────────────┘
-                     │
-        ┌────────────┴────────────┐
-        ▼                         ▼
-┌──────────────────┐   ┌──────────────────────────────────┐
-│  SIGNAL ANALYSIS │   │  DOCUMENT READER MODULE (NEW!)   │
-│  MODULE          │   │  ┌────────────┐  ┌────────────┐  │
-│  • FFT Engine    │   │  │ PDF Extract│  │ ISO Formulas│  │
-│  • Envelope      │   │  │ (PyPDF2)   │  │ BPFO/BPFI   │  │
-│  • Filters       │   │  └────────────┘  └────────────┘  │
-│  • Statistics    │   │  ┌─────────────────────────────┐  │
-│  • ML Models     │   │  │  Bearing Catalog DB         │  │
-│  • Plotly Charts │   │  │  • 6205, 6206, ...          │  │
-│                  │   │  └─────────────────────────────┘  │
-└────────┬─────────┘   └────────┬─────────────────────────┘
-         │                      │
-         ▼                      ▼
-┌─────────────────────────────────────────────────────────────┐
-│                   LOCAL FILE SYSTEM                         │
-│  ┌──────────────────────┐   ┌──────────────────────────┐   │
-│  │  data/signals/       │   │  resources/              │   │
-│  │  ├── real_train/     │   │  ├── machine_manuals/    │   │
-│  │  ├── real_test/      │   │  ├── bearing_catalogs/   │   │
-│  │  └── samples/        │   │  ├── datasheets/         │   │
-│  └──────────────────────┘   │  └── cache/ (auto)       │   │
-│  ┌──────────────────────┐   └──────────────────────────┘   │
-│  │  reports/            │   ┌──────────────────────────┐   │
-│  │  • FFT reports       │   │  models/                 │   │
-│  │  • Envelope reports  │   │  • Trained ML models     │   │
-│  │  • ISO reports       │   │  • Scalers, PCA          │   │
-│  └──────────────────────┘   └──────────────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
-```
-
-**Key Features:**
-- ✅ **4 MCP Resources** - Direct read access to signals and manuals
-- ✅ **25+ MCP Tools** - Complete diagnostic workflow
-- ✅ **Hybrid Architecture** - Resources for reading, Tools for processing
-- ✅ **Local-First** - All data stays on your machine (privacy-preserving)
-
 **Status:** ✅ Core functionality working, comprehensive tests passing
 
 **Known Limitations:**
@@ -541,7 +590,7 @@ If you use this server in your research or projects:
 - **FastMCP** framework by [@jlowin](https://github.com/jlowin)
 - **Model Context Protocol** by [Anthropic](https://www.anthropic.com/)
 - **Sample Data** from [MathWorks](https://github.com/mathworks/RollingElementBearingFaultDiagnosis-Data)
-- **Development Assistance**: Project infrastructure, testing framework, and CI/CD pipeline developed with assistance from [Claude](https://claude.ai) by Anthropic
+- **Development Assistance**: Core codebase and demonstration examples were developed with assistance from [Claude](https://claude.ai) by Anthropic to rapidly prototype and demonstrate the Model Context Protocol (MCP) concept for predictive maintenance applications. This collaboration enabled quick iteration on the architecture, testing framework, and CI/CD pipeline.
 
 ## Support
 
