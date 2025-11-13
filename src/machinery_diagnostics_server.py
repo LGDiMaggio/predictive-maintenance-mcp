@@ -189,6 +189,8 @@ class StatisticalResult(BaseModel):
     skewness: float = Field(description="Skewness (asymmetry)")
     mean: float = Field(description="Mean value")
     std_dev: float = Field(description="Standard deviation")
+    detected_unit: str = Field(description="Auto-detected signal unit (g acceleration or mm/s velocity)")
+    unit_note: str = Field(description="Important note about signal units and conversion requirements")
 
 
 class SignalInfo(BaseModel):
@@ -1010,6 +1012,16 @@ def analyze_statistics(filename: str) -> StatisticalResult:
     kurtosis_val = float(kurtosis(signal_data, fisher=True))  # Fisher=True for excess kurtosis
     skewness_val = float(skew(signal_data))
     
+    # Auto-detect signal units based on RMS magnitude
+    # Heuristic: acceleration signals typically have RMS > 0.5 g
+    # velocity signals typically have RMS < 100 mm/s (usually 1-50 mm/s range)
+    if rms > 0.5:
+        detected_unit = "g (acceleration)"
+        unit_note = "⚠️ Signal detected as ACCELERATION in 'g' units. For ISO 20816-3 evaluation, use evaluate_iso_20816() which converts to velocity (mm/s)."
+    else:
+        detected_unit = "mm/s (velocity) or g (low-amplitude acceleration)"
+        unit_note = "💡 Signal has low amplitude. If this is acceleration in 'g', values are very low. If velocity in 'mm/s', this is typical for healthy machines."
+    
     return StatisticalResult(
         rms=rms,
         peak_to_peak=peak_to_peak,
@@ -1018,7 +1030,9 @@ def analyze_statistics(filename: str) -> StatisticalResult:
         kurtosis=kurtosis_val,
         skewness=skewness_val,
         mean=mean_val,
-        std_dev=std_dev
+        std_dev=std_dev,
+        detected_unit=detected_unit,
+        unit_note=unit_note
     )
 
 
