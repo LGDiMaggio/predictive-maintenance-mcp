@@ -396,7 +396,7 @@ Validate on OuterRaceFault_1.csv
 
 **Result:** Model detects fault with 95%+ confidence
 
-📚 **More examples**: [EXAMPLES.md](EXAMPLES.md) | **Step-by-step tutorial**: [QUICKSTART.md](QUICKSTART.md)
+📚 **More examples**: [EXAMPLES.md](EXAMPLES.md) for complete diagnostic workflows
 
 ## 📊 Professional Reports
 
@@ -432,8 +432,7 @@ Generate FFT report for baseline_1.csv
 
 ## Documentation
 
-- [EXAMPLES.md](EXAMPLES.md) - Complete diagnostic workflows
-- [QUICKSTART.md](QUICKSTART.md) - Step-by-step tutorials
+- [EXAMPLES.md](EXAMPLES.md) - Complete diagnostic workflows with step-by-step tutorials
 - [CONTRIBUTING.md](CONTRIBUTING.md) - Contribution guidelines
 - [CHANGELOG.md](CHANGELOG.md) - Version history
 
@@ -590,7 +589,7 @@ If you use this server in your research or projects:
 - **FastMCP** framework by [@jlowin](https://github.com/jlowin)
 - **Model Context Protocol** by [Anthropic](https://www.anthropic.com/)
 - **Sample Data** from [MathWorks](https://github.com/mathworks/RollingElementBearingFaultDiagnosis-Data)
-- **Development Assistance**: Core codebase and demonstration examples were developed with assistance from [Claude](https://claude.ai) by Anthropic to rapidly prototype and demonstrate the Model Context Protocol (MCP) concept for predictive maintenance applications. This collaboration enabled quick iteration on the architecture, testing framework, and CI/CD pipeline.
+- **Development Assistance**: Core codebase and demonstration examples were developed with assistance from [Claude](https://claude.ai) by Anthropic to rapidly prototype and demonstrate the Model Context Protocol (MCP) concept for predictive maintenance applications. The coding assistant tool enabled quick iteration on the architecture, testing framework, and CI/CD pipeline.
 
 ## Support
 

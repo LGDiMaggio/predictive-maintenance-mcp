@@ -196,8 +196,8 @@ def main():
         print("   See INSTALL.md for manual setup")
     
     print("\n4. Read documentation:")
-    print("   - README.md - Project overview")
-    print("   - QUICKSTART.md - Usage examples")
+    print("   - README.md - Project overview and quick examples")
+    print("   - EXAMPLES.md - Complete usage examples and tutorials")
     print("   - INSTALL.md - Detailed installation guide")
     print()
 

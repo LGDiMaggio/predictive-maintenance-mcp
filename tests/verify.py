@@ -17,15 +17,8 @@ def check_files():
     required_files = [
         "src/machinery_diagnostics_server.py",
         "README.md",
-        "QUICKSTART.md",
-        "EXAMPLES_CLAUDE.md",
-        "PROJECT_SUMMARY.md",
-        "INDEX.md",
-        "test_suite.py",
-        "helper.py",
-        "pyproject.toml",
-        "claude_desktop_config.json",
-        ".env.example"
+        "EXAMPLES.md",
+        "pyproject.toml"
     ]
     
     all_ok = True
@@ -176,18 +169,16 @@ def print_summary(results):
         print("="*70)
         print("\n✅ The server is READY TO USE!")
         print("\n🚀 Next steps:")
-        print("   1. uv run python helper.py generate    # Generate test signals")
-        print("   2. uv run mcp dev src/machinery_diagnostics_server.py")
-        print("   3. Or configure Claude Desktop (see QUICKSTART.md)")
+        print("   1. Start with: uv run mcp dev src/machinery_diagnostics_server.py")
+        print("   2. Or configure Claude Desktop (see README.md)")
         print("\n📖 Documentation:")
-        print("   - INDEX.md        # Complete index")
-        print("   - QUICKSTART.md   # Quick guide")
-        print("   - EXAMPLES_CLAUDE.md  # Usage examples")
+        print("   - README.md       # Complete guide")
+        print("   - EXAMPLES.md     # Usage examples and tutorials")
     else:
         print("⚠️  SOME CHECKS FAILED")
         print("="*70)
         print("\nResolve the issues indicated above.")
-        print("For help, check README.md or QUICKSTART.md")
+        print("For help, check README.md or EXAMPLES.md")
     
     print("\n" + "="*70 + "\n")
     

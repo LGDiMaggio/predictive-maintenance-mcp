@@ -4,7 +4,6 @@ include LICENSE
 include CONTRIBUTING.md
 include EXAMPLES.md
 include CHANGELOG.md
-include QUICKSTART.md
 include INSTALL.md
 
 # Include configuration files
