@@ -878,7 +878,8 @@ def analyze_statistics(filename: str) -> StatisticalResult:
 
 
 @mcp.tool()
-def evaluate_iso_20816(
+async def evaluate_iso_20816(
+    ctx: Context,
     signal_file: str,
     sampling_rate: float = 10000.0,
     machine_group: int = 2,  # CHANGED: Default 2 (medium) - most common industrial case
@@ -938,7 +939,8 @@ def evaluate_iso_20816(
         ISO20816Result with evaluation zone, severity level, and recommendations
         
     Example:
-        evaluate_iso_20816(
+        await evaluate_iso_20816(
+            ctx,
             "motor_vibration.csv",
             sampling_rate=10000,
             machine_group=2,
@@ -956,12 +958,43 @@ def evaluate_iso_20816(
     
     # Try to read metadata JSON for sampling rate
     metadata_file = filepath.parent / (filepath.stem + "_metadata.json")
+    metadata_found = False
+    user_provided_sampling_rate = (sampling_rate != 10000.0)  # Check if user changed default
+    
     if metadata_file.exists():
         import json
         with open(metadata_file, 'r') as f:
             metadata = json.load(f)
             if 'sampling_rate' in metadata:
+                old_sampling_rate = sampling_rate
                 sampling_rate = metadata['sampling_rate']
+                metadata_found = True
+                if ctx:
+                    await ctx.info(f"✅ Found metadata: sampling_rate = {sampling_rate} Hz")
+                    if user_provided_sampling_rate and old_sampling_rate != sampling_rate:
+                        await ctx.info(f"   (Overriding user-provided {old_sampling_rate} Hz with metadata value)")
+    
+    # CRITICAL: If no metadata and user didn't provide sampling_rate, ASK!
+    if not metadata_found and not user_provided_sampling_rate:
+        if ctx:
+            await ctx.info(f"❌ CRITICAL: No metadata found and no sampling_rate provided!")
+            await ctx.info(f"   Sampling rate is REQUIRED for accurate ISO 20816-3 evaluation.")
+            await ctx.info(f"   Using default {sampling_rate} Hz may give INCORRECT results.")
+            await ctx.info(f"")
+            await ctx.info(f"⚠️  PLEASE CONFIRM:")
+            await ctx.info(f"   • Do you know the sampling rate of '{signal_file}'?")
+            await ctx.info(f"   • If YES: Re-run with correct sampling_rate parameter")
+            await ctx.info(f"   • If NO: Results may be unreliable - use with caution")
+            await ctx.info(f"")
+            await ctx.info(f"⚠️  PROCEEDING WITH DEFAULT {sampling_rate} Hz (may be incorrect!)")
+    elif not metadata_found and user_provided_sampling_rate:
+        if ctx:
+            await ctx.info(f"📌 Using user-provided sampling_rate = {sampling_rate} Hz (no metadata verification)")
+    
+    # Notify about machine parameters
+    if ctx:
+        await ctx.info(f"ℹ️  Machine parameters: Group {machine_group} ({'Large' if machine_group == 1 else 'Medium'}), Support '{support_type}'")
+        await ctx.info(f"   If incorrect, provide machine_group and support_type parameters")
     
     # Auto-detect and convert acceleration to velocity if needed
     # Heuristic: acceleration signals typically have RMS > 0.5 g
@@ -971,6 +1004,14 @@ def evaluate_iso_20816(
         # Convert acceleration (g) to velocity (mm/s)
         # Integration: v(t) = ∫ a(t) dt
         unit_conversion_performed = True
+        
+        if ctx:
+            await ctx.info(f"⚠️ UNIT CONVERSION DETECTED")
+            await ctx.info(f"   Signal auto-detected as ACCELERATION (RMS={rms_raw:.2f} g)")
+            await ctx.info(f"   Converting to VELOCITY (mm/s) for ISO 20816-3 compliance")
+            await ctx.info(f"   ISO 20816-3 requires velocity measurements, not acceleration")
+            await ctx.info(f"💡 If signal is already in mm/s velocity, please verify units!")
+        
         logger.warning(f"⚠️ Signal auto-detected as ACCELERATION (RMS={rms_raw:.2f} g). Converting to velocity (mm/s) for ISO 20816-3 evaluation.")
         
         signal_ac = signal_data - np.mean(signal_data)  # Remove DC
@@ -1124,7 +1165,8 @@ async def plot_iso_20816_chart(
         await ctx.info(f"Evaluating ISO 20816-3 for {filename}...")
     
     # First, perform ISO evaluation
-    iso_result = evaluate_iso_20816(
+    iso_result = await evaluate_iso_20816(
+        ctx=ctx,
         signal_file=filename,
         sampling_rate=sampling_rate,
         machine_group=machine_group,
@@ -3207,7 +3249,8 @@ async def generate_iso_report(
             raise ValueError("sampling_rate required")
     
     # Perform ISO evaluation
-    iso_result = evaluate_iso_20816(
+    iso_result = await evaluate_iso_20816(
+        ctx=ctx,
         signal_file=signal_file,
         sampling_rate=sampling_rate,
         machine_group=machine_group,
