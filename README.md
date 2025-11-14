@@ -1,10 +1,12 @@
 # 🏭 Predictive Maintenance MCP Server
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![PyPI version](https://img.shields.io/pypi/v/predictive-maintenance-mcp.svg)](https://pypi.org/project/predictive-maintenance-mcp/)
 [![Tests](https://github.com/LGDiMaggio/predictive-maintenance-mcp/actions/workflows/tests.yml/badge.svg)](https://github.com/LGDiMaggio/predictive-maintenance-mcp/actions/workflows/tests.yml)
 [![codecov](https://codecov.io/gh/LGDiMaggio/predictive-maintenance-mcp/branch/main/graph/badge.svg)](https://codecov.io/gh/LGDiMaggio/predictive-maintenance-mcp)
 [![FastMCP](https://img.shields.io/badge/FastMCP-powered-green.svg)](https://github.com/jlowin/fastmcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![smithery badge](https://smithery.ai/badge/@LGDiMaggio/predictive-maintenance-mcp)](https://smithery.ai/server/@LGDiMaggio/predictive-maintenance-mcp)
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-Luigi%20Di%20Maggio-0077B5?logo=linkedin)](https://www.linkedin.com/in/luigi-gianpio-di-maggio)
 
 A Model Context Protocol server that brings **industrial machinery diagnostics** directly to LLMs like Claude, enabling AI-powered vibration analysis, bearing fault detection, and predictive maintenance workflows all through natural conversation.
@@ -286,7 +288,42 @@ Add to your Claude Desktop config (`%APPDATA%\Claude\claude_desktop_config.json`
 > 📋 **Example configs**: See [`claude_desktop_config_EXAMPLE.json`](claude_desktop_config_EXAMPLE.json) (using UV) and [`claude_desktop_config_PYTHON_VENV.json`](claude_desktop_config_PYTHON_VENV.json) (using Python virtual environment)
 
 <details>
-<summary>Using NPX</summary>
+<summary>Using NPX (recommended for easy installation)</summary>
+
+```json
+{
+  "mcpServers": {
+    "predictive-maintenance": {
+      "command": "uvx",
+      "args": ["predictive-maintenance-mcp"]
+    }
+  }
+}
+```
+
+> **Note**: `uvx` automatically manages the Python environment and dependencies. This is the recommended installation method.
+
+</details>
+
+<details>
+<summary>Using pip installation</summary>
+
+```json
+{
+  "mcpServers": {
+    "predictive-maintenance": {
+      "command": "predictive-maintenance-mcp"
+    }
+  }
+}
+```
+
+> **Prerequisites**: Install first with `pip install predictive-maintenance-mcp` or `pipx install predictive-maintenance-mcp`
+
+</details>
+
+<details>
+<summary>Using UV</summary>
 
 ```json
 {

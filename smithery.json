@@ -1,0 +1,18 @@
+{
+  "name": "predictive-maintenance-mcp",
+  "description": "AI-powered predictive maintenance and fault diagnosis for industrial machinery - vibration analysis, bearing diagnostics, ISO 20816-3 compliance, and ML anomaly detection",
+  "version": "0.2.0",
+  "author": {
+    "name": "Luigi Gianpio Di Maggio",
+    "url": "https://github.com/LGDiMaggio"
+  },
+  "homepage": "https://github.com/LGDiMaggio/predictive-maintenance-mcp",
+  "license": "MIT",
+  "mcpServers": {
+    "predictive-maintenance": {
+      "command": "uvx",
+      "args": ["predictive-maintenance-mcp"],
+      "env": {}
+    }
+  }
+}

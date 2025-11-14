@@ -37,7 +37,7 @@ from mcp.server.session import ServerSession
 
 # Import report generation system
 try:
-    from src.report_generator import (
+    from .report_generator import (
         save_fft_report,
         save_envelope_report,
         save_iso_report,
@@ -45,7 +45,7 @@ try:
         list_reports,
         REPORTS_DIR
     )
-    from src.document_reader import (
+    from .document_reader import (
         calculate_bearing_frequencies,
         extract_machine_specs,
         extract_bearing_designation,
@@ -54,6 +54,7 @@ try:
         extract_text_from_pdf
     )
 except ImportError:
+    # Fallback for direct script execution
     from report_generator import (
         save_fft_report,
         save_envelope_report,
@@ -111,13 +112,17 @@ mcp = FastMCP(
     5) Always cite which analyses and thresholds support each conclusion. If data or parameters are missing, ask for them instead of guessing.
     6) NEVER suggest parameters, thresholds, or recommendations not explicitly provided in tool outputs or prompt workflows. Do NOT invent frequency ranges, filter settings, or maintenance actions. Only use guidance from STEP 6 of diagnostic prompts.
 
-    Signal unit confirmation policy (CRITICAL):
-    - When calling evaluate_iso_20816(), ALWAYS ask user to confirm signal units before proceeding
-    - Use analyze_statistics() first to check detected_unit field
-    - If user doesn't explicitly provide signal_unit parameter, auto-detection will be used (RMS > 0.5 → 'g', else 'mm/s')
-    - ALWAYS inform user about detected unit and ask: "Is this correct? The signal appears to be in [detected unit]"
-    - Only proceed with ISO evaluation after user confirms units
+    Signal unit confirmation policy (CRITICAL - Hypothesis-based flow):
+    - When calling evaluate_iso_20816(), tool follows hypothesis-based unit detection:
+      1. Check metadata file for 'signal_unit' field (best practice)
+      2. Use user-provided signal_unit parameter if explicitly given
+      3. If neither exists: Tool generates RMS-based hypothesis and ASKS USER to confirm
+      4. Default assumption: 'g' (acceleration) if user doesn't know
+    - Tool will display hypothesis reasoning and request user confirmation
+    - ALWAYS inform user about the hypothesis and ask for confirmation
+    - If user confirms hypothesis is wrong, they must provide correct signal_unit parameter
     - Wrong unit conversion (g ↔ mm/s) completely invalidates ISO 20816-3 results!
+    - Best practice: Recommend user adds 'signal_unit' field to metadata JSON files
 
     Output formatting rules:
     - Keep responses brief (≤300 words, bullet points)
@@ -1102,9 +1107,16 @@ async def evaluate_iso_20816(
         machine_group: Machine group 1 (large) or 2 (medium) (default: 2 - medium)
         support_type: 'rigid' or 'flexible' (default: 'rigid')
         operating_speed_rpm: Operating speed in RPM (optional, for frequency range selection)
-        signal_unit: Signal unit - 'g' (acceleration) or 'mm/s' (velocity). 
-                     If None, auto-detection will be attempted (RMS > 0.5 → 'g', else 'mm/s').
-                     **IMPORTANT**: Please specify explicitly to avoid conversion errors!
+        signal_unit: Signal unit - 'g' or 'm/s²' (acceleration) or 'mm/s' or 'm/s' (velocity).
+                     
+                     **PRIORITY ORDER FOR UNIT DETECTION:**
+                     1. Check metadata file for 'signal_unit' field (recommended)
+                     2. Use this parameter if explicitly provided
+                     3. If neither exists: LLM will ask user to confirm based on RMS hypothesis
+                     4. Default assumption: 'g' (most common for vibration sensors)
+                     
+                     **IMPORTANT**: Wrong unit completely invalidates ISO 20816-3 results!
+                     Best practice: Add 'signal_unit' field to metadata JSON files.
     
     Returns:
         ISO20816Result with evaluation zone, severity level, and recommendations
@@ -1168,51 +1180,117 @@ async def evaluate_iso_20816(
         await ctx.info(f"ℹ️  Machine parameters: Group {machine_group} ({'Large' if machine_group == 1 else 'Medium'}), Support '{support_type}'")
         await ctx.info(f"   If incorrect, provide machine_group and support_type parameters")
     
-    # Auto-detect and convert acceleration to velocity if needed
-    # Heuristic: acceleration signals typically have RMS > 0.5 g
+    # ========================================================================
+    # SIGNAL UNIT DETECTION WITH HYPOTHESIS FLOW
+    # ========================================================================
+    # Priority order:
+    # 1. Check metadata file for 'signal_unit' field
+    # 2. Use user-provided signal_unit parameter
+    # 3. Ask LLM to request from user (warning message)
+    # 4. Default assumption: 'g' (acceleration) if no information available
+    
     rms_raw = np.sqrt(np.mean(signal_data**2))
     unit_conversion_performed = False
+    detected_unit = None
+    unit_source = None
     
-    # Determine actual signal unit (user-provided or auto-detected)
+    # STEP 1: Check metadata for signal_unit
+    if metadata_found and metadata_file.exists():
+        try:
+            with open(metadata_file) as f:
+                metadata = json.load(f)
+                if 'signal_unit' in metadata:
+                    detected_unit = metadata['signal_unit'].lower()
+                    unit_source = 'metadata'
+                    if ctx:
+                        await ctx.info(f"")
+                        await ctx.info(f"✅ SIGNAL UNIT from metadata: '{metadata['signal_unit']}'")
+        except Exception:
+            pass
+    
+    # STEP 2: User explicitly provided signal_unit parameter
     if signal_unit is not None:
-        # User explicitly provided unit
         detected_unit = signal_unit.lower()
+        unit_source = 'user_parameter'
         if ctx:
-            await ctx.info(f"✅ User specified signal_unit = '{signal_unit}'")
-    else:
-        # Auto-detect based on RMS heuristic
-        if rms_raw > 0.5:
-            detected_unit = 'g'
-            if ctx:
-                await ctx.info(f"⚠️  AUTO-DETECTION: Signal appears to be ACCELERATION (RMS={rms_raw:.2f} > 0.5)")
-                await ctx.info(f"   Detected unit: 'g' (acceleration)")
-                await ctx.info(f"   If this is incorrect, please re-run with signal_unit='mm/s' parameter")
-        else:
-            detected_unit = 'mm/s'
-            if ctx:
-                await ctx.info(f"⚠️  AUTO-DETECTION: Signal appears to be VELOCITY (RMS={rms_raw:.2f} < 0.5)")
-                await ctx.info(f"   Detected unit: 'mm/s' (velocity)")
-                await ctx.info(f"   If this is incorrect, please re-run with signal_unit='g' parameter")
+            await ctx.info(f"")
+            await ctx.info(f"✅ SIGNAL UNIT from user parameter: '{signal_unit}'")
     
-    # Convert if necessary (g → mm/s)
-    if detected_unit == 'g':
-        # Convert acceleration (g) to velocity (mm/s)
+    # STEP 3: No metadata, no user input → ASK USER with hypothesis
+    if detected_unit is None:
+        unit_source = 'assumed_default'
+        # Calculate RMS-based hypothesis
+        if rms_raw > 0.5:
+            hypothesis = 'g'
+            hypothesis_reason = f"RMS={rms_raw:.2f} > 0.5 (typical for acceleration)"
+        else:
+            hypothesis = 'mm/s'
+            hypothesis_reason = f"RMS={rms_raw:.2f} < 0.5 (typical for velocity)"
+        
+        if ctx:
+            await ctx.info(f"")
+            await ctx.info(f"⚠️  SIGNAL UNIT UNKNOWN - ASKING USER FOR CONFIRMATION")
+            await ctx.info(f"")
+            await ctx.info(f"❓ HYPOTHESIS: Signal appears to be in '{hypothesis}' units")
+            await ctx.info(f"   Reasoning: {hypothesis_reason}")
+            await ctx.info(f"")
+            await ctx.info(f"🙋 PLEASE CONFIRM SIGNAL UNITS:")
+            await ctx.info(f"   • Is the signal in 'g' (acceleration) or 'm/s²' (acceleration)?")
+            await ctx.info(f"   • Or is it already in 'mm/s' (velocity)?")
+            await ctx.info(f"")
+            await ctx.info(f"💡 HOW TO SPECIFY:")
+            await ctx.info(f"   1. Add 'signal_unit' field to metadata file: {metadata_file.name}")
+            await ctx.info(f"      Example: {{'signal_unit': 'g', ...}}")
+            await ctx.info(f"   2. OR provide signal_unit parameter when calling this tool")
+            await ctx.info(f"      Example: signal_unit='g' or signal_unit='mm/s'")
+            await ctx.info(f"")
+            await ctx.info(f"⚠️  DEFAULT ASSUMPTION: Using '{hypothesis}' (most common for vibration sensors)")
+            await ctx.info(f"   If this is incorrect, results will be INVALID!")
+        
+        # Use hypothesis as default
+        detected_unit = hypothesis
+    
+    # Validate detected unit
+    if detected_unit not in ['g', 'm/s²', 'mm/s', 'm/s']:
+        if ctx:
+            await ctx.info(f"❌ ERROR: Invalid signal_unit '{detected_unit}'")
+            await ctx.info(f"   Valid values: 'g', 'm/s²' (acceleration) or 'mm/s', 'm/s' (velocity)")
+        raise ValueError(f"Invalid signal_unit: '{detected_unit}'. Must be 'g', 'm/s²', 'mm/s', or 'm/s'")
+    
+    # Normalize unit names (handle m/s² same as g, m/s same as mm/s but needs conversion)
+    if detected_unit in ['g', 'm/s²']:
+        needs_conversion = True
+        original_unit_display = detected_unit
+    elif detected_unit in ['mm/s', 'm/s']:
+        needs_conversion = (detected_unit == 'm/s')  # m/s needs conversion to mm/s
+        original_unit_display = detected_unit
+        if detected_unit == 'm/s':
+            # Convert m/s to mm/s directly
+            signal_data = signal_data * 1000.0
+            detected_unit = 'mm/s'
+    
+    # Convert if necessary (g or m/s² → mm/s)
+    if needs_conversion and detected_unit in ['g', 'm/s²']:
+        # Convert acceleration to velocity (mm/s)
         # Integration: v(t) = ∫ a(t) dt
         unit_conversion_performed = True
         
         if ctx:
             await ctx.info(f"")
-            await ctx.info(f"🔄 UNIT CONVERSION: Acceleration (g) → Velocity (mm/s)")
+            await ctx.info(f"🔄 UNIT CONVERSION: Acceleration ({original_unit_display}) → Velocity (mm/s)")
             await ctx.info(f"   ISO 20816-3 requires velocity measurements")
             await ctx.info(f"   Performing frequency-domain integration...")
         
-        logger.info(f"Converting acceleration (g) to velocity (mm/s) for ISO 20816-3 evaluation. RMS={rms_raw:.2f} g")
+        logger.info(f"Converting acceleration ({original_unit_display}) to velocity (mm/s) for ISO 20816-3 evaluation. RMS={rms_raw:.2f}")
         
         signal_ac = signal_data - np.mean(signal_data)  # Remove DC
         
-        # Convert from g to m/s²
-        g_const = 9.80665  # m/s²
-        accel_ms2 = signal_ac * g_const
+        # Convert to m/s² if in g
+        if detected_unit == 'g':
+            g_const = 9.80665  # m/s²
+            accel_ms2 = signal_ac * g_const
+        else:  # already in m/s²
+            accel_ms2 = signal_ac
         
         # Integrate in frequency domain
         n = len(accel_ms2)
@@ -1234,7 +1312,7 @@ async def evaluate_iso_20816(
         
         if ctx:
             rms_converted = np.sqrt(np.mean(signal_data**2))
-            await ctx.info(f"✅ Conversion complete: {rms_raw:.2f} g → {rms_converted:.2f} mm/s RMS")
+            await ctx.info(f"✅ Conversion complete: {rms_raw:.2f} {original_unit_display} → {rms_converted:.2f} mm/s RMS")
     elif detected_unit == 'mm/s':
         # Already in correct units
         if ctx:

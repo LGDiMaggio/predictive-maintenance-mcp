@@ -1,5 +1,6 @@
 {
   "sampling_rate": 48828.0,
+  "signal_unit": "g",
   "shaft_speed": 25.0,
   "load": 100.0,
   "BPFI": 118.875,

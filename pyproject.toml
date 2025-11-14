@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "predictive-maintenance-mcp"
 version = "0.2.0"
@@ -51,6 +55,9 @@ Repository = "https://github.com/LGDiMaggio/predictive-maintenance-mcp"
 Documentation = "https://github.com/LGDiMaggio/predictive-maintenance-mcp/blob/main/README.md"
 Issues = "https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues"
 Discussions = "https://github.com/LGDiMaggio/predictive-maintenance-mcp/discussions"
+
+[project.scripts]
+predictive-maintenance-mcp = "machinery_diagnostics_server:main"
 
 [project.optional-dependencies]
 dev = [
