@@ -12,6 +12,7 @@ A Model Context Protocol server that brings **industrial machinery diagnostics**
 
 > 🔧 **From Vibration Data and Machine Manuals to Actionable Insights**: Transform raw sensor data into reports with ISO compliance checks, FFT analysis, envelope analysis and ML anomaly detection. PdM workflows supported by LLMs.
 
+![cover][assets\predictive-maintenance-mcp_com.jpg]
 
 ## 📑 Table of Contents
 
