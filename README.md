@@ -282,79 +282,11 @@ pip install -e .
 
 ### Claude Desktop
 
-Add to your Claude Desktop config (`%APPDATA%\Claude\claude_desktop_config.json` on Windows, `~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
+Add to your Claude Desktop config:
+- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
 
-> 📋 **Example configs**: See [`claude_desktop_config_EXAMPLE.json`](claude_desktop_config_EXAMPLE.json) (using UV) and [`claude_desktop_config_PYTHON_VENV.json`](claude_desktop_config_PYTHON_VENV.json) (using Python virtual environment)
-
-<details>
-<summary>Using NPX (recommended for easy installation)</summary>
-
-```json
-{
-  "mcpServers": {
-    "predictive-maintenance": {
-      "command": "uvx",
-      "args": ["predictive-maintenance-mcp"]
-    }
-  }
-}
-```
-
-> **Note**: `uvx` automatically manages the Python environment and dependencies. This is the recommended installation method.
-
-</details>
-
-<details>
-<summary>Using pip installation</summary>
-
-```json
-{
-  "mcpServers": {
-    "predictive-maintenance": {
-      "command": "predictive-maintenance-mcp"
-    }
-  }
-}
-```
-
-> **Prerequisites**: Install first with `pip install predictive-maintenance-mcp` or `pipx install predictive-maintenance-mcp`
-
-</details>
-
-<details>
-<summary>Using UV</summary>
-
-```json
-{
-  "mcpServers": {
-    "predictive-maintenance": {
-      "command": "npx",
-      "args": ["-y", "predictive-maintenance-mcp"]
-    }
-  }
-}
-```
-
-</details>
-
-<details>
-<summary>Using UV</summary>
-
-```json
-{
-  "mcpServers": {
-    "predictive-maintenance": {
-      "command": "uvx",
-      "args": ["predictive-maintenance-mcp"]
-    }
-  }
-}
-```
-
-</details>
-
-<details>
-<summary>Using Python (from source)</summary>
+> 📋 **Example config**: See [`claude_desktop_config_PYTHON_VENV.json`](claude_desktop_config_PYTHON_VENV.json) for a complete example
 
 ```json
 {
@@ -367,30 +299,30 @@ Add to your Claude Desktop config (`%APPDATA%\Claude\claude_desktop_config.json`
 }
 ```
 
-> **Note**: Replace `C:/path/to/predictive-maintenance-mcp` with your actual project path. Use **absolute paths** for both command and args.
+> **Important Notes**:
+> - Replace `C:/path/to/predictive-maintenance-mcp` with your actual project path
+> - Use **absolute paths** for both `command` and `args`
+> - On macOS/Linux, use `.venv/bin/python` instead of `.venv/Scripts/python.exe`
+> - Forward slashes (`/`) work on all platforms, including Windows
 
-</details>
+After configuration, **restart Claude Desktop** completely.
 
 ### VS Code
 
-For manual installation, add to your MCP configuration:
-
-**Method 1: User Configuration (Recommended)**
-Open Command Palette (`Ctrl + Shift + P`) → `MCP: Open User Configuration`
-
-**Method 2: Workspace Configuration**
-Create `.vscode/mcp.json` in your workspace
+Add to your MCP configuration (`.vscode/mcp.json` or user settings):
 
 ```json
 {
   "servers": {
     "predictive-maintenance": {
-      "command": "npx",
-      "args": ["-y", "predictive-maintenance-mcp"]
+      "command": "/path/to/predictive-maintenance-mcp/.venv/bin/python",
+      "args": ["/path/to/predictive-maintenance-mcp/src/machinery_diagnostics_server.py"]
     }
   }
 }
 ```
+
+> Adjust paths according to your system (use `.venv/Scripts/python.exe` on Windows)
 
 ##  Sample Dataset
 
