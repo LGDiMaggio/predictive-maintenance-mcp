@@ -13,6 +13,7 @@ A Model Context Protocol server that brings **industrial machinery diagnostics**
 
 > 🔧 **From Vibration Data and Machine Manuals to Actionable Insights**: Transform raw sensor data into reports with ISO compliance checks, FFT analysis, envelope analysis and ML anomaly detection. PdM workflows supported by LLMs.
 
+
 ## 📑 Table of Contents
 
 - [✨ What Makes This Special](#-what-makes-this-special)
@@ -627,6 +628,8 @@ If you use this server in your research or projects:
 - **Model Context Protocol** by [Anthropic](https://www.anthropic.com/)
 - **Sample Data** from [MathWorks](https://github.com/mathworks/RollingElementBearingFaultDiagnosis-Data)
 - **Development Assistance**: Core codebase and demonstration examples were developed with assistance from [Claude](https://claude.ai) by Anthropic to rapidly prototype and demonstrate the Model Context Protocol (MCP) concept for predictive maintenance applications. The coding assistant tool enabled quick iteration on the architecture, testing framework, and CI/CD pipeline.
+
+> ⚠️ **Development Notice**: This codebase was generated using Claude AI under human supervision to explore and validate MCP-based approaches for industrial diagnostics and predictive maintenance workflows. While the implementation demonstrates the potential of AI-assisted development for specialized engineering domains, **thorough testing and validation are required** before any production or safety-critical use. The project serves as a research prototype to evaluate how LLM-powered tools can enhance human expertise in machinery condition monitoring.
 
 ## Support
 

@@ -1869,15 +1869,42 @@ async def train_anomaly_model(
             # Prepare validation features for fault signals
             fault_features_list = []
             for fault_file in fault_signal_files:
-                fault_signal, fault_fs, _ = read_signal_with_metadata(fault_file)
-                if fault_signal is not None:
-                    fault_features = extract_features_from_signal(
-                        signal_data=fault_signal,
-                        sampling_rate=fault_fs,
-                        segment_duration=segment_duration,
-                        overlap=overlap_ratio
-                    )
-                    fault_features_scaled = scaler.transform(fault_features)
+                filepath = DATA_DIR / fault_file
+                if not filepath.exists():
+                    if ctx:
+                        await ctx.warning(f"Fault file not found: {fault_file}, skipping")
+                    continue
+                
+                # Auto-detect or use provided sampling rate
+                file_sampling_rate = sampling_rate
+                if file_sampling_rate is None:
+                    metadata_path = DATA_DIR / fault_file.replace('.csv', '_metadata.json')
+                    if metadata_path.exists():
+                        with open(metadata_path) as f:
+                            metadata = json.load(f)
+                            file_sampling_rate = metadata.get("sampling_rate")
+                
+                if file_sampling_rate is None:
+                    if ctx:
+                        await ctx.warning(f"No sampling rate for {fault_file}, skipping")
+                    continue
+                
+                df = pd.read_csv(filepath, header=None)
+                fault_signal = df.iloc[:, 0].values
+                
+                # Extract features
+                segment_length_samples = int(segment_duration * file_sampling_rate)
+                hop_length = int(segment_length_samples * (1 - overlap_ratio))
+                
+                fault_segment_features = []
+                for start in range(0, len(fault_signal) - segment_length_samples + 1, hop_length):
+                    segment = fault_signal[start:start + segment_length_samples]
+                    features = extract_time_domain_features(segment)
+                    fault_segment_features.append(features)
+                
+                if fault_segment_features:
+                    fault_features_df = pd.DataFrame(fault_segment_features)
+                    fault_features_scaled = scaler.transform(fault_features_df.values)
                     fault_features_pca = pca.transform(fault_features_scaled)
                     fault_features_list.append(fault_features_pca)
             
@@ -1888,17 +1915,44 @@ async def train_anomaly_model(
             
             # Prepare validation features for healthy signals
             healthy_val_features_list = []
-            if healthy_validation_signal_files:
-                for healthy_val_file in healthy_validation_signal_files:
-                    healthy_val_signal, healthy_val_fs, _ = read_signal_with_metadata(healthy_val_file)
-                    if healthy_val_signal is not None:
-                        healthy_val_features = extract_features_from_signal(
-                            signal_data=healthy_val_signal,
-                            sampling_rate=healthy_val_fs,
-                            segment_duration=segment_duration,
-                            overlap=overlap_ratio
-                        )
-                        healthy_val_features_scaled = scaler.transform(healthy_val_features)
+            if healthy_validation_files:
+                for healthy_val_file in healthy_validation_files:
+                    filepath = DATA_DIR / healthy_val_file
+                    if not filepath.exists():
+                        if ctx:
+                            await ctx.warning(f"Healthy validation file not found: {healthy_val_file}, skipping")
+                        continue
+                    
+                    # Auto-detect or use provided sampling rate
+                    file_sampling_rate = sampling_rate
+                    if file_sampling_rate is None:
+                        metadata_path = DATA_DIR / healthy_val_file.replace('.csv', '_metadata.json')
+                        if metadata_path.exists():
+                            with open(metadata_path) as f:
+                                metadata = json.load(f)
+                                file_sampling_rate = metadata.get("sampling_rate")
+                    
+                    if file_sampling_rate is None:
+                        if ctx:
+                            await ctx.warning(f"No sampling rate for {healthy_val_file}, skipping")
+                        continue
+                    
+                    df = pd.read_csv(filepath, header=None)
+                    healthy_val_signal = df.iloc[:, 0].values
+                    
+                    # Extract features
+                    segment_length_samples = int(segment_duration * file_sampling_rate)
+                    hop_length = int(segment_length_samples * (1 - overlap_ratio))
+                    
+                    healthy_val_segment_features = []
+                    for start in range(0, len(healthy_val_signal) - segment_length_samples + 1, hop_length):
+                        segment = healthy_val_signal[start:start + segment_length_samples]
+                        features = extract_time_domain_features(segment)
+                        healthy_val_segment_features.append(features)
+                    
+                    if healthy_val_segment_features:
+                        healthy_val_features_df = pd.DataFrame(healthy_val_segment_features)
+                        healthy_val_features_scaled = scaler.transform(healthy_val_features_df.values)
                         healthy_val_features_pca = pca.transform(healthy_val_features_scaled)
                         healthy_val_features_list.append(healthy_val_features_pca)
             
@@ -1996,15 +2050,42 @@ async def train_anomaly_model(
             # Otherwise extract them here
             fault_features_list = []
             for fault_file in fault_signal_files:
-                fault_signal, fault_fs, _ = read_signal_with_metadata(fault_file)
-                if fault_signal is not None:
-                    fault_features = extract_features_from_signal(
-                        signal_data=fault_signal,
-                        sampling_rate=fault_fs,
-                        segment_duration=segment_duration,
-                        overlap=overlap_ratio
-                    )
-                    fault_features_scaled = scaler.transform(fault_features)
+                filepath = DATA_DIR / fault_file
+                if not filepath.exists():
+                    if ctx:
+                        await ctx.warning(f"Fault file not found: {fault_file}, skipping")
+                    continue
+                
+                # Auto-detect or use provided sampling rate
+                file_sampling_rate = sampling_rate
+                if file_sampling_rate is None:
+                    metadata_path = DATA_DIR / fault_file.replace('.csv', '_metadata.json')
+                    if metadata_path.exists():
+                        with open(metadata_path) as f:
+                            metadata = json.load(f)
+                            file_sampling_rate = metadata.get("sampling_rate")
+                
+                if file_sampling_rate is None:
+                    if ctx:
+                        await ctx.warning(f"No sampling rate for {fault_file}, skipping")
+                    continue
+                
+                df = pd.read_csv(filepath, header=None)
+                fault_signal = df.iloc[:, 0].values
+                
+                # Extract features
+                segment_length_samples = int(segment_duration * file_sampling_rate)
+                hop_length = int(segment_length_samples * (1 - overlap_ratio))
+                
+                fault_segment_features = []
+                for start in range(0, len(fault_signal) - segment_length_samples + 1, hop_length):
+                    segment = fault_signal[start:start + segment_length_samples]
+                    features = extract_time_domain_features(segment)
+                    fault_segment_features.append(features)
+                
+                if fault_segment_features:
+                    fault_features_df = pd.DataFrame(fault_segment_features)
+                    fault_features_scaled = scaler.transform(fault_features_df.values)
                     fault_features_pca = pca.transform(fault_features_scaled)
                     fault_features_list.append(fault_features_pca)
             
@@ -2015,17 +2096,44 @@ async def train_anomaly_model(
             
             # Prepare healthy validation features
             healthy_val_features_list = []
-            if healthy_validation_signal_files:
-                for healthy_val_file in healthy_validation_signal_files:
-                    healthy_val_signal, healthy_val_fs, _ = read_signal_with_metadata(healthy_val_file)
-                    if healthy_val_signal is not None:
-                        healthy_val_features = extract_features_from_signal(
-                            signal_data=healthy_val_signal,
-                            sampling_rate=healthy_val_fs,
-                            segment_duration=segment_duration,
-                            overlap=overlap_ratio
-                        )
-                        healthy_val_features_scaled = scaler.transform(healthy_val_features)
+            if healthy_validation_files:
+                for healthy_val_file in healthy_validation_files:
+                    filepath = DATA_DIR / healthy_val_file
+                    if not filepath.exists():
+                        if ctx:
+                            await ctx.warning(f"Healthy validation file not found: {healthy_val_file}, skipping")
+                        continue
+                    
+                    # Auto-detect or use provided sampling rate
+                    file_sampling_rate = sampling_rate
+                    if file_sampling_rate is None:
+                        metadata_path = DATA_DIR / healthy_val_file.replace('.csv', '_metadata.json')
+                        if metadata_path.exists():
+                            with open(metadata_path) as f:
+                                metadata = json.load(f)
+                                file_sampling_rate = metadata.get("sampling_rate")
+                    
+                    if file_sampling_rate is None:
+                        if ctx:
+                            await ctx.warning(f"No sampling rate for {healthy_val_file}, skipping")
+                        continue
+                    
+                    df = pd.read_csv(filepath, header=None)
+                    healthy_val_signal = df.iloc[:, 0].values
+                    
+                    # Extract features
+                    segment_length_samples = int(segment_duration * file_sampling_rate)
+                    hop_length = int(segment_length_samples * (1 - overlap_ratio))
+                    
+                    healthy_val_segment_features = []
+                    for start in range(0, len(healthy_val_signal) - segment_length_samples + 1, hop_length):
+                        segment = healthy_val_signal[start:start + segment_length_samples]
+                        features = extract_time_domain_features(segment)
+                        healthy_val_segment_features.append(features)
+                    
+                    if healthy_val_segment_features:
+                        healthy_val_features_df = pd.DataFrame(healthy_val_segment_features)
+                        healthy_val_features_scaled = scaler.transform(healthy_val_features_df.values)
                         healthy_val_features_pca = pca.transform(healthy_val_features_scaled)
                         healthy_val_features_list.append(healthy_val_features_pca)
             
