@@ -45,6 +45,8 @@ A Model Context Protocol server that brings **industrial machinery diagnostics**
 ![ISO Compliance](assets/iso.png)
 - **🔍 Advanced Diagnostics** - FFT spectrum analysis, envelope analysis for bearing faults, time-domain feature extraction
 ![Envelope analysis 1](assets/envelope_analysis.png)
+![Envelope analysis 2](assets/envelope_signals.png)
+![Envelope analysis 3](assets/envelope_list.png)
 - **🚀 Zero Configuration** - Works out of the box with sample data, auto-detects sampling rates from metadata
 
 ## 🔬 Proof of Concept & Community Invitation
