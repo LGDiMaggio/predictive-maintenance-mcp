@@ -2295,7 +2295,7 @@ async def extract_manual_specs(
     manual_filename: str,
     use_cache: bool = True,
     ctx: Context | None = None
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Extract machine specifications from equipment manual PDF.
     
@@ -2368,7 +2368,7 @@ async def calculate_bearing_characteristic_frequencies(
     contact_angle_deg: float = 0.0,
     shaft_speed_rpm: float = 1500.0,
     ctx: Context | None = None
-) -> Dict[str, float]:
+) -> dict[str, float]:
     """
     Calculate bearing characteristic frequencies from geometry.
     
@@ -2498,7 +2498,7 @@ async def read_manual_excerpt(
 async def search_bearing_catalog(
     bearing_designation: str,
     ctx: Context | None = None
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Search for bearing specifications in local bearing catalogs.
     
@@ -3229,7 +3229,7 @@ async def generate_fft_report(
     num_peaks: int = 15,
     rotation_freq: Optional[float] = None,
     ctx: Context | None = None
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Generate professional FFT spectrum report as HTML file.
     
@@ -3310,9 +3310,9 @@ async def generate_envelope_report(
     filter_high: float = 5000.0,
     max_freq: float = 500.0,
     num_peaks: int = 15,
-    bearing_freqs: Optional[Dict[str, float]] = None,
+    bearing_freqs: Optional[dict[str, float]] = None,
     ctx: Context | None = None
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Generate professional envelope analysis report as HTML file.
     
@@ -3414,7 +3414,7 @@ async def generate_iso_report(
     support_type: str = "rigid",
     operating_speed_rpm: Optional[float] = None,
     ctx: Context | None = None
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Generate professional ISO 20816-3 evaluation report as HTML file.
     
@@ -3479,7 +3479,7 @@ async def generate_iso_report(
 
 
 @mcp.tool()
-def list_html_reports() -> List[Dict[str, Any]]:
+def list_html_reports() -> list[dict[str, Any]]:
     """
     List all available HTML reports in reports/ directory.
     
@@ -3499,7 +3499,7 @@ def list_html_reports() -> List[Dict[str, Any]]:
 
 
 @mcp.tool()
-def get_report_info(file_name: str) -> Dict[str, Any]:
+def get_report_info(file_name: str) -> dict[str, Any]:
     """
     Get metadata from HTML report without loading entire file.
     
@@ -3527,13 +3527,13 @@ def get_report_info(file_name: str) -> Dict[str, Any]:
 @mcp.tool()
 async def generate_pca_visualization_report(
     model_name: str,
-    test_signal_files: Optional[List[str]] = None,
-    true_labels: Optional[Dict[str, str]] = None,
+    test_signal_files: Optional[list[str]] = None,
+    true_labels: Optional[dict[str, str]] = None,
     sampling_rate: Optional[float] = None,
     segment_duration: float = 0.1,
     overlap_ratio: float = 0.5,
     ctx: Context | None = None
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Generate PCA visualization HTML report showing training and test data in 2D PCA space.
     
@@ -3807,13 +3807,13 @@ async def generate_pca_visualization_report(
 
 @mcp.tool()
 async def generate_feature_comparison_report(
-    signal_groups: Dict[str, List[str]],
+    signal_groups: dict[str, list[str]],
     sampling_rate: Optional[float] = None,
     segment_duration: float = 0.1,
     overlap_ratio: float = 0.5,
-    features_to_plot: Optional[List[str]] = None,
+    features_to_plot: Optional[list[str]] = None,
     ctx: Context | None = None
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Generate feature comparison report with violin plots comparing time-domain features.
     
@@ -4609,3 +4609,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
