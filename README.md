@@ -79,7 +79,7 @@ This PoC demonstrates the potential. Now we need **your expertise** to make it p
 
 **Why This Matters:**
 
-Predictive maintenance is critical for Industry 4.0, but expertise is scarce and analysis tools are fragmented. By combining LLM reasoning with diagnostic tools through MCP, we can **democratize access to expert-level machinery diagnostics** and make industrial AI more accessible to engineers worldwide.
+Predictive maintenance is critical for Industry 4.0. Complex diagnostic and maintenance workflows can be **integrated with LLMs to augment human engineering work** when proper context and tools are provided. Through the Model Context Protocol (MCP), we bridge LLM reasoning capabilities with specialized diagnostic tools, enabling **democratized access to expert-level machinery diagnostics** and making industrial AI more accessible to engineers worldwide.
 
 ## 🎬 Quick Examples
 
