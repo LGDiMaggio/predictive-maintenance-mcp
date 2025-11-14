@@ -42,7 +42,9 @@ A Model Context Protocol server that brings **industrial machinery diagnostics**
 - **📊 Professional HTML Reports** - Interactive Plotly visualizations with automatic peak detection and frequency markers
 - **🤖 ML Anomaly Detection** - Train unsupervised/semi-supervised models (OneClassSVM/LOF) on healthy baselines with optional hyperparameter tuning
 - **📏 ISO 20816-3 Compliance** - Industry-standard vibration severity assessment built-in
+![ISO Compliance](assets/iso.png)
 - **🔍 Advanced Diagnostics** - FFT spectrum analysis, envelope analysis for bearing faults, time-domain feature extraction
+![Envelope analysis 1](assets/envelope_analysis.png)
 - **🚀 Zero Configuration** - Works out of the box with sample data, auto-detects sampling rates from metadata
 
 ## 🔬 Proof of Concept & Community Invitation
