@@ -8,7 +8,7 @@ version = "0.3.0"
 description = "Proof of Concept: AI-Powered Predictive Maintenance & Fault Diagnosis MCP Server - Industrial machinery condition monitoring, vibration analysis, bearing diagnostics, and ML-based anomaly detection through Model Context Protocol"
 readme = "README.md"
 authors = [
-    { name = "Luigi Di Maggio", email = "luigi.dimaggio@example.com" }
+    { name = "Luigi Di Maggio", email = "luigi.dimaggio@polito.it" }
 ]
 license = { text = "MIT" }
 keywords = [
