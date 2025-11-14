@@ -59,15 +59,14 @@ A Model Context Protocol server that brings **industrial machinery diagnostics**
 
 ### 🤝 We Invite the Community to Contribute!
 
-This PoC demonstrates the potential - now we need **your expertise** to make it production-ready.
+This PoC demonstrates the potential. Now we need **your expertise** to make it production-ready.
 
 **How You Can Help:**
 
 - **📊 Add More Data** - Real-world vibration datasets from different machines/sensors/industries
 - **🔧 Expand Diagnostics** - Gear fault detection, pump cavitation, motor electrical faults, misalignment
 - **🤖 Improve ML** - Deep learning approaches, advanced anomaly models, real-time streaming analysis
-- **📏 Standards Compliance** - Additional ISO standards (10816, 14839), NIST guidelines, API 670
-- **🌍 Internationalization** - Multi-language support, regional standards (VDI, GB)
+- **🌍 Internationalization** - Multi-language support, regional standards workflows (VDI, GB)
 - **📖 Documentation** - Tutorials, case studies, industrial validation, best practices
 - **🐛 Testing** - Edge cases, validation with ground truth data, cross-validation studies
 
