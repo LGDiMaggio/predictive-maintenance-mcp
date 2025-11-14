@@ -38,7 +38,7 @@ A Model Context Protocol server that brings **industrial machinery diagnostics**
 
 - **🎯 Real Bearing Fault Data Included** - 15 production-quality vibration signals from real machinery tests
 - **📊 Professional HTML Reports** - Interactive Plotly visualizations with automatic peak detection and frequency markers
-- **🤖 ML Anomaly Detection** - Train OneClassSVM/LocalOutlierFactor models with automatic parameter optimization
+- **🤖 ML Anomaly Detection** - Train unsupervised/semi-supervised models (OneClassSVM/LOF) on healthy baselines with optional hyperparameter tuning
 - **📏 ISO 20816-3 Compliance** - Industry-standard vibration severity assessment built-in
 - **🔍 Advanced Diagnostics** - FFT spectrum analysis, envelope analysis for bearing faults, time-domain feature extraction
 - **🚀 Zero Configuration** - Works out of the box with sample data, auto-detects sampling rates from metadata
@@ -132,7 +132,7 @@ Tools perform **computations and generate outputs**:
 <summary><b>🤖 Machine Learning</b></summary>
 
 - **`extract_features_from_signal`** - Extract 17+ statistical features from vibration data
-- **`train_anomaly_model`** - Train OneClassSVM/LocalOutlierFactor on healthy baseline
+- **`train_anomaly_model`** - Train novelty detection models (OneClassSVM/LOF) on healthy data only, with optional semi-supervised hyperparameter tuning
 - **`predict_anomalies`** - Detect anomalies in new signals with confidence scores
 
 </details>

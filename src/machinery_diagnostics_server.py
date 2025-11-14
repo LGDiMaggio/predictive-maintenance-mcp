@@ -29,7 +29,6 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 from sklearn.svm import OneClassSVM
 from sklearn.neighbors import LocalOutlierFactor
-from sklearn.model_selection import GridSearchCV
 from pydantic import BaseModel, Field
 
 from mcp.server.fastmcp import FastMCP, Context
@@ -1748,20 +1747,27 @@ async def train_anomaly_model(
     ctx: Context[ServerSession, None] = None
 ) -> AnomalyModelResult:
     """
-    Train ML-based anomaly detection model on healthy data.
+    Train ML-based anomaly detection model on healthy data (UNSUPERVISED/SEMI-SUPERVISED).
     
     Complete pipeline:
     1. Extract features from healthy signals (segmentation + time-domain features)
-    2. Standardize features (StandardScaler - fitted on training data)
+    2. Standardize features (StandardScaler - fitted on training data only)
     3. Dimensionality reduction (PCA with specified variance explained)
-    4. Train novelty detection model (OneClassSVM or LocalOutlierFactor)
-    5. Optional validation on healthy + fault data
+    4. Train novelty detection model (OneClassSVM or LocalOutlierFactor) on HEALTHY DATA ONLY
+    5. Optional hyperparameter tuning using validation data (semi-supervised)
     6. Save model, scaler, and PCA transformer
+    
+    **Training Mode:**
+    - UNSUPERVISED: Train only on healthy data with automatic hyperparameters
+    - SEMI-SUPERVISED: Train on healthy data, tune hyperparameters using validation set (healthy + fault)
+    
+    **Note:** This is NOT supervised learning. OneClassSVM/LOF are trained ONLY on healthy data.
+    Fault data (if provided) is used ONLY for hyperparameter tuning after training.
     
     **Validation Strategy:**
     - If healthy_validation_files provided: Use those explicitly (no split)
     - If healthy_validation_files NOT provided: Automatic 80/20 split of training data
-    - If fault_signal_files provided: Validate on fault data for sensitivity
+    - If fault_signal_files provided: Enable semi-supervised mode (hyperparameter tuning)
     
     Args:
         healthy_signal_files: List of CSV files with healthy machine data (for training)
@@ -1770,7 +1776,7 @@ async def train_anomaly_model(
         overlap_ratio: Overlap ratio 0-1 (default: 0.5)
         model_type: 'OneClassSVM' or 'LocalOutlierFactor' (default: 'OneClassSVM')
         pca_variance: Cumulative variance to explain with PCA (default: 0.95)
-        fault_signal_files: Optional list of fault signals for validation (sensitivity check)
+        fault_signal_files: Optional list of fault signals for HYPERPARAMETER TUNING (semi-supervised)
         healthy_validation_files: Optional list of healthy signals for validation (specificity check).
                                   If not provided, 20% of training data will be used.
         model_name: Name for saved model files (default: 'anomaly_model')
@@ -1849,55 +1855,108 @@ async def train_anomaly_model(
         await ctx.info(f"Variance explained: {pca.explained_variance_ratio_.sum():.3f}")
     
     # Step 4: Train anomaly detection model
-    # Strategy: Use automatic parameters for unsupervised, optimize with GridSearchCV if validation data provided
+    # Strategy: Train on healthy data only (unsupervised), then use validation for hyperparameter tuning
     
     if model_type == "OneClassSVM":
         if fault_signal_files:
-            # SUPERVISED MODE: We have fault data for validation → Use GridSearchCV
+            # SEMI-SUPERVISED MODE: Train on healthy, tune hyperparameters with validation (healthy + fault)
             if ctx:
-                await ctx.info("Training in SUPERVISED mode with fault validation data")
-                await ctx.info("Running GridSearchCV for parameter optimization...")
+                await ctx.info("Training in SEMI-SUPERVISED mode")
+                await ctx.info("- Training: Healthy data only (unsupervised)")
+                await ctx.info("- Hyperparameter tuning: Using validation set (healthy + fault)")
+                await ctx.info("Evaluating hyperparameter grid...")
             
-            from sklearn.model_selection import GridSearchCV
+            # Prepare validation features for fault signals
+            fault_features_list = []
+            for fault_file in fault_signal_files:
+                fault_signal, fault_fs, _ = read_signal_with_metadata(fault_file)
+                if fault_signal is not None:
+                    fault_features = extract_features_from_signal(
+                        signal_data=fault_signal,
+                        sampling_rate=fault_fs,
+                        segment_duration=segment_duration,
+                        overlap=overlap_ratio
+                    )
+                    fault_features_scaled = scaler.transform(fault_features)
+                    fault_features_pca = pca.transform(fault_features_scaled)
+                    fault_features_list.append(fault_features_pca)
             
-            # Prepare validation labels (healthy=1, fault=-1)
-            y_train = np.ones(len(X_pca))  # All training data is healthy
+            if fault_features_list:
+                X_fault = np.vstack(fault_features_list)
+            else:
+                X_fault = None
             
+            # Prepare validation features for healthy signals
+            healthy_val_features_list = []
+            if healthy_validation_signal_files:
+                for healthy_val_file in healthy_validation_signal_files:
+                    healthy_val_signal, healthy_val_fs, _ = read_signal_with_metadata(healthy_val_file)
+                    if healthy_val_signal is not None:
+                        healthy_val_features = extract_features_from_signal(
+                            signal_data=healthy_val_signal,
+                            sampling_rate=healthy_val_fs,
+                            segment_duration=segment_duration,
+                            overlap=overlap_ratio
+                        )
+                        healthy_val_features_scaled = scaler.transform(healthy_val_features)
+                        healthy_val_features_pca = pca.transform(healthy_val_features_scaled)
+                        healthy_val_features_list.append(healthy_val_features_pca)
+            
+            if healthy_val_features_list:
+                X_healthy_val = np.vstack(healthy_val_features_list)
+            else:
+                X_healthy_val = None
+            
+            # Hyperparameter grid
             param_grid = {
                 'nu': [0.01, 0.05, 0.1, 0.2],
                 'gamma': ['scale', 'auto', 0.001, 0.01, 0.1],
                 'kernel': ['rbf']
             }
             
-            # For supervised optimization, we'll use a scoring function
-            # Note: OneClassSVM in novelty detection mode still requires special handling
-            base_model = OneClassSVM()
-            
-            # Manual grid search (more suitable for novelty detection)
+            # Manual hyperparameter search with validation scoring
             best_score = -np.inf
             best_params = None
             best_model = None
             
             for nu in param_grid['nu']:
                 for gamma in param_grid['gamma']:
+                    # Train on HEALTHY DATA ONLY
                     model_candidate = OneClassSVM(kernel='rbf', nu=nu, gamma=gamma)
-                    model_candidate.fit(X_pca)
+                    model_candidate.fit(X_pca)  # Only healthy training data
                     
-                    # Score on training data (should be mostly positive)
-                    train_predictions = model_candidate.predict(X_pca)
-                    train_score = np.sum(train_predictions == 1) / len(train_predictions)
+                    # Evaluate on validation set (healthy + fault)
+                    validation_score = 0.0
+                    validation_count = 0
                     
-                    # We'll validate against fault data in Step 5, store for now
-                    if train_score > best_score:
-                        best_score = train_score
+                    # Score healthy validation (should predict +1)
+                    if X_healthy_val is not None:
+                        healthy_predictions = model_candidate.predict(X_healthy_val)
+                        healthy_accuracy = np.mean(healthy_predictions == 1)
+                        validation_score += healthy_accuracy
+                        validation_count += 1
+                    
+                    # Score fault validation (should predict -1)
+                    if X_fault is not None:
+                        fault_predictions = model_candidate.predict(X_fault)
+                        fault_accuracy = np.mean(fault_predictions == -1)
+                        validation_score += fault_accuracy
+                        validation_count += 1
+                    
+                    # Balanced accuracy across healthy + fault
+                    if validation_count > 0:
+                        validation_score /= validation_count
+                    
+                    if validation_score > best_score:
+                        best_score = validation_score
                         best_params = {'kernel': 'rbf', 'nu': nu, 'gamma': gamma}
                         best_model = model_candidate
             
             model = best_model
             
             if ctx:
-                await ctx.info(f"Best parameters found: nu={best_params['nu']}, gamma={best_params['gamma']}")
-                await ctx.info(f"Training score: {best_score:.3f}")
+                await ctx.info(f"Best hyperparameters: nu={best_params['nu']}, gamma={best_params['gamma']}")
+                await ctx.info(f"Validation balanced accuracy: {best_score:.3f}")
         
         else:
             # UNSUPERVISED MODE: No fault data → Use automatic parameters
@@ -1927,11 +1986,55 @@ async def train_anomaly_model(
         
     elif model_type == "LocalOutlierFactor":
         if fault_signal_files:
-            # SUPERVISED MODE with LOF
+            # SEMI-SUPERVISED MODE with LOF
             if ctx:
-                await ctx.info("Training LOF in SUPERVISED mode with validation data")
+                await ctx.info("Training LOF in SEMI-SUPERVISED mode")
+                await ctx.info("- Training: Healthy data only (unsupervised)")
+                await ctx.info("- Hyperparameter tuning: Using validation set")
             
-            # Try different n_neighbors values
+            # Prepare validation features (reuse from OneClassSVM section if already computed)
+            # Otherwise extract them here
+            fault_features_list = []
+            for fault_file in fault_signal_files:
+                fault_signal, fault_fs, _ = read_signal_with_metadata(fault_file)
+                if fault_signal is not None:
+                    fault_features = extract_features_from_signal(
+                        signal_data=fault_signal,
+                        sampling_rate=fault_fs,
+                        segment_duration=segment_duration,
+                        overlap=overlap_ratio
+                    )
+                    fault_features_scaled = scaler.transform(fault_features)
+                    fault_features_pca = pca.transform(fault_features_scaled)
+                    fault_features_list.append(fault_features_pca)
+            
+            if fault_features_list:
+                X_fault = np.vstack(fault_features_list)
+            else:
+                X_fault = None
+            
+            # Prepare healthy validation features
+            healthy_val_features_list = []
+            if healthy_validation_signal_files:
+                for healthy_val_file in healthy_validation_signal_files:
+                    healthy_val_signal, healthy_val_fs, _ = read_signal_with_metadata(healthy_val_file)
+                    if healthy_val_signal is not None:
+                        healthy_val_features = extract_features_from_signal(
+                            signal_data=healthy_val_signal,
+                            sampling_rate=healthy_val_fs,
+                            segment_duration=segment_duration,
+                            overlap=overlap_ratio
+                        )
+                        healthy_val_features_scaled = scaler.transform(healthy_val_features)
+                        healthy_val_features_pca = pca.transform(healthy_val_features_scaled)
+                        healthy_val_features_list.append(healthy_val_features_pca)
+            
+            if healthy_val_features_list:
+                X_healthy_val = np.vstack(healthy_val_features_list)
+            else:
+                X_healthy_val = None
+            
+            # Hyperparameter search for LOF
             best_score = -np.inf
             best_params = None
             best_model = None
@@ -1943,7 +2046,34 @@ async def train_anomaly_model(
                         contamination=contamination,
                         novelty=True
                     )
-                    model_candidate.fit(X_pca)
+                    model_candidate.fit(X_pca)  # Only healthy training data
+                    
+                    # Evaluate on validation set
+                    validation_score = 0.0
+                    validation_count = 0
+                    
+                    # Score healthy validation
+                    if X_healthy_val is not None:
+                        healthy_predictions = model_candidate.predict(X_healthy_val)
+                        healthy_accuracy = np.mean(healthy_predictions == 1)
+                        validation_score += healthy_accuracy
+                        validation_count += 1
+                    
+                    # Score fault validation
+                    if X_fault is not None:
+                        fault_predictions = model_candidate.predict(X_fault)
+                        fault_accuracy = np.mean(fault_predictions == -1)
+                        validation_score += fault_accuracy
+                        validation_count += 1
+                    
+                    # Balanced accuracy
+                    if validation_count > 0:
+                        validation_score /= validation_count
+                    
+                    if validation_score > best_score:
+                        best_score = validation_score
+                        best_params = {'n_neighbors': n_neighbors, 'contamination': contamination}
+                        best_model = model_candidate
                     
                     train_predictions = model_candidate.predict(X_pca)
                     train_score = np.sum(train_predictions == 1) / len(train_predictions)

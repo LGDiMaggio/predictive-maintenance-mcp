@@ -746,10 +746,12 @@ Different files may have different sampling rates (97656 Hz vs 48828 Hz).
 If metadata is missing, tool will raise an error requesting sampling_rate.
 0.1s segments with 50% overlap → many segments for statistical representation.
 
-IMPORTANT: Including fault_signal_files enables SUPERVISED training mode:
-- With fault data → GridSearchCV optimizes parameters (nu, gamma, n_neighbors)
+IMPORTANT: Including fault_signal_files enables SEMI-SUPERVISED hyperparameter tuning:
+- With fault data → Manual hyperparameter search with validation scoring (balanced accuracy)
 - Without fault data → UNSUPERVISED mode with automatic parameters
-- LLM should suggest including fault data when available for better optimization
+- NOTE: Model is ALWAYS trained only on healthy data (unsupervised)
+- Fault data is used ONLY for hyperparameter tuning (post-training validation)
+- LLM should suggest including fault data when available for better parameter selection
 ```
 
 **Validation Strategy Selection:**
@@ -808,47 +810,58 @@ The tool automatically selects training strategy based on available data:
 
 **Option A: UNSUPERVISED (Novelty Detection) - No fault data**
 ```
-Train model with ONLY healthy signals
+Train model with ONLY healthy signals (no fault data provided)
 ```
+- **Training**: OneClassSVM/LOF trained ONLY on healthy data
 - **Parameters**: Automatically calculated based on sample size
 - **OneClassSVM**: nu = adaptive (1/√n), gamma = 'scale'
 - **LocalOutlierFactor**: n_neighbors = √n, contamination = 0.1
 - **Use case**: When you only have healthy baseline data
 - **Advantage**: No need for fault examples
+- **Learning type**: Pure unsupervised (one-class learning)
 
-**Option B: SUPERVISED (With Validation) - With fault data** ⭐ RECOMMENDED
+**Option B: SEMI-SUPERVISED (With Validation) - With fault data** ⭐ RECOMMENDED
 ```
-Train model with healthy signals + fault signals for validation
+Train model with healthy signals + fault signals for hyperparameter tuning
 ```
-- **Parameters**: Optimized via grid search
+- **Training**: Still ONLY on healthy data (unsupervised)
+- **Hyperparameter tuning**: Uses validation set (healthy + fault) post-training
 - **OneClassSVM**: Tests nu=[0.01,0.05,0.1,0.2] × gamma=['scale','auto',0.001,0.01,0.1]
 - **LocalOutlierFactor**: Tests n_neighbors=[10,20,30,50] × contamination=[0.05,0.1,0.15,0.2]
+- **Scoring**: Balanced accuracy on validation (healthy specificity + fault sensitivity)
 - **Use case**: When you have both healthy AND fault examples
-- **Advantage**: Better parameter tuning, higher accuracy
+- **Advantage**: Better parameter selection, higher accuracy
+- **Learning type**: Semi-supervised (train unsupervised, tune with labels)
+
+**CRITICAL: This is NOT supervised learning!**
+- Model fit() is called ONLY on healthy data (no labels)
+- Fault data is used ONLY after training for hyperparameter selection
+- This is called "semi-supervised" because labels are used indirectly for tuning
 
 **LLM Recommendation Strategy:**
 ```
 User provides only healthy signals:
   → LLM: "I can train in unsupervised mode with automatic parameters. 
           Do you have any fault examples? Including them would enable 
-          supervised optimization for better accuracy."
+          semi-supervised hyperparameter tuning for better performance."
 
 User provides healthy + fault signals:
-  → LLM: "Training in SUPERVISED mode with GridSearchCV optimization. 
-          This will find the best parameters for your specific dataset."
+  → LLM: "Training in SEMI-SUPERVISED mode with hyperparameter optimization. 
+          Model will be trained only on healthy data, then parameters will be 
+          tuned using validation set for optimal anomaly detection."
 ```
 
 **Step 2: Review training results**
 
 The tool will return different information based on training mode:
 
-**SUPERVISED Mode Output (with fault validation):**
+**SEMI-SUPERVISED Mode Output (with fault validation):**
 ```json
 {
   "model_path": "models/bearing_health_model_model.pkl",
   "scaler_path": "models/bearing_health_model_scaler.pkl",
   "pca_path": "models/bearing_health_model_pca.pkl",
-  "training_mode": "supervised",
+  "training_mode": "semi-supervised",
   "training_samples": 190,
   "features_per_sample": 17,
   "pca_components": 8,
