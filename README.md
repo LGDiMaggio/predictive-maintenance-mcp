@@ -15,6 +15,7 @@ A Model Context Protocol server that brings **industrial machinery diagnostics**
 ## 📑 Table of Contents
 
 - [✨ What Makes This Special](#-what-makes-this-special)
+- [🔬 Proof of Concept & Community Invitation](#-proof-of-concept--community-invitation)
 - [🎬 Quick Examples](#-quick-examples)
 - [🚀 Installation](#-installation)
 - [Configuration](#configuration)
@@ -41,6 +42,44 @@ A Model Context Protocol server that brings **industrial machinery diagnostics**
 - **📏 ISO 20816-3 Compliance** - Industry-standard vibration severity assessment built-in
 - **🔍 Advanced Diagnostics** - FFT spectrum analysis, envelope analysis for bearing faults, time-domain feature extraction
 - **🚀 Zero Configuration** - Works out of the box with sample data, auto-detects sampling rates from metadata
+
+## 🔬 Proof of Concept & Community Invitation
+
+**This is a Proof of Concept (PoC)** - a demonstration of feasibility showing how LLMs can be empowered with industrial diagnostics capabilities through the Model Context Protocol.
+
+### PoC Goals Achieved ✅
+
+- ✅ **Real vibration data integration** - 15 bearing fault signals with metadata
+- ✅ **Professional analysis workflows** - FFT spectrum, envelope analysis, ISO 20816-3 compliance
+- ✅ **ML anomaly detection** - Semi-supervised learning with hyperparameter tuning
+- ✅ **Metadata-driven auto-detection** - Sampling rates and signal units from JSON files
+- ✅ **Interactive HTML reports** - Plotly visualizations with automatic peak detection
+- ✅ **Natural language interface** - Complex diagnostics through conversational AI
+
+### 🤝 We Invite the Community to Contribute!
+
+This PoC demonstrates the potential - now we need **your expertise** to make it production-ready.
+
+**How You Can Help:**
+
+- **📊 Add More Data** - Real-world vibration datasets from different machines/sensors/industries
+- **🔧 Expand Diagnostics** - Gear fault detection, pump cavitation, motor electrical faults, misalignment
+- **🤖 Improve ML** - Deep learning approaches, advanced anomaly models, real-time streaming analysis
+- **📏 Standards Compliance** - Additional ISO standards (10816, 14839), NIST guidelines, API 670
+- **🌍 Internationalization** - Multi-language support, regional standards (VDI, GB)
+- **📖 Documentation** - Tutorials, case studies, industrial validation, best practices
+- **🐛 Testing** - Edge cases, validation with ground truth data, cross-validation studies
+
+**Get Involved:**
+
+- 🐛 **Report issues**: [GitHub Issues](https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues)
+- 💡 **Suggest features**: [Discussions](https://github.com/LGDiMaggio/predictive-maintenance-mcp/discussions)
+- 🔀 **Submit PRs**: See [CONTRIBUTING.md](CONTRIBUTING.md)
+- 💬 **Join the conversation**: [LinkedIn](https://www.linkedin.com/in/luigi-gianpio-di-maggio)
+
+**Why This Matters:**
+
+Predictive maintenance is critical for Industry 4.0, but expertise is scarce and analysis tools are fragmented. By combining LLM reasoning with diagnostic tools through MCP, we can **democratize access to expert-level machinery diagnostics** and make industrial AI more accessible to engineers worldwide.
 
 ## 🎬 Quick Examples
 
@@ -496,13 +535,13 @@ The system now includes a hybrid documentation reader that combines:
 **Known Limitations:**
 - PDF reading requires PyPDF2 (optional dependency)
 - Limited bearing catalog (extensible)
-- No OCR for scanned PDFs (planned for v0.3.0)
+- No OCR for scanned PDFs (planned for v0.4.0)
 
 See [resources/machine_manuals/README.md](resources/machine_manuals/README.md) for usage guide.
 
 ---
 
-### 🔮 Planned for v0.3.0
+### 🔮 Planned for v0.4.0
 
 #### 🔍 Vector Search for Large Documents
 For manuals >100 pages, semantic search will be more efficient:

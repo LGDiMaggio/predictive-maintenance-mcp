@@ -1,8 +1,8 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
-title: "Predictive Maintenance MCP Server"
-version: 0.2.0
-date-released: 2025-11-12
+title: "Predictive Maintenance MCP Server: A Proof of Concept"
+version: 0.3.0
+date-released: 2025-01-16
 authors:
   - family-names: Di Maggio
     given-names: Luigi Gianpio
@@ -12,24 +12,34 @@ authors:
 repository-code: "https://github.com/LGDiMaggio/predictive-maintenance-mcp"
 url: "https://github.com/LGDiMaggio/predictive-maintenance-mcp"
 abstract: >
-  A Model Context Protocol server that brings industrial machinery
-  diagnostics directly to Large Language Models like Claude, enabling
-  AI-powered vibration analysis, bearing fault detection, and predictive
-  maintenance through natural conversation. Features include FFT spectrum
-  analysis, envelope analysis for bearing faults, ISO 20816-3 compliance
-  checks, and ML anomaly detection with interactive HTML reports.
+  A Proof of Concept Model Context Protocol server demonstrating how Large
+  Language Models like Claude can be empowered with industrial machinery
+  diagnostics capabilities. Features real vibration data (15 bearing fault
+  signals), FFT spectrum analysis, envelope analysis for bearing faults,
+  ISO 20816-3 compliance checks, ML anomaly detection with semi-supervised
+  learning, and interactive HTML reports. Demonstrates the feasibility of
+  natural language interfaces for complex industrial diagnostics workflows.
 keywords:
-  - predictive-maintenance
-  - vibration-analysis
-  - condition-monitoring
-  - bearing-fault-detection
-  - model-context-protocol
-  - mcp
-  - fft-analysis
-  - envelope-analysis
-  - iso-20816
-  - machine-learning
+  - signal-processing
+  - iiot
+  - predictive-analytics
   - anomaly-detection
+  - asset-management
+  - envelope-analysis
+  - predictive-maintenance
+  - condition-monitoring
+  - machine-failure
+  - bearing-fault-diagnosis
+  - industrial-iot
+  - fault-diagnosis
+  - vibration-analysis
+  - claude-ai
+  - industry-4-0
+  - model-context-protocol
+  - mcp-server
+  - fastmcp
+  - iso10816
+  - claude-agents
 license: MIT
 # Zenodo DOI
 # identifiers:
@@ -38,11 +48,11 @@ license: MIT
 #     description: "Zenodo DOI for this version"
 preferred-citation:
   type: software
-  title: "Predictive Maintenance MCP Server"
+  title: "Predictive Maintenance MCP Server: A Proof of Concept"
   authors:
     - family-names: Di Maggio
       given-names: Luigi Gianpio
   year: 2025
-  version: 0.2.0
+  version: 0.3.0
   repository-code: "https://github.com/LGDiMaggio/predictive-maintenance-mcp"
   license: MIT
