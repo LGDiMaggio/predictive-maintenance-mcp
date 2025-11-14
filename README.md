@@ -1,6 +1,7 @@
 # 🏭 Predictive Maintenance MCP Server
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.17611334.svg)](https://doi.org/10.5281/zenodo.17611334)
 [![Tests](https://github.com/LGDiMaggio/predictive-maintenance-mcp/actions/workflows/tests.yml/badge.svg)](https://github.com/LGDiMaggio/predictive-maintenance-mcp/actions/workflows/tests.yml)
 [![codecov](https://codecov.io/gh/LGDiMaggio/predictive-maintenance-mcp/branch/main/graph/badge.svg)](https://codecov.io/gh/LGDiMaggio/predictive-maintenance-mcp)
 [![FastMCP](https://img.shields.io/badge/FastMCP-powered-green.svg)](https://github.com/jlowin/fastmcp)
@@ -580,16 +581,20 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Citation
 
-If you use this server in your research or projects:
+If you use this server in your research or projects, please cite:
 
 ```bibtex
-@software{predictive_maintenance_mcp,
-  title = {Predictive Maintenance MCP Server},
+@software{dimaggio_predictive_maintenance_mcp_2025,
+  title = {Predictive Maintenance MCP Server: An open-source framework for integrating Large Language Models with predictive maintenance and fault diagnosis workflows},
   author = {Di Maggio, Luigi Gianpio},
   year = {2025},
-  url = {https://github.com/LGDiMaggio/predictive-maintenance-mcp}
+  version = {0.3.1},
+  url = {https://github.com/LGDiMaggio/predictive-maintenance-mcp},
+  doi = {10.5281/zenodo.17611334}
 }
 ```
+
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.17611334.svg)](https://doi.org/10.5281/zenodo.17611334)
 
 ## Acknowledgments
 

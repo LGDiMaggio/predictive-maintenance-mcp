@@ -1,8 +1,8 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
-title: "Predictive Maintenance MCP Server: A Proof of Concept"
-version: 0.3.0
-date-released: 2025-01-16
+title: "Predictive Maintenance MCP Server: An open-source framework for integrating Large Language Models with predictive maintenance and fault diagnosis workflows"
+version: 0.3.1
+date-released: 2025-11-14
 authors:
   - family-names: Di Maggio
     given-names: Luigi Gianpio
@@ -42,17 +42,18 @@ keywords:
   - claude-agents
 license: MIT
 # Zenodo DOI
-# identifiers:
-#   - type: doi
-#     value: "10.5281/zenodo.XXXXXXX"
-#     description: "Zenodo DOI for this version"
+identifiers:
+  - type: doi
+    value: "10.5281/zenodo.17611334"
+    description: "Zenodo DOI for this version"
 preferred-citation:
   type: software
-  title: "Predictive Maintenance MCP Server: A Proof of Concept"
+  title: "Predictive Maintenance MCP Server: An open-source framework for integrating Large Language Models with predictive maintenance and fault diagnosis workflows"
   authors:
     - family-names: Di Maggio
       given-names: Luigi Gianpio
   year: 2025
-  version: 0.3.0
+  version: 0.3.1
   repository-code: "https://github.com/LGDiMaggio/predictive-maintenance-mcp"
   license: MIT
+  doi: "10.5281/zenodo.17611334"
