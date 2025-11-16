@@ -17,9 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `get_report_info()` - Extract metadata without loading full HTML
 
 - **Real Bearing Vibration Dataset**
-  - 15 production-quality signals from real machinery tests
-  - 3 healthy baselines, 7 outer race faults, 5 inner race faults
-  - Sampling rate: 97.7 kHz, duration: 6 seconds each
+  - 21 production-quality signals from real machinery tests (train: 14, test: 7)
+  - 3 healthy baselines, 7 inner race faults, 10 outer race faults
+  - Sampling rates: 48.8-97.7 kHz, durations: 3-6 seconds (varies by signal)
   - Complete metadata with bearing frequencies (BPFO, BPFI, BSF, FTF)
 
 - **Advanced Diagnostics**
