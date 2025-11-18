@@ -132,7 +132,7 @@ Evaluate real_train/OuterRaceFault_1.csv against ISO 20816-3 standard
 
 📚 **More examples**: See [Usage Examples](#-usage-examples) section below or [EXAMPLES.md](EXAMPLES.md) for complete workflows
 
-## � Available Tools & Resources
+## Available Tools & Resources
 
 ### MCP Resources (Direct Data Access)
 
@@ -227,6 +227,11 @@ Tools perform **computations and generate outputs**:
 
 The system follows a **hybrid MCP architecture** combining Resources (direct data access) and Tools (computational processing):
 
+![MCP Server Architecture](assets/MCPserver.png)
+
+<details>
+<summary><b>Detailed Structure</b></summary>
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    CLAUDE / LLM CLIENT                      │
@@ -290,6 +295,8 @@ The system follows a **hybrid MCP architecture** combining Resources (direct dat
 │  └──────────────────────┘   └──────────────────────────┘   │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+</details>
 
 **Key Features:**
 - ✅ **4 MCP Resources** - Direct read access to signals and manuals
