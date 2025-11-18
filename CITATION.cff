@@ -14,8 +14,7 @@ url: "https://github.com/LGDiMaggio/predictive-maintenance-mcp"
 abstract: >
   A Proof of Concept Model Context Protocol server demonstrating how Large
   Language Models like Claude can be empowered with industrial machinery
-  diagnostics capabilities. Features real vibration data (15 bearing fault
-  signals), FFT spectrum analysis, envelope analysis for bearing faults,
+  diagnostics capabilities. Features vibration data, FFT spectrum analysis, envelope analysis for bearing faults,
   ISO 20816-3 compliance checks, ML anomaly detection with semi-supervised
   learning, and interactive HTML reports. Demonstrates the feasibility of
   natural language interfaces for complex industrial diagnostics workflows.
