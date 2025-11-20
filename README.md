@@ -618,6 +618,10 @@ If you use this server in your research or projects, please cite:
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.17611334.svg)](https://doi.org/10.5281/zenodo.17611334)
 
+## Blog post
+
+👉 [Building an AI-Powered Predictive Maintenance System with MCP and Claude](https://medium.com/@luigigianpio.dimaggio/building-an-ai-powered-predictive-maintenance-system-with-model-context-protocol-and-claude-1b0ed588e574)
+
 ## Acknowledgments
 
 - **FastMCP** framework by [@jlowin](https://github.com/jlowin)
