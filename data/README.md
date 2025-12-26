@@ -4,7 +4,7 @@ This directory contains **production-quality bearing vibration data** from real 
 
 ## ✨ What's Included
 
-- **21 high-quality vibration signals** with varying sampling rates and durations
+- **20 high-quality vibration signals** with varying sampling rates and durations
 - **3 fault types**: Healthy baselines, inner race faults, outer race faults
 - **Train/test split**: Pre-organized for ML workflow
   - **Training set**: 2 healthy, 5 inner race faults, 7 outer race faults
@@ -90,7 +90,7 @@ License: CC BY-NC-SA 4.0
 | `OuterRaceFault_vload_4.csv` | 48,828 Hz | 3.0s | 146,484 |
 | `OuterRaceFault_vload_5.csv` | 48,828 Hz | 3.0s | 146,484 |
 
-### Test Set (`real_test/`) - 7 signals
+### Test Set (`real_test/`) - 6 signals
 
 **Healthy Baseline (1 file)**
 | File | Sampling Rate | Duration | Samples |

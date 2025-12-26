@@ -38,7 +38,7 @@ A Model Context Protocol server that brings **industrial machinery diagnostics**
 
 ## ✨ What Makes This Special
 
-- **🎯 Real Bearing Fault Data Included** - 21 production-quality vibration signals from real machinery tests (3 healthy, 18 faulty)
+- **🎯 Real Bearing Fault Data Included** - 20 production-quality vibration signals from real machinery tests (3 healthy, 17 faulty)
 - **📊 Professional HTML Reports** - Interactive Plotly visualizations with automatic peak detection and frequency markers
 - **🤖 ML Anomaly Detection** - Train unsupervised/semi-supervised models (OneClassSVM/LOF) on healthy baselines with optional hyperparameter tuning
 - **📏 ISO 20816-3 Compliance** - Industry-standard vibration severity assessment built-in
@@ -60,7 +60,7 @@ A Model Context Protocol server that brings **industrial machinery diagnostics**
 
 ### PoC Goals Achieved ✅
 
-- ✅ **Real vibration data integration** - 21 bearing fault signals with metadata (train: 14, test: 7)
+- ✅ **Real vibration data integration** - 20 bearing fault signals with metadata (train: 14, test: 6)
 - ✅ **Professional analysis workflows** - FFT spectrum, envelope analysis, ISO 20816-3 compliance
 - ✅ **ML anomaly detection** - Semi-supervised learning with hyperparameter tuning
 - ✅ **Metadata-driven auto-detection** - Sampling rates and signal units from JSON files
@@ -382,14 +382,14 @@ Add to your MCP configuration (`.vscode/mcp.json` or user settings):
 
 ##  Sample Dataset
 
-The server includes **21 real bearing vibration signals** from production machinery:
+The server includes **20 real bearing vibration signals** from production machinery:
 
 **Training Set (14 signals)**:
 - ✅ **2 Healthy Baselines** - Normal operation data
-- 🔴 **5 Inner Race Faults** - Variable load conditions
-- ⚠️ **7 Outer Race Faults** - Various severity levels
+- 🔴 **7 Inner Race Faults** - Variable load conditions
+- ⚠️ **5 Outer Race Faults** - Various severity levels
 
-**Test Set (7 signals)**:
+**Test Set (6 signals)**:
 - ✅ **1 Healthy Baseline** - Validation data
 - 🔴 **2 Inner Race Faults** - Test conditions
 - ⚠️ **3 Outer Race Faults** - Test conditions
