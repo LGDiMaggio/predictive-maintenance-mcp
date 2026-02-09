@@ -156,10 +156,31 @@ mcp = FastMCP(
     """
 )
 
-# Data directory
-DATA_DIR = Path(__file__).parent.parent / "data" / "signals"
-MODELS_DIR = Path(__file__).parent.parent / "models"
-RESOURCES_DIR = Path(__file__).parent.parent / "resources"
+# Data directory - resolve intelligently for both dev (clone) and pip install
+import os
+
+def _resolve_project_dir():
+    """Find the project root directory.
+    Priority: PdM_DATA_DIR env var > cwd with data/ > relative to __file__"""
+    # 1. Explicit env var
+    env_dir = os.environ.get("PDM_PROJECT_DIR")
+    if env_dir and Path(env_dir).is_dir():
+        return Path(env_dir)
+    # 2. Current working directory (typical for cloned repo)
+    cwd = Path.cwd()
+    if (cwd / "data" / "signals").is_dir():
+        return cwd
+    # 3. Relative to __file__ (dev clone: src/ -> parent is project root)
+    file_based = Path(__file__).parent.parent
+    if (file_based / "data" / "signals").is_dir():
+        return file_based
+    # 4. Fallback to cwd (user will need to create data/ themselves)
+    return cwd
+
+_PROJECT_ROOT = _resolve_project_dir()
+DATA_DIR = _PROJECT_ROOT / "data" / "signals"
+MODELS_DIR = _PROJECT_ROOT / "models"
+RESOURCES_DIR = _PROJECT_ROOT / "resources"
 
 # Ensure directories exist
 DATA_DIR.mkdir(parents=True, exist_ok=True)

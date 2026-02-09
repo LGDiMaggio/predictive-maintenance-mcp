@@ -10,7 +10,7 @@ readme = "README.md"
 authors = [
     { name = "Luigi Di Maggio", email = "luigi.dimaggio@polito.it" }
 ]
-license = { text = "MIT" }
+license = "MIT"
 keywords = [
     "signal-processing",
     "iiot",
@@ -37,7 +37,6 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
     "Intended Audience :: Manufacturing",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -63,13 +62,13 @@ Issues = "https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues"
 Discussions = "https://github.com/LGDiMaggio/predictive-maintenance-mcp/discussions"
 
 [project.scripts]
-predictive-maintenance-mcp = "machinery_diagnostics_server:main"
+predictive-maintenance-mcp = "predictive_maintenance_mcp.machinery_diagnostics_server:main"
+
+[tool.setuptools]
+packages = ["predictive_maintenance_mcp"]
 
 [tool.setuptools.package-dir]
-"" = "src"
-
-[tool.setuptools.packages.find]
-where = ["src"]
+"predictive_maintenance_mcp" = "src"
 
 [project.optional-dependencies]
 dev = [
