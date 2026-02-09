@@ -170,6 +170,5 @@ async def run_report_tests():
     print(f"Reports saved to: {REPORTS_DIR}")
     print("Open the HTML files in your browser to view interactive charts!")
 
-
 if __name__ == "__main__":
     asyncio.run(run_report_tests())
