@@ -1,8 +1,8 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.lgdimaggio/predictive-maintenance-mcp",
+  "name": "io.github.LGDiMaggio/predictive-maintenance-mcp",
   "title": "Predictive Maintenance MCP Server",
-  "description": "A Model Context Protocol server for industrial machinery diagnostics — vibration analysis, FFT spectrum analysis, envelope analysis for bearing faults, ISO 20816-3 compliance, ML anomaly detection, and interactive HTML reports.",
+  "description": "Industrial predictive maintenance: vibration analysis, bearing faults, ISO 20816-3",
   "repository": {
     "url": "https://github.com/LGDiMaggio/predictive-maintenance-mcp",
     "source": "github"
