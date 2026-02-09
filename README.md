@@ -11,6 +11,9 @@
 [![PyPI](https://img.shields.io/pypi/v/predictive-maintenance-mcp)](https://pypi.org/project/predictive-maintenance-mcp/)
 [![FastMCP](https://img.shields.io/badge/FastMCP-powered-green.svg)](https://github.com/jlowin/fastmcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![GitHub stars](https://img.shields.io/github/stars/LGDiMaggio/predictive-maintenance-mcp?style=flat-square)](https://github.com/LGDiMaggio/predictive-maintenance-mcp/stargazers)
+[![GitHub last commit](https://img.shields.io/github/last-commit/LGDiMaggio/predictive-maintenance-mcp?style=flat-square)](https://github.com/LGDiMaggio/predictive-maintenance-mcp/commits/main)
+[![GitHub issues](https://img.shields.io/github/issues/LGDiMaggio/predictive-maintenance-mcp?style=flat-square)](https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues)
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-Luigi%20Di%20Maggio-0077B5?logo=linkedin)](https://www.linkedin.com/in/luigi-gianpio-di-maggio)
 
 A Model Context Protocol server that brings **industrial machinery diagnostics** directly to LLMs like Claude, enabling AI-powered vibration analysis, bearing fault detection, and predictive maintenance workflows all through natural conversation.
@@ -22,7 +25,7 @@ A Model Context Protocol server that brings **industrial machinery diagnostics**
 ## 📑 Table of Contents
 
 - [✨ What Makes This Special](#-what-makes-this-special)
-- [🔬 Proof of Concept & Community Invitation](#-proof-of-concept--community-invitation)
+- [⚡ Quick Start](#-quick-start)
 - [🎬 Quick Examples](#-quick-examples)
 - [🚀 Installation](#-installation)
 - [⚙️ Configuration](#️-configuration)
@@ -36,6 +39,7 @@ A Model Context Protocol server that brings **industrial machinery diagnostics**
 - [🧪 Testing](#-testing)
 - [🛠️ Development](#️-development)
 - [🚀 Roadmap](#-roadmap)
+- [🔬 Proof of Concept & Community Invitation](#-proof-of-concept--community-invitation)
 - [📄 License](#-license)
 - [🗓️ Citation](#️-citation)
 - [🙏 Acknowledgments](#-acknowledgments)
@@ -59,42 +63,26 @@ A Model Context Protocol server that brings **industrial machinery diagnostics**
   </details>
 - **🚀 Zero Configuration** - Works out of the box with sample data, auto-detects sampling rates from metadata
 
-## 🔬 Proof of Concept & Community Invitation
+## ⚡ Quick Start
 
-**This is a Proof of Concept (PoC)** - a demonstration of feasibility showing how LLMs can be empowered with industrial diagnostics capabilities through the Model Context Protocol.
+```bash
+pip install predictive-maintenance-mcp
+```
 
-### PoC Goals Achieved ✅
+Or from source:
 
-- ✅ **Real vibration data integration** - 20 bearing fault signals with metadata (train: 14, test: 6)
-- ✅ **Professional analysis workflows** - FFT spectrum, envelope analysis, ISO 20816-3 compliance
-- ✅ **ML anomaly detection** - Semi-supervised learning with hyperparameter tuning
-- ✅ **Metadata-driven auto-detection** - Sampling rates and signal units from JSON files
-- ✅ **Interactive HTML reports** - Plotly visualizations with automatic peak detection
-- ✅ **Natural language interface** - Complex diagnostics through conversational AI
+```bash
+git clone https://github.com/LGDiMaggio/predictive-maintenance-mcp.git
+cd predictive-maintenance-mcp && pip install -e .
+```
 
-### 🤝 We Invite the Community to Contribute!
+Then configure Claude Desktop (see [Configuration](#️-configuration)) and ask:
 
-This PoC demonstrates the potential. Now we need **your expertise** to make it production-ready.
+```
+Generate envelope report for real_train/OuterRaceFault_1.csv
+```
 
-**How You Can Help:**
-
-- **📊 Add More Data** - Real-world vibration datasets from different machines/sensors/industries
-- **🔧 Expand Diagnostics** - Gear fault detection, pump cavitation, motor electrical faults, misalignment
-- **🤖 Improve ML** - Deep learning approaches, advanced anomaly models, real-time streaming analysis
-- **🌍 Internationalization** - Multi-language support, regional standards workflows (VDI, GB)
-- **📖 Documentation** - Tutorials, case studies, industrial validation, best practices
-- **🐛 Testing** - Edge cases, validation with ground truth data, cross-validation studies
-
-**Get Involved:**
-
-- 🐛 **Report issues**: [GitHub Issues](https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues)
-- 💡 **Suggest features**: [Discussions](https://github.com/LGDiMaggio/predictive-maintenance-mcp/discussions)
-- 🔀 **Submit PRs**: See [CONTRIBUTING.md](CONTRIBUTING.md)
-- 💬 **Join the conversation**: [LinkedIn](https://www.linkedin.com/in/luigi-gianpio-di-maggio)
-
-**Why This Matters:**
-
-Predictive maintenance is critical for Industry 4.0. Complex diagnostic and maintenance workflows can be **integrated with LLMs to augment human engineering work** when proper context and tools are provided. Through the Model Context Protocol (MCP), we bridge LLM reasoning capabilities with specialized diagnostic tools, enabling **democratized access to expert-level machinery diagnostics** and making industrial AI more accessible to engineers worldwide.
+📖 **Full setup guide**: [Installation](#-installation) | [INSTALL.md](INSTALL.md)
 
 ## 🎬 Quick Examples
 
@@ -604,6 +592,43 @@ Many older manuals are image-based PDFs:
 - **Multimodal fusion**: Vibration + temperature + acoustic + oil analysis
 
 💡 **Have ideas?** Open an issue or discussion to suggest features!
+
+## 🔬 Proof of Concept & Community Invitation
+
+**This is a Proof of Concept (PoC)** - a demonstration of feasibility showing how LLMs can be empowered with industrial diagnostics capabilities through the Model Context Protocol.
+
+### PoC Goals Achieved ✅
+
+- ✅ **Real vibration data integration** - 20 bearing fault signals with metadata (train: 14, test: 6)
+- ✅ **Professional analysis workflows** - FFT spectrum, envelope analysis, ISO 20816-3 compliance
+- ✅ **ML anomaly detection** - Semi-supervised learning with hyperparameter tuning
+- ✅ **Metadata-driven auto-detection** - Sampling rates and signal units from JSON files
+- ✅ **Interactive HTML reports** - Plotly visualizations with automatic peak detection
+- ✅ **Natural language interface** - Complex diagnostics through conversational AI
+
+### 🤝 We Invite the Community to Contribute!
+
+This PoC demonstrates the potential. Now we need **your expertise** to make it production-ready.
+
+**How You Can Help:**
+
+- **📊 Add More Data** - Real-world vibration datasets from different machines/sensors/industries
+- **🔧 Expand Diagnostics** - Gear fault detection, pump cavitation, motor electrical faults, misalignment
+- **🤖 Improve ML** - Deep learning approaches, advanced anomaly models, real-time streaming analysis
+- **🌍 Internationalization** - Multi-language support, regional standards workflows (VDI, GB)
+- **📖 Documentation** - Tutorials, case studies, industrial validation, best practices
+- **🐛 Testing** - Edge cases, validation with ground truth data, cross-validation studies
+
+**Get Involved:**
+
+- 🐛 **Report issues**: [GitHub Issues](https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues)
+- 💡 **Suggest features**: [Discussions](https://github.com/LGDiMaggio/predictive-maintenance-mcp/discussions)
+- 🔀 **Submit PRs**: See [CONTRIBUTING.md](CONTRIBUTING.md)
+- 💬 **Join the conversation**: [LinkedIn](https://www.linkedin.com/in/luigi-gianpio-di-maggio)
+
+**Why This Matters:**
+
+Predictive maintenance is critical for Industry 4.0. Complex diagnostic and maintenance workflows can be **integrated with LLMs to augment human engineering work** when proper context and tools are provided. Through the Model Context Protocol (MCP), we bridge LLM reasoning capabilities with specialized diagnostic tools, enabling **democratized access to expert-level machinery diagnostics** and making industrial AI more accessible to engineers worldwide.
 
 ## 📄 License
 
