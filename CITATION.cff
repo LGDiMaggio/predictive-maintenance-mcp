@@ -1,8 +1,8 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
 title: "Predictive Maintenance MCP Server: An open-source framework for integrating Large Language Models with predictive maintenance and fault diagnosis workflows"
-version: 0.3.2
-date-released: 2025-12-27
+version: 0.3.3
+date-released: 2026-02-09
 authors:
   - family-names: Di Maggio
     given-names: Luigi Gianpio
@@ -51,8 +51,8 @@ preferred-citation:
   authors:
     - family-names: Di Maggio
       given-names: Luigi Gianpio
-  year: 2025
-  version: 0.3.2
+  year: 2026
+  version: 0.3.3
   repository-code: "https://github.com/LGDiMaggio/predictive-maintenance-mcp"
   license: MIT
   doi: "10.5281/zenodo.17611542"
