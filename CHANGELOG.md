@@ -5,6 +5,21 @@ All notable changes to the Predictive Maintenance MCP Server project will be doc
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.3] - 2026-02-09
+
+### Fixed
+- **Critical**: Fixed empty wheel - Python source files were not included in PyPI package
+- Package layout: explicit `predictive_maintenance_mcp` package mapping instead of broken `packages.find`
+- Entry point updated to fully qualified `predictive_maintenance_mcp.machinery_diagnostics_server:main`
+- Smart `DATA_DIR` resolution: env var `PDM_PROJECT_DIR` > cwd > relative to `__file__`
+- License format updated to SPDX literal (`"MIT"`) removing setuptools deprecation warnings
+- Removed deprecated license classifier
+
+### Changed
+- CI Black line-length aligned to `88` (matching pyproject.toml)
+- Removed premature `--cov-fail-under=80` from pytest.ini
+- Updated `test_obsolete_tools_removed.py` line count threshold
+
 ## [0.3.2] - 2025-01-15
 
 ### Fixed
