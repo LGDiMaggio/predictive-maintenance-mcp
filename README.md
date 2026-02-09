@@ -7,7 +7,8 @@
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.17611542.svg)](https://doi.org/10.5281/zenodo.17611542)
 [![Tests](https://github.com/LGDiMaggio/predictive-maintenance-mcp/actions/workflows/tests.yml/badge.svg)](https://github.com/LGDiMaggio/predictive-maintenance-mcp/actions/workflows/tests.yml)
 [![codecov](https://codecov.io/gh/LGDiMaggio/predictive-maintenance-mcp/branch/main/graph/badge.svg)](https://codecov.io/gh/LGDiMaggio/predictive-maintenance-mcp)
-[![Smithery](https://smithery.ai/badge/predictive-maintenance-mcp)](https://smithery.ai/server/predictive-maintenance-mcp)
+[![MCP Registry](https://img.shields.io/badge/MCP_Registry-listed-blue)](https://registry.modelcontextprotocol.io)
+[![PyPI](https://img.shields.io/pypi/v/predictive-maintenance-mcp)](https://pypi.org/project/predictive-maintenance-mcp/)
 [![FastMCP](https://img.shields.io/badge/FastMCP-powered-green.svg)](https://github.com/jlowin/fastmcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-Luigi%20Di%20Maggio-0077B5?logo=linkedin)](https://www.linkedin.com/in/luigi-gianpio-di-maggio)
@@ -34,7 +35,7 @@ A Model Context Protocol server that brings **industrial machinery diagnostics**
 - [Debugging](#debugging)
 - [🧪 Testing](#-testing)
 - [🛠️ Development](#️-development)
-- [🚀 Roadmap & Recent Updates](#-roadmap--recent-updates)
+- [🚀 Roadmap](#-roadmap)
 - [License](#license)
 - [Citation](#citation)
 - [Acknowledgments](#acknowledgments)
@@ -136,7 +137,7 @@ Evaluate real_train/OuterRaceFault_1.csv against ISO 20816-3 standard
 
 📚 **More examples**: See [Usage Examples](#-usage-examples) section below or [EXAMPLES.md](EXAMPLES.md) for complete workflows
 
-## Available Tools & Resources
+## 🔧 Available Tools & Resources
 
 ### MCP Resources (Direct Data Access)
 
@@ -175,8 +176,7 @@ Tools perform **computations and generate outputs**:
 - **`analyze_envelope`** - Envelope analysis for bearing fault detection
 - **`analyze_statistics`** - Time-domain statistical indicators (RMS, Crest Factor, Kurtosis, etc.)
 - **`evaluate_iso_20816`** - ISO 20816-3 vibration severity assessment
-- **`diagnose_bearing`** - Guided 6-step bearing diagnostic workflow
-- **`diagnose_gear`** - Evidence-based gear fault diagnostic workflow
+- **`plot_iso_20816_chart`** - Interactive ISO 20816-3 zone visualization chart
 
 </details>
 
@@ -220,10 +220,27 @@ Tools perform **computations and generate outputs**:
 </details>
 
 <details>
-<summary><b>🔍 Data Management</b></summary>
+<summary><b>📈 Visualization & Data</b></summary>
 
 - **`list_signals`** - Browse available signal files with metadata
 - **`generate_test_signal`** - Create synthetic signals for testing
+- **`plot_signal`** - Interactive time-domain signal plot
+- **`plot_spectrum`** - Interactive frequency spectrum plot
+- **`plot_envelope`** - Interactive envelope spectrum plot
+- **`generate_pca_visualization_report`** - PCA visualization of feature space
+- **`generate_feature_comparison_report`** - Feature comparison across signals
+
+</details>
+
+<details>
+<summary><b>🩺 Diagnostic Prompts</b></summary>
+
+- **`diagnose_bearing`** - Guided 6-step bearing diagnostic workflow
+- **`diagnose_gear`** - Evidence-based gear fault diagnostic workflow
+- **`quick_diagnostic_report`** - Quick signal triage and recommendation
+- **`generate_iso_diagnostic_report`** - ISO-focused severity assessment report
+
+> 💡 **Prompts** guide the LLM through multi-step diagnostic procedures by calling tools in sequence.
 
 </details>
 
@@ -304,13 +321,20 @@ The system follows a **hybrid MCP architecture** combining Resources (direct dat
 
 **Key Features:**
 - ✅ **4 MCP Resources** - Direct read access to signals and manuals
-- ✅ **25+ MCP Tools** - Complete diagnostic workflow
+- ✅ **25 MCP Tools** - Signal analysis, ML, reporting, documentation
+- ✅ **4 MCP Prompts** - Guided multi-step diagnostic workflows
 - ✅ **Hybrid Architecture** - Resources for reading, Tools for processing
 - ✅ **Local-First** - All data stays on your machine (privacy-preserving)
 
-##  Installation
+## 🚀 Installation
 
-### Quick Start (Python Package)
+### From PyPI (Recommended)
+
+```bash
+pip install predictive-maintenance-mcp
+```
+
+### From Source
 
 ```bash
 # 1. Clone repository
@@ -330,7 +354,7 @@ python validate_server.py
 
 📖 **Detailed Installation Guide**: See [INSTALL.md](INSTALL.md) for troubleshooting, Claude Desktop setup, and developer instructions.
 
-### From Source (Advanced)
+### From Source (Editable)
 
 ```bash
 git clone https://github.com/LGDiMaggio/predictive-maintenance-mcp.git
@@ -392,14 +416,14 @@ A ready-to-use configuration is included at [.vscode/mcp.json](.vscode/mcp.json)
 
 > On macOS/Linux, use `.venv/bin/python` instead of `.venv/Scripts/python.exe`
 
-##  Sample Dataset
+## 📊 Sample Dataset
 
 The server includes **20 real bearing vibration signals** from production machinery:
 
 **Training Set (14 signals)**:
 - ✅ **2 Healthy Baselines** - Normal operation data
-- 🔴 **7 Inner Race Faults** - Variable load conditions
-- ⚠️ **5 Outer Race Faults** - Various severity levels
+- 🔴 **5 Inner Race Faults** - Variable load conditions
+- ⚠️ **7 Outer Race Faults** - Various severity levels
 
 **Test Set (6 signals)**:
 - ✅ **1 Healthy Baseline** - Validation data
@@ -543,40 +567,7 @@ mypy src/
 flake8 src/
 ```
 
-## 🚀 Roadmap & Recent Updates
-
-### ✨ New in v0.2.1: Machine Documentation Reader (Beta)
-
-**AI-powered extraction of machine specifications from equipment manuals** 🎉
-
-The system now includes a hybrid documentation reader that combines:
-- 📄 **Direct PDF Access** - MCP Resources for full manual text reading
-- 🔍 **Smart Extraction** - Regex patterns for bearings, RPM, power ratings
-- 🧮 **Auto-Calculation** - Bearing fault frequencies from geometry (ISO 15243:2017)
-- 💾 **Caching System** - Fast repeated queries with JSON caching
-
-**What it can do:**
-```
-"What bearings are used in this pump?"
-→ Extracts: Drive end: SKF 6205-2RS, Non-drive end: NSK 6206
-
-"Calculate bearing fault frequencies at 1475 RPM"
-→ BPFO: 85.20 Hz, BPFI: 136.05 Hz, BSF: 101.32 Hz, FTF: 9.47 Hz
-
-"What type of mechanical seal is used?"
-→ Type 21, carbon/ceramic faces (extracted from manual text)
-```
-
-**Status:** ✅ Core functionality working, comprehensive tests passing
-
-**Known Limitations:**
-- PDF reading requires PyPDF2 (optional dependency)
-- Limited bearing catalog (extensible)
-- No OCR for scanned PDFs (planned for v0.4.0)
-
-See [resources/machine_manuals/README.md](resources/machine_manuals/README.md) for usage guide.
-
----
+## 🚀 Roadmap
 
 ### 🔮 Planned for v0.4.0
 
@@ -620,11 +611,11 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 If you use this server in your research or projects, please cite:
 
 ```bibtex
-@software{dimaggio_predictive_maintenance_mcp_2025,
+@software{dimaggio_predictive_maintenance_mcp_2026,
   title = {Predictive Maintenance MCP Server: An open-source framework for integrating Large Language Models with predictive maintenance and fault diagnosis workflows},
   author = {Di Maggio, Luigi Gianpio},
-  year = {2025},
-  version = {0.3.2},
+  year = {2026},
+  version = {0.3.4},
   url = {https://github.com/LGDiMaggio/predictive-maintenance-mcp},
   doi = {10.5281/zenodo.17611542}
 }
