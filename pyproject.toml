@@ -65,6 +65,12 @@ Discussions = "https://github.com/LGDiMaggio/predictive-maintenance-mcp/discussi
 [project.scripts]
 predictive-maintenance-mcp = "machinery_diagnostics_server:main"
 
+[tool.setuptools.package-dir]
+"" = "src"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0.0",

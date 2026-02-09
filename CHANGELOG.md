@@ -5,6 +5,70 @@ All notable changes to the Predictive Maintenance MCP Server project will be doc
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2] - 2025-01-15
+
+### Fixed
+- Package layout: added `[tool.setuptools.package-dir]` and `[tool.setuptools.packages.find]` for correct `src/` layout resolution
+- Version sync: aligned `src/__init__.py` version with `pyproject.toml` (0.3.2)
+- Fixed `test_suite.py` sys.path (was pointing to wrong directory)
+- Fixed `test_reports.py` calling async functions without await
+- Fixed `validate_server.py` checking for obsolete tool names
+- Fixed `setup_claude.ps1` hardcoded placeholder paths (now uses `$PSScriptRoot`)
+
+### Added
+- `smithery.yaml` for Smithery MCP registry listing
+- `.vscode/mcp.json` example configuration for VS Code
+- `Dockerfile` for containerized deployment
+- `SECURITY.md` security policy
+- GitHub issue templates (bug report, feature request) and PR template
+- Comprehensive CHANGELOG entries for all versions
+
+### Changed
+- Updated CHANGELOG.md with complete version history
+- Improved README with PyPI badge, npx quickstart, and corrected documentation
+
+## [0.3.1] - 2025-01-10
+
+### Fixed
+- Improved error handling in signal loading
+- Better validation of sampling rate parameters
+- Fixed edge cases in ISO 20816-3 zone classification
+
+### Changed
+- Enhanced PCA visualization report generation
+- Improved bearing catalog search accuracy
+
+## [0.3.0] - 2025-01-05
+
+### Added
+- **Machine Documentation Reader** (production-ready)
+  - `extract_manual_specs()` - Extract bearing/gear specs from PDF/TXT manuals
+  - `calculate_bearing_characteristic_frequencies()` - ISO 15243:2017 calculations
+  - `read_manual_excerpt()` - Configurable page-limit manual reading
+  - `search_bearing_catalog()` - Local catalog with 20+ common bearings
+  - MCP Resources: `manual://list` and `manual://read/{filename}`
+  - JSON caching system for repeated queries
+- **PCA Visualization** - `generate_pca_visualization_report()` for feature space exploration
+- **Signal Plotting** - `plot_signal()` and `plot_spectrum()` tools
+- **Unit Conversion** - Automatic acceleration-to-velocity conversion in ISO evaluation
+
+### Changed
+- Upgraded from PoC documentation reader (v0.2.1) to production-ready module
+- Improved ML pipeline with better feature normalization
+
+## [0.2.1] - 2025-11-15
+
+### Added
+- **Machine Documentation Reader (Beta)**
+  - PDF/TXT manual text extraction via `document_reader.py`
+  - Regex-based bearing and RPM extraction
+  - Basic bearing frequency calculation
+  - Initial caching system
+
+### Changed
+- Improved test coverage for envelope analysis
+- Better error messages for missing data files
+
 ## [0.2.0] - 2025-11-11
 
 ### Added
@@ -64,23 +128,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Roadmap
 
-### Planned for v0.3.0
-- **🤖 AI-Powered Machine Documentation Reader**
-  - Automatic extraction of bearing/gear specifications from equipment manuals (PDF)
-  - Parse technical datasheets to identify characteristic frequencies (BPFO, BPFI, BSF, FTF)
-  - Extract machine parameters: power rating, operating speeds, bearing types
-  - Integration with LLM for natural language understanding of technical specs
-  - Support for common formats: maintenance manuals, bearing catalogs, OEM documentation
-- Multi-signal comparison tools
-- Advanced trending and monitoring
-- Additional diagnostic workflows (pumps, motors, gearboxes)
-- Enhanced ML models with hyperparameter tuning
-- Extended dataset with more fault types
+### Planned for v0.4.0
+- **🔍 Vector Search for Large Documents** - ChromaDB/FAISS integration for semantic manual search
+- **📷 OCR Support** - Tesseract integration for scanned PDF manuals
+- **🌐 Online Bearing Catalog** - Optional web-based bearing lookup (privacy-first)
+- Multi-signal comparison and trending tools
+- Advanced diagnostic workflows (pumps, motors, gearboxes)
+- Enhanced ML models with deep learning approaches
 
 ### Future Enhancements
 - Real-time signal streaming support
-- Cloud integration options
-- Dashboard for multi-asset monitoring
+- Cloud integration options (Azure/AWS)
+- Dashboard for multi-asset fleet monitoring
 - Mobile-friendly report viewing
 - Integration with industrial IoT platforms
 - **Multimodal diagnostics**: Combine vibration, temperature, acoustic data

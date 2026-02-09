@@ -1,9 +1,11 @@
 # 🏭 Predictive Maintenance MCP Server
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![Version](https://img.shields.io/badge/version-0.3.2-brightgreen.svg)](https://github.com/LGDiMaggio/predictive-maintenance-mcp/releases)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.17611542.svg)](https://doi.org/10.5281/zenodo.17611542)
 [![Tests](https://github.com/LGDiMaggio/predictive-maintenance-mcp/actions/workflows/tests.yml/badge.svg)](https://github.com/LGDiMaggio/predictive-maintenance-mcp/actions/workflows/tests.yml)
 [![codecov](https://codecov.io/gh/LGDiMaggio/predictive-maintenance-mcp/branch/main/graph/badge.svg)](https://codecov.io/gh/LGDiMaggio/predictive-maintenance-mcp)
+[![Smithery](https://smithery.ai/badge/predictive-maintenance-mcp)](https://smithery.ai/server/predictive-maintenance-mcp)
 [![FastMCP](https://img.shields.io/badge/FastMCP-powered-green.svg)](https://github.com/jlowin/fastmcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-Luigi%20Di%20Maggio-0077B5?logo=linkedin)](https://www.linkedin.com/in/luigi-gianpio-di-maggio)
@@ -334,6 +336,13 @@ cd predictive-maintenance-mcp
 pip install -e .
 ```
 
+### Docker
+
+```bash
+docker build -t predictive-maintenance-mcp .
+docker run -i predictive-maintenance-mcp
+```
+
 ## Configuration
 
 ### Claude Desktop
@@ -365,20 +374,21 @@ After configuration, **restart Claude Desktop** completely.
 
 ### VS Code
 
-Add to your MCP configuration (`.vscode/mcp.json` or user settings):
+A ready-to-use configuration is included at [.vscode/mcp.json](.vscode/mcp.json). Adjust paths for your system:
 
 ```json
 {
   "servers": {
     "predictive-maintenance": {
-      "command": "/path/to/predictive-maintenance-mcp/.venv/bin/python",
-      "args": ["/path/to/predictive-maintenance-mcp/src/machinery_diagnostics_server.py"]
+      "type": "stdio",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "args": ["${workspaceFolder}/src/machinery_diagnostics_server.py"]
     }
   }
 }
 ```
 
-> Adjust paths according to your system (use `.venv/Scripts/python.exe` on Windows)
+> On macOS/Linux, use `.venv/bin/python` instead of `.venv/Scripts/python.exe`
 
 ##  Sample Dataset
 
@@ -465,6 +475,8 @@ Generate FFT report for baseline_1.csv
 - [EXAMPLES.md](EXAMPLES.md) - Complete diagnostic workflows with step-by-step tutorials
 - [CONTRIBUTING.md](CONTRIBUTING.md) - Contribution guidelines
 - [CHANGELOG.md](CHANGELOG.md) - Version history
+- [SECURITY.md](SECURITY.md) - Security policy
+- [REFACTORING.md](REFACTORING.md) - Server refactoring roadmap
 
 ## Debugging
 

@@ -108,17 +108,21 @@ print(f"   MCP Resources: {resource_count}")
 print("   ✅ OK")
 print()
 
-# 7. Check for HTML artifact tools
-print("7️⃣ HTML Artifact tools:")
-html_tools = [
-    "generate_iso_chart_html",
-    "generate_fft_chart_html",
-    "generate_envelope_html",
-    "generate_signal_plot_html"
+# 7. Check for key MCP tools
+print("7️⃣ Key MCP tools:")
+key_tools = [
+    "generate_fft_report",
+    "generate_envelope_report",
+    "generate_iso_report",
+    "analyze_fft",
+    "analyze_envelope",
+    "evaluate_iso_20816",
+    "train_anomaly_model",
+    "predict_anomalies",
 ]
 
-for tool in html_tools:
-    found = f"def {tool}(" in content
+for tool in key_tools:
+    found = f"def {tool}(" in content or f"async def {tool}(" in content
     status = "✅" if found else "❌"
     print(f"   {status} {tool}()")
 
