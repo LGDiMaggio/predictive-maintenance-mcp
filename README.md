@@ -25,21 +25,21 @@ A Model Context Protocol server that brings **industrial machinery diagnostics**
 - [🔬 Proof of Concept & Community Invitation](#-proof-of-concept--community-invitation)
 - [🎬 Quick Examples](#-quick-examples)
 - [🚀 Installation](#-installation)
-- [Configuration](#configuration)
+- [⚙️ Configuration](#️-configuration)
 - [🔧 Available Tools & Resources](#-available-tools--resources)
-- [Architecture](#architecture)
+- [🏗️ Architecture](#️-architecture)
 - [📊 Sample Dataset](#-sample-dataset)
 - [💡 Usage Examples](#-usage-examples)
 - [📊 Professional Reports](#-professional-reports)
-- [Documentation](#documentation)
-- [Debugging](#debugging)
+- [📚 Documentation](#-documentation)
+- [🔍 Debugging](#-debugging)
 - [🧪 Testing](#-testing)
 - [🛠️ Development](#️-development)
 - [🚀 Roadmap](#-roadmap)
-- [License](#license)
-- [Citation](#citation)
-- [Acknowledgments](#acknowledgments)
-- [Support](#support)
+- [📄 License](#-license)
+- [🗓️ Citation](#️-citation)
+- [🙏 Acknowledgments](#-acknowledgments)
+- [💬 Support](#-support)
 
 ## ✨ What Makes This Special
 
@@ -244,7 +244,7 @@ Tools perform **computations and generate outputs**:
 
 </details>
 
-## Architecture
+## 🏗️ Architecture
 
 The system follows a **hybrid MCP architecture** combining Resources (direct data access) and Tools (computational processing):
 
@@ -362,6 +362,14 @@ cd predictive-maintenance-mcp
 pip install -e .
 ```
 
+### With uv (Fast)
+
+```bash
+git clone https://github.com/LGDiMaggio/predictive-maintenance-mcp.git
+cd predictive-maintenance-mcp
+uv sync
+```
+
 ### Docker
 
 ```bash
@@ -369,15 +377,13 @@ docker build -t predictive-maintenance-mcp .
 docker run -i predictive-maintenance-mcp
 ```
 
-## Configuration
+## ⚙️ Configuration
 
 ### Claude Desktop
 
 Add to your Claude Desktop config:
 - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
 - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-
-> 📋 **Example config**: See [`claude_desktop_config_PYTHON_VENV.json`](claude_desktop_config_PYTHON_VENV.json) for a complete example
 
 ```json
 {
@@ -496,20 +502,19 @@ Generate FFT report for baseline_1.csv
 ```
 → Opens `reports/fft_spectrum_baseline_1_20251111_143022.html` in browser
 
-## Documentation
+## 📚 Documentation
 
 - [EXAMPLES.md](EXAMPLES.md) - Complete diagnostic workflows with step-by-step tutorials
 - [CONTRIBUTING.md](CONTRIBUTING.md) - Contribution guidelines
 - [CHANGELOG.md](CHANGELOG.md) - Version history
 - [SECURITY.md](SECURITY.md) - Security policy
-- [REFACTORING.md](REFACTORING.md) - Server refactoring roadmap
 
-## Debugging
+## 🔍 Debugging
 
 Use MCP Inspector for interactive testing:
 
 ```bash
-npx @modelcontextprotocol/inspector npx predictive-maintenance-mcp
+npx @modelcontextprotocol/inspector uv run mcp run src/machinery_diagnostics_server.py
 ```
 
 Or from source:
@@ -600,13 +605,13 @@ Many older manuals are image-based PDFs:
 
 💡 **Have ideas?** Open an issue or discussion to suggest features!
 
-## License
+## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 **Note**: Sample data is licensed CC BY-NC-SA 4.0 (non-commercial). For commercial use, replace with your own machinery data.
 
-## Citation
+## 🗓️ Citation
 
 If you use this server in your research or projects, please cite:
 
@@ -623,11 +628,11 @@ If you use this server in your research or projects, please cite:
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.17611542.svg)](https://doi.org/10.5281/zenodo.17611542)
 
-## Blog post
+## 📝 Blog Post
 
 👉 [Building an AI-Powered Predictive Maintenance System with MCP and Claude](https://medium.com/@luigigianpio.dimaggio/building-an-ai-powered-predictive-maintenance-system-with-model-context-protocol-and-claude-1b0ed588e574)
 
-## Acknowledgments
+## 🙏 Acknowledgments
 
 - **FastMCP** framework by [@jlowin](https://github.com/jlowin)
 - **Model Context Protocol** by [Anthropic](https://www.anthropic.com/)
@@ -636,7 +641,7 @@ If you use this server in your research or projects, please cite:
 
 > ⚠️ **Development Notice**: This codebase was generated using Claude AI under human supervision to explore and validate MCP-based approaches for industrial diagnostics and predictive maintenance workflows. While the implementation demonstrates the potential of AI-assisted development for specialized engineering domains, **thorough testing and validation are required** before any production or safety-critical use. The project serves as a research prototype to evaluate how LLM-powered tools can enhance human expertise in machinery condition monitoring.
 
-## Support
+## 💬 Support
 
 - **Issues**: https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues
 - **Discussions**: https://github.com/LGDiMaggio/predictive-maintenance-mcp/discussions

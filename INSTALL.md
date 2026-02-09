@@ -51,6 +51,13 @@ pip install -e .
 pip install -e .[dev]
 ```
 
+### Alternative: Install with uv
+
+```bash
+uv sync            # production deps
+uv sync --all-extras  # include dev deps
+```
+
 ### 4. Verify Installation
 ```bash
 python -c "import mcp; print('MCP installed successfully')"
