@@ -5,6 +5,15 @@ All notable changes to the Predictive Maintenance MCP Server project will be doc
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.4] - 2026-02-09
+
+### Added
+- MCP Registry metadata (`server.json` + `mcp-name` verification tag in README)
+- `skip-existing` flag for TestPyPI in publish workflow
+
+### Changed
+- Version bump to republish package with updated README for MCP Registry verification
+
 ## [0.3.3] - 2026-02-09
 
 ### Fixed

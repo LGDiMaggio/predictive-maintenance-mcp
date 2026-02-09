@@ -3,7 +3,7 @@
 <!-- mcp-name: io.github.LGDiMaggio/predictive-maintenance-mcp -->
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![Version](https://img.shields.io/badge/version-0.3.3-brightgreen.svg)](https://github.com/LGDiMaggio/predictive-maintenance-mcp/releases)
+[![Version](https://img.shields.io/badge/version-0.3.4-brightgreen.svg)](https://github.com/LGDiMaggio/predictive-maintenance-mcp/releases)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.17611542.svg)](https://doi.org/10.5281/zenodo.17611542)
 [![Tests](https://github.com/LGDiMaggio/predictive-maintenance-mcp/actions/workflows/tests.yml/badge.svg)](https://github.com/LGDiMaggio/predictive-maintenance-mcp/actions/workflows/tests.yml)
 [![codecov](https://codecov.io/gh/LGDiMaggio/predictive-maintenance-mcp/branch/main/graph/badge.svg)](https://codecov.io/gh/LGDiMaggio/predictive-maintenance-mcp)
