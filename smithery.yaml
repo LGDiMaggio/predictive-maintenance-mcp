@@ -1,0 +1,42 @@
+# Smithery configuration for MCP registry
+# https://smithery.ai
+
+startCommand:
+  type: stdio
+  configSchema:
+    type: object
+    properties:
+      dataDir:
+        type: string
+        description: "Path to the data/signals directory (optional, auto-detected)"
+    required: []
+  commandFunction: |-
+    (config) => ({
+      command: "python",
+      args: ["src/machinery_diagnostics_server.py"],
+      env: config.dataDir ? { DATA_DIR: config.dataDir } : {}
+    })
+
+name: predictive-maintenance-mcp
+description: >
+  AI-Powered Predictive Maintenance & Fault Diagnosis MCP Server.
+  Industrial machinery condition monitoring, vibration analysis (FFT, envelope),
+  bearing diagnostics, ISO 20816-3 compliance, and ML-based anomaly detection
+  through Model Context Protocol.
+
+keywords:
+  - predictive-maintenance
+  - vibration-analysis
+  - bearing-fault-diagnosis
+  - condition-monitoring
+  - iso-20816
+  - anomaly-detection
+  - signal-processing
+  - industrial-iot
+
+author:
+  name: Luigi Di Maggio
+  url: https://github.com/LGDiMaggio
+
+repository: https://github.com/LGDiMaggio/predictive-maintenance-mcp
+license: MIT

@@ -112,5 +112,5 @@ jobs:
     
     - name: Check code formatting
       run: |
-        black --check --line-length=120 src tests
+        black --check --line-length=88 src tests
       continue-on-error: true

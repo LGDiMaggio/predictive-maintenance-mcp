@@ -2,6 +2,24 @@
 
 ## Quick Start (Recommended)
 
+### From PyPI
+
+```bash
+pip install predictive-maintenance-mcp
+```
+
+This installs the server and all dependencies. You can then run it directly:
+
+```bash
+predictive-maintenance-mcp
+```
+
+> **Note**: The PyPI package does not include sample data. Clone the repository (see below) if you need the bundled vibration signals.
+
+---
+
+## From Source
+
 ### Prerequisites
 - Python 3.11 or 3.12
 - pip (Python package manager)
@@ -31,6 +49,13 @@ pip install -e .
 
 # OR install with development tools (for contributors)
 pip install -e .[dev]
+```
+
+### Alternative: Install with uv
+
+```bash
+uv sync            # production deps
+uv sync --all-extras  # include dev deps
 ```
 
 ### 4. Verify Installation
@@ -208,6 +233,7 @@ python validate_server.py
 - `scipy>=1.16.2` - Scientific computing (FFT, filters)
 - `scikit-learn>=1.7.2` - Machine learning
 - `plotly>=5.24.0` - Interactive visualizations
+- `pydantic>=2.12.0` - Data validation
 
 ### Development Dependencies
 - `pytest>=8.0.0` - Testing

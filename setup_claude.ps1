@@ -41,7 +41,7 @@ if (Test-Path $claudeConfigFile) {
             command = "uv"
             args = @(
                 "--directory",
-                "C:\\path\\to\\predictive-maintenance-mcp",
+                $PSScriptRoot,
                 "run",
                 "predictive-maintenance-mcp"
             )
@@ -62,7 +62,7 @@ if (Test-Path $claudeConfigFile) {
                 command = "uv"
                 args = @(
                     "--directory",
-                    "C:\\path\\to\\predictive-maintenance-mcp",
+                    $PSScriptRoot,
                     "run",
                     "predictive-maintenance-mcp"
                 )
@@ -90,7 +90,7 @@ Write-Host ""
 
 # 3. Verify server can start (quick test)
 Write-Host "Testing server startup..." -ForegroundColor Cyan
-$projectDir = Split-Path $PSScriptRoot -Parent
+$projectDir = $PSScriptRoot
 if (Test-Path "$projectDir\src\machinery_diagnostics_server.py") {
     try {
         $testResult = python -m py_compile "$projectDir\src\machinery_diagnostics_server.py" 2>&1

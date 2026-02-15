@@ -1,0 +1,42 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+dist
+build
+.eggs
+
+# Virtual environments
+.venv
+venv
+env
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test and dev files
+tests/
+*.pytest_cache
+.coverage
+htmlcov
+coverage.xml
+
+# Docs not needed in container
+*.md
+!README.md
+LICENSE
+CITATION.cff
+.zenodo.json
+assets/

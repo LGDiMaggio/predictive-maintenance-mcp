@@ -32,7 +32,8 @@ env.bak/
 venv.bak/
 
 # IDE
-.vscode/
+.vscode/*
+!.vscode/mcp.json
 .idea/
 *.swp
 *.swo
@@ -63,3 +64,8 @@ reports/*.html
 # OS
 Thumbs.db
 .DS_Store
+
+# MCP Registry CLI
+mcp-publisher.exe
+mcp-publisher
+.mcpregistry_*

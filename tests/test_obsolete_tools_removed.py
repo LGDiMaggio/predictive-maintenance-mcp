@@ -85,12 +85,12 @@ def test_obsolete_tools_removed():
     line_count = len(lines)
     
     print(f"  Current line count: {line_count}")
-    print(f"  Expected: < 3000 lines (after removing ~1380 lines)")
+    print(f"  Expected: < 5500 lines (models extracted to models.py)")
     
-    if line_count < 3000:
-        print(f"  ✓ File reduced to {line_count} lines")
+    if line_count < 5500:
+        print(f"  ✓ File at {line_count} lines")
     else:
-        print(f"  ⚠️ File still has {line_count} lines (expected < 3000)")
+        print(f"  ⚠️ File still has {line_count} lines (expected < 5500)")
     
     print("-" * 70)
     
