@@ -1,12 +1,14 @@
 name: Publish to MCP Registry
 
 on:
-  push:
-    tags: ["v*"]  # Triggers on version tags like v0.4.0
+  workflow_run:
+    workflows: ["Publish to PyPI"]
+    types: [completed]
 
 jobs:
   publish-mcp:
     runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     permissions:
       id-token: write  # Required for OIDC authentication
       contents: read
@@ -14,6 +16,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_branch }}
 
       - name: Install mcp-publisher
         run: |
@@ -22,10 +26,28 @@ jobs:
       - name: Authenticate to MCP Registry
         run: ./mcp-publisher login github-oidc
 
-      - name: Set version in server.json
+      - name: Set version from tag
         run: |
-          VERSION=${GITHUB_REF#refs/tags/v}
+          TAG="${{ github.event.workflow_run.head_branch }}"
+          VERSION="${TAG#v}"
+          echo "Publishing version: $VERSION"
           jq --arg v "$VERSION" '.version = $v | .packages[0].version = $v' server.json > server.tmp && mv server.tmp server.json
+
+      - name: Wait for PyPI propagation
+        run: |
+          TAG="${{ github.event.workflow_run.head_branch }}"
+          VERSION="${TAG#v}"
+          echo "Waiting for predictive-maintenance-mcp $VERSION on PyPI..."
+          for i in $(seq 1 12); do
+            if curl -sf "https://pypi.org/pypi/predictive-maintenance-mcp/$VERSION/json" > /dev/null; then
+              echo "Package found on PyPI!"
+              exit 0
+            fi
+            echo "Attempt $i/12 - not yet available, waiting 15s..."
+            sleep 15
+          done
+          echo "Package not found on PyPI after 3 minutes"
+          exit 1
 
       - name: Publish server to MCP Registry
         run: ./mcp-publisher publish
