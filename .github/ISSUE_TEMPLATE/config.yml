@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: "\U0001F4AC Discussions"
+    url: https://github.com/LGDiMaggio/predictive-maintenance-mcp/discussions
+    about: "Ask questions, share ideas, or discuss the project direction"
+  - name: "\U0001F4D6 Documentation"
+    url: https://github.com/LGDiMaggio/predictive-maintenance-mcp/blob/main/docs/QUICKSTART_ENGINEER.md
+    about: "Start here if you're a maintenance engineer"
+  - name: "\U0001F4BB Developer Guide"
+    url: https://github.com/LGDiMaggio/predictive-maintenance-mcp/blob/main/docs/QUICKSTART_DEVELOPER.md
+    about: "Start here if you're a software developer"

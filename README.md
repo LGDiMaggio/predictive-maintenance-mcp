@@ -1,5 +1,7 @@
 # 🏭 Predictive Maintenance MCP Server
 
+<!-- mcp-name: io.github.LGDiMaggio/predictive-maintenance-mcp -->
+
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.17611542.svg)](https://doi.org/10.5281/zenodo.17611542)
 [![Tests](https://github.com/LGDiMaggio/predictive-maintenance-mcp/actions/workflows/tests.yml/badge.svg)](https://github.com/LGDiMaggio/predictive-maintenance-mcp/actions/workflows/tests.yml)
@@ -8,42 +10,155 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-Luigi%20Di%20Maggio-0077B5?logo=linkedin)](https://www.linkedin.com/in/luigi-gianpio-di-maggio)
 
-A Model Context Protocol server that brings **industrial machinery diagnostics** directly to LLMs like Claude, enabling AI-powered vibration analysis, bearing fault detection, and predictive maintenance workflows all through natural conversation.
+> **Transform raw vibration data into actionable maintenance insights through natural conversation with AI.**
 
-> 🔧 **From Vibration Data and Machine Manuals to Actionable Insights**: Transform raw sensor data into reports with ISO compliance checks, FFT analysis, envelope analysis and ML anomaly detection. PdM workflows supported by LLMs.
+A [Model Context Protocol](https://modelcontextprotocol.io/) server that brings **industrial machinery diagnostics** directly to LLMs like Claude, enabling AI-powered vibration analysis, bearing fault detection, and predictive maintenance workflows — all through natural language.
 
 ![Predictive Maintenance MCP Server Cover](assets/predictive-maintenance-mcp_com.jpg)
 
+---
+
+## 🎯 Our Mission
+
+Predictive maintenance is critical for Industry 4.0, yet expert-level machinery diagnostics remains inaccessible to most engineers. Complex diagnostic workflows — FFT spectrum analysis, envelope demodulation, ISO severity assessment — require years of specialized training.
+
+**We believe that AI can democratize this expertise.**
+
+By combining the reasoning capabilities of Large Language Models with specialized diagnostic tools through the Model Context Protocol (MCP), we create a bridge: engineers can describe a problem in plain language and receive professional-grade analysis. No signal processing PhD required.
+
+This project is an **open-source framework** that proves this vision works. It's a foundation — a set of building blocks — that the community can extend, customize, and deploy for any industrial diagnostics scenario.
+
+> 📖 **Read the full story**: [Building an AI-Powered Predictive Maintenance System with MCP and Claude](https://medium.com/@luigigianpio.dimaggio/building-an-ai-powered-predictive-maintenance-system-with-model-context-protocol-and-claude-1b0ed588e574)
+
+---
+
+## 🏗️ Ecosystem Architecture
+
+This project is built around the **Model Context Protocol (MCP)** — an open standard that lets you package any software tool and make it instantly queryable by an LLM. Think of it as a USB port for AI: plug in a tool, and the LLM immediately knows how to use it.
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│   YOU (Natural Language)                                     │
+│   "Is this bearing failing? Show me the envelope analysis."  │
+└──────────────┬───────────────────────────────────────────────┘
+               │
+               ▼
+┌──────────────────────────────────────────────────────────────┐
+│   LLM (Claude, GPT, local models...)                         │
+│   Understands your question, selects the right tools         │
+└──────────────┬───────────────────────────────────────────────┘
+               │  Model Context Protocol (MCP)
+               ▼
+┌──────────────────────────────────────────────────────────────┐
+│   PREDICTIVE MAINTENANCE MCP SERVER                          │
+│   ┌────────────────┐  ┌───────────────┐  ┌───────────────┐  │
+│   │ FFT Analysis   │  │ Envelope      │  │ ISO 20816-3   │  │
+│   │ & Reporting    │  │ Demodulation  │  │ Compliance    │  │
+│   └────────────────┘  └───────────────┘  └───────────────┘  │
+│   ┌────────────────┐  ┌───────────────┐  ┌───────────────┐  │
+│   │ ML Anomaly     │  │ Manual/PDF    │  │ Bearing       │  │
+│   │ Detection      │  │ Reader        │  │ Catalog       │  │
+│   └────────────────┘  └───────────────┘  └───────────────┘  │
+└──────────────┬───────────────────────────────────────────────┘
+               │
+               ▼
+┌──────────────────────────────────────────────────────────────┐
+│   YOUR DATA (stays on your machine — privacy-first)          │
+│   Vibration signals · Equipment manuals · Trained models     │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**Key insight**: The LLM doesn't know signal processing. It knows how to *call tools* that do signal processing. MCP is the standard that makes this plug-and-play — you can add new diagnostic tools without changing the LLM.
+
+### What This Means For You
+
+- **🔌 Plug-and-play** — Add new analysis tools (thermography, oil analysis, acoustics) as simple Python functions — the LLM discovers them automatically
+- **🔒 Privacy-first** — All data stays on your machine; only tool calls and results flow through the LLM
+- **🤖 LLM-agnostic** — Works with Claude, ChatGPT, or any MCP-compatible client
+- **🧱 Modular** — Use only the tools you need, extend with your own
+
+---
+
 ## 📑 Table of Contents
 
+- [🎯 Our Mission](#-our-mission)
+- [🏗️ Ecosystem Architecture](#️-ecosystem-architecture)
+- [🚪 Choose Your Path](#-choose-your-path)
 - [✨ What Makes This Special](#-what-makes-this-special)
-- [🔬 Proof of Concept & Community Invitation](#-proof-of-concept--community-invitation)
 - [🎬 Quick Examples](#-quick-examples)
 - [🚀 Installation](#-installation)
-- [Configuration](#configuration)
+- [⚙️ Configuration](#️-configuration)
 - [🔧 Available Tools & Resources](#-available-tools--resources)
-- [Architecture](#architecture)
+- [📐 Detailed Architecture](#-detailed-architecture)
 - [📊 Sample Dataset](#-sample-dataset)
 - [💡 Usage Examples](#-usage-examples)
 - [📊 Professional Reports](#-professional-reports)
-- [Documentation](#documentation)
-- [Debugging](#debugging)
+- [📖 Documentation](#-documentation)
 - [🧪 Testing](#-testing)
 - [🛠️ Development](#️-development)
-- [🚀 Roadmap & Recent Updates](#-roadmap--recent-updates)
-- [License](#license)
-- [Citation](#citation)
-- [Acknowledgments](#acknowledgments)
-- [Support](#support)
+- [🚀 Roadmap](#-roadmap)
+- [🤝 Contributing](#-contributing)
+- [📄 License](#-license)
+- [📚 Citation](#-citation)
+- [🙏 Acknowledgments](#-acknowledgments)
+
+---
+
+## 🚪 Choose Your Path
+
+This project serves two audiences. Pick the door that fits you:
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+### 🔧 I'm a Maintenance / Reliability Engineer
+
+*"I want to use AI for my vibration analysis and diagnostics."*
+
+**You don't need to write code.** This tool turns your vibration data into professional reports through simple conversation.
+
+**What you'll get:**
+- ISO 20816-3 compliance reports in one sentence
+- Bearing fault detection from your real data
+- Interactive HTML reports you can share with your team
+- ML anomaly detection trained on your healthy baselines
+
+➡️ **Start here**: [**Quickstart for Engineers**](docs/QUICKSTART_ENGINEER.md)
+
+</td>
+<td width="50%" valign="top">
+
+### 💻 I'm an AI / Software Developer
+
+*"I want to understand MCP, extend this server, or build my own."*
+
+**The code is your playground.** Learn how MCP works, add new diagnostic tools, or use this as a template for your own domain-specific server.
+
+**What you'll learn:**
+- How MCP bridges LLMs and specialized tools
+- How to create new tools as Python functions
+- How to design resource/tool hybrid architectures
+- How to contribute to an industrial open-source project
+
+➡️ **Start here**: [**Quickstart for Developers**](docs/QUICKSTART_DEVELOPER.md)
+
+</td>
+</tr>
+</table>
+
+> 💡 **Don't fit either profile?** That's fine — read on for the full documentation, or jump to [Quick Examples](#-quick-examples) to see the server in action.
+
+---
 
 ## ✨ What Makes This Special
 
-- **🎯 Real Bearing Fault Data Included** - 20 production-quality vibration signals from real machinery tests (3 healthy, 17 faulty)
-- **📊 Professional HTML Reports** - Interactive Plotly visualizations with automatic peak detection and frequency markers
-- **🤖 ML Anomaly Detection** - Train unsupervised/semi-supervised models (OneClassSVM/LOF) on healthy baselines with optional hyperparameter tuning
-- **📏 ISO 20816-3 Compliance** - Industry-standard vibration severity assessment built-in
-![ISO Compliance](assets/iso.png)
-- **🔍 Advanced Diagnostics** - FFT spectrum analysis, envelope analysis for bearing faults, time-domain feature extraction
+- **🎯 Real Bearing Fault Data Included** — 20 production-quality vibration signals from real machinery tests (3 healthy, 17 faulty)
+- **📊 Professional HTML Reports** — Interactive Plotly visualizations with automatic peak detection and frequency markers
+- **🤖 ML Anomaly Detection** — Train unsupervised/semi-supervised models (OneClassSVM/LOF) on healthy baselines with optional hyperparameter tuning
+- **📏 ISO 20816-3 Compliance** — Industry-standard vibration severity assessment built-in
+  ![ISO Compliance](assets/iso.png)
+- **🔍 Advanced Diagnostics** — FFT spectrum analysis, envelope analysis for bearing faults, time-domain feature extraction
   <details>
   <summary><b>Example analysis</b></summary>
   
@@ -52,44 +167,9 @@ A Model Context Protocol server that brings **industrial machinery diagnostics**
   ![Envelope analysis 3](assets/envelope_list.png)
   
   </details>
-- **🚀 Zero Configuration** - Works out of the box with sample data, auto-detects sampling rates from metadata
+- **🚀 Zero Configuration** — Works out of the box with sample data, auto-detects sampling rates from metadata
 
-## 🔬 Proof of Concept & Community Invitation
-
-**This is a Proof of Concept (PoC)** - a demonstration of feasibility showing how LLMs can be empowered with industrial diagnostics capabilities through the Model Context Protocol.
-
-### PoC Goals Achieved ✅
-
-- ✅ **Real vibration data integration** - 20 bearing fault signals with metadata (train: 14, test: 6)
-- ✅ **Professional analysis workflows** - FFT spectrum, envelope analysis, ISO 20816-3 compliance
-- ✅ **ML anomaly detection** - Semi-supervised learning with hyperparameter tuning
-- ✅ **Metadata-driven auto-detection** - Sampling rates and signal units from JSON files
-- ✅ **Interactive HTML reports** - Plotly visualizations with automatic peak detection
-- ✅ **Natural language interface** - Complex diagnostics through conversational AI
-
-### 🤝 We Invite the Community to Contribute!
-
-This PoC demonstrates the potential. Now we need **your expertise** to make it production-ready.
-
-**How You Can Help:**
-
-- **📊 Add More Data** - Real-world vibration datasets from different machines/sensors/industries
-- **🔧 Expand Diagnostics** - Gear fault detection, pump cavitation, motor electrical faults, misalignment
-- **🤖 Improve ML** - Deep learning approaches, advanced anomaly models, real-time streaming analysis
-- **🌍 Internationalization** - Multi-language support, regional standards workflows (VDI, GB)
-- **📖 Documentation** - Tutorials, case studies, industrial validation, best practices
-- **🐛 Testing** - Edge cases, validation with ground truth data, cross-validation studies
-
-**Get Involved:**
-
-- 🐛 **Report issues**: [GitHub Issues](https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues)
-- 💡 **Suggest features**: [Discussions](https://github.com/LGDiMaggio/predictive-maintenance-mcp/discussions)
-- 🔀 **Submit PRs**: See [CONTRIBUTING.md](CONTRIBUTING.md)
-- 💬 **Join the conversation**: [LinkedIn](https://www.linkedin.com/in/luigi-gianpio-di-maggio)
-
-**Why This Matters:**
-
-Predictive maintenance is critical for Industry 4.0. Complex diagnostic and maintenance workflows can be **integrated with LLMs to augment human engineering work** when proper context and tools are provided. Through the Model Context Protocol (MCP), we bridge LLM reasoning capabilities with specialized diagnostic tools, enabling **democratized access to expert-level machinery diagnostics** and making industrial AI more accessible to engineers worldwide.
+---
 
 ## 🎬 Quick Examples
 
@@ -132,7 +212,89 @@ Evaluate real_train/OuterRaceFault_1.csv against ISO 20816-3 standard
 
 📚 **More examples**: See [Usage Examples](#-usage-examples) section below or [EXAMPLES.md](EXAMPLES.md) for complete workflows
 
-## Available Tools & Resources
+---
+
+## 🚀 Installation
+
+### Quick Start (Python Package)
+
+```bash
+# 1. Clone repository
+git clone https://github.com/LGDiMaggio/predictive-maintenance-mcp.git
+cd predictive-maintenance-mcp
+
+# 2. Run automated setup
+python setup_venv.py
+
+# 3. Activate environment
+.venv\Scripts\activate  # Windows
+source .venv/bin/activate  # Linux/macOS
+
+# 4. Verify installation
+python validate_server.py
+```
+
+📖 **Detailed Installation Guide**: See [INSTALL.md](INSTALL.md) for troubleshooting, Claude Desktop setup, and developer instructions.
+
+### From Source (Advanced)
+
+```bash
+git clone https://github.com/LGDiMaggio/predictive-maintenance-mcp.git
+cd predictive-maintenance-mcp
+pip install -e .
+```
+
+---
+
+## ⚙️ Configuration
+
+### Claude Desktop
+
+Add to your Claude Desktop config:
+- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+
+> 📋 **Example config**: See [`claude_desktop_config_PYTHON_VENV.json`](claude_desktop_config_PYTHON_VENV.json) for a complete example
+
+```json
+{
+  "mcpServers": {
+    "predictive-maintenance": {
+      "command": "C:/path/to/predictive-maintenance-mcp/.venv/Scripts/python.exe",
+      "args": ["C:/path/to/predictive-maintenance-mcp/src/machinery_diagnostics_server.py"]
+    }
+  }
+}
+```
+
+> **Important Notes**:
+> - Replace `C:/path/to/predictive-maintenance-mcp` with your actual project path
+> - Use **absolute paths** for both `command` and `args`
+> - On macOS/Linux, use `.venv/bin/python` instead of `.venv/Scripts/python.exe`
+> - Forward slashes (`/`) work on all platforms, including Windows
+
+After configuration, **restart Claude Desktop** completely.
+
+### VS Code
+
+Add to your MCP configuration (`.vscode/mcp.json` or user settings):
+
+```json
+{
+  "servers": {
+    "predictive-maintenance": {
+      "command": "/path/to/predictive-maintenance-mcp/.venv/bin/python",
+      "args": ["/path/to/predictive-maintenance-mcp/src/machinery_diagnostics_server.py"]
+    }
+  }
+}
+```
+
+> Adjust paths according to your system (use `.venv/Scripts/python.exe` on Windows)
+
+---
+
+## 🔧 Available Tools & Resources
 
 ### MCP Resources (Direct Data Access)
 
@@ -141,8 +303,8 @@ Resources provide **direct read access** for Claude to examine data:
 <details>
 <summary><b>📊 Vibration Signals</b></summary>
 
-- **`signal://list`** - Browse all available signal files with metadata
-- **`signal://read/{filename}`** - Read signal data directly (first 1000 samples preview)
+- **`signal://list`** — Browse all available signal files with metadata
+- **`signal://read/{filename}`** — Read signal data directly (first 1000 samples preview)
 
 **Usage:** Claude can directly read signals without calling tools first.
 
@@ -151,8 +313,8 @@ Resources provide **direct read access** for Claude to examine data:
 <details>
 <summary><b>📖 Machine Manuals</b></summary>
 
-- **`manual://list`** - Browse available equipment manuals (PDF/TXT)
-- **`manual://read/{filename}`** - Read manual text (first 20 pages)
+- **`manual://list`** — Browse available equipment manuals (PDF/TXT)
+- **`manual://read/{filename}`** — Read manual text (first 20 pages)
 
 **Usage:** Claude can answer ANY question about manual content by reading directly.
 
@@ -167,32 +329,32 @@ Tools perform **computations and generate outputs**:
 <details>
 <summary><b>📊 Analysis & Diagnostics</b></summary>
 
-- **`analyze_fft`** - FFT spectrum analysis with automatic peak detection
-- **`analyze_envelope`** - Envelope analysis for bearing fault detection
-- **`analyze_statistics`** - Time-domain statistical indicators (RMS, Crest Factor, Kurtosis, etc.)
-- **`evaluate_iso_20816`** - ISO 20816-3 vibration severity assessment
-- **`diagnose_bearing`** - Guided 6-step bearing diagnostic workflow
-- **`diagnose_gear`** - Evidence-based gear fault diagnostic workflow
+- **`analyze_fft`** — FFT spectrum analysis with automatic peak detection
+- **`analyze_envelope`** — Envelope analysis for bearing fault detection
+- **`analyze_statistics`** — Time-domain statistical indicators (RMS, Crest Factor, Kurtosis, etc.)
+- **`evaluate_iso_20816`** — ISO 20816-3 vibration severity assessment
+- **`diagnose_bearing`** — Guided 6-step bearing diagnostic workflow
+- **`diagnose_gear`** — Evidence-based gear fault diagnostic workflow
 
 </details>
 
 <details>
 <summary><b>🤖 Machine Learning</b></summary>
 
-- **`extract_features_from_signal`** - Extract 17+ statistical features from vibration data
-- **`train_anomaly_model`** - Train novelty detection models (OneClassSVM/LOF) on healthy data only, with optional semi-supervised hyperparameter tuning
-- **`predict_anomalies`** - Detect anomalies in new signals with confidence scores
+- **`extract_features_from_signal`** — Extract 17+ statistical features from vibration data
+- **`train_anomaly_model`** — Train novelty detection models (OneClassSVM/LOF) on healthy data only, with optional semi-supervised hyperparameter tuning
+- **`predict_anomalies`** — Detect anomalies in new signals with confidence scores
 
 </details>
 
 <details>
 <summary><b>📄 Professional Report Generation</b></summary>
 
-- **`generate_fft_report`** - Interactive FFT spectrum HTML report with peak table
-- **`generate_envelope_report`** - Envelope analysis report with bearing fault markers
-- **`generate_iso_report`** - ISO 20816-3 evaluation with zone visualization
-- **`list_html_reports`** - List all generated reports with metadata
-- **`get_report_info`** - Get report details without loading full HTML
+- **`generate_fft_report`** — Interactive FFT spectrum HTML report with peak table
+- **`generate_envelope_report`** — Envelope analysis report with bearing fault markers
+- **`generate_iso_report`** — ISO 20816-3 evaluation with zone visualization
+- **`list_html_reports`** — List all generated reports with metadata
+- **`get_report_info`** — Get report details without loading full HTML
 
 > 💡 **All reports are interactive Plotly visualizations saved to `reports/` directory**
 
@@ -201,15 +363,15 @@ Tools perform **computations and generate outputs**:
 <details>
 <summary><b>📖 Machine Documentation Reader</b></summary>
 
-- **`list_machine_manuals`** - List available equipment manuals (PDF/TXT)
-- **`extract_manual_specs`** - Extract bearings, RPM, power from manual (with caching)
-- **`calculate_bearing_characteristic_frequencies`** - Calculate BPFO/BPFI/BSF/FTF from geometry
-- **`read_manual_excerpt`** - Read manual text excerpt (configurable page limit)
-- **`search_bearing_catalog`** - Search bearing geometry in local catalog (20+ common bearings)
+- **`list_machine_manuals`** — List available equipment manuals (PDF/TXT)
+- **`extract_manual_specs`** — Extract bearings, RPM, power from manual (with caching)
+- **`calculate_bearing_characteristic_frequencies`** — Calculate BPFO/BPFI/BSF/FTF from geometry
+- **`read_manual_excerpt`** — Read manual text excerpt (configurable page limit)
+- **`search_bearing_catalog`** — Search bearing geometry in local catalog (20+ common bearings)
 
 **MCP Resources:**
-- `manual://list` - Browse available manuals
-- `manual://read/{filename}` - Read manual for LLM context
+- `manual://list` — Browse available manuals
+- `manual://read/{filename}` — Read manual for LLM context
 
 > 🎯 **Upload pump manual → Extract bearing specs → Auto-calculate frequencies → Diagnose signal**
 
@@ -218,12 +380,14 @@ Tools perform **computations and generate outputs**:
 <details>
 <summary><b>🔍 Data Management</b></summary>
 
-- **`list_signals`** - Browse available signal files with metadata
-- **`generate_test_signal`** - Create synthetic signals for testing
+- **`list_signals`** — Browse available signal files with metadata
+- **`generate_test_signal`** — Create synthetic signals for testing
 
 </details>
 
-## Architecture
+---
+
+## 📐 Detailed Architecture
 
 The system follows a **hybrid MCP architecture** combining Resources (direct data access) and Tools (computational processing):
 
@@ -299,104 +463,32 @@ The system follows a **hybrid MCP architecture** combining Resources (direct dat
 </details>
 
 **Key Features:**
-- ✅ **4 MCP Resources** - Direct read access to signals and manuals
-- ✅ **25+ MCP Tools** - Complete diagnostic workflow
-- ✅ **Hybrid Architecture** - Resources for reading, Tools for processing
-- ✅ **Local-First** - All data stays on your machine (privacy-preserving)
+- ✅ **4 MCP Resources** — Direct read access to signals and manuals
+- ✅ **25+ MCP Tools** — Complete diagnostic workflow
+- ✅ **Hybrid Architecture** — Resources for reading, Tools for processing
+- ✅ **Local-First** — All data stays on your machine (privacy-preserving)
 
-##  Installation
+---
 
-### Quick Start (Python Package)
-
-```bash
-# 1. Clone repository
-git clone https://github.com/LGDiMaggio/predictive-maintenance-mcp.git
-cd predictive-maintenance-mcp
-
-# 2. Run automated setup
-python setup_venv.py
-
-# 3. Activate environment
-.venv\Scripts\activate  # Windows
-source .venv/bin/activate  # Linux/macOS
-
-# 4. Verify installation
-python validate_server.py
-```
-
-📖 **Detailed Installation Guide**: See [INSTALL.md](INSTALL.md) for troubleshooting, Claude Desktop setup, and developer instructions.
-
-### From Source (Advanced)
-
-```bash
-git clone https://github.com/LGDiMaggio/predictive-maintenance-mcp.git
-cd predictive-maintenance-mcp
-pip install -e .
-```
-
-## Configuration
-
-### Claude Desktop
-
-Add to your Claude Desktop config:
-- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
-- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-
-> 📋 **Example config**: See [`claude_desktop_config_PYTHON_VENV.json`](claude_desktop_config_PYTHON_VENV.json) for a complete example
-
-```json
-{
-  "mcpServers": {
-    "predictive-maintenance": {
-      "command": "C:/path/to/predictive-maintenance-mcp/.venv/Scripts/python.exe",
-      "args": ["C:/path/to/predictive-maintenance-mcp/src/machinery_diagnostics_server.py"]
-    }
-  }
-}
-```
-
-> **Important Notes**:
-> - Replace `C:/path/to/predictive-maintenance-mcp` with your actual project path
-> - Use **absolute paths** for both `command` and `args`
-> - On macOS/Linux, use `.venv/bin/python` instead of `.venv/Scripts/python.exe`
-> - Forward slashes (`/`) work on all platforms, including Windows
-
-After configuration, **restart Claude Desktop** completely.
-
-### VS Code
-
-Add to your MCP configuration (`.vscode/mcp.json` or user settings):
-
-```json
-{
-  "servers": {
-    "predictive-maintenance": {
-      "command": "/path/to/predictive-maintenance-mcp/.venv/bin/python",
-      "args": ["/path/to/predictive-maintenance-mcp/src/machinery_diagnostics_server.py"]
-    }
-  }
-}
-```
-
-> Adjust paths according to your system (use `.venv/Scripts/python.exe` on Windows)
-
-##  Sample Dataset
+## 📊 Sample Dataset
 
 The server includes **20 real bearing vibration signals** from production machinery:
 
 **Training Set (14 signals)**:
-- ✅ **2 Healthy Baselines** - Normal operation data
-- 🔴 **7 Inner Race Faults** - Variable load conditions
-- ⚠️ **5 Outer Race Faults** - Various severity levels
+- ✅ **2 Healthy Baselines** — Normal operation data
+- 🔴 **7 Inner Race Faults** — Variable load conditions
+- ⚠️ **5 Outer Race Faults** — Various severity levels
 
 **Test Set (6 signals)**:
-- ✅ **1 Healthy Baseline** - Validation data
-- 🔴 **2 Inner Race Faults** - Test conditions
-- ⚠️ **3 Outer Race Faults** - Test conditions
+- ✅ **1 Healthy Baseline** — Validation data
+- 🔴 **2 Inner Race Faults** — Test conditions
+- ⚠️ **3 Outer Race Faults** — Test conditions
 
 > **Note**: Sampling rates and durations vary by signal (48.8-97.7 kHz, 3-6 seconds). All parameters auto-detected from metadata files.
 
 📖 **Full dataset documentation**: [data/README.md](data/README.md)
+
+---
 
 ## 💡 Usage Examples
 
@@ -428,17 +520,19 @@ Validate on OuterRaceFault_1.csv
 
 📚 **More examples**: [EXAMPLES.md](EXAMPLES.md) for complete diagnostic workflows
 
+---
+
 ## 📊 Professional Reports
 
 All analysis tools generate **interactive HTML reports** with Plotly visualizations:
 
 ### Why HTML Reports?
 
-✅ **Universal** - Works with any LLM (Claude, ChatGPT, local models)  
-✅ **Zero tokens** - Files saved locally, not in chat  
-✅ **Interactive** - Pan, zoom, hover for details  
-✅ **Professional** - Publication-ready visualizations  
-✅ **Persistent** - Save for documentation and sharing
+✅ **Universal** — Works with any LLM (Claude, ChatGPT, local models)  
+✅ **Zero tokens** — Files saved locally, not in chat  
+✅ **Interactive** — Pan, zoom, hover for details  
+✅ **Professional** — Publication-ready visualizations  
+✅ **Persistent** — Save for documentation and sharing
 
 ### Report Types
 
@@ -460,25 +554,21 @@ Generate FFT report for baseline_1.csv
 ```
 → Opens `reports/fft_spectrum_baseline_1_20251111_143022.html` in browser
 
-## Documentation
+---
 
-- [EXAMPLES.md](EXAMPLES.md) - Complete diagnostic workflows with step-by-step tutorials
-- [CONTRIBUTING.md](CONTRIBUTING.md) - Contribution guidelines
-- [CHANGELOG.md](CHANGELOG.md) - Version history
+## 📖 Documentation
 
-## Debugging
+| Document | Audience | Description |
+|----------|----------|-------------|
+| [**Quickstart for Engineers**](docs/QUICKSTART_ENGINEER.md) | 🔧 Engineers | Get results fast, no coding required |
+| [**Quickstart for Developers**](docs/QUICKSTART_DEVELOPER.md) | 💻 Developers | Understand MCP, extend the server |
+| [EXAMPLES.md](EXAMPLES.md) | Everyone | Complete diagnostic workflows with step-by-step tutorials |
+| [INSTALL.md](INSTALL.md) | Everyone | Detailed installation and troubleshooting guide |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Contributors | How to contribute (for every skill level) |
+| [CHANGELOG.md](CHANGELOG.md) | Everyone | Version history |
+| [data/README.md](data/README.md) | Everyone | Dataset documentation |
 
-Use MCP Inspector for interactive testing:
-
-```bash
-npx @modelcontextprotocol/inspector npx predictive-maintenance-mcp
-```
-
-Or from source:
-
-```bash
-uv run mcp dev src/machinery_diagnostics_server.py
-```
+---
 
 ## 🧪 Testing
 
@@ -508,6 +598,8 @@ pytest -v
 
 See [tests/README.md](tests/README.md) for detailed testing documentation.
 
+---
+
 ## 🛠️ Development
 
 ### Install Development Dependencies
@@ -529,79 +621,81 @@ mypy src/
 flake8 src/
 ```
 
-## 🚀 Roadmap & Recent Updates
+### Debugging
 
-### ✨ New in v0.2.1: Machine Documentation Reader (Beta)
+Use MCP Inspector for interactive testing:
 
-**AI-powered extraction of machine specifications from equipment manuals** 🎉
-
-The system now includes a hybrid documentation reader that combines:
-- 📄 **Direct PDF Access** - MCP Resources for full manual text reading
-- 🔍 **Smart Extraction** - Regex patterns for bearings, RPM, power ratings
-- 🧮 **Auto-Calculation** - Bearing fault frequencies from geometry (ISO 15243:2017)
-- 💾 **Caching System** - Fast repeated queries with JSON caching
-
-**What it can do:**
-```
-"What bearings are used in this pump?"
-→ Extracts: Drive end: SKF 6205-2RS, Non-drive end: NSK 6206
-
-"Calculate bearing fault frequencies at 1475 RPM"
-→ BPFO: 85.20 Hz, BPFI: 136.05 Hz, BSF: 101.32 Hz, FTF: 9.47 Hz
-
-"What type of mechanical seal is used?"
-→ Type 21, carbon/ceramic faces (extracted from manual text)
+```bash
+npx @modelcontextprotocol/inspector npx predictive-maintenance-mcp
 ```
 
-**Status:** ✅ Core functionality working, comprehensive tests passing
+Or from source:
 
-**Known Limitations:**
-- PDF reading requires PyPDF2 (optional dependency)
-- Limited bearing catalog (extensible)
-- No OCR for scanned PDFs (planned for v0.4.0)
-
-See [resources/machine_manuals/README.md](resources/machine_manuals/README.md) for usage guide.
+```bash
+uv run mcp dev src/machinery_diagnostics_server.py
+```
 
 ---
 
-### 🔮 Planned for v0.4.0
+## 🚀 Roadmap
 
-#### 🔍 Vector Search for Large Documents
-For manuals >100 pages, semantic search will be more efficient:
-- **ChromaDB/FAISS integration** - Embed PDF chunks for semantic search
-- **Query examples**: "bearing specifications", "maintenance schedule", "lubrication requirements"
-- **Benefit**: Faster than sequential reading, context-aware retrieval
+### ✨ Recent: v0.2.1 — Machine Documentation Reader
 
-#### 📷 OCR Support for Scanned Manuals
-Many older manuals are image-based PDFs:
-- **Tesseract integration** - Extract text from scanned pages
-- **Preprocessing** - Image enhancement for better accuracy
-- **Fallback**: Graceful degradation if OCR unavailable
+AI-powered extraction of machine specifications from equipment manuals:
+- 📄 **Direct PDF Access** via MCP Resources
+- 🔍 **Smart Extraction** — Regex patterns for bearings, RPM, power ratings
+- 🧮 **Auto-Calculation** — Bearing fault frequencies from geometry (ISO 15243:2017)
+- 💾 **Caching System** — Fast repeated queries with JSON caching
 
-#### 🌐 Online Bearing Catalog Integration (Future)
-- **Optional feature**: Web search for unknown bearings
-- **Privacy-first**: User must enable explicitly
-- **Sources**: SKF/FAG public catalogs (no API required)
+### 🔮 Planned Enhancements
+
+Each item below links to an open issue where you can **discuss, contribute, or claim the task**:
+
+| Priority | Enhancement | Status | Get Involved |
+|----------|-------------|--------|--------------|
+| 🔴 High | **Parquet/HDF5 data format support** | Open | [Good First Issue](https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues) |
+| 🔴 High | **Customizable ISO report thresholds** | Open | [Good First Issue](https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues) |
+| 🔴 High | **Docker image for zero-install setup** | Open | [Help Wanted](https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues) |
+| 🟡 Medium | **Vector search for large documents** (ChromaDB/FAISS) | Planned | [Discuss](https://github.com/LGDiMaggio/predictive-maintenance-mcp/discussions) |
+| 🟡 Medium | **OCR for scanned PDF manuals** (Tesseract) | Planned | [Discuss](https://github.com/LGDiMaggio/predictive-maintenance-mcp/discussions) |
+| 🟡 Medium | **Multi-signal trending** — Compare historical data | Planned | [Discuss](https://github.com/LGDiMaggio/predictive-maintenance-mcp/discussions) |
+| 🟢 Future | **Real-time streaming** — Live vibration monitoring | Concept | — |
+| 🟢 Future | **Dashboard** — Multi-asset fleet monitoring | Concept | — |
+| 🟢 Future | **Online bearing catalog** — Web search for unknown bearings | Concept | — |
+| 🟢 Future | **Multimodal fusion** — Vibration + temperature + acoustic | Concept | — |
+
+> 💡 **Have ideas?** [Open a discussion](https://github.com/LGDiMaggio/predictive-maintenance-mcp/discussions) or [create an issue](https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues/new/choose)!
 
 ---
 
-### 📈 Additional Future Enhancements
-- **Real-time streaming**: Live vibration signal monitoring
-- **Multi-signal trending**: Compare historical data across assets
-- **Dashboard**: Multi-asset fleet monitoring interface
-- **Mobile reports**: Responsive HTML reports for field use
-- **Cloud integration**: Optional Azure/AWS storage for large datasets
-- **Multimodal fusion**: Vibration + temperature + acoustic + oil analysis
+## 🤝 Contributing
 
-💡 **Have ideas?** Open an issue or discussion to suggest features!
+We welcome contributions from **everyone** — not just programmers. See our full [CONTRIBUTING.md](CONTRIBUTING.md) guide, which includes specific paths for:
 
-## License
+- **🔧 Domain experts** — Validate signals, add datasets, review diagnostic logic
+- **💻 Developers** — Add tools, fix bugs, improve architecture
+- **📖 Technical writers** — Improve docs, add tutorials, translate content
+- **🧪 Testers** — Edge cases, validation with ground truth data
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+### Quick Start for Contributors
+
+1. Browse [Issues](https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues) — look for `good first issue` or `help wanted` labels
+2. Comment on the issue to claim it
+3. Fork → Branch → Code → Test → PR
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed setup and guidelines.
+
+---
+
+## 📄 License
+
+This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
 
 **Note**: Sample data is licensed CC BY-NC-SA 4.0 (non-commercial). For commercial use, replace with your own machinery data.
 
-## Citation
+---
+
+## 📚 Citation
 
 If you use this server in your research or projects, please cite:
 
@@ -610,7 +704,7 @@ If you use this server in your research or projects, please cite:
   title = {Predictive Maintenance MCP Server: An open-source framework for integrating Large Language Models with predictive maintenance and fault diagnosis workflows},
   author = {Di Maggio, Luigi Gianpio},
   year = {2025},
-  version = {0.3.2},
+  version = {0.4.0},
   url = {https://github.com/LGDiMaggio/predictive-maintenance-mcp},
   doi = {10.5281/zenodo.17611542}
 }
@@ -618,24 +712,25 @@ If you use this server in your research or projects, please cite:
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.17611542.svg)](https://doi.org/10.5281/zenodo.17611542)
 
-## Blog post
+---
 
-👉 [Building an AI-Powered Predictive Maintenance System with MCP and Claude](https://medium.com/@luigigianpio.dimaggio/building-an-ai-powered-predictive-maintenance-system-with-model-context-protocol-and-claude-1b0ed588e574)
-
-## Acknowledgments
+## 🙏 Acknowledgments
 
 - **FastMCP** framework by [@jlowin](https://github.com/jlowin)
 - **Model Context Protocol** by [Anthropic](https://www.anthropic.com/)
 - **Sample Data** from [MathWorks](https://github.com/mathworks/RollingElementBearingFaultDiagnosis-Data)
-- **Development Assistance**: Core codebase and demonstration examples were developed with assistance from [Claude](https://claude.ai) by Anthropic to rapidly prototype and demonstrate the Model Context Protocol (MCP) concept for predictive maintenance applications. The coding assistant tool enabled quick iteration on the architecture, testing framework, and CI/CD pipeline.
+- **Development Assistance**: Core codebase and demonstration examples were developed with assistance from [Claude](https://claude.ai) by Anthropic to rapidly prototype and demonstrate the Model Context Protocol (MCP) concept for predictive maintenance applications.
 
-> ⚠️ **Development Notice**: This codebase was generated using Claude AI under human supervision to explore and validate MCP-based approaches for industrial diagnostics and predictive maintenance workflows. While the implementation demonstrates the potential of AI-assisted development for specialized engineering domains, **thorough testing and validation are required** before any production or safety-critical use. The project serves as a research prototype to evaluate how LLM-powered tools can enhance human expertise in machinery condition monitoring.
-
-## Support
-
-- **Issues**: https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues
-- **Discussions**: https://github.com/LGDiMaggio/predictive-maintenance-mcp/discussions
+> ⚠️ **Development Notice**: This codebase was generated using Claude AI under human supervision to explore and validate MCP-based approaches for industrial diagnostics and predictive maintenance workflows. While the implementation demonstrates the potential of AI-assisted development for specialized engineering domains, **thorough testing and validation are required** before any production or safety-critical use.
 
 ---
 
-**Built with ❤️ for condition monitoring professionals**
+## 📬 Support
+
+- **Issues**: https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues
+- **Discussions**: https://github.com/LGDiMaggio/predictive-maintenance-mcp/discussions
+- **Blog post**: [Building an AI-Powered Predictive Maintenance System with MCP and Claude](https://medium.com/@luigigianpio.dimaggio/building-an-ai-powered-predictive-maintenance-system-with-model-context-protocol-and-claude-1b0ed588e574)
+
+---
+
+**Built with ❤️ for condition monitoring professionals and the open-source community**

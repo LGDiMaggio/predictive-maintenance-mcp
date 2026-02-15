@@ -5,6 +5,50 @@ All notable changes to the Predictive Maintenance MCP Server project will be doc
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-02-15
+
+### Added
+- **Persona-Based Documentation System**
+  - New `docs/QUICKSTART_ENGINEER.md` — Zero-code guide for maintenance and reliability engineers
+  - New `docs/QUICKSTART_DEVELOPER.md` — Architecture guide for AI/software developers with tutorial on creating new MCP tools
+  - "Choose Your Path" section in README with two clear entry points
+
+- **"Our Mission" Section in README**
+  - Project vision and purpose integrated directly into the repository (previously only on external blog post)
+  - Explains the "why" of MCP for industrial diagnostics
+
+- **Ecosystem Architecture Overview**
+  - Visual diagram explaining the MCP flow: User → LLM → MCP Server → Data
+  - Explanation of MCP as "USB port for AI" — plug-and-play tool integration
+  - Clarifies the Resource vs Tool pattern
+
+- **GitHub Issue Templates**
+  - Bug Report template with environment details
+  - Feature Request template with impact assessment
+  - Good First Issue template with effort estimates and mentorship links
+  - Domain Validation template for engineers to provide expert feedback (no code required)
+  - Pull Request template with standardized checklist
+  - Issue template config with contact links to Discussions and guides
+
+- **Revamped CONTRIBUTING.md with Four Contribution Paths**
+  - Path 1: Domain Expert (no code required — validate results, provide datasets, review diagnostics)
+  - Path 2: Software Developer (add tools, improve architecture, build Docker support)
+  - Path 3: Technical Writer (tutorials, translations, case studies)
+  - Path 4: Tester / QA (edge cases, cross-platform, ground truth validation)
+
+- **Actionable Roadmap**
+  - Roadmap items now link to GitHub Issues/Discussions
+  - Priority-based table with Get Involved column
+  - Docker image for zero-install setup added as high-priority item
+
+### Changed
+- **README.md completely restructured** — Mission → Architecture → Choose Your Path → Content
+  - Moved from purely technical README to narrative + technical hybrid
+  - Added Documentation table linking all guides by audience
+  - Consolidated support links (Issues, Discussions, Blog post) in dedicated section
+- **CONTRIBUTING.md rewritten** — From generic PR guide to persona-based contribution manifesto
+- Version bump from 0.3.2 to 0.4.0
+
 ## [0.2.0] - 2025-11-11
 
 ### Added
@@ -64,13 +108,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Roadmap
 
-### Planned for v0.3.0
-- **🤖 AI-Powered Machine Documentation Reader**
-  - Automatic extraction of bearing/gear specifications from equipment manuals (PDF)
-  - Parse technical datasheets to identify characteristic frequencies (BPFO, BPFI, BSF, FTF)
-  - Extract machine parameters: power rating, operating speeds, bearing types
-  - Integration with LLM for natural language understanding of technical specs
-  - Support for common formats: maintenance manuals, bearing catalogs, OEM documentation
+### Planned for v0.5.0
+- **📦 Docker image** for zero-install setup
+- **📂 Parquet/HDF5 data format support**
+- **📏 Customizable ISO report thresholds**
 - Multi-signal comparison tools
 - Advanced trending and monitoring
 - Additional diagnostic workflows (pumps, motors, gearboxes)

@@ -1,17 +1,98 @@
 # Contributing to Predictive Maintenance MCP Server
 
-Thank you for your interest in contributing! This document provides guidelines and instructions for contributing to the project.
+Thank you for your interest in contributing! This project thrives on **diverse contributions** — not just code. Whether you're a maintenance engineer, a Python developer, a technical writer, or a student exploring open source for the first time, there's a meaningful way for you to help.
+
+---
 
 ## Table of Contents
 
+- [Choose Your Contribution Path](#choose-your-contribution-path)
 - [Code of Conduct](#code-of-conduct)
-- [Getting Started](#getting-started)
-- [Development Setup](#development-setup)
-- [How to Contribute](#how-to-contribute)
+- [Getting Started (All Contributors)](#getting-started-all-contributors)
+- [Path 1: Domain Expert (No Coding Required)](#path-1-domain-expert-no-coding-required)
+- [Path 2: Software Developer](#path-2-software-developer)
+- [Path 3: Technical Writer / Translator](#path-3-technical-writer--translator)
+- [Path 4: Tester / QA](#path-4-tester--qa)
 - [Coding Standards](#coding-standards)
-- [Testing Guidelines](#testing-guidelines)
-- [Documentation](#documentation)
 - [Pull Request Process](#pull-request-process)
+- [Adding New Analysis Tools](#adding-new-analysis-tools)
+- [Recognition](#recognition)
+- [Questions?](#questions)
+
+---
+
+## Choose Your Contribution Path
+
+Not everyone contributes in the same way, and **all contributions are equally valued**. Find your path:
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+### 🔧 Path 1: Domain Expert
+*Maintenance engineer, reliability analyst, vibration specialist*
+
+**You don't need to write code.** Your industrial knowledge is the most valuable asset this project needs.
+
+- Validate diagnostic accuracy against real-world experience
+- Provide real vibration datasets (anonymized)
+- Review whether fault detection results make engineering sense
+- Suggest new diagnostic workflows from your daily practice
+
+➡️ [Jump to Path 1 details](#path-1-domain-expert-no-coding-required)
+
+</td>
+<td width="50%" valign="top">
+
+### 💻 Path 2: Software Developer
+*Python developer, AI/ML engineer, full-stack dev*
+
+**The architecture is clean and extensible.** Adding a new MCP tool is as simple as writing a Python function with a decorator.
+
+- Add new diagnostic tools
+- Improve ML models
+- Build Docker support
+- Enhance the report system
+
+➡️ [Jump to Path 2 details](#path-2-software-developer)
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+### 📖 Path 3: Technical Writer
+*Documentation specialist, translator, educator*
+
+**Clear documentation saves hours** for every future user. Help us explain complex concepts simply.
+
+- Improve tutorials and examples
+- Translate documentation
+- Write case studies
+- Create video walkthroughs
+
+➡️ [Jump to Path 3 details](#path-3-technical-writer--translator)
+
+</td>
+<td width="50%" valign="top">
+
+### 🧪 Path 4: Tester / QA
+*Quality assurance, edge case hunter, validation specialist*
+
+**Break things on purpose.** Find the inputs that make the system fail — that's how we make it robust.
+
+- Test with unusual data formats
+- Validate results against ground truth
+- Report edge cases and unexpected behaviors
+- Cross-platform testing (Windows/macOS/Linux)
+
+➡️ [Jump to Path 4 details](#path-4-tester--qa)
+
+</td>
+</tr>
+</table>
+
+---
 
 ## Code of Conduct
 
@@ -33,82 +114,192 @@ We are committed to providing a welcoming and inclusive environment for all cont
 - Publishing others' private information
 - Other conduct inappropriate in a professional setting
 
-## Getting Started
+---
 
-### Prerequisites
+## Getting Started (All Contributors)
 
-- Python 3.11 or higher
-- Git
-- Basic understanding of signal processing (helpful but not required)
-- Familiarity with MCP protocol (can be learned along the way)
+### 1. Find Something to Work On
 
-### Initial Setup
+Browse [**Issues**](https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues) and look for these labels:
 
-1. **Fork the repository**
-   ```bash
-   # Click "Fork" button on GitHub
-   ```
+| Label | Meaning |
+|-------|---------|
+| `good first issue` | Small, well-defined tasks perfect for newcomers |
+| `help wanted` | Tasks where we specifically need community help |
+| `documentation` | Writing, editing, or translating docs |
+| `bug` | Something isn't working correctly |
+| `enhancement` | New feature or improvement |
+| `domain-knowledge` | Requires industrial/engineering expertise, not necessarily code |
 
-2. **Clone your fork**
-   ```bash
-   git clone https://github.com/YOUR_USERNAME/predictive-maintenance-mcp.git
-   cd predictive-maintenance-mcp
-   ```
+**Can't find a matching issue?** [Open a discussion](https://github.com/LGDiMaggio/predictive-maintenance-mcp/discussions) to propose your idea first.
 
-3. **Add upstream remote**
-   ```bash
-   git remote add upstream https://github.com/LGDiMaggio/predictive-maintenance-mcp.git
-   ```
+### 2. Claim the Issue
 
-4. **Install dependencies**
-   ```bash
-   pip install -e ".[dev]"
-   ```
+Comment on the issue: *"I'd like to work on this!"* — this prevents duplicate effort.
 
-## Development Setup
-
-### Environment Configuration
+### 3. Set Up Your Environment
 
 ```bash
-# Create virtual environment (recommended)
+# Fork the repository on GitHub, then:
+git clone https://github.com/YOUR_USERNAME/predictive-maintenance-mcp.git
+cd predictive-maintenance-mcp
+
+# Add upstream remote
+git remote add upstream https://github.com/LGDiMaggio/predictive-maintenance-mcp.git
+
+# Create virtual environment
 python -m venv .venv
-
-# Activate (Windows)
-.venv\Scripts\activate
-
-# Activate (macOS/Linux)
-source .venv/bin/activate
+.venv\Scripts\activate      # Windows
+source .venv/bin/activate    # macOS/Linux
 
 # Install development dependencies
 pip install -e ".[dev]"
+
+# Verify everything works
+pytest -v
 ```
 
-### Development Dependencies
+---
 
-The `[dev]` extra includes:
-- `pytest` - Testing framework
-- `pytest-cov` - Coverage reporting
-- `flake8` - Code linting
-- `mypy` - Type checking
-- `black` - Code formatting
+## Path 1: Domain Expert (No Coding Required)
 
-## How to Contribute
+Your industrial experience is **irreplaceable**. Here's how to contribute without writing a single line of code:
 
-### Types of Contributions
+### Validate Diagnostic Results
 
-We welcome various types of contributions:
+Run the server with the included test data and verify:
+- Do the bearing fault frequencies make engineering sense?
+- Are the ISO 20816-3 zone classifications correct for the given vibration levels?
+- Would the envelope analysis results lead to the right maintenance decision?
 
-#### 1. Bug Reports
-- Use GitHub Issues
-- Include clear description
-- Provide steps to reproduce
-- Include error messages/logs
-- Specify your environment
+**How to provide feedback**: Open an issue titled *"Validation: [what you tested]"* and describe what you found. Include screenshots of the HTML reports if helpful.
 
-**Template:**
+### Provide Real-World Datasets
+
+We need anonymized vibration data from real machinery:
+- Healthy baseline signals for different machine types
+- Known fault conditions (bearing, gear, imbalance, misalignment)
+- Metadata: sampling rate, shaft speed, bearing type, fault description
+
+**Format**: CSV with one column of acceleration values + a JSON metadata file. See `data/signals/real_train/` for examples.
+
+**Privacy**: Anonymize all data. Remove any proprietary machine identifiers, company names, or location information.
+
+### Suggest New Diagnostic Workflows
+
+You know what matters in the field. Open a discussion or issue describing:
+- What diagnostic procedure do you follow daily?
+- What information do you need that the current tools don't provide?
+- What standards or guidelines should we support (VDI 3832, ISO 10816, etc.)?
+
+### Review the Bearing Catalog
+
+The file `resources/bearing_catalogs/common_bearings_catalog.json` contains ~20 bearings. You can:
+- Verify the geometry data is correct
+- Suggest additional common bearing models that should be included
+- Provide corrections for contact angles, ball counts, or pitch diameters
+
+This is a JSON file — you can edit it directly or provide the data in any format and we'll add it.
+
+---
+
+## Path 2: Software Developer
+
+### Development Setup
+
+```bash
+# Create feature branch
+git checkout -b feature/your-feature-name
+
+# Make changes, then test
+pytest -v
+black src/ --check
+flake8 src/ --max-line-length=120
+mypy src/ --ignore-missing-imports
+
+# Commit with clear messages
+git commit -m "feat: Add parquet file reading support
+
+- Add load_parquet() function in signal loading
+- Support both single and multi-column parquet files
+- Add unit tests with synthetic data
+- Update EXAMPLES.md with parquet usage
+
+Closes #42"
+```
+
+### Good First Issues for Developers
+
+| Task | What You'll Learn | Issue |
+|------|-------------------|-------|
+| **Add Parquet data format support** | Signal loading pipeline, pandas I/O | [Browse issues](https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues) |
+| **Make ISO thresholds configurable** | Tool parameter design, ISO standard | [Browse issues](https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues) |
+| **Add unit conversion tool** | MCP tool pattern, unit systems | [Browse issues](https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues) |
+| **Improve error messages** | Error handling best practices | [Browse issues](https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues) |
+| **Create Dockerfile** | Docker, deployment, DevOps | [Browse issues](https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues) |
+
+### How to Create a New MCP Tool
+
+See the complete template in the [Developer Quickstart](docs/QUICKSTART_DEVELOPER.md#step-4-create-your-first-tool).
+
+Summary:
+1. Add a `@mcp.tool()` decorated function in `machinery_diagnostics_server.py`
+2. Write comprehensive docstring (the LLM reads this!)
+3. Add tests in `tests/`
+4. Update `EXAMPLES.md` if the tool adds a new workflow
+5. Submit PR
+
+### Architecture Contributions
+
+For bigger features, **open a discussion first** to align on approach:
+
+- **Docker containerization** — Package everything into `docker run predictive-maintenance-mcp`
+- **Vector search** — ChromaDB/FAISS for semantic search over large equipment manuals
+- **Streaming support** — Real-time vibration signal monitoring via Server-Sent Events
+- **Plugin system** — Allow external Python packages to register tools
+
+---
+
+## Path 3: Technical Writer / Translator
+
+### Documentation Improvements
+
+| Task | Impact |
+|------|--------|
+| Add a **video walkthrough** of the engineer quickstart | Reduces barrier for non-technical users |
+| Write a **case study** using real (anonymized) data | Shows the tool's value to decision-makers |
+| Improve **inline code comments** in `machinery_diagnostics_server.py` | Helps new developers understand the codebase |
+| **Translate** the engineer quickstart to other languages | Expands reach globally |
+| Create a **glossary** of vibration analysis terms used in the project | Bridges the gap between domains |
+
+### Documentation Standards
+
+- Use clear, simple language. Assume the reader may not be a native English speaker.
+- Include the **"why"** alongside the **"how"** — people remember reasons better than steps.
+- Every code example should be copy-pasteable and testable.
+- Use screenshots or diagrams for visual concepts (reports, architecture).
+
+---
+
+## Path 4: Tester / QA
+
+### What to Test
+
+| Test Category | What to Try | Why It Matters |
+|---------------|-------------|----------------|
+| **Edge cases** | Very short signals (10 samples), very long signals (10M+), zero values, NaN values | Robustness |
+| **Format variations** | CSV with headers, without headers, different delimiters, numeric formats | Real-world data is messy |
+| **Cross-platform** | Run all tests on Windows, macOS, and Linux | Consistent experience |
+| **Integration** | Full workflow: load → analyze → report → ML train → predict | End-to-end validation |
+| **Ground truth** | Compare results against known reference values from textbooks or certified tools | Accuracy guarantee |
+
+### How to Report Issues
+
+Use this template when filing bugs:
+
 ```markdown
 **Bug Description:**
-Brief description of the issue
+Brief description of what went wrong
 
 **Steps to Reproduce:**
 1. Load signal file X
@@ -119,320 +310,56 @@ Brief description of the issue
 What should happen
 
 **Actual Behavior:**
-What actually happens
+What actually happens (include full error message)
 
 **Environment:**
-- OS: Windows/macOS/Linux
-- Python version: 3.11
-- Server version: 0.2.0
+- OS: Windows 11 / macOS 14 / Ubuntu 22.04
+- Python: 3.11.x / 3.12.x
+- Server version: 0.4.0
 ```
 
-#### 2. Feature Requests
-- Describe the problem the feature would solve
-- Provide use cases
-- Suggest implementation approach (optional)
-
-#### 3. Code Contributions
-- Bug fixes
-- New analysis tools
-- Performance improvements
-- Documentation improvements
-
-#### 4. Documentation
-- Fix typos or unclear explanations
-- Add examples
-- Translate documentation
-- Improve API documentation
+---
 
 ## Coding Standards
 
-### Python Style Guide
+### Python Style
 
-We follow **PEP 8** with some specific conventions:
+- **Formatter**: `black` (run before every commit)
+- **Linter**: `flake8` (max line length: 120)
+- **Type checker**: `mypy` (use type hints for all function signatures)
+- **Docstrings**: Google style
+- **Imports**: Standard library → Third-party → Local
 
-#### Imports
-```python
-# Standard library
-import os
-import sys
-
-# Third-party
-import numpy as np
-from scipy import signal
-
-# Local
-from machinery_diagnostics_server import analyze_fft
-```
-
-#### Function Documentation
-```python
-def analyze_signal(
-    file_path: str,
-    sampling_rate: float,
-    segment_duration: float = 1.0
-) -> dict:
-    """
-    Analyze vibration signal using FFT.
-    
-    Args:
-        file_path: Path to CSV signal file
-        sampling_rate: Sampling frequency in Hz
-        segment_duration: Segment duration in seconds (default: 1.0)
-    
-    Returns:
-        Dictionary containing analysis results with keys:
-        - frequencies: Frequency array
-        - magnitudes: Magnitude array
-        - peaks: List of detected peaks
-    
-    Raises:
-        FileNotFoundError: If signal file doesn't exist
-        ValueError: If sampling_rate <= 0
-    
-    Example:
-        >>> result = analyze_signal("motor.csv", 10000)
-        >>> print(result['peaks'])
-        [{'frequency': 50.0, 'magnitude': 0.85}]
-    """
-    pass
-```
-
-#### Type Hints
-Always use type hints for function signatures:
-```python
-from typing import List, Dict, Optional, Tuple
-
-def detect_peaks(
-    spectrum: np.ndarray,
-    threshold: float = 0.1
-) -> List[Tuple[float, float]]:
-    """Detect peaks in spectrum."""
-    pass
-```
-
-#### Error Handling
-```python
-try:
-    signal_data = load_signal(file_path)
-except FileNotFoundError:
-    raise FileNotFoundError(
-        f"Signal file not found: {file_path}. "
-        "Please check the file path and try again."
-    )
-except Exception as e:
-    raise RuntimeError(f"Error loading signal: {e}")
-```
-
-### Code Formatting
-
-We use **Black** for consistent formatting:
 ```bash
-# Format your code
-black src/
-
-# Check formatting
-black --check src/
-```
-
-### Linting
-
-Use **flake8** to check code quality:
-```bash
-flake8 src/ --max-line-length=120 --max-complexity=20
-```
-
-### Type Checking
-
-Use **mypy** for type checking:
-```bash
+# Quick check before committing
+black src/ tests/
+flake8 src/ --max-line-length=120
 mypy src/ --ignore-missing-imports
+pytest -v
 ```
 
-## Testing Guidelines
+### Testing Requirements
 
-### Writing Tests
-
-Place tests in the `tests/` directory:
-
-```python
-# tests/test_fft_analysis.py
-
-import pytest
-import numpy as np
-from machinery_diagnostics_server import analyze_fft
-
-def test_analyze_fft_basic():
-    """Test basic FFT analysis."""
-    # Arrange
-    signal = np.sin(2 * np.pi * 50 * np.linspace(0, 1, 1000))
-    
-    # Act
-    result = analyze_fft(signal, sampling_rate=1000)
-    
-    # Assert
-    assert result['peak_frequency'] == pytest.approx(50.0, rel=0.1)
-    assert len(result['frequencies']) > 0
-
-def test_analyze_fft_invalid_sampling_rate():
-    """Test that invalid sampling rate raises error."""
-    signal = np.zeros(100)
-    
-    with pytest.raises(ValueError):
-        analyze_fft(signal, sampling_rate=-1)
-```
-
-### Running Tests
-
-```bash
-# Run all tests
-pytest tests/
-
-# Run with coverage
-pytest tests/ --cov=src --cov-report=html
-
-# Run specific test file
-pytest tests/test_fft_analysis.py
-
-# Run specific test
-pytest tests/test_fft_analysis.py::test_analyze_fft_basic
-```
-
-### Test Coverage
-
-Aim for:
 - **>80% coverage** for new code
-- **100% coverage** for critical analysis functions
+- **100% coverage** for critical analysis functions (FFT, envelope, ISO)
+- All tests must pass before PR submission
 
 ```bash
-# Generate coverage report
-pytest tests/ --cov=src --cov-report=term-missing
+pytest --cov=src --cov-report=term-missing
 ```
 
-## Documentation
-
-### Docstring Format
-
-Use Google-style docstrings:
-
-```python
-def calculate_bearing_frequencies(
-    shaft_speed: float,
-    num_balls: int,
-    ball_diameter: float,
-    pitch_diameter: float,
-    contact_angle: float = 0.0
-) -> dict:
-    """
-    Calculate bearing characteristic frequencies.
-    
-    Uses standard bearing kinematic formulas to compute:
-    - BPFO (Ball Pass Frequency Outer race)
-    - BPFI (Ball Pass Frequency Inner race)
-    - BSF (Ball Spin Frequency)
-    - FTF (Fundamental Train Frequency)
-    
-    Args:
-        shaft_speed: Shaft rotation speed in Hz
-        num_balls: Number of rolling elements
-        ball_diameter: Diameter of rolling element in mm
-        pitch_diameter: Bearing pitch diameter in mm
-        contact_angle: Contact angle in degrees (default: 0.0)
-    
-    Returns:
-        Dictionary with keys:
-        - BPFO: Outer race frequency
-        - BPFI: Inner race frequency
-        - BSF: Ball spin frequency
-        - FTF: Cage frequency
-    
-    Example:
-        >>> freqs = calculate_bearing_frequencies(
-        ...     shaft_speed=30.0,
-        ...     num_balls=8,
-        ...     ball_diameter=12.7,
-        ...     pitch_diameter=58.0
-        ... )
-        >>> print(f"BPFO: {freqs['BPFO']:.2f} Hz")
-        BPFO: 99.75 Hz
-    
-    References:
-        Harris, T. A. (2001). Rolling Bearing Analysis (4th ed.).
-        ISO 281:2007 - Rolling bearings — Dynamic load ratings
-    """
-    pass
-```
-
-### Updating README
-
-When adding new features:
-1. Update "Features" section
-2. Add tool documentation to "Available Tools"
-3. Update examples if applicable
-4. Add to roadmap if partial implementation
-
-### API Documentation
-
-For new tools, add to API reference:
-```markdown
-#### `new_analysis_tool`
-Brief description of what the tool does.
-
-**Parameters:**
-- `param1` (type, required) - Description
-- `param2` (type, optional) - Description (default: value)
-
-**Returns:**
-- Description of return value
-
-**Example:**
-\```
-new_analysis_tool
-param1: value1
-param2: value2
-\```
-```
+---
 
 ## Pull Request Process
 
 ### Before Submitting
 
-1. **Update your fork**
-   ```bash
-   git fetch upstream
-   git checkout main
-   git merge upstream/main
-   ```
-
-2. **Create a feature branch**
-   ```bash
-   git checkout -b feature/your-feature-name
-   ```
-
-3. **Make your changes**
-   - Write code
-   - Add tests
-   - Update documentation
-
-4. **Test your changes**
-   ```bash
-   pytest tests/
-   flake8 src/
-   mypy src/
-   ```
-
-5. **Commit with clear messages**
-   ```bash
-   git add .
-   git commit -m "Add feature: brief description
-   
-   - Detailed change 1
-   - Detailed change 2
-   - Fixes #123"
-   ```
+1. Update your fork: `git fetch upstream && git merge upstream/main`
+2. Run all checks: `pytest -v && black --check src/ && flake8 src/`
+3. Write clear commit messages (see format below)
 
 ### Commit Message Format
 
-Use this format:
 ```
 <type>: <subject>
 
@@ -441,14 +368,7 @@ Use this format:
 <footer>
 ```
 
-**Types:**
-- `feat`: New feature
-- `fix`: Bug fix
-- `docs`: Documentation only
-- `style`: Code style (formatting, missing semicolons, etc.)
-- `refactor`: Code restructuring without behavior change
-- `test`: Adding tests
-- `chore`: Maintenance tasks
+**Types**: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`
 
 **Example:**
 ```
@@ -462,58 +382,42 @@ feat: Add bearing frequency calculator tool
 Closes #42
 ```
 
-### Submitting Pull Request
+### PR Description Template
 
-1. **Push to your fork**
-   ```bash
-   git push origin feature/your-feature-name
-   ```
+```markdown
+## Description
+Brief description of changes
 
-2. **Create Pull Request**
-   - Go to GitHub
-   - Click "New Pull Request"
-   - Select your branch
-   - Fill in PR template
+## Type of Change
+- [ ] Bug fix
+- [ ] New feature
+- [ ] Breaking change
+- [ ] Documentation update
 
-3. **PR Description Template**
-   ```markdown
-   ## Description
-   Brief description of changes
-   
-   ## Type of Change
-   - [ ] Bug fix
-   - [ ] New feature
-   - [ ] Breaking change
-   - [ ] Documentation update
-   
-   ## Testing
-   - [ ] Tests added/updated
-   - [ ] All tests pass
-   - [ ] Code coverage maintained/improved
-   
-   ## Checklist
-   - [ ] Code follows style guidelines
-   - [ ] Self-reviewed the code
-   - [ ] Commented complex sections
-   - [ ] Updated documentation
-   - [ ] No breaking changes (or documented)
-   
-   ## Related Issues
-   Fixes #123
-   ```
+## Testing
+- [ ] Tests added/updated
+- [ ] All tests pass
+- [ ] Coverage maintained/improved
 
-### Review Process
+## Checklist
+- [ ] Code follows style guidelines
+- [ ] Self-reviewed
+- [ ] Documentation updated
+- [ ] No breaking changes (or documented)
 
-1. **Automated checks** run automatically (pytest, flake8, mypy, black)
-2. **Maintainer review** (typically weekly, may be faster for urgent fixes)
-3. **Address feedback** if requested
-4. **Approval and merge** once approved
+## Related Issues
+Fixes #123
+```
 
-> 📅 **Review Timeline**: PRs are typically reviewed on a weekly basis. Critical bug fixes may receive faster attention.
+### Review Timeline
+
+PRs are typically reviewed on a **weekly basis**. Critical bug fixes may receive faster attention.
+
+---
 
 ## Adding New Analysis Tools
 
-### Template for New Tool
+### Template
 
 ```python
 @mcp.tool()
@@ -521,7 +425,7 @@ def new_analysis_tool(
     file_path: str,
     sampling_rate: float,
     parameter1: float,
-    parameter2: Optional[str] = None
+    parameter2: str | None = None
 ) -> dict:
     """
     Brief description of what the tool does.
@@ -529,66 +433,51 @@ def new_analysis_tool(
     Args:
         file_path: Path to signal file (required)
         sampling_rate: Sampling frequency in Hz (required)
-        parameter1: Description of parameter1 (required)
-        parameter2: Description of parameter2 (optional, default: None)
+        parameter1: Description (required)
+        parameter2: Description (optional, default: None)
     
     Returns:
         Dictionary with analysis results
-    
-    Example:
-        >>> result = new_analysis_tool("signal.csv", 10000, 1.5)
     """
     # 1. Load and validate signal
-    try:
-        signal_data = load_signal(file_path)
-    except FileNotFoundError:
-        raise FileNotFoundError(f"Signal file not found: {file_path}")
-    
     # 2. Validate parameters
-    if sampling_rate <= 0:
-        raise ValueError("Sampling rate must be positive")
-    
     # 3. Perform analysis
-    result = perform_analysis(signal_data, parameter1, parameter2)
-    
-    # 4. Format and return results
-    return {
-        "analysis_type": "new_analysis",
-        "file_path": file_path,
-        "sampling_rate": sampling_rate,
-        "results": result,
-        "timestamp": datetime.now().isoformat()
-    }
+    # 4. Return structured results
 ```
 
 ### Checklist for New Tools
 
 - [ ] Function implements core algorithm correctly
 - [ ] Input validation for all parameters
-- [ ] Clear error messages
-- [ ] Comprehensive docstring
+- [ ] Clear error messages (the LLM relays these to users!)
+- [ ] Comprehensive docstring (the LLM reads this to decide when to call the tool!)
 - [ ] Unit tests with >80% coverage
 - [ ] Integration test with sample data
-- [ ] README documentation updated
-- [ ] Example usage in EXAMPLES.md
-- [ ] Type hints for all parameters
+- [ ] EXAMPLES.md updated (if new workflow)
 
-## Questions?
-
-- **General questions**: Open a [Discussion](https://github.com/LGDiMaggio/predictive-maintenance-mcp/discussions) (enable in Settings if not available)
-- **Bug reports**: Open an [Issue](https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues)
-- **Security issues**: Email directly to the repository owner (contact information in GitHub profile)
+---
 
 ## Recognition
 
 Contributors will be:
-- Acknowledged in release notes for the version including their contribution
-- Mentioned in relevant documentation sections they contributed to
-- Credited in commit history with proper attribution
+- **Acknowledged** in release notes for the version including their contribution
+- **Mentioned** in relevant documentation sections they contributed to
+- **Credited** in commit history with proper attribution
 
 **Major Contributors** (significant features or sustained contributions) may receive:
 - Highlighted mention in README.md
 - Co-authorship on research publications using this work (if applicable)
 - Invitation to join as project collaborator
 
-Thank you for contributing to Predictive Maintenance MCP Server! 🚀
+---
+
+## Questions?
+
+- **General questions**: [Open a Discussion](https://github.com/LGDiMaggio/predictive-maintenance-mcp/discussions)
+- **Bug reports**: [Open an Issue](https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues)
+- **Security issues**: Email directly to the repository owner (contact in GitHub profile)
+- **Contribution ideas**: [Start a Discussion](https://github.com/LGDiMaggio/predictive-maintenance-mcp/discussions) — we'll help you find the right approach
+
+---
+
+**Every contribution matters. The smallest fix improves the experience for every future user.** 🚀
