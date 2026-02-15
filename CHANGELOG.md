@@ -5,6 +5,14 @@ All notable changes to the Predictive Maintenance MCP Server project will be doc
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-02-15
+
+### Fixed
+- Aligned `__version__` in `src/__init__.py` and `SERVER_VERSION` in `.env.example` to 0.4.x (were still 0.3.4 after merge)
+- Shortened `server.json` description to ≤100 characters (MCP Registry validation requirement)
+- Added `0.4.x` to supported versions table in `SECURITY.md`
+- PyPI publish: v0.4.0 was uploaded with stale `__init__` version; this release corrects it
+
 ## [0.4.0] - 2026-02-15
 
 ### Added

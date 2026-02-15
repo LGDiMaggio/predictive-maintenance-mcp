@@ -315,7 +315,7 @@ What actually happens (include full error message)
 **Environment:**
 - OS: Windows 11 / macOS 14 / Ubuntu 22.04
 - Python: 3.11.x / 3.12.x
-- Server version: 0.4.0
+- Server version: 0.4.1
 ```
 
 ---
