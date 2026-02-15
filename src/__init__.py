@@ -5,7 +5,7 @@ A Model Context Protocol server for industrial machinery diagnostics,
 vibration analysis, and predictive maintenance.
 """
 
-__version__ = "0.3.4"
+__version__ = "0.4.0"
 __author__ = "Luigi Gianpio Di Maggio"
 __license__ = "MIT"
 
