@@ -63,8 +63,11 @@ This project is built around the **Model Context Protocol (MCP)** — an open st
                │
                ▼
 ┌──────────────────────────────────────────────────────────────┐
-│   YOUR DATA (stays on your machine — privacy-first)          │
+│   YOUR DATA (raw files stay on your machine)                 │
 │   Vibration signals · Equipment manuals · Trained models     │
+│                                                              │
+│   ⚠️  Analysis results (peaks, RMS, diagnoses) flow back     │
+│   to the LLM provider. Use a local LLM for full air-gap.     │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -73,7 +76,7 @@ This project is built around the **Model Context Protocol (MCP)** — an open st
 ### What This Means For You
 
 - **🔌 Plug-and-play** — Add new analysis tools (thermography, oil analysis, acoustics) as simple Python functions — the LLM discovers them automatically
-- **🔒 Privacy-first** — All data stays on your machine; only tool calls and results flow through the LLM
+- **🔒 Local processing** — Raw signals never leave your machine; only computed results (peaks, RMS, diagnoses) flow to the LLM. Use a [local LLM](https://ollama.com/) for full air-gapped privacy
 - **🤖 LLM-agnostic** — Works with Claude, ChatGPT, or any MCP-compatible client
 - **🧱 Modular** — Use only the tools you need, extend with your own
 

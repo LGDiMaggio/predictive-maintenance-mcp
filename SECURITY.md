@@ -30,10 +30,14 @@ If you discover a security vulnerability in this project, please report it respo
 
 This MCP server is designed to run **locally** on your machine:
 
-- All data processing happens locally (no cloud transmission)
-- Signal data and reports remain on the local filesystem
-- ML models are trained and stored locally
-- No network requests are made during normal operation
+- All signal processing (FFT, envelope, statistics, ML) runs locally — no third-party analytics APIs
+- Raw signal files (CSV), equipment manuals (PDF), and trained ML models never leave your filesystem
+- HTML reports are generated and stored locally
+- The MCP server itself makes **no network requests** during operation
+
+> **Important**: While the server processes data locally, the **analysis results** (peak frequencies, RMS values, statistical summaries, diagnostic text, manual excerpts) are returned to the LLM client and transmitted to the LLM provider's API (e.g., Anthropic, OpenAI). This is inherent to any LLM-based workflow — the LLM needs tool outputs to generate responses. Raw signal arrays are never sent in full; only computed summaries and metrics flow through the LLM.
+>
+> **To maximize privacy**: Use a local LLM (e.g., Ollama, LM Studio) as your MCP client — this keeps the entire pipeline on your machine with zero data leaving your network.
 
 ### File System Access
 
@@ -58,6 +62,7 @@ The server accesses the local filesystem for:
 ### Data Privacy
 
 - **No telemetry**: The server does not collect or transmit usage data
-- **No external APIs**: All analysis runs locally without internet
+- **No external APIs**: The server itself makes no network calls — all analysis runs locally
 - **Sample data**: Included dataset is from public research sources (MathWorks)
-- **Your data**: Any proprietary vibration data you add stays on your machine
+- **Raw data stays local**: Your proprietary vibration signals, manuals, and models remain on your filesystem
+- **Analysis results flow to LLM**: Computed metrics (frequencies, RMS, kurtosis, diagnoses) are returned to the LLM provider as tool outputs — this is inherent to MCP-based workflows. For full air-gapped privacy, use a local LLM client
