@@ -604,23 +604,6 @@ Generate FFT report for baseline_1.csv
 
 ---
 
-## 🌐 GitHub Pages (Marketing + SEO)
-
-To improve discoverability and onboarding, this repository includes a dedicated landing page for GitHub Pages:
-
-- **Landing page source**: [`docs/index.md`](docs/index.md)
-- **SEO configuration**: [`docs/_config.yml`](docs/_config.yml)
-
-### Enable in 30 seconds
-
-1. Go to **GitHub → Settings → Pages**
-2. Under **Build and deployment**, choose **Deploy from a branch**
-3. Select branch `main` and folder `/docs`
-4. Save
-
-Your project page will be published at:
-`https://<your-github-username>.github.io/predictive-maintenance-mcp/`
-
 ## 🧪 Testing
 
 This project includes a comprehensive test suite covering all analysis tools:
