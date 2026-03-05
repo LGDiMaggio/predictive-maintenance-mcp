@@ -1,0 +1,27 @@
+title: Predictive Maintenance MCP Server
+description: Open-source MCP server for AI-powered predictive maintenance, bearing diagnostics, vibration analysis, and ISO 20816 compliance.
+url: "https://lgdimaggio.github.io"
+baseurl: "/predictive-maintenance-mcp"
+lang: en
+markdown: kramdown
+theme: minima
+plugins:
+  - jekyll-seo-tag
+  - jekyll-sitemap
+
+seo:
+  type: SoftwareApplication
+
+twitter:
+  username: LGDiMaggio
+  card: summary_large_image
+
+github_username: LGDiMaggio
+
+header_pages:
+  - QUICKSTART_ENGINEER.md
+  - QUICKSTART_DEVELOPER.md
+
+exclude:
+  - Gemfile
+  - Gemfile.lock

@@ -115,8 +115,8 @@ mcp = FastMCP(
     - All visualizations are generated as professional HTML files
     - Reports are saved in reports/ directory with metadata
     - LLM should inform user about report location and NOT display HTML content
-    - Use list_reports() to see available reports
-    - Use read_report_metadata() to get report info without consuming tokens
+    - Use list_html_reports() to see available reports
+    - Use get_report_info() to get report info without consuming tokens
 
     Evidence-based inference policy (hard rules):
     1) Do NOT infer fault type from filenames, paths, or user-provided labels. Treat filenames as opaque identifiers.

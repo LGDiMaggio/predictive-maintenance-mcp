@@ -172,8 +172,8 @@ This project serves two audiences. Pick the door that fits you:
   ![Envelope analysis 3](assets/envelope_list.png)
   
   </details>
-- **� Multi-Format Support** — Load signals from CSV, MAT (MATLAB), WAV, NPY, and Parquet files
-- **�🚀 Zero Configuration** — Works out of the box with sample data, auto-detects sampling rates from metadata
+- **📁 Multi-Format Support** — Load signals from CSV, MAT (MATLAB), WAV, NPY, and Parquet files
+- **🚀 Zero Configuration** — Works out of the box with sample data, auto-detects sampling rates from metadata
 
 ---
 
@@ -267,8 +267,6 @@ python -m predictive_maintenance_mcp
 Add to your Claude Desktop config:
 - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
 - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-
-> 📋 **Example config**: See [`claude_desktop_config_PYTHON_VENV.json`](claude_desktop_config_PYTHON_VENV.json) for a complete example
 
 ```json
 {
@@ -367,6 +365,8 @@ Tools perform **computations and generate outputs**:
 - **`generate_fft_report`** — Interactive FFT spectrum HTML report with peak table
 - **`generate_envelope_report`** — Envelope analysis report with bearing fault markers
 - **`generate_iso_report`** — ISO 20816-3 evaluation with zone visualization
+- **`generate_pca_visualization_report`** — 2D/3D PCA projection report for anomaly exploration
+- **`generate_feature_comparison_report`** — Feature-level comparison report across signals/classes
 - **`list_html_reports`** — List all generated reports with metadata
 - **`get_report_info`** — Get report details without loading full HTML
 
@@ -392,10 +392,13 @@ Tools perform **computations and generate outputs**:
 </details>
 
 <details>
-<summary><b>🔍 Data Management</b></summary>
+<summary><b>🔍 Data Management & Visualization</b></summary>
 
 - **`list_signals`** — Browse available signal files with metadata
 - **`generate_test_signal`** — Create synthetic signals for testing
+- **`plot_signal`** — Generate time-domain signal plot
+- **`plot_spectrum`** — Generate FFT spectrum plot
+- **`plot_envelope`** — Generate envelope spectrum plot
 
 </details>
 
@@ -492,7 +495,7 @@ The system follows a **hybrid MCP architecture** combining Resources (direct dat
 
 **Key Features:**
 - ✅ **4 MCP Resources** — Direct read access to signals and manuals
-- ✅ **25 MCP Tools** — Complete diagnostic workflow
+- ✅ **25 MCP Tools** — Complete diagnostic workflow (analysis, plotting, ML, reporting, manuals)
 - ✅ **4 MCP Prompts** — Guided diagnostic workflows
 - ✅ **Hybrid Architecture** — Resources for reading, Tools for processing
 - ✅ **Local-First** — All data stays on your machine (privacy-preserving)
@@ -600,6 +603,23 @@ Generate FFT report for baseline_1.csv
 | [skills/](skills/) | 🤖 LLM Clients | Copilot Skills — guided diagnostic workflows (bearing, screening, reporting) |
 
 ---
+
+## 🌐 GitHub Pages (Marketing + SEO)
+
+To improve discoverability and onboarding, this repository includes a dedicated landing page for GitHub Pages:
+
+- **Landing page source**: [`docs/index.md`](docs/index.md)
+- **SEO configuration**: [`docs/_config.yml`](docs/_config.yml)
+
+### Enable in 30 seconds
+
+1. Go to **GitHub → Settings → Pages**
+2. Under **Build and deployment**, choose **Deploy from a branch**
+3. Select branch `main` and folder `/docs`
+4. Save
+
+Your project page will be published at:
+`https://<your-github-username>.github.io/predictive-maintenance-mcp/`
 
 ## 🧪 Testing
 
