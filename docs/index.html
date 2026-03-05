@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- Primary SEO -->
+  <title>Predictive Maintenance MCP Server — AI-Powered Vibration Diagnostics</title>
+  <meta name="description" content="Open-source MCP server that turns raw vibration data into actionable maintenance insights through AI. Bearing fault detection, FFT analysis, ISO 20816 compliance — via natural language.">
+  <meta name="keywords" content="predictive maintenance, MCP server, vibration analysis, bearing fault detection, ISO 20816, FFT analysis, envelope analysis, AI diagnostics, Industry 4.0, condition monitoring, Model Context Protocol, Claude, open source">
+  <meta name="author" content="Luigi Gianpio Di Maggio">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://lgdimaggio.github.io/predictive-maintenance-mcp/">
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Predictive Maintenance MCP Server — AI-Powered Vibration Diagnostics">
+  <meta property="og:description" content="Open-source MCP server that brings industrial machinery diagnostics to LLMs. Bearing fault detection, FFT, envelope analysis, ISO 20816 — all via natural language.">
+  <meta property="og:url" content="https://lgdimaggio.github.io/predictive-maintenance-mcp/">
+  <meta property="og:image" content="https://raw.githubusercontent.com/LGDiMaggio/predictive-maintenance-mcp/main/assets/predictive-maintenance-mcp_com.jpg">
+  <meta property="og:site_name" content="Predictive Maintenance MCP Server">
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Predictive Maintenance MCP Server">
+  <meta name="twitter:description" content="AI-powered vibration diagnostics via the Model Context Protocol. Open source, privacy-first, production-ready.">
+  <meta name="twitter:image" content="https://raw.githubusercontent.com/LGDiMaggio/predictive-maintenance-mcp/main/assets/predictive-maintenance-mcp_com.jpg">
+
+  <!-- JSON-LD Structured Data -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Predictive Maintenance MCP Server",
+    "description": "Open-source MCP server for AI-powered predictive maintenance, bearing diagnostics, vibration analysis, and ISO 20816 compliance.",
+    "applicationCategory": "EngineeringApplication",
+    "operatingSystem": "Windows, macOS, Linux",
+    "softwareVersion": "0.5.0",
+    "license": "https://opensource.org/licenses/MIT",
+    "url": "https://lgdimaggio.github.io/predictive-maintenance-mcp/",
+    "codeRepository": "https://github.com/LGDiMaggio/predictive-maintenance-mcp",
+    "author": {
+      "@type": "Person",
+      "name": "Luigi Gianpio Di Maggio",
+      "url": "https://www.linkedin.com/in/luigi-gianpio-di-maggio"
+    },
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    },
+    "keywords": ["predictive maintenance", "MCP", "vibration analysis", "bearing fault detection", "ISO 20816", "AI diagnostics"]
+  }
+  </script>
+
+  <!-- Favicon (GitHub-hosted) -->
+  <link rel="icon" href="https://raw.githubusercontent.com/LGDiMaggio/predictive-maintenance-mcp/main/assets/MCPserver.png" type="image/png">
+
+  <style>
+    /* ========== Reset & Base ========== */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      color: #1a1a2e;
+      background: #fafbfc;
+      line-height: 1.65;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    a { color: #0969da; text-decoration: none; transition: color .2s; }
+    a:hover { color: #0550ae; }
+
+    img { max-width: 100%; height: auto; }
+
+    .container { max-width: 1100px; margin: 0 auto; padding: 0 1.5rem; }
+
+    /* ========== Navigation ========== */
+    nav {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(255,255,255,.92);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid #e1e4e8;
+      padding: .75rem 0;
+    }
+    nav .container {
+      display: flex; align-items: center; justify-content: space-between;
+      flex-wrap: wrap; gap: .5rem;
+    }
+    nav .logo {
+      font-weight: 700; font-size: 1.05rem; color: #1a1a2e;
+      display: flex; align-items: center; gap: .45rem;
+    }
+    nav .logo span { font-size: 1.25rem; }
+    nav ul { list-style: none; display: flex; gap: 1.4rem; flex-wrap: wrap; }
+    nav ul a { font-size: .88rem; font-weight: 500; color: #57606a; }
+    nav ul a:hover { color: #0969da; }
+
+    /* ========== Hero ========== */
+    .hero {
+      padding: 5rem 0 4rem;
+      text-align: center;
+      background: linear-gradient(165deg, #f0f4ff 0%, #fafbfc 50%, #f0fdf4 100%);
+    }
+    .hero h1 {
+      font-size: clamp(2rem, 5vw, 3rem);
+      font-weight: 800;
+      line-height: 1.2;
+      color: #0d1117;
+      max-width: 800px;
+      margin: 0 auto 1.25rem;
+    }
+    .hero h1 em {
+      font-style: normal;
+      background: linear-gradient(135deg, #0969da, #1a7f37);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .hero p.tagline {
+      font-size: 1.18rem;
+      color: #57606a;
+      max-width: 640px;
+      margin: 0 auto 2rem;
+    }
+    .hero-cta {
+      display: flex; justify-content: center; gap: 1rem; flex-wrap: wrap;
+    }
+    .btn {
+      display: inline-flex; align-items: center; gap: .4rem;
+      padding: .75rem 1.6rem;
+      border-radius: 8px;
+      font-weight: 600; font-size: .95rem;
+      transition: transform .15s, box-shadow .2s;
+    }
+    .btn:hover { transform: translateY(-1px); }
+    .btn-primary {
+      background: #0969da; color: #fff;
+      box-shadow: 0 2px 8px rgba(9,105,218,.25);
+    }
+    .btn-primary:hover { background: #0550ae; color: #fff; }
+    .btn-outline {
+      border: 1.5px solid #d0d7de; color: #1a1a2e; background: #fff;
+    }
+    .btn-outline:hover { border-color: #0969da; color: #0969da; }
+
+    .install-snippet {
+      margin: 2.5rem auto 0;
+      max-width: 480px;
+      background: #1a1a2e;
+      color: #e6edf3;
+      border-radius: 10px;
+      padding: .9rem 1.4rem;
+      font-family: 'Cascadia Code', 'Fira Code', monospace;
+      font-size: .9rem;
+      text-align: left;
+      position: relative;
+      cursor: pointer;
+      user-select: all;
+    }
+    .install-snippet::before {
+      content: '$ ';
+      color: #7ee787;
+    }
+    .install-snippet .copy-hint {
+      position: absolute; right: 1rem; top: 50%; transform: translateY(-50%);
+      font-size: .7rem; color: #8b949e; font-family: 'Segoe UI', sans-serif;
+    }
+
+    /* ========== Badges Row ========== */
+    .badges {
+      display: flex; justify-content: center; gap: .5rem; flex-wrap: wrap;
+      margin-top: 2rem;
+    }
+
+    /* ========== Stats ========== */
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 1.5rem;
+      padding: 3rem 0;
+      text-align: center;
+    }
+    .stat-item .stat-num {
+      font-size: 2.2rem; font-weight: 800; color: #0969da;
+    }
+    .stat-item .stat-label {
+      font-size: .85rem; color: #57606a; margin-top: .2rem;
+    }
+
+    /* ========== Section Shared ========== */
+    section { padding: 4rem 0; }
+    section h2 {
+      font-size: 1.75rem; font-weight: 700; text-align: center;
+      margin-bottom: .5rem;
+    }
+    section .section-sub {
+      text-align: center; color: #57606a; max-width: 600px;
+      margin: 0 auto 2.5rem; font-size: 1.02rem;
+    }
+
+    /* ========== Features Grid ========== */
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 1.5rem;
+    }
+    .feature-card {
+      background: #fff;
+      border: 1px solid #e1e4e8;
+      border-radius: 12px;
+      padding: 1.8rem;
+      transition: box-shadow .2s, transform .2s;
+    }
+    .feature-card:hover {
+      box-shadow: 0 4px 20px rgba(0,0,0,.06);
+      transform: translateY(-2px);
+    }
+    .feature-card .icon { font-size: 1.8rem; margin-bottom: .8rem; }
+    .feature-card h3 { font-size: 1.1rem; font-weight: 700; margin-bottom: .5rem; }
+    .feature-card p { font-size: .92rem; color: #57606a; }
+
+    /* ========== How It Works ========== */
+    .how-steps {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 2rem;
+      counter-reset: step;
+    }
+    .how-step {
+      text-align: center;
+      position: relative;
+    }
+    .how-step::before {
+      counter-increment: step;
+      content: counter(step);
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 48px; height: 48px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #0969da, #1a7f37);
+      color: #fff; font-weight: 800; font-size: 1.2rem;
+      margin-bottom: 1rem;
+    }
+    .how-step h3 { font-size: 1.05rem; margin-bottom: .4rem; }
+    .how-step p { font-size: .88rem; color: #57606a; }
+
+    /* ========== Audience Tabs ========== */
+    .audience-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 2rem;
+    }
+    .audience-card {
+      background: #fff; border-radius: 12px; border: 1px solid #e1e4e8;
+      padding: 2rem; text-align: center;
+    }
+    .audience-card .role-icon { font-size: 2.5rem; margin-bottom: .8rem; }
+    .audience-card h3 { font-size: 1.15rem; margin-bottom: .5rem; }
+    .audience-card p { font-size: .92rem; color: #57606a; margin-bottom: 1.2rem; }
+    .audience-card ul {
+      text-align: left; list-style: none; padding: 0;
+    }
+    .audience-card ul li {
+      padding: .35rem 0; font-size: .9rem; color: #24292f;
+    }
+    .audience-card ul li::before {
+      content: '✓ '; color: #1a7f37; font-weight: 700;
+    }
+
+    /* ========== Screenshots ========== */
+    .screenshots {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 1.5rem;
+    }
+    .screenshot-card {
+      border-radius: 12px; overflow: hidden;
+      border: 1px solid #e1e4e8;
+      background: #fff;
+    }
+    .screenshot-card img {
+      width: 100%; display: block;
+    }
+    .screenshot-card figcaption {
+      padding: .8rem 1rem;
+      font-size: .85rem; color: #57606a; text-align: center;
+    }
+
+    /* ========== CTA Banner ========== */
+    .cta-banner {
+      background: linear-gradient(135deg, #0d1117, #161b22);
+      color: #fff;
+      text-align: center;
+      padding: 4rem 1.5rem;
+      border-radius: 16px;
+      margin: 3rem 0;
+    }
+    .cta-banner h2 { color: #fff; margin-bottom: .8rem; }
+    .cta-banner p { color: #8b949e; max-width: 560px; margin: 0 auto 2rem; font-size: 1.05rem; }
+    .cta-banner .btn-primary { background: #238636; box-shadow: 0 2px 8px rgba(35,134,54,.3); }
+    .cta-banner .btn-primary:hover { background: #2ea043; }
+
+    /* ========== Footer ========== */
+    footer {
+      border-top: 1px solid #e1e4e8;
+      padding: 2.5rem 0;
+      text-align: center;
+      font-size: .85rem;
+      color: #8b949e;
+    }
+    footer .footer-links { display: flex; justify-content: center; gap: 1.5rem; flex-wrap: wrap; margin-bottom: 1rem; }
+    footer .footer-links a { color: #57606a; font-size: .85rem; }
+    footer .footer-links a:hover { color: #0969da; }
+
+    /* ========== Responsive ========== */
+    @media (max-width: 600px) {
+      .hero { padding: 3rem 0 2.5rem; }
+      section { padding: 2.5rem 0; }
+      .stats { grid-template-columns: repeat(2, 1fr); gap: 1rem; }
+      .stat-item .stat-num { font-size: 1.7rem; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ==================== NAV ==================== -->
+<nav aria-label="Primary">
+  <div class="container">
+    <a href="#" class="logo"><span>🏭</span> PM-MCP</a>
+    <ul>
+      <li><a href="#features">Features</a></li>
+      <li><a href="#how-it-works">How It Works</a></li>
+      <li><a href="#who-its-for">Use Cases</a></li>
+      <li><a href="#screenshots">Screenshots</a></li>
+      <li><a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp" target="_blank" rel="noopener">GitHub ↗</a></li>
+    </ul>
+  </div>
+</nav>
+
+<!-- ==================== HERO ==================== -->
+<header class="hero">
+  <div class="container">
+    <h1>Turn Vibration Data into <em>Maintenance Decisions</em> — with AI</h1>
+    <p class="tagline">
+      An open-source MCP server that gives LLMs like Claude expert-level machinery diagnostics:
+      FFT analysis, bearing fault detection, ISO 20816 assessment — all through natural conversation.
+    </p>
+    <div class="hero-cta">
+      <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp" class="btn btn-primary" target="_blank" rel="noopener">
+        ⭐ Star on GitHub
+      </a>
+      <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp/blob/main/INSTALL.md" class="btn btn-outline" target="_blank" rel="noopener">
+        📖 Quick Install
+      </a>
+    </div>
+
+    <div class="install-snippet" title="Click to copy">
+      pip install predictive-maintenance-mcp
+      <span class="copy-hint">click to copy</span>
+    </div>
+
+    <div class="badges">
+      <a href="https://pypi.org/project/predictive-maintenance-mcp/" target="_blank" rel="noopener"><img alt="PyPI version" src="https://img.shields.io/pypi/v/predictive-maintenance-mcp?style=flat-square" loading="lazy"></a>
+      <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp/actions/workflows/tests.yml" target="_blank" rel="noopener"><img alt="Tests" src="https://img.shields.io/github/actions/workflow/status/LGDiMaggio/predictive-maintenance-mcp/tests.yml?label=tests&style=flat-square" loading="lazy"></a>
+      <a href="https://codecov.io/gh/LGDiMaggio/predictive-maintenance-mcp" target="_blank" rel="noopener"><img alt="Coverage" src="https://img.shields.io/codecov/c/github/LGDiMaggio/predictive-maintenance-mcp?style=flat-square" loading="lazy"></a>
+      <img alt="License MIT" src="https://img.shields.io/badge/license-MIT-yellow?style=flat-square" loading="lazy">
+      <img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11+-blue?style=flat-square" loading="lazy">
+    </div>
+  </div>
+</header>
+
+<!-- ==================== STATS ==================== -->
+<section aria-label="Key numbers">
+  <div class="container">
+    <div class="stats">
+      <div class="stat-item">
+        <div class="stat-num">25</div>
+        <div class="stat-label">MCP Tools</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-num">4</div>
+        <div class="stat-label">Diagnostic Prompts</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-num">5</div>
+        <div class="stat-label">Signal Formats</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-num">44</div>
+        <div class="stat-label">Tests Passing</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-num">100%</div>
+        <div class="stat-label">Privacy-First</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== FEATURES ==================== -->
+<section id="features">
+  <div class="container">
+    <h2>What You Can Do</h2>
+    <p class="section-sub">Professional-grade diagnostics tools, accessible through any MCP-compatible AI assistant.</p>
+
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="icon">📊</div>
+        <h3>FFT Spectrum Analysis</h3>
+        <p>Frequency-domain decomposition with automatic peak detection, harmonic identification, and dB-normalized visualization.</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon">🔍</div>
+        <h3>Envelope Analysis</h3>
+        <p>Bearing-fault-focused demodulation that reveals characteristic defect frequencies (BPFO, BPFI, BSF, FTF) hidden in raw signals.</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon">📏</div>
+        <h3>ISO 20816-3 Assessment</h3>
+        <p>Automated vibration severity evaluation per international standards, with unit conversion (g ↔ mm/s) and hypothesis-based flow.</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon">🤖</div>
+        <h3>ML Anomaly Detection</h3>
+        <p>Train models on healthy baseline data and predict anomalies in new signals. Isolation Forest with automatic feature extraction.</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon">📄</div>
+        <h3>Interactive HTML Reports</h3>
+        <p>Publication-quality reports with Plotly charts, auto-generated summaries, and shareable files for operations teams and management.</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon">📁</div>
+        <h3>Multi-Format Ingestion</h3>
+        <p>Load signals from CSV, MATLAB (.mat), WAV, NumPy (.npy), and Parquet — unified loading with automatic metadata handling.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== HOW IT WORKS ==================== -->
+<section id="how-it-works" style="background:#f6f8fa;">
+  <div class="container">
+    <h2>How It Works</h2>
+    <p class="section-sub">Three steps from raw data to actionable insight.</p>
+
+    <div class="how-steps">
+      <div class="how-step">
+        <h3>Install & Connect</h3>
+        <p><code>pip install predictive-maintenance-mcp</code><br>Add to Claude Desktop, VS Code, or any MCP-compatible client.</p>
+      </div>
+      <div class="how-step">
+        <h3>Ask in Plain Language</h3>
+        <p>"Analyze the bearing vibration data and check if there's an outer race fault."</p>
+      </div>
+      <div class="how-step">
+        <h3>Get Expert Analysis</h3>
+        <p>The AI orchestrates FFT, envelope, ISO checks — and delivers evidence-based results with interactive reports.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== AUDIENCE ==================== -->
+<section id="who-its-for">
+  <div class="container">
+    <h2>Built for Two Audiences</h2>
+    <p class="section-sub">Whether you maintain machines or build AI tools — this project is your starting point.</p>
+
+    <div class="audience-grid">
+      <div class="audience-card">
+        <div class="role-icon">🔧</div>
+        <h3>Reliability &amp; Maintenance Engineers</h3>
+        <p>Use natural language to diagnose machine health without a signal processing PhD.</p>
+        <ul>
+          <li>Screen machine health conversationally</li>
+          <li>Identify likely fault families from real data</li>
+          <li>Generate shareable reports for management</li>
+          <li>Follow guided diagnostic workflows</li>
+        </ul>
+        <br>
+        <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp/blob/main/docs/QUICKSTART_ENGINEER.md" class="btn btn-outline" target="_blank" rel="noopener">Engineer Quick Start →</a>
+      </div>
+      <div class="audience-card">
+        <div class="role-icon">💻</div>
+        <h3>AI &amp; Software Developers</h3>
+        <p>Learn MCP tool design and build industrial copilots on a production-ready foundation.</p>
+        <ul>
+          <li>Study real MCP tool architecture</li>
+          <li>Extend with custom tools and datasets</li>
+          <li>Build reusable industrial AI workflows</li>
+          <li>Use Copilot Skills for quick integration</li>
+        </ul>
+        <br>
+        <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp/blob/main/docs/QUICKSTART_DEVELOPER.md" class="btn btn-outline" target="_blank" rel="noopener">Developer Quick Start →</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== SCREENSHOTS ==================== -->
+<section id="screenshots" style="background:#f6f8fa;">
+  <div class="container">
+    <h2>See It in Action</h2>
+    <p class="section-sub">Professional visualizations generated through natural language commands.</p>
+
+    <div class="screenshots">
+      <figure class="screenshot-card">
+        <img src="https://raw.githubusercontent.com/LGDiMaggio/predictive-maintenance-mcp/main/assets/envelope_analysis.png"
+             alt="Envelope analysis showing bearing fault frequencies with BPFO, BPFI, BSF peaks"
+             loading="lazy" width="600" height="400">
+        <figcaption>Envelope analysis — bearing defect frequency identification</figcaption>
+      </figure>
+      <figure class="screenshot-card">
+        <img src="https://raw.githubusercontent.com/LGDiMaggio/predictive-maintenance-mcp/main/assets/iso.png"
+             alt="ISO 20816-3 vibration severity assessment chart with zone classification"
+             loading="lazy" width="600" height="400">
+        <figcaption>ISO 20816-3 vibration severity assessment</figcaption>
+      </figure>
+      <figure class="screenshot-card">
+        <img src="https://raw.githubusercontent.com/LGDiMaggio/predictive-maintenance-mcp/main/assets/MCPserver.png"
+             alt="MCP server architecture diagram showing tools, resources, and prompts"
+             loading="lazy" width="600" height="400">
+        <figcaption>MCP server architecture overview</figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== TECH STACK ==================== -->
+<section>
+  <div class="container">
+    <h2>Technology Stack</h2>
+    <p class="section-sub">Built on battle-tested Python libraries and the open Model Context Protocol.</p>
+    <div class="features-grid">
+      <div class="feature-card" style="text-align:center">
+        <div class="icon">⚡</div>
+        <h3>FastMCP Framework</h3>
+        <p>High-performance MCP server with automatic schema generation and transport handling.</p>
+      </div>
+      <div class="feature-card" style="text-align:center">
+        <div class="icon">🧪</div>
+        <h3>SciPy + NumPy</h3>
+        <p>Industry-standard scientific computing for signal processing and spectral analysis.</p>
+      </div>
+      <div class="feature-card" style="text-align:center">
+        <div class="icon">🧠</div>
+        <h3>scikit-learn</h3>
+        <p>Machine learning anomaly detection with Isolation Forest, trained on healthy baselines.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== CTA ==================== -->
+<section>
+  <div class="container">
+    <div class="cta-banner">
+      <h2>Ready to Transform Your Maintenance Workflow?</h2>
+      <p>Install in 60 seconds. Ask your first diagnostic question in under 5 minutes. No credit card, no vendor lock-in.</p>
+      <div class="hero-cta">
+        <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp" class="btn btn-primary" target="_blank" rel="noopener">
+          Get Started on GitHub →
+        </a>
+        <a href="https://pypi.org/project/predictive-maintenance-mcp/" class="btn btn-outline" style="color:#fff;border-color:rgba(255,255,255,.3)" target="_blank" rel="noopener">
+          View on PyPI
+        </a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== FOOTER ==================== -->
+<footer>
+  <div class="container">
+    <div class="footer-links">
+      <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://pypi.org/project/predictive-maintenance-mcp/" target="_blank" rel="noopener">PyPI</a>
+      <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp/blob/main/INSTALL.md" target="_blank" rel="noopener">Install</a>
+      <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp/blob/main/EXAMPLES.md" target="_blank" rel="noopener">Examples</a>
+      <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener">Contribute</a>
+      <a href="https://doi.org/10.5281/zenodo.17611542" target="_blank" rel="noopener">Cite (DOI)</a>
+      <a href="https://www.linkedin.com/in/luigi-gianpio-di-maggio" target="_blank" rel="noopener">Author: Luigi Di Maggio</a>
+    </div>
+    <p>MIT License &copy; 2025 Luigi Gianpio Di Maggio &middot; Made for the Industry 4.0 community</p>
+  </div>
+</footer>
+
+<!-- ==================== Copy Snippet Script ==================== -->
+<script>
+  document.querySelector('.install-snippet').addEventListener('click', function() {
+    const text = 'pip install predictive-maintenance-mcp';
+    navigator.clipboard.writeText(text).then(() => {
+      const hint = this.querySelector('.copy-hint');
+      hint.textContent = 'copied!';
+      setTimeout(() => { hint.textContent = 'click to copy'; }, 2000);
+    });
+  });
+</script>
+
+</body>
+</html>
