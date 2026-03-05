@@ -232,7 +232,7 @@ Closes #42"
 
 | Task | What You'll Learn | Issue |
 |------|-------------------|-------|
-| **Add Parquet data format support** | Signal loading pipeline, pandas I/O | [Browse issues](https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues) |
+| ~~**Add Parquet data format support**~~ | ~~Signal loading pipeline, pandas I/O~~ | ✅ Done in v0.5.0 |
 | **Make ISO thresholds configurable** | Tool parameter design, ISO standard | [Browse issues](https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues) |
 | **Add unit conversion tool** | MCP tool pattern, unit systems | [Browse issues](https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues) |
 | **Improve error messages** | Error handling best practices | [Browse issues](https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues) |
@@ -315,7 +315,7 @@ What actually happens (include full error message)
 **Environment:**
 - OS: Windows 11 / macOS 14 / Ubuntu 22.04
 - Python: 3.11.x / 3.12.x
-- Server version: 0.4.1
+- Server version: 0.5.0
 ```
 
 ---

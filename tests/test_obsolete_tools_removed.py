@@ -47,7 +47,7 @@ def test_obsolete_tools_removed():
         print("\n✓✓ PASS: All obsolete functions successfully removed")
     else:
         print("\n✗✗ FAIL: Some obsolete functions still present!")
-        return False
+        assert False, "Some obsolete functions still present"
     
     # Verify new report tools exist
     print("\n[TEST] Checking new report generation tools exist...")
@@ -74,7 +74,7 @@ def test_obsolete_tools_removed():
         print("\n✓✓ PASS: All required tools present")
     else:
         print("\n✗✗ FAIL: Some required tools missing!")
-        return False
+        assert False, "Some required tools missing"
     
     # Check line count reduction
     print("\n[TEST] Checking file size reduction...")
@@ -103,14 +103,12 @@ def test_obsolete_tools_removed():
     print(f"  • File size reduced to {line_count} lines")
     print(f"  • Unit conversion warning system active")
     print("=" * 70)
-    
-    return True
 
 
 if __name__ == "__main__":
     try:
-        success = test_obsolete_tools_removed()
-        sys.exit(0 if success else 1)
+        test_obsolete_tools_removed()
+        sys.exit(0)
     except Exception as e:
         print(f"\n✗✗ TEST FAILED WITH ERROR: {e}")
         import traceback

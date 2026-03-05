@@ -82,17 +82,21 @@ pytest -v
 predictive-maintenance-mcp/
 ├── src/
 │   ├── machinery_diagnostics_server.py  ← THE SERVER (all MCP tools defined here)
-│   ├── document_reader.py               ← PDF/manual processing module
+│   ├── document_reader.py               ← PDF/manual processing module (pypdf)
 │   ├── report_generator.py              ← HTML report generation (Plotly)
 │   └── html_templates.py                ← Report HTML templates
 ├── data/
-│   └── signals/                         ← Real vibration data (CSV + metadata)
+│   └── signals/                         ← Vibration data (CSV/MAT/WAV/NPY/Parquet + metadata)
 │       ├── real_train/                  ← 14 signals for training
 │       └── real_test/                   ← 6 signals for validation
 ├── resources/
 │   ├── machine_manuals/                 ← Equipment manuals (PDF/TXT)
 │   ├── bearing_catalogs/                ← Bearing geometry database
 │   └── cache/                           ← Auto-cached manual extractions
+├── skills/                              ← Copilot Skills (guided diagnostic workflows)
+│   ├── bearing-diagnosis/               ← 8-step bearing fault detection
+│   ├── quick-screening/                 ← Fast health screening
+│   └── report-generation/               ← Professional report orchestration
 ├── models/                              ← Trained ML models (joblib)
 ├── reports/                             ← Generated HTML reports
 └── tests/                               ← Comprehensive test suite
@@ -321,7 +325,7 @@ These are tasks specifically designed to be completable by someone new to the pr
 
 | Task | Skills Needed | Impact |
 |------|---------------|--------|
-| Add Parquet file reading support | Python, pandas | Allows users with industrial data historians to connect directly |
+| ~~Add Parquet file reading support~~ | ~~Python, pandas~~ | ✅ Done in v0.5.0 (CSV, MAT, WAV, NPY, Parquet all supported) |
 | Make ISO report thresholds configurable | Python | Enables different machine classes (pumps vs turbines) |
 | Add unit conversion tool (mil ↔ mm/s ↔ g) | Python, vibration basics | Helps users with data in different unit systems |
 | Improve error messages for missing metadata | Python | Better UX for new users |

@@ -92,6 +92,7 @@ This project is built around the **Model Context Protocol (MCP)** — an open st
 - [🚀 Installation](#-installation)
 - [⚙️ Configuration](#️-configuration)
 - [🔧 Available Tools & Resources](#-available-tools--resources)
+- [🤖 Copilot Skills](#copilot-skills-guided-workflows)
 - [📐 Detailed Architecture](#-detailed-architecture)
 - [📊 Sample Dataset](#-sample-dataset)
 - [💡 Usage Examples](#-usage-examples)
@@ -163,6 +164,7 @@ This project serves two audiences. Pick the door that fits you:
   ![ISO Compliance](assets/iso.png)
 - **🔍 Advanced Diagnostics** — FFT spectrum analysis, envelope analysis for bearing faults, time-domain feature extraction
   <details>
+
   <summary><b>Example analysis</b></summary>
   
   ![Envelope analysis 1](assets/envelope_analysis.png)
@@ -170,7 +172,8 @@ This project serves two audiences. Pick the door that fits you:
   ![Envelope analysis 3](assets/envelope_list.png)
   
   </details>
-- **🚀 Zero Configuration** — Works out of the box with sample data, auto-detects sampling rates from metadata
+- **� Multi-Format Support** — Load signals from CSV, MAT (MATLAB), WAV, NPY, and Parquet files
+- **�🚀 Zero Configuration** — Works out of the box with sample data, auto-detects sampling rates from metadata
 
 ---
 
@@ -247,6 +250,14 @@ cd predictive-maintenance-mcp
 pip install -e .
 ```
 
+### Run as Module
+
+After installation, you can also run the server directly:
+
+```bash
+python -m predictive_maintenance_mcp
+```
+
 ---
 
 ## ⚙️ Configuration
@@ -307,7 +318,7 @@ Resources provide **direct read access** for Claude to examine data:
 <summary><b>📊 Vibration Signals</b></summary>
 
 - **`signal://list`** — Browse all available signal files with metadata
-- **`signal://read/{filename}`** — Read signal data directly (first 1000 samples preview)
+- **`signal://read/{filename}`** — Read signal data directly (supports CSV, MAT, WAV, NPY, Parquet)
 
 **Usage:** Claude can directly read signals without calling tools first.
 
@@ -390,6 +401,20 @@ Tools perform **computations and generate outputs**:
 
 ---
 
+### Copilot Skills (Guided Workflows)
+
+The `skills/` directory contains pre-built guided workflows that orchestrate multiple MCP tools into structured diagnostic procedures:
+
+| Skill | Steps | Description |
+|-------|:-----:|-------------|
+| [**bearing-diagnosis**](skills/bearing-diagnosis/SKILL.md) | 8 | Complete bearing fault detection: statistics → FFT → envelope → frequency matching → ISO severity → report |
+| [**quick-screening**](skills/quick-screening/SKILL.md) | 5 | Fast health screening with clear Healthy/Suspicious/Critical classification |
+| [**report-generation**](skills/report-generation/SKILL.md) | 6 | Professional HTML report generation with composite multi-report option |
+
+> 💡 Skills are standalone markdown files that any MCP-compatible LLM client can use as system instructions to coordinate multi-step diagnostic workflows.
+
+---
+
 ## 📐 Detailed Architecture
 
 The system follows a **hybrid MCP architecture** combining Resources (direct data access) and Tools (computational processing):
@@ -437,7 +462,7 @@ The system follows a **hybrid MCP architecture** combining Resources (direct dat
 │  SIGNAL ANALYSIS │   │  DOCUMENT READER MODULE          │
 │  MODULE          │   │  ┌────────────┐  ┌────────────┐  │
 │  • FFT Engine    │   │  │ PDF Extract│  │ ISO Formulas│  │
-│  • Envelope      │   │  │ (PyPDF2)   │  │ BPFO/BPFI   │  │
+│  • Envelope      │   │  │ (pypdf)    │  │ BPFO/BPFI   │  │
 │  • Filters       │   │  └────────────┘  └────────────┘  │
 │  • Statistics    │   │  ┌─────────────────────────────┐  │
 │  • ML Models     │   │  │  Bearing Catalog DB         │  │
@@ -467,7 +492,8 @@ The system follows a **hybrid MCP architecture** combining Resources (direct dat
 
 **Key Features:**
 - ✅ **4 MCP Resources** — Direct read access to signals and manuals
-- ✅ **25+ MCP Tools** — Complete diagnostic workflow
+- ✅ **25 MCP Tools** — Complete diagnostic workflow
+- ✅ **4 MCP Prompts** — Guided diagnostic workflows
 - ✅ **Hybrid Architecture** — Resources for reading, Tools for processing
 - ✅ **Local-First** — All data stays on your machine (privacy-preserving)
 
@@ -568,8 +594,10 @@ Generate FFT report for baseline_1.csv
 | [EXAMPLES.md](EXAMPLES.md) | Everyone | Complete diagnostic workflows with step-by-step tutorials |
 | [INSTALL.md](INSTALL.md) | Everyone | Detailed installation and troubleshooting guide |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Contributors | How to contribute (for every skill level) |
+| [Ollama Guide](docs/OLLAMA_GUIDE.md) | Engineers | Use with local LLMs (fully air-gapped) |
 | [CHANGELOG.md](CHANGELOG.md) | Everyone | Version history |
 | [data/README.md](data/README.md) | Everyone | Dataset documentation |
+| [skills/](skills/) | 🤖 LLM Clients | Copilot Skills — guided diagnostic workflows (bearing, screening, reporting) |
 
 ---
 
@@ -642,13 +670,13 @@ uv run mcp dev src/machinery_diagnostics_server.py
 
 ## 🚀 Roadmap
 
-### ✨ Recent: v0.2.1 — Machine Documentation Reader
+### ✨ Recent: v0.5.0 — Code Quality & Multi-Format Support
 
-AI-powered extraction of machine specifications from equipment manuals:
-- 📄 **Direct PDF Access** via MCP Resources
-- 🔍 **Smart Extraction** — Regex patterns for bearings, RPM, power ratings
-- 🧮 **Auto-Calculation** — Bearing fault frequencies from geometry (ISO 15243:2017)
-- 💾 **Caching System** — Fast repeated queries with JSON caching
+- 📂 **Multi-format signal loading** — CSV, MAT, WAV, NPY, Parquet via unified `load_signal_data()`
+- 🔧 **ML code deduplication** — 4 helper functions reduce ~163 statements
+- 📦 **pypdf migration** — Replaced deprecated PyPDF2 with pypdf
+- ▶️ **`python -m` support** — Run as `python -m predictive_maintenance_mcp`
+- 🧹 **Consolidated metadata reads** — ISO evaluation no longer double-reads metadata files
 
 ### 🔮 Planned Enhancements
 
@@ -656,7 +684,7 @@ Each item below links to an open issue where you can **discuss, contribute, or c
 
 | Priority | Enhancement | Status | Get Involved |
 |----------|-------------|--------|--------------|
-| 🔴 High | **Parquet/HDF5 data format support** | Open | [Good First Issue](https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues) |
+| ✅ Done | **Parquet/MAT/WAV/NPY data format support** | v0.5.0 | — |
 | 🔴 High | **Customizable ISO report thresholds** | Open | [Good First Issue](https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues) |
 | 🔴 High | **Docker image for zero-install setup** | Open | [Help Wanted](https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues) |
 | 🟡 Medium | **Vector search for large documents** (ChromaDB/FAISS) | Planned | [Discuss](https://github.com/LGDiMaggio/predictive-maintenance-mcp/discussions) |
@@ -707,7 +735,7 @@ If you use this server in your research or projects, please cite:
   title = {Predictive Maintenance MCP Server: An open-source framework for integrating Large Language Models with predictive maintenance and fault diagnosis workflows},
   author = {Di Maggio, Luigi Gianpio},
   year = {2025},
-  version = {0.4.1},
+  version = {0.5.0},
   url = {https://github.com/LGDiMaggio/predictive-maintenance-mcp},
   doi = {10.5281/zenodo.17611542}
 }

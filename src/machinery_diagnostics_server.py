@@ -16,6 +16,7 @@ from typing import Any, Optional
 from dataclasses import dataclass
 import pickle
 import json
+import sys
 
 import numpy as np
 import pandas as pd
@@ -86,11 +87,11 @@ except ImportError:
     )
 
 
-# Logging configuration (use stderr to not interfere with stdio)
+# Logging configuration (use stderr explicitly to not interfere with MCP stdio)
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler()]  # Goes to stderr by default
+    handlers=[logging.StreamHandler(sys.stderr)]
 )
 logger = logging.getLogger(__name__)
 
@@ -218,9 +219,10 @@ def list_available_signals() -> str:
             DATA_DIR.mkdir(parents=True, exist_ok=True)
             return "[]"
         
+        SUPPORTED_EXTENSIONS = [".csv", ".txt", ".npy", ".dat", ".mat", ".wav", ".parquet"]
         signals = []
         for file_path in DATA_DIR.glob("**/*"):
-            if file_path.is_file() and file_path.suffix in [".csv", ".txt", ".npy", ".dat"]:
+            if file_path.is_file() and file_path.suffix in SUPPORTED_EXTENSIONS:
                 signals.append({
                     "filename": str(file_path.relative_to(DATA_DIR)).replace("\\", "/"),
                     "path": str(file_path),
@@ -248,13 +250,13 @@ def read_signal_file(filename: str) -> str:
     """
     Read a signal file and return the data.
     
-    Supports formats: CSV, TXT (newline-separated values), NPY (numpy array)
+    Supports formats: CSV, TXT, NPY, MAT (MATLAB), WAV (audio), Parquet
     
     Args:
         filename: Name of the file to read
         
     Returns:
-        JSON with signal data
+        JSON with signal data (first 1000 samples as preview)
     """
     try:
         file_path = DATA_DIR / filename
@@ -262,17 +264,13 @@ def read_signal_file(filename: str) -> str:
         if not file_path.exists():
             return f'{{"error": "File {filename} not found"}}'
         
-        # Lettura in base all'estensione
-        if file_path.suffix == ".npy":
-            data = np.load(file_path)
-            signal_data = data.tolist()
+        # Use the unified loader for all supported formats
+        signal_array = load_signal_data(filename)
         
-        elif file_path.suffix in [".csv", ".txt"]:
-            df = pd.read_csv(file_path, header=None)
-            signal_data = df.iloc[:, 0].tolist()
+        if signal_array is None:
+            return f'{{"error": "Could not load signal from {filename}. Unsupported format or read error."}}'
         
-        else:
-            return f'{{"error": "Unsupported file format: {file_path.suffix}"}}'
+        signal_data = signal_array.tolist()
         
         result = {
             "filename": filename,
@@ -493,8 +491,9 @@ async def load_and_validate_metadata(
     
     # Calculate signal info
     try:
-        df = pd.read_csv(filepath, header=None)
-        signal_data = df.iloc[:, 0].values
+        signal_data = load_signal_data(filename)
+        if signal_data is None:
+            raise ValueError(f"Could not load signal data from: {filename}")
         signal_duration_sec = len(signal_data) / sampling_rate
         await ctx.info(f"")
         await ctx.info(f"📏 Signal info: {len(signal_data)} samples, {signal_duration_sec:.2f}s duration at {sampling_rate} Hz")
@@ -514,8 +513,15 @@ def load_signal_data(filename: str) -> Optional[np.ndarray]:
     """
     Load signal data from file.
     
+    Supported formats:
+        - .csv, .txt: Comma/tab-separated values (first column used)
+        - .npy: NumPy binary array
+        - .mat: MATLAB files (first numeric variable used)
+        - .wav: WAV audio files (first channel, normalized to [-1, 1])
+        - .parquet: Apache Parquet files (first column used)
+    
     Args:
-        filename: File name
+        filename: File name relative to data/signals/
         
     Returns:
         Numpy array with data or None if error
@@ -533,11 +539,61 @@ def load_signal_data(filename: str) -> Optional[np.ndarray]:
             df = pd.read_csv(file_path, header=None)
             return df.iloc[:, 0].values
         
+        elif file_path.suffix == ".mat":
+            from scipy.io import loadmat
+            mat_data = loadmat(str(file_path))
+            # Find first numeric variable (skip MATLAB metadata keys)
+            for key, value in mat_data.items():
+                if key.startswith('__'):
+                    continue
+                if isinstance(value, np.ndarray) and value.dtype.kind in ('f', 'i', 'u'):
+                    data = value.flatten()
+                    if len(data) > 0:
+                        return data.astype(np.float64)
+            logger.warning(f"No numeric data found in MAT file: {filename}")
+            return None
+        
+        elif file_path.suffix == ".wav":
+            from scipy.io import wavfile
+            sample_rate, data = wavfile.read(str(file_path))
+            if data.ndim > 1:
+                data = data[:, 0]  # Take first channel
+            # Normalize to float
+            if data.dtype.kind == 'i':
+                data = data.astype(np.float64) / np.iinfo(data.dtype).max
+            return data.astype(np.float64)
+        
+        elif file_path.suffix == ".parquet":
+            df = pd.read_parquet(file_path)
+            return df.iloc[:, 0].values.astype(np.float64)
+        
         return None
     
     except Exception as e:
         logger.error(f"Error loading signal {filename}: {e}")
         return None
+
+
+def get_metadata_path(signal_filename: str) -> Path:
+    """
+    Derive the metadata JSON file path from any signal filename.
+    
+    Works with all supported extensions: .csv, .txt, .npy, .mat, .wav, .parquet
+    
+    Args:
+        signal_filename: Signal filename (relative to DATA_DIR)
+        
+    Returns:
+        Path to the corresponding _metadata.json file
+    """
+    p = Path(signal_filename)
+    return DATA_DIR / p.parent / f"{p.stem}_metadata.json"
+
+
+def get_metadata_path_from_dir(data_dir: Path, signal_filename: str) -> Path:
+    """Derive metadata path from signal filename within a specific directory."""
+    stem = Path(signal_filename).stem
+    return data_dir / f"{stem}_metadata.json"
 
 
 # ============================================================================
@@ -554,9 +610,10 @@ def list_signals() -> str:
         if not DATA_DIR.exists():
             return "No signals directory found"
         
+        SUPPORTED_EXTENSIONS = [".csv", ".txt", ".npy", ".dat", ".mat", ".wav", ".parquet"]
         signals = []
         for file_path in DATA_DIR.glob("**/*"):
-            if file_path.is_file() and file_path.suffix in [".csv", ".txt", ".npy", ".dat"]:
+            if file_path.is_file() and file_path.suffix in SUPPORTED_EXTENSIONS:
                 relative_path = file_path.relative_to(DATA_DIR)
                 signals.append(str(relative_path).replace("\\", "/"))
         
@@ -910,7 +967,7 @@ def analyze_statistics(filename: str) -> StatisticalResult:
     Statistical parameters are key indicators for diagnostics:
     - RMS: Effective value, correlated to signal energy
     - Crest Factor: Indicates presence of impulses (high = possible faults)
-    - Kurtosis: Measures impulsiveness (>3 = presence of impulses)
+    - Kurtosis: Measures impulsiveness (excess kurtosis; >0 = non-Gaussian, >3 = strong impulses)
     - Peak-to-Peak: Signal range
     
     **CRITICAL - LLM Inference Policy:**
@@ -1060,12 +1117,14 @@ async def evaluate_iso_20816(
     if not filepath.exists():
         raise FileNotFoundError(f"File not found: {signal_file}")
     
-    df = pd.read_csv(filepath, header=None)
-    signal_data = df.iloc[:, 0].values
+    signal_data = load_signal_data(signal_file)
+    if signal_data is None:
+        raise ValueError(f"Could not load signal data from: {signal_file}")
     
-    # Try to read metadata JSON for sampling rate
+    # Try to read metadata JSON (single read for sampling_rate + signal_unit)
     metadata_file = filepath.parent / (filepath.stem + "_metadata.json")
     metadata_found = False
+    metadata = {}
     user_provided_sampling_rate = (sampling_rate != 10000.0)  # Check if user changed default
     
     if metadata_file.exists():
@@ -1117,19 +1176,13 @@ async def evaluate_iso_20816(
     detected_unit = None
     unit_source = None
     
-    # STEP 1: Check metadata for signal_unit
-    if metadata_found and metadata_file.exists():
-        try:
-            with open(metadata_file) as f:
-                metadata = json.load(f)
-                if 'signal_unit' in metadata:
-                    detected_unit = metadata['signal_unit'].lower()
-                    unit_source = 'metadata'
-                    if ctx:
-                        await ctx.info(f"")
-                        await ctx.info(f"✅ SIGNAL UNIT from metadata: '{metadata['signal_unit']}'")
-        except Exception:
-            pass
+    # STEP 1: Check metadata for signal_unit (reuse already-loaded metadata dict)
+    if metadata_found and 'signal_unit' in metadata:
+        detected_unit = metadata['signal_unit'].lower()
+        unit_source = 'metadata'
+        if ctx:
+            await ctx.info(f"")
+            await ctx.info(f"✅ SIGNAL UNIT from metadata: '{metadata['signal_unit']}'")
     
     # STEP 2: User explicitly provided signal_unit parameter
     if signal_unit is not None:
@@ -1462,8 +1515,9 @@ async def plot_iso_20816_chart(
         ]
     )
     
-    # Save HTML
-    output_file = DATA_DIR / f"plot_iso_{filename.replace('.csv', '')}.html"
+    # Save HTML to reports directory
+    safe_name = Path(filename).stem.replace('/', '_').replace('\\', '_')
+    output_file = REPORTS_DIR / f"plot_iso_{safe_name}.html"
     fig.write_html(str(output_file))
     
     if ctx:
@@ -1589,7 +1643,7 @@ async def extract_features_from_signal(
     
     # Auto-detect sampling rate from metadata if not provided
     if sampling_rate is None:
-        metadata_path = DATA_DIR / signal_file.replace('.csv', '_metadata.json')
+        metadata_path = get_metadata_path(signal_file)
         if metadata_path.exists():
             with open(metadata_path) as f:
                 metadata = json.load(f)
@@ -1609,8 +1663,9 @@ async def extract_features_from_signal(
     if not filepath.exists():
         raise FileNotFoundError(f"File not found: {signal_file}")
     
-    df = pd.read_csv(filepath, header=None)
-    signal_data = df.iloc[:, 0].values
+    signal_data = load_signal_data(signal_file)
+    if signal_data is None:
+        raise ValueError(f"Could not load signal data from: {signal_file}")
     
     # Calculate segment parameters
     segment_length_samples = int(segment_duration * sampling_rate)
@@ -1655,6 +1710,176 @@ async def extract_features_from_signal(
         feature_names=feature_names,
         features_preview=[features_list[i] for i in range(min(5, len(features_list)))]
     )
+
+
+
+def _resolve_sampling_rate(
+    signal_file: str,
+    sampling_rate: Optional[float],
+    strict: bool = True,
+) -> Optional[float]:
+    """
+    Resolve sampling rate for a signal file.
+    
+    Priority: provided sampling_rate > metadata > error/None.
+    
+    Args:
+        signal_file: Signal filename relative to DATA_DIR
+        sampling_rate: User-provided sampling rate (None = auto-detect)
+        strict: If True, raise on missing rate; if False, return None
+    
+    Returns:
+        Resolved sampling rate, or None if strict=False and not found
+    """
+    if sampling_rate is not None:
+        return sampling_rate
+    
+    metadata_path = get_metadata_path(signal_file)
+    if metadata_path.exists():
+        with open(metadata_path) as f:
+            metadata = json.load(f)
+            rate = metadata.get("sampling_rate")
+            if rate is not None:
+                return rate
+    
+    if strict:
+        raise ValueError(
+            f"No sampling rate found for {signal_file}. "
+            f"Please provide sampling_rate parameter or create "
+            f"{Path(signal_file).stem}_metadata.json with 'sampling_rate' field."
+        )
+    return None
+
+
+def _segment_and_extract_features(
+    signal_data: np.ndarray,
+    sampling_rate: float,
+    segment_duration: float,
+    overlap_ratio: float,
+) -> list[dict]:
+    """
+    Segment a signal and extract time-domain features from each segment.
+    
+    Args:
+        signal_data: Raw signal array
+        sampling_rate: Sampling frequency in Hz
+        segment_duration: Duration of each segment in seconds
+        overlap_ratio: Overlap ratio between segments (0-1)
+    
+    Returns:
+        List of feature dictionaries, one per segment
+    """
+    segment_length_samples = int(segment_duration * sampling_rate)
+    hop_length = int(segment_length_samples * (1 - overlap_ratio))
+    features_list = []
+    
+    for start in range(0, len(signal_data) - segment_length_samples + 1, hop_length):
+        segment = signal_data[start:start + segment_length_samples]
+        features = extract_time_domain_features(segment)
+        features_list.append(features)
+    
+    return features_list
+
+
+async def _extract_features_from_files(
+    signal_files: list[str],
+    sampling_rate: Optional[float],
+    segment_duration: float,
+    overlap_ratio: float,
+    strict: bool = True,
+    ctx: Context = None,
+) -> tuple[list[dict], list[float]]:
+    """
+    Load signals, resolve sampling rates, segment, and extract features.
+    
+    Args:
+        signal_files: List of signal filenames relative to DATA_DIR
+        sampling_rate: User-provided sampling rate (None = auto-detect per file)
+        segment_duration: Segment duration in seconds
+        overlap_ratio: Overlap ratio (0-1)
+        strict: If True, raise on missing files/rates; if False, skip them
+        ctx: MCP context for logging
+    
+    Returns:
+        Tuple of (all_features_list, detected_rates)
+    """
+    all_features = []
+    detected_rates = []
+    
+    for signal_file in signal_files:
+        filepath = DATA_DIR / signal_file
+        if not filepath.exists():
+            if strict:
+                raise FileNotFoundError(f"File not found: {signal_file}")
+            else:
+                if ctx:
+                    await ctx.warning(f"File not found: {signal_file}, skipping")
+                continue
+        
+        file_rate = _resolve_sampling_rate(signal_file, sampling_rate, strict=strict)
+        if file_rate is None:
+            if ctx:
+                await ctx.warning(f"No sampling rate for {signal_file}, skipping")
+            continue
+        
+        if ctx and sampling_rate is None:
+            await ctx.info(f"  {signal_file}: detected {file_rate} Hz from metadata")
+        
+        detected_rates.append(file_rate)
+        
+        signal_data = load_signal_data(signal_file)
+        if signal_data is None:
+            if strict:
+                raise ValueError(f"Could not load signal data from: {signal_file}")
+            else:
+                if ctx:
+                    await ctx.warning(f"Could not load {signal_file}, skipping")
+                continue
+        
+        features = _segment_and_extract_features(signal_data, file_rate, segment_duration, overlap_ratio)
+        all_features.extend(features)
+    
+    return all_features, detected_rates
+
+
+async def _extract_and_transform_validation_features(
+    signal_files: list[str],
+    sampling_rate: Optional[float],
+    segment_duration: float,
+    overlap_ratio: float,
+    scaler,
+    pca,
+    strict: bool = False,
+    ctx: Context = None,
+) -> Optional[np.ndarray]:
+    """
+    Extract features from validation files and apply scaler + PCA transform.
+    
+    Args:
+        signal_files: List of signal filenames relative to DATA_DIR
+        sampling_rate: User-provided sampling rate (None = auto-detect)
+        segment_duration: Segment duration in seconds
+        overlap_ratio: Overlap ratio (0-1)
+        scaler: Fitted StandardScaler
+        pca: Fitted PCA transformer
+        strict: If True, raise on errors; if False, skip problematic files
+        ctx: MCP context for logging
+    
+    Returns:
+        PCA-transformed feature matrix, or None if no features extracted
+    """
+    features_list, _ = await _extract_features_from_files(
+        signal_files, sampling_rate, segment_duration, overlap_ratio,
+        strict=strict, ctx=ctx
+    )
+    
+    if not features_list:
+        return None
+    
+    features_df = pd.DataFrame(features_list)
+    features_scaled = scaler.transform(features_df.values)
+    features_pca = pca.transform(features_scaled)
+    return features_pca
 
 
 @mcp.tool()
@@ -1713,51 +1938,10 @@ async def train_anomaly_model(
         await ctx.info(f"Training {model_type} model on {len(healthy_signal_files)} healthy signals...")
     
     # Step 1: Extract features from all healthy signals
-    # Each signal may have different sampling rate - detect per file
-    all_features = []
-    detected_rates = []
-    
-    for signal_file in healthy_signal_files:
-        filepath = DATA_DIR / signal_file
-        if not filepath.exists():
-            raise FileNotFoundError(f"File not found: {signal_file}")
-        
-        # Auto-detect or use provided sampling rate for THIS file
-        file_sampling_rate = sampling_rate
-        if file_sampling_rate is None:
-            metadata_path = DATA_DIR / signal_file.replace('.csv', '_metadata.json')
-            if metadata_path.exists():
-                with open(metadata_path) as f:
-                    metadata = json.load(f)
-                    file_sampling_rate = metadata.get("sampling_rate")
-                    if file_sampling_rate is None:
-                        raise ValueError(
-                            f"No sampling_rate in metadata for {signal_file}. "
-                            f"Please provide sampling_rate parameter explicitly."
-                        )
-                    if ctx:
-                        await ctx.info(f"  {signal_file}: detected {file_sampling_rate} Hz from metadata")
-            else:
-                raise ValueError(
-                    f"No metadata found for {signal_file} and no sampling_rate provided. "
-                    f"Cannot proceed without sampling rate information. "
-                    f"Please either:\n"
-                    f"  1. Create {signal_file.replace('.csv', '_metadata.json')} with 'sampling_rate' field\n"
-                    f"  2. Provide sampling_rate parameter explicitly"
-                )
-        detected_rates.append(file_sampling_rate)
-        
-        df = pd.read_csv(filepath, header=None)
-        signal_data = df.iloc[:, 0].values
-        
-        # Segment signal using THIS file's sampling rate
-        segment_length_samples = int(segment_duration * file_sampling_rate)
-        hop_length = int(segment_length_samples * (1 - overlap_ratio))
-        
-        for start in range(0, len(signal_data) - segment_length_samples + 1, hop_length):
-            segment = signal_data[start:start + segment_length_samples]
-            features = extract_time_domain_features(segment)
-            all_features.append(features)
+    all_features, detected_rates = await _extract_features_from_files(
+        healthy_signal_files, sampling_rate, segment_duration, overlap_ratio,
+        strict=True, ctx=ctx
+    )
     
     features_df = pd.DataFrame(all_features)
     X_train = features_df.values
@@ -1791,99 +1975,18 @@ async def train_anomaly_model(
                 await ctx.info("Evaluating hyperparameter grid...")
             
             # Prepare validation features for fault signals
-            fault_features_list = []
-            for fault_file in fault_signal_files:
-                filepath = DATA_DIR / fault_file
-                if not filepath.exists():
-                    if ctx:
-                        await ctx.warning(f"Fault file not found: {fault_file}, skipping")
-                    continue
-                
-                # Auto-detect or use provided sampling rate
-                file_sampling_rate = sampling_rate
-                if file_sampling_rate is None:
-                    metadata_path = DATA_DIR / fault_file.replace('.csv', '_metadata.json')
-                    if metadata_path.exists():
-                        with open(metadata_path) as f:
-                            metadata = json.load(f)
-                            file_sampling_rate = metadata.get("sampling_rate")
-                
-                if file_sampling_rate is None:
-                    if ctx:
-                        await ctx.warning(f"No sampling rate for {fault_file}, skipping")
-                    continue
-                
-                df = pd.read_csv(filepath, header=None)
-                fault_signal = df.iloc[:, 0].values
-                
-                # Extract features
-                segment_length_samples = int(segment_duration * file_sampling_rate)
-                hop_length = int(segment_length_samples * (1 - overlap_ratio))
-                
-                fault_segment_features = []
-                for start in range(0, len(fault_signal) - segment_length_samples + 1, hop_length):
-                    segment = fault_signal[start:start + segment_length_samples]
-                    features = extract_time_domain_features(segment)
-                    fault_segment_features.append(features)
-                
-                if fault_segment_features:
-                    fault_features_df = pd.DataFrame(fault_segment_features)
-                    fault_features_scaled = scaler.transform(fault_features_df.values)
-                    fault_features_pca = pca.transform(fault_features_scaled)
-                    fault_features_list.append(fault_features_pca)
-            
-            if fault_features_list:
-                X_fault = np.vstack(fault_features_list)
-            else:
-                X_fault = None
+            X_fault = await _extract_and_transform_validation_features(
+                fault_signal_files, sampling_rate, segment_duration, overlap_ratio,
+                scaler, pca, strict=False, ctx=ctx
+            )
             
             # Prepare validation features for healthy signals
-            healthy_val_features_list = []
+            X_healthy_val = None
             if healthy_validation_files:
-                for healthy_val_file in healthy_validation_files:
-                    filepath = DATA_DIR / healthy_val_file
-                    if not filepath.exists():
-                        if ctx:
-                            await ctx.warning(f"Healthy validation file not found: {healthy_val_file}, skipping")
-                        continue
-                    
-                    # Auto-detect or use provided sampling rate
-                    file_sampling_rate = sampling_rate
-                    if file_sampling_rate is None:
-                        metadata_path = DATA_DIR / healthy_val_file.replace('.csv', '_metadata.json')
-                        if metadata_path.exists():
-                            with open(metadata_path) as f:
-                                metadata = json.load(f)
-                                file_sampling_rate = metadata.get("sampling_rate")
-                    
-                    if file_sampling_rate is None:
-                        if ctx:
-                            await ctx.warning(f"No sampling rate for {healthy_val_file}, skipping")
-                        continue
-                    
-                    df = pd.read_csv(filepath, header=None)
-                    healthy_val_signal = df.iloc[:, 0].values
-                    
-                    # Extract features
-                    segment_length_samples = int(segment_duration * file_sampling_rate)
-                    hop_length = int(segment_length_samples * (1 - overlap_ratio))
-                    
-                    healthy_val_segment_features = []
-                    for start in range(0, len(healthy_val_signal) - segment_length_samples + 1, hop_length):
-                        segment = healthy_val_signal[start:start + segment_length_samples]
-                        features = extract_time_domain_features(segment)
-                        healthy_val_segment_features.append(features)
-                    
-                    if healthy_val_segment_features:
-                        healthy_val_features_df = pd.DataFrame(healthy_val_segment_features)
-                        healthy_val_features_scaled = scaler.transform(healthy_val_features_df.values)
-                        healthy_val_features_pca = pca.transform(healthy_val_features_scaled)
-                        healthy_val_features_list.append(healthy_val_features_pca)
-            
-            if healthy_val_features_list:
-                X_healthy_val = np.vstack(healthy_val_features_list)
-            else:
-                X_healthy_val = None
+                X_healthy_val = await _extract_and_transform_validation_features(
+                    healthy_validation_files, sampling_rate, segment_duration, overlap_ratio,
+                    scaler, pca, strict=False, ctx=ctx
+                )
             
             # Hyperparameter grid
             param_grid = {
@@ -1970,101 +2073,19 @@ async def train_anomaly_model(
                 await ctx.info("- Training: Healthy data only (unsupervised)")
                 await ctx.info("- Hyperparameter tuning: Using validation set")
             
-            # Prepare validation features (reuse from OneClassSVM section if already computed)
-            # Otherwise extract them here
-            fault_features_list = []
-            for fault_file in fault_signal_files:
-                filepath = DATA_DIR / fault_file
-                if not filepath.exists():
-                    if ctx:
-                        await ctx.warning(f"Fault file not found: {fault_file}, skipping")
-                    continue
-                
-                # Auto-detect or use provided sampling rate
-                file_sampling_rate = sampling_rate
-                if file_sampling_rate is None:
-                    metadata_path = DATA_DIR / fault_file.replace('.csv', '_metadata.json')
-                    if metadata_path.exists():
-                        with open(metadata_path) as f:
-                            metadata = json.load(f)
-                            file_sampling_rate = metadata.get("sampling_rate")
-                
-                if file_sampling_rate is None:
-                    if ctx:
-                        await ctx.warning(f"No sampling rate for {fault_file}, skipping")
-                    continue
-                
-                df = pd.read_csv(filepath, header=None)
-                fault_signal = df.iloc[:, 0].values
-                
-                # Extract features
-                segment_length_samples = int(segment_duration * file_sampling_rate)
-                hop_length = int(segment_length_samples * (1 - overlap_ratio))
-                
-                fault_segment_features = []
-                for start in range(0, len(fault_signal) - segment_length_samples + 1, hop_length):
-                    segment = fault_signal[start:start + segment_length_samples]
-                    features = extract_time_domain_features(segment)
-                    fault_segment_features.append(features)
-                
-                if fault_segment_features:
-                    fault_features_df = pd.DataFrame(fault_segment_features)
-                    fault_features_scaled = scaler.transform(fault_features_df.values)
-                    fault_features_pca = pca.transform(fault_features_scaled)
-                    fault_features_list.append(fault_features_pca)
-            
-            if fault_features_list:
-                X_fault = np.vstack(fault_features_list)
-            else:
-                X_fault = None
+            # Prepare validation features for fault signals
+            X_fault = await _extract_and_transform_validation_features(
+                fault_signal_files, sampling_rate, segment_duration, overlap_ratio,
+                scaler, pca, strict=False, ctx=ctx
+            )
             
             # Prepare healthy validation features
-            healthy_val_features_list = []
+            X_healthy_val = None
             if healthy_validation_files:
-                for healthy_val_file in healthy_validation_files:
-                    filepath = DATA_DIR / healthy_val_file
-                    if not filepath.exists():
-                        if ctx:
-                            await ctx.warning(f"Healthy validation file not found: {healthy_val_file}, skipping")
-                        continue
-                    
-                    # Auto-detect or use provided sampling rate
-                    file_sampling_rate = sampling_rate
-                    if file_sampling_rate is None:
-                        metadata_path = DATA_DIR / healthy_val_file.replace('.csv', '_metadata.json')
-                        if metadata_path.exists():
-                            with open(metadata_path) as f:
-                                metadata = json.load(f)
-                                file_sampling_rate = metadata.get("sampling_rate")
-                    
-                    if file_sampling_rate is None:
-                        if ctx:
-                            await ctx.warning(f"No sampling rate for {healthy_val_file}, skipping")
-                        continue
-                    
-                    df = pd.read_csv(filepath, header=None)
-                    healthy_val_signal = df.iloc[:, 0].values
-                    
-                    # Extract features
-                    segment_length_samples = int(segment_duration * file_sampling_rate)
-                    hop_length = int(segment_length_samples * (1 - overlap_ratio))
-                    
-                    healthy_val_segment_features = []
-                    for start in range(0, len(healthy_val_signal) - segment_length_samples + 1, hop_length):
-                        segment = healthy_val_signal[start:start + segment_length_samples]
-                        features = extract_time_domain_features(segment)
-                        healthy_val_segment_features.append(features)
-                    
-                    if healthy_val_segment_features:
-                        healthy_val_features_df = pd.DataFrame(healthy_val_segment_features)
-                        healthy_val_features_scaled = scaler.transform(healthy_val_features_df.values)
-                        healthy_val_features_pca = pca.transform(healthy_val_features_scaled)
-                        healthy_val_features_list.append(healthy_val_features_pca)
-            
-            if healthy_val_features_list:
-                X_healthy_val = np.vstack(healthy_val_features_list)
-            else:
-                X_healthy_val = None
+                X_healthy_val = await _extract_and_transform_validation_features(
+                    healthy_validation_files, sampling_rate, segment_duration, overlap_ratio,
+                    scaler, pca, strict=False, ctx=ctx
+                )
             
             # Hyperparameter search for LOF
             best_score = -np.inf
@@ -2104,14 +2125,6 @@ async def train_anomaly_model(
                     
                     if validation_score > best_score:
                         best_score = validation_score
-                        best_params = {'n_neighbors': n_neighbors, 'contamination': contamination}
-                        best_model = model_candidate
-                    
-                    train_predictions = model_candidate.predict(X_pca)
-                    train_score = np.sum(train_predictions == 1) / len(train_predictions)
-                    
-                    if train_score > best_score:
-                        best_score = train_score
                         best_params = {'n_neighbors': n_neighbors, 'contamination': contamination}
                         best_model = model_candidate
             
@@ -2165,43 +2178,13 @@ async def train_anomaly_model(
             if ctx:
                 await ctx.info(f"Using {len(healthy_validation_files)} explicitly provided healthy validation files")
             
-            # Extract features from validation files
-            healthy_val_features = []
-            for signal_file in healthy_validation_files:
-                filepath = DATA_DIR / signal_file
-                if not filepath.exists():
-                    logger.warning(f"Validation file not found: {signal_file}, skipping...")
-                    continue
-                
-                # Auto-detect sampling rate for validation file
-                file_sampling_rate = sampling_rate
-                if file_sampling_rate is None:
-                    metadata_path = DATA_DIR / signal_file.replace('.csv', '_metadata.json')
-                    if metadata_path.exists():
-                        with open(metadata_path) as f:
-                            metadata = json.load(f)
-                            file_sampling_rate = metadata.get("sampling_rate")
-                            if file_sampling_rate is None:
-                                raise ValueError(f"No sampling_rate in metadata for validation file {signal_file}")
-                    else:
-                        raise ValueError(f"No metadata found for validation file {signal_file}")
-                
-                df = pd.read_csv(filepath, header=None)
-                signal_data = df.iloc[:, 0].values
-                
-                segment_length_samples = int(segment_duration * file_sampling_rate)
-                hop_length = int(segment_length_samples * (1 - overlap_ratio))
-                
-                for start in range(0, len(signal_data) - segment_length_samples + 1, hop_length):
-                    segment = signal_data[start:start + segment_length_samples]
-                    features = extract_time_domain_features(segment)
-                    healthy_val_features.append(features)
+            # Extract and transform features from validation files
+            X_pca_healthy_val = await _extract_and_transform_validation_features(
+                healthy_validation_files, sampling_rate, segment_duration, overlap_ratio,
+                scaler, pca, strict=True, ctx=ctx
+            )
             
-            if healthy_val_features:
-                X_healthy_val = pd.DataFrame(healthy_val_features).values
-                X_healthy_val_scaled = scaler.transform(X_healthy_val)
-                X_pca_healthy_val = pca.transform(X_healthy_val_scaled)
-                
+            if X_pca_healthy_val is not None:
                 healthy_predictions = model.predict(X_pca_healthy_val)
                 healthy_correct = np.sum(healthy_predictions == 1)
                 healthy_total = len(healthy_predictions)
@@ -2246,39 +2229,12 @@ async def train_anomaly_model(
                 await ctx.info(f"Healthy validation: {healthy_correct}/{healthy_total} correctly classified ({healthy_accuracy*100:.1f}%)")
         
         # Part B: Validate on FAULT data
-        fault_features = []
-        for signal_file in fault_signal_files:
-            filepath = DATA_DIR / signal_file
-            if filepath.exists():
-                # Auto-detect sampling rate for validation file
-                file_sampling_rate = sampling_rate
-                if file_sampling_rate is None:
-                    metadata_path = DATA_DIR / signal_file.replace('.csv', '_metadata.json')
-                    if metadata_path.exists():
-                        with open(metadata_path) as f:
-                            metadata = json.load(f)
-                            file_sampling_rate = metadata.get("sampling_rate")
-                            if file_sampling_rate is None:
-                                raise ValueError(f"No sampling_rate in metadata for validation file {signal_file}")
-                    else:
-                        raise ValueError(f"No metadata found for validation file {signal_file}")
-                
-                df = pd.read_csv(filepath, header=None)
-                signal_data = df.iloc[:, 0].values
-                
-                segment_length_samples = int(segment_duration * file_sampling_rate)
-                hop_length = int(segment_length_samples * (1 - overlap_ratio))
-                
-                for start in range(0, len(signal_data) - segment_length_samples + 1, hop_length):
-                    segment = signal_data[start:start + segment_length_samples]
-                    features = extract_time_domain_features(segment)
-                    fault_features.append(features)
+        X_fault_pca = await _extract_and_transform_validation_features(
+            fault_signal_files, sampling_rate, segment_duration, overlap_ratio,
+            scaler, pca, strict=True, ctx=ctx
+        )
         
-        if fault_features:
-            X_fault = pd.DataFrame(fault_features).values
-            X_fault_scaled = scaler.transform(X_fault)
-            X_fault_pca = pca.transform(X_fault_scaled)
-            
+        if X_fault_pca is not None:
             # Predict (should be -1 for anomalies)
             fault_predictions = model.predict(X_fault_pca)
             
@@ -2420,11 +2376,25 @@ async def predict_anomalies(
     if not filepath.exists():
         raise FileNotFoundError(f"File not found: {signal_file}")
     
-    df = pd.read_csv(filepath, header=None)
-    signal_data = df.iloc[:, 0].values
+    signal_data = load_signal_data(signal_file)
+    if signal_data is None:
+        raise ValueError(f"Could not load signal data from: {signal_file}")
     
     # Extract features
     sampling_rate = metadata['sampling_rate']
+    if isinstance(sampling_rate, str):
+        # Model was trained with per-file metadata detection; read from signal metadata
+        meta_path = get_metadata_path(signal_file)
+        if meta_path.exists():
+            with open(meta_path, 'r') as f:
+                signal_meta = json.load(f)
+            sampling_rate = float(signal_meta.get('sampling_rate', 10000.0))
+        else:
+            raise ValueError(
+                f"Model was trained with per-file sampling rates but no metadata found for {signal_file}. "
+                "Please provide a _metadata.json file alongside the signal CSV."
+            )
+    sampling_rate = float(sampling_rate)
     segment_duration = metadata['segment_duration']
     overlap_ratio = metadata['overlap_ratio']
     
@@ -2942,8 +2912,9 @@ async def plot_signal(
     if not filepath.exists():
         raise FileNotFoundError(f"File not found: {signal_file}")
     
-    df = pd.read_csv(filepath, header=None)
-    signal_data = df.iloc[:, 0].values
+    signal_data = load_signal_data(signal_file)
+    if signal_data is None:
+        raise ValueError(f"Could not load signal data from: {signal_file}")
     
     # Time array
     n = len(signal_data)
@@ -3053,8 +3024,9 @@ async def plot_signal(
         ]
     )
     
-    # Save HTML
-    output_file = DATA_DIR / f"plot_signal_{signal_file.replace('.csv', '')}.html"
+    # Save HTML to reports directory
+    safe_name = Path(signal_file).stem.replace('/', '_').replace('\\', '_')
+    output_file = REPORTS_DIR / f"plot_signal_{safe_name}.html"
     fig.write_html(str(output_file))
     
     if ctx:
@@ -3111,8 +3083,9 @@ async def plot_spectrum(
     if not filepath.exists():
         raise FileNotFoundError(f"File not found: {signal_file}")
     
-    df = pd.read_csv(filepath, header=None)
-    signal_data = df.iloc[:, 0].values
+    signal_data = load_signal_data(signal_file)
+    if signal_data is None:
+        raise ValueError(f"Could not load signal data from: {signal_file}")
     
     # Apply Hamming window to reduce spectral leakage
     n = len(signal_data)
@@ -3222,8 +3195,9 @@ async def plot_spectrum(
         yaxis=dict(range=[-80, 5])  # From -80 dB to +5 dB (peak at 0 dB)
     )
     
-    # Save HTML
-    output_file = DATA_DIR / f"plot_spectrum_{signal_file.replace('.csv', '')}.html"
+    # Save HTML to reports directory
+    safe_name = Path(signal_file).stem.replace('/', '_').replace('\\', '_')
+    output_file = REPORTS_DIR / f"plot_spectrum_{safe_name}.html"
     fig.write_html(str(output_file))
     
     if ctx:
@@ -3282,8 +3256,9 @@ async def plot_envelope(
     if not filepath.exists():
         raise FileNotFoundError(f"File not found: {signal_file}")
     
-    df = pd.read_csv(filepath, header=None)
-    signal_data = df.iloc[:, 0].values
+    signal_data = load_signal_data(signal_file)
+    if signal_data is None:
+        raise ValueError(f"Could not load signal data from: {signal_file}")
     
     # Default filter band if not specified
     if filter_band is None:
@@ -3446,8 +3421,9 @@ async def plot_envelope(
         showlegend=True
     )
     
-    # Save HTML
-    output_file = DATA_DIR / f"plot_envelope_{signal_file.replace('.csv', '')}.html"
+    # Save HTML to reports directory
+    safe_name = Path(signal_file).stem.replace('/', '_').replace('\\', '_')
+    output_file = REPORTS_DIR / f"plot_envelope_{safe_name}.html"
     fig.write_html(str(output_file))
     
     if ctx:
@@ -3501,7 +3477,7 @@ async def generate_fft_report(
     
     # Auto-detect sampling rate
     if sampling_rate is None:
-        metadata_path = DATA_DIR / signal_file.replace('.csv', '_metadata.json')
+        metadata_path = get_metadata_path(signal_file)
         if metadata_path.exists():
             with open(metadata_path) as f:
                 metadata = json.load(f)
@@ -3588,7 +3564,7 @@ async def generate_envelope_report(
     
     # Auto-detect sampling rate and bearing freqs
     if sampling_rate is None or bearing_freqs is None:
-        metadata_path = DATA_DIR / signal_file.replace('.csv', '_metadata.json')
+        metadata_path = get_metadata_path(signal_file)
         if metadata_path.exists():
             with open(metadata_path) as f:
                 metadata = json.load(f)
@@ -3684,7 +3660,7 @@ async def generate_iso_report(
     
     # Auto-detect sampling rate
     if sampling_rate is None:
-        metadata_path = DATA_DIR / signal_file.replace('.csv', '_metadata.json')
+        metadata_path = get_metadata_path(signal_file)
         if metadata_path.exists():
             with open(metadata_path) as f:
                 sampling_rate = json.load(f).get("sampling_rate")
@@ -3857,8 +3833,9 @@ async def generate_pca_visualization_report(
                 logger.warning(f"File not found: {signal_file}, skipping...")
                 continue
             
-            df = pd.read_csv(filepath, header=None)
-            signal_data = df.iloc[:, 0].values
+            signal_data = load_signal_data(signal_file)
+            if signal_data is None:
+                raise ValueError(f"Could not load signal data from: {signal_file}")
             
             # Segment and extract features
             segment_length_samples = int(segment_duration * sampling_rate)
@@ -4090,7 +4067,7 @@ async def generate_feature_comparison_report(
     
     # All possible features
     all_feature_names = [
-        'mean', 'std', 'var', 'mean_abs', 'rms', 'max_val', 'min_val', 'peak_to_peak',
+        'mean', 'std', 'var', 'mean_abs', 'rms', 'max', 'min', 'range',
         'crest_factor', 'kurtosis', 'skewness', 'shape_factor', 'impulse_factor',
         'clearance_factor', 'power', 'entropy', 'zero_crossing_rate'
     ]
@@ -4112,7 +4089,7 @@ async def generate_feature_comparison_report(
             
             # Auto-detect sampling rate if not provided
             if sampling_rate is None:
-                metadata_path = DATA_DIR / signal_file.replace('.csv', '_metadata.json')
+                metadata_path = get_metadata_path(signal_file)
                 if metadata_path.exists():
                     with open(metadata_path) as f:
                         metadata = json.load(f)
@@ -4120,8 +4097,9 @@ async def generate_feature_comparison_report(
                 else:
                     sampling_rate = 10000.0  # fallback
             
-            df = pd.read_csv(filepath, header=None)
-            signal_data = df.iloc[:, 0].values
+            signal_data = load_signal_data(signal_file)
+            if signal_data is None:
+                raise ValueError(f"Could not load signal data from: {signal_file}")
             
             # Segment and extract features
             segment_length_samples = int(segment_duration * sampling_rate)
@@ -4639,7 +4617,7 @@ Call: analyze_statistics("{signal_file}")
 Report: RMS, Crest Factor, Kurtosis, Skewness (bullet points only).
 Flags (screening thresholds, not definitive):
 - CF > 4 → impulsiveness present; CF > 6 → strong impulsiveness
-- Kurtosis > 3 → impulsive content; > 5 → significant; > 8 → severe
+- Kurtosis > 0 → non-Gaussian / impulsive content (excess kurtosis); > 3 → significant; > 6 → severe
 Note: These flags alone are insufficient for fault identification.
 
 3) Spectral snapshot
@@ -4648,7 +4626,7 @@ Call: analyze_fft("{signal_file}", 10000)
 - If operating speed is known, relate peaks to 1×/2× RPM; otherwise, request it for deeper interpretation.
 
 4) Next-step guidance (evidence-first)
-- If strong impulsiveness (CF>6 or Kurtosis>8), suggest: "Use diagnose_bearing prompt for targeted bearing analysis"
+- If strong impulsiveness (CF>6 or Kurtosis>6), suggest: "Use diagnose_bearing prompt for targeted bearing analysis"
 - If tonal/harmonic pattern dominates, suggest: "Use diagnose_gear prompt if gear suspected"
 - If broadband increase, suggest: ISO 20816-3 check with evaluate_iso_20816()
 
@@ -4751,9 +4729,9 @@ Report the following parameters:
 DIAGNOSTIC INDICATORS:
 • Crest Factor > 4: ⚠️  Possible presence of impulses (bearing faults)
 • Crest Factor > 6: 🚨 High probability of bearing defects
-• Kurtosis > 3: ⚠️  Presence of impulses
-• Kurtosis > 5: ⚠️  Significant impulsive content (bearing damage)
-• Kurtosis > 8: 🚨 Severe bearing damage
+• Kurtosis > 0: ⚠️  Non-Gaussian / impulsive content (excess kurtosis, Fisher convention)
+• Kurtosis > 3: ⚠️  Significant impulsive content (bearing damage likely)
+• Kurtosis > 6: 🚨 Severe bearing damage (strong impulses)
 
 ================================================================================
 SECTION 3: SPECTRAL ANALYSIS

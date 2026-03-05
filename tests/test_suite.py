@@ -4,6 +4,7 @@ Test and validation script for the Machinery Diagnostics MCP Server.
 
 import sys
 from pathlib import Path
+import pytest
 
 # Add src to path
 src_path = Path(__file__).parent.parent / "src"
@@ -19,16 +20,15 @@ def test_imports():
         import pandas as pd
         import mcp
         from pydantic import BaseModel
+        from importlib.metadata import version as pkg_version
         
         print("✅ All dependencies imported successfully")
         print(f"   - NumPy: {np.__version__}")
         print(f"   - SciPy: {scipy.__version__}")
         print(f"   - Pandas: {pd.__version__}")
-        print(f"   - MCP: {mcp.__version__}")
-        return True
+        print(f"   - MCP: {pkg_version('mcp')}")
     except ImportError as e:
-        print(f"❌ Import error: {e}")
-        return False
+        pytest.fail(f"Import error: {e}")
 
 
 def test_signal_generation():
@@ -60,11 +60,9 @@ def test_signal_generation():
         print(f"   - Sampling rate: {fs} Hz")
         print(f"   - Duration: {duration} s")
         print(f"   - Samples: {len(signal)}")
-        return True
         
     except Exception as e:
-        print(f"❌ Signal generation error: {e}")
-        return False
+        pytest.fail(f"Signal generation error: {e}")
 
 
 def test_fft():
@@ -96,11 +94,9 @@ def test_fft():
         print(f"✅ FFT analysis successful")
         print(f"   - Peak frequency: {peak_freq:.1f} Hz (expected: 50 Hz)")
         print(f"   - Frequency resolution: {fs/N:.2f} Hz")
-        return True
         
     except Exception as e:
-        print(f"❌ FFT test error: {e}")
-        return False
+        pytest.fail(f"FFT test error: {e}")
 
 
 def test_statistics():
@@ -125,11 +121,9 @@ def test_statistics():
         print(f"   - Crest Factor: {cf:.2f}")
         print(f"   - Kurtosis: {kurt:.2f}")
         print(f"   - Skewness: {skewness:.2f}")
-        return True
         
     except Exception as e:
-        print(f"❌ Statistics test error: {e}")
-        return False
+        pytest.fail(f"Statistics test error: {e}")
 
 
 def print_project_info():
@@ -183,8 +177,8 @@ def main():
     results = []
     for name, test_func in tests:
         try:
-            result = test_func()
-            results.append((name, result))
+            test_func()
+            results.append((name, True))
         except Exception as e:
             print(f"❌ {name} failed with exception: {e}")
             results.append((name, False))

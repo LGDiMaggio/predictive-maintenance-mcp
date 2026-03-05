@@ -47,9 +47,10 @@ test_files = list(Path("data/signals/real_test").glob("*.csv"))
 print(f"   Training signals: {len(train_files)}")
 print(f"   Test signals: {len(test_files)}")
 if len(train_files) + len(test_files) < 20:
-    print("   ⚠️  Warning: Expected 20 CSV files")
+    print("   ⚠️  Warning: Expected at least 20 signal files")
 else:
     print("   ✅ OK")
+print(f"   Supported formats: CSV, MAT, WAV, NPY, Parquet")
 print()
 
 # 4. Syntax check

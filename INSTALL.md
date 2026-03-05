@@ -186,8 +186,8 @@ pip install -e .
    - ✅ `"command": "C:/path/.venv/Scripts/python.exe"` (Windows)
    - ✅ `"command": "/path/.venv/bin/python"` (macOS/Linux)
 
-4. **Don't use `-m` module import**: The package isn't installed as a module:
-   - ❌ `"args": ["-m", "machinery_diagnostics_server"]`
+4. **Module import**: If installed via `pip install -e .`, you can also use:
+   - ✅ `"args": ["-m", "predictive_maintenance_mcp"]`
    - ✅ `"args": ["C:/path/src/machinery_diagnostics_server.py"]`
 
 5. **Restart Claude Desktop completely** after config changes

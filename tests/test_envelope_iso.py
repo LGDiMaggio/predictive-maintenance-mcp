@@ -20,7 +20,7 @@ class TestEnvelopeAnalysis:
         from scipy.signal import butter, filtfilt
         
         # Generate signal with multiple frequencies
-        fs = 10000
+        fs = 20000  # Must be > 2 * highcut to avoid Wn=1.0
         t = np.linspace(0, 1, fs, endpoint=False)
         signal = (np.sin(2*np.pi*100*t) +  # Low freq
                   np.sin(2*np.pi*2000*t) +  # Mid freq (pass)

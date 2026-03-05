@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "predictive-maintenance-mcp"
-version = "0.4.1"
+version = "0.5.0"
 description = "Proof of Concept: AI-Powered Predictive Maintenance & Fault Diagnosis MCP Server - Industrial machinery condition monitoring, vibration analysis, bearing diagnostics, and ML-based anomaly detection through Model Context Protocol"
 readme = "README.md"
 authors = [
@@ -63,7 +63,13 @@ Issues = "https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues"
 Discussions = "https://github.com/LGDiMaggio/predictive-maintenance-mcp/discussions"
 
 [project.scripts]
-predictive-maintenance-mcp = "machinery_diagnostics_server:main"
+predictive-maintenance-mcp = "predictive_maintenance_mcp.machinery_diagnostics_server:main"
+
+[tool.setuptools]
+packages = ["predictive_maintenance_mcp"]
+
+[tool.setuptools.package-dir]
+predictive_maintenance_mcp = "src"
 
 [project.optional-dependencies]
 dev = [
@@ -109,7 +115,15 @@ testpaths = ["tests"]
 python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
-addopts = "-v --cov=src --cov-report=term-missing --cov-report=html"
+addopts = "-v --strict-markers --tb=short --cov=src --cov-report=term-missing --cov-report=html"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+    "ml: marks tests that require ML models",
+    "real_data: marks tests that use real bearing data samples",
+    "asyncio: marks tests as async (requires pytest-asyncio)",
+]
 
 [tool.coverage.run]
 source = ["src"]

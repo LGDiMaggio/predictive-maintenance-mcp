@@ -21,7 +21,7 @@ By the end of this guide, you will have:
 
 Imagine having a vibration analyst available 24/7, who can:
 
-- **Read your vibration data** (CSV files from accelerometers, DAQ systems)
+- **Read your vibration data** (CSV, MAT, WAV, NPY, Parquet files from accelerometers, DAQ systems)
 - **Run FFT spectrum analysis** and detect dominant frequencies
 - **Perform envelope analysis** to identify bearing fault signatures (BPFO, BPFI, BSF)
 - **Evaluate ISO 20816-3 compliance** and classify vibration severity zones
@@ -142,7 +142,7 @@ and I'm using a 6205 bearing?
 
 ### Prepare Your Data
 
-Your vibration data needs to be in **CSV format** with one column of acceleration values. Example:
+Your vibration data can be in **CSV, MAT (MATLAB), WAV, NPY, or Parquet format**. For CSV files, use one column of acceleration values. Example:
 
 ```csv
 acceleration
@@ -155,7 +155,7 @@ acceleration
 
 ### Add Your Files
 
-1. Copy your CSV files to: `data/signals/real_train/` (or `real_test/`)
+1. Copy your signal files to: `data/signals/real_train/` (or `real_test/`)
 2. (Optional) Create a metadata JSON file with the same name:
 
 ```json

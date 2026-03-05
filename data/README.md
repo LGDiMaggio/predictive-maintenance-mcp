@@ -21,14 +21,14 @@ Perfect for:
 
 ## 📁 Directory Structure
 
-- **`signals/`** - Processed CSV signals ready for analysis (exposed via MCP resources)
+- **`signals/`** - Signal files ready for analysis (CSV, MAT, WAV, NPY, Parquet — exposed via MCP resources)
   - `real_train/` - Training dataset (2 healthy + 12 faulty signals)
   - `real_test/` - Test dataset for validation (1 healthy + 5 faulty signals)
 - **`real_bearings/`** - Source MAT files from MathWorks (archive only, not used by MCP server)
   - `train/` - Original MATLAB .mat files
   - `test/` - Original MATLAB .mat files
 
-> **Note**: The MCP server only uses CSV files in `signals/` directory. The `real_bearings/` folder is kept as source archive.
+> **Note**: The MCP server reads signal files from the `signals/` directory (supports CSV, MAT, WAV, NPY, Parquet). The `real_bearings/` folder is kept as source archive.
 
 ## 📊 Dataset Information
 

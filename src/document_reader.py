@@ -26,11 +26,11 @@ import logging
 
 # PDF processing
 try:
-    import PyPDF2
+    import pypdf
     HAS_PDF = True
 except ImportError:
     HAS_PDF = False
-    logging.warning("PyPDF2 not installed. PDF reading disabled.")
+    logging.warning("pypdf not installed. PDF reading disabled.")
 
 # Math for bearing frequency calculations
 import math
@@ -59,7 +59,7 @@ def extract_text_from_pdf(pdf_path: Path, max_pages: Optional[int] = None) -> st
         Extracted text content
     """
     if not HAS_PDF:
-        raise ImportError("PyPDF2 required for PDF reading. Install with: pip install PyPDF2")
+        raise ImportError("pypdf required for PDF reading. Install with: pip install pypdf")
     
     if not pdf_path.exists():
         raise FileNotFoundError(f"PDF not found: {pdf_path}")
@@ -67,7 +67,7 @@ def extract_text_from_pdf(pdf_path: Path, max_pages: Optional[int] = None) -> st
     text_parts = []
     
     with open(pdf_path, 'rb') as file:
-        pdf_reader = PyPDF2.PdfReader(file)
+        pdf_reader = pypdf.PdfReader(file)
         total_pages = len(pdf_reader.pages)
         pages_to_read = min(max_pages, total_pages) if max_pages else total_pages
         
@@ -133,8 +133,8 @@ def calculate_bearing_frequencies(
     BPFI = (num_balls / 2.0) * f_shaft * (1 + d_ratio * math.cos(alpha))
     
     # Ball Spin Frequency (BSF)
-    # BSF = (Pd/Bd) * f_shaft * (1 - (Bd/Pd * cos(α))²)
-    BSF = (pitch_diameter_mm / ball_diameter_mm) * f_shaft * \
+    # BSF = (Pd/(2*Bd)) * f_shaft * (1 - (Bd/Pd * cos(α))²)
+    BSF = (pitch_diameter_mm / (2.0 * ball_diameter_mm)) * f_shaft * \
           (1 - (d_ratio * math.cos(alpha))**2)
     
     # Fundamental Train Frequency / Cage frequency (FTF)

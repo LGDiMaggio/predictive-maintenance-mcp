@@ -131,8 +131,9 @@ Save as PDF and upload to this directory.
 
 ## Supported File Formats
 
-- **PDF** (preferred) - Full text extraction with PyPDF2
-- **Future**: DOCX, TXT, images with OCR
+- **PDF** (preferred) - Full text extraction with pypdf
+- **TXT** - Plain text manuals
+- **Future**: DOCX, images with OCR
 
 ## Privacy Note
 

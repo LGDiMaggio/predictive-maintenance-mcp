@@ -5,6 +5,28 @@ All notable changes to the Predictive Maintenance MCP Server project will be doc
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-02-16
+
+### Added
+- **Multi-format signal loading** — `load_signal_data()` now supports CSV, TXT, NPY, MAT (MATLAB), WAV, and Parquet formats
+- **`__main__.py`** — Server can now be run as `python -m predictive_maintenance_mcp`
+- **Ollama Guide** added to documentation table in README
+
+### Changed
+- **Unified signal loading** — All 16 `pd.read_csv()` call sites refactored to use `load_signal_data()`, enabling all tools to accept any supported format
+- **ML code deduplication** — Extracted 4 helper functions (`_resolve_sampling_rate`, `_segment_and_extract_features`, `_extract_features_from_files`, `_extract_and_transform_validation_features`), reducing ~163 statements in `train_anomaly_model`
+- **ISO metadata consolidation** — `evaluate_iso_20816` now reads metadata file once instead of twice
+- **PyPDF2 → pypdf migration** — Replaced deprecated PyPDF2 with pypdf in `document_reader.py`
+- **Pytest config consolidation** — Merged `pytest.ini` into `pyproject.toml` (`[tool.pytest.ini_options]`)
+- **Logging to stderr** — Server logging now uses `stderr` to avoid polluting MCP stdio transport
+- **Report filenames** — `report_generator.py` uses `Path.stem` for all filename sanitizations
+
+### Fixed
+- **Packaging** — Corrected `pyproject.toml` package-dir mapping (`src/` → `predictive_maintenance_mcp`)
+- **Metadata paths** — `get_metadata_path()` now uses `Path.stem` to work with all signal extensions
+- **Plot output directories** — Report generator creates output directories before writing files
+- **Flaky ML test** — Fixed `test_predict_anomalies` instability with deterministic seed
+
 ## [0.4.1] - 2026-02-15
 
 ### Fixed
@@ -116,14 +138,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Roadmap
 
-### Planned for v0.5.0
+### Planned for v0.6.0
 - **📦 Docker image** for zero-install setup
-- **📂 Parquet/HDF5 data format support**
 - **📏 Customizable ISO report thresholds**
 - Multi-signal comparison tools
 - Advanced trending and monitoring
 - Additional diagnostic workflows (pumps, motors, gearboxes)
-- Enhanced ML models with hyperparameter tuning
 - Extended dataset with more fault types
 
 ### Future Enhancements

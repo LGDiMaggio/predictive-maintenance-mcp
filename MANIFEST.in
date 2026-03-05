@@ -7,12 +7,11 @@ include CHANGELOG.md
 include INSTALL.md
 
 # Include configuration files
-include pytest.ini
 include pyproject.toml
 include setup_venv.py
 
 # Include data files
-recursive-include data *.csv *.json *.txt
+recursive-include data *.csv *.json *.txt *.mat *.wav *.npy *.parquet
 recursive-include data/signals/samples README.md
 
 # Include tests

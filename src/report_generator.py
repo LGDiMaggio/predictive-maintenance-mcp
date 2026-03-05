@@ -7,6 +7,7 @@ All reports are saved as standalone HTML files in the reports/ directory.
 
 import logging
 from pathlib import Path
+from pathlib import Path
 from typing import Dict, Any, Optional, List
 import json
 
@@ -130,7 +131,7 @@ def save_fft_report(
     )
     
     # Save HTML file
-    safe_name = signal_file.replace("/", "_").replace("\\", "_").replace(".csv", "")
+    safe_name = Path(signal_file).stem.replace("/", "_").replace("\\", "_")
     output_file = REPORTS_DIR / f"fft_spectrum_{safe_name}.html"
     output_file.write_text(html, encoding='utf-8')
     
@@ -258,7 +259,7 @@ def save_envelope_report(
     )
     
     # Save HTML file
-    safe_name = signal_file.replace("/", "_").replace("\\", "_").replace(".csv", "")
+    safe_name = Path(signal_file).stem.replace("/", "_").replace("\\", "_")
     output_file = REPORTS_DIR / f"envelope_analysis_{safe_name}.html"
     output_file.write_text(html, encoding='utf-8')
     
@@ -313,7 +314,7 @@ def save_iso_report(
     )
     
     # Save HTML file
-    safe_name = signal_file.replace("/", "_").replace("\\", "_").replace(".csv", "")
+    safe_name = Path(signal_file).stem.replace("/", "_").replace("\\", "_")
     output_file = REPORTS_DIR / f"iso_20816_{safe_name}.html"
     output_file.write_text(html, encoding='utf-8')
     
