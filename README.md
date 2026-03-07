@@ -222,27 +222,15 @@ Evaluate real_train/OuterRaceFault_1.csv against ISO 20816-3 standard
 
 ## 🚀 Installation
 
-### Quick Start (Python Package)
+### Option A — PyPI (recommended)
 
 ```bash
-# 1. Clone repository
-git clone https://github.com/LGDiMaggio/predictive-maintenance-mcp.git
-cd predictive-maintenance-mcp
-
-# 2. Run automated setup
-python setup_venv.py
-
-# 3. Activate environment
-.venv\Scripts\activate  # Windows
-source .venv/bin/activate  # Linux/macOS
-
-# 4. Verify installation
-python validate_server.py
+pip install predictive-maintenance-mcp
 ```
 
-📖 **Detailed Installation Guide**: See [INSTALL.md](INSTALL.md) for troubleshooting, Claude Desktop setup, and developer instructions.
+Then configure your MCP client (see [Configuration](#️-configuration) below) and point it to the installed server.
 
-### From Source (Advanced)
+### Option B — From Source (development)
 
 ```bash
 git clone https://github.com/LGDiMaggio/predictive-maintenance-mcp.git
@@ -250,13 +238,17 @@ cd predictive-maintenance-mcp
 pip install -e .
 ```
 
-### Run as Module
-
-After installation, you can also run the server directly:
+### Run the Server
 
 ```bash
+# Via module (works with both pip install and editable install)
 python -m predictive_maintenance_mcp
+
+# Via console script (after pip install)
+predictive-maintenance-mcp
 ```
+
+📖 **Detailed Installation Guide**: See [INSTALL.md](INSTALL.md) for troubleshooting and advanced setup.
 
 ---
 
@@ -268,12 +260,29 @@ Add to your Claude Desktop config:
 - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
 - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
 
+**If installed via pip** (recommended):
+
+```json
+{
+  "mcpServers": {
+    "predictive-maintenance": {
+      "command": "predictive-maintenance-mcp"
+    }
+  }
+}
+```
+
+**If running from source** (local dev):
+
 ```json
 {
   "mcpServers": {
     "predictive-maintenance": {
       "command": "C:/path/to/predictive-maintenance-mcp/.venv/Scripts/python.exe",
-      "args": ["C:/path/to/predictive-maintenance-mcp/src/machinery_diagnostics_server.py"]
+      "args": ["-m", "predictive_maintenance_mcp"],
+      "env": {
+        "PDM_PROJECT_DIR": "C:/path/to/predictive-maintenance-mcp"
+      }
     }
   }
 }
@@ -281,9 +290,9 @@ Add to your Claude Desktop config:
 
 > **Important Notes**:
 > - Replace `C:/path/to/predictive-maintenance-mcp` with your actual project path
-> - Use **absolute paths** for both `command` and `args`
+> - Use **absolute paths** — forward slashes (`/`) work on all platforms, including Windows
 > - On macOS/Linux, use `.venv/bin/python` instead of `.venv/Scripts/python.exe`
-> - Forward slashes (`/`) work on all platforms, including Windows
+> - The `PDM_PROJECT_DIR` env var tells the server where to find `data/`, `models/`, and `reports/`
 
 After configuration, **restart Claude Desktop** completely.
 
@@ -291,18 +300,37 @@ After configuration, **restart Claude Desktop** completely.
 
 Add to your MCP configuration (`.vscode/mcp.json` or user settings):
 
+**If installed via pip** (recommended):
+
 ```json
 {
   "servers": {
     "predictive-maintenance": {
-      "command": "/path/to/predictive-maintenance-mcp/.venv/bin/python",
-      "args": ["/path/to/predictive-maintenance-mcp/src/machinery_diagnostics_server.py"]
+      "type": "stdio",
+      "command": "predictive-maintenance-mcp"
     }
   }
 }
 ```
 
-> Adjust paths according to your system (use `.venv/Scripts/python.exe` on Windows)
+**If running from source** (local dev):
+
+```json
+{
+  "servers": {
+    "predictive-maintenance": {
+      "type": "stdio",
+      "command": "/path/to/predictive-maintenance-mcp/.venv/bin/python",
+      "args": ["-m", "predictive_maintenance_mcp"],
+      "env": {
+        "PDM_PROJECT_DIR": "/path/to/predictive-maintenance-mcp"
+      }
+    }
+  }
+}
+```
+
+> Use `.venv/Scripts/python.exe` on Windows. The `PDM_PROJECT_DIR` env var tells the server where to find `data/`, `models/`, and `reports/`.
 
 ---
 
@@ -663,10 +691,10 @@ Use MCP Inspector for interactive testing:
 npx @modelcontextprotocol/inspector npx predictive-maintenance-mcp
 ```
 
-Or from source:
+Or from source (with venv active):
 
 ```bash
-uv run mcp dev src/machinery_diagnostics_server.py
+npx @modelcontextprotocol/inspector python -m predictive_maintenance_mcp
 ```
 
 ---
