@@ -35,10 +35,7 @@ except ImportError:
 # Math for bearing frequency calculations
 import math
 
-# Base directories
-RESOURCES_DIR = Path(__file__).parent.parent / "resources"
-CACHE_DIR = RESOURCES_DIR / "cache"
-CACHE_DIR.mkdir(parents=True, exist_ok=True)
+from .config import RESOURCES_DIR, CACHE_DIR
 
 logger = logging.getLogger(__name__)
 

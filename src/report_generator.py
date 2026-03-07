@@ -7,7 +7,6 @@ All reports are saved as standalone HTML files in the reports/ directory.
 
 import logging
 from pathlib import Path
-from pathlib import Path
 from typing import Dict, Any, Optional, List
 import json
 
@@ -16,24 +15,15 @@ import pandas as pd
 from scipy.signal import find_peaks
 
 # Import HTML templates
-try:
-    from src.html_templates import (
-        create_fft_report,
-        create_envelope_report,
-        create_iso_report
-    )
-except ImportError:
-    from html_templates import (
-        create_fft_report,
-        create_envelope_report,
-        create_iso_report
-    )
+from .html_templates import (
+    create_fft_report,
+    create_envelope_report,
+    create_iso_report
+)
+
+from .config import REPORTS_DIR
 
 logger = logging.getLogger(__name__)
-
-# Reports output directory
-REPORTS_DIR = Path(__file__).parent.parent / "reports"
-REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def save_fft_report(

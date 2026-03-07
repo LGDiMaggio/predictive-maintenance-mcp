@@ -7,16 +7,12 @@ This test verifies that:
 3. Zone description includes conversion notice
 """
 
-import sys
 import numpy as np
 import asyncio
 import pytest
 from pathlib import Path
 
-# Add src to path
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
-from machinery_diagnostics_server import evaluate_iso_20816
+from predictive_maintenance_mcp.machinery_diagnostics_server import evaluate_iso_20816
 
 @pytest.mark.skip(reason="Integration test requiring MCP Context - evaluate_iso_20816 needs ctx injection from MCP framework")
 @pytest.mark.asyncio

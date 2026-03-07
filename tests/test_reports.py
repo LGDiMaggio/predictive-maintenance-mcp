@@ -2,21 +2,17 @@
 Test Report Generation System
 """
 
-import sys
 import asyncio
 from pathlib import Path
 
-# Add src to path
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
-from machinery_diagnostics_server import (
-    load_signal_data,
+from predictive_maintenance_mcp.signal_loader import load_signal_data
+from predictive_maintenance_mcp.machinery_diagnostics_server import (
     analyze_fft,
     analyze_envelope,
     evaluate_iso_20816,
-    DATA_DIR
 )
-from report_generator import (
+from predictive_maintenance_mcp.config import DATA_DIR
+from predictive_maintenance_mcp.report_generator import (
     save_fft_report,
     save_envelope_report,
     save_iso_report,

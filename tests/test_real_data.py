@@ -4,21 +4,17 @@ Complete test of MCP server with real bearing fault data
 NOTE: Sampling rates are read from metadata JSON files.
 """
 
-import sys
 from pathlib import Path
 import json
 import numpy as np
 
-# Add src to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-from src.machinery_diagnostics_server import (
+from predictive_maintenance_mcp.machinery_diagnostics_server import (
     analyze_fft,
     analyze_envelope,
     analyze_statistics,
     evaluate_iso_20816,
-    load_signal_data
 )
+from predictive_maintenance_mcp.signal_loader import load_signal_data
 
 # Paths relative to data/signals/
 BASELINE_TRAIN = [

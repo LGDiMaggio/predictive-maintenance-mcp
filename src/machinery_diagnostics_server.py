@@ -36,63 +36,40 @@ from mcp.server.fastmcp import FastMCP, Context
 from mcp.server.session import ServerSession
 
 # Import Pydantic models
-try:
-    from .models import (
-        FFTResult, EnvelopeResult, StatisticalResult, SignalInfo,
-        ISO20816Result, FeatureExtractionResult, AnomalyModelResult,
-        AnomalyPredictionResult
-    )
-except ImportError:
-    from models import (
-        FFTResult, EnvelopeResult, StatisticalResult, SignalInfo,
-        ISO20816Result, FeatureExtractionResult, AnomalyModelResult,
-        AnomalyPredictionResult
-    )
+from .models import (
+    FFTResult, EnvelopeResult, StatisticalResult, SignalInfo,
+    ISO20816Result, FeatureExtractionResult, AnomalyModelResult,
+    AnomalyPredictionResult
+)
 
 # Import report generation system
-try:
-    from .report_generator import (
-        save_fft_report,
-        save_envelope_report,
-        save_iso_report,
-        read_report_metadata,
-        list_reports,
-        REPORTS_DIR
-    )
-    from .document_reader import (
-        calculate_bearing_frequencies,
-        extract_machine_specs,
-        extract_bearing_designation,
-        extract_rpm_values,
-        extract_power_ratings,
-        extract_text_from_pdf
-    )
-except ImportError:
-    # Fallback for direct script execution
-    from report_generator import (
-        save_fft_report,
-        save_envelope_report,
-        save_iso_report,
-        read_report_metadata,
-        list_reports,
-        REPORTS_DIR
-    )
-    from document_reader import (
-        calculate_bearing_frequencies,
-        extract_machine_specs,
-        extract_bearing_designation,
-        extract_rpm_values,
-        extract_power_ratings,
-        extract_text_from_pdf
-    )
-
-
-# Logging configuration (use stderr explicitly to not interfere with MCP stdio)
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler(sys.stderr)]
+from .report_generator import (
+    save_fft_report,
+    save_envelope_report,
+    save_iso_report,
+    read_report_metadata,
+    list_reports,
+    REPORTS_DIR
 )
+from .document_reader import (
+    calculate_bearing_frequencies,
+    extract_machine_specs,
+    extract_bearing_designation,
+    extract_rpm_values,
+    extract_power_ratings,
+    extract_text_from_pdf
+)
+
+# Signal I/O e segmentazione — funzioni pure testabili senza MCP
+from .signal_loader import (
+    load_signal_data,
+    extract_segment,
+    get_metadata_path,
+    get_metadata_path_from_dir,
+    SUPPORTED_EXTENSIONS,
+)
+
+# Logger per questo modulo — la configurazione avviene in main() per evitare side-effect a import-time
 logger = logging.getLogger(__name__)
 
 # MCP server initialization
@@ -157,40 +134,8 @@ mcp = FastMCP(
     """
 )
 
-# Data directory - resolve intelligently for both dev (clone) and pip install
-import os
-
-def _resolve_project_dir():
-    """Find the project root directory.
-    Priority: PdM_DATA_DIR env var > cwd with data/ > relative to __file__"""
-    # 1. Explicit env var
-    env_dir = os.environ.get("PDM_PROJECT_DIR")
-    if env_dir and Path(env_dir).is_dir():
-        return Path(env_dir)
-    # 2. Current working directory (typical for cloned repo)
-    cwd = Path.cwd()
-    if (cwd / "data" / "signals").is_dir():
-        return cwd
-    # 3. Relative to __file__ (dev clone: src/ -> parent is project root)
-    file_based = Path(__file__).parent.parent
-    if (file_based / "data" / "signals").is_dir():
-        return file_based
-    # 4. Fallback to cwd (user will need to create data/ themselves)
-    return cwd
-
-_PROJECT_ROOT = _resolve_project_dir()
-DATA_DIR = _PROJECT_ROOT / "data" / "signals"
-MODELS_DIR = _PROJECT_ROOT / "models"
-RESOURCES_DIR = _PROJECT_ROOT / "resources"
-
-# Ensure directories exist
-DATA_DIR.mkdir(parents=True, exist_ok=True)
-MODELS_DIR.mkdir(parents=True, exist_ok=True)
-REPORTS_DIR.mkdir(parents=True, exist_ok=True)
-RESOURCES_DIR.mkdir(parents=True, exist_ok=True)
-(RESOURCES_DIR / "machine_manuals").mkdir(parents=True, exist_ok=True)
-(RESOURCES_DIR / "bearing_catalogs").mkdir(parents=True, exist_ok=True)
-(RESOURCES_DIR / "datasheets").mkdir(parents=True, exist_ok=True)
+# Path del progetto — definiti in config.py, importati qui
+from .config import DATA_DIR, MODELS_DIR, RESOURCES_DIR, REPORTS_DIR, CACHE_DIR
 
 
 # ============================================================================
@@ -218,8 +163,7 @@ def list_available_signals() -> str:
         if not DATA_DIR.exists():
             DATA_DIR.mkdir(parents=True, exist_ok=True)
             return "[]"
-        
-        SUPPORTED_EXTENSIONS = [".csv", ".txt", ".npy", ".dat", ".mat", ".wav", ".parquet"]
+
         signals = []
         for file_path in DATA_DIR.glob("**/*"):
             if file_path.is_file() and file_path.suffix in SUPPORTED_EXTENSIONS:
@@ -509,93 +453,6 @@ async def load_and_validate_metadata(
     return sampling_rate, segment_duration
 
 
-def load_signal_data(filename: str) -> Optional[np.ndarray]:
-    """
-    Load signal data from file.
-    
-    Supported formats:
-        - .csv, .txt: Comma/tab-separated values (first column used)
-        - .npy: NumPy binary array
-        - .mat: MATLAB files (first numeric variable used)
-        - .wav: WAV audio files (first channel, normalized to [-1, 1])
-        - .parquet: Apache Parquet files (first column used)
-    
-    Args:
-        filename: File name relative to data/signals/
-        
-    Returns:
-        Numpy array with data or None if error
-    """
-    try:
-        file_path = DATA_DIR / filename
-        
-        if not file_path.exists():
-            return None
-        
-        if file_path.suffix == ".npy":
-            return np.load(file_path)
-        
-        elif file_path.suffix in [".csv", ".txt"]:
-            df = pd.read_csv(file_path, header=None)
-            return df.iloc[:, 0].values
-        
-        elif file_path.suffix == ".mat":
-            from scipy.io import loadmat
-            mat_data = loadmat(str(file_path))
-            # Find first numeric variable (skip MATLAB metadata keys)
-            for key, value in mat_data.items():
-                if key.startswith('__'):
-                    continue
-                if isinstance(value, np.ndarray) and value.dtype.kind in ('f', 'i', 'u'):
-                    data = value.flatten()
-                    if len(data) > 0:
-                        return data.astype(np.float64)
-            logger.warning(f"No numeric data found in MAT file: {filename}")
-            return None
-        
-        elif file_path.suffix == ".wav":
-            from scipy.io import wavfile
-            sample_rate, data = wavfile.read(str(file_path))
-            if data.ndim > 1:
-                data = data[:, 0]  # Take first channel
-            # Normalize to float
-            if data.dtype.kind == 'i':
-                data = data.astype(np.float64) / np.iinfo(data.dtype).max
-            return data.astype(np.float64)
-        
-        elif file_path.suffix == ".parquet":
-            df = pd.read_parquet(file_path)
-            return df.iloc[:, 0].values.astype(np.float64)
-        
-        return None
-    
-    except Exception as e:
-        logger.error(f"Error loading signal {filename}: {e}")
-        return None
-
-
-def get_metadata_path(signal_filename: str) -> Path:
-    """
-    Derive the metadata JSON file path from any signal filename.
-    
-    Works with all supported extensions: .csv, .txt, .npy, .mat, .wav, .parquet
-    
-    Args:
-        signal_filename: Signal filename (relative to DATA_DIR)
-        
-    Returns:
-        Path to the corresponding _metadata.json file
-    """
-    p = Path(signal_filename)
-    return DATA_DIR / p.parent / f"{p.stem}_metadata.json"
-
-
-def get_metadata_path_from_dir(data_dir: Path, signal_filename: str) -> Path:
-    """Derive metadata path from signal filename within a specific directory."""
-    stem = Path(signal_filename).stem
-    return data_dir / f"{stem}_metadata.json"
-
-
 # ============================================================================
 
 @mcp.tool()
@@ -609,8 +466,7 @@ def list_signals() -> str:
     try:
         if not DATA_DIR.exists():
             return "No signals directory found"
-        
-        SUPPORTED_EXTENSIONS = [".csv", ".txt", ".npy", ".dat", ".mat", ".wav", ".parquet"]
+
         signals = []
         for file_path in DATA_DIR.glob("**/*"):
             if file_path.is_file() and file_path.suffix in SUPPORTED_EXTENSIONS:
@@ -701,30 +557,20 @@ async def analyze_fft(
     
     # Load data
     signal_data = load_signal_data(filename)
-    
+
     if signal_data is None:
         raise ValueError(f"Unable to load signal from {filename}")
-    
+
     # Extract segment if requested
     full_signal_length = len(signal_data)
     signal_duration_sec = full_signal_length / sampling_rate
-    
+
     if segment_duration is not None and segment_duration < signal_duration_sec:
-        # Calculate segment length in samples
-        segment_samples = int(segment_duration * sampling_rate)
-        
-        # Random start position
-        max_start = full_signal_length - segment_samples
-        if random_seed is not None:
-            np.random.seed(random_seed)
-        start_idx = np.random.randint(0, max_start + 1) if max_start > 0 else 0
-        
-        # Extract segment
-        signal_data = signal_data[start_idx:start_idx + segment_samples]
-        logger.info(f"Analyzing {segment_duration}s random segment from {signal_duration_sec:.1f}s signal (samples {start_idx}-{start_idx + segment_samples})")
+        signal_data = extract_segment(signal_data, segment_duration, sampling_rate, seed=random_seed)
+        logger.info(f"Analyzing {segment_duration}s random segment from {signal_duration_sec:.1f}s signal")
     else:
         logger.info(f"Analyzing full signal ({signal_duration_sec:.1f}s, {full_signal_length} samples)")
-    
+
     # Number of samples
     N = len(signal_data)
     
@@ -846,22 +692,11 @@ async def analyze_envelope(
     signal_duration_sec = full_signal_length / sampling_rate
     
     if segment_duration is not None and segment_duration < signal_duration_sec:
-        # Calculate segment length in samples
-        segment_samples = int(segment_duration * sampling_rate)
-        
-        # Random start position
-        max_start = full_signal_length - segment_samples
-        if random_seed is not None:
-            np.random.seed(random_seed)
-        start_idx = np.random.randint(0, max_start + 1) if max_start > 0 else 0
-        
-        # Extract segment
-        signal_data = signal_data[start_idx:start_idx + segment_samples]
-        logger.info(f"Analyzing {segment_duration}s random segment from {signal_duration_sec:.1f}s signal (samples {start_idx}-{start_idx + segment_samples})")
+        signal_data = extract_segment(signal_data, segment_duration, sampling_rate, seed=random_seed)
+        logger.info(f"Analyzing {segment_duration}s random segment from {signal_duration_sec:.1f}s signal")
     else:
         logger.info(f"Analyzing full signal ({signal_duration_sec:.1f}s, {full_signal_length} samples)")
 
-    
     # Design Butterworth bandpass filter using SOS (numerically stable)
     nyquist = sampling_rate / 2
     low = filter_low / nyquist
@@ -4813,14 +4648,34 @@ ANALYZED BY: ISO 20816-3 Diagnostic System
 # MAIN
 # ============================================================================
 
+def _setup_environment() -> None:
+    """Configura logging e crea le directory necessarie al server.
+
+    Separato da main() per permettere import del modulo senza side-effect.
+    Chiamato esplicitamente solo all'avvio del server.
+    """
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[logging.StreamHandler(sys.stderr)]
+    )
+
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    MODELS_DIR.mkdir(parents=True, exist_ok=True)
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    RESOURCES_DIR.mkdir(parents=True, exist_ok=True)
+    (RESOURCES_DIR / "machine_manuals").mkdir(parents=True, exist_ok=True)
+    (RESOURCES_DIR / "bearing_catalogs").mkdir(parents=True, exist_ok=True)
+    (RESOURCES_DIR / "datasheets").mkdir(parents=True, exist_ok=True)
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+
 def main():
     """Run the MCP server."""
+    _setup_environment()
     logger.info("Starting Predictive Maintenance MCP Server...")
-    
-    # Ensure data directory exists
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
     logger.info(f"Data directory: {DATA_DIR}")
-    
+
     # Run server with stdio transport
     mcp.run(transport="stdio")
 

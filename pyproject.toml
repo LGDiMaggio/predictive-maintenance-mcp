@@ -72,6 +72,18 @@ packages = ["predictive_maintenance_mcp"]
 predictive_maintenance_mcp = "src"
 
 [project.optional-dependencies]
+docs = [
+    "pypdf>=4.0",
+]
+ml = [
+    "scikit-learn>=1.4",
+]
+viz = [
+    "plotly>=5.20",
+]
+full = [
+    "predictive-maintenance-mcp[docs,ml,viz]",
+]
 dev = [
     "pytest>=8.0.0",
     "pytest-cov>=4.1.0",

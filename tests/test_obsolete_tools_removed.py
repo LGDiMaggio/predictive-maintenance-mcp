@@ -4,13 +4,9 @@ Test that obsolete artifact tools have been removed.
 Verifies that the old inline HTML artifact system tools are no longer present.
 """
 
-import sys
 from pathlib import Path
 
-# Add src to path
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
-import machinery_diagnostics_server as server
+import predictive_maintenance_mcp.machinery_diagnostics_server as server
 
 def test_obsolete_tools_removed():
     """Test that obsolete inline artifact tools are removed."""
