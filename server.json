@@ -3,12 +3,12 @@
   "name": "io.github.LGDiMaggio/predictive-maintenance-mcp",
   "title": "Predictive Maintenance",
   "description": "Industrial vibration analysis, bearing fault diagnosis, ISO 20816, and ML anomaly detection",
-  "version": "0.5.0",
+  "version": "0.7.0",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "predictive-maintenance-mcp",
-      "version": "0.5.0",
+      "version": "0.7.0",
       "transport": {
         "type": "stdio"
       }

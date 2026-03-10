@@ -59,6 +59,10 @@ This project is built around the **Model Context Protocol (MCP)** — an open st
 │   │ ML Anomaly     │  │ Manual/PDF    │  │ Bearing       │  │
 │   │ Detection      │  │ Reader        │  │ Catalog       │  │
 │   └────────────────┘  └───────────────┘  └───────────────┘  │
+│   ┌────────────────┐  ┌───────────────┐                     │
+│   │ RAG Document   │  │ DOCX Report   │                     │
+│   │ Search (FAISS) │  │ Generation    │                     │
+│   └────────────────┘  └───────────────┘                     │
 └──────────────┬───────────────────────────────────────────────┘
                │
                ▼
@@ -173,7 +177,11 @@ This project serves two audiences. Pick the door that fits you:
   
   </details>
 - **📁 Multi-Format Support** — Load signals from CSV, MAT (MATLAB), WAV, NPY, and Parquet files
-- **🚀 Zero Configuration** — Works out of the box with sample data, auto-detects sampling rates from metadata
+- **🔎 RAG Document Search** — Vector search (FAISS + sentence-transformers) with TF-IDF fallback over machine manuals and bearing catalogs. Auto-cached.
+- **📝 DOCX Reports** — Generate structured Word diagnostic reports alongside interactive HTML (requires `python-docx`)
+- **🔍 OCR for Scanned PDFs** — Automatic OCR fallback (Tesseract) for image-based equipment manuals
+- **⚡ LLM-Optimised Output** — Tool responses return compact summaries (top peaks, statistics) instead of raw arrays, keeping LLM context windows lean
+- **�🚀 Zero Configuration** — Works out of the box with sample data, auto-detects sampling rates from metadata
 
 ---
 
@@ -393,12 +401,13 @@ Tools perform **computations and generate outputs**:
 - **`generate_fft_report`** — Interactive FFT spectrum HTML report with peak table
 - **`generate_envelope_report`** — Envelope analysis report with bearing fault markers
 - **`generate_iso_report`** — ISO 20816-3 evaluation with zone visualization
+- **`generate_diagnostic_report_docx`** — Structured Word (.docx) diagnostic report (requires `python-docx`)
 - **`generate_pca_visualization_report`** — 2D/3D PCA projection report for anomaly exploration
 - **`generate_feature_comparison_report`** — Feature-level comparison report across signals/classes
 - **`list_html_reports`** — List all generated reports with metadata
 - **`get_report_info`** — Get report details without loading full HTML
 
-> 💡 **All reports are interactive Plotly visualizations saved to `reports/` directory**
+> 💡 **HTML reports are interactive Plotly visualizations saved to `reports/`. DOCX reports are structured Word documents for stakeholders.**
 
 </details>
 
@@ -410,6 +419,7 @@ Tools perform **computations and generate outputs**:
 - **`calculate_bearing_characteristic_frequencies`** — Calculate BPFO/BPFI/BSF/FTF from geometry
 - **`read_manual_excerpt`** — Read manual text excerpt (configurable page limit)
 - **`search_bearing_catalog`** — Search bearing geometry in local catalog (20+ common bearings)
+- **`search_documentation`** — Semantic search across machine manuals and bearing catalogs (FAISS vector search or TF-IDF fallback)
 
 **MCP Resources:**
 - `manual://list` — Browse available manuals
@@ -442,7 +452,9 @@ The `skills/` directory contains pre-built guided workflows that orchestrate mul
 | [**quick-screening**](skills/quick-screening/SKILL.md) | 5 | Fast health screening with clear Healthy/Suspicious/Critical classification |
 | [**report-generation**](skills/report-generation/SKILL.md) | 6 | Professional HTML report generation with composite multi-report option |
 
-> 💡 Skills are standalone markdown files that any MCP-compatible LLM client can use as system instructions to coordinate multi-step diagnostic workflows.
+> ⚠️ **Skills are Claude / GitHub Copilot-specific.** They use [SKILL.md with YAML frontmatter](https://docs.anthropic.com/en/docs/agents-and-tools/claude-code/skills), a convention recognised by Claude.ai, Claude Code, and Copilot agents. Other LLM clients can still read them as plain markdown, but automatic skill invocation requires a Claude or Copilot-compatible host.
+>
+> **MCP tools, resources, and HTML reports are LLM-agnostic** — they work with any MCP-compatible client (ChatGPT, Ollama, LM Studio, etc.).
 
 ---
 
@@ -480,10 +492,11 @@ The system follows a **hybrid MCP architecture** combining Resources (direct dat
 │  │  TOOLS (Analysis & Processing)                       │  │
 │  │  • FFT, Envelope, ISO 20816-3                        │  │
 │  │  • ML Anomaly Detection                              │  │
-│  │  • Report Generation (HTML)                          │  │
+│  │  • Report Generation (HTML + DOCX)                   │  │
 │  │  • Manual Spec Extraction                            │  │
 │  │  • Bearing Frequency Calculation                     │  │
 │  │  • Bearing Catalog Search                            │  │
+│  │  • RAG Document Search (FAISS / TF-IDF)               │  │
 │  └──────────────────────────────────────────────────────┘  │
 └────────────────────┬────────────────────────────────────────┘
                      │
@@ -523,8 +536,8 @@ The system follows a **hybrid MCP architecture** combining Resources (direct dat
 
 **Key Features:**
 - ✅ **4 MCP Resources** — Direct read access to signals and manuals
-- ✅ **25 MCP Tools** — Complete diagnostic workflow (analysis, plotting, ML, reporting, manuals)
-- ✅ **4 MCP Prompts** — Guided diagnostic workflows
+- ✅ **27 MCP Tools** — Complete diagnostic workflow (analysis, plotting, ML, reporting incl. DOCX, manuals, RAG search)
+- ✅ **3 Copilot Skills** — Guided diagnostic workflows (Claude / Copilot-specific)
 - ✅ **Hybrid Architecture** — Resources for reading, Tools for processing
 - ✅ **Local-First** — All data stays on your machine (privacy-preserving)
 
@@ -601,6 +614,7 @@ All analysis tools generate **interactive HTML reports** with Plotly visualizati
 | 🔊 **FFT Spectrum** | `generate_fft_report()` | Frequency analysis, peak detection, harmonic markers |
 | 🎯 **Envelope Analysis** | `generate_envelope_report()` | Bearing fault frequencies, modulation detection |
 | 📏 **ISO 20816-3** | `generate_iso_report()` | Vibration severity zones, compliance assessment |
+| 📝 **Diagnostic DOCX** | `generate_diagnostic_report_docx()` | Word document with stats, peaks, ISO, diagnosis |
 
 All reports include:
 - Interactive Plotly charts (pan/zoom/hover)
@@ -628,7 +642,7 @@ Generate FFT report for baseline_1.csv
 | [Ollama Guide](docs/OLLAMA_GUIDE.md) | Engineers | Use with local LLMs (fully air-gapped) |
 | [CHANGELOG.md](CHANGELOG.md) | Everyone | Version history |
 | [data/README.md](data/README.md) | Everyone | Dataset documentation |
-| [skills/](skills/) | 🤖 LLM Clients | Copilot Skills — guided diagnostic workflows (bearing, screening, reporting) |
+| [skills/](skills/) | 🤖 Claude / Copilot | Copilot Skills — guided diagnostic workflows (bearing, screening, reporting) |
 
 ---
 
@@ -701,13 +715,12 @@ npx @modelcontextprotocol/inspector python -m predictive_maintenance_mcp
 
 ## 🚀 Roadmap
 
-### ✨ Recent: v0.5.0 — Code Quality & Multi-Format Support
+### ✨ Recent: v0.7.0 — Vector Search, OCR & DOCX Reports
 
-- 📂 **Multi-format signal loading** — CSV, MAT, WAV, NPY, Parquet via unified `load_signal_data()`
-- 🔧 **ML code deduplication** — 4 helper functions reduce ~163 statements
-- 📦 **pypdf migration** — Replaced deprecated PyPDF2 with pypdf
-- ▶️ **`python -m` support** — Run as `python -m predictive_maintenance_mcp`
-- 🧹 **Consolidated metadata reads** — ISO evaluation no longer double-reads metadata files
+- 🔎 **FAISS vector search** — Semantic document retrieval with sentence-transformers (TF-IDF fallback when not installed)
+- 🔍 **OCR for scanned PDFs** — Automatic Tesseract OCR fallback for image-based equipment manuals
+- 📝 **DOCX diagnostic reports** — Structured Word documents with statistics, peaks, ISO evaluation, and diagnostic summary
+- ⚡ **Compact FFT output** — Top-20 peaks + RMS/stats instead of full arrays (~200 KB → ~2 KB)
 
 ### 🔮 Planned Enhancements
 
@@ -718,8 +731,9 @@ Each item below links to an open issue where you can **discuss, contribute, or c
 | ✅ Done | **Parquet/MAT/WAV/NPY data format support** | v0.5.0 | — |
 | 🔴 High | **Customizable ISO report thresholds** | Open | [Good First Issue](https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues) |
 | 🔴 High | **Docker image for zero-install setup** | Open | [Help Wanted](https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues) |
-| 🟡 Medium | **Vector search for large documents** (ChromaDB/FAISS) | Planned | [Discuss](https://github.com/LGDiMaggio/predictive-maintenance-mcp/discussions) |
-| 🟡 Medium | **OCR for scanned PDF manuals** (Tesseract) | Planned | [Discuss](https://github.com/LGDiMaggio/predictive-maintenance-mcp/discussions) |
+| ✅ Done | **Vector search for large documents** (FAISS + sentence-transformers) | v0.7.0 | — |
+| ✅ Done | **OCR for scanned PDF manuals** (Tesseract) | v0.7.0 | — |
+| ✅ Done | **DOCX diagnostic reports** (python-docx) | v0.7.0 | — |
 | 🟡 Medium | **Multi-signal trending** — Compare historical data | Planned | [Discuss](https://github.com/LGDiMaggio/predictive-maintenance-mcp/discussions) |
 | 🟢 Future | **Real-time streaming** — Live vibration monitoring | Concept | — |
 | 🟢 Future | **Dashboard** — Multi-asset fleet monitoring | Concept | — |
@@ -766,7 +780,7 @@ If you use this server in your research or projects, please cite:
   title = {Predictive Maintenance MCP Server: An open-source framework for integrating Large Language Models with predictive maintenance and fault diagnosis workflows},
   author = {Di Maggio, Luigi Gianpio},
   year = {2025},
-  version = {0.5.0},
+  version = {0.7.0},
   url = {https://github.com/LGDiMaggio/predictive-maintenance-mcp},
   doi = {10.5281/zenodo.17611542}
 }

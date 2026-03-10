@@ -9,12 +9,25 @@ from typing import Any, Optional
 from pydantic import BaseModel, Field
 
 
+class SpectralPeak(BaseModel):
+    """A single peak in the frequency spectrum."""
+    frequency_hz: float = Field(description="Peak frequency in Hz")
+    magnitude: float = Field(description="Peak magnitude (linear)")
+    magnitude_db: float = Field(description="Peak magnitude in dB (relative to max)")
+    note: str = Field(default="", description="Optional annotation (e.g. harmonic label)")
+
+
 class FFTResult(BaseModel):
-    """FFT analysis result with structured output."""
-    frequencies: list[float] = Field(description="Frequency array (Hz)")
-    magnitudes: list[float] = Field(description="Magnitude array")
+    """FFT analysis result — compact summary (top peaks + stats, no full arrays).
+    
+    Full-length arrays are never returned to the LLM to avoid context overflow.
+    Use generate_fft_report() or plot_spectrum() for visual inspection."""
+    top_peaks: list[SpectralPeak] = Field(description="Top spectral peaks sorted by magnitude")
     peak_frequency: float = Field(description="Dominant peak frequency (Hz)")
     peak_magnitude: float = Field(description="Dominant peak magnitude")
+    rms_spectral: float = Field(description="RMS of the magnitude spectrum")
+    total_bins: int = Field(description="Total number of FFT bins computed")
+    freq_range_hz: list[float] = Field(description="[min_freq, max_freq] of the spectrum")
     sampling_rate: float = Field(description="Sampling frequency (Hz)")
     num_samples: int = Field(description="Number of analyzed samples")
     frequency_resolution: float = Field(description="Frequency resolution (Hz)")

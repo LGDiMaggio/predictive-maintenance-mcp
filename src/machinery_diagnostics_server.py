@@ -37,7 +37,7 @@ from mcp.server.session import ServerSession
 
 # Import Pydantic models
 from .models import (
-    FFTResult, EnvelopeResult, StatisticalResult, SignalInfo,
+    FFTResult, SpectralPeak, EnvelopeResult, StatisticalResult, SignalInfo,
     ISO20816Result, FeatureExtractionResult, AnomalyModelResult,
     AnomalyPredictionResult
 )
@@ -49,6 +49,7 @@ from .report_generator import (
     save_iso_report,
     read_report_metadata,
     list_reports,
+    save_diagnostic_report_docx,
     REPORTS_DIR
 )
 from .document_reader import (
@@ -87,6 +88,14 @@ mcp = FastMCP(
     - Professional HTML report generation (saved to reports/ directory)
     - Automatic peak detection and harmonic identification
     - Guided diagnostic workflows (prompts)
+    - Document search (RAG) across machine manuals and bearing catalogs
+
+    Output efficiency:
+    - All spectral tools return COMPACT summaries (top peaks + stats), NOT full arrays
+    - Signal resources return metadata + statistics only, NOT raw samples
+    - Reports are saved as HTML files; only path + summary returned to chat
+    - Use generate_*_report() or plot_*() for full visual inspection
+    - NEVER attempt to display or return full-length arrays in chat
 
     Report Generation System:
     - All visualizations are generated as professional HTML files
@@ -94,6 +103,11 @@ mcp = FastMCP(
     - LLM should inform user about report location and NOT display HTML content
     - Use list_html_reports() to see available reports
     - Use get_report_info() to get report info without consuming tokens
+
+    Documentation Search (RAG):
+    - Use search_documentation() to find relevant passages in manuals and catalogs
+    - Prefer search_documentation() over read_manual_excerpt() for targeted queries
+    - Use read_manual_excerpt() only when you need to read consecutive pages
 
     Evidence-based inference policy (hard rules):
     1) Do NOT infer fault type from filenames, paths, or user-provided labels. Treat filenames as opaque identifiers.
@@ -192,15 +206,19 @@ def list_available_signals() -> str:
 @mcp.resource("signal://read/{filename}")
 def read_signal_file(filename: str) -> str:
     """
-    Read a signal file and return the data.
+    Read a signal file and return metadata summary.
     
     Supports formats: CSV, TXT, NPY, MAT (MATLAB), WAV (audio), Parquet
+    
+    NOTE: Returns metadata and statistics only — raw samples are NOT included
+    to avoid context overflow. Use plot_signal() for visual inspection or
+    load the signal in analysis tools (analyze_fft, analyze_envelope, etc.).
     
     Args:
         filename: Name of the file to read
         
     Returns:
-        JSON with signal data (first 1000 samples as preview)
+        JSON with signal metadata and basic statistics (no raw data)
     """
     try:
         file_path = DATA_DIR / filename
@@ -214,17 +232,24 @@ def read_signal_file(filename: str) -> str:
         if signal_array is None:
             return f'{{"error": "Could not load signal from {filename}. Unsupported format or read error."}}'
         
-        signal_data = signal_array.tolist()
-        
+        # Return metadata + statistics, NOT raw samples
+        rms = float(np.sqrt(np.mean(signal_array**2)))
         result = {
             "filename": filename,
-            "num_samples": len(signal_data),
-            "data": signal_data[:1000],  # First 1000 samples to avoid overload
-            "total_samples": len(signal_data),
-            "preview_only": len(signal_data) > 1000
+            "num_samples": len(signal_array),
+            "duration_hint": f"{len(signal_array)} samples (provide sampling_rate for duration in seconds)",
+            "statistics": {
+                "rms": round(rms, 6),
+                "peak": round(float(np.max(np.abs(signal_array))), 6),
+                "mean": round(float(np.mean(signal_array)), 6),
+                "std": round(float(np.std(signal_array)), 6),
+                "min": round(float(np.min(signal_array)), 6),
+                "max": round(float(np.max(signal_array)), 6),
+            },
+            "note": "Raw samples not included — use analysis tools or plot_signal() for inspection."
         }
         
-        return pd.Series(result).to_json(indent=2)
+        return json.dumps(result, indent=2)
     
     except Exception as e:
         logger.error(f"Error reading signal {filename}: {e}")
@@ -606,11 +631,32 @@ async def analyze_fft(
     # Calculate frequency resolution
     frequency_resolution = sampling_rate / N
     
+    # Build compact summary: top N peaks + stats (no full arrays)
+    top_n = 20
+    max_mag = float(np.max(magnitudes)) if len(magnitudes) > 0 else 1e-12
+    order = np.argsort(magnitudes)[::-1]
+    n_peaks = min(top_n, len(order))
+    top_idx = np.sort(order[:n_peaks])  # sort back by frequency
+    
+    top_peaks = []
+    for i in top_idx:
+        mag_val = float(magnitudes[i])
+        mag_db = float(20 * np.log10(max(mag_val, 1e-12) / max(max_mag, 1e-12)))
+        top_peaks.append(SpectralPeak(
+            frequency_hz=round(float(frequencies[i]), 3),
+            magnitude=round(mag_val, 6),
+            magnitude_db=round(mag_db, 2)
+        ))
+    
+    rms_spectral = float(np.sqrt(np.mean(magnitudes**2)))
+    
     return FFTResult(
-        frequencies=frequencies.tolist(),
-        magnitudes=magnitudes.tolist(),
+        top_peaks=top_peaks,
         peak_frequency=peak_frequency,
         peak_magnitude=peak_magnitude,
+        rms_spectral=round(rms_spectral, 6),
+        total_bins=len(frequencies),
+        freq_range_hz=[round(float(frequencies[0]), 3), round(float(frequencies[-1]), 3)] if len(frequencies) > 0 else [0, 0],
         sampling_rate=sampling_rate,
         num_samples=N,
         frequency_resolution=frequency_resolution
@@ -2611,6 +2657,113 @@ async def search_bearing_catalog(
             "error": str(e),
             "suggestion": "Check that bearing_catalogs directory exists and contains common_bearings_catalog.json"
         }
+
+
+# ============================================================================
+# TOOLS - DOCUMENT SEARCH (RAG)
+# ============================================================================
+
+@mcp.tool()
+async def search_documentation(
+    query: str,
+    top_k: int = 5,
+    force_reindex: bool = False,
+    ctx: Context | None = None
+) -> dict[str, Any]:
+    """
+    Semantic search across all machine manuals and bearing catalogs.
+    
+    Uses vector retrieval (RAG) to find the most relevant passages from
+    PDFs, text files, and JSON catalogs in resources/.
+    
+    Backends (chosen automatically):
+      - FAISS + sentence-transformers  (pip install predictive-maintenance-mcp[vector-search])
+      - TF-IDF keyword search          (default, zero extra deps)
+    
+    The index is built lazily on first call and cached on disk.  It is
+    automatically rebuilt when source files change.
+    
+    Args:
+        query: Natural-language question or keywords
+               (e.g. "bearing 6205 geometry", "maintenance interval pump")
+        top_k: Number of passages to return (default: 5)
+        force_reindex: Rebuild the index even if cache is fresh (default: False)
+        ctx: MCP context
+    
+    Returns:
+        Dictionary with ranked results, each containing text passage, source
+        file, relevance score, and chunk index.
+    """
+    from .rag import get_or_build_index, backend_name
+
+    if ctx:
+        await ctx.info(f"Searching documentation for: {query!r} (backend: {backend_name()})")
+
+    idx = get_or_build_index(force_rebuild=force_reindex)
+
+    if idx.num_chunks == 0:
+        return {
+            "results": [],
+            "backend": backend_name(),
+            "note": "No documents indexed. Add PDFs or TXT files to resources/machine_manuals/ or resources/bearing_catalogs/."
+        }
+
+    results = idx.query(query, top_k=top_k)
+
+    if ctx:
+        await ctx.info(f"Found {len(results)} relevant passages from {len(set(r['source'] for r in results))} documents")
+
+    return {
+        "query": query,
+        "num_results": len(results),
+        "total_chunks_indexed": idx.num_chunks,
+        "backend": backend_name(),
+        "results": results,
+    }
+
+
+# ============================================================================
+# TOOLS - DOCX REPORT GENERATION
+# ============================================================================
+
+@mcp.tool()
+async def generate_diagnostic_report_docx(
+    signal_file: str,
+    sections: dict[str, Any],
+    title: str | None = None,
+    ctx: Context | None = None,
+) -> dict[str, Any]:
+    """
+    Generate a structured Word (.docx) diagnostic report.
+
+    Requires: ``pip install predictive-maintenance-mcp[docx]``
+
+    ``sections`` is a dict whose keys define what to include (all optional):
+      - statistics:           dict  (RMS, Kurtosis, Crest Factor …)
+      - fft_peaks:            list  [{frequency, magnitude_db, note}, …]
+      - envelope_peaks:       list  [{frequency, magnitude_db, match}, …]
+      - bearing_frequencies:  dict  {BPFO, BPFI, BSF, FTF}
+      - iso:                  dict  (from evaluate_iso_20816 output)
+      - diagnosis:            str   (free-text diagnostic summary)
+
+    Args:
+        signal_file: Signal filename used for the report title / filename
+        sections: Content sections to include (see above)
+        title: Optional custom report title
+        ctx: MCP context
+
+    Returns:
+        Dictionary with file_path, file_name, and per-section summary.
+    """
+    if ctx:
+        await ctx.info(f"Generating DOCX diagnostic report for {signal_file}")
+
+    result = save_diagnostic_report_docx(signal_file, sections, title=title)
+
+    if ctx and "error" not in result:
+        await ctx.info(f"DOCX report saved: {result['file_name']}")
+
+    return result
 
 
 # ============================================================================

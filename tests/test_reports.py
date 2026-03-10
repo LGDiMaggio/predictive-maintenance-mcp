@@ -7,8 +7,6 @@ from pathlib import Path
 
 from predictive_maintenance_mcp.signal_loader import load_signal_data
 from predictive_maintenance_mcp.machinery_diagnostics_server import (
-    analyze_fft,
-    analyze_envelope,
     evaluate_iso_20816,
 )
 from predictive_maintenance_mcp.config import DATA_DIR
@@ -36,13 +34,23 @@ async def run_report_tests():
     signal = load_signal_data(signal_file)
 
     if signal is not None:
-        fft_result = await analyze_fft(signal_file, sampling_rate=97656, max_frequency=5000)
+        # Compute FFT arrays directly (analyze_fft returns compact peaks only)
+        from scipy.fft import fft, fftfreq
+
+        sampling_rate = 97656
+        N = len(signal)
+        window = np.hamming(N)
+        fft_values = fft(signal * window)
+        freqs = fftfreq(N, 1 / sampling_rate)
+        pos = freqs > 0
+        frequencies = freqs[pos]
+        magnitudes = 2.0 * np.abs(fft_values[pos]) / N
 
         report_result = save_fft_report(
             signal_file=signal_file,
-            sampling_rate=97656,
-            frequencies=np.array(fft_result.frequencies),
-            magnitudes=np.array(fft_result.magnitudes),
+            sampling_rate=sampling_rate,
+            frequencies=frequencies,
+            magnitudes=magnitudes,
             signal_data=signal,
             max_freq=5000,
             num_peaks=15

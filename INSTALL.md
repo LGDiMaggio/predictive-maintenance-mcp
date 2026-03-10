@@ -234,6 +234,34 @@ python validate_server.py
 - `scikit-learn>=1.7.2` - Machine learning
 - `plotly>=5.24.0` - Interactive visualizations
 - `pydantic>=2.12.0` - Data validation
+- `pypdf>=4.0` - PDF text extraction
+
+### Optional Extras
+
+Install any combination using pip extras:
+
+```bash
+# Semantic vector search (FAISS + sentence-transformers)
+pip install predictive-maintenance-mcp[vector-search]
+
+# OCR for scanned PDF manuals (Tesseract)
+pip install predictive-maintenance-mcp[ocr]
+
+# DOCX diagnostic report generation
+pip install predictive-maintenance-mcp[docx]
+
+# Everything (all optional features)
+pip install predictive-maintenance-mcp[full]
+```
+
+| Extra | Packages | Purpose |
+|-------|----------|---------|
+| `vector-search` | `faiss-cpu`, `sentence-transformers` | Semantic document search (FAISS). Falls back to TF-IDF when not installed. |
+| `ocr` | `pytesseract`, `Pillow`, `pdf2image` | OCR for scanned/image-based PDF manuals. Requires [Poppler](https://github.com/ossamamehmood/Poppler-windows/releases) on system PATH. |
+| `docx` | `python-docx` | Generate structured Word (.docx) diagnostic reports. |
+| `full` | All of the above | Install all optional features at once. |
+
+> **Note**: `vector-search` pulls in PyTorch (~2 GB). For lightweight installs, skip it — TF-IDF keyword search works well for technical documentation.
 
 ### Development Dependencies
 - `pytest>=8.0.0` - Testing

@@ -5,6 +5,35 @@ All notable changes to the Predictive Maintenance MCP Server project will be doc
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2025-07-14
+
+### Added
+- **FAISS vector search** — `search_documentation` now uses FAISS + sentence-transformers for semantic retrieval when installed (`pip install predictive-maintenance-mcp[vector-search]`). Falls back to TF-IDF keyword search when not installed. Dual-backend `DocumentIndex` in `src/rag.py`.
+- **OCR for scanned PDFs** — `document_reader.extract_text_from_pdf()` automatically falls back to Tesseract OCR for pages with empty/minimal text. Requires optional `pytesseract` + `pdf2image` + Poppler.
+- **DOCX diagnostic reports** — New `generate_diagnostic_report_docx` MCP tool and `save_diagnostic_report_docx()` in report generator. Creates structured Word documents with statistics tables, FFT/envelope peaks, bearing frequencies, ISO evaluation, and diagnostic summary. Requires optional `python-docx`.
+- **New optional dependency groups** in `pyproject.toml`: `vector-search`, `ocr`, `docx`. The `full` extra now includes all of them.
+- **Overlapping chunking** — New `chunk_text()` helper in RAG module for character-level overlapping chunks alongside paragraph-aware chunking.
+
+### Changed
+- **`search_documentation`** now reports active backend (`faiss` or `tfidf`) in response
+- **27 MCP tools** (was 26) — added `generate_diagnostic_report_docx`
+- Version bumped to 0.7.0
+
+## [0.6.0] - 2025-07-08
+
+### Added
+- **RAG-based document search** — New `search_documentation` MCP tool using TF-IDF indexing over machine manuals and bearing catalogs (`src/rag.py`)
+- **`SpectralPeak` model** — Structured representation for individual FFT peaks (frequency, magnitude, dB, annotation)
+
+### Changed
+- **Compact FFT output** — `analyze_fft` now returns top-20 peaks + RMS/stats instead of full frequency/magnitude arrays (~200 KB → ~2 KB per call), eliminating LLM context overflow
+- **Compact signal resource** — `read_signal_file` returns metadata + statistics only (no raw samples), preventing large JSON payloads
+- **Server instructions** updated with output-efficiency policy and RAG documentation guidance
+- **`pypdf`** promoted from optional to required dependency
+
+### Fixed
+- LLM "output too long" errors caused by full-array serialisation in `FFTResult`
+
 ## [0.5.0] - 2026-02-16
 
 ### Added
@@ -138,7 +167,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Roadmap
 
-### Planned for v0.6.0
+### Planned for v0.7.0
 - **📦 Docker image** for zero-install setup
 - **📏 Customizable ISO report thresholds**
 - Multi-signal comparison tools

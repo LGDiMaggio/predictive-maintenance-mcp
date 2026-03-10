@@ -1,11 +1,15 @@
 """
-HTML Report Generation Tools
+Report Generation Tools
 
 Professional report generation system for machinery diagnostics.
-All reports are saved as standalone HTML files in the reports/ directory.
+Reports are saved in the reports/ directory as:
+  - **HTML** (default) — Interactive Plotly charts, standalone files.
+  - **DOCX** (optional) — Structured Word documents for stakeholders.
+    Requires ``python-docx``: ``pip install predictive-maintenance-mcp[docx]``
 """
 
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 import json
@@ -24,6 +28,16 @@ from .html_templates import (
 from .config import REPORTS_DIR
 
 logger = logging.getLogger(__name__)
+
+# Optional DOCX support
+try:
+    from docx import Document as DocxDocument
+    from docx.shared import Inches, Pt, RGBColor
+    from docx.enum.table import WD_TABLE_ALIGNMENT
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    HAS_DOCX = True
+except ImportError:
+    HAS_DOCX = False
 
 
 def save_fft_report(
@@ -411,3 +425,140 @@ def list_reports() -> List[Dict[str, Any]]:
     reports.sort(key=lambda x: x['created'], reverse=True)
     
     return reports
+
+
+# ============================================================================
+# DOCX REPORT GENERATION (optional: requires python-docx)
+# ============================================================================
+
+def save_diagnostic_report_docx(
+    signal_file: str,
+    sections: Dict[str, Any],
+    title: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Generate a structured Word (.docx) diagnostic report.
+
+    ``sections`` is a dict whose keys define what to include.  Recognised
+    keys (all optional):
+
+    - ``statistics``  –  dict with RMS, Kurtosis, Crest Factor …
+    - ``fft_peaks``   –  list of ``{frequency, magnitude_db, note}``
+    - ``envelope_peaks`` – list of ``{frequency, magnitude_db, match}``
+    - ``bearing_frequencies`` – dict with BPFO, BPFI, BSF, FTF
+    - ``iso``         –  dict from ``evaluate_iso_20816`` output
+    - ``diagnosis``   –  free-text diagnostic summary (str)
+
+    Returns:
+        Dictionary with file path and metadata, or an error dict when
+        python-docx is not installed.
+    """
+    if not HAS_DOCX:
+        return {
+            "error": "python-docx is not installed. Install with: pip install predictive-maintenance-mcp[docx]",
+        }
+
+    doc = DocxDocument()
+
+    # -- styles -----------------------------------------------------------
+    style = doc.styles["Normal"]
+    style.font.name = "Calibri"
+    style.font.size = Pt(11)
+
+    # -- title ------------------------------------------------------------
+    heading = title or f"Diagnostic Report — {signal_file}"
+    doc.add_heading(heading, level=0)
+    doc.add_paragraph(
+        f"Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}  •  "
+        f"Signal: {signal_file}"
+    )
+
+    # -- 1. Statistics table ----------------------------------------------
+    stats = sections.get("statistics")
+    if stats and isinstance(stats, dict):
+        doc.add_heading("Statistical Summary", level=1)
+        table = doc.add_table(rows=1, cols=2, style="Light Shading Accent 1")
+        table.alignment = WD_TABLE_ALIGNMENT.CENTER
+        hdr = table.rows[0].cells
+        hdr[0].text, hdr[1].text = "Parameter", "Value"
+        for key, val in stats.items():
+            row = table.add_row().cells
+            row[0].text = str(key)
+            row[1].text = f"{val:.6g}" if isinstance(val, float) else str(val)
+
+    # -- 2. FFT peaks table -----------------------------------------------
+    fft_peaks = sections.get("fft_peaks")
+    if fft_peaks:
+        doc.add_heading("FFT Spectrum — Top Peaks", level=1)
+        table = doc.add_table(rows=1, cols=3, style="Light Shading Accent 1")
+        table.alignment = WD_TABLE_ALIGNMENT.CENTER
+        hdr = table.rows[0].cells
+        hdr[0].text, hdr[1].text, hdr[2].text = "Frequency (Hz)", "Magnitude (dB)", "Note"
+        for p in fft_peaks:
+            row = table.add_row().cells
+            row[0].text = f"{p['frequency']:.2f}"
+            row[1].text = f"{p['magnitude_db']:.1f}"
+            row[2].text = p.get("note", "")
+
+    # -- 3. Envelope peaks table ------------------------------------------
+    env_peaks = sections.get("envelope_peaks")
+    if env_peaks:
+        doc.add_heading("Envelope Analysis — Top Peaks", level=1)
+        table = doc.add_table(rows=1, cols=3, style="Light Shading Accent 1")
+        table.alignment = WD_TABLE_ALIGNMENT.CENTER
+        hdr = table.rows[0].cells
+        hdr[0].text, hdr[1].text, hdr[2].text = "Frequency (Hz)", "Magnitude (dB)", "Bearing Match"
+        for p in env_peaks:
+            row = table.add_row().cells
+            row[0].text = f"{p['frequency']:.2f}"
+            row[1].text = f"{p['magnitude_db']:.1f}"
+            row[2].text = p.get("match", "")
+
+    # -- 4. Bearing characteristic frequencies ----------------------------
+    bf = sections.get("bearing_frequencies")
+    if bf and isinstance(bf, dict):
+        doc.add_heading("Bearing Characteristic Frequencies", level=1)
+        table = doc.add_table(rows=1, cols=2, style="Light Shading Accent 1")
+        table.alignment = WD_TABLE_ALIGNMENT.CENTER
+        hdr = table.rows[0].cells
+        hdr[0].text, hdr[1].text = "Frequency", "Value (Hz)"
+        for name, val in bf.items():
+            row = table.add_row().cells
+            row[0].text = str(name)
+            row[1].text = f"{val:.2f}" if isinstance(val, (int, float)) else str(val)
+
+    # -- 5. ISO 20816 evaluation ------------------------------------------
+    iso = sections.get("iso")
+    if iso and isinstance(iso, dict):
+        doc.add_heading("ISO 20816-3 Evaluation", level=1)
+        zone = iso.get("zone", "?")
+        severity = iso.get("severity_level", "?")
+        rms_v = iso.get("rms_velocity", 0)
+        p = doc.add_paragraph()
+        p.add_run(f"Zone {zone}").bold = True
+        p.add_run(f"  —  {severity}  (RMS velocity: {rms_v:.3f} mm/s)")
+        if iso.get("thresholds"):
+            doc.add_paragraph(f"Thresholds: {iso['thresholds']}")
+
+    # -- 6. Free-text diagnosis -------------------------------------------
+    diagnosis = sections.get("diagnosis")
+    if diagnosis:
+        doc.add_heading("Diagnostic Summary", level=1)
+        doc.add_paragraph(str(diagnosis))
+
+    # -- save -------------------------------------------------------------
+    safe_name = Path(signal_file).stem.replace("/", "_").replace("\\", "_")
+    output_file = REPORTS_DIR / f"diagnostic_{safe_name}.docx"
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    doc.save(str(output_file))
+
+    logger.info("DOCX report saved: %s", output_file.name)
+
+    return {
+        "file_path": str(output_file.absolute()),
+        "file_name": output_file.name,
+        "file_size_kb": output_file.stat().st_size / 1024,
+        "report_type": "diagnostic_docx",
+        "sections_included": [k for k in sections if sections[k]],
+        "message": f"✓ DOCX report saved: {output_file.name} ({output_file.stat().st_size / 1024:.1f} KB)",
+    }

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "predictive-maintenance-mcp"
-version = "0.5.0"
+version = "0.7.0"
 description = "Proof of Concept: AI-Powered Predictive Maintenance & Fault Diagnosis MCP Server - Industrial machinery condition monitoring, vibration analysis, bearing diagnostics, and ML-based anomaly detection through Model Context Protocol"
 readme = "README.md"
 authors = [
@@ -51,6 +51,7 @@ dependencies = [
     "pandas>=2.3.3",
     "plotly>=5.24.0",
     "pydantic>=2.12.0",
+    "pypdf>=4.0",
     "scikit-learn>=1.7.2",
     "scipy>=1.16.2",
 ]
@@ -81,8 +82,20 @@ ml = [
 viz = [
     "plotly>=5.20",
 ]
+vector-search = [
+    "faiss-cpu>=1.7",
+    "sentence-transformers>=2.0",
+]
+ocr = [
+    "pytesseract>=0.3",
+    "Pillow>=10.0",
+    "pdf2image>=1.16",
+]
+docx = [
+    "python-docx>=1.0",
+]
 full = [
-    "predictive-maintenance-mcp[docs,ml,viz]",
+    "predictive-maintenance-mcp[docs,ml,viz,vector-search,ocr,docx]",
 ]
 dev = [
     "pytest>=8.0.0",

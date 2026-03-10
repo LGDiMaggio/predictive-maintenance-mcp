@@ -32,6 +32,14 @@ except ImportError:
     HAS_PDF = False
     logging.warning("pypdf not installed. PDF reading disabled.")
 
+# OCR for scanned PDFs (optional)
+try:
+    from PIL import Image
+    import pytesseract
+    HAS_OCR = True
+except ImportError:
+    HAS_OCR = False
+
 # Math for bearing frequency calculations
 import math
 
@@ -48,6 +56,9 @@ def extract_text_from_pdf(pdf_path: Path, max_pages: Optional[int] = None) -> st
     """
     Extract text from PDF file.
     
+    Falls back to OCR (pytesseract) for scanned/image-based pages when
+    the standard text layer is empty or nearly empty.
+    
     Args:
         pdf_path: Path to PDF file
         max_pages: Maximum number of pages to extract (None = all pages)
@@ -62,6 +73,7 @@ def extract_text_from_pdf(pdf_path: Path, max_pages: Optional[int] = None) -> st
         raise FileNotFoundError(f"PDF not found: {pdf_path}")
     
     text_parts = []
+    ocr_used = False
     
     with open(pdf_path, 'rb') as file:
         pdf_reader = pypdf.PdfReader(file)
@@ -70,9 +82,48 @@ def extract_text_from_pdf(pdf_path: Path, max_pages: Optional[int] = None) -> st
         
         for page_num in range(pages_to_read):
             page = pdf_reader.pages[page_num]
-            text_parts.append(page.extract_text())
+            page_text = page.extract_text() or ""
+            
+            # If text layer is empty/minimal, try OCR
+            if len(page_text.strip()) < 20 and HAS_OCR:
+                ocr_text = _ocr_pdf_page(pdf_path, page_num)
+                if ocr_text:
+                    page_text = ocr_text
+                    ocr_used = True
+            
+            text_parts.append(page_text)
+    
+    if ocr_used:
+        logger.info("OCR was used for some pages of %s", pdf_path.name)
     
     return "\n\n".join(text_parts)
+
+
+def _ocr_pdf_page(pdf_path: Path, page_num: int) -> str:
+    """OCR a single PDF page using pytesseract.
+
+    Requires ``pytesseract``, ``Pillow``, and the ``pdf2image`` library
+    (plus Poppler binaries on the system PATH).
+
+    Returns extracted text or empty string on failure.
+    """
+    if not HAS_OCR:
+        return ""
+    try:
+        from pdf2image import convert_from_path
+        images = convert_from_path(
+            str(pdf_path),
+            first_page=page_num + 1,
+            last_page=page_num + 1,
+            dpi=300,
+        )
+        if images:
+            return pytesseract.image_to_string(images[0])
+    except ImportError:
+        logger.debug("pdf2image not installed – skipping OCR for %s p.%d", pdf_path.name, page_num)
+    except Exception as exc:
+        logger.debug("OCR failed for %s p.%d: %s", pdf_path.name, page_num, exc)
+    return ""
 
 
 # ============================================================================
