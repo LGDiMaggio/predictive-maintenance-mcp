@@ -1,0 +1,45 @@
+# Docker Compose for HTTPS deployment (e.g. Microsoft Copilot Studio)
+#
+# Usage:
+#   1. Edit Caddyfile: replace mcp.example.com with your domain
+#   2. docker compose up -d
+#   3. Caddy auto-provisions a TLS certificate via Let's Encrypt
+#   4. Connect Copilot Studio to: https://mcp.example.com/sse
+#
+# For local testing (no TLS):
+#   docker compose up mcp-server
+#   → http://localhost:8000/sse
+
+services:
+  mcp-server:
+    build: .
+    restart: unless-stopped
+    environment:
+      - MCP_TRANSPORT=sse
+      - MCP_HOST=0.0.0.0
+      - MCP_PORT=8000
+    ports:
+      - "8000:8000"   # remove this line when using caddy
+    volumes:
+      - ./data:/app/data:ro
+      - ./resources:/app/resources:ro
+      - ./models:/app/models
+      - ./reports:/app/reports
+
+  # Uncomment below for production HTTPS via Caddy
+  # caddy:
+  #   image: caddy:2-alpine
+  #   restart: unless-stopped
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./Caddyfile:/etc/caddy/Caddyfile:ro
+  #     - caddy_data:/data
+  #     - caddy_config:/config
+  #   depends_on:
+  #     - mcp-server
+
+# volumes:
+#   caddy_data:
+#   caddy_config:

@@ -14,6 +14,8 @@ import logging
 from pathlib import Path
 from typing import Any, Optional
 from dataclasses import dataclass
+import argparse
+import os
 import pickle
 import json
 import sys
@@ -4824,13 +4826,58 @@ def _setup_environment() -> None:
 
 
 def main():
-    """Run the MCP server."""
-    _setup_environment()
-    logger.info("Starting Predictive Maintenance MCP Server...")
-    logger.info(f"Data directory: {DATA_DIR}")
+    """Run the MCP server.
 
-    # Run server with stdio transport
-    mcp.run(transport="stdio")
+    CLI usage::
+
+        # Default: stdio transport (Claude Desktop, VS Code)
+        predictive-maintenance-mcp
+
+        # SSE transport for remote/enterprise clients (e.g. Copilot Studio)
+        predictive-maintenance-mcp --transport sse --host 0.0.0.0 --port 8080
+
+        # Streamable-HTTP transport (MCP 2025-03-26 spec)
+        predictive-maintenance-mcp --transport streamable-http --port 8080
+
+    Environment variable overrides (useful in Docker)::
+
+        MCP_TRANSPORT=sse  MCP_HOST=0.0.0.0  MCP_PORT=8080
+    """
+    parser = argparse.ArgumentParser(
+        description="Predictive Maintenance MCP Server",
+    )
+    parser.add_argument(
+        "--transport", "-t",
+        choices=["stdio", "sse", "streamable-http"],
+        default=os.environ.get("MCP_TRANSPORT", "stdio"),
+        help="Transport protocol (default: stdio, env: MCP_TRANSPORT)",
+    )
+    parser.add_argument(
+        "--host",
+        default=os.environ.get("MCP_HOST", "127.0.0.1"),
+        help="Bind address for SSE/HTTP (default: 127.0.0.1, env: MCP_HOST)",
+    )
+    parser.add_argument(
+        "--port", "-p",
+        type=int,
+        default=int(os.environ.get("MCP_PORT", "8000")),
+        help="Port for SSE/HTTP transport (default: 8000, env: MCP_PORT)",
+    )
+    args = parser.parse_args()
+
+    _setup_environment()
+
+    # Apply host/port to FastMCP settings (used by SSE and streamable-http)
+    mcp.settings.host = args.host
+    mcp.settings.port = args.port
+
+    logger.info("Starting Predictive Maintenance MCP Server...")
+    logger.info(f"Transport: {args.transport}")
+    logger.info(f"Data directory: {DATA_DIR}")
+    if args.transport != "stdio":
+        logger.info(f"Listening on {args.host}:{args.port}")
+
+    mcp.run(transport=args.transport)
 
 
 if __name__ == "__main__":

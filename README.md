@@ -81,7 +81,8 @@ This project is built around the **Model Context Protocol (MCP)** — an open st
 
 - **🔌 Plug-and-play** — Add new analysis tools (thermography, oil analysis, acoustics) as simple Python functions — the LLM discovers them automatically
 - **🔒 Local processing** — Raw signals never leave your machine; only computed results (peaks, RMS, diagnoses) flow to the LLM. Use a [local LLM](https://ollama.com/) for full air-gapped privacy
-- **🤖 LLM-agnostic** — Works with Claude, ChatGPT, or any MCP-compatible client
+- **🤖 LLM-agnostic** — Works with Claude, ChatGPT, **Microsoft Copilot Studio**, or any MCP-compatible client
+- **🌐 Enterprise-ready** — Deploy as HTTPS server (SSE transport) for corporate environments with Docker + auto-TLS
 - **🧱 Modular** — Use only the tools you need, extend with your own
 
 ---
@@ -249,14 +250,19 @@ pip install -e .
 ### Run the Server
 
 ```bash
-# Via module (works with both pip install and editable install)
+# Default: stdio transport (Claude Desktop, VS Code)
 python -m predictive_maintenance_mcp
-
-# Via console script (after pip install)
 predictive-maintenance-mcp
+
+# SSE transport for remote/enterprise clients (Copilot Studio, networked)
+predictive-maintenance-mcp --transport sse --host 0.0.0.0 --port 8080
+
+# Docker (SSE mode by default)
+docker compose up -d
 ```
 
 📖 **Detailed Installation Guide**: See [INSTALL.md](INSTALL.md) for troubleshooting and advanced setup.
+📖 **HTTPS Deployment**: See [DEPLOYMENT.md](docs/DEPLOYMENT.md) for enterprise deployment with TLS.
 
 ---
 
@@ -636,6 +642,7 @@ Generate FFT report for baseline_1.csv
 |----------|----------|-------------|
 | [**Quickstart for Engineers**](docs/QUICKSTART_ENGINEER.md) | 🔧 Engineers | Get results fast, no coding required |
 | [**Quickstart for Developers**](docs/QUICKSTART_DEVELOPER.md) | 💻 Developers | Understand MCP, extend the server |
+| [**HTTPS Deployment**](docs/DEPLOYMENT.md) | 🏢 Enterprise | Docker + HTTPS for Copilot Studio and remote clients |
 | [EXAMPLES.md](EXAMPLES.md) | Everyone | Complete diagnostic workflows with step-by-step tutorials |
 | [INSTALL.md](INSTALL.md) | Everyone | Detailed installation and troubleshooting guide |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Contributors | How to contribute (for every skill level) |
@@ -715,8 +722,10 @@ npx @modelcontextprotocol/inspector python -m predictive_maintenance_mcp
 
 ## 🚀 Roadmap
 
-### ✨ Recent: v0.7.0 — Vector Search, OCR & DOCX Reports
+### ✨ Recent: v0.7.0–0.7.1 — Vector Search, OCR, DOCX & HTTPS Transport
 
+- 🌐 **SSE / Streamable-HTTP transport** — Deploy as HTTPS server for Microsoft Copilot Studio and remote MCP clients
+- 🐳 **Docker Compose + Caddy** — One-command deployment with automatic TLS certificates
 - 🔎 **FAISS vector search** — Semantic document retrieval with sentence-transformers (TF-IDF fallback when not installed)
 - 🔍 **OCR for scanned PDFs** — Automatic Tesseract OCR fallback for image-based equipment manuals
 - 📝 **DOCX diagnostic reports** — Structured Word documents with statistics, peaks, ISO evaluation, and diagnostic summary
@@ -730,7 +739,8 @@ Each item below links to an open issue where you can **discuss, contribute, or c
 |----------|-------------|--------|--------------|
 | ✅ Done | **Parquet/MAT/WAV/NPY data format support** | v0.5.0 | — |
 | 🔴 High | **Customizable ISO report thresholds** | Open | [Good First Issue](https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues) |
-| 🔴 High | **Docker image for zero-install setup** | Open | [Help Wanted](https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues) |
+| ✅ Done | **HTTPS / SSE transport for Copilot Studio** | v0.7.1 | — |
+| ✅ Done | **Docker Compose + Caddy auto-TLS** | v0.7.1 | — |
 | ✅ Done | **Vector search for large documents** (FAISS + sentence-transformers) | v0.7.0 | — |
 | ✅ Done | **OCR for scanned PDF manuals** (Tesseract) | v0.7.0 | — |
 | ✅ Done | **DOCX diagnostic reports** (python-docx) | v0.7.0 | — |

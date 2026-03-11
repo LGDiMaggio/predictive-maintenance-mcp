@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(powershell -Command \"cd ''c:\\\\Users\\\\d044653\\\\OneDrive - Politecnico di Torino\\\\predictive-maintenance-mcp''; .\\\\.venv\\\\Scripts\\\\python.exe -c \"\"import pathlib; before = set\\(pathlib.Path\\(''.''\\).glob\\(''*/''\\)\\); import predictive_maintenance_mcp; after = set\\(pathlib.Path\\(''.''\\).glob\\(''*/''\\)\\); new_dirs = after - before; print\\(''FAIL: dirs create: '' + str\\(new_dirs\\)\\) if new_dirs else print\\(''OK: nessuna directory creata a import-time''\\); from predictive_maintenance_mcp import mcp, main, __version__; print\\(''OK: mcp='' + type\\(mcp\\).__name__ + '' version='' + __version__\\)\"\"\")",
+      "Bash(powershell -Command \"cd ''c:\\\\Users\\\\d044653\\\\OneDrive - Politecnico di Torino\\\\predictive-maintenance-mcp''; .\\\\.venv\\\\Scripts\\\\python.exe -m pytest tests/ -x -q --no-header --tb=short 2>&1 | Select-Object -First 60\")",
+      "Bash(powershell -Command \"cd ''c:\\\\Users\\\\d044653\\\\OneDrive - Politecnico di Torino\\\\predictive-maintenance-mcp''; .\\\\.venv\\\\Scripts\\\\python.exe -c \"\"import predictive_maintenance_mcp; print\\(predictive_maintenance_mcp.__file__\\)\"\"\")",
+      "Bash(powershell -Command \"cd ''c:\\\\Users\\\\d044653\\\\OneDrive - Politecnico di Torino\\\\predictive-maintenance-mcp''; .\\\\.venv\\\\Scripts\\\\python.exe -m pytest tests/ -x -q --no-header --tb=short 2>&1 | Select-Object -First 80\")",
+      "Bash(powershell -Command \"cd ''c:\\\\Users\\\\d044653\\\\OneDrive - Politecnico di Torino\\\\predictive-maintenance-mcp''; git status\")",
+      "Bash(powershell -Command \"cd ''c:\\\\Users\\\\d044653\\\\OneDrive - Politecnico di Torino\\\\predictive-maintenance-mcp''; git log --oneline -5\")",
+      "Bash(powershell -Command \"cd ''c:\\\\Users\\\\d044653\\\\OneDrive - Politecnico di Torino\\\\predictive-maintenance-mcp''; git add pyproject.toml src/config.py src/signal_loader.py src/document_reader.py src/machinery_diagnostics_server.py src/report_generator.py tests/test_obsolete_tools_removed.py tests/test_real_data.py tests/test_reports.py tests/test_unit_conversion.py\")",
+      "Bash(powershell -Command \"cd ''c:\\\\Users\\\\d044653\\\\OneDrive - Politecnico di Torino\\\\predictive-maintenance-mcp''; git commit -m ''refactor: eliminate import-time side effects and centralize path config:*)",
+      "Bash(powershell -Command \"cd ''c:\\\\Users\\\\d044653\\\\OneDrive - Politecnico di Torino\\\\predictive-maintenance-mcp''; git push origin main\")"
+    ]
+  }
+}

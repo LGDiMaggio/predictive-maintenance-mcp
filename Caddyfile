@@ -1,0 +1,6 @@
+# Replace mcp.example.com with your actual domain.
+# Caddy auto-provisions TLS certificates via Let's Encrypt.
+
+mcp.example.com {
+    reverse_proxy mcp-server:8000
+}

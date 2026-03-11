@@ -5,6 +5,18 @@ All notable changes to the Predictive Maintenance MCP Server project will be doc
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.1] - 2025-07-15
+
+### Added
+- **SSE & Streamable-HTTP transport** — `main()` now accepts `--transport sse|streamable-http` (or env var `MCP_TRANSPORT`) via argparse CLI, enabling remote HTTPS deployment for Microsoft Copilot Studio and other networked MCP clients. `--host` / `--port` (or `MCP_HOST` / `MCP_PORT`) configure the listen address.
+- **Docker Compose + Caddy** — New `docker-compose.yml` with `mcp-server` service (SSE by default) and commented-out Caddy reverse proxy for automatic Let's Encrypt HTTPS certificates. New `Caddyfile` template.
+- **HTTPS Deployment guide** — New `docs/DEPLOYMENT.md` covering local SSE testing, Docker Compose + Caddy auto-TLS, nginx reverse proxy, Azure/cloud deployment, Copilot Studio connection, and CLI reference.
+
+### Changed
+- **Dockerfile** rebuilt for SSE default — installs `uvicorn`, sets `MCP_TRANSPORT=sse`, `MCP_HOST=0.0.0.0`, `EXPOSE 8000`
+- README updated: enterprise-ready features, Copilot Studio mention, deployment docs table, roadmap progress
+- Version bumped to 0.7.1
+
 ## [0.7.0] - 2025-07-14
 
 ### Added
