@@ -69,6 +69,8 @@ def chunk_text(
       - ``index`` : sequential chunk number
       - ``start`` / ``end`` : character offsets in the original text
     """
+    if chunk_overlap >= chunk_size:
+        chunk_overlap = max(0, chunk_size - 1)
     chunks: list[dict[str, Any]] = []
     start = 0
     idx = 0
