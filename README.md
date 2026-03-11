@@ -82,7 +82,7 @@ This project is built around the **Model Context Protocol (MCP)** — an open st
 - **🔌 Plug-and-play** — Add new analysis tools (thermography, oil analysis, acoustics) as simple Python functions — the LLM discovers them automatically
 - **🔒 Local processing** — Raw signals never leave your machine; only computed results (peaks, RMS, diagnoses) flow to the LLM. Use a [local LLM](https://ollama.com/) for full air-gapped privacy
 - **🤖 LLM-agnostic** — Works with Claude, ChatGPT, **Microsoft Copilot Studio**, or any MCP-compatible client
-- **🌐 Enterprise-ready** — Deploy as HTTPS server (SSE transport) for corporate environments with Docker + auto-TLS
+- **🌐 Enterprise-ready** — Deploy as HTTPS server (SSE transport) for corporate environments — [with or without Docker](docs/DEPLOYMENT.md)
 - **🧱 Modular** — Use only the tools you need, extend with your own
 
 ---
@@ -262,7 +262,7 @@ docker compose up -d
 ```
 
 📖 **Detailed Installation Guide**: See [INSTALL.md](INSTALL.md) for troubleshooting and advanced setup.
-📖 **HTTPS Deployment**: See [DEPLOYMENT.md](docs/DEPLOYMENT.md) for enterprise deployment with TLS.
+📖 **HTTPS Deployment & Copilot Studio**: See [DEPLOYMENT.md](docs/DEPLOYMENT.md) for enterprise deployment (with or without Docker), Microsoft Copilot Studio connection, and authentication setup.
 
 ---
 
