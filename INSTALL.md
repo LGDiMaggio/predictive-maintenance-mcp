@@ -64,6 +64,21 @@ python -c "import mcp; print('MCP installed successfully')"
 python validate_server.py
 ```
 
+### 5. Run the Server
+```bash
+# Default: stdio transport (Claude Desktop, VS Code)
+predictive-maintenance-mcp
+python -m predictive_maintenance_mcp
+
+# SSE transport for remote/enterprise clients (Copilot Studio, networked)
+predictive-maintenance-mcp --transport sse --host 0.0.0.0 --port 8080
+
+# Docker (SSE mode by default)
+docker compose up -d
+```
+
+See [DEPLOYMENT.md](docs/DEPLOYMENT.md) for HTTPS setup with Docker + Caddy auto-TLS.
+
 ---
 
 ## For Claude Desktop Users
@@ -250,6 +265,9 @@ pip install predictive-maintenance-mcp[ocr]
 # DOCX diagnostic report generation
 pip install predictive-maintenance-mcp[docx]
 
+# SSE transport for remote/enterprise deployment (Copilot Studio, networked clients)
+pip install predictive-maintenance-mcp[sse]
+
 # Everything (all optional features)
 pip install predictive-maintenance-mcp[full]
 ```
@@ -259,6 +277,7 @@ pip install predictive-maintenance-mcp[full]
 | `vector-search` | `faiss-cpu`, `sentence-transformers` | Semantic document search (FAISS). Falls back to TF-IDF when not installed. |
 | `ocr` | `pytesseract`, `Pillow`, `pdf2image` | OCR for scanned/image-based PDF manuals. Requires [Poppler](https://github.com/ossamamehmood/Poppler-windows/releases) on system PATH. |
 | `docx` | `python-docx` | Generate structured Word (.docx) diagnostic reports. |
+| `sse` | `uvicorn` | SSE/HTTP transport for remote MCP clients. Required for `--transport sse`. |
 | `full` | All of the above | Install all optional features at once. |
 
 > **Note**: `vector-search` pulls in PyTorch (~2 GB). For lightweight installs, skip it — TF-IDF keyword search works well for technical documentation.

@@ -790,7 +790,7 @@ If you use this server in your research or projects, please cite:
   title = {Predictive Maintenance MCP Server: An open-source framework for integrating Large Language Models with predictive maintenance and fault diagnosis workflows},
   author = {Di Maggio, Luigi Gianpio},
   year = {2025},
-  version = {0.7.0},
+  version = {0.7.1},
   url = {https://github.com/LGDiMaggio/predictive-maintenance-mcp},
   doi = {10.5281/zenodo.17611542}
 }

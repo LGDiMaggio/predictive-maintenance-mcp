@@ -46,7 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - LLM "output too long" errors caused by full-array serialisation in `FFTResult`
 
-## [0.5.0] - 2026-02-16
+## [0.5.0] - 2025-02-16
 
 ### Added
 - **Multi-format signal loading** — `load_signal_data()` now supports CSV, TXT, NPY, MAT (MATLAB), WAV, and Parquet formats

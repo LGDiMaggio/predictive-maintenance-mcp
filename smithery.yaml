@@ -2,7 +2,7 @@
 # https://smithery.ai
 
 startCommand:
-  type: stdio
+  type: stdio  # Also supports SSE and Streamable-HTTP via --transport flag
   configSchema:
     type: object
     properties:
@@ -12,8 +12,8 @@ startCommand:
     required: []
   commandFunction: |-
     (config) => ({
-      command: "python",
-      args: ["src/machinery_diagnostics_server.py"],
+      command: "predictive-maintenance-mcp",
+      args: [],
       env: config.dataDir ? { DATA_DIR: config.dataDir } : {}
     })
 
