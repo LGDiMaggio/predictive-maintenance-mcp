@@ -126,3 +126,120 @@ class AnomalyPredictionResult(BaseModel):
     anomaly_scores: Optional[list[float]] = Field(None, description="Anomaly scores if available")
     overall_health: str = Field(description="Overall health status: 'Healthy', 'Suspicious', 'Faulty'")
     confidence: str = Field(description="Confidence level: 'High', 'Medium', 'Low'")
+
+
+# ============================================================================
+# Phase 1 Models — Signal Repository, Spectral, Bearing, ISO, Diagnosis
+# ============================================================================
+
+
+class StoredSignalInfo(BaseModel):
+    """Metadata for a signal stored in the SignalRepository."""
+    signal_id: str = Field(description="Unique identifier for the stored signal")
+    filepath: str = Field(description="Original file path")
+    load_timestamp: str = Field(description="ISO 8601 timestamp when signal was loaded")
+    shape: list[int] = Field(description="Shape of the signal array")
+    num_samples: int = Field(description="Number of samples")
+    sampling_rate: Optional[float] = Field(None, description="Sampling rate in Hz")
+    duration_s: Optional[float] = Field(None, description="Duration in seconds")
+    size_bytes: int = Field(description="Approximate memory size in bytes")
+    signal_unit: Optional[str] = Field(None, description="Signal unit (g, mm/s, m/s², etc.)")
+
+
+class PSDResult(BaseModel):
+    """Power Spectral Density (Welch method) result."""
+    signal_id: str = Field(description="Signal identifier used")
+    num_samples: int = Field(description="Number of samples analyzed")
+    sampling_rate: float = Field(description="Sampling rate (Hz)")
+    nperseg: int = Field(description="Samples per segment")
+    noverlap: int = Field(description="Overlap between segments")
+    window: str = Field(description="Window function used")
+    top_peaks: list[SpectralPeak] = Field(description="Top spectral peaks by power")
+    total_power: float = Field(description="Total integrated power")
+    freq_range_hz: list[float] = Field(description="[min_freq, max_freq]")
+    frequency_resolution: float = Field(description="Frequency resolution (Hz)")
+
+
+class STFTResult(BaseModel):
+    """STFT Spectrogram result — summary only, no full 2D arrays."""
+    signal_id: str = Field(description="Signal identifier used")
+    num_samples: int = Field(description="Number of samples analyzed")
+    sampling_rate: float = Field(description="Sampling rate (Hz)")
+    nperseg: int = Field(description="Samples per segment")
+    noverlap: int = Field(description="Overlap between segments")
+    window: str = Field(description="Window function used")
+    num_time_bins: int = Field(description="Number of time bins")
+    num_freq_bins: int = Field(description="Number of frequency bins")
+    freq_range_hz: list[float] = Field(description="[min_freq, max_freq]")
+    time_range_s: list[float] = Field(description="[start_time, end_time]")
+    max_power_freq_hz: float = Field(description="Frequency with maximum power")
+    max_power_time_s: float = Field(description="Time of maximum power")
+    energy_per_band: list[dict[str, float]] = Field(description="Energy in predefined frequency bands")
+
+
+class EnvelopeSpectrumResult(BaseModel):
+    """Envelope spectrum result using signal_id pattern."""
+    signal_id: str = Field(description="Signal identifier used")
+    num_samples: int = Field(description="Number of samples analyzed")
+    sampling_rate: float = Field(description="Sampling rate (Hz)")
+    method: str = Field(description="Envelope extraction method")
+    frequency_range: tuple[float, float] = Field(description="Analysis frequency range (Hz)")
+    top_peaks: list[SpectralPeak] = Field(description="Top peaks in envelope spectrum")
+    diagnosis: str = Field(description="Interpretive diagnosis text")
+
+
+class BearingFaultCheckResult(BaseModel):
+    """Result of checking for a specific bearing fault frequency."""
+    signal_id: str = Field(description="Signal identifier used")
+    bearing_id: str = Field(description="Bearing designation")
+    fault_type: str = Field(description="Fault type: BPFO, BPFI, BSF, or FTF")
+    expected_frequency_hz: float = Field(description="Expected fault frequency")
+    detected: bool = Field(description="Whether a peak was detected within tolerance")
+    detected_frequency_hz: Optional[float] = Field(None, description="Actual peak frequency")
+    magnitude: Optional[float] = Field(None, description="Magnitude at detected frequency")
+    deviation_pct: Optional[float] = Field(None, description="Deviation from expected (%)")
+    harmonics_detected: list[dict[str, float]] = Field(default=[], description="Harmonics found")
+    confidence: str = Field(description="Confidence: high, moderate, low, or none")
+
+
+class BearingFaultsSummary(BaseModel):
+    """Summary of all fault checks for one bearing."""
+    signal_id: str = Field(description="Signal identifier used")
+    bearing_id: str = Field(description="Bearing designation")
+    rpm: float = Field(description="Shaft speed (RPM)")
+    shaft_frequency_hz: float = Field(description="Shaft frequency (Hz)")
+    bearing_frequencies: dict[str, float] = Field(description="Calculated BPFO/BPFI/BSF/FTF (Hz)")
+    fault_checks: list[BearingFaultCheckResult] = Field(description="Results for each fault type")
+    overall_assessment: str = Field(description="Summary assessment text")
+    most_likely_fault: Optional[str] = Field(None, description="Most likely fault type if any")
+
+
+class VibrationSeverityResult(BaseModel):
+    """ISO 10816/20816 severity result using signal_id pattern."""
+    signal_id: str = Field(description="Signal identifier used")
+    rms_velocity_mm_s: float = Field(description="RMS velocity in mm/s")
+    machine_class: str = Field(description="Machine class (I, II, III, or IV)")
+    axis: str = Field(description="Measurement axis")
+    zone: str = Field(description="ISO zone: A, B, C, or D")
+    zone_description: str = Field(description="Zone description")
+    severity_level: str = Field(description="Good, Acceptable, Unsatisfactory, or Unacceptable")
+    color_code: str = Field(description="green, yellow, orange, or red")
+    boundaries: dict[str, float] = Field(description="Zone boundaries {AB, BC, CD} in mm/s")
+    unit_conversion_performed: bool = Field(description="Whether acceleration-to-velocity conversion was done")
+    original_unit: Optional[str] = Field(None, description="Original signal unit before conversion")
+
+
+class DiagnosisResult(BaseModel):
+    """Full integrated diagnosis pipeline result."""
+    signal_id: str = Field(description="Signal identifier used")
+    rpm: float = Field(description="Machine speed (RPM)")
+    bearing_id: Optional[str] = Field(None, description="Bearing used (if any)")
+    machine_class: str = Field(description="Machine class for ISO severity")
+    fft_summary: dict[str, Any] = Field(description="FFT key findings")
+    psd_summary: dict[str, Any] = Field(description="PSD key findings")
+    stft_summary: dict[str, Any] = Field(description="STFT key findings")
+    bearing_faults: Optional[BearingFaultsSummary] = Field(None, description="Bearing fault results")
+    iso_severity: VibrationSeverityResult = Field(description="ISO severity assessment")
+    overall_diagnosis: str = Field(description="Combined diagnostic text")
+    confidence: str = Field(description="Overall confidence: high, moderate, or low")
+    recommendations: list[str] = Field(description="Recommended actions")

@@ -72,6 +72,31 @@ from .signal_loader import (
     SUPPORTED_EXTENSIONS,
 )
 
+# Phase 1: Signal repository, spectral, bearing, ISO, diagnosis modules
+from .signal_repository import get_repository
+from .spectral import (
+    compute_psd as _compute_psd,
+    compute_stft_spectrogram as _compute_stft,
+    compute_envelope_spectrum as _compute_envelope,
+)
+from .bearing_catalog import (
+    lookup_bearing as _lookup_bearing,
+    compute_fault_frequencies as _compute_fault_freqs,
+    list_catalog_bearings as _list_catalog,
+)
+from .bearing_analyzer import (
+    check_bearing_fault_peak as _check_fault_peak,
+    check_all_bearing_faults as _check_all_faults,
+    lookup_bearing_and_compute as _lookup_and_compute,
+)
+from .iso10816 import assess_vibration_severity as _assess_severity
+from .diagnosis_pipeline import diagnose_vibration as _diagnose_vibration
+from .models import (
+    StoredSignalInfo, PSDResult, STFTResult, EnvelopeSpectrumResult,
+    BearingFaultCheckResult, BearingFaultsSummary, VibrationSeverityResult,
+    DiagnosisResult
+)
+
 # Logger per questo modulo — la configurazione avviene in main() per evitare side-effect a import-time
 logger = logging.getLogger(__name__)
 
@@ -924,46 +949,46 @@ async def evaluate_iso_20816(
 ) -> ISO20816Result:
     """
     Evaluate vibration severity according to ISO 20816-3 standard.
-    
+
     ISO 20816-3 defines vibration severity zones for rotating machinery based on
     broadband RMS velocity measurements on non-rotating parts (bearings, housings).
-    
+
     **CRITICAL - LLM Inference Policy:**
     - **NEVER infer fault type or severity from filename** (e.g., "OuterRaceFault_1.csv" does NOT mean outer race fault)
     - **NEVER assume baseline/healthy from filename** (e.g., "baseline" does NOT guarantee Zone A)
     - Treat ALL filenames as opaque identifiers
     - Report ONLY the ISO zone returned by measurement, regardless of filename
     - If filename suggests "baseline" but measurement shows Zone C/D, report Zone C/D
-    
+
     **DEFAULTS** (use if user doesn't specify):
     - machine_group = 2 (medium-sized machines, most common)
     - support_type = "rigid" (horizontal machines on foundations)
-    
+
     **Machine Group Selection Guide** (ask user if unsure):
     - Group 1: Large machines (power >300 kW OR shaft height H ≥ 315 mm)
       Examples: Large turbines, generators, compressors, large pumps
     - Group 2: Medium machines (15-300 kW OR 160mm ≤ H < 315mm) [DEFAULT]
       Examples: Industrial motors, fans, pumps, gearboxes
-    
+
     **Support Type Selection Guide** (ask user if unsure):
     - "rigid": Machine on stiff foundation, horizontal orientation [DEFAULT]
       Rule: Lowest natural frequency > 1.25 × main excitation frequency
       Examples: Motors/pumps on concrete, horizontal compressors
     - "flexible": Machine on soft supports, vertical, or large turbine-generator sets
       Examples: Vertical pumps, machines on springs, large turbogenerators
-    
+
     **When to ask user**:
     - If power/dimensions unknown → use defaults (Group 2, rigid)
     - If clearly large turbine (>10 MW) → suggest Group 1, flexible
     - If vertical machine → suggest flexible
     - If user provides machine specs → use guide above
-    
+
     Evaluation Zones:
     - Zone A (Green): New machine condition - excellent
     - Zone B (Yellow): Acceptable for long-term unrestricted operation
     - Zone C (Orange): Unsatisfactory - limited operation, plan maintenance
     - Zone D (Red): Sufficient severity to cause damage - immediate action
-    
+
     Args:
         signal_file: Name of the CSV file in data/signals/
         sampling_rate: Sampling frequency in Hz (default: 10000)
@@ -971,19 +996,19 @@ async def evaluate_iso_20816(
         support_type: 'rigid' or 'flexible' (default: 'rigid')
         operating_speed_rpm: Operating speed in RPM (optional, for frequency range selection)
         signal_unit: Signal unit - 'g' or 'm/s²' (acceleration) or 'mm/s' or 'm/s' (velocity).
-                     
+
                      **PRIORITY ORDER FOR UNIT DETECTION:**
                      1. Check metadata file for 'signal_unit' field (recommended)
                      2. Use this parameter if explicitly provided
                      3. If neither exists: LLM will ask user to confirm based on RMS hypothesis
                      4. Default assumption: 'g' (most common for vibration sensors)
-                     
+
                      **IMPORTANT**: Wrong unit completely invalidates ISO 20816-3 results!
                      Best practice: Add 'signal_unit' field to metadata JSON files.
-    
+
     Returns:
         ISO20816Result with evaluation zone, severity level, and recommendations
-        
+
     Example:
         await evaluate_iso_20816(
             ctx,
@@ -995,21 +1020,23 @@ async def evaluate_iso_20816(
             signal_unit="g"  # Explicitly specify: 'g' or 'mm/s'
         )
     """
+    from .iso10816 import assess_severity_raw
+
     # Load signal
     filepath = DATA_DIR / signal_file
     if not filepath.exists():
         raise FileNotFoundError(f"File not found: {signal_file}")
-    
+
     signal_data = load_signal_data(signal_file)
     if signal_data is None:
         raise ValueError(f"Could not load signal data from: {signal_file}")
-    
+
     # Try to read metadata JSON (single read for sampling_rate + signal_unit)
     metadata_file = filepath.parent / (filepath.stem + "_metadata.json")
     metadata_found = False
     metadata = {}
     user_provided_sampling_rate = (sampling_rate != 10000.0)  # Check if user changed default
-    
+
     if metadata_file.exists():
         import json
         with open(metadata_file, 'r') as f:
@@ -1022,7 +1049,7 @@ async def evaluate_iso_20816(
                     await ctx.info(f"✅ Found metadata: sampling_rate = {sampling_rate} Hz")
                     if user_provided_sampling_rate and old_sampling_rate != sampling_rate:
                         await ctx.info(f"   (Overriding user-provided {old_sampling_rate} Hz with metadata value)")
-    
+
     # CRITICAL: If no metadata and user didn't provide sampling_rate, ASK!
     if not metadata_found and not user_provided_sampling_rate:
         if ctx:
@@ -1039,53 +1066,41 @@ async def evaluate_iso_20816(
     elif not metadata_found and user_provided_sampling_rate:
         if ctx:
             await ctx.info(f"📌 Using user-provided sampling_rate = {sampling_rate} Hz (no metadata verification)")
-    
+
     # Notify about machine parameters
     if ctx:
         await ctx.info(f"ℹ️  Machine parameters: Group {machine_group} ({'Large' if machine_group == 1 else 'Medium'}), Support '{support_type}'")
         await ctx.info(f"   If incorrect, provide machine_group and support_type parameters")
-    
+
     # ========================================================================
     # SIGNAL UNIT DETECTION WITH HYPOTHESIS FLOW
     # ========================================================================
-    # Priority order:
-    # 1. Check metadata file for 'signal_unit' field
-    # 2. Use user-provided signal_unit parameter
-    # 3. Ask LLM to request from user (warning message)
-    # 4. Default assumption: 'g' (acceleration) if no information available
-    
     rms_raw = np.sqrt(np.mean(signal_data**2))
-    unit_conversion_performed = False
     detected_unit = None
-    unit_source = None
-    
-    # STEP 1: Check metadata for signal_unit (reuse already-loaded metadata dict)
+
+    # STEP 1: Check metadata for signal_unit
     if metadata_found and 'signal_unit' in metadata:
         detected_unit = metadata['signal_unit'].lower()
-        unit_source = 'metadata'
         if ctx:
             await ctx.info(f"")
             await ctx.info(f"✅ SIGNAL UNIT from metadata: '{metadata['signal_unit']}'")
-    
+
     # STEP 2: User explicitly provided signal_unit parameter
     if signal_unit is not None:
         detected_unit = signal_unit.lower()
-        unit_source = 'user_parameter'
         if ctx:
             await ctx.info(f"")
             await ctx.info(f"✅ SIGNAL UNIT from user parameter: '{signal_unit}'")
-    
+
     # STEP 3: No metadata, no user input → ASK USER with hypothesis
     if detected_unit is None:
-        unit_source = 'assumed_default'
-        # Calculate RMS-based hypothesis
         if rms_raw > 0.5:
             hypothesis = 'g'
             hypothesis_reason = f"RMS={rms_raw:.2f} > 0.5 (typical for acceleration)"
         else:
             hypothesis = 'mm/s'
             hypothesis_reason = f"RMS={rms_raw:.2f} < 0.5 (typical for velocity)"
-        
+
         if ctx:
             await ctx.info(f"")
             await ctx.info(f"⚠️  SIGNAL UNIT UNKNOWN - ASKING USER FOR CONFIRMATION")
@@ -1105,170 +1120,60 @@ async def evaluate_iso_20816(
             await ctx.info(f"")
             await ctx.info(f"⚠️  DEFAULT ASSUMPTION: Using '{hypothesis}' (most common for vibration sensors)")
             await ctx.info(f"   If this is incorrect, results will be INVALID!")
-        
-        # Use hypothesis as default
+
         detected_unit = hypothesis
-    
+
     # Validate detected unit
     if detected_unit not in ['g', 'm/s²', 'mm/s', 'm/s']:
         if ctx:
             await ctx.info(f"❌ ERROR: Invalid signal_unit '{detected_unit}'")
             await ctx.info(f"   Valid values: 'g', 'm/s²' (acceleration) or 'mm/s', 'm/s' (velocity)")
         raise ValueError(f"Invalid signal_unit: '{detected_unit}'. Must be 'g', 'm/s²', 'mm/s', or 'm/s'")
-    
-    # Normalize unit names (handle m/s² same as g, m/s same as mm/s but needs conversion)
+
+    # Notify about unit conversion
     if detected_unit in ['g', 'm/s²']:
-        needs_conversion = True
-        original_unit_display = detected_unit
-    elif detected_unit in ['mm/s', 'm/s']:
-        needs_conversion = (detected_unit == 'm/s')  # m/s needs conversion to mm/s
-        original_unit_display = detected_unit
-        if detected_unit == 'm/s':
-            # Convert m/s to mm/s directly
-            signal_data = signal_data * 1000.0
-            detected_unit = 'mm/s'
-    
-    # Convert if necessary (g or m/s² → mm/s)
-    if needs_conversion and detected_unit in ['g', 'm/s²']:
-        # Convert acceleration to velocity (mm/s)
-        # Integration: v(t) = ∫ a(t) dt
-        unit_conversion_performed = True
-        
         if ctx:
             await ctx.info(f"")
-            await ctx.info(f"🔄 UNIT CONVERSION: Acceleration ({original_unit_display}) → Velocity (mm/s)")
+            await ctx.info(f"🔄 UNIT CONVERSION: Acceleration ({detected_unit}) → Velocity (mm/s)")
             await ctx.info(f"   ISO 20816-3 requires velocity measurements")
             await ctx.info(f"   Performing frequency-domain integration...")
-        
-        logger.info(f"Converting acceleration ({original_unit_display}) to velocity (mm/s) for ISO 20816-3 evaluation. RMS={rms_raw:.2f}")
-        
-        signal_ac = signal_data - np.mean(signal_data)  # Remove DC
-        
-        # Convert to m/s² if in g
-        if detected_unit == 'g':
-            g_const = 9.80665  # m/s²
-            accel_ms2 = signal_ac * g_const
-        else:  # already in m/s²
-            accel_ms2 = signal_ac
-        
-        # Integrate in frequency domain
-        n = len(accel_ms2)
-        dt = 1.0 / sampling_rate
-        
-        # FFT
-        accel_fft = np.fft.rfft(accel_ms2)
-        freqs = np.fft.rfftfreq(n, dt)
-        
-        # Integrate: V(f) = A(f) / (j*2πf)
-        vel_fft = np.zeros_like(accel_fft, dtype=complex)
-        vel_fft[1:] = accel_fft[1:] / (1j * 2 * np.pi * freqs[1:])
-        
-        # IFFT to get velocity in m/s
-        vel_ms = np.fft.irfft(vel_fft, n=n)
-        
-        # Convert to mm/s
-        signal_data = vel_ms * 1000.0
-        
-        if ctx:
-            rms_converted = np.sqrt(np.mean(signal_data**2))
-            await ctx.info(f"✅ Conversion complete: {rms_raw:.2f} {original_unit_display} → {rms_converted:.2f} mm/s RMS")
-    elif detected_unit == 'mm/s':
-        # Already in correct units
-        if ctx:
+
+    # ========================================================================
+    # DELEGATE MATH to iso10816.assess_severity_raw (single source of truth)
+    # ========================================================================
+    result = assess_severity_raw(
+        signal=signal_data,
+        fs=sampling_rate,
+        machine_group=machine_group,
+        support_type=support_type,
+        signal_unit=detected_unit,
+        operating_speed_rpm=operating_speed_rpm,
+    )
+
+    # Post-computation ctx messages
+    if ctx:
+        if result["unit_conversion_performed"]:
+            await ctx.info(f"✅ Conversion complete: {rms_raw:.2f} {detected_unit} → {result['rms_velocity_mm_s']:.2f} mm/s RMS")
+        elif detected_unit == 'mm/s':
             await ctx.info(f"✅ Signal already in velocity (mm/s) - no conversion needed")
-    else:
-        raise ValueError(f"Invalid signal_unit: '{signal_unit}'. Must be 'g' or 'mm/s'")
-    
-    # Determine frequency range based on operating speed
-    # ISO 20816-3: 10-1000 Hz for speeds ≥ 600 rpm
-    #              2-1000 Hz for speeds 120-600 rpm
-    if operating_speed_rpm and operating_speed_rpm < 600:
-        freq_low = 2.0
-        freq_high = 1000.0
-        freq_range_desc = "2-1000 Hz (speed < 600 RPM)"
-    else:
-        freq_low = 10.0
-        freq_high = 1000.0
-        freq_range_desc = "10-1000 Hz (speed ≥ 600 RPM)"
-    
-    # Apply bandpass filter using SOS (more numerically stable)
-    nyquist = sampling_rate / 2.0
-    
-    # Ensure filter frequencies are within valid range
-    freq_low = max(freq_low, 1.0)
-    freq_high = min(freq_high, nyquist * 0.95)
-    
-    # Use SOS format for numerical stability with high sampling rates
-    sos = butter(4, [freq_low / nyquist, freq_high / nyquist], btype='band', output='sos')
-    signal_filtered = sosfiltfilt(sos, signal_data)
-    
-    # Calculate RMS velocity in mm/s
-    # Assuming input signal is already in mm/s (or convert if needed)
-    rms_velocity = float(np.sqrt(np.mean(signal_filtered**2)))
-    
-    # ISO 20816-3 zone boundaries (mm/s RMS velocity)
-    # Table A.1: Group 1 (Large machines, >300 kW, H ≥ 315 mm)
-    # Table A.2: Group 2 (Medium machines, 15-300 kW, 160 mm ≤ H < 315 mm)
-    
-    if machine_group == 1:
-        if support_type.lower() == "rigid":
-            boundary_ab = 2.3
-            boundary_bc = 4.5
-            boundary_cd = 7.1
-        else:  # flexible
-            boundary_ab = 3.5
-            boundary_bc = 7.1
-            boundary_cd = 11.0
-    elif machine_group == 2:
-        if support_type.lower() == "rigid":
-            boundary_ab = 1.4
-            boundary_bc = 2.8
-            boundary_cd = 4.5
-        else:  # flexible
-            boundary_ab = 2.3
-            boundary_bc = 4.5
-            boundary_cd = 7.1
-    else:
-        raise ValueError(f"Invalid machine_group: {machine_group}. Must be 1 or 2.")
-    
-    # Determine zone
-    if rms_velocity <= boundary_ab:
-        zone = "A"
-        zone_desc = "New machine condition. Vibration is excellent."
-        severity = "Good"
-        color = "green"
-    elif rms_velocity <= boundary_bc:
-        zone = "B"
-        zone_desc = "Acceptable for unrestricted long-term operation."
-        severity = "Acceptable"
-        color = "yellow"
-    elif rms_velocity <= boundary_cd:
-        zone = "C"
-        zone_desc = "Unsatisfactory for long-term operation. Plan maintenance soon."
-        severity = "Unsatisfactory"
-        color = "orange"
-    else:
-        zone = "D"
-        zone_desc = "Vibration severity may cause damage. Immediate action required!"
-        severity = "Unacceptable"
-        color = "red"
-    
-    # Add unit conversion notice to zone description if conversion was performed
-    if unit_conversion_performed:
-        zone_desc = f"⚠️ SIGNAL CONVERTED: Acceleration (g) → Velocity (mm/s). {zone_desc}"
-    
+
+    # Build zone description with conversion notice
+    zone_desc = result["zone_description"]
+    if result["unit_conversion_performed"]:
+        zone_desc = f"⚠️ SIGNAL CONVERTED: Acceleration ({detected_unit}) → Velocity (mm/s). {zone_desc}"
+
     return ISO20816Result(
-        rms_velocity=rms_velocity,
+        rms_velocity=result["rms_velocity_mm_s"],
         machine_group=machine_group,
         support_type=support_type.lower(),
-        zone=zone,
+        zone=result["zone"],
         zone_description=zone_desc,
-        severity_level=severity,
-        color_code=color,
-        boundary_ab=boundary_ab,
-        boundary_bc=boundary_bc,
-        boundary_cd=boundary_cd,
-        frequency_range=freq_range_desc,
+        severity_level=result["severity_level"],
+        color_code=result["color_code"],
+        boundary_ab=result["boundaries"]["AB"],
+        boundary_bc=result["boundaries"]["BC"],
+        boundary_cd=result["boundaries"]["CD"],
+        frequency_range=result["frequency_range"],
         operating_speed_rpm=operating_speed_rpm
     )
 
@@ -4797,6 +4702,501 @@ REPORT GENERATED: [Current date/time]
 ANALYZED BY: ISO 20816-3 Diagnostic System
 ================================================================================
 """
+
+
+# ============================================================================
+# TOOLS - SIGNAL REPOSITORY (Phase 1 — signal_id pattern)
+# ============================================================================
+
+
+@mcp.tool()
+async def load_signal(
+    ctx: Context,
+    filepath: str,
+    signal_id: Optional[str] = None,
+    sampling_rate: Optional[float] = None,
+) -> StoredSignalInfo:
+    """Load a signal into the in-memory repository for fast repeated access.
+
+    Once loaded, reference the signal by its signal_id in other tools like
+    compute_power_spectral_density, diagnose_vibration, etc.
+
+    Args:
+        filepath: Filename relative to data/signals/, or absolute path.
+        signal_id: Custom ID (defaults to filename stem).
+        sampling_rate: Sampling rate in Hz (overrides metadata file).
+    """
+    repo = get_repository()
+    info = repo.load_signal(filepath, signal_id=signal_id, sampling_rate=sampling_rate)
+    if ctx:
+        await ctx.info(f"Loaded signal '{info['signal_id']}': {info['num_samples']} samples, {info['size_bytes'] / 1024:.1f} KB")
+    return StoredSignalInfo(**info)
+
+
+@mcp.tool()
+async def list_stored_signals(ctx: Context) -> list[StoredSignalInfo]:
+    """List all signals currently cached in the in-memory repository."""
+    repo = get_repository()
+    signals = repo.list_signals()
+    if ctx:
+        await ctx.info(f"{len(signals)} signal(s) in repository")
+    return [StoredSignalInfo(**s) for s in signals]
+
+
+@mcp.tool()
+async def get_signal_info(ctx: Context, signal_id: str) -> StoredSignalInfo:
+    """Get metadata for a stored signal without loading the full array."""
+    repo = get_repository()
+    info = repo.get_signal_info(signal_id)
+    return StoredSignalInfo(**info)
+
+
+@mcp.tool()
+async def clear_signal(ctx: Context, signal_id: str) -> dict[str, Any]:
+    """Remove a signal from the in-memory repository."""
+    repo = get_repository()
+    removed = repo.clear_signal(signal_id)
+    status = "removed" if removed else "not found"
+    if ctx:
+        await ctx.info(f"Signal '{signal_id}': {status}")
+    return {"signal_id": signal_id, "status": status}
+
+
+@mcp.tool()
+async def clear_all_signals(ctx: Context) -> dict[str, Any]:
+    """Clear all signals from the in-memory repository."""
+    repo = get_repository()
+    count = repo.clear_all()
+    if ctx:
+        await ctx.info(f"Cleared {count} signal(s) from repository")
+    return {"cleared_count": count}
+
+
+# ============================================================================
+# TOOLS - SPECTRAL ANALYSIS (Phase 1 — signal_id based)
+# ============================================================================
+
+
+@mcp.tool()
+async def compute_power_spectral_density(
+    ctx: Context,
+    signal_id: str,
+    nperseg: int = 256,
+    noverlap: int = 128,
+    window: str = "hann",
+) -> PSDResult:
+    """Compute Power Spectral Density (Welch method) for a stored signal.
+
+    Requires signal loaded via load_signal() first.
+
+    Args:
+        signal_id: ID of the stored signal.
+        nperseg: Samples per FFT segment (default 256).
+        noverlap: Overlap between segments (default 128).
+        window: Window function (default 'hann').
+    """
+    repo = get_repository()
+    signal_data = repo.get_signal(signal_id)
+    info = repo.get_signal_info(signal_id)
+    fs = info.get("sampling_rate")
+    if fs is None:
+        raise ValueError(f"No sampling_rate for signal '{signal_id}'. Re-load with sampling_rate parameter.")
+
+    if ctx:
+        await ctx.info(f"Computing PSD for '{signal_id}' ({info['num_samples']} samples, {fs} Hz)")
+
+    result = _compute_psd(signal_data, fs, nperseg=nperseg, noverlap=noverlap, window=window)
+
+    return PSDResult(
+        signal_id=signal_id,
+        num_samples=info["num_samples"],
+        sampling_rate=fs,
+        nperseg=nperseg,
+        noverlap=noverlap,
+        window=window,
+        top_peaks=[SpectralPeak(**p) for p in result["top_peaks"]],
+        total_power=result["total_power"],
+        freq_range_hz=result["freq_range_hz"],
+        frequency_resolution=result["frequency_resolution"],
+    )
+
+
+@mcp.tool()
+async def compute_spectrogram_stft(
+    ctx: Context,
+    signal_id: str,
+    nperseg: int = 256,
+    noverlap: int = 128,
+    window: str = "hann",
+) -> STFTResult:
+    """Compute STFT spectrogram for a stored signal.
+
+    Returns time-frequency summary (no full 2D array). Use for detecting
+    time-varying frequency content (transient faults, speed changes).
+
+    Args:
+        signal_id: ID of the stored signal.
+        nperseg: Samples per STFT segment (default 256).
+        noverlap: Overlap between segments (default 128).
+        window: Window function (default 'hann').
+    """
+    repo = get_repository()
+    signal_data = repo.get_signal(signal_id)
+    info = repo.get_signal_info(signal_id)
+    fs = info.get("sampling_rate")
+    if fs is None:
+        raise ValueError(f"No sampling_rate for signal '{signal_id}'.")
+
+    if ctx:
+        await ctx.info(f"Computing STFT for '{signal_id}'")
+
+    result = _compute_stft(signal_data, fs, nperseg=nperseg, noverlap=noverlap, window=window)
+
+    return STFTResult(
+        signal_id=signal_id,
+        num_samples=info["num_samples"],
+        sampling_rate=fs,
+        nperseg=nperseg,
+        noverlap=noverlap,
+        window=window,
+        num_time_bins=result["num_time_bins"],
+        num_freq_bins=result["num_freq_bins"],
+        freq_range_hz=result["freq_range_hz"],
+        time_range_s=result["time_range_s"],
+        max_power_freq_hz=result["max_power_freq_hz"],
+        max_power_time_s=result["max_power_time_s"],
+        energy_per_band=result["energy_per_band"],
+    )
+
+
+@mcp.tool()
+async def compute_envelope_spectrum_tool(
+    ctx: Context,
+    signal_id: str,
+    filter_low: float = 500.0,
+    filter_high: float = 5000.0,
+    method: str = "hilbert",
+) -> EnvelopeSpectrumResult:
+    """Compute envelope spectrum for a stored signal (signal_id pattern).
+
+    Use for bearing fault detection. The envelope spectrum reveals
+    modulation patterns caused by bearing defects.
+
+    Args:
+        signal_id: ID of the stored signal.
+        filter_low: Bandpass filter low frequency (Hz).
+        filter_high: Bandpass filter high frequency (Hz).
+        method: Envelope method (default 'hilbert').
+    """
+    repo = get_repository()
+    signal_data = repo.get_signal(signal_id)
+    info = repo.get_signal_info(signal_id)
+    fs = info.get("sampling_rate")
+    if fs is None:
+        raise ValueError(f"No sampling_rate for signal '{signal_id}'.")
+
+    if ctx:
+        await ctx.info(f"Computing envelope spectrum for '{signal_id}' ({filter_low}-{filter_high} Hz)")
+
+    result = _compute_envelope(
+        signal_data, fs,
+        frequency_range=(filter_low, filter_high),
+        method=method,
+    )
+
+    return EnvelopeSpectrumResult(
+        signal_id=signal_id,
+        num_samples=result["num_envelope_samples"],
+        sampling_rate=fs,
+        method=method,
+        frequency_range=(filter_low, filter_high),
+        top_peaks=[SpectralPeak(**p) for p in result["top_peaks"]],
+        diagnosis=result["diagnosis"],
+    )
+
+
+# ============================================================================
+# TOOLS - BEARING DIAGNOSTICS (Phase 1 — signal_id based)
+# ============================================================================
+
+
+@mcp.tool()
+async def check_bearing_fault_peak_tool(
+    ctx: Context,
+    signal_id: str,
+    bearing_id: str,
+    fault_type: str,
+    rpm: float,
+    tolerance_pct: float = 5.0,
+) -> BearingFaultCheckResult:
+    """Check for a specific bearing fault frequency in a stored signal.
+
+    Args:
+        signal_id: ID of the stored signal.
+        bearing_id: Bearing designation (e.g. '6205').
+        fault_type: Which fault to check: 'BPFO', 'BPFI', 'BSF', or 'FTF'.
+        rpm: Shaft speed in RPM.
+        tolerance_pct: Frequency matching tolerance (default 5%).
+    """
+    repo = get_repository()
+    signal_data = repo.get_signal(signal_id)
+    info = repo.get_signal_info(signal_id)
+    fs = info.get("sampling_rate")
+    if fs is None:
+        raise ValueError(f"No sampling_rate for signal '{signal_id}'.")
+
+    # Look up expected frequency
+    freq_data = _compute_fault_freqs(bearing_id, rpm)
+    if freq_data is None:
+        raise ValueError(f"Bearing '{bearing_id}' not found in catalog.")
+
+    fault_type_upper = fault_type.upper()
+    if fault_type_upper not in freq_data:
+        raise ValueError(f"Invalid fault_type '{fault_type}'. Use BPFO, BPFI, BSF, or FTF.")
+
+    expected = freq_data[fault_type_upper]
+
+    if ctx:
+        await ctx.info(f"Checking {fault_type_upper} at {expected:.2f} Hz for bearing {bearing_id}")
+
+    result = _check_fault_peak(
+        signal=signal_data,
+        fs=fs,
+        expected_freq=expected,
+        fault_type=fault_type_upper,
+        bearing_id=bearing_id,
+        signal_id=signal_id,
+        tolerance_pct=tolerance_pct,
+    )
+
+    return BearingFaultCheckResult(**result)
+
+
+@mcp.tool()
+async def check_bearing_faults_direct(
+    ctx: Context,
+    signal_id: str,
+    bearing_id: str,
+    rpm: float,
+    tolerance_pct: float = 5.0,
+) -> BearingFaultsSummary:
+    """Run all bearing fault checks (BPFO, BPFI, BSF, FTF) on a stored signal.
+
+    Args:
+        signal_id: ID of the stored signal.
+        bearing_id: Bearing designation (e.g. '6205').
+        rpm: Shaft speed in RPM.
+        tolerance_pct: Frequency matching tolerance (default 5%).
+    """
+    repo = get_repository()
+    signal_data = repo.get_signal(signal_id)
+    info = repo.get_signal_info(signal_id)
+    fs = info.get("sampling_rate")
+    if fs is None:
+        raise ValueError(f"No sampling_rate for signal '{signal_id}'.")
+
+    if ctx:
+        await ctx.info(f"Running all bearing fault checks for {bearing_id} at {rpm} RPM")
+
+    result = _check_all_faults(
+        signal=signal_data,
+        fs=fs,
+        bearing_id=bearing_id,
+        rpm=rpm,
+        signal_id=signal_id,
+        tolerance_pct=tolerance_pct,
+    )
+
+    return BearingFaultsSummary(
+        signal_id=result["signal_id"],
+        bearing_id=result["bearing_id"],
+        rpm=result["rpm"],
+        shaft_frequency_hz=result["shaft_frequency_hz"],
+        bearing_frequencies=result["bearing_frequencies"],
+        fault_checks=[BearingFaultCheckResult(**c) for c in result["fault_checks"]],
+        overall_assessment=result["overall_assessment"],
+        most_likely_fault=result["most_likely_fault"],
+    )
+
+
+@mcp.tool()
+async def lookup_bearing_and_compute_tool(
+    ctx: Context,
+    bearing_type: str,
+    rpm: float,
+    signal_id: str,
+    tolerance_pct: float = 5.0,
+) -> BearingFaultsSummary:
+    """Look up bearing, compute fault frequencies, and check signal — all in one call.
+
+    End-to-end bearing analysis: catalog lookup + frequency calculation +
+    envelope spectrum fault detection.
+
+    Args:
+        bearing_type: Bearing designation (e.g. 'SKF 6205-2RS', '6205').
+        rpm: Shaft speed in RPM.
+        signal_id: ID of the stored signal.
+        tolerance_pct: Frequency matching tolerance (default 5%).
+    """
+    repo = get_repository()
+    signal_data = repo.get_signal(signal_id)
+    info = repo.get_signal_info(signal_id)
+    fs = info.get("sampling_rate")
+    if fs is None:
+        raise ValueError(f"No sampling_rate for signal '{signal_id}'.")
+
+    if ctx:
+        await ctx.info(f"End-to-end bearing analysis: {bearing_type} at {rpm} RPM")
+
+    result = _lookup_and_compute(
+        signal=signal_data,
+        fs=fs,
+        bearing_type=bearing_type,
+        rpm=rpm,
+        signal_id=signal_id,
+        tolerance_pct=tolerance_pct,
+    )
+
+    return BearingFaultsSummary(
+        signal_id=result["signal_id"],
+        bearing_id=result["bearing_id"],
+        rpm=result["rpm"],
+        shaft_frequency_hz=result["shaft_frequency_hz"],
+        bearing_frequencies=result["bearing_frequencies"],
+        fault_checks=[BearingFaultCheckResult(**c) for c in result["fault_checks"]],
+        overall_assessment=result["overall_assessment"],
+        most_likely_fault=result["most_likely_fault"],
+    )
+
+
+# ============================================================================
+# TOOLS - ISO SEVERITY & DIAGNOSIS (Phase 1 — signal_id based)
+# ============================================================================
+
+
+@mcp.tool()
+async def assess_vibration_severity(
+    ctx: Context,
+    signal_id: str,
+    machine_class: str = "II",
+    axis: str = "vertical",
+) -> VibrationSeverityResult:
+    """Assess vibration severity per ISO 10816/20816 for a stored signal.
+
+    Uses the signal_id pattern (load once, reference by ID).
+    Signal unit is read from metadata; defaults to 'g' if unknown.
+
+    Args:
+        signal_id: ID of the stored signal.
+        machine_class: 'I' (small <15kW), 'II' (medium 15-300kW),
+            'III' (large rigid >300kW), 'IV' (large flexible).
+        axis: Measurement axis (informational).
+    """
+    repo = get_repository()
+    signal_data = repo.get_signal(signal_id)
+    info = repo.get_signal_info(signal_id)
+    fs = info.get("sampling_rate")
+    if fs is None:
+        raise ValueError(f"No sampling_rate for signal '{signal_id}'.")
+
+    signal_unit = info.get("signal_unit", "g")
+    if ctx:
+        await ctx.info(f"Assessing ISO severity for '{signal_id}' (class {machine_class}, unit: {signal_unit})")
+
+    result = _assess_severity(
+        signal=signal_data,
+        fs=fs,
+        machine_class=machine_class,
+        axis=axis,
+        signal_unit=signal_unit,
+    )
+    result["signal_id"] = signal_id
+
+    if ctx:
+        await ctx.info(f"Zone {result['zone']} ({result['severity_level']}): {result['rms_velocity_mm_s']:.2f} mm/s")
+
+    return VibrationSeverityResult(**result)
+
+
+@mcp.tool()
+async def diagnose_vibration_tool(
+    ctx: Context,
+    signal_id: str,
+    rpm: float,
+    bearing_id: Optional[str] = None,
+    machine_class: str = "II",
+) -> DiagnosisResult:
+    """Full integrated diagnosis: FFT + PSD + STFT + bearing faults + ISO severity.
+
+    Comprehensive vibration diagnostic pipeline. Loads signal from repository,
+    runs all analyses, and synthesizes results into an actionable report.
+
+    Args:
+        signal_id: ID of the stored signal.
+        rpm: Machine operating speed in RPM.
+        bearing_id: Bearing designation for fault detection (optional).
+        machine_class: ISO machine class (default 'II').
+    """
+    repo = get_repository()
+    signal_data = repo.get_signal(signal_id)
+    info = repo.get_signal_info(signal_id)
+    fs = info.get("sampling_rate")
+    if fs is None:
+        raise ValueError(f"No sampling_rate for signal '{signal_id}'.")
+
+    signal_unit = info.get("signal_unit", "g")
+    if ctx:
+        await ctx.info(f"Running full diagnosis for '{signal_id}' at {rpm} RPM")
+        if bearing_id:
+            await ctx.info(f"Bearing analysis: {bearing_id}")
+
+    result = _diagnose_vibration(
+        signal=signal_data,
+        fs=fs,
+        rpm=rpm,
+        signal_id=signal_id,
+        bearing_id=bearing_id,
+        machine_class=machine_class,
+        signal_unit=signal_unit,
+    )
+
+    # Convert nested dicts to Pydantic models
+    bearing_faults_model = None
+    if result["bearing_faults"]:
+        bf = result["bearing_faults"]
+        bearing_faults_model = BearingFaultsSummary(
+            signal_id=bf["signal_id"],
+            bearing_id=bf["bearing_id"],
+            rpm=bf["rpm"],
+            shaft_frequency_hz=bf["shaft_frequency_hz"],
+            bearing_frequencies=bf["bearing_frequencies"],
+            fault_checks=[BearingFaultCheckResult(**c) for c in bf["fault_checks"]],
+            overall_assessment=bf["overall_assessment"],
+            most_likely_fault=bf["most_likely_fault"],
+        )
+
+    iso_model = VibrationSeverityResult(**result["iso_severity"])
+
+    if ctx:
+        await ctx.info(f"Diagnosis complete: {result['confidence']} confidence")
+        await ctx.info(f"ISO Zone: {result['iso_severity']['zone']}")
+        for rec in result["recommendations"]:
+            await ctx.info(f"  → {rec}")
+
+    return DiagnosisResult(
+        signal_id=result["signal_id"],
+        rpm=result["rpm"],
+        bearing_id=result["bearing_id"],
+        machine_class=result["machine_class"],
+        fft_summary=result["fft_summary"],
+        psd_summary=result["psd_summary"],
+        stft_summary=result["stft_summary"],
+        bearing_faults=bearing_faults_model,
+        iso_severity=iso_model,
+        overall_diagnosis=result["overall_diagnosis"],
+        confidence=result["confidence"],
+        recommendations=result["recommendations"],
+    )
 
 
 # ============================================================================
