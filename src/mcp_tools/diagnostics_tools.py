@@ -53,81 +53,13 @@ from ..bearing_analyzer import (
 from ..iso10816 import assess_vibration_severity as _assess_severity
 from ..diagnosis_pipeline import diagnose_vibration as _diagnose_vibration
 
-from .analysis_tools import extract_time_domain_features
+from ..signal_processing.features import (
+    extract_time_domain_features,
+    segment_and_extract_features as _segment_and_extract_features,
+    resolve_sampling_rate as _resolve_sampling_rate,
+)
 
 logger = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# Internal helpers (module-level, outside register)
-# ---------------------------------------------------------------------------
-
-def _resolve_sampling_rate(
-    signal_file: str,
-    sampling_rate: Optional[float],
-    strict: bool = True,
-) -> Optional[float]:
-    """
-    Resolve sampling rate for a signal file.
-
-    Priority: provided sampling_rate > metadata > error/None.
-
-    Args:
-        signal_file: Signal filename relative to DATA_DIR
-        sampling_rate: User-provided sampling rate (None = auto-detect)
-        strict: If True, raise on missing rate; if False, return None
-
-    Returns:
-        Resolved sampling rate, or None if strict=False and not found
-    """
-    if sampling_rate is not None:
-        return sampling_rate
-
-    metadata_path = get_metadata_path(signal_file)
-    if metadata_path.exists():
-        with open(metadata_path) as f:
-            metadata = json.load(f)
-            rate = metadata.get("sampling_rate")
-            if rate is not None:
-                return rate
-
-    if strict:
-        raise ValueError(
-            f"No sampling rate found for {signal_file}. "
-            f"Please provide sampling_rate parameter or create "
-            f"{Path(signal_file).stem}_metadata.json with 'sampling_rate' field."
-        )
-    return None
-
-
-def _segment_and_extract_features(
-    signal_data: np.ndarray,
-    sampling_rate: float,
-    segment_duration: float,
-    overlap_ratio: float,
-) -> list[dict]:
-    """
-    Segment a signal and extract time-domain features from each segment.
-
-    Args:
-        signal_data: Raw signal array
-        sampling_rate: Sampling frequency in Hz
-        segment_duration: Duration of each segment in seconds
-        overlap_ratio: Overlap ratio between segments (0-1)
-
-    Returns:
-        List of feature dictionaries, one per segment
-    """
-    segment_length_samples = int(segment_duration * sampling_rate)
-    hop_length = int(segment_length_samples * (1 - overlap_ratio))
-    features_list = []
-
-    for start in range(0, len(signal_data) - segment_length_samples + 1, hop_length):
-        segment = signal_data[start:start + segment_length_samples]
-        features = extract_time_domain_features(segment)
-        features_list.append(features)
-
-    return features_list
 
 
 async def _extract_features_from_files(
