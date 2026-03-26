@@ -116,6 +116,57 @@ class TestUnitConversion:
         assert result["unit_conversion_performed"] is False
 
 
+class TestAdditionalUnits:
+    def test_m_s_unit(self):
+        """m/s should be converted to mm/s."""
+        fs = 10000
+        t = np.linspace(0, 1.0, fs, endpoint=False)
+        signal = 0.002 * np.sin(2 * np.pi * 50 * t)  # 2 mm/s = 0.002 m/s
+        result = assess_vibration_severity(signal, fs=fs, signal_unit="m/s")
+        assert result["unit_conversion_performed"] is True
+        assert result["original_unit"] == "m/s"
+
+    def test_m_s2_unit(self):
+        """m/s2 (without superscript) should work like m/s²."""
+        fs = 10000
+        t = np.linspace(0, 1.0, fs, endpoint=False)
+        signal = 5.0 * np.sin(2 * np.pi * 50 * t)
+        result = assess_vibration_severity(signal, fs=fs, signal_unit="m/s2")
+        assert result["unit_conversion_performed"] is True
+
+    def test_unknown_unit_assumed_mm_s(self):
+        """Unknown unit should assume mm/s with warning."""
+        signal = np.random.randn(10000) * 0.1
+        result = assess_vibration_severity(signal, fs=10000, signal_unit="mils")
+        assert result["unit_conversion_performed"] is False
+
+    def test_rpm_based_frequency_range(self):
+        """Low RPM should use 2-1000 Hz range."""
+        from predictive_maintenance_mcp.iso10816 import assess_severity_raw
+        signal = np.random.randn(10000) * 0.1
+        result = assess_severity_raw(
+            signal, fs=10000, signal_unit="mm/s", operating_speed_rpm=300
+        )
+        assert "2-1000" in result["frequency_range"]
+
+    def test_high_rpm_frequency_range(self):
+        """High RPM should use 10-1000 Hz range."""
+        from predictive_maintenance_mcp.iso10816 import assess_severity_raw
+        signal = np.random.randn(10000) * 0.1
+        result = assess_severity_raw(
+            signal, fs=10000, signal_unit="mm/s", operating_speed_rpm=3000
+        )
+        assert "10-1000" in result["frequency_range"]
+
+    def test_invalid_group_support(self):
+        """Invalid machine_group/support_type combo should raise."""
+        from predictive_maintenance_mcp.iso10816 import assess_severity_raw
+        with pytest.raises(ValueError):
+            assess_severity_raw(
+                np.random.randn(1000), fs=10000, machine_group=3
+            )
+
+
 class TestResultStructure:
     def test_result_keys(self):
         signal = np.random.randn(10000)

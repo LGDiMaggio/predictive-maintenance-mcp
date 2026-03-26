@@ -240,6 +240,7 @@ class DiagnosisResult(BaseModel):
     stft_summary: dict[str, Any] = Field(description="STFT key findings")
     bearing_faults: Optional[BearingFaultsSummary] = Field(None, description="Bearing fault results")
     iso_severity: VibrationSeverityResult = Field(description="ISO severity assessment")
+    anomaly_detection: Optional[dict[str, Any]] = Field(None, description="Anomaly detection results (health, ratio, score)")
     overall_diagnosis: str = Field(description="Combined diagnostic text")
     confidence: str = Field(description="Overall confidence: high, moderate, or low")
     recommendations: list[str] = Field(description="Recommended actions")

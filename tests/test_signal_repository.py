@@ -119,6 +119,42 @@ class TestClear:
         assert repo.signal_count == 0
 
 
+class TestEdgeCases:
+    def test_load_mat_direct(self, repo, tmp_path):
+        """Test loading a .mat file via direct fallback loader."""
+        from scipy.io import savemat
+        data = np.random.randn(500)
+        mat_path = tmp_path / "test_mat.mat"
+        savemat(str(mat_path), {"vibration": data})
+        info = repo.load_signal(str(mat_path))
+        assert info["num_samples"] == 500
+
+    def test_no_metadata_file(self, repo, tmp_path):
+        """Load signal without companion metadata JSON."""
+        npy_path = tmp_path / "no_meta.npy"
+        np.save(npy_path, np.random.randn(100))
+        info = repo.load_signal(str(npy_path))
+        assert info["sampling_rate"] is None
+        assert info["signal_unit"] is None
+
+    def test_memory_tracking(self, repo, tmp_path):
+        """current_memory_bytes tracks correctly."""
+        path = tmp_path / "mem_test.npy"
+        data = np.random.randn(1000)
+        np.save(path, data)
+        repo.load_signal(str(path), signal_id="m1")
+        assert repo.current_memory_bytes == data.nbytes
+        repo.clear_signal("m1")
+        assert repo.current_memory_bytes == 0
+
+    def test_duration_calculated(self, repo, tmp_path):
+        """Duration should be calculated when sampling_rate known."""
+        path = tmp_path / "dur.npy"
+        np.save(path, np.random.randn(10000))
+        info = repo.load_signal(str(path), sampling_rate=10000)
+        assert info["duration_s"] == pytest.approx(1.0, abs=0.01)
+
+
 class TestLRUEviction:
     def test_eviction_when_full(self, tmp_path):
         """With a tiny max (8 KB), loading large signals should evict oldest."""

@@ -5193,6 +5193,7 @@ async def diagnose_vibration_tool(
         stft_summary=result["stft_summary"],
         bearing_faults=bearing_faults_model,
         iso_severity=iso_model,
+        anomaly_detection=result.get("anomaly_detection"),
         overall_diagnosis=result["overall_diagnosis"],
         confidence=result["confidence"],
         recommendations=result["recommendations"],
