@@ -175,6 +175,7 @@ source = ["src"]
 omit = ["*/tests/*", "*/__pycache__/*"]
 
 [tool.coverage.report]
+fail_under = 40
 exclude_lines = [
     "pragma: no cover",
     "def __repr__",

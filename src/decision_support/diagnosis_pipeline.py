@@ -15,10 +15,10 @@ from typing import Any, Optional
 import numpy as np
 import pandas as pd
 from scipy.fft import fft, fftfreq
-from scipy.stats import kurtosis, skew, entropy
 
 from ..config import MODELS_DIR
 from ..signal_processing.spectral import compute_psd, compute_stft_spectrogram
+from ..signal_processing.features import extract_time_domain_features as _extract_time_domain_features
 from ..diagnostics.bearing_analyzer import check_all_bearing_faults
 from ..diagnostics.iso10816 import assess_vibration_severity
 
@@ -58,52 +58,6 @@ def _compute_fft_summary(
         "rms_spectral": round(rms_spectral, 6),
         "num_bins": len(freqs),
         "top_peaks": top_peaks,
-    }
-
-
-def _extract_time_domain_features(segment: np.ndarray) -> dict[str, float]:
-    """Extract 17 time-domain features from a signal segment.
-
-    Mirrors extract_time_domain_features in machinery_diagnostics_server.py
-    to ensure compatibility with trained anomaly models.
-    """
-    mean_val = float(np.mean(segment))
-    std_val = float(np.std(segment))
-    var_val = float(np.var(segment))
-    mean_abs_val = float(np.mean(np.abs(segment)))
-    rms_val = float(np.sqrt(np.mean(segment**2)))
-    max_val = float(np.max(segment))
-    min_val = float(np.min(segment))
-    range_val = max_val - min_val
-    skewness_val = float(skew(segment))
-    kurtosis_val = float(kurtosis(segment, fisher=True))
-
-    if rms_val == 0:
-        rms_val = 1e-10
-    if mean_abs_val == 0:
-        mean_abs_val = 1e-10
-
-    shape_factor_val = rms_val / mean_abs_val
-    crest_factor_val = float(np.max(np.abs(segment))) / rms_val
-    impulse_factor_val = float(np.max(np.abs(segment))) / mean_abs_val
-    sqrt_mean = float(np.mean(np.sqrt(np.abs(segment))))
-    clearance_factor_val = float(np.max(np.abs(segment))) / (sqrt_mean**2) if sqrt_mean > 0 else 0.0
-    power_val = float(np.mean(segment**2))
-    hist, _ = np.histogram(segment, bins=50, density=True)
-    hist = hist + 1e-10
-    entropy_val = float(entropy(hist))
-    zero_crossings = np.where(np.diff(np.sign(segment)))[0]
-    zero_crossing_rate_val = float(len(zero_crossings) / len(segment))
-
-    return {
-        "mean": mean_val, "std": std_val, "var": var_val,
-        "mean_abs": mean_abs_val, "rms": rms_val,
-        "max": max_val, "min": min_val, "range": range_val,
-        "skewness": skewness_val, "kurtosis": kurtosis_val,
-        "shape_factor": shape_factor_val, "crest_factor": crest_factor_val,
-        "impulse_factor": impulse_factor_val, "clearance_factor": clearance_factor_val,
-        "power": power_val, "entropy": entropy_val,
-        "zero_crossing_rate": zero_crossing_rate_val,
     }
 
 
