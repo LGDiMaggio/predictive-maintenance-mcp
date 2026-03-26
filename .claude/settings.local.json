@@ -9,7 +9,17 @@
       "Bash(powershell -Command \"cd ''c:\\\\Users\\\\d044653\\\\OneDrive - Politecnico di Torino\\\\predictive-maintenance-mcp''; git log --oneline -5\")",
       "Bash(powershell -Command \"cd ''c:\\\\Users\\\\d044653\\\\OneDrive - Politecnico di Torino\\\\predictive-maintenance-mcp''; git add pyproject.toml src/config.py src/signal_loader.py src/document_reader.py src/machinery_diagnostics_server.py src/report_generator.py tests/test_obsolete_tools_removed.py tests/test_real_data.py tests/test_reports.py tests/test_unit_conversion.py\")",
       "Bash(powershell -Command \"cd ''c:\\\\Users\\\\d044653\\\\OneDrive - Politecnico di Torino\\\\predictive-maintenance-mcp''; git commit -m ''refactor: eliminate import-time side effects and centralize path config:*)",
-      "Bash(powershell -Command \"cd ''c:\\\\Users\\\\d044653\\\\OneDrive - Politecnico di Torino\\\\predictive-maintenance-mcp''; git push origin main\")"
+      "Bash(powershell -Command \"cd ''c:\\\\Users\\\\d044653\\\\OneDrive - Politecnico di Torino\\\\predictive-maintenance-mcp''; git push origin main\")",
+      "Bash(timeout 60 python -m pytest tests/test_signal_loader.py -o \"addopts=\" -v --tb=short)",
+      "Bash(timeout 60 python -m pytest tests/test_report_docx.py -o \"addopts=\" -v --tb=short)",
+      "Bash(timeout 90 python -m pytest tests/test_rag.py -o \"addopts=\" -v --tb=short)",
+      "Bash(python -m pytest tests/test_rag.py -o \"addopts=\" -v --tb=short --timeout=30)",
+      "Bash(python -m pytest tests/test_rag.py -o \"addopts=\" -v --tb=short)",
+      "Bash(python -m pytest tests/test_signal_loader.py -o \"addopts=\" -v --tb=short)",
+      "Bash(python -m pytest tests/ -o \"addopts=\" -v --tb=short)",
+      "Bash(rm -f run_tests.py rag_result.txt rag_result2.txt rag_result5.txt rag_err.txt rag_out.txt rag_test.txt test_output.txt)",
+      "Bash(ls *.txt *.py)",
+      "Bash(python -c \"import os; os.remove\\(''rag_result.txt''\\)\")"
     ]
   }
 }
