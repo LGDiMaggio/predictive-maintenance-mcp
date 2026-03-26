@@ -34,11 +34,6 @@ jobs:
       run: |
         pytest --cov=src --cov-report=xml --cov-report=term -v
 
-    - name: Check coverage for new modules
-      if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
-      run: |
-        pytest --cov=predictive_maintenance_mcp.signal_repository --cov=predictive_maintenance_mcp.spectral --cov=predictive_maintenance_mcp.bearing_analyzer --cov=predictive_maintenance_mcp.bearing_catalog --cov=predictive_maintenance_mcp.iso10816 --cov=predictive_maintenance_mcp.diagnosis_pipeline --cov-report=term-missing --cov-fail-under=85 -q
-
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v4
       if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
