@@ -8,36 +8,36 @@ on:
 
 jobs:
   test:
-    name: Test on Python ${{ matrix.python-version }}
-    runs-on: ubuntu-latest
-    continue-on-error: true  # Don't fail entire workflow on test errors
+    name: Test Python ${{ matrix.python-version }} / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
         python-version: ["3.11", "3.12"]
-    
+
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
         cache: 'pip'
-    
+
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -e .[dev]
-    
+
     - name: Run tests with pytest
       run: |
         pytest --cov=src --cov-report=xml --cov-report=term -v
-      continue-on-error: true  # Don't fail on test errors for now
-    
+
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v4
-      if: always()  # Upload even if tests fail
-      continue-on-error: true  # Don't fail if codecov upload fails
+      if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+      continue-on-error: true
       with:
         file: ./coverage.xml
         flags: unittests
@@ -47,46 +47,47 @@ jobs:
   lint:
     name: Lint with flake8
     runs-on: ubuntu-latest
-    
+
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: "3.11"
         cache: 'pip'
-    
+
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install flake8
-    
-    - name: Lint with flake8
+
+    - name: Lint - syntax errors and undefined names (blocking)
       run: |
-        # Stop the build if there are Python syntax errors or undefined names
         flake8 src --count --select=E9,F63,F7,F82 --show-source --statistics
-        # Exit-zero treats all errors as warnings. Line length set to 120 (more permissive)
+
+    - name: Lint - style warnings (non-blocking)
+      run: |
         flake8 src --count --exit-zero --max-complexity=20 --max-line-length=120 --statistics
 
   type-check:
     name: Type check with mypy
     runs-on: ubuntu-latest
-    
+
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: "3.11"
         cache: 'pip'
-    
+
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -e .[dev]
-    
+
     - name: Type check with mypy
       run: |
         mypy src --ignore-missing-imports --no-strict-optional --allow-untyped-defs
@@ -95,21 +96,21 @@ jobs:
   format-check:
     name: Check formatting with Black
     runs-on: ubuntu-latest
-    
+
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: "3.11"
         cache: 'pip'
-    
+
     - name: Install Black
       run: |
         python -m pip install --upgrade pip
         pip install black
-    
+
     - name: Check code formatting
       run: |
         black --check --line-length=88 src tests
