@@ -67,14 +67,29 @@ Discussions = "https://github.com/LGDiMaggio/predictive-maintenance-mcp/discussi
 predictive-maintenance-mcp = "predictive_maintenance_mcp.machinery_diagnostics_server:main"
 
 [tool.setuptools]
-packages = ["predictive_maintenance_mcp"]
+packages = [
+    "predictive_maintenance_mcp",
+    "predictive_maintenance_mcp.signal_acquisition",
+    "predictive_maintenance_mcp.signal_processing",
+    "predictive_maintenance_mcp.diagnostics",
+    "predictive_maintenance_mcp.decision_support",
+    "predictive_maintenance_mcp.prognostics",
+]
 
 [tool.setuptools.package-dir]
 predictive_maintenance_mcp = "src"
+"predictive_maintenance_mcp.signal_acquisition" = "src/signal_acquisition"
+"predictive_maintenance_mcp.signal_processing" = "src/signal_processing"
+"predictive_maintenance_mcp.diagnostics" = "src/diagnostics"
+"predictive_maintenance_mcp.decision_support" = "src/decision_support"
+"predictive_maintenance_mcp.prognostics" = "src/prognostics"
 
 [project.optional-dependencies]
 docs = [
     "pypdf>=4.0",
+    "sphinx>=7.0",
+    "sphinx-rtd-theme>=2.0",
+    "sphinx-autodoc-typehints>=2.0",
 ]
 ml = [
     "scikit-learn>=1.4",
