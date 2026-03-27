@@ -864,7 +864,7 @@ def register(mcp: FastMCP) -> None:
             if sampling_rate is None:
                 raise ValueError("sampling_rate required")
 
-        # Import evaluate_iso_20816 from the monolith (will be refactored later)
+        # Use the monolith's evaluate_iso_20816 (shares same logic as diagnostics_tools)
         from ..machinery_diagnostics_server import evaluate_iso_20816
 
         # Perform ISO evaluation
