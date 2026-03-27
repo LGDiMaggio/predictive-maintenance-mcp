@@ -12,6 +12,6 @@ __version__ = "0.7.1"
 __author__ = "Luigi Gianpio Di Maggio"
 __license__ = "MIT"
 
-from .machinery_diagnostics_server import mcp, main
+from .server import mcp, main
 
 __all__ = ["mcp", "main", "__version__"]

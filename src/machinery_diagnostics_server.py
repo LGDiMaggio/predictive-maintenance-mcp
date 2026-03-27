@@ -1,13 +1,16 @@
 """
-Predictive Maintenance MCP Server
+Predictive Maintenance MCP Server — DEPRECATED LEGACY MONOLITH.
 
-This server provides tools and resources for predictive maintenance,
-vibration signal analysis, and industrial machinery diagnostics.
+.. deprecated:: 0.8.0
+    This module is superseded by the modular ISO 13374 architecture:
+    - Entry point: ``server.py``
+    - Tools: ``mcp_tools/`` sub-package
+    - Signal processing: ``signal_processing/``
+    - Diagnostics: ``diagnostics/``
+    - Decision support: ``decision_support/``
 
-Features:
-- Resources: Reading signals from files (CSV, binary)
-- Tools: FFT Analysis, Envelope Analysis, Statistical Analysis
-- Prompts: Diagnostic workflows for bearings, gears, etc.
+    Kept temporarily for backward compatibility (report_tools.py imports).
+    Will be removed in v1.0.0.
 """
 
 import logging

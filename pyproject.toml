@@ -64,7 +64,7 @@ Issues = "https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues"
 Discussions = "https://github.com/LGDiMaggio/predictive-maintenance-mcp/discussions"
 
 [project.scripts]
-predictive-maintenance-mcp = "predictive_maintenance_mcp.machinery_diagnostics_server:main"
+predictive-maintenance-mcp = "predictive_maintenance_mcp.server:main"
 
 [tool.setuptools]
 packages = [
@@ -172,10 +172,16 @@ markers = [
 
 [tool.coverage.run]
 source = ["src"]
-omit = ["*/tests/*", "*/__pycache__/*"]
+omit = [
+    "*/tests/*",
+    "*/__pycache__/*",
+    "src/machinery_diagnostics_server.py",  # Legacy monolith — deprecated, replaced by mcp_tools/ + server.py
+    "src/html_templates.py",                # Legacy HTML templates — superseded by report_tools.py
+    "src/report_generator.py",              # Legacy report generator — superseded by mcp_tools/report_tools.py
+]
 
 [tool.coverage.report]
-fail_under = 40
+fail_under = 60
 exclude_lines = [
     "pragma: no cover",
     "def __repr__",
