@@ -250,14 +250,18 @@ class SignalRepository:
 # ------------------------------------------------------------------
 
 _repository: Optional[SignalRepository] = None
+_repo_lock = threading.Lock()
 
 
 def get_repository() -> SignalRepository:
     """Get or create the global SignalRepository singleton."""
     global _repository
     if _repository is None:
-        max_gb = float(os.environ.get("PMM_SIGNAL_CACHE_GB", "10"))
-        _repository = SignalRepository(
-            max_memory_bytes=int(max_gb * 1024**3)
-        )
+        with _repo_lock:
+            # Double-checked locking
+            if _repository is None:
+                max_gb = float(os.environ.get("PMM_SIGNAL_CACHE_GB", "10"))
+                _repository = SignalRepository(
+                    max_memory_bytes=int(max_gb * 1024**3)
+                )
     return _repository

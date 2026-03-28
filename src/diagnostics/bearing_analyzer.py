@@ -86,7 +86,7 @@ def check_bearing_fault_peak(
     if detected and len(harmonics) >= 2:
         confidence = "high"
     elif detected and len(harmonics) >= 1:
-        confidence = "high"
+        confidence = "moderate"
     elif detected:
         confidence = "moderate"
     elif len(harmonics) > 0:

@@ -9,7 +9,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 from mcp.server.fastmcp import FastMCP
 
-from predictive_maintenance_mcp.mcp_tools.acquisition_tools import register, load_and_validate_metadata
+from predictive_maintenance_mcp.mcp_tools.acquisition_tools import register
+from predictive_maintenance_mcp.mcp_tools._utils import load_and_validate_metadata
+from predictive_maintenance_mcp.signal_loader import load_signal_data
 
 
 # ---------------------------------------------------------------------------
@@ -73,6 +75,8 @@ class TestLoadAndValidateMetadata:
     async def test_uses_metadata_sampling_rate(self, data_dir, mock_ctx):
         rate, seg = await load_and_validate_metadata(
             mock_ctx, "test_sine.csv",
+            data_dir=data_dir,
+            load_signal_data_fn=load_signal_data,
             provided_sampling_rate=None,
             default_sampling_rate=1000.0,
             provided_segment_duration=None,
@@ -84,6 +88,8 @@ class TestLoadAndValidateMetadata:
     async def test_uses_default_when_no_metadata(self, data_dir, mock_ctx):
         rate, seg = await load_and_validate_metadata(
             mock_ctx, "real_train/baseline_1.csv",
+            data_dir=data_dir,
+            load_signal_data_fn=load_signal_data,
             provided_sampling_rate=None,
             default_sampling_rate=1000.0,
             provided_segment_duration=None,
@@ -96,6 +102,8 @@ class TestLoadAndValidateMetadata:
     async def test_metadata_overrides_user_on_conflict(self, data_dir, mock_ctx):
         rate, seg = await load_and_validate_metadata(
             mock_ctx, "test_sine.csv",
+            data_dir=data_dir,
+            load_signal_data_fn=load_signal_data,
             provided_sampling_rate=5000.0,  # different from metadata (10000)
             default_sampling_rate=1000.0,
             provided_segment_duration=None,
@@ -107,6 +115,8 @@ class TestLoadAndValidateMetadata:
     async def test_segment_duration_default(self, data_dir, mock_ctx):
         _, seg = await load_and_validate_metadata(
             mock_ctx, "test_sine.csv",
+            data_dir=data_dir,
+            load_signal_data_fn=load_signal_data,
             provided_sampling_rate=None,
             default_sampling_rate=1000.0,
             provided_segment_duration=None,
@@ -118,6 +128,8 @@ class TestLoadAndValidateMetadata:
     async def test_segment_duration_user_provided(self, data_dir, mock_ctx):
         _, seg = await load_and_validate_metadata(
             mock_ctx, "test_sine.csv",
+            data_dir=data_dir,
+            load_signal_data_fn=load_signal_data,
             provided_sampling_rate=None,
             default_sampling_rate=1000.0,
             provided_segment_duration=0.5,

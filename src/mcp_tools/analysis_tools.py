@@ -32,124 +32,9 @@ from ..signal_processing.features import (
     segment_and_extract_features as _segment_and_extract_features,
     resolve_sampling_rate as _resolve_sampling_rate,
 )
+from ._utils import sanitize_filename, load_and_validate_metadata as _load_and_validate_metadata
 
 logger = logging.getLogger(__name__)
-
-
-async def load_and_validate_metadata(
-    ctx: Context,
-    filename: str,
-    provided_sampling_rate: Optional[float],
-    default_sampling_rate: float,
-    provided_segment_duration: Optional[float],
-    default_segment_duration: float
-) -> tuple[float, float]:
-    """
-    Load metadata and validate/confirm analysis parameters with user.
-
-    Critical parameter validation strategy:
-    1. SAMPLING RATE:
-       - Check metadata file first
-       - If metadata exists: use it, notify user
-       - If no metadata AND user provided: use user value, warn no verification
-       - If no metadata AND no user input: CRITICAL WARNING, ask user to confirm
-
-    2. SEGMENT DURATION:
-       - Always notify user of value being used
-       - Suggest they can modify if needed
-
-    Args:
-        ctx: MCP context for user communication
-        filename: Signal filename
-        provided_sampling_rate: Sampling rate provided by user (None if using default)
-        default_sampling_rate: Default sampling rate (e.g., 1000.0)
-        provided_segment_duration: Segment duration provided by user (None if using default)
-        default_segment_duration: Default segment duration (e.g., 1.0)
-
-    Returns:
-        Tuple of (validated_sampling_rate, validated_segment_duration)
-    """
-    filepath = DATA_DIR / filename
-    metadata_file = filepath.parent / (filepath.stem + "_metadata.json")
-
-    # Initialize with provided or default values
-    sampling_rate = provided_sampling_rate if provided_sampling_rate is not None else default_sampling_rate
-    segment_duration = provided_segment_duration if provided_segment_duration is not None else default_segment_duration
-
-    # Check if user explicitly provided values (not using defaults)
-    user_provided_sampling_rate = (provided_sampling_rate is not None and provided_sampling_rate != default_sampling_rate)
-    user_provided_segment_duration = (provided_segment_duration is not None and provided_segment_duration != default_segment_duration)
-
-    # STEP 1: Validate SAMPLING RATE (CRITICAL)
-    metadata_found = False
-    if metadata_file.exists():
-        import json
-        with open(metadata_file, 'r') as f:
-            metadata = json.load(f)
-            if 'sampling_rate' in metadata:
-                metadata_sampling_rate = metadata['sampling_rate']
-                metadata_found = True
-
-                if user_provided_sampling_rate and abs(sampling_rate - metadata_sampling_rate) > 0.1:
-                    # User provided DIFFERENT value than metadata
-                    await ctx.info(f"⚠️  CONFLICT: User provided {sampling_rate} Hz, but metadata says {metadata_sampling_rate} Hz")
-                    await ctx.info(f"   Using METADATA value: {metadata_sampling_rate} Hz (more reliable)")
-                    sampling_rate = metadata_sampling_rate
-                else:
-                    # Metadata found, use it
-                    await ctx.info(f"✅ Metadata found: sampling_rate = {metadata_sampling_rate} Hz")
-                    sampling_rate = metadata_sampling_rate
-
-    # CRITICAL: No metadata found
-    if not metadata_found:
-        if user_provided_sampling_rate:
-            # User provided value, no metadata to verify
-            await ctx.info(f"📌 Using user-provided sampling_rate = {sampling_rate} Hz")
-            await ctx.info(f"   ⚠️  No metadata file to verify - cannot confirm correctness")
-        else:
-            # NO metadata, NO user input - CRITICAL!
-            await ctx.info(f"")
-            await ctx.info(f"❌ CRITICAL: No metadata found and no sampling_rate provided!")
-            await ctx.info(f"")
-            await ctx.info(f"   File: {filename}")
-            await ctx.info(f"   Expected metadata: {metadata_file.name}")
-            await ctx.info(f"")
-            await ctx.info(f"   Sampling rate is CRITICAL for frequency analysis accuracy.")
-            await ctx.info(f"   Using default {sampling_rate} Hz may give COMPLETELY WRONG results!")
-            await ctx.info(f"")
-            await ctx.info(f"⚠️  PLEASE CONFIRM:")
-            await ctx.info(f"   • Do you know the sampling rate for '{filename}'?")
-            await ctx.info(f"   • If YES: Please provide sampling_rate parameter and re-run")
-            await ctx.info(f"   • If NO: Results will be UNRELIABLE - interpretation requires caution")
-            await ctx.info(f"")
-            await ctx.info(f"⚠️  PROCEEDING WITH DEFAULT {sampling_rate} Hz (likely incorrect!)")
-            await ctx.info(f"")
-
-    # STEP 2: Validate SEGMENT DURATION (important but less critical)
-    if user_provided_segment_duration:
-        await ctx.info(f"📊 Using segment_duration = {segment_duration}s (user-provided)")
-    else:
-        await ctx.info(f"📊 Using segment_duration = {segment_duration}s (default)")
-        await ctx.info(f"   💡 You can modify by providing segment_duration parameter")
-
-    # Calculate signal info
-    try:
-        signal_data = load_signal_data(filename)
-        if signal_data is None:
-            raise ValueError(f"Could not load signal data from: {filename}")
-        signal_duration_sec = len(signal_data) / sampling_rate
-        await ctx.info(f"")
-        await ctx.info(f"📏 Signal info: {len(signal_data)} samples, {signal_duration_sec:.2f}s duration at {sampling_rate} Hz")
-
-        if segment_duration is not None and segment_duration < signal_duration_sec:
-            await ctx.info(f"   Analyzing {segment_duration}s segment from {signal_duration_sec:.2f}s total")
-        else:
-            await ctx.info(f"   Analyzing full signal")
-        await ctx.info(f"")
-    except Exception as e:
-        logger.warning(f"Could not load signal for info: {e}")
-
-    return sampling_rate, segment_duration
 
 
 # ============================================================================
@@ -213,13 +98,15 @@ def register(mcp: FastMCP) -> None:
             FFTResult with frequencies, magnitudes and dominant peak
         """
         # Validate and load metadata with user confirmation
-        sampling_rate, segment_duration = await load_and_validate_metadata(
+        sampling_rate, segment_duration = await _load_and_validate_metadata(
             ctx=ctx,
             filename=filename,
+            data_dir=DATA_DIR,
+            load_signal_data_fn=load_signal_data,
             provided_sampling_rate=sampling_rate,
             default_sampling_rate=1000.0,
             provided_segment_duration=segment_duration,
-            default_segment_duration=1.0
+            default_segment_duration=1.0,
         )
 
         # Load data
@@ -359,13 +246,15 @@ def register(mcp: FastMCP) -> None:
             EnvelopeResult with peak information and diagnosis (optimized for chat display)
         """
         # Validate and load metadata with user confirmation
-        sampling_rate, segment_duration = await load_and_validate_metadata(
+        sampling_rate, segment_duration = await _load_and_validate_metadata(
             ctx=ctx,
             filename=filename,
+            data_dir=DATA_DIR,
+            load_signal_data_fn=load_signal_data,
             provided_sampling_rate=sampling_rate,
             default_sampling_rate=1000.0,
             provided_segment_duration=segment_duration,
-            default_segment_duration=1.0
+            default_segment_duration=1.0,
         )
 
         # Load data
@@ -640,8 +529,8 @@ def register(mcp: FastMCP) -> None:
         features_df = pd.DataFrame(features_list)
         feature_names = list(features_df.columns)
 
-        # Save features to file
-        features_file = DATA_DIR / f"features_{signal_file}"
+        # Save features to file (sanitize to prevent path traversal)
+        features_file = DATA_DIR / f"features_{sanitize_filename(signal_file)}"
         features_df.to_csv(features_file, index=False)
 
         if ctx:
