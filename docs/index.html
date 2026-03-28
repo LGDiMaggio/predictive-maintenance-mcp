@@ -642,6 +642,7 @@
     <ul>
       <li><a href="#features">Features</a></li>
       <li><a href="#how-it-works">How It Works</a></li>
+      <li><a href="#plugin">Plugin</a></li>
       <li><a href="#demo">Demo</a></li>
       <li><a href="#screenshots">Gallery</a></li>
       <li><a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp" class="nav-cta" target="_blank" rel="noopener">GitHub ↗</a></li>
@@ -667,7 +668,7 @@
   <div class="container">
     <div class="hero-badge">
       <span class="pulse"></span>
-      v0.7.1 — SSE/HTTPS transport, Docker Compose &amp; Caddy auto-TLS
+      v0.7.1 — 48 MCP endpoints, Claude Code plugin, ISO 13374 modular architecture
     </div>
 
     <h1>
@@ -676,7 +677,7 @@
     </h1>
 
     <p class="tagline">
-      An open-source MCP server that gives AI assistants expert-level machinery diagnostics.
+      An open-source MCP server with 48 endpoints and a Claude Code plugin that gives AI assistants expert-level machinery diagnostics.
       Ask in plain English, get evidence-based answers.
     </p>
 
@@ -709,20 +710,20 @@
   <div class="container">
     <div class="stats-grid">
       <div class="stat-card">
-        <div class="stat-num" data-target="27">0</div>
-        <div class="stat-label">MCP Tools</div>
+        <div class="stat-num" data-target="48">0</div>
+        <div class="stat-label">MCP Endpoints</div>
       </div>
       <div class="stat-card">
-        <div class="stat-num" data-target="4">0</div>
-        <div class="stat-label">Diagnostic Prompts</div>
+        <div class="stat-num" data-target="7">0</div>
+        <div class="stat-label">Plugin Skills</div>
       </div>
       <div class="stat-card">
         <div class="stat-num" data-target="5">0</div>
         <div class="stat-label">Signal Formats</div>
       </div>
       <div class="stat-card">
-        <div class="stat-num" data-target="44">0</div>
-        <div class="stat-label">Tests Passing</div>
+        <div class="stat-num" data-target="86">0</div>
+        <div class="stat-label">% Test Coverage</div>
       </div>
       <div class="stat-card">
         <div class="stat-num">100%</div>
@@ -764,13 +765,13 @@
       </div>
       <div class="feature-card reveal">
         <div class="feature-icon green">📄</div>
-        <h3>Interactive HTML Reports</h3>
-        <p>Publication-quality reports with Plotly charts and structured DOCX diagnostics. Shareable files for ops teams and management.</p>
+        <h3>Interactive HTML &amp; DOCX Reports</h3>
+        <p>Publication-quality reports with Plotly charts and structured Word diagnostics. 6 report types for ops teams and management.</p>
       </div>
       <div class="feature-card reveal">
-        <div class="feature-icon purple">📁</div>
-        <h3>Multi-Format Ingestion</h3>
-        <p>Load from CSV, MATLAB (.mat), WAV, NumPy (.npy), and Parquet. Unified loading with automatic metadata handling.</p>
+        <div class="feature-icon purple">🔌</div>
+        <h3>Claude Code Plugin</h3>
+        <p>7 domain skills, 2 autonomous agents, 3 slash commands. Install from the marketplace for guided diagnostic workflows.</p>
       </div>
     </div>
   </div>
@@ -799,7 +800,7 @@
       <div class="step">
         <div class="step-num">3</div>
         <h3>Get Expert Analysis</h3>
-        <p>AI orchestrates FFT, envelope, ISO checks — delivers evidence-based results with interactive reports.</p>
+        <p>AI orchestrates 48 endpoints — FFT, envelope, ISO checks, ML anomaly detection — and delivers evidence-based results with interactive reports.</p>
       </div>
     </div>
   </div>
@@ -871,7 +872,7 @@
           <li>Study real MCP tool architecture patterns</li>
           <li>Extend with custom tools and datasets</li>
           <li>Build reusable industrial AI workflows</li>
-          <li>Use Copilot Skills for quick integration</li>
+          <li>Install the Claude Code plugin for guided workflows</li>
         </ul>
         <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp/blob/main/docs/QUICKSTART_DEVELOPER.md" class="btn-card" target="_blank" rel="noopener">Developer Quick Start →</a>
       </div>
@@ -905,8 +906,42 @@
         <img src="https://raw.githubusercontent.com/LGDiMaggio/predictive-maintenance-mcp/main/assets/MCPserver.png"
              alt="MCP server architecture showing 27 tools, 4 resources, 4 prompts"
              loading="lazy" width="600" height="400">
-        <figcaption>MCP server architecture overview</figcaption>
+        <figcaption>MCP server architecture — 48 endpoints organized by ISO 13374</figcaption>
       </figure>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== PLUGIN ==================== -->
+<section id="plugin">
+  <div class="container">
+    <div class="section-header reveal">
+      <span class="overline">Claude Code Integration</span>
+      <h2>Install the Plugin, Get Superpowers</h2>
+      <p>7 domain skills, 2 autonomous agents, and 3 slash commands — installable in seconds.</p>
+    </div>
+
+    <div class="install-box" style="max-width:620px;margin:0 auto 2.5rem" id="installPluginBox" title="Click to copy">
+      <code style="font-size:.82rem">/plugin marketplace add LGDiMaggio/predictive-maintenance-mcp</code>
+      <button class="copy-btn" id="copyPluginBtn">Copy</button>
+    </div>
+
+    <div class="features-grid">
+      <div class="feature-card reveal">
+        <div class="feature-icon green">🎯</div>
+        <h3>7 Domain Skills</h3>
+        <p>Bearing diagnosis, gear analysis, quick screening, report generation, anomaly detection, signal management, and documentation search — activate automatically on context.</p>
+      </div>
+      <div class="feature-card reveal">
+        <div class="feature-icon purple">🤖</div>
+        <h3>2 Autonomous Agents</h3>
+        <p><strong>diagnostic-pipeline</strong>: Full ISO 13374 workflow from signal to report. <strong>signal-explorer</strong>: Compare and characterize multiple signals at once.</p>
+      </div>
+      <div class="feature-card reveal">
+        <div class="feature-icon">⚡</div>
+        <h3>3 Slash Commands</h3>
+        <p><code>/pm-diagnose</code> for bearing diagnosis, <code>/pm-screen</code> for quick health checks, <code>/pm-report</code> for instant report generation.</p>
+      </div>
     </div>
   </div>
 </section>
@@ -972,6 +1007,25 @@
       btn.textContent = 'Copied!';
       btn.style.color = '#10b981';
       setTimeout(() => { btn.textContent = 'Copy'; btn.style.color = ''; }, 2000);
+    });
+  }
+
+  // Copy plugin install command
+  var pluginBox = document.getElementById('installPluginBox');
+  var pluginBtn = document.getElementById('copyPluginBtn');
+  if (pluginBox && pluginBtn) {
+    pluginBox.addEventListener('click', function(e) {
+      if (e.target.closest('.copy-btn')) return;
+      copyPlugin();
+    });
+    pluginBtn.addEventListener('click', copyPlugin);
+  }
+  function copyPlugin() {
+    navigator.clipboard.writeText('/plugin marketplace add LGDiMaggio/predictive-maintenance-mcp').then(function() {
+      var btn = document.getElementById('copyPluginBtn');
+      btn.textContent = 'Copied!';
+      btn.style.color = '#10b981';
+      setTimeout(function() { btn.textContent = 'Copy'; btn.style.color = ''; }, 2000);
     });
   }
 
