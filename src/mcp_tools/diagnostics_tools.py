@@ -58,6 +58,7 @@ from ..signal_processing.features import (
     segment_and_extract_features as _segment_and_extract_features,
     resolve_sampling_rate as _resolve_sampling_rate,
 )
+from ._utils import safe_resolve, sanitize_filename
 
 logger = logging.getLogger(__name__)
 
@@ -906,11 +907,13 @@ def register(mcp: FastMCP) -> None:
                 if ctx:
                     await ctx.info(f"Healthy validation: {healthy_correct}/{healthy_total} correctly classified ({healthy_accuracy*100:.1f}%)")
 
-            # Part B: Validate on FAULT data
-            X_fault_pca = await _extract_and_transform_validation_features(
-                fault_signal_files, sampling_rate, segment_duration, overlap_ratio,
-                scaler, pca, strict=True, ctx=ctx
-            )
+            # Part B: Validate on FAULT data (only if fault files were provided)
+            X_fault_pca = None
+            if fault_signal_files:
+                X_fault_pca = await _extract_and_transform_validation_features(
+                    fault_signal_files, sampling_rate, segment_duration, overlap_ratio,
+                    scaler, pca, strict=True, ctx=ctx
+                )
 
             if X_fault_pca is not None:
                 # Predict (should be -1 for anomalies)
@@ -1034,11 +1037,16 @@ def register(mcp: FastMCP) -> None:
         if ctx:
             await ctx.info(f"Predicting anomalies in {signal_file}...")
 
+        # Validate model_name — must be a safe filename component
+        safe_name = sanitize_filename(model_name)
+        if safe_name != model_name:
+            raise ValueError(f"Invalid model_name '{model_name}'. Use only alphanumeric, underscore, hyphen, or dot characters.")
+
         # Load model, scaler, PCA
-        model_path = MODELS_DIR / f"{model_name}_model.pkl"
-        scaler_path = MODELS_DIR / f"{model_name}_scaler.pkl"
-        pca_path = MODELS_DIR / f"{model_name}_pca.pkl"
-        metadata_path = MODELS_DIR / f"{model_name}_metadata.json"
+        model_path = safe_resolve(MODELS_DIR, f"{model_name}_model.pkl")
+        scaler_path = safe_resolve(MODELS_DIR, f"{model_name}_scaler.pkl")
+        pca_path = safe_resolve(MODELS_DIR, f"{model_name}_pca.pkl")
+        metadata_path = safe_resolve(MODELS_DIR, f"{model_name}_metadata.json")
 
         if not model_path.exists():
             raise FileNotFoundError(f"Model not found: {model_path}. Train model first.")
@@ -1229,7 +1237,7 @@ def register(mcp: FastMCP) -> None:
         if ctx:
             await ctx.info(f"Extracting specifications from: {manual_filename}")
 
-        manual_path = RESOURCES_DIR / "machine_manuals" / manual_filename
+        manual_path = safe_resolve(RESOURCES_DIR / "machine_manuals", manual_filename)
 
         if not manual_path.exists():
             raise FileNotFoundError(
@@ -1362,7 +1370,7 @@ def register(mcp: FastMCP) -> None:
         if ctx:
             await ctx.info(f"Reading from: {manual_filename}")
 
-        manual_path = RESOURCES_DIR / "machine_manuals" / manual_filename
+        manual_path = safe_resolve(RESOURCES_DIR / "machine_manuals", manual_filename)
 
         if not manual_path.exists():
             raise FileNotFoundError(f"Manual not found: {manual_filename}")
