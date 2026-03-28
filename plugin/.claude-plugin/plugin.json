@@ -1,0 +1,25 @@
+{
+  "name": "predictive-maintenance",
+  "version": "1.0.0",
+  "description": "Industrial-grade predictive maintenance skills, agents, and workflows for the predictive-maintenance-mcp server. Provides domain expertise for vibration analysis, bearing/gear fault diagnosis, anomaly detection, ISO 20816-3 compliance, and diagnostic report generation.",
+  "author": {
+    "name": "Luigi Di Maggio",
+    "email": "luigi.dimaggio@polito.it",
+    "url": "https://github.com/LGDiMaggio"
+  },
+  "homepage": "https://github.com/LGDiMaggio/predictive-maintenance-mcp",
+  "repository": "https://github.com/LGDiMaggio/predictive-maintenance-mcp",
+  "license": "MIT",
+  "keywords": [
+    "predictive-maintenance",
+    "vibration-analysis",
+    "bearing-fault-diagnosis",
+    "gear-diagnosis",
+    "iso-20816",
+    "iso-13374",
+    "anomaly-detection",
+    "condition-monitoring",
+    "mcp",
+    "industrial"
+  ]
+}
