@@ -1,4 +1,4 @@
-# 🏭 Predictive Maintenance MCP Server
+# Predictive Maintenance MCP Server
 
 <!-- mcp-name: io.github.LGDiMaggio/predictive-maintenance-mcp -->
 
@@ -14,11 +14,13 @@
 
 A [Model Context Protocol](https://modelcontextprotocol.io/) server that brings **industrial machinery diagnostics** directly to LLMs like Claude, enabling AI-powered vibration analysis, bearing fault detection, and predictive maintenance workflows — all through natural language.
 
+**48 MCP endpoints** | **ISO 13374 architecture** | **Claude Code plugin** | **86% test coverage** | **Privacy-first**
+
 ![Predictive Maintenance MCP Server Cover](assets/predictive-maintenance-mcp_com.jpg)
 
 ---
 
-## 🎯 Our Mission
+## Why This Exists
 
 Predictive maintenance is critical for Industry 4.0, yet expert-level machinery diagnostics remains inaccessible to most engineers. Complex diagnostic workflows — FFT spectrum analysis, envelope demodulation, ISO severity assessment — require years of specialized training.
 
@@ -26,102 +28,81 @@ Predictive maintenance is critical for Industry 4.0, yet expert-level machinery 
 
 By combining the reasoning capabilities of Large Language Models with specialized diagnostic tools through the Model Context Protocol (MCP), we create a bridge: engineers can describe a problem in plain language and receive professional-grade analysis. No signal processing PhD required.
 
-This project is an **open-source framework** that proves this vision works. It's a foundation — a set of building blocks — that the community can extend, customize, and deploy for any industrial diagnostics scenario.
+This project is an **open-source framework** that proves this vision works. Recently refactored from a monolithic prototype into a **modular, standards-compliant platform** organized around the ISO 13374 Six-Block Diagnostic Architecture — with a full Claude Code plugin for guided workflows.
 
-> 📖 **Read the full story**: [Building an AI-Powered Predictive Maintenance System with MCP and Claude](https://medium.com/@luigigianpio.dimaggio/building-an-ai-powered-predictive-maintenance-system-with-model-context-protocol-and-claude-1b0ed588e574)
+> Read the full story: [Building an AI-Powered Predictive Maintenance System with MCP and Claude](https://medium.com/@luigigianpio.dimaggio/building-an-ai-powered-predictive-maintenance-system-with-model-context-protocol-and-claude-1b0ed588e574)
 
 ---
 
-## 🏗️ Ecosystem Architecture
-
-This project is built around the **Model Context Protocol (MCP)** — an open standard that lets you package any software tool and make it instantly queryable by an LLM. Think of it as a USB port for AI: plug in a tool, and the LLM immediately knows how to use it.
+## How It Works
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│   YOU (Natural Language)                                     │
-│   "Is this bearing failing? Show me the envelope analysis."  │
-└──────────────┬───────────────────────────────────────────────┘
-               │
-               ▼
-┌──────────────────────────────────────────────────────────────┐
-│   LLM (Claude, GPT, local models...)                         │
-│   Understands your question, selects the right tools         │
-└──────────────┬───────────────────────────────────────────────┘
-               │  Model Context Protocol (MCP)
-               ▼
-┌──────────────────────────────────────────────────────────────┐
-│   PREDICTIVE MAINTENANCE MCP SERVER                          │
-│   ┌────────────────┐  ┌───────────────┐  ┌───────────────┐  │
-│   │ FFT Analysis   │  │ Envelope      │  │ ISO 20816-3   │  │
-│   │ & Reporting    │  │ Demodulation  │  │ Compliance    │  │
-│   └────────────────┘  └───────────────┘  └───────────────┘  │
-│   ┌────────────────┐  ┌───────────────┐  ┌───────────────┐  │
-│   │ ML Anomaly     │  │ Manual/PDF    │  │ Bearing       │  │
-│   │ Detection      │  │ Reader        │  │ Catalog       │  │
-│   └────────────────┘  └───────────────┘  └───────────────┘  │
-│   ┌────────────────┐  ┌───────────────┐                     │
-│   │ RAG Document   │  │ DOCX Report   │                     │
-│   │ Search (FAISS) │  │ Generation    │                     │
-│   └────────────────┘  └───────────────┘                     │
-└──────────────┬───────────────────────────────────────────────┘
-               │
-               ▼
-┌──────────────────────────────────────────────────────────────┐
-│   YOUR DATA (raw files stay on your machine)                 │
-│   Vibration signals · Equipment manuals · Trained models     │
-│                                                              │
-│   ⚠️  Analysis results (peaks, RMS, diagnoses) flow back     │
-│   to the LLM provider. Use a local LLM for full air-gap.     │
-└──────────────────────────────────────────────────────────────┘
+                        YOU
+          "Is this bearing failing?"
+                        |
+                        v
+              LLM (Claude, GPT, Ollama...)
+          Understands your question, selects tools
+                        |
+                        v  Model Context Protocol (MCP)
+    +-----------------------------------------+
+    |   PREDICTIVE MAINTENANCE MCP SERVER      |
+    |                                         |
+    |   40 Tools  |  4 Prompts  |  4 Resources |
+    |                                         |
+    |   Signal Processing  |  Diagnostics     |
+    |   ML Anomaly Det.    |  ISO Compliance  |
+    |   RAG Doc Search     |  Report Gen.     |
+    +-----------------------------------------+
+                        |
+                        v
+              YOUR DATA (stays local)
+    Vibration signals | Equipment manuals | ML models
 ```
 
-**Key insight**: The LLM doesn't know signal processing. It knows how to *call tools* that do signal processing. MCP is the standard that makes this plug-and-play — you can add new diagnostic tools without changing the LLM.
+**Key insight**: The LLM doesn't know signal processing. It knows how to *call tools* that do signal processing. MCP is the standard that makes this plug-and-play.
 
-### What This Means For You
-
-- **🔌 Plug-and-play** — Add new analysis tools (thermography, oil analysis, acoustics) as simple Python functions — the LLM discovers them automatically
-- **🔒 Local processing** — Raw signals never leave your machine; only computed results (peaks, RMS, diagnoses) flow to the LLM. Use a [local LLM](https://ollama.com/) for full air-gapped privacy
-- **🤖 LLM-agnostic** — Works with Claude, ChatGPT, **Microsoft Copilot Studio**, or any MCP-compatible client
-- **🌐 Enterprise-ready** — Deploy as HTTPS server (SSE transport) for corporate environments — [with or without Docker](docs/DEPLOYMENT.md)
-- **🧱 Modular** — Use only the tools you need, extend with your own
+- **Plug-and-play** — Add new analysis tools as Python functions; the LLM discovers them automatically
+- **Local processing** — Raw signals never leave your machine; only computed results (peaks, RMS, diagnoses) flow to the LLM. Use a [local LLM](https://ollama.com/) for full air-gapped privacy
+- **LLM-agnostic** — Works with Claude, ChatGPT, **Microsoft Copilot Studio**, or any MCP-compatible client
+- **Enterprise-ready** — Deploy as HTTPS server (SSE transport) for corporate environments — [with or without Docker](docs/DEPLOYMENT.md)
+- **Modular** — Use only the tools you need, extend with your own
 
 ---
 
-## 📑 Table of Contents
+## Table of Contents
 
-- [🎯 Our Mission](#-our-mission)
-- [🏗️ Ecosystem Architecture](#️-ecosystem-architecture)
-- [🚪 Choose Your Path](#-choose-your-path)
-- [✨ What Makes This Special](#-what-makes-this-special)
-- [🎬 Quick Examples](#-quick-examples)
-- [🚀 Installation](#-installation)
-- [⚙️ Configuration](#️-configuration)
-- [🔧 Available Tools & Resources](#-available-tools--resources)
-- [🤖 Copilot Skills](#copilot-skills-guided-workflows)
-- [📐 Detailed Architecture](#-detailed-architecture)
-- [📊 Sample Dataset](#-sample-dataset)
-- [💡 Usage Examples](#-usage-examples)
-- [📊 Professional Reports](#-professional-reports)
-- [📖 Documentation](#-documentation)
-- [🧪 Testing](#-testing)
-- [🛠️ Development](#️-development)
-- [🚀 Roadmap](#-roadmap)
-- [🤝 Contributing](#-contributing)
-- [📄 License](#-license)
-- [📚 Citation](#-citation)
-- [🙏 Acknowledgments](#-acknowledgments)
+- [How It Works](#how-it-works)
+- [Choose Your Path](#choose-your-path)
+- [What Makes This Special](#what-makes-this-special)
+- [Quick Examples](#quick-examples)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Available Tools & Resources (48 Endpoints)](#available-tools--resources)
+- [Claude Code Plugin](#claude-code-plugin)
+- [Architecture](#architecture)
+- [Sample Dataset](#sample-dataset)
+- [Usage Examples](#usage-examples)
+- [Professional Reports](#professional-reports)
+- [Documentation](#documentation)
+- [Testing](#testing)
+- [Development](#development)
+- [Roadmap](#roadmap)
+- [Contributing](#contributing)
+- [License](#license)
+- [Citation](#citation)
 
 ---
 
-## 🚪 Choose Your Path
+## Choose Your Path
 
-This project serves two audiences. Pick the door that fits you:
+This project serves two audiences. Pick the path that fits you:
 
 <table>
 <tr>
 <td width="50%" valign="top">
 
-### 🔧 I'm a Maintenance / Reliability Engineer
+### I'm a Maintenance / Reliability Engineer
 
 *"I want to use AI for my vibration analysis and diagnostics."*
 
@@ -133,12 +114,12 @@ This project serves two audiences. Pick the door that fits you:
 - Interactive HTML reports you can share with your team
 - ML anomaly detection trained on your healthy baselines
 
-➡️ **Start here**: [**Quickstart for Engineers**](docs/QUICKSTART_ENGINEER.md)
+**Start here**: [**Quickstart for Engineers**](docs/QUICKSTART_ENGINEER.md)
 
 </td>
 <td width="50%" valign="top">
 
-### 💻 I'm an AI / Software Developer
+### I'm an AI / Software Developer
 
 *"I want to understand MCP, extend this server, or build my own."*
 
@@ -147,46 +128,46 @@ This project serves two audiences. Pick the door that fits you:
 **What you'll learn:**
 - How MCP bridges LLMs and specialized tools
 - How to create new tools as Python functions
-- How to design resource/tool hybrid architectures
-- How to contribute to an industrial open-source project
+- How the ISO 13374 modular architecture works
+- How to build and distribute Claude Code plugins
 
-➡️ **Start here**: [**Quickstart for Developers**](docs/QUICKSTART_DEVELOPER.md)
+**Start here**: [**Quickstart for Developers**](docs/QUICKSTART_DEVELOPER.md)
 
 </td>
 </tr>
 </table>
 
-> 💡 **Don't fit either profile?** That's fine — read on for the full documentation, or jump to [Quick Examples](#-quick-examples) to see the server in action.
+> Don't fit either profile? Read on for the full documentation, or jump to [Quick Examples](#quick-examples) to see the server in action.
 
 ---
 
-## ✨ What Makes This Special
+## What Makes This Special
 
-- **🎯 Real Bearing Fault Data Included** — 20 production-quality vibration signals from real machinery tests (3 healthy, 17 faulty)
-- **📊 Professional HTML Reports** — Interactive Plotly visualizations with automatic peak detection and frequency markers
-- **🤖 ML Anomaly Detection** — Train unsupervised/semi-supervised models (OneClassSVM/LOF) on healthy baselines with optional hyperparameter tuning
-- **📏 ISO 20816-3 Compliance** — Industry-standard vibration severity assessment built-in
+- **48 MCP Endpoints** — 40 tools + 4 guided prompts + 4 resources, organized by ISO 13374 diagnostic blocks
+- **Real Bearing Fault Data Included** — 20 production-quality vibration signals from real machinery tests (3 healthy, 17 faulty)
+- **Claude Code Plugin** — 7 domain skills, 2 autonomous agents, 3 slash commands — installable from the marketplace
+- **ISO 13374 Modular Architecture** — Codebase organized into signal acquisition, processing, diagnostics, prognostics, and decision support sub-packages
+- **Professional Reports** — Interactive Plotly HTML visualizations + structured Word (.docx) diagnostic reports
+- **ISO 20816-3 Compliance** — Industry-standard vibration severity assessment built-in
   ![ISO Compliance](assets/iso.png)
-- **🔍 Advanced Diagnostics** — FFT spectrum analysis, envelope analysis for bearing faults, time-domain feature extraction
+- **Advanced Diagnostics** — FFT spectrum, envelope analysis, PSD, STFT spectrograms, time-domain features
   <details>
-
   <summary><b>Example analysis</b></summary>
-  
+
   ![Envelope analysis 1](assets/envelope_analysis.png)
   ![Envelope analysis 2](assets/envelope_signals.png)
   ![Envelope analysis 3](assets/envelope_list.png)
-  
+
   </details>
-- **📁 Multi-Format Support** — Load signals from CSV, MAT (MATLAB), WAV, NPY, and Parquet files
-- **🔎 RAG Document Search** — Vector search (FAISS + sentence-transformers) with TF-IDF fallback over machine manuals and bearing catalogs. Auto-cached.
-- **📝 DOCX Reports** — Generate structured Word diagnostic reports alongside interactive HTML (requires `python-docx`)
-- **🔍 OCR for Scanned PDFs** — Automatic OCR fallback (Tesseract) for image-based equipment manuals
-- **⚡ LLM-Optimised Output** — Tool responses return compact summaries (top peaks, statistics) instead of raw arrays, keeping LLM context windows lean
-- **�🚀 Zero Configuration** — Works out of the box with sample data, auto-detects sampling rates from metadata
+- **ML Anomaly Detection** — Train OneClassSVM/LOF on healthy baselines with optional hyperparameter tuning
+- **Multi-Format Support** — Load signals from CSV, MAT (MATLAB), WAV, NPY, and Parquet files
+- **RAG Document Search** — Vector search (FAISS + sentence-transformers) with TF-IDF fallback over machine manuals and bearing catalogs
+- **86% Test Coverage** — Comprehensive test suite across Windows, macOS, and Linux with CI/CD on GitHub Actions
+- **Multi-Transport** — stdio (Claude Desktop), SSE, and Streamable-HTTP for enterprise deployment
 
 ---
 
-## 🎬 Quick Examples
+## Quick Examples
 
 ### Example 1: Bearing Fault Detection
 
@@ -207,8 +188,8 @@ Generate envelope report for real_train/OuterRaceFault_1.csv
 Evaluate real_train/OuterRaceFault_1.csv against ISO 20816-3 standard
 ```
 
-**Result**: 
-- RMS velocity: 4.5 mm/s → Zone B (Acceptable for long-term operation)
+**Result**:
+- RMS velocity: 4.5 mm/s -> Zone B (Acceptable for long-term operation)
 - Interactive HTML report with zone visualization
 - Compliance assessment and recommendations
 
@@ -225,11 +206,11 @@ Evaluate real_train/OuterRaceFault_1.csv against ISO 20816-3 standard
 - Calculates: BPFO=85.20 Hz, BPFI=136.05 Hz, BSF=101.32 Hz
 - Diagnoses: Outer race fault detected with 3 harmonics
 
-📚 **More examples**: See [Usage Examples](#-usage-examples) section below or [EXAMPLES.md](EXAMPLES.md) for complete workflows
+More examples: See [Usage Examples](#usage-examples) below or [EXAMPLES.md](EXAMPLES.md) for complete workflows
 
 ---
 
-## 🚀 Installation
+## Installation
 
 ### Option A — PyPI (recommended)
 
@@ -237,21 +218,29 @@ Evaluate real_train/OuterRaceFault_1.csv against ISO 20816-3 standard
 pip install predictive-maintenance-mcp
 ```
 
-Then configure your MCP client (see [Configuration](#️-configuration) below) and point it to the installed server.
+Optional extras for advanced features:
+
+```bash
+pip install predictive-maintenance-mcp[full]        # Everything
+pip install predictive-maintenance-mcp[vector-search] # FAISS semantic search
+pip install predictive-maintenance-mcp[ml]           # ML anomaly detection
+pip install predictive-maintenance-mcp[docx]         # Word report generation
+pip install predictive-maintenance-mcp[ocr]          # OCR for scanned PDFs
+pip install predictive-maintenance-mcp[sse]          # SSE/HTTP transport
+```
 
 ### Option B — From Source (development)
 
 ```bash
 git clone https://github.com/LGDiMaggio/predictive-maintenance-mcp.git
 cd predictive-maintenance-mcp
-pip install -e .
+pip install -e ".[dev]"
 ```
 
 ### Run the Server
 
 ```bash
 # Default: stdio transport (Claude Desktop, VS Code)
-python -m predictive_maintenance_mcp
 predictive-maintenance-mcp
 
 # SSE transport for remote/enterprise clients (Copilot Studio, networked)
@@ -261,12 +250,12 @@ predictive-maintenance-mcp --transport sse --host 0.0.0.0 --port 8080
 docker compose up -d
 ```
 
-📖 **Detailed Installation Guide**: See [INSTALL.md](INSTALL.md) for troubleshooting and advanced setup.
-📖 **HTTPS Deployment & Copilot Studio**: See [DEPLOYMENT.md](docs/DEPLOYMENT.md) for enterprise deployment (with or without Docker), Microsoft Copilot Studio connection, and authentication setup.
+Detailed Installation Guide: See [INSTALL.md](INSTALL.md) for troubleshooting and advanced setup.
+HTTPS Deployment & Copilot Studio: See [DEPLOYMENT.md](docs/DEPLOYMENT.md) for enterprise deployment.
 
 ---
 
-## ⚙️ Configuration
+## Configuration
 
 ### Claude Desktop
 
@@ -302,7 +291,7 @@ Add to your Claude Desktop config:
 }
 ```
 
-> **Important Notes**:
+> **Notes**:
 > - Replace `C:/path/to/predictive-maintenance-mcp` with your actual project path
 > - Use **absolute paths** — forward slashes (`/`) work on all platforms, including Windows
 > - On macOS/Linux, use `.venv/bin/python` instead of `.venv/Scripts/python.exe`
@@ -344,232 +333,281 @@ Add to your MCP configuration (`.vscode/mcp.json` or user settings):
 }
 ```
 
-> Use `.venv/Scripts/python.exe` on Windows. The `PDM_PROJECT_DIR` env var tells the server where to find `data/`, `models/`, and `reports/`.
+> Use `.venv/Scripts/python.exe` on Windows.
 
 ---
 
-## 🔧 Available Tools & Resources
+## Available Tools & Resources
 
-### MCP Resources (Direct Data Access)
+**48 MCP endpoints** organized by the ISO 13374 Six-Block Diagnostic Architecture:
 
-Resources provide **direct read access** for Claude to examine data:
+### Block 1: Signal Acquisition (6 tools + 2 resources)
+
+| Endpoint | Type | Description |
+|----------|------|-------------|
+| `load_signal` | Tool | Load vibration file into memory cache |
+| `list_signals` | Tool | Browse available signal files with metadata |
+| `list_stored_signals` | Tool | List cached signals in memory |
+| `get_signal_info` | Tool | Get signal metadata (sampling rate, duration, stats) |
+| `generate_test_signal` | Tool | Create synthetic vibration signals for testing |
+| `clear_signal` / `clear_all_signals` | Tool | Cache management |
+| `signal://list` | Resource | Browse all available signal files |
+| `signal://read/{filename}` | Resource | Read signal metadata + statistics |
+
+### Block 2: Signal Processing & Analysis (7 tools)
+
+| Tool | Description |
+|------|-------------|
+| `analyze_fft` | FFT spectrum analysis with automatic peak detection |
+| `analyze_envelope` | Envelope analysis (Hilbert demodulation) for bearing faults |
+| `analyze_statistics` | Time-domain features (RMS, kurtosis, crest factor, entropy) |
+| `compute_power_spectral_density` | Welch's method PSD |
+| `compute_spectrogram_stft` | STFT time-frequency spectrogram |
+| `extract_features_from_signal` | 17+ statistical & spectral features |
+| `plot_signal` / `plot_spectrum` / `plot_envelope` | Visualization tools |
+
+### Blocks 3-4: Diagnostics & Health Assessment (14 tools)
 
 <details>
-<summary><b>📊 Vibration Signals</b></summary>
+<summary><b>Bearing Diagnostics</b></summary>
 
-- **`signal://list`** — Browse all available signal files with metadata
-- **`signal://read/{filename}`** — Read signal data directly (supports CSV, MAT, WAV, NPY, Parquet)
-
-**Usage:** Claude can directly read signals without calling tools first.
+| Tool | Description |
+|------|-------------|
+| `calculate_bearing_characteristic_frequencies` | Compute BPFO/BPFI/BSF/FTF |
+| `check_bearing_fault_peak_tool` | Detect peaks at fault frequencies |
+| `check_bearing_faults_direct` | Multi-fault detection (inner/outer/ball/cage) |
+| `diagnose_bearing` | Guided 6-step bearing diagnostic workflow |
+| `search_bearing_catalog` | Lookup bearing specs by model |
+| `lookup_bearing_and_compute_tool` | Combined catalog lookup + frequency calculation |
 
 </details>
 
 <details>
-<summary><b>📖 Machine Manuals</b></summary>
+<summary><b>Gear Diagnostics & ISO Standards</b></summary>
 
-- **`manual://list`** — Browse available equipment manuals (PDF/TXT)
-- **`manual://read/{filename}`** — Read manual text (first 20 pages)
-
-**Usage:** Claude can answer ANY question about manual content by reading directly.
+| Tool | Description |
+|------|-------------|
+| `diagnose_gear` | Evidence-based gear fault detection |
+| `evaluate_iso_20816` | ISO 20816-3 severity assessment (Zones A/B/C/D) |
+| `assess_vibration_severity` | Vibration health classification |
 
 </details>
+
+<details>
+<summary><b>ML Anomaly Detection</b></summary>
+
+| Tool | Description |
+|------|-------------|
+| `train_anomaly_model` | Train novelty detection (OneClassSVM/LOF) on healthy data |
+| `predict_anomalies` | Detect anomalies in new signals with confidence scores |
+
+</details>
+
+<details>
+<summary><b>Documentation & RAG Search</b></summary>
+
+| Endpoint | Type | Description |
+|----------|------|-------------|
+| `search_documentation` | Tool | Semantic RAG search (FAISS/TF-IDF) over manuals & catalogs |
+| `read_manual_excerpt` | Tool | Read machine manual text |
+| `extract_manual_specs` | Tool | Auto-extract bearing/RPM/power from manuals |
+| `list_machine_manuals` | Tool | Browse available equipment documentation |
+| `manual://list` | Resource | List available manuals |
+| `manual://read/{filename}` | Resource | Read manual content |
+
+</details>
+
+### Block 6: Reporting & Decision Support (11 tools)
+
+| Tool | Description |
+|------|-------------|
+| `generate_fft_report` | Interactive Plotly FFT HTML report |
+| `generate_envelope_report` | Envelope analysis report with bearing markers |
+| `generate_iso_report` | ISO 20816-3 severity zone visualization |
+| `generate_diagnostic_report_docx` | Structured Word document report |
+| `generate_pca_visualization_report` | 2D/3D PCA projection |
+| `generate_feature_comparison_report` | Feature-level comparison across signals |
+| `list_html_reports` | Browse generated HTML reports |
+| `get_report_info` | Get report metadata without loading full HTML |
+
+### Guided Workflows (4 MCP Prompts)
+
+| Prompt | Description |
+|--------|-------------|
+| `diagnose_bearing_prompt` | Complete bearing fault diagnostic decision tree |
+| `diagnose_gear_prompt` | Gear fault detection workflow |
+| `quick_diagnostic_report_prompt` | Fast health screening |
+| `analyze_anomalies_prompt` | ML-based anomaly detection tutorial |
 
 ---
 
-### MCP Tools (Analysis & Processing)
+## Claude Code Plugin
 
-Tools perform **computations and generate outputs**:
+The project includes a **distributable Claude Code plugin** that brings domain-specific intelligence directly into your coding environment. The plugin wraps the MCP server's capabilities into guided skills, autonomous agents, and quick-access commands.
 
-<details>
-<summary><b>📊 Analysis & Diagnostics</b></summary>
+### Installation
 
-- **`analyze_fft`** — FFT spectrum analysis with automatic peak detection
-- **`analyze_envelope`** — Envelope analysis for bearing fault detection
-- **`analyze_statistics`** — Time-domain statistical indicators (RMS, Crest Factor, Kurtosis, etc.)
-- **`evaluate_iso_20816`** — ISO 20816-3 vibration severity assessment
-- **`diagnose_bearing`** — Guided 6-step bearing diagnostic workflow
-- **`diagnose_gear`** — Evidence-based gear fault diagnostic workflow
+**From the marketplace:**
 
-</details>
+```shell
+/plugin marketplace add LGDiMaggio/predictive-maintenance-mcp
+/plugin install predictive-maintenance@predictive-maintenance-marketplace
+```
 
-<details>
-<summary><b>🤖 Machine Learning</b></summary>
+**Local development:**
 
-- **`extract_features_from_signal`** — Extract 17+ statistical features from vibration data
-- **`train_anomaly_model`** — Train novelty detection models (OneClassSVM/LOF) on healthy data only, with optional semi-supervised hyperparameter tuning
-- **`predict_anomalies`** — Detect anomalies in new signals with confidence scores
+```shell
+/plugin marketplace add ./plugin
+/plugin install predictive-maintenance@predictive-maintenance-marketplace
+```
 
-</details>
+### Skills (7)
 
-<details>
-<summary><b>📄 Professional Report Generation</b></summary>
+Skills activate automatically when Claude detects relevant context in your conversation:
 
-- **`generate_fft_report`** — Interactive FFT spectrum HTML report with peak table
-- **`generate_envelope_report`** — Envelope analysis report with bearing fault markers
-- **`generate_iso_report`** — ISO 20816-3 evaluation with zone visualization
-- **`generate_diagnostic_report_docx`** — Structured Word (.docx) diagnostic report (requires `python-docx`)
-- **`generate_pca_visualization_report`** — 2D/3D PCA projection report for anomaly exploration
-- **`generate_feature_comparison_report`** — Feature-level comparison report across signals/classes
-- **`list_html_reports`** — List all generated reports with metadata
-- **`get_report_info`** — Get report details without loading full HTML
+| Skill | Triggers | Description |
+|-------|----------|-------------|
+| **bearing-diagnosis** | "diagnose bearing", "outer race fault" | Full bearing fault diagnostic workflow |
+| **gear-diagnosis** | "gear fault", "gear mesh frequency" | Gear fault detection via spectral analysis |
+| **quick-screening** | "quick check", "is this machine healthy" | Fast health screening (<30s) |
+| **report-generation** | "generate report", "create PDF" | Professional HTML/DOCX report generation |
+| **anomaly-detection** | "train model", "detect anomalies" | ML-based anomaly detection (SVM, LOF) |
+| **signal-management** | "load signal", "generate test signal" | Signal loading, generation, cache management |
+| **documentation-search** | "search manual", "look up bearing" | RAG search across manuals and catalogs |
 
-> 💡 **HTML reports are interactive Plotly visualizations saved to `reports/`. DOCX reports are structured Word documents for stakeholders.**
+### Agents (2)
 
-</details>
+Agents run autonomously for complex, multi-step tasks:
 
-<details>
-<summary><b>📖 Machine Documentation Reader</b></summary>
+| Agent | When to Use | Description |
+|-------|-------------|-------------|
+| **diagnostic-pipeline** | "Run a full diagnostic on this signal" | Complete ISO 13374 pipeline: load -> analyze -> diagnose -> report |
+| **signal-explorer** | "Explore these signals and compare them" | Signal characterization, comparison, and outlier detection |
 
-- **`list_machine_manuals`** — List available equipment manuals (PDF/TXT)
-- **`extract_manual_specs`** — Extract bearings, RPM, power from manual (with caching)
-- **`calculate_bearing_characteristic_frequencies`** — Calculate BPFO/BPFI/BSF/FTF from geometry
-- **`read_manual_excerpt`** — Read manual text excerpt (configurable page limit)
-- **`search_bearing_catalog`** — Search bearing geometry in local catalog (20+ common bearings)
-- **`search_documentation`** — Semantic search across machine manuals and bearing catalogs (FAISS vector search or TF-IDF fallback)
+### Commands (3)
 
-**MCP Resources:**
-- `manual://list` — Browse available manuals
-- `manual://read/{filename}` — Read manual for LLM context
+Quick entry points for common workflows:
 
-> 🎯 **Upload pump manual → Extract bearing specs → Auto-calculate frequencies → Diagnose signal**
+| Command | Usage | Description |
+|---------|-------|-------------|
+| `/pm-diagnose` | `/pm-diagnose bearing_001` | Start bearing fault diagnosis |
+| `/pm-screen` | `/pm-screen bearing_001` | Quick health screening |
+| `/pm-report` | `/pm-report bearing_001 full` | Generate diagnostic reports |
 
-</details>
-
-<details>
-<summary><b>🔍 Data Management & Visualization</b></summary>
-
-- **`list_signals`** — Browse available signal files with metadata
-- **`generate_test_signal`** — Create synthetic signals for testing
-- **`plot_signal`** — Generate time-domain signal plot
-- **`plot_spectrum`** — Generate FFT spectrum plot
-- **`plot_envelope`** — Generate envelope spectrum plot
-
-</details>
+> **Note**: The Claude Code plugin requires the predictive-maintenance-mcp MCP server to be installed and connected. The plugin provides the domain expertise layer; the MCP server provides the computational engine.
 
 ---
 
-### Copilot Skills (Guided Workflows)
+## Architecture
 
-The `skills/` directory contains pre-built guided workflows that orchestrate multiple MCP tools into structured diagnostic procedures:
+The system follows a **modular ISO 13374 Six-Block Architecture**, recently refactored from a monolithic design into clear sub-packages:
 
-| Skill | Steps | Description |
-|-------|:-----:|-------------|
-| [**bearing-diagnosis**](skills/bearing-diagnosis/SKILL.md) | 8 | Complete bearing fault detection: statistics → FFT → envelope → frequency matching → ISO severity → report |
-| [**quick-screening**](skills/quick-screening/SKILL.md) | 5 | Fast health screening with clear Healthy/Suspicious/Critical classification |
-| [**report-generation**](skills/report-generation/SKILL.md) | 6 | Professional HTML report generation with composite multi-report option |
-
-> ⚠️ **Skills are Claude / GitHub Copilot-specific.** They use [SKILL.md with YAML frontmatter](https://docs.anthropic.com/en/docs/agents-and-tools/claude-code/skills), a convention recognised by Claude.ai, Claude Code, and Copilot agents. Other LLM clients can still read them as plain markdown, but automatic skill invocation requires a Claude or Copilot-compatible host.
->
-> **MCP tools, resources, and HTML reports are LLM-agnostic** — they work with any MCP-compatible client (ChatGPT, Ollama, LM Studio, etc.).
-
----
-
-## 📐 Detailed Architecture
-
-The system follows a **hybrid MCP architecture** combining Resources (direct data access) and Tools (computational processing):
+```
+src/predictive_maintenance_mcp/
+|-- mcp_tools/              # MCP endpoint registration (48 endpoints)
+|   |-- acquisition_tools.py    # Block 1: Signal loading & resources
+|   |-- analysis_tools.py       # Block 2: FFT, envelope, STFT, features
+|   |-- diagnostics_tools.py    # Blocks 3-4: Bearing, gear, ISO, ML
+|   |-- report_tools.py         # Block 6: HTML/DOCX report generation
+|   |-- prompts.py              # Guided diagnostic workflows
+|   +-- _utils.py               # Shared utilities
+|-- signal_acquisition/     # Multi-format loaders (CSV, MAT, WAV, NPY, Parquet)
+|-- signal_processing/      # Pure spectral analysis & feature extraction
+|-- diagnostics/            # Bearing/gear analysis, ISO standards
+|-- decision_support/       # Evidence-based diagnosis pipeline
+|-- prognostics/            # RUL estimation & trend analysis (Phase 2)
+|-- rag.py                  # Document indexing & search (FAISS/TF-IDF)
+|-- models.py               # Pydantic data models
+|-- server.py               # FastMCP server configuration
++-- config.py               # Configuration management
+```
 
 ![MCP Server Architecture](assets/MCPserver.png)
 
 <details>
-<summary><b>Detailed Structure</b></summary>
+<summary><b>Detailed Architecture Diagram</b></summary>
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    CLAUDE / LLM CLIENT                      │
-└────────────────────┬────────────────────────────────────────┘
-                     │
-                     ▼
-┌─────────────────────────────────────────────────────────────┐
-│                   MCP SERVER (FastMCP)                      │
-│  ┌──────────────────────────────────────────────────────┐  │
-│  │  RESOURCES (Direct Data Access)                      │  │
-│  │  ┌────────────────────────────────────────────────┐  │  │
-│  │  │  Vibration Signals                             │  │  │
-│  │  │  • signal://list                               │  │  │
-│  │  │  • signal://read/{filename}                    │  │  │
-│  │  └────────────────────────────────────────────────┘  │  │
-│  │  ┌────────────────────────────────────────────────┐  │  │
-│  │  │  Machine Manuals                               │  │  │
-│  │  │  • manual://list                               │  │  │
-│  │  │  • manual://read/{filename}                    │  │  │
-│  │  └────────────────────────────────────────────────┘  │  │
-│  └──────────────────────────────────────────────────────┘  │
-│  ┌──────────────────────────────────────────────────────┐  │
-│  │  TOOLS (Analysis & Processing)                       │  │
-│  │  • FFT, Envelope, ISO 20816-3                        │  │
-│  │  • ML Anomaly Detection                              │  │
-│  │  • Report Generation (HTML + DOCX)                   │  │
-│  │  • Manual Spec Extraction                            │  │
-│  │  • Bearing Frequency Calculation                     │  │
-│  │  • Bearing Catalog Search                            │  │
-│  │  • RAG Document Search (FAISS / TF-IDF)               │  │
-│  └──────────────────────────────────────────────────────┘  │
-└────────────────────┬────────────────────────────────────────┘
-                     │
-        ┌────────────┴────────────┐
-        ▼                         ▼
-┌──────────────────┐   ┌──────────────────────────────────┐
-│  SIGNAL ANALYSIS │   │  DOCUMENT READER MODULE          │
-│  MODULE          │   │  ┌────────────┐  ┌────────────┐  │
-│  • FFT Engine    │   │  │ PDF Extract│  │ ISO Formulas│  │
-│  • Envelope      │   │  │ (pypdf)    │  │ BPFO/BPFI   │  │
-│  • Filters       │   │  └────────────┘  └────────────┘  │
-│  • Statistics    │   │  ┌─────────────────────────────┐  │
-│  • ML Models     │   │  │  Bearing Catalog DB         │  │
-│  • Plotly Charts │   │  │  • 20+ ISO bearings         │  │
-│                  │   │  └─────────────────────────────┘  │
-└────────┬─────────┘   └────────┬─────────────────────────┘
-         │                      │
-         ▼                      ▼
-┌─────────────────────────────────────────────────────────────┐
-│                   LOCAL FILE SYSTEM                         │
-│  ┌──────────────────────┐   ┌──────────────────────────┐   │
-│  │  data/signals/       │   │  resources/              │   │
-│  │  ├── real_train/     │   │  ├── machine_manuals/    │   │
-│  │  ├── real_test/      │   │  ├── bearing_catalogs/   │   │
-│  │  └── samples/        │   │  ├── datasheets/         │   │
-│  └──────────────────────┘   │  └── cache/ (auto)       │   │
-│  ┌──────────────────────┐   └──────────────────────────┘   │
-│  │  reports/            │   ┌──────────────────────────┐   │
-│  │  • FFT reports       │   │  models/                 │   │
-│  │  • Envelope reports  │   │  • Trained ML models     │   │
-│  │  • ISO reports       │   │  • Scalers, PCA          │   │
-│  └──────────────────────┘   └──────────────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
++-------------------------------------------------------------+
+|                    CLAUDE / LLM CLIENT                       |
++--------------------+----------------------------------------+
+                     |
+                     v
++-------------------------------------------------------------+
+|                   MCP SERVER (FastMCP)                       |
+|  +------------------------------------------------------+   |
+|  |  RESOURCES (Direct Data Access)                       |   |
+|  |  - signal://list, signal://read/{filename}            |   |
+|  |  - manual://list, manual://read/{filename}            |   |
+|  +------------------------------------------------------+   |
+|  +------------------------------------------------------+   |
+|  |  TOOLS (40 Analysis & Processing Tools)               |   |
+|  |  Block 1: Signal Acquisition (6)                      |   |
+|  |  Block 2: Signal Processing (7)                       |   |
+|  |  Blocks 3-4: Diagnostics & Health (14)                |   |
+|  |  Block 6: Reporting (11)                              |   |
+|  +------------------------------------------------------+   |
+|  +------------------------------------------------------+   |
+|  |  PROMPTS (4 Guided Workflows)                         |   |
+|  |  Bearing diagnosis | Gear diagnosis                   |   |
+|  |  Quick screening   | Anomaly detection                |   |
+|  +------------------------------------------------------+   |
++--------------------+----------------------------------------+
+                     |
+        +------------+------------+
+        v                         v
++------------------+   +----------------------------------+
+|  SIGNAL ANALYSIS |   |  DOCUMENT READER MODULE           |
+|  - FFT Engine    |   |  - PDF Extract (pypdf + OCR)     |
+|  - Envelope      |   |  - ISO Formulas (BPFO/BPFI)     |
+|  - Filters       |   |  - Bearing Catalog DB (20+)      |
+|  - Statistics    |   |  - RAG Index (FAISS / TF-IDF)    |
+|  - ML Models     |   +----------------------------------+
+|  - Plotly Charts |
++--------+---------+
+         |
+         v
++-------------------------------------------------------------+
+|                   LOCAL FILE SYSTEM                           |
+|  data/signals/       | resources/machine_manuals/            |
+|  data/real_bearings/ | resources/bearing_catalogs/            |
+|  reports/            | models/ (trained ML models)            |
++-------------------------------------------------------------+
 ```
 
 </details>
 
-**Key Features:**
-- ✅ **4 MCP Resources** — Direct read access to signals and manuals
-- ✅ **27 MCP Tools** — Complete diagnostic workflow (analysis, plotting, ML, reporting incl. DOCX, manuals, RAG search)
-- ✅ **3 Copilot Skills** — Guided diagnostic workflows (Claude / Copilot-specific)
-- ✅ **Hybrid Architecture** — Resources for reading, Tools for processing
-- ✅ **Local-First** — All data stays on your machine (privacy-preserving)
+**Key Numbers:**
+- 40 MCP Tools — Complete diagnostic workflow
+- 4 MCP Prompts — Guided diagnostic workflows
+- 4 MCP Resources — Direct read access to signals and manuals
+- 7 Plugin Skills + 2 Agents + 3 Commands — Claude Code integration
+- Hybrid Architecture — Resources for reading, Tools for processing
+- Local-First — All data stays on your machine (privacy-preserving)
 
 ---
 
-## 📊 Sample Dataset
+## Sample Dataset
 
 The server includes **20 real bearing vibration signals** from production machinery:
 
 **Training Set (14 signals)**:
-- ✅ **2 Healthy Baselines** — Normal operation data
-- 🔴 **7 Inner Race Faults** — Variable load conditions
-- ⚠️ **5 Outer Race Faults** — Various severity levels
+- 2 Healthy Baselines — Normal operation data
+- 7 Inner Race Faults — Variable load conditions
+- 5 Outer Race Faults — Various severity levels
 
 **Test Set (6 signals)**:
-- ✅ **1 Healthy Baseline** — Validation data
-- 🔴 **2 Inner Race Faults** — Test conditions
-- ⚠️ **3 Outer Race Faults** — Test conditions
+- 1 Healthy Baseline — Validation data
+- 2 Inner Race Faults — Test conditions
+- 3 Outer Race Faults — Test conditions
 
 > **Note**: Sampling rates and durations vary by signal (48.8-97.7 kHz, 3-6 seconds). All parameters auto-detected from metadata files.
 
-📖 **Full dataset documentation**: [data/README.md](data/README.md)
+Full dataset documentation: [data/README.md](data/README.md)
 
 ---
 
-## 💡 Usage Examples
+## Usage Examples
 
 ### Quick Fault Detection
 
@@ -578,7 +616,7 @@ Diagnose bearing fault in real_train/OuterRaceFault_1.csv
 BPFO=81.13 Hz, BPFI=118.88 Hz, BSF=63.91 Hz, FTF=14.84 Hz
 ```
 
-**Result:** ✅ Outer race fault detected at ~81 Hz with harmonics
+**Result:** Outer race fault detected at ~81 Hz with harmonics
 
 ### Generate Professional Report
 
@@ -597,65 +635,70 @@ Validate on OuterRaceFault_1.csv
 
 **Result:** Model detects fault with 95%+ confidence
 
-📚 **More examples**: [EXAMPLES.md](EXAMPLES.md) for complete diagnostic workflows
+### Full Diagnostic with Claude Code Plugin
+
+```
+/pm-diagnose real_train/OuterRaceFault_1.csv
+```
+
+**Result:** The diagnostic-pipeline agent runs the complete ISO 13374 workflow: load signal -> FFT + envelope analysis -> bearing diagnosis -> ISO severity assessment -> generate HTML + DOCX reports
+
+More examples: [EXAMPLES.md](EXAMPLES.md) for complete diagnostic workflows
 
 ---
 
-## 📊 Professional Reports
+## Professional Reports
 
 All analysis tools generate **interactive HTML reports** with Plotly visualizations:
 
 ### Why HTML Reports?
 
-✅ **Universal** — Works with any LLM (Claude, ChatGPT, local models)  
-✅ **Zero tokens** — Files saved locally, not in chat  
-✅ **Interactive** — Pan, zoom, hover for details  
-✅ **Professional** — Publication-ready visualizations  
-✅ **Persistent** — Save for documentation and sharing
+- **Universal** — Works with any LLM (Claude, ChatGPT, local models)
+- **Zero tokens** — Files saved locally, not in chat
+- **Interactive** — Pan, zoom, hover for details
+- **Professional** — Publication-ready visualizations
+- **Persistent** — Save for documentation and sharing
 
 ### Report Types
 
 | Report | Tool | Contents |
 |--------|------|----------|
-| 🔊 **FFT Spectrum** | `generate_fft_report()` | Frequency analysis, peak detection, harmonic markers |
-| 🎯 **Envelope Analysis** | `generate_envelope_report()` | Bearing fault frequencies, modulation detection |
-| 📏 **ISO 20816-3** | `generate_iso_report()` | Vibration severity zones, compliance assessment |
-| 📝 **Diagnostic DOCX** | `generate_diagnostic_report_docx()` | Word document with stats, peaks, ISO, diagnosis |
-
-All reports include:
-- Interactive Plotly charts (pan/zoom/hover)
-- Automatic peak detection with frequency tables
-- Metadata (signal info, analysis parameters)
-- Timestamp and file references
+| FFT Spectrum | `generate_fft_report()` | Frequency analysis, peak detection, harmonic markers |
+| Envelope Analysis | `generate_envelope_report()` | Bearing fault frequencies, modulation detection |
+| ISO 20816-3 | `generate_iso_report()` | Vibration severity zones, compliance assessment |
+| Diagnostic DOCX | `generate_diagnostic_report_docx()` | Word document with stats, peaks, ISO, diagnosis |
+| PCA Visualization | `generate_pca_visualization_report()` | 2D/3D anomaly exploration |
+| Feature Comparison | `generate_feature_comparison_report()` | Cross-signal feature analysis |
 
 **Usage:**
 ```
 Generate FFT report for baseline_1.csv
 ```
-→ Opens `reports/fft_spectrum_baseline_1_20251111_143022.html` in browser
+-> Opens `reports/fft_spectrum_baseline_1_*.html` in browser
 
 ---
 
-## 📖 Documentation
+## Documentation
 
 | Document | Audience | Description |
 |----------|----------|-------------|
-| [**Quickstart for Engineers**](docs/QUICKSTART_ENGINEER.md) | 🔧 Engineers | Get results fast, no coding required |
-| [**Quickstart for Developers**](docs/QUICKSTART_DEVELOPER.md) | 💻 Developers | Understand MCP, extend the server |
-| [**HTTPS Deployment**](docs/DEPLOYMENT.md) | 🏢 Enterprise | Docker + HTTPS for Copilot Studio and remote clients |
-| [EXAMPLES.md](EXAMPLES.md) | Everyone | Complete diagnostic workflows with step-by-step tutorials |
-| [INSTALL.md](INSTALL.md) | Everyone | Detailed installation and troubleshooting guide |
+| [**Quickstart for Engineers**](docs/QUICKSTART_ENGINEER.md) | Engineers | Get results fast, no coding required |
+| [**Quickstart for Developers**](docs/QUICKSTART_DEVELOPER.md) | Developers | Understand MCP, extend the server |
+| [**Architecture Guide**](docs/architecture.md) | Developers | ISO 13374 block mapping and module design |
+| [**HTTPS Deployment**](docs/DEPLOYMENT.md) | Enterprise | Docker + HTTPS for Copilot Studio and remote clients |
+| [**Ollama Guide**](docs/OLLAMA_GUIDE.md) | Engineers | Use with local LLMs (fully air-gapped) |
+| [**Plugin README**](plugin/README.md) | Claude Code users | Plugin installation and usage |
+| [EXAMPLES.md](EXAMPLES.md) | Everyone | Complete diagnostic workflows |
+| [INSTALL.md](INSTALL.md) | Everyone | Detailed installation and troubleshooting |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Contributors | How to contribute (for every skill level) |
-| [Ollama Guide](docs/OLLAMA_GUIDE.md) | Engineers | Use with local LLMs (fully air-gapped) |
 | [CHANGELOG.md](CHANGELOG.md) | Everyone | Version history |
 | [data/README.md](data/README.md) | Everyone | Dataset documentation |
-| [skills/](skills/) | 🤖 Claude / Copilot | Copilot Skills — guided diagnostic workflows (bearing, screening, reporting) |
 
 ---
 
-## 🧪 Testing
+## Testing
 
-This project includes a comprehensive test suite covering all analysis tools:
+This project includes a comprehensive test suite with **86% coverage** across 3 platforms:
 
 ```bash
 # Run all tests
@@ -671,19 +714,25 @@ pytest tests/test_fft_analysis.py
 pytest -v
 ```
 
+**CI/CD runs on:**
+- Ubuntu, Windows, macOS
+- Python 3.11 and 3.12
+
 **Test coverage includes:**
-- ✅ FFT analysis and peak detection
-- ✅ Envelope analysis and bearing fault detection
-- ✅ ISO 20816-3 evaluation and zone classification
-- ✅ ML tools (feature extraction, training, prediction)
-- ✅ Report generation system (HTML outputs)
-- ✅ Real bearing fault data validation
+- FFT analysis and peak detection
+- Envelope analysis and bearing fault detection
+- ISO 20816-3 evaluation and zone classification
+- ML tools (feature extraction, training, prediction)
+- Report generation system (HTML + DOCX)
+- Signal acquisition and caching
+- RAG document search
+- Real bearing fault data validation
 
 See [tests/README.md](tests/README.md) for detailed testing documentation.
 
 ---
 
-## 🛠️ Development
+## Development
 
 ### Install Development Dependencies
 
@@ -709,7 +758,7 @@ flake8 src/
 Use MCP Inspector for interactive testing:
 
 ```bash
-npx @modelcontextprotocol/inspector npx predictive-maintenance-mcp
+npx @modelcontextprotocol/inspector predictive-maintenance-mcp
 ```
 
 Or from source (with venv active):
@@ -720,60 +769,57 @@ npx @modelcontextprotocol/inspector python -m predictive_maintenance_mcp
 
 ---
 
-## 🚀 Roadmap
+## Roadmap
 
-### ✨ Recent: v0.7.0–0.7.1 — Vector Search, OCR, DOCX & HTTPS Transport
+### Phase 1: Foundation (Complete)
 
-- 🌐 **SSE / Streamable-HTTP transport** — Deploy as HTTPS server for Microsoft Copilot Studio and remote MCP clients
-- 🐳 **Docker Compose + Caddy** — One-command deployment with automatic TLS certificates
-- 🔎 **FAISS vector search** — Semantic document retrieval with sentence-transformers (TF-IDF fallback when not installed)
-- 🔍 **OCR for scanned PDFs** — Automatic Tesseract OCR fallback for image-based equipment manuals
-- 📝 **DOCX diagnostic reports** — Structured Word documents with statistics, peaks, ISO evaluation, and diagnostic summary
-- ⚡ **Compact FFT output** — Top-20 peaks + RMS/stats instead of full arrays (~200 KB → ~2 KB)
+- [x] Modular ISO 13374 six-block architecture
+- [x] 40 MCP tools + 4 prompts + 4 resources
+- [x] Claude Code plugin with 7 skills, 2 agents, 3 commands
+- [x] 86% test coverage across 3 platforms
+- [x] SSE/Streamable-HTTP transport for enterprise deployment
+- [x] Docker Compose + Caddy auto-TLS
+- [x] FAISS vector search + TF-IDF fallback
+- [x] DOCX diagnostic reports
+- [x] OCR for scanned PDFs
+- [x] Security audit and quality review
 
-### 🔮 Planned Enhancements
+### Phase 2: Enterprise Readiness (Planned)
 
-Each item below links to an open issue where you can **discuss, contribute, or claim the task**:
+| Priority | Enhancement | Status |
+|----------|-------------|--------|
+| High | **Customizable ISO report thresholds** | [Open](https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues) |
+| Medium | **Multi-signal trending** — Compare historical data | Planned |
+| Medium | **RUL estimation** — Remaining useful life models | Scaffolded |
+| Future | **Real-time streaming** — Live vibration monitoring (MQTT/Kafka) | Concept |
+| Future | **Fleet dashboard** — Multi-asset monitoring | Concept |
+| Future | **CMMS integration** — SAP, Maximo, Infor | Concept |
+| Future | **Multimodal fusion** — Vibration + temperature + acoustic | Concept |
 
-| Priority | Enhancement | Status | Get Involved |
-|----------|-------------|--------|--------------|
-| ✅ Done | **Parquet/MAT/WAV/NPY data format support** | v0.5.0 | — |
-| 🔴 High | **Customizable ISO report thresholds** | Open | [Good First Issue](https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues) |
-| ✅ Done | **HTTPS / SSE transport for Copilot Studio** | v0.7.1 | — |
-| ✅ Done | **Docker Compose + Caddy auto-TLS** | v0.7.1 | — |
-| ✅ Done | **Vector search for large documents** (FAISS + sentence-transformers) | v0.7.0 | — |
-| ✅ Done | **OCR for scanned PDF manuals** (Tesseract) | v0.7.0 | — |
-| ✅ Done | **DOCX diagnostic reports** (python-docx) | v0.7.0 | — |
-| 🟡 Medium | **Multi-signal trending** — Compare historical data | Planned | [Discuss](https://github.com/LGDiMaggio/predictive-maintenance-mcp/discussions) |
-| 🟢 Future | **Real-time streaming** — Live vibration monitoring | Concept | — |
-| 🟢 Future | **Dashboard** — Multi-asset fleet monitoring | Concept | — |
-| 🟢 Future | **Online bearing catalog** — Web search for unknown bearings | Concept | — |
-| 🟢 Future | **Multimodal fusion** — Vibration + temperature + acoustic | Concept | — |
-
-> 💡 **Have ideas?** [Open a discussion](https://github.com/LGDiMaggio/predictive-maintenance-mcp/discussions) or [create an issue](https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues/new/choose)!
+> Have ideas? [Open a discussion](https://github.com/LGDiMaggio/predictive-maintenance-mcp/discussions) or [create an issue](https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues/new/choose)!
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 We welcome contributions from **everyone** — not just programmers. See our full [CONTRIBUTING.md](CONTRIBUTING.md) guide, which includes specific paths for:
 
-- **🔧 Domain experts** — Validate signals, add datasets, review diagnostic logic
-- **💻 Developers** — Add tools, fix bugs, improve architecture
-- **📖 Technical writers** — Improve docs, add tutorials, translate content
-- **🧪 Testers** — Edge cases, validation with ground truth data
+- **Domain experts** — Validate signals, add datasets, review diagnostic logic
+- **Developers** — Add tools, fix bugs, improve architecture
+- **Technical writers** — Improve docs, add tutorials, translate content
+- **Testers** — Edge cases, validation with ground truth data
 
 ### Quick Start for Contributors
 
 1. Browse [Issues](https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues) — look for `good first issue` or `help wanted` labels
 2. Comment on the issue to claim it
-3. Fork → Branch → Code → Test → PR
+3. Fork -> Branch -> Code -> Test -> PR
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed setup and guidelines.
 
 ---
 
-## 📄 License
+## License
 
 This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
 
@@ -781,7 +827,7 @@ This project is licensed under the MIT License — see the [LICENSE](LICENSE) fi
 
 ---
 
-## 📚 Citation
+## Citation
 
 If you use this server in your research or projects, please cite:
 
@@ -800,18 +846,18 @@ If you use this server in your research or projects, please cite:
 
 ---
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - **FastMCP** framework by [@jlowin](https://github.com/jlowin)
 - **Model Context Protocol** by [Anthropic](https://www.anthropic.com/)
 - **Sample Data** from [MathWorks](https://github.com/mathworks/RollingElementBearingFaultDiagnosis-Data)
-- **Development Assistance**: Core codebase and demonstration examples were developed with assistance from [Claude](https://claude.ai) by Anthropic to rapidly prototype and demonstrate the Model Context Protocol (MCP) concept for predictive maintenance applications.
+- **Development Assistance**: Core codebase developed with assistance from [Claude](https://claude.ai) by Anthropic
 
-> ⚠️ **Development Notice**: This codebase was generated using Claude AI under human supervision to explore and validate MCP-based approaches for industrial diagnostics and predictive maintenance workflows. While the implementation demonstrates the potential of AI-assisted development for specialized engineering domains, **thorough testing and validation are required** before any production or safety-critical use.
+> **Development Notice**: This codebase was generated using Claude AI under human supervision to explore and validate MCP-based approaches for industrial diagnostics and predictive maintenance workflows. While the implementation demonstrates the potential of AI-assisted development for specialized engineering domains, **thorough testing and validation are required** before any production or safety-critical use.
 
 ---
 
-## 📬 Support
+## Support
 
 - **Issues**: https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues
 - **Discussions**: https://github.com/LGDiMaggio/predictive-maintenance-mcp/discussions
@@ -819,4 +865,4 @@ If you use this server in your research or projects, please cite:
 
 ---
 
-**Built with ❤️ for condition monitoring professionals and the open-source community**
+**Built for condition monitoring professionals and the open-source community**
