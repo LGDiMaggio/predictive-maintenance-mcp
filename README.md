@@ -1,4 +1,4 @@
-# Predictive Maintenance MCP Server
+# Predictive Maintenance MCP Server — AI Agent for Condition Monitoring
 
 <!-- mcp-name: io.github.LGDiMaggio/predictive-maintenance-mcp -->
 
@@ -10,11 +10,11 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-Luigi%20Di%20Maggio-0077B5?logo=linkedin)](https://www.linkedin.com/in/luigi-gianpio-di-maggio)
 
-> **Transform raw vibration data into actionable maintenance insights through natural conversation with AI.**
+> **An AI agent that transforms raw vibration data into actionable maintenance insights through natural conversation.**
 
-A [Model Context Protocol](https://modelcontextprotocol.io/) server that brings **industrial machinery diagnostics** directly to LLMs like Claude, enabling AI-powered vibration analysis, bearing fault detection, and predictive maintenance workflows — all through natural language.
+An open-source [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server and **Claude Code plugin** that brings **AI-powered predictive maintenance** and **condition monitoring** directly to LLMs. Use it as an **AI agent for vibration analysis**, bearing fault detection, and industrial diagnostics — all through natural language.
 
-**48 MCP endpoints** | **ISO 13374 architecture** | **Claude Code plugin** | **86% test coverage** | **Privacy-first**
+**48 MCP endpoints** | **ISO 13374 architecture** | **Claude Code plugin with 7 skills** | **86% test coverage** | **Privacy-first**
 
 ![Predictive Maintenance MCP Server Cover](assets/predictive-maintenance-mcp_com.jpg)
 
@@ -22,13 +22,13 @@ A [Model Context Protocol](https://modelcontextprotocol.io/) server that brings 
 
 ## Why This Exists
 
-Predictive maintenance is critical for Industry 4.0, yet expert-level machinery diagnostics remains inaccessible to most engineers. Complex diagnostic workflows — FFT spectrum analysis, envelope demodulation, ISO severity assessment — require years of specialized training.
+Predictive maintenance and condition monitoring are critical for Industry 4.0, yet expert-level machinery diagnostics remains inaccessible to most engineers. Complex diagnostic workflows — FFT spectrum analysis, envelope demodulation, ISO severity assessment — require years of specialized training.
 
-**We believe that AI can democratize this expertise.**
+**We believe that AI agents can democratize this expertise.**
 
-By combining the reasoning capabilities of Large Language Models with specialized diagnostic tools through the Model Context Protocol (MCP), we create a bridge: engineers can describe a problem in plain language and receive professional-grade analysis. No signal processing PhD required.
+By combining the reasoning capabilities of Large Language Models with specialized diagnostic tools through the Model Context Protocol (MCP), we create an **AI agent for predictive maintenance**: engineers describe a problem in plain language and receive professional-grade analysis. No signal processing PhD required.
 
-This project is an **open-source framework** that proves this vision works. Recently refactored from a monolithic prototype into a **modular, standards-compliant platform** organized around the ISO 13374 Six-Block Diagnostic Architecture — with a full Claude Code plugin for guided workflows.
+This project is an **open-source framework** that proves this vision works. Recently refactored from a monolithic prototype into a **modular, standards-compliant platform** organized around the ISO 13374 Six-Block Diagnostic Architecture — with a full **Claude Code plugin** featuring 7 domain skills, 2 autonomous agents, and 3 slash commands for guided predictive maintenance workflows.
 
 > Read the full story: [Building an AI-Powered Predictive Maintenance System with MCP and Claude](https://medium.com/@luigigianpio.dimaggio/building-an-ai-powered-predictive-maintenance-system-with-model-context-protocol-and-claude-1b0ed588e574)
 
@@ -60,11 +60,12 @@ This project is an **open-source framework** that proves this vision works. Rece
     Vibration signals | Equipment manuals | ML models
 ```
 
-**Key insight**: The LLM doesn't know signal processing. It knows how to *call tools* that do signal processing. MCP is the standard that makes this plug-and-play.
+**Key insight**: The LLM doesn't know signal processing. It knows how to *call tools* that do signal processing. MCP is the standard that makes this plug-and-play — turning any LLM into a **condition monitoring AI agent**.
 
-- **Plug-and-play** — Add new analysis tools as Python functions; the LLM discovers them automatically
+- **Plug-and-play** — Add new analysis tools as Python functions; the AI agent discovers them automatically
 - **Local processing** — Raw signals never leave your machine; only computed results (peaks, RMS, diagnoses) flow to the LLM. Use a [local LLM](https://ollama.com/) for full air-gapped privacy
 - **LLM-agnostic** — Works with Claude, ChatGPT, **Microsoft Copilot Studio**, or any MCP-compatible client
+- **Claude Code plugin** — 7 domain skills for bearing diagnosis, gear analysis, anomaly detection, and report generation — activate automatically based on conversation context
 - **Enterprise-ready** — Deploy as HTTPS server (SSE transport) for corporate environments — [with or without Docker](docs/DEPLOYMENT.md)
 - **Modular** — Use only the tools you need, extend with your own
 
@@ -143,9 +144,10 @@ This project serves two audiences. Pick the path that fits you:
 
 ## What Makes This Special
 
+- **AI Agent for Predictive Maintenance** — An intelligent agent that orchestrates 48 MCP endpoints to perform vibration analysis, fault detection, and condition monitoring autonomously
 - **48 MCP Endpoints** — 40 tools + 4 guided prompts + 4 resources, organized by ISO 13374 diagnostic blocks
 - **Real Bearing Fault Data Included** — 20 production-quality vibration signals from real machinery tests (3 healthy, 17 faulty)
-- **Claude Code Plugin** — 7 domain skills, 2 autonomous agents, 3 slash commands — installable from the marketplace
+- **Claude Code Plugin for Predictive Maintenance** — 7 domain skills, 2 autonomous agents, 3 slash commands — installable from the Claude Code marketplace
 - **ISO 13374 Modular Architecture** — Codebase organized into signal acquisition, processing, diagnostics, prognostics, and decision support sub-packages
 - **Professional Reports** — Interactive Plotly HTML visualizations + structured Word (.docx) diagnostic reports
 - **ISO 20816-3 Compliance** — Industry-standard vibration severity assessment built-in
@@ -441,9 +443,9 @@ Add to your MCP configuration (`.vscode/mcp.json` or user settings):
 
 ---
 
-## Claude Code Plugin
+## Claude Code Plugin — Predictive Maintenance Skills & Agents
 
-The project includes a **distributable Claude Code plugin** that brings domain-specific intelligence directly into your coding environment. The plugin wraps the MCP server's capabilities into guided skills, autonomous agents, and quick-access commands.
+The project includes a **distributable Claude Code plugin for predictive maintenance** that brings domain-specific intelligence directly into your coding environment. The plugin wraps the MCP server's capabilities into guided **Claude skills for condition monitoring**, autonomous diagnostic agents, and quick-access commands.
 
 ### Installation
 
@@ -865,4 +867,4 @@ If you use this server in your research or projects, please cite:
 
 ---
 
-**Built for condition monitoring professionals and the open-source community**
+**An open-source AI agent for predictive maintenance and condition monitoring — built for reliability engineers and the developer community.**

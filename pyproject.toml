@@ -5,33 +5,33 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "predictive-maintenance-mcp"
 version = "0.7.1"
-description = "Proof of Concept: AI-Powered Predictive Maintenance & Fault Diagnosis MCP Server - Industrial machinery condition monitoring, vibration analysis, bearing diagnostics, and ML-based anomaly detection through Model Context Protocol"
+description = "AI agent for predictive maintenance & condition monitoring — Open-source MCP server and Claude Code plugin with 48 endpoints for vibration analysis, bearing fault detection, ISO 20816 compliance, and ML anomaly detection via natural language"
 readme = "README.md"
 authors = [
     { name = "Luigi Di Maggio", email = "luigi.dimaggio@polito.it" }
 ]
 license = { text = "MIT" }
 keywords = [
-    "signal-processing",
-    "iiot",
-    "predictive-analytics",
-    "anomaly-detection",
-    "asset-management",
-    "envelope-analysis",
+    "ai-agent-predictive-maintenance",
+    "claude-plugin-predictive-maintenance",
+    "condition-monitoring-ai-agent",
     "predictive-maintenance",
     "condition-monitoring",
-    "machine-failure",
-    "bearing-fault-diagnosis",
-    "industrial-iot",
-    "fault-diagnosis",
     "vibration-analysis",
-    "claude-ai",
-    "industry-4-0",
+    "bearing-fault-diagnosis",
+    "fault-diagnosis",
     "model-context-protocol",
     "mcp-server",
-    "fastmcp",
-    "iso10816",
-    "claude-agents"
+    "claude-ai",
+    "claude-agents",
+    "claude-skills",
+    "signal-processing",
+    "anomaly-detection",
+    "envelope-analysis",
+    "iso20816",
+    "industry-4-0",
+    "industrial-iot",
+    "machine-learning-condition-monitoring"
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
