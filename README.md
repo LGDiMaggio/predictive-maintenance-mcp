@@ -451,6 +451,9 @@ The project includes a **distributable Claude Code plugin for predictive mainten
 
 **From the marketplace:**
 
+> This repository now ships a **repository-root marketplace** at `.claude-plugin/marketplace.json` for hosted distribution (e.g., `owner/repo`). It resolves the plugin via `git-subdir` (`path: "plugin"`) so installation works directly from GitHub.
+
+
 ```shell
 /plugin marketplace add LGDiMaggio/predictive-maintenance-mcp
 /plugin install predictive-maintenance@predictive-maintenance-marketplace
@@ -459,6 +462,10 @@ The project includes a **distributable Claude Code plugin for predictive mainten
 **Local development:**
 
 ```shell
+/plugin marketplace add .
+/plugin install predictive-maintenance@predictive-maintenance-marketplace
+
+# Optional: test only the plugin subdirectory marketplace
 /plugin marketplace add ./plugin
 /plugin install predictive-maintenance@predictive-maintenance-marketplace
 ```

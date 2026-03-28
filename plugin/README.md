@@ -15,9 +15,15 @@ The `predictive-maintenance-mcp` MCP server must be installed and connected. See
 /plugin install predictive-maintenance@predictive-maintenance-marketplace
 ```
 
+> This repo also includes `.claude-plugin/marketplace.json` at repository root for hosted distribution (`owner/repo`).
+
 ### Local Development
 
 ```shell
+/plugin marketplace add .
+/plugin install predictive-maintenance@predictive-maintenance-marketplace
+
+# Optional: test only the plugin subdirectory marketplace
 /plugin marketplace add ./plugin
 /plugin install predictive-maintenance@predictive-maintenance-marketplace
 ```
