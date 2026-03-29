@@ -62,37 +62,35 @@
   <link rel="icon" href="https://raw.githubusercontent.com/LGDiMaggio/predictive-maintenance-mcp/main/assets/MCPserver.png" type="image/png">
 
   <style>
-    /* ===== CSS Custom Properties ===== */
     :root {
-      --bg: #06080f;
-      --bg-card: rgba(255,255,255,.03);
-      --bg-card-hover: rgba(255,255,255,.06);
-      --surface: #0d1117;
-      --surface-light: #161b22;
-      --surface-lighter: #1c2128;
-      --text: #e6edf3;
-      --text-muted: #8b949e;
-      --text-dim: #6e7681;
-      --accent: #58a6ff;
-      --accent-bright: #79c0ff;
-      --accent-deep: #1f6feb;
-      --accent2: #3fb950;
-      --accent2-dim: #238636;
-      --accent3: #bc8cff;
-      --accent3-dim: #8b5cf6;
-      --amber: #d29922;
-      --amber-dim: rgba(210,153,34,.15);
-      --red: #f85149;
-      --border: rgba(240,246,252,.1);
-      --border-hover: rgba(88,166,255,.25);
-      --glow: rgba(31,111,235,.12);
-      --glow-green: rgba(63,185,80,.1);
-      --radius: 12px;
-      --radius-lg: 16px;
-      --radius-sm: 8px;
+      --bg: #0a0c14;
+      --bg2: #0e1019;
+      --surface: #12141e;
+      --surface2: #181a26;
+      --surface3: #1e2030;
+      --text: #f0f2f8;
+      --text-secondary: #a0a8c0;
+      --text-dim: #636b80;
+      --accent: #6c8aff;
+      --accent-bright: #8da5ff;
+      --accent-deep: #4c6ef5;
+      --accent-glow: rgba(108,138,255,.15);
+      --green: #4ade80;
+      --green-dim: rgba(74,222,128,.12);
+      --purple: #c084fc;
+      --purple-dim: rgba(192,132,252,.12);
+      --amber: #fbbf24;
+      --amber-dim: rgba(251,191,36,.1);
+      --red: #f87171;
+      --red-dim: rgba(248,113,113,.1);
+      --cyan: #22d3ee;
+      --border: rgba(255,255,255,.06);
+      --border-hover: rgba(108,138,255,.3);
+      --radius: 16px;
+      --radius-sm: 10px;
+      --radius-xs: 6px;
     }
 
-    /* ===== Reset ===== */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html { scroll-behavior: smooth; }
 
@@ -100,868 +98,563 @@
       font-family: 'Inter', system-ui, -apple-system, sans-serif;
       background: var(--bg);
       color: var(--text);
-      line-height: 1.6;
+      line-height: 1.65;
       -webkit-font-smoothing: antialiased;
       overflow-x: hidden;
     }
 
-    /* Subtle dot grid background */
     body::before {
       content: '';
       position: fixed; inset: 0;
-      background-image: radial-gradient(rgba(255,255,255,.03) 1px, transparent 1px);
-      background-size: 24px 24px;
-      pointer-events: none;
-      z-index: 0;
+      background-image: radial-gradient(rgba(255,255,255,.018) 1px, transparent 1px);
+      background-size: 32px 32px;
+      pointer-events: none; z-index: 0;
     }
 
     a { color: var(--accent-bright); text-decoration: none; transition: color .2s; }
-    a:hover { color: #a5d6ff; }
-    img { max-width: 100%; height: auto; display: block; }
+    a:hover { color: #b3c5ff; }
     code { font-family: 'JetBrains Mono', monospace; font-size: .85em; }
+    img { max-width: 100%; height: auto; display: block; }
 
-    .container { max-width: 1120px; margin: 0 auto; padding: 0 1.5rem; position: relative; z-index: 1; }
+    .container { max-width: 1100px; margin: 0 auto; padding: 0 1.5rem; position: relative; z-index: 1; }
 
-    /* ===== Scroll Reveal ===== */
+    /* Reveal */
     .reveal {
-      opacity: 0;
-      transform: translateY(24px);
-      transition: opacity .6s cubic-bezier(.16,1,.3,1), transform .6s cubic-bezier(.16,1,.3,1);
+      opacity: 0; transform: translateY(28px);
+      transition: opacity .7s cubic-bezier(.16,1,.3,1), transform .7s cubic-bezier(.16,1,.3,1);
     }
     .reveal.visible { opacity: 1; transform: translateY(0); }
 
-    /* ===== Navigation ===== */
+    /* ===== Nav ===== */
     nav {
       position: fixed; top: 0; left: 0; right: 0; z-index: 200;
-      background: rgba(6,8,15,.8);
-      backdrop-filter: blur(16px) saturate(1.6);
-      -webkit-backdrop-filter: blur(16px) saturate(1.6);
+      background: rgba(10,12,20,.75);
+      backdrop-filter: blur(20px) saturate(1.5);
+      -webkit-backdrop-filter: blur(20px) saturate(1.5);
       border-bottom: 1px solid var(--border);
-      padding: .65rem 0;
+      padding: .7rem 0;
     }
-    nav .container {
-      display: flex; align-items: center; justify-content: space-between;
-      flex-wrap: wrap; gap: .5rem;
-    }
+    nav .container { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .5rem; }
     nav .logo {
-      font-weight: 800; font-size: 1.05rem; color: var(--text);
-      display: flex; align-items: center; gap: .55rem;
-      letter-spacing: -.02em;
+      font-weight: 800; font-size: 1rem; color: var(--text);
+      display: flex; align-items: center; gap: .55rem; letter-spacing: -.02em;
     }
     nav .logo-icon {
-      width: 30px; height: 30px;
-      background: linear-gradient(135deg, var(--accent-deep), var(--accent2-dim));
-      border-radius: 7px;
+      width: 32px; height: 32px;
+      background: linear-gradient(135deg, var(--accent-deep), var(--purple));
+      border-radius: 8px;
       display: flex; align-items: center; justify-content: center;
-      font-size: .9rem;
+      font-size: .85rem;
     }
     nav ul { list-style: none; display: flex; gap: 1.3rem; align-items: center; flex-wrap: wrap; }
-    nav ul a {
-      font-size: .84rem; font-weight: 500; color: var(--text-muted);
-      transition: color .2s;
-    }
+    nav ul a { font-size: .84rem; font-weight: 500; color: var(--text-secondary); transition: color .2s; }
     nav ul a:hover { color: var(--text); }
     .nav-cta {
       background: var(--accent-deep); color: #fff !important;
-      padding: .38rem .9rem; border-radius: 6px; font-weight: 600;
+      padding: .4rem 1rem; border-radius: 8px; font-weight: 700;
       font-size: .82rem; transition: background .2s, transform .15s;
     }
     .nav-cta:hover { background: var(--accent); transform: translateY(-1px); color: #fff !important; }
 
     /* ===== Hero ===== */
     .hero {
-      position: relative;
-      padding: 9rem 0 5rem;
-      text-align: center;
-      overflow: hidden;
+      position: relative; padding: 10rem 0 6rem; text-align: center; overflow: hidden;
     }
     .hero::before {
-      content: '';
-      position: absolute; inset: 0;
+      content: ''; position: absolute; inset: 0;
       background:
-        radial-gradient(ellipse 70% 50% at 50% -10%, rgba(31,111,235,.15), transparent),
-        radial-gradient(ellipse 50% 40% at 80% 60%, rgba(63,185,80,.08), transparent),
-        radial-gradient(ellipse 40% 50% at 15% 70%, rgba(188,140,255,.06), transparent);
-      animation: heroGlow 10s ease-in-out infinite alternate;
+        radial-gradient(ellipse 80% 60% at 50% -5%, rgba(76,110,245,.18), transparent 70%),
+        radial-gradient(ellipse 50% 45% at 80% 50%, rgba(192,132,252,.08), transparent),
+        radial-gradient(ellipse 40% 50% at 20% 60%, rgba(74,222,128,.06), transparent);
+      animation: heroGlow 12s ease-in-out infinite alternate;
     }
-    @keyframes heroGlow {
-      0%   { opacity: .6; transform: scale(1); }
-      100% { opacity: 1;  transform: scale(1.04); }
-    }
-    .hero-wave {
-      position: absolute; bottom: 0; left: 0; width: 200%; height: 100px;
-      opacity: .1;
-    }
-    .hero-wave path { animation: waveShift 8s ease-in-out infinite alternate; }
-    @keyframes waveShift {
-      0%   { transform: translateX(0); }
-      100% { transform: translateX(-25%); }
-    }
+    @keyframes heroGlow { 0%{opacity:.5;transform:scale(1)} 100%{opacity:1;transform:scale(1.03)} }
 
     .hero .container { position: relative; z-index: 1; }
     .hero-badge {
       display: inline-flex; align-items: center; gap: .45rem;
-      background: rgba(31,111,235,.1);
-      border: 1px solid rgba(88,166,255,.2);
-      border-radius: 999px;
-      padding: .3rem .9rem;
-      font-size: .78rem; font-weight: 600;
-      color: var(--accent-bright);
-      margin-bottom: 1.5rem;
+      background: rgba(108,138,255,.08); border: 1px solid rgba(108,138,255,.18);
+      border-radius: 999px; padding: .32rem 1rem;
+      font-size: .78rem; font-weight: 600; color: var(--accent-bright);
+      margin-bottom: 1.8rem;
     }
     .hero-badge .pulse {
-      width: 7px; height: 7px; border-radius: 50%;
-      background: var(--accent2);
+      width: 7px; height: 7px; border-radius: 50%; background: var(--green);
       animation: pulse 2s ease-in-out infinite;
     }
     @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.4;transform:scale(1.6)} }
 
     .hero h1 {
-      font-size: clamp(2.2rem, 5vw, 3.4rem);
-      font-weight: 900;
-      line-height: 1.12;
-      letter-spacing: -.04em;
-      max-width: 820px;
-      margin: 0 auto 1.2rem;
+      font-size: clamp(2.4rem, 5.5vw, 3.6rem);
+      font-weight: 900; line-height: 1.1; letter-spacing: -.045em;
+      max-width: 780px; margin: 0 auto 1.5rem;
     }
     .hero h1 .gradient-text {
-      background: linear-gradient(135deg, var(--accent-bright) 0%, var(--accent2) 50%, var(--accent3) 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
+      background: linear-gradient(135deg, #8da5ff 0%, #c084fc 45%, #4ade80 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
       background-size: 200% auto;
-      animation: gradientShift 5s ease-in-out infinite alternate;
+      animation: gradShift 6s ease-in-out infinite alternate;
     }
-    @keyframes gradientShift {
-      0%   { background-position: 0% 50%; }
-      100% { background-position: 100% 50%; }
-    }
+    @keyframes gradShift { 0%{background-position:0% 50%} 100%{background-position:100% 50%} }
+
     .hero .tagline {
-      font-size: 1.1rem; color: var(--text-muted);
-      max-width: 620px; margin: 0 auto 2rem;
-      font-weight: 400; line-height: 1.7;
+      font-size: 1.15rem; color: var(--text-secondary);
+      max-width: 600px; margin: 0 auto 2.5rem;
+      font-weight: 400; line-height: 1.75;
     }
     .hero .tagline strong { color: var(--text); font-weight: 600; }
 
-    /* CTA buttons */
-    .cta-row { display: flex; justify-content: center; gap: .75rem; flex-wrap: wrap; }
+    .cta-row { display: flex; justify-content: center; gap: .85rem; flex-wrap: wrap; }
     .btn {
-      display: inline-flex; align-items: center; gap: .45rem;
-      padding: .75rem 1.5rem; border-radius: var(--radius-sm);
-      font-weight: 700; font-size: .9rem;
+      display: inline-flex; align-items: center; gap: .5rem;
+      padding: .8rem 1.6rem; border-radius: var(--radius-sm);
+      font-weight: 700; font-size: .92rem;
       transition: transform .15s, box-shadow .25s, background .2s;
       border: none; cursor: pointer;
     }
     .btn:hover { transform: translateY(-2px); }
     .btn-primary {
-      background: var(--accent-deep);
+      background: linear-gradient(135deg, var(--accent-deep), #7c5cfc);
       color: #fff;
-      box-shadow: 0 4px 16px rgba(31,111,235,.3);
+      box-shadow: 0 4px 20px rgba(76,110,245,.35);
     }
-    .btn-primary:hover {
-      background: var(--accent);
-      box-shadow: 0 6px 24px rgba(31,111,235,.4);
-      color: #fff;
-    }
+    .btn-primary:hover { box-shadow: 0 8px 32px rgba(76,110,245,.45); color: #fff; }
     .btn-ghost {
-      background: rgba(255,255,255,.05);
-      color: var(--text);
+      background: rgba(255,255,255,.04); color: var(--text);
       border: 1px solid var(--border);
     }
-    .btn-ghost:hover {
-      background: rgba(255,255,255,.08);
-      border-color: rgba(240,246,252,.2);
-      color: var(--text);
-    }
+    .btn-ghost:hover { background: rgba(255,255,255,.07); border-color: rgba(255,255,255,.12); color: var(--text); }
 
-    /* Install snippet */
     .install-box {
-      margin: 2.5rem auto 0;
-      max-width: 460px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-sm);
-      padding: .75rem 1rem;
-      display: flex; align-items: center; justify-content: space-between;
-      gap: .6rem;
-      cursor: pointer;
-      transition: border-color .2s, box-shadow .2s;
+      margin: 2.5rem auto 0; max-width: 460px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius-sm); padding: .8rem 1.1rem;
+      display: flex; align-items: center; justify-content: space-between; gap: .6rem;
+      cursor: pointer; transition: border-color .2s, box-shadow .2s;
     }
-    .install-box:hover {
-      border-color: var(--border-hover);
-      box-shadow: 0 0 16px var(--glow);
-    }
-    .install-box code {
-      color: var(--accent-bright); font-weight: 500;
-      white-space: nowrap; font-size: .85rem;
-    }
-    .install-box code::before {
-      content: '$ ';
-      color: var(--accent2);
-    }
+    .install-box:hover { border-color: var(--border-hover); box-shadow: 0 0 20px var(--accent-glow); }
+    .install-box code { color: var(--accent-bright); font-weight: 500; white-space: nowrap; font-size: .85rem; }
+    .install-box code::before { content: '$ '; color: var(--green); }
     .install-box .copy-btn {
-      background: rgba(255,255,255,.06);
-      border: 1px solid var(--border);
-      border-radius: 5px;
-      padding: .25rem .55rem;
-      color: var(--text-muted);
-      font-size: .72rem; font-weight: 600;
-      cursor: pointer;
-      transition: background .2s, color .2s;
-      flex-shrink: 0;
-      font-family: 'Inter', sans-serif;
+      background: rgba(255,255,255,.05); border: 1px solid var(--border);
+      border-radius: 6px; padding: .25rem .6rem; color: var(--text-dim);
+      font-size: .72rem; font-weight: 600; cursor: pointer;
+      transition: background .2s, color .2s; flex-shrink: 0; font-family: 'Inter', sans-serif;
     }
     .install-box .copy-btn:hover { background: rgba(255,255,255,.1); color: var(--text); }
 
-    /* Badges */
-    .badge-row {
-      display: flex; justify-content: center; gap: .45rem; flex-wrap: wrap;
-      margin-top: 2rem;
-    }
+    .badge-row { display: flex; justify-content: center; gap: .5rem; flex-wrap: wrap; margin-top: 2rem; }
     .badge-row img { height: 20px; }
 
-    /* ===== Stats ===== */
-    .stats-section { padding: 3rem 0; }
-    .stats-grid {
-      display: grid;
-      grid-template-columns: repeat(5, 1fr);
-      gap: .75rem;
+    /* ===== Key Numbers ===== */
+    .numbers { padding: 3.5rem 0 1rem; }
+    .numbers-grid {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem;
     }
-    .stat-card {
-      text-align: center;
-      padding: 1.25rem .5rem;
-      border-radius: var(--radius);
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      transition: border-color .3s, box-shadow .3s;
+    .num-card {
+      text-align: center; padding: 1.5rem .75rem;
+      border-radius: var(--radius); background: var(--surface);
+      border: 1px solid var(--border); transition: border-color .3s, box-shadow .3s;
     }
-    .stat-card:hover {
-      border-color: var(--border-hover);
-      box-shadow: 0 0 24px var(--glow);
+    .num-card:hover { border-color: var(--border-hover); box-shadow: 0 0 30px var(--accent-glow); }
+    .num-val {
+      font-size: 2.2rem; font-weight: 900; letter-spacing: -.04em;
+      background: linear-gradient(135deg, var(--accent-bright), var(--green));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
     }
-    .stat-num {
-      font-size: 2rem; font-weight: 900; letter-spacing: -.03em;
-      background: linear-gradient(135deg, var(--accent-bright), var(--accent2));
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-    }
-    .stat-label {
-      font-size: .78rem; color: var(--text-muted);
-      margin-top: .2rem; font-weight: 500;
-    }
+    .num-label { font-size: .82rem; color: var(--text-secondary); margin-top: .2rem; font-weight: 500; }
 
-    /* ===== Section base ===== */
-    section { padding: 4.5rem 0; }
-    .section-header { text-align: center; margin-bottom: 3rem; }
+    /* ===== Generic Section ===== */
+    section { padding: 5rem 0; }
+    .section-header { text-align: center; margin-bottom: 3.5rem; }
     .section-header .overline {
-      display: inline-block;
-      font-size: .72rem; font-weight: 700;
-      text-transform: uppercase; letter-spacing: .14em;
-      color: var(--accent);
-      margin-bottom: .7rem;
+      display: inline-block; font-size: .72rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .15em;
+      color: var(--accent); margin-bottom: .75rem;
     }
     .section-header h2 {
-      font-size: clamp(1.5rem, 2.8vw, 2rem);
-      font-weight: 800; letter-spacing: -.03em;
-      margin-bottom: .5rem;
+      font-size: clamp(1.6rem, 3vw, 2.2rem);
+      font-weight: 800; letter-spacing: -.035em; margin-bottom: .6rem;
     }
-    .section-header p {
-      color: var(--text-muted); max-width: 540px; margin: 0 auto;
-      font-size: 1rem;
-    }
+    .section-header p { color: var(--text-secondary); max-width: 560px; margin: 0 auto; font-size: 1.02rem; }
 
-    /* ===== Conversation Examples (Bento) ===== */
-    .convo-grid {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 1rem;
+    /* ===== Comparison (Tools vs No Tools) ===== */
+    .compare-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; max-width: 900px; margin: 0 auto; }
+    .compare-card {
+      border-radius: var(--radius); padding: 2rem 1.75rem; position: relative; overflow: hidden;
     }
+    .compare-card.bad {
+      background: var(--surface); border: 1px solid rgba(248,113,113,.15);
+    }
+    .compare-card.good {
+      background: var(--surface); border: 1px solid rgba(74,222,128,.2);
+    }
+    .compare-card .tag {
+      display: inline-flex; align-items: center; gap: .35rem;
+      font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .1em;
+      margin-bottom: 1rem; padding: .25rem .7rem; border-radius: 999px;
+    }
+    .compare-card.bad .tag { background: var(--red-dim); color: var(--red); }
+    .compare-card.good .tag { background: var(--green-dim); color: var(--green); }
+    .compare-card blockquote {
+      font-size: 1rem; line-height: 1.7; font-style: italic; color: var(--text-secondary);
+      border-left: 3px solid var(--border); padding-left: 1rem; margin: 0;
+    }
+    .compare-card.good blockquote { border-left-color: rgba(74,222,128,.3); color: var(--text); }
+    .compare-check {
+      margin-top: 1.2rem; display: flex; flex-direction: column; gap: .5rem;
+    }
+    .compare-check span {
+      font-size: .85rem; color: var(--text-secondary); display: flex; align-items: center; gap: .4rem;
+    }
+    .compare-check span .dot {
+      width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+    }
+    .compare-card.bad .dot { background: var(--red); }
+    .compare-card.good .dot { background: var(--green); }
+    .compare-takeaway {
+      text-align: center; margin-top: 2rem;
+      font-size: .95rem; color: var(--text-secondary); font-weight: 500;
+    }
+    .compare-takeaway strong { color: var(--text); }
+
+    /* ===== Conversation examples ===== */
+    .convo-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.25rem; }
     .convo-card {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-lg);
-      padding: 1.75rem;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 1.75rem;
       transition: border-color .3s, box-shadow .3s, transform .3s;
-      position: relative;
-      overflow: hidden;
     }
-    .convo-card::before {
-      content: '';
-      position: absolute; top: 0; left: 0; right: 0; height: 2px;
-      background: linear-gradient(90deg, transparent, var(--accent), var(--accent2), transparent);
-      opacity: 0;
-      transition: opacity .3s;
-    }
-    .convo-card:hover {
-      border-color: var(--border-hover);
-      box-shadow: 0 6px 32px var(--glow);
-      transform: translateY(-2px);
-    }
-    .convo-card:hover::before { opacity: 1; }
+    .convo-card:hover { border-color: var(--border-hover); box-shadow: 0 8px 36px var(--accent-glow); transform: translateY(-3px); }
     .convo-prompt {
-      font-size: .92rem; font-weight: 600; color: var(--text);
-      margin-bottom: .65rem;
-      display: flex; align-items: flex-start; gap: .5rem;
+      font-size: .95rem; font-weight: 600; color: var(--text);
+      margin-bottom: .7rem; display: flex; align-items: flex-start; gap: .55rem;
     }
     .convo-prompt .icon {
-      flex-shrink: 0;
-      width: 24px; height: 24px;
-      border-radius: 6px;
-      background: rgba(31,111,235,.12);
+      flex-shrink: 0; width: 26px; height: 26px; border-radius: 7px;
+      background: var(--accent-glow);
       display: flex; align-items: center; justify-content: center;
-      font-size: .7rem; color: var(--accent);
-      margin-top: .1rem;
+      font-size: .72rem; color: var(--accent); margin-top: .1rem;
     }
-    .convo-response {
-      font-size: .85rem; color: var(--text-muted); line-height: 1.65;
-      padding-left: 2.05rem;
-    }
+    .convo-response { font-size: .88rem; color: var(--text-secondary); line-height: 1.7; padding-left: 2.15rem; }
 
-    /* ===== Feature Cards ===== */
-    .features-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-      gap: 1rem;
-    }
-    .feature-card {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 1.75rem;
+    /* ===== Feature grid ===== */
+    .feat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.25rem; }
+    .feat-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 1.75rem;
       transition: border-color .3s, box-shadow .3s, transform .3s;
-      position: relative;
-      overflow: hidden;
+      position: relative; overflow: hidden;
     }
-    .feature-card::before {
-      content: '';
-      position: absolute; top: 0; left: 0; right: 0; height: 2px;
-      background: linear-gradient(90deg, transparent, var(--accent), var(--accent2), transparent);
-      opacity: 0;
-      transition: opacity .3s;
+    .feat-card::after {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+      background: linear-gradient(90deg, transparent, var(--accent), var(--purple), transparent);
+      opacity: 0; transition: opacity .3s;
     }
-    .feature-card:hover {
-      border-color: var(--border-hover);
-      box-shadow: 0 6px 32px var(--glow);
-      transform: translateY(-2px);
-    }
-    .feature-card:hover::before { opacity: 1; }
-    .feature-icon {
-      width: 42px; height: 42px;
-      border-radius: 10px;
+    .feat-card:hover { border-color: var(--border-hover); box-shadow: 0 8px 36px var(--accent-glow); transform: translateY(-3px); }
+    .feat-card:hover::after { opacity: 1; }
+    .feat-icon {
+      width: 44px; height: 44px; border-radius: 11px;
       display: flex; align-items: center; justify-content: center;
-      font-size: 1.2rem;
-      margin-bottom: 1rem;
-      background: rgba(31,111,235,.1);
-      border: 1px solid rgba(88,166,255,.12);
+      font-size: 1.25rem; margin-bottom: 1rem;
     }
-    .feature-icon.green { background: rgba(63,185,80,.1); border-color: rgba(63,185,80,.12); }
-    .feature-icon.purple { background: rgba(188,140,255,.1); border-color: rgba(188,140,255,.12); }
-    .feature-icon.amber { background: var(--amber-dim); border-color: rgba(210,153,34,.12); }
-    .feature-card h3 { font-size: 1rem; font-weight: 700; margin-bottom: .35rem; }
-    .feature-card p { font-size: .87rem; color: var(--text-muted); line-height: 1.6; }
+    .feat-icon.blue { background: var(--accent-glow); border: 1px solid rgba(108,138,255,.12); }
+    .feat-icon.green { background: var(--green-dim); border: 1px solid rgba(74,222,128,.12); }
+    .feat-icon.purple { background: var(--purple-dim); border: 1px solid rgba(192,132,252,.12); }
+    .feat-icon.amber { background: var(--amber-dim); border: 1px solid rgba(251,191,36,.12); }
+    .feat-card h3 { font-size: 1.02rem; font-weight: 700; margin-bottom: .4rem; }
+    .feat-card p { font-size: .88rem; color: var(--text-secondary); line-height: 1.65; }
 
-    /* ===== How It Works ===== */
-    .how-section {
-      background: var(--surface);
-      border-top: 1px solid var(--border);
-      border-bottom: 1px solid var(--border);
-    }
-    .steps-track {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 2rem;
-      position: relative;
-    }
-    .steps-track::before {
-      content: '';
-      position: absolute;
-      top: 28px; left: 18%; right: 18%;
-      height: 2px;
-      background: linear-gradient(90deg, var(--accent-deep), var(--accent2-dim));
-      opacity: .2;
+    /* ===== How it works ===== */
+    .how-section { background: var(--bg2); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+    .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2.5rem; position: relative; }
+    .steps::before {
+      content: ''; position: absolute; top: 32px; left: 16%; right: 16%;
+      height: 2px; background: linear-gradient(90deg, var(--accent-deep), var(--green));
+      opacity: .15;
     }
     .step { text-align: center; position: relative; }
     .step-num {
-      width: 56px; height: 56px;
-      border-radius: 50%;
+      width: 64px; height: 64px; border-radius: 50%;
       display: inline-flex; align-items: center; justify-content: center;
-      font-size: 1.2rem; font-weight: 900;
-      background: linear-gradient(135deg, var(--accent-deep), var(--accent2-dim));
-      color: #fff;
-      margin-bottom: 1.2rem;
-      box-shadow: 0 0 24px rgba(31,111,235,.15);
+      font-size: 1.3rem; font-weight: 900;
+      background: linear-gradient(135deg, var(--accent-deep), var(--purple));
+      color: #fff; margin-bottom: 1.3rem;
+      box-shadow: 0 0 30px rgba(108,138,255,.2);
       position: relative; z-index: 1;
     }
-    .step h3 { font-size: 1rem; font-weight: 700; margin-bottom: .4rem; }
-    .step p { font-size: .85rem; color: var(--text-muted); max-width: 250px; margin: 0 auto; }
+    .step h3 { font-size: 1.05rem; font-weight: 700; margin-bottom: .45rem; }
+    .step p { font-size: .88rem; color: var(--text-secondary); max-width: 270px; margin: 0 auto; }
     .step code {
-      background: rgba(88,166,255,.1);
-      padding: .12rem .4rem; border-radius: 4px;
-      color: var(--accent-bright); font-size: .78rem;
+      background: rgba(108,138,255,.1); padding: .15rem .45rem;
+      border-radius: 5px; color: var(--accent-bright); font-size: .78rem;
     }
 
-    /* ===== Chat Demo ===== */
+    /* ===== Chat demo ===== */
     .chat-demo {
-      max-width: 660px;
-      margin: 0 auto;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-lg);
-      overflow: hidden;
+      max-width: 680px; margin: 0 auto;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); overflow: hidden;
     }
-    .chat-titlebar {
-      background: var(--surface-light);
-      padding: .6rem 1rem;
-      display: flex; align-items: center; gap: .55rem;
+    .chat-bar {
+      background: var(--surface2); padding: .65rem 1.1rem;
+      display: flex; align-items: center; gap: .6rem;
       border-bottom: 1px solid var(--border);
-      font-size: .78rem; font-weight: 600; color: var(--text-muted);
+      font-size: .8rem; font-weight: 600; color: var(--text-dim);
     }
-    .chat-dots { display: flex; gap: 5px; }
-    .chat-dots span { width: 10px; height: 10px; border-radius: 50%; }
-    .chat-dots span:nth-child(1) { background: #f85149; }
-    .chat-dots span:nth-child(2) { background: #d29922; }
-    .chat-dots span:nth-child(3) { background: #3fb950; }
-    .chat-body { padding: 1.25rem; display: flex; flex-direction: column; gap: .85rem; }
+    .chat-dots { display: flex; gap: 6px; }
+    .chat-dots span { width: 11px; height: 11px; border-radius: 50%; }
+    .chat-dots span:nth-child(1) { background: #f87171; }
+    .chat-dots span:nth-child(2) { background: #fbbf24; }
+    .chat-dots span:nth-child(3) { background: #4ade80; }
+    .chat-body { padding: 1.3rem; display: flex; flex-direction: column; gap: .9rem; }
     .chat-msg {
-      max-width: 86%;
-      padding: .75rem 1rem;
-      border-radius: 12px;
-      font-size: .85rem;
-      line-height: 1.55;
-      animation: msgFade .6s ease both;
+      max-width: 88%; padding: .8rem 1.1rem;
+      border-radius: 14px; font-size: .88rem; line-height: 1.6;
+      animation: msgIn .5s ease both;
     }
     .chat-msg:nth-child(1) { animation-delay: .1s; }
     .chat-msg:nth-child(2) { animation-delay: .3s; }
     .chat-msg:nth-child(3) { animation-delay: .5s; }
     .chat-msg:nth-child(4) { animation-delay: .7s; }
-    @keyframes msgFade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes msgIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
     .chat-msg.user {
       align-self: flex-end;
-      background: var(--accent-deep);
-      color: #fff;
-      border-bottom-right-radius: 4px;
+      background: linear-gradient(135deg, var(--accent-deep), #6c5ce7);
+      color: #fff; border-bottom-right-radius: 4px;
     }
     .chat-msg.ai {
       align-self: flex-start;
-      background: var(--surface-light);
-      border: 1px solid var(--border);
-      color: var(--text);
-      border-bottom-left-radius: 4px;
+      background: var(--surface2); border: 1px solid var(--border);
+      color: var(--text); border-bottom-left-radius: 4px;
     }
     .chat-msg .sender {
-      font-size: .68rem; font-weight: 700;
-      text-transform: uppercase; letter-spacing: .06em;
-      margin-bottom: .25rem; opacity: .6;
+      font-size: .68rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .06em; margin-bottom: .3rem; opacity: .55;
     }
 
-    /* ===== Plugin Section ===== */
-    .plugin-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 1rem;
-    }
+    /* ===== Plugin ===== */
+    .plugin-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.25rem; }
 
     /* ===== Architecture ===== */
-    .arch-wrapper {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 2rem;
-      align-items: start;
-    }
+    .arch-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 2.5rem; align-items: start; }
     .arch-diagram {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-lg);
-      padding: 2rem;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 2rem;
       font-family: 'JetBrains Mono', monospace;
-      font-size: .78rem;
-      line-height: 1.55;
-      color: var(--text-muted);
-      white-space: pre;
-      overflow-x: auto;
+      font-size: .78rem; line-height: 1.6; color: var(--text-dim);
+      white-space: pre; overflow-x: auto;
     }
-    .arch-diagram .hl-blue { color: var(--accent-bright); }
-    .arch-diagram .hl-green { color: var(--accent2); }
-    .arch-diagram .hl-purple { color: var(--accent3); }
-    .arch-principles {
-      display: flex; flex-direction: column; gap: .85rem;
-    }
-    .principle {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 1.25rem 1.5rem;
+    .arch-diagram .hl-b { color: var(--accent-bright); }
+    .arch-diagram .hl-g { color: var(--green); }
+    .arch-diagram .hl-p { color: var(--purple); }
+    .arch-diagram .hl-a { color: var(--amber); }
+    .principle-stack { display: flex; flex-direction: column; gap: .9rem; }
+    .prin-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius-sm); padding: 1.25rem 1.5rem;
       transition: border-color .3s, box-shadow .3s;
     }
-    .principle:hover {
-      border-color: var(--border-hover);
-      box-shadow: 0 4px 20px var(--glow);
-    }
-    .principle h4 {
-      font-size: .9rem; font-weight: 700; margin-bottom: .3rem;
-      display: flex; align-items: center; gap: .45rem;
-    }
-    .principle p { font-size: .83rem; color: var(--text-muted); line-height: 1.55; }
+    .prin-card:hover { border-color: var(--border-hover); box-shadow: 0 4px 24px var(--accent-glow); }
+    .prin-card h4 { font-size: .92rem; font-weight: 700; margin-bottom: .3rem; display: flex; align-items: center; gap: .4rem; }
+    .prin-card p { font-size: .85rem; color: var(--text-secondary); line-height: 1.6; }
 
     /* ===== Audience ===== */
-    .audience-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-      gap: 1.25rem;
-    }
-    .audience-card {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-lg);
-      padding: 2rem 1.75rem;
+    .audience-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.5rem; }
+    .aud-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 2rem 1.75rem;
       transition: border-color .3s, box-shadow .3s;
     }
-    .audience-card:hover {
-      border-color: var(--border-hover);
-      box-shadow: 0 6px 32px var(--glow);
-    }
-    .audience-icon {
-      width: 48px; height: 48px;
-      border-radius: 12px;
+    .aud-card:hover { border-color: var(--border-hover); box-shadow: 0 8px 36px var(--accent-glow); }
+    .aud-icon {
+      width: 50px; height: 50px; border-radius: 13px;
       display: flex; align-items: center; justify-content: center;
-      font-size: 1.5rem;
-      margin-bottom: 1rem;
+      font-size: 1.5rem; margin-bottom: 1.1rem;
     }
-    .audience-icon.eng { background: var(--amber-dim); border: 1px solid rgba(210,153,34,.18); }
-    .audience-icon.dev { background: rgba(188,140,255,.1); border: 1px solid rgba(188,140,255,.15); }
-    .audience-card h3 { font-size: 1.05rem; font-weight: 700; margin-bottom: .4rem; }
-    .audience-card > p { font-size: .87rem; color: var(--text-muted); margin-bottom: 1rem; }
-    .audience-card ul { list-style: none; padding: 0; margin-bottom: 1.2rem; }
-    .audience-card ul li {
-      padding: .3rem 0; font-size: .85rem; color: var(--text-muted);
-      display: flex; align-items: flex-start; gap: .45rem;
+    .aud-icon.eng { background: var(--amber-dim); border: 1px solid rgba(251,191,36,.18); }
+    .aud-icon.dev { background: var(--purple-dim); border: 1px solid rgba(192,132,252,.18); }
+    .aud-card h3 { font-size: 1.08rem; font-weight: 700; margin-bottom: .4rem; }
+    .aud-card > p { font-size: .9rem; color: var(--text-secondary); margin-bottom: 1rem; }
+    .aud-card ul { list-style: none; padding: 0; margin-bottom: 1.2rem; }
+    .aud-card ul li {
+      padding: .35rem 0; font-size: .88rem; color: var(--text-secondary);
+      display: flex; align-items: flex-start; gap: .5rem;
     }
-    .audience-card ul li::before {
-      content: '\2713';
-      color: var(--accent2);
-      font-weight: 800;
-      flex-shrink: 0;
-    }
+    .aud-card ul li::before { content: '\2713'; color: var(--green); font-weight: 800; flex-shrink: 0; }
     .btn-card {
       display: inline-flex; align-items: center; gap: .35rem;
-      padding: .5rem 1rem;
-      border-radius: 6px;
-      font-weight: 600; font-size: .83rem;
+      padding: .55rem 1.1rem; border-radius: 8px;
+      font-weight: 600; font-size: .85rem;
       color: var(--accent-bright);
-      background: rgba(88,166,255,.06);
-      border: 1px solid rgba(88,166,255,.15);
+      background: rgba(108,138,255,.06); border: 1px solid rgba(108,138,255,.15);
       transition: background .2s, border-color .2s;
     }
-    .btn-card:hover {
-      background: rgba(88,166,255,.12);
-      border-color: rgba(88,166,255,.3);
-      color: var(--accent-bright);
-    }
-
-    /* ===== Screenshots ===== */
-    .screenshots-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-      gap: 1rem;
-    }
-    .screenshot-card {
-      border-radius: var(--radius);
-      overflow: hidden;
-      border: 1px solid var(--border);
-      background: var(--surface);
-      transition: border-color .3s, box-shadow .3s, transform .3s;
-    }
-    .screenshot-card:hover {
-      border-color: var(--border-hover);
-      box-shadow: 0 6px 32px var(--glow);
-      transform: translateY(-2px);
-    }
-    .screenshot-card img { width: 100%; display: block; }
-    .screenshot-card figcaption {
-      padding: .65rem .85rem;
-      font-size: .78rem; color: var(--text-muted); text-align: center;
-      font-weight: 500;
-    }
+    .btn-card:hover { background: rgba(108,138,255,.12); border-color: rgba(108,138,255,.3); color: var(--accent-bright); }
 
     /* ===== Sample Data ===== */
-    .sample-data-box {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-lg);
-      padding: 2rem 2.5rem;
-      display: grid;
-      grid-template-columns: 1fr auto;
-      gap: 2rem;
-      align-items: center;
+    .sample-box {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 2rem 2.5rem;
+      display: grid; grid-template-columns: 1fr auto; gap: 2rem; align-items: center;
     }
-    .sample-data-box h3 { font-size: 1.1rem; font-weight: 700; margin-bottom: .4rem; }
-    .sample-data-box p { font-size: .87rem; color: var(--text-muted); line-height: 1.6; }
-    .sample-data-box .data-stats {
-      display: flex; gap: 1.5rem; margin-top: .8rem;
-    }
-    .data-stat { text-align: center; }
-    .data-stat .num {
-      font-size: 1.5rem; font-weight: 900;
-      background: linear-gradient(135deg, var(--accent-bright), var(--accent2));
+    .sample-box h3 { font-size: 1.15rem; font-weight: 700; margin-bottom: .5rem; }
+    .sample-box p { font-size: .9rem; color: var(--text-secondary); line-height: 1.65; }
+    .data-nums { display: flex; gap: 1.5rem; margin-top: .9rem; }
+    .data-num { text-align: center; }
+    .data-num .val {
+      font-size: 1.6rem; font-weight: 900;
+      background: linear-gradient(135deg, var(--accent-bright), var(--green));
       -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
     }
-    .data-stat .label { font-size: .72rem; color: var(--text-dim); font-weight: 500; }
+    .data-num .lbl { font-size: .72rem; color: var(--text-dim); font-weight: 500; }
     .sample-try {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 1rem 1.25rem;
-      font-size: .82rem;
-      color: var(--text-muted);
-      font-style: italic;
-      max-width: 300px;
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: var(--radius-sm); padding: 1rem 1.25rem;
+      font-size: .85rem; color: var(--text-secondary); font-style: italic; max-width: 300px;
     }
-    .sample-try code {
-      color: var(--accent-bright);
-      font-style: normal;
-      font-size: .78rem;
-    }
+    .sample-try code { color: var(--accent-bright); font-style: normal; font-size: .8rem; }
 
-    /* ===== Docs Links ===== */
-    .docs-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-      gap: .75rem;
+    /* ===== FAQ ===== */
+    .faq-list { max-width: 740px; margin: 0 auto; }
+    .faq-item {
+      border-bottom: 1px solid var(--border);
     }
+    .faq-q {
+      width: 100%; background: none; border: none; color: var(--text);
+      padding: 1.25rem 0; text-align: left; cursor: pointer;
+      font-size: 1rem; font-weight: 600; font-family: 'Inter', sans-serif;
+      display: flex; justify-content: space-between; align-items: center; gap: 1rem;
+    }
+    .faq-q:hover { color: var(--accent-bright); }
+    .faq-q::after {
+      content: '+'; font-size: 1.3rem; font-weight: 300; color: var(--text-dim);
+      transition: transform .3s; flex-shrink: 0;
+    }
+    .faq-item.open .faq-q::after { transform: rotate(45deg); }
+    .faq-a {
+      max-height: 0; overflow: hidden; transition: max-height .35s ease, padding .35s ease;
+      font-size: .9rem; color: var(--text-secondary); line-height: 1.7;
+    }
+    .faq-item.open .faq-a { max-height: 300px; padding-bottom: 1.25rem; }
+
+    /* ===== Docs grid ===== */
+    .docs-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: .85rem; }
     .doc-link {
-      display: flex; align-items: center; gap: .6rem;
-      padding: .85rem 1rem;
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-sm);
-      transition: border-color .2s, box-shadow .2s, transform .15s;
-      color: var(--text);
-      font-size: .87rem; font-weight: 500;
+      display: flex; align-items: center; gap: .65rem;
+      padding: .9rem 1.1rem;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius-sm); transition: border-color .2s, box-shadow .2s, transform .15s;
+      color: var(--text); font-size: .9rem; font-weight: 500;
     }
-    .doc-link:hover {
-      border-color: var(--border-hover);
-      box-shadow: 0 4px 16px var(--glow);
-      transform: translateY(-1px);
-      color: var(--text);
-    }
+    .doc-link:hover { border-color: var(--border-hover); box-shadow: 0 4px 20px var(--accent-glow); transform: translateY(-1px); color: var(--text); }
     .doc-link .doc-icon {
-      width: 32px; height: 32px;
-      border-radius: 8px;
+      width: 34px; height: 34px; border-radius: 9px;
       display: flex; align-items: center; justify-content: center;
-      font-size: .9rem;
-      background: rgba(88,166,255,.08);
-      flex-shrink: 0;
+      font-size: .95rem; background: rgba(108,138,255,.08); flex-shrink: 0;
     }
-    .doc-link .doc-for {
-      font-size: .72rem; color: var(--text-dim); font-weight: 400;
-      display: block; margin-top: .1rem;
-    }
-
-    /* ===== Citation ===== */
-    .citation-box {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 1.25rem 1.5rem;
-      max-width: 540px;
-      margin: 0 auto;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: .75rem;
-      color: var(--text-muted);
-      line-height: 1.6;
-      position: relative;
-      overflow: hidden;
-    }
-    .citation-box .copy-cite-btn {
-      position: absolute; top: .75rem; right: .75rem;
-      background: rgba(255,255,255,.06);
-      border: 1px solid var(--border);
-      border-radius: 5px;
-      padding: .2rem .5rem;
-      color: var(--text-dim);
-      font-size: .68rem; font-weight: 600;
-      cursor: pointer;
-      transition: background .2s, color .2s;
-      font-family: 'Inter', sans-serif;
-    }
-    .citation-box .copy-cite-btn:hover { background: rgba(255,255,255,.1); color: var(--text); }
+    .doc-link .doc-for { font-size: .72rem; color: var(--text-dim); font-weight: 400; display: block; margin-top: .1rem; }
 
     /* ===== Related ===== */
     .related-card {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-lg);
-      padding: 1.75rem 2rem;
-      display: flex;
-      gap: 1.5rem;
-      align-items: center;
-      max-width: 700px;
-      margin: 0 auto;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 1.75rem 2rem;
+      display: flex; gap: 1.5rem; align-items: center;
+      max-width: 700px; margin: 0 auto;
       transition: border-color .3s, box-shadow .3s;
     }
-    .related-card:hover {
-      border-color: var(--border-hover);
-      box-shadow: 0 6px 32px var(--glow);
-    }
+    .related-card:hover { border-color: var(--border-hover); box-shadow: 0 6px 32px var(--accent-glow); }
     .related-icon {
-      width: 56px; height: 56px;
-      border-radius: 14px;
-      background: rgba(63,185,80,.1);
-      border: 1px solid rgba(63,185,80,.15);
+      width: 56px; height: 56px; border-radius: 14px;
+      background: var(--green-dim); border: 1px solid rgba(74,222,128,.15);
       display: flex; align-items: center; justify-content: center;
-      font-size: 1.6rem;
-      flex-shrink: 0;
+      font-size: 1.5rem; flex-shrink: 0;
     }
     .related-card h3 { font-size: 1rem; font-weight: 700; margin-bottom: .25rem; }
-    .related-card p { font-size: .85rem; color: var(--text-muted); line-height: 1.55; }
+    .related-card p { font-size: .88rem; color: var(--text-secondary); line-height: 1.6; }
+
+    /* ===== Citation ===== */
+    .cite-box {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius-sm); padding: 1.3rem 1.5rem;
+      max-width: 540px; margin: 0 auto;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: .75rem; color: var(--text-secondary); line-height: 1.65;
+      position: relative; overflow: hidden;
+    }
+    .cite-box .copy-cite-btn {
+      position: absolute; top: .75rem; right: .75rem;
+      background: rgba(255,255,255,.05); border: 1px solid var(--border);
+      border-radius: 6px; padding: .22rem .55rem; color: var(--text-dim);
+      font-size: .68rem; font-weight: 600; cursor: pointer;
+      transition: background .2s, color .2s; font-family: 'Inter', sans-serif;
+    }
+    .cite-box .copy-cite-btn:hover { background: rgba(255,255,255,.1); color: var(--text); }
 
     /* ===== Footer ===== */
     footer {
-      border-top: 1px solid var(--border);
-      padding: 2rem 0;
-      text-align: center;
+      border-top: 1px solid var(--border); padding: 2.5rem 0; text-align: center;
     }
-    .footer-links {
-      display: flex; justify-content: center; gap: 1.2rem; flex-wrap: wrap;
-      margin-bottom: .8rem;
-    }
-    .footer-links a { color: var(--text-dim); font-size: .82rem; font-weight: 500; }
+    .footer-links { display: flex; justify-content: center; gap: 1.3rem; flex-wrap: wrap; margin-bottom: .8rem; }
+    .footer-links a { color: var(--text-dim); font-size: .84rem; font-weight: 500; }
     .footer-links a:hover { color: var(--text); }
     footer .copy { color: var(--text-dim); font-size: .78rem; }
 
     /* ===== Responsive ===== */
-    @media (max-width: 768px) {
-      .hero { padding: 7rem 0 3.5rem; }
-      .stats-grid { grid-template-columns: repeat(3, 1fr); }
-      .steps-track { grid-template-columns: 1fr; gap: 1.5rem; }
-      .steps-track::before { display: none; }
-      .convo-grid { grid-template-columns: 1fr; }
-      .plugin-grid { grid-template-columns: 1fr; }
-      .arch-wrapper { grid-template-columns: 1fr; }
-      .sample-data-box { grid-template-columns: 1fr; }
-    }
-    @media (max-width: 480px) {
-      .stats-grid { grid-template-columns: repeat(2, 1fr); }
-      .hero h1 { font-size: 1.7rem; }
-    }
-
-    /* ===== Tools overview ===== */
-    .tools-overview {
-      display: grid;
-      grid-template-columns: repeat(5, 1fr);
-      gap: .75rem;
-      margin-top: 2rem;
-    }
-    .tool-cat-card {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 1.25rem .75rem;
-      text-align: center;
-      transition: border-color .3s, box-shadow .3s, transform .3s;
-    }
-    .tool-cat-card:hover {
-      border-color: var(--border-hover);
-      box-shadow: 0 0 20px var(--glow);
-      transform: translateY(-2px);
-    }
-    .tool-cat-icon { font-size: 1.5rem; display: block; margin-bottom: .4rem; }
-    .tool-cat-num {
-      font-size: 2rem; font-weight: 900; letter-spacing: -.03em;
-      background: linear-gradient(135deg, var(--accent-bright), var(--accent2));
-      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
-    }
-    .tool-cat-name { font-size: .82rem; font-weight: 700; color: var(--text); margin: .2rem 0 .15rem; }
-    .tool-cat-desc { font-size: .71rem; color: var(--text-dim); line-height: 1.45; }
-
-    /* ===== Standards strip ===== */
-    .standards-strip {
-      display: flex; justify-content: center; gap: .75rem; flex-wrap: wrap;
-      margin-top: 2.5rem;
-    }
-    .std-badge {
-      background: rgba(255,255,255,.03);
-      border: 1px solid var(--border);
-      border-radius: 999px;
-      padding: .35rem 1rem;
-      font-size: .76rem; font-weight: 600; color: var(--text-muted);
-      display: flex; align-items: center; gap: .4rem;
-    }
-    .std-badge::before {
-      content: ''; width: 6px; height: 6px; border-radius: 50%;
-      background: var(--accent2); flex-shrink: 0;
-    }
-
-    /* ===== arch colour ===== */
-    .arch-diagram .hl-amber { color: var(--amber); }
-
     @media (max-width: 900px) {
-      .tools-overview { grid-template-columns: repeat(3, 1fr); }
+      .feat-grid { grid-template-columns: repeat(2, 1fr); }
+      .plugin-grid { grid-template-columns: 1fr; }
+      .arch-layout { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 768px) {
+      .hero { padding: 8rem 0 4rem; }
+      .numbers-grid { grid-template-columns: repeat(2, 1fr); }
+      .steps { grid-template-columns: 1fr; gap: 1.5rem; }
+      .steps::before { display: none; }
+      .convo-grid { grid-template-columns: 1fr; }
+      .compare-grid { grid-template-columns: 1fr; }
+      .audience-grid { grid-template-columns: 1fr; }
+      .sample-box { grid-template-columns: 1fr; }
     }
     @media (max-width: 480px) {
-      .tools-overview { grid-template-columns: repeat(2, 1fr); }
+      .numbers-grid { grid-template-columns: repeat(2, 1fr); }
+      .feat-grid { grid-template-columns: 1fr; }
+      .hero h1 { font-size: 1.8rem; }
     }
   </style>
 </head>
 <body>
 
-<!-- ==================== NAVIGATION ==================== -->
+<!-- Nav -->
 <nav>
   <div class="container">
-    <a href="#" class="logo">
-      <div class="logo-icon">&#x1F3ED;</div>
-      PM-MCP
-    </a>
+    <a href="#" class="logo"><div class="logo-icon">&#x1F3ED;</div>PM-MCP</a>
     <ul>
+      <li><a href="#why">Why</a></li>
       <li><a href="#capabilities">Capabilities</a></li>
       <li><a href="#how-it-works">How It Works</a></li>
-      <li><a href="#plugin">Plugin</a></li>
-      <li><a href="#architecture">Architecture</a></li>
-      <li><a href="#results">Results</a></li>
+      <li><a href="#features">Features</a></li>
       <li><a href="#docs">Docs</a></li>
       <li><a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp" class="nav-cta" target="_blank" rel="noopener">GitHub &#x2197;</a></li>
     </ul>
   </div>
 </nav>
 
-<!-- ==================== HERO ==================== -->
+<!-- Hero -->
 <header class="hero">
-  <svg class="hero-wave" viewBox="0 0 2400 120" preserveAspectRatio="none" aria-hidden="true">
-    <path d="M0,60 C200,20 400,100 600,60 C800,20 1000,100 1200,60 C1400,20 1600,100 1800,60 C2000,20 2200,100 2400,60"
-          fill="none" stroke="url(#waveGrad)" stroke-width="2"/>
-    <defs>
-      <linearGradient id="waveGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-        <stop offset="0%" stop-color="#1f6feb"/>
-        <stop offset="50%" stop-color="#238636"/>
-        <stop offset="100%" stop-color="#8b5cf6"/>
-      </linearGradient>
-    </defs>
-  </svg>
-
   <div class="container">
-    <div class="hero-badge">
-      <span class="pulse"></span>
-      Open-source &middot; local-first &middot; machine diagnostics in plain language
-    </div>
+    <div class="hero-badge"><span class="pulse"></span>Open-source &middot; runs on your machine &middot; MIT licensed</div>
 
-    <h1>
-      Understand Machine Health<br>
-      <span class="gradient-text">Without Signal-Processing Jargon</span>
-    </h1>
+    <h1>Ask Your Machines<br><span class="gradient-text">How They're Feeling</span></h1>
 
     <p class="tagline">
-      Ask simple questions about vibration data and get practical answers: <strong>is this machine safe</strong>, <strong>what is likely failing</strong>, and <strong>what should we do next</strong>.
-      This open-source MCP server supports maintenance engineers with evidence, not buzzwords.
+      An AI copilot for maintenance teams. Upload vibration data, ask questions in plain language,
+      get <strong>clear diagnoses</strong>, <strong>risk levels</strong>, and <strong>actionable reports</strong> &mdash; without writing a single line of code.
     </p>
 
     <div class="cta-row">
-      <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp" class="btn btn-primary" target="_blank" rel="noopener">
-        Star on GitHub
-      </a>
-      <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp/blob/main/INSTALL.md" class="btn btn-ghost" target="_blank" rel="noopener">
-        Quick Start Guide
-      </a>
+      <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp" class="btn btn-primary" target="_blank" rel="noopener">&#9733; Star on GitHub</a>
+      <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp/blob/main/INSTALL.md" class="btn btn-ghost" target="_blank" rel="noopener">Quick Start &rarr;</a>
     </div>
 
     <div class="install-box" id="installBox" title="Click to copy">
@@ -970,263 +663,220 @@
     </div>
 
     <div class="badge-row">
-      <a href="https://pypi.org/project/predictive-maintenance-mcp/" target="_blank" rel="noopener"><img alt="PyPI version" src="https://img.shields.io/pypi/v/predictive-maintenance-mcp?style=flat-square&color=1f6feb" loading="lazy"></a>
-      <a href="https://doi.org/10.5281/zenodo.17611542" target="_blank" rel="noopener"><img alt="DOI" src="https://img.shields.io/badge/DOI-10.5281%2Fzenodo.17611542-1f6feb?style=flat-square" loading="lazy"></a>
+      <a href="https://pypi.org/project/predictive-maintenance-mcp/" target="_blank" rel="noopener"><img alt="PyPI version" src="https://img.shields.io/pypi/v/predictive-maintenance-mcp?style=flat-square&color=4c6ef5" loading="lazy"></a>
+      <a href="https://doi.org/10.5281/zenodo.17611542" target="_blank" rel="noopener"><img alt="DOI" src="https://img.shields.io/badge/DOI-10.5281%2Fzenodo.17611542-4c6ef5?style=flat-square" loading="lazy"></a>
       <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp/actions/workflows/tests.yml" target="_blank" rel="noopener"><img alt="Tests" src="https://img.shields.io/github/actions/workflow/status/LGDiMaggio/predictive-maintenance-mcp/tests.yml?label=tests&style=flat-square" loading="lazy"></a>
       <a href="https://codecov.io/gh/LGDiMaggio/predictive-maintenance-mcp" target="_blank" rel="noopener"><img alt="Coverage" src="https://img.shields.io/codecov/c/github/LGDiMaggio/predictive-maintenance-mcp?style=flat-square" loading="lazy"></a>
-      <img alt="License MIT" src="https://img.shields.io/badge/license-MIT-238636?style=flat-square" loading="lazy">
-      <img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11+-1f6feb?style=flat-square" loading="lazy">
+      <img alt="License MIT" src="https://img.shields.io/badge/license-MIT-4ade80?style=flat-square" loading="lazy">
+      <img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11+-4c6ef5?style=flat-square" loading="lazy">
     </div>
   </div>
 </header>
 
-<!-- ==================== STATS ==================== -->
-<section class="stats-section reveal">
+<!-- Key Numbers -->
+<section class="numbers reveal">
   <div class="container">
-    <div class="stats-grid">
-      <div class="stat-card">
-        <div class="stat-num" data-target="48">0</div>
-        <div class="stat-label">MCP Endpoints</div>
+    <div class="numbers-grid">
+      <div class="num-card">
+        <div class="num-val" data-target="48">0</div>
+        <div class="num-label">Analysis Endpoints</div>
       </div>
-      <div class="stat-card">
-        <div class="stat-num" data-target="7">0</div>
-        <div class="stat-label">Plugin Skills</div>
+      <div class="num-card">
+        <div class="num-val" data-target="7">0</div>
+        <div class="num-label">Diagnostic Skills</div>
       </div>
-      <div class="stat-card">
-        <div class="stat-num" data-target="6">0</div>
-        <div class="stat-label">Core Engine Modules</div>
+      <div class="num-card">
+        <div class="num-val" data-target="86">0</div>
+        <div class="num-label">% Test Coverage</div>
       </div>
-      <div class="stat-card">
-        <div class="stat-num" data-target="86">0</div>
-        <div class="stat-label">% Test Coverage</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-num">100%</div>
-        <div class="stat-label">Local Processing</div>
+      <div class="num-card">
+        <div class="num-val">100%</div>
+        <div class="num-label">Local Processing</div>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ==================== WHAT CAN IT DO ==================== -->
+<!-- Why: Tools vs No Tools -->
+<section id="why">
+  <div class="container">
+    <div class="section-header reveal">
+      <span class="overline">Why This Exists</span>
+      <h2>Tools Turn Guesses into Evidence</h2>
+      <p>Without dedicated diagnostic tools, an AI can only speculate. With them, it runs a real analysis pipeline and delivers measured, repeatable answers.</p>
+    </div>
+
+    <div class="compare-grid reveal">
+      <div class="compare-card bad">
+        <div class="tag">&#x2718; Plain LLM &mdash; No Tools</div>
+        <blockquote>&ldquo;It might be a bearing fault&hellip; maybe check the alignment? I&rsquo;d suggest monitoring it.&rdquo;</blockquote>
+        <div class="compare-check">
+          <span><span class="dot"></span>Text-only, no real data</span>
+          <span><span class="dot"></span>No measurements or frequencies</span>
+          <span><span class="dot"></span>Not repeatable across operators</span>
+        </div>
+      </div>
+      <div class="compare-card good">
+        <div class="tag">&#x2714; With MCP Tools</div>
+        <blockquote>&ldquo;Outer-race bearing wear detected at 89.4&nbsp;Hz (expected 89.8&nbsp;Hz). Vibration: 4.2&nbsp;mm/s &mdash; <strong>alert zone</strong>. Recommend inspection within 24&nbsp;h.&rdquo;</blockquote>
+        <div class="compare-check">
+          <span><span class="dot"></span>Real sensor data processed locally</span>
+          <span><span class="dot"></span>Measured frequencies and severity</span>
+          <span><span class="dot"></span>Consistent, auditable results</span>
+        </div>
+      </div>
+    </div>
+    <p class="compare-takeaway reveal"><strong>Same AI, different outcomes.</strong> The tools make the difference.</p>
+  </div>
+</section>
+
+<!-- What Can It Do -->
 <section id="capabilities">
   <div class="container">
     <div class="section-header reveal">
-      <span class="overline">What Can It Do</span>
-      <h2>Upload a Signal, Get a Clear Maintenance Answer</h2>
-      <p>The assistant runs the full analysis pipeline locally, then explains results in clear language your team can act on.</p>
+      <span class="overline">What Can You Do With It</span>
+      <h2>Talk to Your Data, Get Answers You Can Act On</h2>
+      <p>The assistant runs the full analysis pipeline on your machine and explains results in language your team understands.</p>
     </div>
 
     <div class="convo-grid">
       <div class="convo-card reveal">
-        <div class="convo-prompt">
-          <span class="icon">&#x1F4AC;</span>
-          &ldquo;Is this bearing healthy?&rdquo;
-        </div>
-        <div class="convo-response">
-          Loads your data, checks fault patterns, estimates severity, and returns a clear health verdict with supporting evidence.
-        </div>
+        <div class="convo-prompt"><span class="icon">&#x1F4AC;</span>&ldquo;Is this bearing healthy?&rdquo;</div>
+        <div class="convo-response">Loads your data, checks fault patterns, estimates severity, and returns a clear health verdict with supporting evidence.</div>
       </div>
       <div class="convo-card reveal">
-        <div class="convo-prompt">
-          <span class="icon">&#x1F4AC;</span>
-          &ldquo;Generate a full diagnostic report&rdquo;
-        </div>
-        <div class="convo-response">
-          Generates a manager-friendly report with key charts, risk level, and recommended next actions.
-        </div>
+        <div class="convo-prompt"><span class="icon">&#x1F4AC;</span>&ldquo;Generate a report for my supervisor&rdquo;</div>
+        <div class="convo-response">Creates a manager-friendly HTML report with key charts, risk level, findings summary, and recommended next actions.</div>
       </div>
       <div class="convo-card reveal">
-        <div class="convo-prompt">
-          <span class="icon">&#x1F4AC;</span>
-          &ldquo;Extract specs from this pump manual and diagnose the signal&rdquo;
-        </div>
-        <div class="convo-response">
-          Uses machine documentation and bearing metadata to match expected fault signatures against measured data.
-        </div>
+        <div class="convo-prompt"><span class="icon">&#x1F4AC;</span>&ldquo;Use the pump manual to diagnose this signal&rdquo;</div>
+        <div class="convo-response">Reads equipment documentation and bearing catalog specs, then matches expected fault signatures against your measured data.</div>
       </div>
       <div class="convo-card reveal">
-        <div class="convo-prompt">
-          <span class="icon">&#x1F4AC;</span>
-          &ldquo;Train an anomaly detector on my healthy baselines&rdquo;
-        </div>
-        <div class="convo-response">
-          Learns normal behavior from baseline runs, then flags unusual patterns before they become failures.
-        </div>
+        <div class="convo-prompt"><span class="icon">&#x1F4AC;</span>&ldquo;Learn what &lsquo;normal&rsquo; looks like for these machines&rdquo;</div>
+        <div class="convo-response">Trains on healthy baseline runs and flags unusual patterns in future signals &mdash; before they become failures.</div>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ==================== TOOLS OVERVIEW ==================== -->
-<section>
-  <div class="container">
-    <div class="section-header reveal">
-      <span class="overline">48 Endpoints</span>
-      <h2>What You Get Out of the Box</h2>
-      <p>Five tool groups covering data ingestion, diagnostics, reporting, and guided workflows &mdash; all local by default.</p>
-    </div>
-    <div class="tools-overview reveal">
-      <div class="tool-cat-card">
-        <span class="tool-cat-icon">&#x1F4E1;</span>
-        <div class="tool-cat-num" data-target="8">0</div>
-        <div class="tool-cat-name">Acquisition</div>
-        <div class="tool-cat-desc">CSV, WAV, MAT, NPY, Parquet &middot; cache management &middot; 2 resources</div>
-      </div>
-      <div class="tool-cat-card">
-        <span class="tool-cat-icon">&#x1F4CA;</span>
-        <div class="tool-cat-num" data-target="9">0</div>
-        <div class="tool-cat-name">Analysis</div>
-        <div class="tool-cat-desc">Frequency analysis, fault indicators, trend features, and visual checks</div>
-      </div>
-      <div class="tool-cat-card">
-        <span class="tool-cat-icon">&#x2699;&#xFE0F;</span>
-        <div class="tool-cat-num" data-target="14">0</div>
-        <div class="tool-cat-name">Diagnostics</div>
-        <div class="tool-cat-desc">Bearing and gear checks, anomaly detection, documentation-aware diagnosis</div>
-      </div>
-      <div class="tool-cat-card">
-        <span class="tool-cat-icon">&#x1F4C4;</span>
-        <div class="tool-cat-num" data-target="8">0</div>
-        <div class="tool-cat-name">Reporting</div>
-        <div class="tool-cat-desc">HTML and DOCX outputs designed for engineers, managers, and handover workflows</div>
-      </div>
-      <div class="tool-cat-card">
-        <span class="tool-cat-icon">&#x1F9ED;</span>
-        <div class="tool-cat-num" data-target="4">0</div>
-        <div class="tool-cat-name">Workflows</div>
-        <div class="tool-cat-desc">Guided prompts: bearing, gear, quick screening, anomaly detection</div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ==================== FEATURES ==================== -->
-<section>
-  <div class="container">
-    <div class="section-header reveal">
-      <span class="overline">Capabilities</span>
-      <h2>Built for Real Maintenance Decisions</h2>
-      <p>Accessible from any MCP-compatible assistant, with explanations focused on outcomes instead of jargon.</p>
-    </div>
-
-    <div class="features-grid">
-      <div class="feature-card reveal">
-        <div class="feature-icon">&#x1F4CA;</div>
-        <h3>Frequency-Domain Insight</h3>
-        <p>Frequency-domain decomposition with automatic peak detection, harmonic identification, and dB-normalized visualization.</p>
-      </div>
-      <div class="feature-card reveal">
-        <div class="feature-icon green">&#x1F50D;</div>
-        <h3>Early Bearing Fault Detection</h3>
-        <p>Highlights subtle impact patterns that often indicate early bearing wear, even when the raw signal looks normal.</p>
-      </div>
-      <div class="feature-card reveal">
-        <div class="feature-icon purple">&#x1F4CF;</div>
-        <h3>Risk-Zone Classification</h3>
-        <p>Automatic severity classification into intuitive risk zones so teams can prioritize interventions quickly.</p>
-      </div>
-      <div class="feature-card reveal">
-        <div class="feature-icon amber">&#x1F916;</div>
-        <h3>ML Anomaly Detection</h3>
-        <p>Train on healthy baselines, detect anomalies in new signals. OneClassSVM &amp; LocalOutlierFactor with automatic feature extraction.</p>
-      </div>
-      <div class="feature-card reveal">
-        <div class="feature-icon green">&#x1F4C4;</div>
-        <h3>Readable Engineering Reports</h3>
-        <p>HTML reports with Plotly charts and structured Word diagnostics. 6 report types for ops teams and management.</p>
-      </div>
-      <div class="feature-card reveal">
-        <div class="feature-icon purple">&#x1F4D6;</div>
-        <h3>Manual-Aware Diagnostics</h3>
-        <p>Semantic search over equipment manuals and bearing catalogs. Extract specs from PDFs and match to signals automatically.</p>
-      </div>
-      <div class="feature-card reveal">
-        <div class="feature-icon amber">&#x1F4C8;</div>
-        <h3>Trend &amp; Remaining-Life Estimates</h3>
-        <p>Remaining Useful Life estimation and trend analysis with confidence intervals &mdash; ISO 13374 Block 5. Move from reactive to predictive decisions.</p>
-      </div>
-      <div class="feature-card reveal">
-        <div class="feature-icon green">&#x1F9E0;</div>
-        <h3>Action Recommendations</h3>
-        <p>Evidence-based diagnosis pipeline, alert triage, and contextual maintenance recommendations built on the ISO 13374 Block 6 advisory layer.</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ==================== HOW IT WORKS ==================== -->
+<!-- How It Works -->
 <section id="how-it-works" class="how-section">
   <div class="container">
     <div class="section-header reveal">
-      <span class="overline">Workflow</span>
-      <h2>Three Steps to Expert Diagnostics</h2>
-      <p>From install to actionable insight in under five minutes.</p>
+      <span class="overline">Get Started</span>
+      <h2>From Install to Insight in Five Minutes</h2>
     </div>
 
-    <div class="steps-track reveal">
+    <div class="steps reveal">
       <div class="step">
         <div class="step-num">1</div>
-        <h3>Install &amp; Connect</h3>
-        <p><code>pip install predictive-maintenance-mcp</code> &mdash; add to Claude Desktop, VS Code, or any MCP client.</p>
+        <h3>Install</h3>
+        <p><code>pip install predictive-maintenance-mcp</code> &mdash; connect to Claude Desktop, VS&nbsp;Code, or any MCP&nbsp;client.</p>
       </div>
       <div class="step">
         <div class="step-num">2</div>
-        <h3>Ask in Plain Language</h3>
+        <h3>Ask</h3>
         <p>&ldquo;Load OuterRaceFault_1.csv and check if the bearing is healthy.&rdquo;</p>
       </div>
       <div class="step">
         <div class="step-num">3</div>
-        <h3>Get Explainable Results</h3>
-        <p>The assistant combines multiple analysis methods and returns a concise diagnosis, confidence signals, and recommended actions.</p>
+        <h3>Act</h3>
+        <p>Get a clear diagnosis, confidence signals, risk classification, and recommended next steps.</p>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ==================== CHAT DEMO ==================== -->
+<!-- Chat Demo -->
 <section id="demo">
   <div class="container">
     <div class="section-header reveal">
       <span class="overline">Live Preview</span>
       <h2>What a Conversation Looks Like</h2>
-      <p>Real examples of how maintenance teams interact with the assistant.</p>
     </div>
 
     <div class="chat-demo reveal">
-      <div class="chat-titlebar">
+      <div class="chat-bar">
         <div class="chat-dots"><span></span><span></span><span></span></div>
         Claude Desktop &mdash; PM-MCP Connected
       </div>
       <div class="chat-body">
-        <div class="chat-msg user">
-          <div class="sender">You</div>
-          Is this pump safe to run for the next shift?
-        </div>
-        <div class="chat-msg ai">
-          <div class="sender">Assistant</div>
-          I ran an ISO 20816-3 assessment on the latest vibration data. The RMS velocity is <strong>4.2 mm/s</strong>, placing this pump in <strong>Zone C (Alert)</strong>. I recommend planning inspection within 24 hours and reducing load.
-        </div>
-        <div class="chat-msg user">
-          <div class="sender">You</div>
-          What's the most likely fault? Create a report for my supervisor.
-        </div>
-        <div class="chat-msg ai">
-          <div class="sender">Assistant</div>
-          The fault signature is consistent with <strong>outer-race bearing wear</strong> on the drive-end side. I've generated an HTML report with the key charts and a recommended action plan &mdash; saved to <code>reports/</code>.
-        </div>
+        <div class="chat-msg user"><div class="sender">You</div>Is this pump safe to run for the next shift?</div>
+        <div class="chat-msg ai"><div class="sender">Assistant</div>I ran a vibration severity assessment on the latest data. The RMS velocity is <strong>4.2&nbsp;mm/s</strong>, placing this pump in the <strong>Alert zone</strong>. I recommend planning an inspection within 24&nbsp;hours and reducing load if possible.</div>
+        <div class="chat-msg user"><div class="sender">You</div>What's the most likely fault? Create a report for my supervisor.</div>
+        <div class="chat-msg ai"><div class="sender">Assistant</div>The fault signature is consistent with <strong>outer-race bearing wear</strong> on the drive-end side. I&rsquo;ve generated an HTML report with key charts and a recommended action plan &mdash; saved to <code>reports/</code>.</div>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ==================== PLUGIN ==================== -->
-<section id="plugin">
+<!-- Features -->
+<section id="features">
+  <div class="container">
+    <div class="section-header reveal">
+      <span class="overline">Capabilities</span>
+      <h2>Everything You Need for Machine Diagnostics</h2>
+      <p>From raw vibration files to maintenance decisions &mdash; all running locally on your infrastructure.</p>
+    </div>
+
+    <div class="feat-grid">
+      <div class="feat-card reveal">
+        <div class="feat-icon blue">&#x1F50D;</div>
+        <h3>Frequency Analysis</h3>
+        <p>Decompose signals into frequency components with automatic peak detection, harmonic identification, and clear visualizations.</p>
+      </div>
+      <div class="feat-card reveal">
+        <div class="feat-icon green">&#x2699;&#xFE0F;</div>
+        <h3>Early Fault Detection</h3>
+        <p>Highlight subtle impact patterns that indicate early bearing or gear wear &mdash; even when the raw signal looks normal.</p>
+      </div>
+      <div class="feat-card reveal">
+        <div class="feat-icon purple">&#x1F6A6;</div>
+        <h3>Risk Classification</h3>
+        <p>Automatic severity zones so teams know immediately what needs urgent attention and what can wait.</p>
+      </div>
+      <div class="feat-card reveal">
+        <div class="feat-icon amber">&#x1F916;</div>
+        <h3>Anomaly Detection</h3>
+        <p>Train on healthy baselines, then automatically flag unusual signals. Machine learning models with zero-code setup.</p>
+      </div>
+      <div class="feat-card reveal">
+        <div class="feat-icon green">&#x1F4CB;</div>
+        <h3>Clear Reports</h3>
+        <p>Generate HTML reports with interactive charts and structured Word documents. Designed for engineers, operators, and management.</p>
+      </div>
+      <div class="feat-card reveal">
+        <div class="feat-icon blue">&#x1F4D6;</div>
+        <h3>Manual-Aware Diagnosis</h3>
+        <p>Search equipment manuals and bearing catalogs. Extract specs from PDFs and cross-check against measured data automatically.</p>
+      </div>
+      <div class="feat-card reveal">
+        <div class="feat-icon purple">&#x1F4C8;</div>
+        <h3>Trend &amp; Life Estimates</h3>
+        <p>Remaining useful life estimation and degradation trend tracking. Move from reactive fixes to planned interventions.</p>
+      </div>
+      <div class="feat-card reveal">
+        <div class="feat-icon amber">&#x1F9E0;</div>
+        <h3>Action Recommendations</h3>
+        <p>Evidence-based maintenance suggestions with confidence levels. No guessing &mdash; every recommendation cites its source data.</p>
+      </div>
+      <div class="feat-card reveal">
+        <div class="feat-icon green">&#x1F50C;</div>
+        <h3>Extensible &amp; Open</h3>
+        <p>Plugin architecture for custom signal processors and report formats. Works with Claude, ChatGPT, Ollama, or any MCP-compatible client.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Plugin -->
+<section id="plugin" class="how-section">
   <div class="container">
     <div class="section-header reveal">
       <span class="overline">Claude Code Plugin</span>
-      <h2>Automation for Faster Daily Work</h2>
-      <p>7 skills, 2 autonomous agents, 3 slash commands &mdash; installable from the Claude Code marketplace.</p>
+      <h2>Automate Diagnostics From Your Editor</h2>
+      <p>7 skills, 2 autonomous agents, 3 slash commands &mdash; works inside Claude Code.</p>
     </div>
 
     <div class="install-box" style="max-width:580px;margin:0 auto 2rem" id="installPluginBox" title="Click to copy">
@@ -1235,18 +885,18 @@
     </div>
 
     <div class="plugin-grid">
-      <div class="feature-card reveal">
-        <div class="feature-icon green">&#x1F3AF;</div>
+      <div class="feat-card reveal">
+        <div class="feat-icon green">&#x1F3AF;</div>
         <h3>7 Domain Skills</h3>
-        <p>Bearing diagnosis, gear analysis, quick screening, report generation, anomaly detection, signal management, documentation search &mdash; activate automatically.</p>
+        <p>Bearing diagnosis, gear analysis, quick screening, report generation, anomaly detection, signal management, and documentation search.</p>
       </div>
-      <div class="feature-card reveal">
-        <div class="feature-icon purple">&#x1F916;</div>
+      <div class="feat-card reveal">
+        <div class="feat-icon purple">&#x1F916;</div>
         <h3>2 Autonomous Agents</h3>
-        <p><strong>diagnostic-pipeline</strong>: Full ISO 13374 workflow from signal to report. <strong>signal-explorer</strong>: Compare and characterize multiple signals.</p>
+        <p><strong>diagnostic-pipeline</strong>: End-to-end workflow from signal to report. <strong>signal-explorer</strong>: Compare and characterize multiple signals.</p>
       </div>
-      <div class="feature-card reveal">
-        <div class="feature-icon">&#x26A1;</div>
+      <div class="feat-card reveal">
+        <div class="feat-icon blue">&#x26A1;</div>
         <h3>3 Slash Commands</h3>
         <p><code>/pm-diagnose</code> for bearing diagnosis, <code>/pm-screen</code> for quick health checks, <code>/pm-report</code> for instant reports.</p>
       </div>
@@ -1254,65 +904,60 @@
   </div>
 </section>
 
-<!-- ==================== ARCHITECTURE ==================== -->
+<!-- Architecture -->
 <section id="architecture">
   <div class="container">
     <div class="section-header reveal">
-      <span class="overline">Architecture</span>
-      <h2>Privacy-First Architecture</h2>
-      <p>Raw machine data remains local. You keep control of datasets, models, and generated reports.</p>
+      <span class="overline">Under the Hood</span>
+      <h2>Your Data Never Leaves Your Machine</h2>
+      <p>Raw vibration files stay local. Only computed results (severity scores, fault types) flow to the AI for interpretation.</p>
     </div>
 
-    <div class="arch-wrapper reveal">
-      <div class="arch-diagram"><span class="hl-purple">        YOU</span>  (natural language)
+    <div class="arch-layout reveal">
+      <div class="arch-diagram"><span class="hl-p">        YOU</span>  (natural language)
              |
              v
-  <span class="hl-blue">     LLM</span>  (Claude / GPT / Ollama)
+  <span class="hl-b">     LLM</span>  (Claude / GPT / Ollama)
              |  Model Context Protocol
              v
   +----------------------------------+
-  |  <span class="hl-blue">Predictive Maintenance MCP</span>     |
+  |  <span class="hl-b">Predictive Maintenance MCP</span>     |
   |                                  |
-  |  <span class="hl-green">signal_acquisition</span>    [Block 1]  |
-  |  <span class="hl-green">signal_processing</span>     [Block 2]  |
-  |  <span class="hl-blue">diagnostics</span>           [Block 3-4]|
-  |  <span class="hl-purple">prognostics</span>           [Block 5]  |
-  |  <span class="hl-amber">decision_support</span>      [Block 6]  |
+  |  <span class="hl-g">data_ingestion</span>                 |
+  |  <span class="hl-g">signal_processing</span>              |
+  |  <span class="hl-b">diagnostics</span>                    |
+  |  <span class="hl-p">prognostics</span>                    |
+  |  <span class="hl-a">decision_support</span>               |
   +----------------------------------+
              |
              v
-  <span class="hl-green">  YOUR DATA</span>  (always local)
+  <span class="hl-g">  YOUR DATA</span>  (always local)
   signals &middot; manuals &middot; models</div>
 
-      <div class="arch-principles">
-        <div class="principle">
+      <div class="principle-stack">
+        <div class="prin-card">
           <h4>&#x1F512; Privacy-First</h4>
-          <p>Raw vibration data processed entirely on your machine. Only computed results (severity scores, fault classifications) flow to the LLM.</p>
+          <p>Raw vibration data is processed entirely on your machine. Only computed results flow to the LLM &mdash; never raw waveforms.</p>
         </div>
-        <div class="principle">
-          <h4>&#x1F310; LLM-Agnostic</h4>
-          <p>Works with Claude, ChatGPT, Microsoft Copilot Studio, or any MCP-compatible client. Use Ollama for fully air-gapped deployments.</p>
+        <div class="prin-card">
+          <h4>&#x1F310; Works With Any AI</h4>
+          <p>Claude, ChatGPT, Microsoft Copilot Studio, or Ollama for fully air-gapped deployments. Any MCP client works.</p>
         </div>
-        <div class="principle">
-          <h4>&#x1F3D7; Structured Diagnostic Pipeline</h4>
-          <p>Each sub-package maps to an ISO&nbsp;13374 block: <code>signal_acquisition</code>&nbsp;(B1), <code>signal_processing</code>&nbsp;(B2), <code>diagnostics</code>&nbsp;(B3-4), <code>prognostics</code>&nbsp;(B5), <code>decision_support</code>&nbsp;(B6).</p>
+        <div class="prin-card">
+          <h4>&#x1F3D7; Structured Pipeline</h4>
+          <p>Six-stage diagnostic flow: ingest &rarr; process &rarr; detect &rarr; assess &rarr; predict &rarr; recommend. Each stage is independent and testable.</p>
         </div>
-        <div class="principle">
+        <div class="prin-card">
           <h4>&#x1F9E9; Extensible by Design</h4>
-          <p>Use only the tools you need, extend with your own. Plugin architecture supports custom signal processors, diagnostics, and report formats.</p>
+          <p>Use only the tools you need. Plugin architecture for custom signal processors, diagnostics, and report formats.</p>
         </div>
       </div>
-    </div>
-    <div class="standards-strip reveal">
-      <span class="std-badge">Structured pipeline: ingest &rarr; analyze &rarr; diagnose &rarr; report</span>
-      <span class="std-badge">Local-by-default processing for sensitive machine data</span>
-      <span class="std-badge">Open standards compatible through MCP</span>
     </div>
   </div>
 </section>
 
-<!-- ==================== AUDIENCE ==================== -->
-<section id="who-its-for">
+<!-- Audience -->
+<section>
   <div class="container">
     <div class="section-header reveal">
       <span class="overline">Who It's For</span>
@@ -1321,99 +966,100 @@
     </div>
 
     <div class="audience-grid">
-      <div class="audience-card reveal">
-        <div class="audience-icon eng">&#x1F527;</div>
+      <div class="aud-card reveal">
+        <div class="aud-icon eng">&#x1F527;</div>
         <h3>Reliability &amp; Maintenance Engineers</h3>
-        <p>Diagnose machine health through natural language. No signal processing PhD required.</p>
+        <p>Diagnose machine health through conversation. No signal-processing expertise required.</p>
         <ul>
-          <li>Screen machine health conversationally</li>
-          <li>Identify likely fault families from real data</li>
+          <li>Screen machine health by asking simple questions</li>
+          <li>Identify likely fault families from real vibration data</li>
           <li>Generate shareable reports for management</li>
           <li>Follow guided diagnostic workflows</li>
         </ul>
-        <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp/blob/main/docs/QUICKSTART_ENGINEER.md" class="btn-card" target="_blank" rel="noopener">Engineer Quick Start &#x2192;</a>
+        <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp/blob/main/docs/QUICKSTART_ENGINEER.md" class="btn-card" target="_blank" rel="noopener">Engineer Quick Start &rarr;</a>
       </div>
-      <div class="audience-card reveal">
-        <div class="audience-icon dev">&#x1F4BB;</div>
+      <div class="aud-card reveal">
+        <div class="aud-icon dev">&#x1F4BB;</div>
         <h3>AI &amp; Software Developers</h3>
-        <p>Learn MCP tool design and build industrial copilots on a production-ready foundation.</p>
+        <p>Study real MCP tool architecture and build industrial copilots on a production-ready foundation.</p>
         <ul>
-          <li>Study real MCP tool architecture patterns</li>
+          <li>Learn MCP tool design patterns from a real project</li>
           <li>Extend with custom tools and datasets</li>
           <li>Build reusable industrial AI workflows</li>
-          <li>Install the Claude Code plugin</li>
+          <li>Install the Claude Code plugin for fast iteration</li>
         </ul>
-        <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp/blob/main/docs/QUICKSTART_DEVELOPER.md" class="btn-card" target="_blank" rel="noopener">Developer Quick Start &#x2192;</a>
+        <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp/blob/main/docs/QUICKSTART_DEVELOPER.md" class="btn-card" target="_blank" rel="noopener">Developer Quick Start &rarr;</a>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ==================== RESULTS ==================== -->
-<section id="results" class="how-section">
-  <div class="container">
-    <div class="section-header reveal">
-      <span class="overline">Outcomes</span>
-      <h2>From Raw Signals to Better Decisions</h2>
-      <p>A modern workflow focused on clarity: understand risk quickly, communicate findings clearly, and plan next actions with confidence.</p>
-    </div>
-
-    <div class="plugin-grid">
-      <div class="feature-card reveal">
-        <div class="feature-icon green">&#x1F7E2;</div>
-        <h3>Faster Triage</h3>
-        <p>Prioritize which assets need immediate attention versus routine follow-up using clear severity cues.</p>
-      </div>
-      <div class="feature-card reveal">
-        <div class="feature-icon purple">&#x1F4DD;</div>
-        <h3>Clear Communication</h3>
-        <p>Create shareable outputs for operators, reliability engineers, and management without rewriting technical notes.</p>
-      </div>
-      <div class="feature-card reveal">
-        <div class="feature-icon amber">&#x23F1;&#xFE0F;</div>
-        <h3>Less Time to Action</h3>
-        <p>Move from "what am I looking at?" to "what should we do now?" in minutes, directly from the chat workflow.</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ==================== SAMPLE DATA ==================== -->
+<!-- Sample Data -->
 <section>
   <div class="container">
     <div class="section-header reveal">
-      <span class="overline">Ready to Use</span>
-      <h2>Real Bearing Vibration Data Included</h2>
-      <p>20 signals from production machinery tests &mdash; no setup required.</p>
+      <span class="overline">Ready to Try</span>
+      <h2>Real Bearing Data Included</h2>
+      <p>20 vibration signals from production machinery &mdash; install and start diagnosing immediately.</p>
     </div>
 
-    <div class="sample-data-box reveal">
+    <div class="sample-box reveal">
       <div>
         <h3>Production Bearing Fault Dataset</h3>
         <p>Training set: 2 healthy baselines + 12 fault signals (inner race, outer race). Test set: 1 healthy baseline + 5 fault signals.</p>
-        <div class="data-stats">
-          <div class="data-stat">
-            <div class="num">20</div>
-            <div class="label">Signals</div>
-          </div>
-          <div class="data-stat">
-            <div class="num">3</div>
-            <div class="label">Fault Types</div>
-          </div>
-          <div class="data-stat">
-            <div class="num">3</div>
-            <div class="label">Healthy Baselines</div>
-          </div>
+        <div class="data-nums">
+          <div class="data-num"><div class="val">20</div><div class="lbl">Signals</div></div>
+          <div class="data-num"><div class="val">3</div><div class="lbl">Fault Types</div></div>
+          <div class="data-num"><div class="val">3</div><div class="lbl">Healthy Baselines</div></div>
         </div>
       </div>
-      <div class="sample-try">
-        Try: <code>&ldquo;Load real_train/OuterRaceFault_1.csv and diagnose the bearing fault.&rdquo;</code>
+      <div class="sample-try">Try: <code>&ldquo;Load OuterRaceFault_1.csv and diagnose the bearing.&rdquo;</code></div>
+    </div>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section id="faq">
+  <div class="container">
+    <div class="section-header reveal">
+      <span class="overline">Questions</span>
+      <h2>Frequently Asked</h2>
+    </div>
+
+    <div class="faq-list reveal">
+      <div class="faq-item">
+        <button class="faq-q">What is this project, in one sentence?</button>
+        <div class="faq-a">An open-source tool that lets you ask an AI assistant about your machine's vibration data and get real, evidence-based maintenance answers &mdash; running entirely on your computer.</div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-q">Does my data leave my machine?</button>
+        <div class="faq-a">No. Raw vibration files are processed locally. Only computed summaries (severity scores, fault classifications) are sent to the AI for interpretation. Use Ollama for a fully air-gapped setup.</div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-q">Which AI models are supported?</button>
+        <div class="faq-a">Any MCP-compatible client: Claude Desktop, VS Code with Copilot, ChatGPT (via MCP bridge), Microsoft Copilot Studio, or local models with Ollama.</div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-q">Do I need signal-processing knowledge?</button>
+        <div class="faq-a">No. Ask questions in plain language like &ldquo;Is this bearing healthy?&rdquo; The AI handles the analysis pipeline and explains results in everyday terms.</div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-q">What kinds of faults can it detect?</button>
+        <div class="faq-a">Outer race, inner race, and rolling element bearing defects; gear mesh issues; general unbalance and misalignment. The system uses frequency analysis, envelope detection, and trained anomaly models.</div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-q">Is this a replacement for professional vibration analysis?</button>
+        <div class="faq-a">No. It's a screening and decision-support tool that helps prioritize and communicate. Critical decisions should always be validated by qualified reliability engineers.</div>
+      </div>
+      <div class="faq-item">
+        <button class="faq-q">Can I add my own analysis tools?</button>
+        <div class="faq-a">Yes. The plugin architecture supports custom signal processors, diagnostic logic, and report formats. See the Developer Quick Start for details.</div>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ==================== DOCUMENTATION ==================== -->
+<!-- Documentation -->
 <section id="docs">
   <div class="container">
     <div class="section-header reveal">
@@ -1436,15 +1082,11 @@
       </a>
       <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp/blob/main/docs/DEPLOYMENT.md" class="doc-link" target="_blank" rel="noopener">
         <div class="doc-icon">&#x1F433;</div>
-        <div>HTTPS Deployment<span class="doc-for">Docker + enterprise setup</span></div>
+        <div>Deployment<span class="doc-for">Docker + enterprise setup</span></div>
       </a>
       <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp/blob/main/docs/OLLAMA_GUIDE.md" class="doc-link" target="_blank" rel="noopener">
         <div class="doc-icon">&#x1F310;</div>
         <div>Ollama Guide<span class="doc-for">Fully air-gapped local LLMs</span></div>
-      </a>
-      <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp/blob/main/docs/architecture.md" class="doc-link" target="_blank" rel="noopener">
-        <div class="doc-icon">&#x1F3D7;</div>
-        <div>Architecture<span class="doc-for">ISO 13374 block mapping</span></div>
       </a>
       <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp/blob/main/EXAMPLES.md" class="doc-link" target="_blank" rel="noopener">
         <div class="doc-icon">&#x1F4D6;</div>
@@ -1454,18 +1096,21 @@
         <div class="doc-icon">&#x1F91D;</div>
         <div>Contributing<span class="doc-for">All skill levels welcome</span></div>
       </a>
+      <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp/blob/main/docs/architecture.md" class="doc-link" target="_blank" rel="noopener">
+        <div class="doc-icon">&#x1F3D7;</div>
+        <div>Architecture<span class="doc-for">Pipeline design &amp; standards</span></div>
+      </a>
     </div>
   </div>
 </section>
 
-<!-- ==================== RELATED ==================== -->
+<!-- Related -->
 <section>
   <div class="container">
     <div class="section-header reveal">
       <span class="overline">Related</span>
       <h2>Hardware Extension</h2>
     </div>
-
     <a href="https://github.com/LGDiMaggio/claude-stwinbox-diagnostics" class="related-card reveal" target="_blank" rel="noopener">
       <div class="related-icon">&#x1F4E1;</div>
       <div>
@@ -1476,15 +1121,14 @@
   </div>
 </section>
 
-<!-- ==================== CITATION ==================== -->
+<!-- Citation -->
 <section>
   <div class="container">
     <div class="section-header reveal">
       <span class="overline">Citation</span>
       <h2>Cite This Project</h2>
     </div>
-
-    <div class="citation-box reveal" id="citationBox">
+    <div class="cite-box reveal" id="citationBox">
       <button class="copy-cite-btn" id="copyCiteBtn">Copy BibTeX</button>
 @software{dimaggio_predictive_maintenance_mcp_2025,
   title   = {Predictive Maintenance MCP Server},
@@ -1497,7 +1141,7 @@
   </div>
 </section>
 
-<!-- ==================== FOOTER ==================== -->
+<!-- Footer -->
 <footer>
   <div class="container">
     <div class="footer-links">
@@ -1509,13 +1153,13 @@
       <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener">Contribute</a>
       <a href="https://www.linkedin.com/in/luigi-gianpio-di-maggio" target="_blank" rel="noopener">Luigi Di Maggio</a>
     </div>
-    <p class="copy">MIT License &copy; 2025&ndash;2026 Luigi Gianpio Di Maggio &middot; An open-source AI assistant for predictive maintenance &mdash; built to support reliability engineers and the developer community.</p>
+    <p class="copy">MIT License &copy; 2025&ndash;2026 Luigi Gianpio Di Maggio &middot; An open-source AI copilot for predictive maintenance &mdash; built for reliability engineers and the developer community.</p>
   </div>
 </footer>
 
-<!-- ==================== Scripts ==================== -->
+<!-- Scripts -->
 <script>
-  // Copy pip install
+  // Copy install command
   document.getElementById('installBox').addEventListener('click', function(e) {
     if (e.target.closest('.copy-btn')) return;
     copyInstall();
@@ -1525,7 +1169,7 @@
     navigator.clipboard.writeText('pip install predictive-maintenance-mcp').then(function() {
       var btn = document.getElementById('copyBtn');
       btn.textContent = 'Copied!';
-      btn.style.color = '#3fb950';
+      btn.style.color = '#4ade80';
       setTimeout(function() { btn.textContent = 'Copy'; btn.style.color = ''; }, 2000);
     });
   }
@@ -1544,7 +1188,7 @@
     navigator.clipboard.writeText('/plugin marketplace add LGDiMaggio/predictive-maintenance-mcp').then(function() {
       var btn = document.getElementById('copyPluginBtn');
       btn.textContent = 'Copied!';
-      btn.style.color = '#3fb950';
+      btn.style.color = '#4ade80';
       setTimeout(function() { btn.textContent = 'Copy'; btn.style.color = ''; }, 2000);
     });
   }
@@ -1555,22 +1199,31 @@
     navigator.clipboard.writeText(text).then(function() {
       var btn = document.getElementById('copyCiteBtn');
       btn.textContent = 'Copied!';
-      btn.style.color = '#3fb950';
+      btn.style.color = '#4ade80';
       setTimeout(function() { btn.textContent = 'Copy BibTeX'; btn.style.color = ''; }, 2000);
     });
   });
 
-  // Scroll-reveal with IntersectionObserver
+  // FAQ accordion
+  document.querySelectorAll('.faq-q').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var item = this.parentElement;
+      var wasOpen = item.classList.contains('open');
+      document.querySelectorAll('.faq-item.open').forEach(function(el) { el.classList.remove('open'); });
+      if (!wasOpen) item.classList.add('open');
+    });
+  });
+
+  // Scroll reveal
   var observer = new IntersectionObserver(function(entries) {
     entries.forEach(function(entry) {
       if (entry.isIntersecting) {
         entry.target.classList.add('visible');
-        entry.target.querySelectorAll('.stat-num[data-target], .tool-cat-num[data-target]').forEach(animateCounter);
+        entry.target.querySelectorAll('.num-val[data-target]').forEach(animateCounter);
         observer.unobserve(entry.target);
       }
     });
   }, { threshold: 0.12, rootMargin: '0px 0px -30px 0px' });
-
   document.querySelectorAll('.reveal').forEach(function(el) { observer.observe(el); });
 
   // Counter animation
