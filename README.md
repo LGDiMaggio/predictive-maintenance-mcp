@@ -1,5 +1,7 @@
 # Predictive Maintenance MCP Server — AI Agent for Condition Monitoring
 
+[![SafeSkill 87/100](https://img.shields.io/badge/SafeSkill-87%2F100_Passes%20with%20Notes-yellow)](https://safeskill.dev/scan/lgdimaggio-predictive-maintenance-mcp)
+
 <!-- mcp-name: io.github.LGDiMaggio/predictive-maintenance-mcp -->
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
