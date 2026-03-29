@@ -5,6 +5,22 @@ All notable changes to the Predictive Maintenance MCP Server project will be doc
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-03-29
+
+### Added
+- **Claude Code plugin** — distributable plugin with 7 domain skills (bearing diagnosis, gear analysis, quick screening, report generation, anomaly detection, signal management, documentation search), 2 autonomous agents (`diagnostic-pipeline`, `signal-explorer`), and 3 slash commands (`/pm-diagnose`, `/pm-screen`, `/pm-report`). Installable from the Claude Code marketplace.
+- **Prognostics sub-package** — `src/prognostics/` with `RULEstimator` (Remaining Useful Life) and `TrendAnalyzer` with confidence intervals — ISO 13374 Block 5 implementation.
+- **Decision support sub-package** — `src/decision_support/` with `AlertManager`, `MaintenanceRecommendations`, and evidence-based `DiagnosisPipeline` — ISO 13374 Block 6 advisory layer.
+- **Phase 1 modular refactoring** — monolithic server split into `mcp_tools/` (acquisition, analysis, diagnostics, report, prompts), `signal_acquisition/`, `signal_processing/`, `diagnostics/`, `prognostics/`, `decision_support/` sub-packages following ISO 13374 six-block architecture.
+- **Jupyter notebooks** — 3 interactive notebooks: getting started, bearing diagnostics, condition monitoring.
+- **Guided workflow prompts** — 4 MCP prompt endpoints: `diagnose_bearing_prompt`, `diagnose_gear_prompt`, `quick_diagnostic_report_prompt`, `analyze_anomalies_prompt`.
+
+### Changed
+- Total MCP endpoints expanded to **48** (from 24).
+- README strategically redesigned: pitch-first, 60% shorter, engineer/developer split quickstarts.
+- GitHub Pages updated: Tools at a Glance section, ISO 13374 six-block architecture diagram, standards compliance strip, Prognostics & Decision Intelligence feature cards.
+- Test coverage at **86%** across 20+ test files.
+
 ## [0.7.1] - 2025-07-15
 
 ### Added
