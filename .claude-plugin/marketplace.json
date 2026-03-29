@@ -11,11 +11,7 @@
   "plugins": [
     {
       "name": "predictive-maintenance",
-      "source": {
-        "source": "git-subdir",
-        "url": "https://github.com/LGDiMaggio/predictive-maintenance-mcp.git",
-        "path": "plugin"
-      },
+      "source": "./plugin",
       "description": "Complete predictive maintenance toolkit: 7 skills, 2 agents, and 3 commands for vibration analysis, bearing/gear fault diagnosis, anomaly detection, ISO standards compliance, and diagnostic report generation. Requires the predictive-maintenance-mcp server.",
       "version": "1.0.0",
       "author": {
