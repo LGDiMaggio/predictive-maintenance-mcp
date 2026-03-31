@@ -284,7 +284,7 @@ class DocumentIndex:
         results = []
         for i in top_idx:
             if scores[i] < min_score:
-                break
+                continue
             results.append({
                 "text": self._chunks[i]["text"],
                 "source": self._chunks[i]["source"],

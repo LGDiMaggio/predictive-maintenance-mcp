@@ -29,7 +29,9 @@ def safe_resolve(base_dir: Path, user_input: str) -> Path:
     """
     candidate = (base_dir / user_input).resolve()
     allowed = base_dir.resolve()
-    if not str(candidate).startswith(str(allowed)):
+    # Use Path.is_relative_to (Python 3.9+) to avoid sibling-directory bypass
+    # e.g. /data/signals_evil would pass a naive startswith("/data/signals") check
+    if not candidate.is_relative_to(allowed):
         raise ValueError(f"Invalid path — escapes base directory: {user_input}")
     return candidate
 
