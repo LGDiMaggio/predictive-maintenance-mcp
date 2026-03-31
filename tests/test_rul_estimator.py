@@ -8,6 +8,7 @@ import pytest
 from predictive_maintenance_mcp.prognostics.rul_estimator import (
     estimate_rul_linear,
     estimate_rul_exponential,
+    estimate_rul_weibull,
 )
 
 
@@ -69,4 +70,47 @@ class TestExponentialRUL:
         """Series with all negative values cannot be log-fitted."""
         series = [-5.0, -4.0, -3.0, -2.0, -1.0]
         result = estimate_rul_exponential(series, failure_threshold=10.0)
+        assert result is None
+
+
+class TestWeibullRUL:
+    """Tests for Weibull degradation RUL estimation."""
+
+    def test_weibull_increasing_degradation(self):
+        """Monotonically increasing degradation should yield a finite RUL."""
+        series = [0.1 + 0.5 * (i ** 1.5) for i in range(1, 31)]
+        # Threshold above current max — extrapolation should reach it.
+        threshold = max(series) * 1.5
+
+        result = estimate_rul_weibull(series, failure_threshold=threshold)
+
+        assert result is not None
+        assert result["method"] == "weibull"
+        assert result["rul"] >= 0
+        assert 0.0 <= result["confidence"] <= 1.0
+        assert result["shape"] > 0
+        assert result["scale"] > 0
+
+    def test_weibull_flat_series(self):
+        """Flat series cannot be fitted — should return None."""
+        series = [5.0] * 20
+        result = estimate_rul_weibull(series, failure_threshold=100.0)
+        assert result is None
+
+    def test_weibull_threshold_already_exceeded(self):
+        """If the last value already exceeds the threshold, return None."""
+        series = [float(i) for i in range(1, 51)]
+        result = estimate_rul_weibull(series, failure_threshold=10.0)
+        assert result is None
+
+    def test_weibull_short_series(self):
+        """Series with fewer than 3 points should return None."""
+        series = [1.0, 2.0]
+        result = estimate_rul_weibull(series, failure_threshold=100.0)
+        assert result is None
+
+    def test_weibull_negative_values(self):
+        """Series with negative values cannot be Weibull-fitted."""
+        series = [-3.0, -2.0, -1.0, 0.0, 1.0]
+        result = estimate_rul_weibull(series, failure_threshold=10.0)
         assert result is None

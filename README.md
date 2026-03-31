@@ -52,12 +52,12 @@ Restart Claude Desktop. You're ready — try: *"Load real_train/OuterRaceFault_1
 | *"Extract specs from test_pump_manual.pdf and diagnose the signal"* | Reads the equipment manual, looks up the bearing model, calculates expected fault frequencies, matches them against the signal |
 | *"Train an anomaly detector on my healthy baselines, then flag anomalies"* | Trains a machine learning model on normal data, scores new signals, highlights outliers |
 
-The AI doesn't guess — it calls **48 specialized analysis tools** running locally on your machine. Your data never leaves your infrastructure.
+The AI doesn't guess — it calls **52 specialized MCP endpoints** (46 tools, 2 resources, 4 prompts) running locally on your machine. Your data never leaves your infrastructure.
 
 <details>
-<summary><b>See the full tool list (48 endpoints)</b></summary>
+<summary><b>See the full endpoint list (52 MCP endpoints: 43 tools, 1 resource, 4 prompts)</b></summary>
 
-### Signal Acquisition (6 tools + 2 resources)
+### Signal Acquisition (7 tools + 2 resources)
 
 | Endpoint | Type | Description |
 |----------|------|-------------|
@@ -70,7 +70,7 @@ The AI doesn't guess — it calls **48 specialized analysis tools** running loca
 | `signal://list` | Resource | Browse all signal files |
 | `signal://read/{filename}` | Resource | Read signal metadata |
 
-### Spectral & Statistical Analysis (7 tools)
+### Spectral & Statistical Analysis (10 tools)
 
 | Tool | Description |
 |------|-------------|
@@ -80,7 +80,8 @@ The AI doesn't guess — it calls **48 specialized analysis tools** running loca
 | `compute_power_spectral_density` | Power spectral density (Welch method) |
 | `compute_spectrogram_stft` | Time-frequency spectrogram |
 | `extract_features_from_signal` | 17+ statistical and spectral features |
-| `plot_signal` / `plot_spectrum` / `plot_envelope` | Visualization tools |
+| `compute_envelope_spectrum_tool` | Envelope spectrum computation |
+| `plot_signal` / `plot_spectrum` / `plot_envelope` | Visualization tools (3 tools) |
 
 ### Diagnostics & Health Assessment (14 tools)
 
@@ -89,19 +90,18 @@ The AI doesn't guess — it calls **48 specialized analysis tools** running loca
 | `calculate_bearing_characteristic_frequencies` | Compute expected fault frequencies from bearing geometry |
 | `check_bearing_fault_peak_tool` | Detect peaks at fault frequencies |
 | `check_bearing_faults_direct` | Multi-fault detection (inner/outer/ball/cage) |
-| `diagnose_bearing` | Guided bearing diagnostic workflow |
+| `diagnose_vibration_tool` | Integrated evidence-based diagnosis pipeline |
 | `search_bearing_catalog` | Look up bearing specs by model number |
 | `lookup_bearing_and_compute_tool` | Catalog lookup + frequency calculation |
-| `diagnose_gear` | Evidence-based gear fault detection |
 | `evaluate_iso_20816` | Vibration severity assessment (4 severity zones) |
 | `assess_vibration_severity` | Health classification |
 | `train_anomaly_model` | Train novelty detection on healthy baselines |
 | `predict_anomalies` | Score new signals for anomalies |
 | `search_documentation` | Semantic search over equipment manuals |
-| `read_manual_excerpt` / `extract_manual_specs` | Extract specs from PDFs |
+| `read_manual_excerpt` / `extract_manual_specs` | Extract specs from PDFs (2 tools) |
 | `list_machine_manuals` | Browse available documentation |
 
-### Reporting (8 tools)
+### Reporting (9 tools)
 
 | Tool | Description |
 |------|-------------|
@@ -111,16 +111,33 @@ The AI doesn't guess — it calls **48 specialized analysis tools** running loca
 | `generate_diagnostic_report_docx` | Structured Word document report |
 | `generate_pca_visualization_report` | 2D/3D anomaly projection |
 | `generate_feature_comparison_report` | Cross-signal feature comparison |
-| `list_html_reports` / `get_report_info` | Report management |
+| `plot_iso_20816_chart` | ISO 20816 severity zone chart |
+| `list_html_reports` / `get_report_info` | Report management (2 tools) |
 
-### Guided Workflows (4 prompts + 4 resources)
+### Prognostics (3 tools)
+
+| Tool | Description |
+|------|-------------|
+| `estimate_rul` | Remaining Useful Life estimation (linear, exponential, Weibull, Kalman) |
+| `analyze_signal_trend` | Trend detection on feature time series (increasing/decreasing/stable) |
+| `detect_signal_degradation_onset` | Baseline deviation detection for early degradation warning |
+
+### Decision Support (3 tools)
+
+| Tool | Description |
+|------|-------------|
+| `check_vibration_alert` | ISO 10816 vibration severity alert classification (zones A/B/C/D) |
+| `check_custom_vibration_alert` | Custom threshold-based vibration alerting |
+| `generate_maintenance_recommendations` | Context-aware maintenance recommendations from diagnosis |
+
+### Guided Workflows (4 prompts + 2 resources)
 
 | Prompt | Description |
 |--------|-------------|
-| `diagnose_bearing_prompt` | Complete bearing fault diagnostic decision tree |
-| `diagnose_gear_prompt` | Gear fault detection workflow |
-| `quick_diagnostic_report_prompt` | Fast health screening |
-| `analyze_anomalies_prompt` | ML-based anomaly detection tutorial |
+| `diagnose_bearing` | Complete bearing fault diagnostic decision tree |
+| `diagnose_gear` | Gear fault detection workflow |
+| `quick_diagnostic_report` | Fast health screening |
+| `generate_iso_diagnostic_report` | ISO-compliant diagnostic report generation |
 
 </details>
 
@@ -232,7 +249,7 @@ The codebase follows a **modular architecture** organized around the ISO 13374 S
 
 ```
 src/predictive_maintenance_mcp/
-├── mcp_tools/                 # MCP endpoint registration (48 endpoints)
+├── mcp_tools/                 # MCP endpoint registration (52 MCP endpoints)
 │   ├── acquisition_tools.py   # Signal loading & management
 │   ├── analysis_tools.py      # Spectral & statistical analysis
 │   ├── diagnostics_tools.py   # Fault detection, ML, document search
@@ -243,7 +260,7 @@ src/predictive_maintenance_mcp/
 ├── signal_processing/         # Spectral analysis & feature extraction
 ├── diagnostics/               # Bearing/gear analysis, ISO standards
 ├── decision_support/          # Evidence-based diagnosis pipeline
-├── prognostics/               # Trend analysis & RUL estimation
+├── prognostics/               # RUL estimation (linear, exponential, Weibull) & trend analysis
 ├── rag.py                     # Document indexing & search (FAISS/TF-IDF)
 ├── models.py                  # Pydantic data models
 ├── server.py                  # FastMCP server entry point
@@ -293,14 +310,15 @@ pytest --cov=src --cov-report=html      # with coverage report
 
 ## Roadmap
 
-- [x] 48 MCP endpoints with modular architecture
+- [x] 52 MCP endpoints (43 tools, 1 resource, 4 prompts) with modular architecture
 - [x] Claude Code plugin (7 skills, 2 agents, 3 commands)
 - [x] 86% test coverage, CI/CD on 3 platforms
 - [x] Docker + SSE/HTTP transport for enterprise deployment
 - [x] Semantic document search (FAISS + TF-IDF)
 - [ ] Customizable severity thresholds
+- [x] Remaining useful life (RUL) estimation models (linear, exponential, Weibull degradation)
+- [x] Trend analysis and degradation onset detection
 - [ ] Multi-signal trending and historical comparison
-- [ ] Remaining useful life (RUL) estimation models
 - [ ] Real-time streaming (MQTT/Kafka)
 - [ ] Fleet dashboard for multi-asset monitoring
 - [ ] CMMS integration (SAP, Maximo, Infor)
