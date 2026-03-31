@@ -20,6 +20,7 @@ Supports:
 
 import json
 import re
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 import logging
@@ -463,7 +464,7 @@ def extract_machine_specs(manual_path: Path, use_cache: bool = True) -> Dict:
         "rpm_values": extract_rpm_values(text),
         "power_ratings": extract_power_ratings(text),
         "text_excerpt": text[:2000],  # First 2000 chars for LLM context
-        "extraction_date": "2025-11-12",
+        "extraction_date": datetime.now().isoformat(),
         "pages_analyzed": pages_analyzed
     }
     
