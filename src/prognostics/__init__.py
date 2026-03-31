@@ -6,4 +6,5 @@ degradation-based maintenance planning.
 """
 
 from .trend_analyzer import analyze_trend, detect_degradation_onset  # noqa: F401
-from .rul_estimator import estimate_rul_linear, estimate_rul_exponential  # noqa: F401
+from .rul_estimator import estimate_rul_linear, estimate_rul_exponential, estimate_rul_weibull  # noqa: F401
+from .kalman_rul import estimate_rul_kalman  # noqa: F401

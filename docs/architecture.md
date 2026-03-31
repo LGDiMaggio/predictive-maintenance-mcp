@@ -63,11 +63,14 @@ State detection and health assessment.
 | `bearing_catalog.py` | SKF/FAG/Timken/NSK bearing specs, characteristic frequencies |
 | `iso10816.py` | ISO 10816 / ISO 20816-3 vibration severity zones (A/B/C/D) |
 
-### Block 5: Prognostics (`prognostics/`)
+### Block 5: Prognostics (`prognostics/`) — Implemented
 
-Placeholder for Phase 2. Will contain:
-- Remaining Useful Life (RUL) estimation
-- Trend analysis with confidence intervals
+Remaining useful life estimation and trend analysis.
+
+| Module | Purpose |
+|--------|---------|
+| `rul_estimator.py` | RUL estimation via linear extrapolation, exponential degradation, and Weibull survival models |
+| `trend_analyzer.py` | Linear trend fitting with statistical significance and degradation onset detection |
 
 ### Block 6: Decision Support (`decision_support/`)
 
@@ -93,6 +96,9 @@ Block 3: check_bearing_fault_peak(), check_all_bearing_faults()
     │
     ▼
 Block 4: assess_vibration_severity() ──▶ ISO 10816 zones
+    │
+    ▼
+Block 5: estimate_rul(), analyze_trend() ──▶ RUL & degradation forecasts
     │
     ▼
 Block 6: diagnose_vibration() ──▶ Structured DiagnosisResult
@@ -130,8 +136,10 @@ src/
 │   ├── __init__.py                    #   re-exports diagnosis pipeline
 │   └── diagnosis_pipeline.py          #   integrated diagnosis
 │
-├── prognostics/                       # ISO 13374 Block 5 (Phase 2)
-│   └── __init__.py                    #   placeholder
+├── prognostics/                       # ISO 13374 Block 5
+│   ├── __init__.py                    #   re-exports RUL + trend functions
+│   ├── rul_estimator.py               #   linear, exponential, Weibull RUL
+│   └── trend_analyzer.py              #   trend fitting, degradation onset
 │
 ├── signal_loader.py                   # Canonical loaders (+ compat shim)
 ├── signal_repository.py               # Canonical repository (+ compat shim)
@@ -179,9 +187,9 @@ from predictive_maintenance_mcp.diagnosis_pipeline import diagnose_vibration
 3. Re-export in `diagnostics/__init__.py`
 4. Optionally integrate into `diagnosis_pipeline.py`
 
-### Adding prognostic models (Phase 2)
+### Adding prognostic models
 
-1. Create `src/prognostics/your_model.py`
+1. Create `src/prognostics/your_model.py` (existing models: `rul_estimator.py`, `trend_analyzer.py`)
 2. Implement RUL estimation or trend analysis
 3. Re-export in `prognostics/__init__.py`
 4. Wire into decision support pipeline
@@ -205,6 +213,6 @@ Only: Diagnostic reports, LLM queries (no raw waveforms)
 
 | Standard | Coverage | Modules |
 |----------|----------|---------|
-| ISO 13374 | Blocks 1-4, 6 | All sub-packages |
+| ISO 13374 | Blocks 1-6 | All sub-packages |
 | ISO 10816 / 20816-3 | Severity zones A-D | `diagnostics/iso10816.py` |
 | MIMOSA OSA-CBM | Signature analysis, detection | `diagnostics/`, `signal_processing/` |

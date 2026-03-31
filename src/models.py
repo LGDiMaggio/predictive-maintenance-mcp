@@ -244,3 +244,48 @@ class DiagnosisResult(BaseModel):
     overall_diagnosis: str = Field(description="Combined diagnostic text")
     confidence: str = Field(description="Overall confidence: high, moderate, or low")
     recommendations: list[str] = Field(description="Recommended actions")
+
+
+# ============================================================================
+# Phase 2 Models — Prognostics & Decision Support
+# ============================================================================
+
+
+class RULEstimationResult(BaseModel):
+    """Remaining Useful Life estimation result."""
+    rul: float = Field(description="Estimated remaining useful life in time units")
+    confidence: float = Field(description="R-squared or confidence metric (0-1)")
+    method: str = Field(description="Estimation method used")
+    confidence_interval: list[float] | None = Field(default=None, description="[lower, upper] RUL bounds (Kalman only)")
+    shape: float | None = Field(default=None, description="Weibull shape parameter (Weibull only)")
+    scale: float | None = Field(default=None, description="Weibull scale parameter (Weibull only)")
+    estimated_rate: float | None = Field(default=None, description="Estimated degradation rate (Kalman only)")
+
+
+class TrendAnalysisResult(BaseModel):
+    """Signal trend analysis result."""
+    feature_name: str = Field(description="Feature analyzed")
+    slope: float = Field(description="Trend slope per segment")
+    intercept: float = Field(description="Trend intercept")
+    r_squared: float = Field(description="R-squared goodness of fit")
+    trend_direction: str = Field(description="increasing, decreasing, or stable")
+    p_value: float = Field(description="Statistical significance")
+    num_segments: int = Field(description="Number of segments analyzed")
+
+
+class DegradationOnsetResult(BaseModel):
+    """Degradation onset detection result."""
+    feature_name: str = Field(description="Feature analyzed")
+    onset_detected: bool = Field(description="Whether degradation onset was detected")
+    onset_segment_index: int | None = Field(default=None, description="Segment index where degradation starts")
+    threshold_sigma: float = Field(description="Sigma threshold used for detection")
+    num_segments: int = Field(description="Total number of segments")
+
+
+class AlertResult(BaseModel):
+    """Vibration alert assessment result."""
+    alert_level: str = Field(description="none, warning, alarm, or danger")
+    zone: str = Field(description="ISO zone classification (A/B/C/D)")
+    rms_velocity: float = Field(description="Input RMS velocity value")
+    exceeded_threshold: float | None = Field(default=None, description="Threshold that was exceeded")
+    message: str = Field(description="Human-readable alert message")

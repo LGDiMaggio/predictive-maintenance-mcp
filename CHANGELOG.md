@@ -5,6 +5,18 @@ All notable changes to the Predictive Maintenance MCP Server project will be doc
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Prognostics tools exposed as MCP endpoints (RUL estimation, trend analysis, degradation onset detection)
+- Decision support tools exposed as MCP endpoints (vibration alerts, maintenance recommendations)
+- Advanced prognostic models: Weibull degradation and Kalman filter-based RUL estimation
+- Block 5 (Prognostics) of ISO 13374 architecture now fully implemented
+
+### Changed
+- Documentation updated to reflect implemented status of prognostics and RUL estimation
+- Endpoint terminology clarified: "MCP endpoints" used consistently for total count (tools + resources + prompts)
+
 ## [0.8.0] - 2026-03-29
 
 ### Added
