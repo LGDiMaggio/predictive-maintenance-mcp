@@ -4113,7 +4113,7 @@ def diagnose_bearing(
 
     Evidence-based policy:
     - Envelope peaks at characteristic frequencies are PRIMARY indicators (strong evidence)
-    - Statistical indicators (CF>6, Kurtosis>10) are SECONDARY/confirmatory
+    - Statistical indicators (CF>6, Kurtosis>6) are SECONDARY/confirmatory
     - If envelope shows clear peaks at BPFO/BPFI/BSF/FTF (±5% tolerance) → bearing fault is STRONGLY indicated
     - Additional high CF or Kurtosis reinforces the diagnosis but is not strictly required if envelope evidence is clear
     
@@ -4235,9 +4235,9 @@ Call: analyze_statistics("{signal_file}")
 Report: RMS, Crest Factor, Kurtosis (excess), Skewness in bullet points.
 
 Interpretation flags (SECONDARY indicators):
-• CF > 6 or Kurtosis > 10 → Strong impulsiveness (supports bearing fault hypothesis)
-• CF 4-6 or Kurtosis 5-10 → Moderate impulsiveness (weak support)
-• CF < 4 and Kurtosis < 5 → Low impulsiveness (but envelope may still show faults)
+• CF > 6 or Kurtosis > 6 → Strong impulsiveness (supports bearing fault hypothesis)
+• CF 4-6 or Kurtosis 3-6 → Moderate impulsiveness (weak support)
+• CF < 4 and Kurtosis < 3 → Low impulsiveness (but envelope may still show faults)
 
 ⚠️ Do NOT diagnose from statistics alone. Proceed to envelope analysis.
 
@@ -4303,8 +4303,8 @@ A) IF envelope spectrum shows clear peak(s) at characteristic frequency (±5%):
    • Peak at FTF (±5%) → **Cage fault**
    
    Confidence level:
-   - High confidence: Peak + harmonics present AND (CF>6 OR Kurtosis>10)
-   - Moderate confidence: Peak present but weaker harmonics OR moderate stats (CF 4-6, Kurt 5-10)
+   - High confidence: Peak + harmonics present AND (CF>6 OR Kurtosis>6)
+   - Moderate confidence: Peak present but weaker harmonics OR moderate stats (CF 4-6, Kurt 3-6)
    - Note: Even without extreme statistics, clear envelope peaks ARE diagnostic
    
 B) IF envelope shows ambiguous/borderline peaks:
@@ -4426,7 +4426,7 @@ GUARDRAILS (apply throughout):
 - A gear tooth fault (localized damage) requires BOTH:
   • Clear Gear Mesh Frequency (GMF) harmonics AND
   • Sidebands spaced by shaft rotation frequency (f_rot) around GMF or its harmonics
-  • (Optional but reinforcing) Elevated Kurtosis (>5) or modulation energy
+  • (Optional but reinforcing) Elevated Kurtosis (>3) or modulation energy
 - Without sidebands: DO NOT claim tooth damage; consider uniform wear only if GMF elevated but stable statistics.
 
 STEP 1 — INPUT & CONTEXT
@@ -4439,7 +4439,7 @@ Call: analyze_statistics("{signal_file}")
 Report RMS, Crest Factor, Kurtosis in bullet points (brief).
 Indicators:
 - Elevated RMS: possible general load / imbalance
-- High Kurtosis (>5): impulsive impacts (may correlate with chipped tooth)
+- High Kurtosis (>3): impulsive impacts (may correlate with chipped tooth)
 - High Crest Factor (>4): impulsiveness
 (Do NOT diagnose from stats alone.)
 
@@ -4462,7 +4462,7 @@ to inspect modulation signature. (Not mandatory if FFT already conclusive.)
 
 STEP 5 — CLASSIFICATION (apply confirmation rule)
 Decision categories (choose exactly one):
-- "Gear tooth fault CONFIRMED" → Requires: (GMF harmonics present) AND (≥1 clear sideband pair with spacing ≈ f_rot) AND (supporting stat: Kurtosis>5 or CF>4)
+- "Gear tooth fault CONFIRMED" → Requires: (GMF harmonics present) AND (≥1 clear sideband pair with spacing ≈ f_rot) AND (supporting stat: Kurtosis>3 or CF>4)
 - "Possible localized tooth damage" → Partial sidebands OR ambiguous spacing; list missing evidence required for confirmation.
 - "Uniform wear / increased load" → Elevated GMF amplitude WITHOUT sidebands, normal/low impulsiveness.
 
