@@ -87,6 +87,16 @@ mcp = FastMCP(
     - Do NOT auto-correct or guess filenames
     - If ambiguous, ask user to clarify
 
+    Prognostics (ISO 13374 Block 5):
+    - Remaining Useful Life estimation (linear, exponential, weibull, kalman)
+    - Signal trend analysis (increasing/decreasing/stable detection)
+    - Degradation onset detection (baseline deviation)
+
+    Decision Support (ISO 13374 Block 6):
+    - ISO 10816 vibration alert classification (zone A/B/C/D)
+    - Custom threshold alerting
+    - Maintenance recommendation generation (severity + fault-specific)
+
     Workflow Prompts (use these for guided analysis):
     - diagnose_bearing() - Complete bearing diagnostic workflow with evidence-based decision tree
     - diagnose_gear() - Gear fault detection workflow

@@ -278,6 +278,13 @@ def register(mcp: FastMCP) -> None:
         low = filter_low / nyquist
         high = filter_high / nyquist
 
+        # Clamp to valid range (0, 1) and ensure low < high
+        low = max(low, 0.01)
+        high = min(high, 0.99)
+        if low >= high:
+            low = 0.01
+            high = 0.99
+
         sos = butter(4, [low, high], btype='band', output='sos')
 
         # Apply filter
