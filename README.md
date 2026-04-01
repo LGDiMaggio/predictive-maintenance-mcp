@@ -12,9 +12,6 @@
 
 An open-source [MCP](https://modelcontextprotocol.io/) server and **Claude Code plugin** that turns LLMs into condition monitoring assistants. Engineers describe what they need in plain language; the AI calls the right analysis tools and delivers results. It's designed to **support and accelerate expert decision-making**, not replace it — the engineer stays in control.
 
-<!-- TODO: Replace with a 15-20s GIF showing: prompt in Claude → tools called → report opens in browser -->
-<!-- ![Demo](assets/demo.gif) -->
-
 ---
 
 ## Quick Start
@@ -330,7 +327,7 @@ Contributions welcome from **everyone** — not just programmers. Domain experts
   title   = {Predictive Maintenance MCP Server},
   author  = {Di Maggio, Luigi Gianpio},
   year    = {2025},
-  version = {0.7.1},
+  version = {0.8.0},
   url     = {https://github.com/LGDiMaggio/predictive-maintenance-mcp},
   doi     = {10.5281/zenodo.17611542}
 }
