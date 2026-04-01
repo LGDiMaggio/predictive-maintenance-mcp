@@ -13,7 +13,7 @@
   <link rel="canonical" href="https://lgdimaggio.github.io/predictive-maintenance-mcp/">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 
   <!-- Open Graph -->
   <meta property="og:type" content="website">
@@ -95,7 +95,7 @@
     html { scroll-behavior: smooth; }
 
     body {
-      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      font-family: 'Outfit', system-ui, -apple-system, sans-serif;
       background: var(--bg);
       color: var(--text);
       line-height: 1.65;
@@ -106,8 +106,16 @@
     body::before {
       content: '';
       position: fixed; inset: 0;
-      background-image: radial-gradient(rgba(255,255,255,.018) 1px, transparent 1px);
-      background-size: 32px 32px;
+      background-image:
+        linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px);
+      background-size: 56px 56px;
+      pointer-events: none; z-index: 0;
+    }
+    body::after {
+      content: '';
+      position: fixed; inset: 0;
+      background: radial-gradient(ellipse at 50% 50%, transparent 40%, rgba(0,0,0,.35) 100%);
       pointer-events: none; z-index: 0;
     }
 
@@ -163,9 +171,8 @@
     .hero::before {
       content: ''; position: absolute; inset: 0;
       background:
-        radial-gradient(ellipse 80% 60% at 50% -5%, rgba(76,110,245,.18), transparent 70%),
-        radial-gradient(ellipse 50% 45% at 80% 50%, rgba(192,132,252,.08), transparent),
-        radial-gradient(ellipse 40% 50% at 20% 60%, rgba(74,222,128,.06), transparent);
+        radial-gradient(ellipse 70% 50% at 50% -10%, rgba(34,211,238,.15), transparent 70%),
+        radial-gradient(ellipse 45% 35% at 65% 40%, rgba(99,102,241,.06), transparent);
       animation: heroGlow 12s ease-in-out infinite alternate;
     }
     @keyframes heroGlow { 0%{opacity:.5;transform:scale(1)} 100%{opacity:1;transform:scale(1.03)} }
@@ -190,7 +197,7 @@
       max-width: 780px; margin: 0 auto 1.5rem;
     }
     .hero h1 .gradient-text {
-      background: linear-gradient(135deg, #8da5ff 0%, #c084fc 45%, #4ade80 100%);
+      background: linear-gradient(135deg, #e0f7fa 0%, #22d3ee 40%, #6366f1 100%);
       -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
       background-size: 200% auto;
       animation: gradShift 6s ease-in-out infinite alternate;
@@ -239,7 +246,7 @@
       background: rgba(255,255,255,.05); border: 1px solid var(--border);
       border-radius: 6px; padding: .25rem .6rem; color: var(--text-dim);
       font-size: .72rem; font-weight: 600; cursor: pointer;
-      transition: background .2s, color .2s; flex-shrink: 0; font-family: 'Inter', sans-serif;
+      transition: background .2s, color .2s; flex-shrink: 0; font-family: 'Outfit', sans-serif;
     }
     .install-box .copy-btn:hover { background: rgba(255,255,255,.1); color: var(--text); }
 
@@ -523,7 +530,7 @@
     .faq-q {
       width: 100%; background: none; border: none; color: var(--text);
       padding: 1.25rem 0; text-align: left; cursor: pointer;
-      font-size: 1rem; font-weight: 600; font-family: 'Inter', sans-serif;
+      font-size: 1rem; font-weight: 600; font-family: 'Outfit', sans-serif;
       display: flex; justify-content: space-between; align-items: center; gap: 1rem;
     }
     .faq-q:hover { color: var(--accent-bright); }
@@ -587,7 +594,7 @@
       background: rgba(255,255,255,.05); border: 1px solid var(--border);
       border-radius: 6px; padding: .22rem .55rem; color: var(--text-dim);
       font-size: .68rem; font-weight: 600; cursor: pointer;
-      transition: background .2s, color .2s; font-family: 'Inter', sans-serif;
+      transition: background .2s, color .2s; font-family: 'Outfit', sans-serif;
     }
     .cite-box .copy-cite-btn:hover { background: rgba(255,255,255,.1); color: var(--text); }
 
@@ -853,8 +860,8 @@
       </div>
       <div class="feat-card reveal">
         <div class="feat-icon purple">&#x1F4C8;</div>
-        <h3>Trend &amp; Life Estimates</h3>
-        <p>Remaining useful life estimation (linear, exponential, Weibull models), trend analysis, and degradation onset detection. Move from reactive fixes to planned interventions.</p>
+        <h3>Multi-Format Ingestion</h3>
+        <p>Load vibration data from CSV, WAV, MAT, NPY, and Parquet files. Automatic sampling rate detection and metadata extraction.</p>
       </div>
       <div class="feat-card reveal">
         <div class="feat-icon amber">&#x1F9E0;</div>
