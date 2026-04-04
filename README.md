@@ -38,6 +38,16 @@ Restart Claude Desktop. You're ready — try: *"Load real_train/OuterRaceFault_1
 
 ---
 
+## See It in Action
+
+<p align="center">
+  <img src="assets/claude_gif.gif" alt="Predictive Maintenance MCP — diagnostic workflow in Claude Desktop" width="720">
+</p>
+
+<p align="center"><em>Full diagnostic workflow: load signal → spectral analysis → fault detection → severity assessment → report generation</em></p>
+
+---
+
 ## What Can It Do?
 
 **Upload a vibration signal → get a professional diagnosis through conversation.**
