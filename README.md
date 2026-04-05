@@ -159,6 +159,12 @@ The project includes a **plugin for Claude Code** with domain-specific skills th
 /plugin install predictive-maintenance@predictive-maintenance-marketplace
 ```
 
+<p align="center">
+  <img src="assets/plugin.gif" alt="Claude Code Plugin — skills, agents, and slash commands in action" width="720">
+</p>
+
+<p align="center"><em>Claude Code plugin: domain skills activate automatically, slash commands for quick diagnostics</em></p>
+
 ### Skills (7) — activate automatically based on context
 
 | Skill | What it does |
