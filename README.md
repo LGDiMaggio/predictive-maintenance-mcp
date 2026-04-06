@@ -10,7 +10,7 @@
 
 **Give any AI assistant the ability to analyze vibration data, detect machinery faults, and generate professional diagnostic reports — through natural conversation.**
 
-An open-source [MCP](https://modelcontextprotocol.io/) server and **predictive maintenance AI agent** that turns LLMs into condition monitoring assistants. Engineers describe what they need in plain language; the AI calls the right analysis tools and delivers results — bearing fault detection, ISO 20816 severity assessment, anomaly detection, and remaining useful life estimation. Also available as a **Claude Code plugin** with 7 diagnostic skills. It's designed to **support and accelerate expert decision-making**, not replace it — the engineer stays in control.
+An open-source [MCP](https://modelcontextprotocol.io/) server and **predictive maintenance AI agent** that turns LLMs into condition monitoring assistants. Engineers describe what they need in plain language; the AI calls the right analysis tools and delivers results — bearing fault detection, risk assessment, anomaly detection, and remaining useful life estimation. Also available as a **Claude Code plugin** with 7 diagnostic skills. It's designed to **support and accelerate expert decision-making**.
 
 ---
 
