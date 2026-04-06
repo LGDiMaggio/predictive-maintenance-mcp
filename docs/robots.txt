@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://lgdimaggio.github.io/predictive-maintenance-mcp/sitemap.xml

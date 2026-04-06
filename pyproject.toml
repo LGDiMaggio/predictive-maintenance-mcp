@@ -5,19 +5,20 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "predictive-maintenance-mcp"
 version = "0.8.0"
-description = "AI agent for predictive maintenance & condition monitoring — Open-source MCP server and Claude Code plugin with 48 endpoints for vibration analysis, bearing fault detection, ISO 20816 compliance, and ML anomaly detection via natural language"
+description = "AI agent for predictive maintenance & condition monitoring — Open-source MCP server and Claude Code plugin with 52 endpoints for vibration analysis, bearing fault detection, ISO 20816 severity assessment, ML anomaly detection, and remaining useful life estimation via natural language"
 readme = "README.md"
 authors = [
     { name = "Luigi Di Maggio", email = "luigi.dimaggio@polito.it" }
 ]
 license = { text = "MIT" }
 keywords = [
-    "ai-agent-predictive-maintenance",
-    "claude-plugin-predictive-maintenance",
+    "predictive-maintenance-ai-agent",
     "condition-monitoring-ai-agent",
+    "machine-maintenance-copilot",
     "predictive-maintenance",
     "condition-monitoring",
     "vibration-analysis",
+    "bearing-fault-detection",
     "bearing-fault-diagnosis",
     "fault-diagnosis",
     "model-context-protocol",
@@ -25,13 +26,17 @@ keywords = [
     "claude-ai",
     "claude-agents",
     "claude-skills",
+    "claude-code-plugin",
     "signal-processing",
     "anomaly-detection",
     "envelope-analysis",
     "iso20816",
     "industry-4-0",
     "industrial-iot",
-    "machine-learning-condition-monitoring"
+    "machine-learning-condition-monitoring",
+    "remaining-useful-life",
+    "ai-vibration-diagnostics",
+    "machine-health-monitoring"
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -57,11 +62,12 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/LGDiMaggio/predictive-maintenance-mcp"
+Homepage = "https://lgdimaggio.github.io/predictive-maintenance-mcp/"
 Repository = "https://github.com/LGDiMaggio/predictive-maintenance-mcp"
-Documentation = "https://github.com/LGDiMaggio/predictive-maintenance-mcp/blob/main/README.md"
+Documentation = "https://lgdimaggio.github.io/predictive-maintenance-mcp/"
 Issues = "https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues"
 Discussions = "https://github.com/LGDiMaggio/predictive-maintenance-mcp/discussions"
+Changelog = "https://github.com/LGDiMaggio/predictive-maintenance-mcp/blob/main/CHANGELOG.md"
 
 [project.scripts]
 predictive-maintenance-mcp = "predictive_maintenance_mcp.server:main"
