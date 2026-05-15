@@ -83,45 +83,76 @@ See [DEPLOYMENT.md](docs/DEPLOYMENT.md) for HTTPS setup with Docker + Caddy auto
 
 ## For Claude Desktop Users
 
-### Automatic Setup (Windows)
-Run the PowerShell script for automatic configuration:
+### Automatic Setup (Windows) — Recommended
 ```powershell
 .\setup_claude.ps1
 ```
 
-This will:
-- Create virtual environment
-- Install dependencies
-- Configure Claude Desktop automatically
-- Test the server
+The script does everything automatically:
+- Finds `uv` on your system
+- Creates a virtual environment (outside cloud-sync folders if needed — see note below)
+- Installs all dependencies and pre-compiles bytecode for fast startup
+- Writes the correct entry into `%APPDATA%\Claude\claude_desktop_config.json`
+- Smoke-tests the server import
 
-### Manual Setup
-1. Complete steps 1-3 above
-2. Edit your Claude Desktop config:
-   - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
-   - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
-   - Linux: `~/.config/Claude/claude_desktop_config.json`
+**Repo on OneDrive / Dropbox?** The script detects this and stores the venv in
+`%LOCALAPPDATA%\venvs\predictive-maintenance-mcp` instead. This avoids a >60 s
+cold-start timeout caused by cloud-sync file scanning. The data directory stays
+inside the repo as usual.
 
-3. Add this configuration:
+After the script finishes: fully quit Claude Desktop (File → Quit) and restart it.
+
+---
+
+### Manual Setup (Windows / macOS / Linux)
+
+#### Prerequisites
+- Python 3.11+
+- [`uv`](https://docs.astral.sh/uv/getting-started/installation/) (recommended) or `pip`
+
+#### 1. Create venv *outside* any cloud-synced folder
+
+```powershell
+# Windows — store venv in LOCALAPPDATA to avoid OneDrive/Dropbox scanning
+uv venv $env:LOCALAPPDATA\venvs\predictive-maintenance-mcp --python 3.11
+uv pip install --python $env:LOCALAPPDATA\venvs\predictive-maintenance-mcp\Scripts\python.exe C:\path\to\repo
+```
+
+```bash
+# macOS / Linux — standard location is fine (no cloud sync by default)
+uv venv /path/to/repo/.venv --python 3.11
+uv pip install --python /path/to/repo/.venv/bin/python /path/to/repo
+```
+
+#### 2. Configure Claude Desktop
+
+Edit `%APPDATA%\Claude\claude_desktop_config.json` (Windows) or
+`~/Library/Application Support/Claude/claude_desktop_config.json` (macOS):
+
 ```json
 {
   "mcpServers": {
     "predictive-maintenance": {
-      "command": "C:/path/to/predictive-maintenance-mcp/.venv/Scripts/python.exe",
-      "args": [
-        "C:/path/to/predictive-maintenance-mcp/src/machinery_diagnostics_server.py"
-      ]
+      "command": "C:/Users/<you>/AppData/Local/venvs/predictive-maintenance-mcp/Scripts/python.exe",
+      "args": ["-m", "predictive_maintenance_mcp"],
+      "env": {
+        "PDM_PROJECT_DIR": "C:/path/to/repo"
+      }
     }
   }
 }
 ```
 
-> **Important**: 
-> - Replace `C:/path/to/predictive-maintenance-mcp` with your actual project path
-> - Use **absolute paths** for both `command` and `args`
-> - On macOS/Linux, use `.venv/bin/python` instead of `.venv/Scripts/python.exe`
+> **Important notes:**
+> - Use **absolute paths** — Claude Desktop launches servers with a minimal PATH
+> - `PDM_PROJECT_DIR` tells the server where to find `data/` and `models/`;
+>   required only when the venv lives outside the repo directory
+> - On macOS/Linux use `.venv/bin/python` and forward slashes
 
-4. Restart Claude Desktop
+#### 3. Restart Claude Desktop
+
+Fully quit (File → Quit) and restart. The `predictive-maintenance` server
+should appear in the tools list.
 
 ---
 
