@@ -20,17 +20,33 @@ An open-source [MCP](https://modelcontextprotocol.io/) server and **predictive m
 pip install predictive-maintenance-mcp
 ```
 
-Add to your Claude Desktop config (`%APPDATA%\Claude\claude_desktop_config.json` on Windows, `~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
+**Windows — automatic setup (recommended):**
+
+Clone the repo and run the setup script — it installs the venv, pre-compiles dependencies, and writes `claude_desktop_config.json` automatically (handles OneDrive/cloud-sync paths too):
+
+```powershell
+git clone https://github.com/LGDiMaggio/predictive-maintenance-mcp.git
+cd predictive-maintenance-mcp
+.\setup_claude.ps1
+```
+
+**Manual config (Windows / macOS / Linux):**
+
+Find the full path to `uvx` on your system (`where uvx` on Windows, `which uvx` on macOS/Linux), then add to `%APPDATA%\Claude\claude_desktop_config.json` (Windows) or `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS):
 
 ```json
 {
   "mcpServers": {
     "predictive-maintenance": {
-      "command": "predictive-maintenance-mcp"
+      "command": "/full/path/to/uvx",
+      "args": ["predictive-maintenance-mcp"],
+      "env": { "UV_LINK_MODE": "copy" }
     }
   }
 }
 ```
+
+> **Why the full path?** Claude Desktop launches servers with a minimal `PATH` that often omits user-local tool directories (e.g. `~/.local/bin`). Using the full path to `uvx` avoids a silent "command not found" failure. On Windows the typical path is `C:\Users\<you>\.local\bin\uvx.exe`.
 
 Restart Claude Desktop. You're ready — try: *"Load real_train/OuterRaceFault_1.csv and check if the bearing is healthy."*
 
