@@ -14,15 +14,17 @@ An open-source [MCP](https://modelcontextprotocol.io/) server and **predictive m
 
 ---
 
+## Who is this for?
+
+- **Reliability & maintenance engineers** who want fast vibration diagnostics in plain language — no coding required. It augments and accelerates expert judgment; it doesn't replace it.
+- **Developers & industrial-AI practitioners** who want to expose predictive-maintenance workflows as MCP tools and build on top of them.
+- **Researchers & students** working on bearing fault diagnosis, condition monitoring, or MCP / agent tooling.
+
+---
+
 ## Quick Start
 
-```bash
-pip install predictive-maintenance-mcp
-```
-
-**Windows — automatic setup (recommended):**
-
-Clone the repo and run the setup script — it installs the venv, pre-compiles dependencies, and writes `claude_desktop_config.json` automatically (handles OneDrive/cloud-sync paths too):
+**Get running in ~3 minutes.** On Windows, one script wires everything into Claude Desktop — it installs the venv, pre-compiles dependencies, and writes `claude_desktop_config.json` for you (OneDrive / cloud-sync paths included):
 
 ```powershell
 git clone https://github.com/LGDiMaggio/predictive-maintenance-mcp.git
@@ -30,9 +32,20 @@ cd predictive-maintenance-mcp
 .\setup_claude.ps1
 ```
 
-**Manual config (Windows / macOS / Linux):**
+Restart Claude Desktop, then try:
 
-Find the full path to `uvx` on your system (`where uvx` on Windows, `which uvx` on macOS/Linux), then add to `%APPDATA%\Claude\claude_desktop_config.json` (Windows) or `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS):
+> *"Load real_train/OuterRaceFault_1.csv and check if the bearing is healthy."*
+
+<details>
+<summary><b>Manual config (macOS / Linux / other MCP clients)</b></summary>
+
+Install the package:
+
+```bash
+pip install predictive-maintenance-mcp
+```
+
+Find the full path to `uvx` (`which uvx` on macOS/Linux, `where uvx` on Windows), then add to your client config — `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
 
 ```json
 {
@@ -48,7 +61,7 @@ Find the full path to `uvx` on your system (`where uvx` on Windows, `which uvx` 
 
 > **Why the full path?** Claude Desktop launches servers with a minimal `PATH` that often omits user-local tool directories (e.g. `~/.local/bin`). Using the full path to `uvx` avoids a silent "command not found" failure. On Windows the typical path is `C:\Users\<you>\.local\bin\uvx.exe`.
 
-Restart Claude Desktop. You're ready — try: *"Load real_train/OuterRaceFault_1.csv and check if the bearing is healthy."*
+</details>
 
 > **More options**: [install from source](INSTALL.md) · [VS Code setup](INSTALL.md) · [Docker / HTTPS deployment](docs/DEPLOYMENT.md) · [use with local LLMs (Ollama)](docs/OLLAMA_GUIDE.md)
 
@@ -353,6 +366,12 @@ pytest --cov=src --cov-report=html      # with coverage report
 - [ ] CMMS integration (SAP, Maximo, Infor)
 
 > Ideas? [Open a discussion](https://github.com/LGDiMaggio/predictive-maintenance-mcp/discussions) or [create an issue](https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues/new/choose).
+
+---
+
+## Are you using this?
+
+I'd genuinely love to know. Whether you ran it on real machinery or just tried the sample data, drop a line in [Discussions](https://github.com/LGDiMaggio/predictive-maintenance-mcp/discussions) — one sentence about your machine or use case is enough. Real-world feedback directly shapes what gets built next.
 
 ---
 
