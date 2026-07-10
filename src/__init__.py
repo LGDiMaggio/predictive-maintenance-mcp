@@ -8,7 +8,7 @@ Installable as 'predictive-maintenance-mcp' from PyPI.
 Package name: predictive_maintenance_mcp (mapped from src/ directory).
 """
 
-__version__ = "0.8.0"
+__version__ = "0.8.1"
 __author__ = "Luigi Gianpio Di Maggio"
 __license__ = "MIT"
 

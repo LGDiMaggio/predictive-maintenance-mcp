@@ -1,51 +1,28 @@
-"""Shared utilities for MCP tool modules."""
+"""Shared utilities for MCP tool modules.
+
+Path-safety helpers (``safe_resolve``, ``sanitize_filename``) are re-exported
+from :mod:`predictive_maintenance_mcp.path_safety`, the canonical single source
+of truth, so the containment logic lives in exactly one place.
+"""
 
 import json
 import logging
-import re
 from pathlib import Path
 from typing import Optional
 
 import numpy as np
 from mcp.server.fastmcp import Context
 
+# Canonical path-safety helpers — do not re-implement here (see path_safety.py).
+from ..path_safety import (  # noqa: F401
+    safe_resolve,
+    sanitize_filename,
+    validate_name_component,
+    resolve_model_paths,
+    ModelPaths,
+)
+
 logger = logging.getLogger(__name__)
-
-
-def safe_resolve(base_dir: Path, user_input: str) -> Path:
-    """Resolve *user_input* under *base_dir* and verify containment.
-
-    Prevents path-traversal attacks (e.g. ``../../etc/passwd``).
-
-    Args:
-        base_dir: The directory the resolved path must stay inside.
-        user_input: User-supplied filename / relative path.
-
-    Returns:
-        The resolved, validated :class:`Path`.
-
-    Raises:
-        ValueError: If the resolved path escapes *base_dir*.
-    """
-    candidate = (base_dir / user_input).resolve()
-    allowed = base_dir.resolve()
-    # Use Path.is_relative_to (Python 3.9+) to avoid sibling-directory bypass
-    # e.g. /data/signals_evil would pass a naive startswith("/data/signals") check
-    if not candidate.is_relative_to(allowed):
-        raise ValueError(f"Invalid path — escapes base directory: {user_input}")
-    return candidate
-
-
-def sanitize_filename(name: str) -> str:
-    """Strip directory separators and dangerous characters from *name*.
-
-    Useful when constructing output filenames from user-provided strings.
-
-    Returns:
-        A safe filename component containing only ``[a-zA-Z0-9_.-]``.
-    """
-    stem = Path(name).name  # drop any directory components
-    return re.sub(r"[^a-zA-Z0-9_.\-]", "_", stem)
 
 
 async def load_and_validate_metadata(

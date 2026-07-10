@@ -17,6 +17,7 @@ import numpy as np
 import pandas as pd
 
 from .config import DATA_DIR
+from .path_safety import safe_resolve
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +42,11 @@ def load_signal_data(filename: str) -> Optional[np.ndarray]:
         Numpy array with data or None if error
     """
     try:
-        file_path = DATA_DIR / filename
+        # Contain the user-supplied filename inside DATA_DIR before any stat/read
+        # so a traversal (e.g. '../../secret.csv') cannot exfiltrate file contents.
+        # safe_resolve raises on escape; the surrounding except maps it to None,
+        # preserving this function's "return None on failure" contract.
+        file_path = safe_resolve(DATA_DIR, filename)
 
         if not file_path.exists():
             return None

@@ -17,6 +17,7 @@ import pandas as pd
 from scipy.fft import fft, fftfreq
 
 from ..config import MODELS_DIR
+from ..path_safety import resolve_model_paths
 from ..signal_processing.spectral import compute_psd, compute_stft_spectrogram
 from ..signal_processing.features import extract_time_domain_features as _extract_time_domain_features
 from ..diagnostics.bearing_analyzer import check_all_bearing_faults
@@ -77,23 +78,25 @@ def _run_anomaly_detection(
         Dict with anomaly_ratio, overall_health, anomaly_score, num_segments,
         or None if model not found or prediction fails.
     """
-    model_path = MODELS_DIR / f"{model_name}_model.pkl"
-    scaler_path = MODELS_DIR / f"{model_name}_scaler.pkl"
-    pca_path = MODELS_DIR / f"{model_name}_pca.pkl"
-    metadata_path = MODELS_DIR / f"{model_name}_metadata.json"
-
-    if not model_path.exists():
-        logger.info(f"Anomaly model not found at {model_path}, skipping.")
-        return None
-
     try:
+        # Defense in depth: model_name is currently a constant, but route it
+        # through the same containment helper so a future user-controlled caller
+        # stays safe. Kept inside the try so an invalid name degrades to None
+        # (this function's contract) instead of aborting the whole diagnosis.
+        _model_paths = resolve_model_paths(MODELS_DIR, model_name)
+        model_path = _model_paths.model
+
+        if not model_path.exists():
+            logger.info(f"Anomaly model not found at {model_path}, skipping.")
+            return None
+
         with open(model_path, "rb") as f:
             model = pickle.load(f)
-        with open(scaler_path, "rb") as f:
+        with open(_model_paths.scaler, "rb") as f:
             scaler = pickle.load(f)
-        with open(pca_path, "rb") as f:
+        with open(_model_paths.pca, "rb") as f:
             pca = pickle.load(f)
-        with open(metadata_path, "r") as f:
+        with open(_model_paths.metadata, "r") as f:
             meta = json.load(f)
 
         # Use model's training parameters for segmentation

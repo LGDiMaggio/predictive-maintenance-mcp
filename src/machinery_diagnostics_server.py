@@ -180,6 +180,7 @@ mcp = FastMCP(
 
 # Path del progetto — definiti in config.py, importati qui
 from .config import DATA_DIR, MODELS_DIR, RESOURCES_DIR, REPORTS_DIR, CACHE_DIR
+from .path_safety import resolve_model_paths, sanitize_filename, validate_name_component
 
 
 # ============================================================================
@@ -1484,8 +1485,9 @@ async def extract_features_from_signal(
     features_df = pd.DataFrame(features_list)
     feature_names = list(features_df.columns)
     
-    # Save features to file
-    features_file = DATA_DIR / f"features_{signal_file}"
+    # Save features to file — sanitize the user-supplied name so it cannot
+    # escape DATA_DIR (mirrors the modular analysis_tools.py twin).
+    features_file = DATA_DIR / f"features_{sanitize_filename(signal_file)}"
     features_df.to_csv(features_file, index=False)
     
     if ctx:
@@ -1725,9 +1727,13 @@ async def train_anomaly_model(
     Returns:
         AnomalyModelResult with model paths and performance metrics
     """
+    # Fail fast on an unsafe model_name before doing any expensive work or
+    # touching the filesystem (the write happens in step 6).
+    validate_name_component(model_name, kind="model_name")
+
     if ctx:
         await ctx.info(f"Training {model_type} model on {len(healthy_signal_files)} healthy signals...")
-    
+
     # Step 1: Extract features from all healthy signals
     all_features, detected_rates = await _extract_features_from_files(
         healthy_signal_files, sampling_rate, segment_duration, overlap_ratio,
@@ -2060,12 +2066,14 @@ async def train_anomaly_model(
                 await ctx.info(f"Overall validation accuracy: {validation_accuracy*100:.1f}%")
     
     # Step 6: Save model, scaler, and PCA
+    # Validate model_name and contain every derived path before writing pickles.
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
-    
-    model_path = MODELS_DIR / f"{model_name}_model.pkl"
-    scaler_path = MODELS_DIR / f"{model_name}_scaler.pkl"
-    pca_path = MODELS_DIR / f"{model_name}_pca.pkl"
-    
+
+    _model_paths = resolve_model_paths(MODELS_DIR, model_name)
+    model_path = _model_paths.model
+    scaler_path = _model_paths.scaler
+    pca_path = _model_paths.pca
+
     with open(model_path, 'wb') as f:
         pickle.dump(model, f)
     with open(scaler_path, 'wb') as f:
@@ -2091,10 +2099,10 @@ async def train_anomaly_model(
         'num_validation_files': len(fault_signal_files) if fault_signal_files else 0
     }
     
-    metadata_path = MODELS_DIR / f"{model_name}_metadata.json"
+    metadata_path = _model_paths.metadata
     with open(metadata_path, 'w') as f:
         json.dump(metadata, f, indent=2)
-    
+
     if ctx:
         await ctx.info(f"Model saved to {model_path}")
         await ctx.info(f"Scaler saved to {scaler_path}")
@@ -2143,13 +2151,14 @@ async def predict_anomalies(
     """
     if ctx:
         await ctx.info(f"Predicting anomalies in {signal_file}...")
-    
-    # Load model, scaler, PCA
-    model_path = MODELS_DIR / f"{model_name}_model.pkl"
-    scaler_path = MODELS_DIR / f"{model_name}_scaler.pkl"
-    pca_path = MODELS_DIR / f"{model_name}_pca.pkl"
-    metadata_path = MODELS_DIR / f"{model_name}_metadata.json"
-    
+
+    # Load model, scaler, PCA — validate name and contain paths before un-pickling.
+    _model_paths = resolve_model_paths(MODELS_DIR, model_name)
+    model_path = _model_paths.model
+    scaler_path = _model_paths.scaler
+    pca_path = _model_paths.pca
+    metadata_path = _model_paths.metadata
+
     if not model_path.exists():
         raise FileNotFoundError(f"Model not found: {model_path}. Train model first.")
     
@@ -3692,13 +3701,14 @@ async def generate_pca_visualization_report(
     """
     if ctx:
         await ctx.info(f"Generating PCA visualization for model '{model_name}'...")
-    
-    # Load model, scaler, PCA
-    model_path = MODELS_DIR / f"{model_name}_model.pkl"
-    scaler_path = MODELS_DIR / f"{model_name}_scaler.pkl"
-    pca_path = MODELS_DIR / f"{model_name}_pca.pkl"
-    metadata_path = MODELS_DIR / f"{model_name}_metadata.json"
-    
+
+    # Load model, scaler, PCA — validate name and contain paths before un-pickling.
+    _model_paths = resolve_model_paths(MODELS_DIR, model_name)
+    model_path = _model_paths.model
+    scaler_path = _model_paths.scaler
+    pca_path = _model_paths.pca
+    metadata_path = _model_paths.metadata
+
     if not model_path.exists():
         raise FileNotFoundError(f"Model not found: {model_path}")
     

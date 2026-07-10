@@ -29,6 +29,7 @@ from ..report_generator import (
     REPORTS_DIR as REPORTS_DIR_PATH,
 )
 from ..document_reader import calculate_bearing_frequencies
+from ._utils import resolve_model_paths
 
 logger = logging.getLogger(__name__)
 
@@ -990,11 +991,13 @@ def register(mcp: FastMCP) -> None:
         if ctx:
             await ctx.info(f"Generating PCA visualization for model '{model_name}'...")
 
-        # Load model, scaler, PCA
-        model_path = MODELS_DIR / f"{model_name}_model.pkl"
-        scaler_path = MODELS_DIR / f"{model_name}_scaler.pkl"
-        pca_path = MODELS_DIR / f"{model_name}_pca.pkl"
-        metadata_path = MODELS_DIR / f"{model_name}_metadata.json"
+        # Load model, scaler, PCA — validate the name and contain every derived
+        # path before un-pickling (single source of truth in path_safety).
+        _model_paths = resolve_model_paths(MODELS_DIR, model_name)
+        model_path = _model_paths.model
+        scaler_path = _model_paths.scaler
+        pca_path = _model_paths.pca
+        metadata_path = _model_paths.metadata
 
         if not model_path.exists():
             raise FileNotFoundError(f"Model not found: {model_path}")

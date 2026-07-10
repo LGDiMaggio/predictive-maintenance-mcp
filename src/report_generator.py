@@ -26,6 +26,7 @@ from .html_templates import (
 )
 
 from .config import REPORTS_DIR
+from .path_safety import safe_resolve
 
 logger = logging.getLogger(__name__)
 
@@ -347,8 +348,15 @@ def read_report_metadata(file_name: str) -> Dict[str, Any]:
     Returns:
         Dictionary with metadata, or error dict if file not found
     """
-    file_path = REPORTS_DIR / file_name
-    
+    # Contain the user-supplied filename before touching the filesystem —
+    # otherwise ``../../secret`` turns this into a file-existence/size oracle
+    # and a conditional-read primitive.
+    try:
+        file_path = safe_resolve(REPORTS_DIR, file_name)
+    except ValueError:
+        logger.warning("Rejected out-of-bounds report filename: %r", file_name)
+        return {'error': f"Invalid report filename: {file_name}"}
+
     if not file_path.exists():
         available = [f.name for f in REPORTS_DIR.glob("*.html")]
         return {

@@ -17,6 +17,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Documentation updated to reflect implemented status of prognostics and RUL estimation
 - Endpoint terminology clarified: "MCP endpoints" used consistently for total count (tools + resources + prompts)
 
+## [0.8.1] - 2026-07-10
+
+Security-only patch release. No new features or API changes.
+
+### Security
+- **Path traversal fixed across every model and report file path** (all sites, in
+  both the modular server and the legacy monolith). `train_anomaly_model` built its
+  pickle output path from an unvalidated `model_name` — an arbitrary-file-write
+  primitive reachable from any MCP client — and the model-load and
+  `read_report_metadata` read paths were likewise unvalidated. Every user-supplied
+  filesystem path now flows through a single canonical `path_safety` helper that
+  uses `Path.is_relative_to` for containment (closing the sibling-directory bypass
+  a `str.startswith` check would miss) and validates model names before any I/O.
+  Unsafe names are rejected with a clear error and no file is written or read.
+- **Signal read path contained.** `load_signal_data` (the shared read sink behind
+  `analyze_fft`, `predict_anomalies`, and every signal tool) now resolves the
+  user-supplied filename inside the data directory, closing an arbitrary
+  file-content read reachable from any MCP client. Broader signal-path hardening
+  (companion-metadata resolution and per-tool existence checks) is tracked as a
+  follow-up.
+
 ## [0.8.0] - 2026-03-29
 
 ### Added

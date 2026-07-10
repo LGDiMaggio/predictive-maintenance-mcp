@@ -58,7 +58,11 @@ from ..signal_processing.features import (
     segment_and_extract_features as _segment_and_extract_features,
     resolve_sampling_rate as _resolve_sampling_rate,
 )
-from ._utils import safe_resolve, sanitize_filename
+from ._utils import (
+    safe_resolve,
+    resolve_model_paths,
+    validate_name_component,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -613,6 +617,10 @@ def register(mcp: FastMCP) -> None:
         Returns:
             AnomalyModelResult with model paths and performance metrics
         """
+        # Fail fast on an unsafe model_name before doing any expensive work or
+        # touching the filesystem (the write happens in step 6).
+        validate_name_component(model_name, kind="model_name")
+
         if ctx:
             await ctx.info(f"Training {model_type} model on {len(healthy_signal_files)} healthy signals...")
 
@@ -950,11 +958,15 @@ def register(mcp: FastMCP) -> None:
                     await ctx.info(f"Overall validation accuracy: {validation_accuracy*100:.1f}%")
 
         # Step 6: Save model, scaler, and PCA
+        # Validate model_name and contain every derived path before writing —
+        # these are pickle files, so an unvalidated name is an arbitrary-write
+        # (and later arbitrary-code-execution) primitive.
         MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
-        model_path = MODELS_DIR / f"{model_name}_model.pkl"
-        scaler_path = MODELS_DIR / f"{model_name}_scaler.pkl"
-        pca_path = MODELS_DIR / f"{model_name}_pca.pkl"
+        _model_paths = resolve_model_paths(MODELS_DIR, model_name)
+        model_path = _model_paths.model
+        scaler_path = _model_paths.scaler
+        pca_path = _model_paths.pca
 
         with open(model_path, 'wb') as f:
             pickle.dump(model, f)
@@ -981,7 +993,7 @@ def register(mcp: FastMCP) -> None:
             'num_validation_files': len(fault_signal_files) if fault_signal_files else 0
         }
 
-        metadata_path = MODELS_DIR / f"{model_name}_metadata.json"
+        metadata_path = _model_paths.metadata
         with open(metadata_path, 'w') as f:
             json.dump(metadata, f, indent=2)
 
@@ -1037,16 +1049,13 @@ def register(mcp: FastMCP) -> None:
         if ctx:
             await ctx.info(f"Predicting anomalies in {signal_file}...")
 
-        # Validate model_name — must be a safe filename component
-        safe_name = sanitize_filename(model_name)
-        if safe_name != model_name:
-            raise ValueError(f"Invalid model_name '{model_name}'. Use only alphanumeric, underscore, hyphen, or dot characters.")
-
-        # Load model, scaler, PCA
-        model_path = safe_resolve(MODELS_DIR, f"{model_name}_model.pkl")
-        scaler_path = safe_resolve(MODELS_DIR, f"{model_name}_scaler.pkl")
-        pca_path = safe_resolve(MODELS_DIR, f"{model_name}_pca.pkl")
-        metadata_path = safe_resolve(MODELS_DIR, f"{model_name}_metadata.json")
+        # Validate model_name and contain every derived path (single source of
+        # truth shared with the training/PCA/pipeline model-load sites).
+        _model_paths = resolve_model_paths(MODELS_DIR, model_name)
+        model_path = _model_paths.model
+        scaler_path = _model_paths.scaler
+        pca_path = _model_paths.pca
+        metadata_path = _model_paths.metadata
 
         if not model_path.exists():
             raise FileNotFoundError(f"Model not found: {model_path}. Train model first.")
