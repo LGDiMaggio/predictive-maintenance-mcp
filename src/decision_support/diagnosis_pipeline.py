@@ -10,7 +10,7 @@ import json
 import logging
 import pickle
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 import numpy as np
 import pandas as pd
@@ -158,7 +158,8 @@ def diagnose_vibration(
     rpm: float,
     signal_id: str = "",
     bearing_id: Optional[str] = None,
-    machine_class: str = "II",
+    machine_group: Literal[1, 2] = 2,
+    support_type: Literal["rigid", "flexible"] = "rigid",
     signal_unit: str = "g",
     anomaly_model_name: str = "bearing_health_model",
 ) -> dict:
@@ -169,7 +170,8 @@ def diagnose_vibration(
     2. PSD (Welch method)
     3. STFT spectrogram (time-varying behavior)
     4. Bearing fault detection (if bearing_id provided)
-    5. ISO 10816/20816 severity assessment
+    5. ISO 20816-3 severity assessment (zone boundaries from
+       ISO 10816-3:2009)
     6. Anomaly detection (OneClassSVM, if model available)
     7. Synthesis into overall diagnosis
 
@@ -179,7 +181,9 @@ def diagnose_vibration(
         rpm: Machine operating speed (RPM).
         signal_id: Signal identifier for result labeling.
         bearing_id: Bearing designation for fault detection (optional).
-        machine_class: ISO machine class ('I', 'II', 'III', 'IV').
+        machine_group: ISO 20816-3 machine group — 1 (large, >300 kW) or
+            2 (medium, 15-300 kW).
+        support_type: Support type — 'rigid' or 'flexible'.
         signal_unit: Signal unit ('g', 'm/s²', 'mm/s').
         anomaly_model_name: Name of trained anomaly model (default: 'bearing_health_model').
 
@@ -225,7 +229,8 @@ def diagnose_vibration(
     iso_result = assess_vibration_severity(
         signal=signal,
         fs=fs,
-        machine_class=machine_class,
+        machine_group=machine_group,
+        support_type=support_type,
         signal_unit=signal_unit,
         operating_speed_rpm=rpm,
     )
@@ -249,7 +254,8 @@ def diagnose_vibration(
         "signal_id": signal_id,
         "rpm": rpm,
         "bearing_id": bearing_id,
-        "machine_class": machine_class,
+        "machine_group": machine_group,
+        "support_type": support_type,
         "fft_summary": fft_summary,
         "psd_summary": psd_summary,
         "stft_summary": stft_summary,

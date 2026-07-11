@@ -55,9 +55,10 @@ class TestCheckVibrationAlert:
 
     @pytest.mark.asyncio
     async def test_zone_b(self, tools, mock_ctx):
+        # Group 2 rigid boundaries (ISO 10816-3:2009): 1.4 / 2.8 / 4.5 mm/s
         result = await tools["check_vibration_alert"](
             ctx=mock_ctx,
-            rms_velocity=3.0,
+            rms_velocity=2.0,
             machine_group=2,
             support_type="rigid",
         )
@@ -67,9 +68,11 @@ class TestCheckVibrationAlert:
 
     @pytest.mark.asyncio
     async def test_zone_c(self, tools, mock_ctx):
+        # 3.0 mm/s group 2 rigid is Zone C (2.8 < 3.0 <= 4.5); the old
+        # duplicated table wrongly called it Zone B.
         result = await tools["check_vibration_alert"](
             ctx=mock_ctx,
-            rms_velocity=5.0,
+            rms_velocity=3.0,
             machine_group=2,
             support_type="rigid",
         )

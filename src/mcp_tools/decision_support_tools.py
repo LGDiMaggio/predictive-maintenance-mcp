@@ -33,15 +33,18 @@ def register(mcp: FastMCP) -> None:
         machine_group: int = 2,
         support_type: str = "rigid",
     ) -> AlertResult:
-        """Check an RMS velocity value against ISO 10816 alert thresholds.
+        """Check an RMS velocity value against ISO 20816-3 alert thresholds.
 
         Classifies the reading into ISO zones (A/B/C/D) and returns the
-        corresponding alert level (none, warning, alarm, danger).
+        corresponding alert level (none, warning, alarm, danger). Zone
+        boundary values come from ISO 10816-3:2009 (the four-zone scheme;
+        ISO 20816-3:2022 merges zones A/B), via the single severity engine.
 
         Args:
             ctx: MCP context for user communication.
             rms_velocity: RMS velocity in mm/s.
-            machine_group: ISO 10816 machine group (1 or 2, default: 2).
+            machine_group: ISO 20816-3 machine group — 1 (large, >300 kW)
+                or 2 (medium, 15-300 kW). Default: 2.
             support_type: Support type — "rigid" or "flexible" (default: "rigid").
 
         Returns:
@@ -72,7 +75,7 @@ def register(mcp: FastMCP) -> None:
     ) -> AlertResult:
         """Check an RMS velocity value against user-defined thresholds.
 
-        Allows custom alert boundaries instead of ISO 10816 defaults.
+        Allows custom alert boundaries instead of the ISO 20816-3 defaults.
 
         Args:
             ctx: MCP context for user communication.

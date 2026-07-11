@@ -45,13 +45,15 @@ class TestDiagnoseVibration:
             fs=fs,
             rpm=1500,
             signal_id="healthy_test",
-            machine_class="II",
+            machine_group=2,
+            support_type="rigid",
             signal_unit="g",
         )
 
         assert result["signal_id"] == "healthy_test"
         assert result["rpm"] == 1500
-        assert result["machine_class"] == "II"
+        assert result["machine_group"] == 2
+        assert result["support_type"] == "rigid"
         assert "fft_summary" in result
         assert "psd_summary" in result
         assert "stft_summary" in result
@@ -69,13 +71,26 @@ class TestDiagnoseVibration:
             rpm=1797,
             signal_id="faulty_test",
             bearing_id="6205",
-            machine_class="II",
+            machine_group=2,
+            support_type="rigid",
             signal_unit="g",
         )
 
         assert result["bearing_id"] == "6205"
         assert result["bearing_faults"] is not None
         assert len(result["bearing_faults"]["fault_checks"]) == 4
+
+    def test_machine_class_parameter_removed(self, healthy_signal):
+        """The invented machine_class I-IV vocabulary no longer exists."""
+        signal, fs = healthy_signal
+        with pytest.raises(TypeError):
+            diagnose_vibration(
+                signal=signal,
+                fs=fs,
+                rpm=1500,
+                machine_class="II",
+                signal_unit="g",
+            )
 
     def test_diagnosis_without_bearing(self, healthy_signal):
         signal, fs = healthy_signal

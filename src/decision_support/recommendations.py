@@ -26,7 +26,7 @@ def generate_recommendations(
     """Generate maintenance recommendations based on severity and faults.
 
     Args:
-        severity_zone: ISO 10816/20816 zone letter — ``"A"``, ``"B"``,
+        severity_zone: ISO 20816-3 zone letter — ``"A"``, ``"B"``,
             ``"C"``, or ``"D"``.
         fault_types: Optional list of detected fault keywords (e.g.
             ``["outer_race", "misalignment"]``).

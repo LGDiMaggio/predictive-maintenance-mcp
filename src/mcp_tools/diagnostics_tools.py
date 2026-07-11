@@ -4,7 +4,7 @@ import logging
 import json
 import pickle
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 import numpy as np
 import pandas as pd
@@ -193,10 +193,13 @@ def register(mcp: FastMCP) -> None:
         signal_unit: Optional[str] = None  # NEW: 'g' for acceleration, 'mm/s' for velocity, None for auto-detect
     ) -> ISO20816Result:
         """
-        Evaluate vibration severity according to ISO 20816-3 standard.
+        Evaluate vibration severity according to the ISO 20816-3 standard.
 
         ISO 20816-3 defines vibration severity zones for rotating machinery based on
         broadband RMS velocity measurements on non-rotating parts (bearings, housings).
+        Zone boundary values are those of ISO 10816-3:2009 (four-zone A-D scheme;
+        ISO 20816-3:2022 merges zones A/B) — the provenance note is included in the
+        result. Scope: machines rated above 15 kW.
 
         **CRITICAL - LLM Inference Policy:**
         - **NEVER infer fault type or severity from filename** (e.g., "OuterRaceFault_1.csv" does NOT mean outer race fault)
@@ -418,7 +421,8 @@ def register(mcp: FastMCP) -> None:
             boundary_bc=result["boundaries"]["BC"],
             boundary_cd=result["boundaries"]["CD"],
             frequency_range=result["frequency_range"],
-            operating_speed_rpm=operating_speed_rpm
+            operating_speed_rpm=operating_speed_rpm,
+            threshold_provenance=result["threshold_provenance"],
         )
 
     # ------------------------------------------------------------------
@@ -1689,18 +1693,25 @@ def register(mcp: FastMCP) -> None:
     async def assess_vibration_severity(
         ctx: Context,
         signal_id: str,
-        machine_class: str = "II",
+        machine_group: Literal[1, 2] = 2,
+        support_type: Literal["rigid", "flexible"] = "rigid",
         axis: str = "vertical",
     ) -> VibrationSeverityResult:
-        """Assess vibration severity per ISO 10816/20816 for a stored signal.
+        """Assess vibration severity per ISO 20816-3 for a stored signal.
+
+        Zone boundary values come from ISO 10816-3:2009 (four-zone A-D
+        scheme; ISO 20816-3:2022 merges zones A/B) — the provenance note is
+        included in the result. Scope: machines rated above 15 kW; results
+        for smaller machines are not covered by these boundaries.
 
         Uses the signal_id pattern (load once, reference by ID).
         Signal unit is read from metadata; defaults to 'g' if unknown.
 
         Args:
             signal_id: ID of the stored signal.
-            machine_class: 'I' (small <15kW), 'II' (medium 15-300kW),
-                'III' (large rigid >300kW), 'IV' (large flexible).
+            machine_group: 1 (large machines, >300 kW) or
+                2 (medium machines, 15-300 kW). Default 2.
+            support_type: 'rigid' or 'flexible'. Default 'rigid'.
             axis: Measurement axis (informational).
         """
         repo = get_repository()
@@ -1712,12 +1723,16 @@ def register(mcp: FastMCP) -> None:
 
         signal_unit = info.get("signal_unit", "g")
         if ctx:
-            await ctx.info(f"Assessing ISO severity for '{signal_id}' (class {machine_class}, unit: {signal_unit})")
+            await ctx.info(
+                f"Assessing ISO severity for '{signal_id}' "
+                f"(group {machine_group}, {support_type}, unit: {signal_unit})"
+            )
 
         result = _assess_severity(
             signal=signal_data,
             fs=fs,
-            machine_class=machine_class,
+            machine_group=machine_group,
+            support_type=support_type,
             axis=axis,
             signal_unit=signal_unit,
         )
@@ -1734,18 +1749,23 @@ def register(mcp: FastMCP) -> None:
         signal_id: str,
         rpm: float,
         bearing_id: Optional[str] = None,
-        machine_class: str = "II",
+        machine_group: Literal[1, 2] = 2,
+        support_type: Literal["rigid", "flexible"] = "rigid",
     ) -> DiagnosisResult:
         """Full integrated diagnosis: FFT + PSD + STFT + bearing faults + ISO severity.
 
         Comprehensive vibration diagnostic pipeline. Loads signal from repository,
         runs all analyses, and synthesizes results into an actionable report.
+        The ISO severity block uses ISO 20816-3 machine group/support type
+        (zone boundaries from ISO 10816-3:2009, provenance noted in output).
 
         Args:
             signal_id: ID of the stored signal.
             rpm: Machine operating speed in RPM.
             bearing_id: Bearing designation for fault detection (optional).
-            machine_class: ISO machine class (default 'II').
+            machine_group: 1 (large, >300 kW) or 2 (medium, 15-300 kW).
+                Default 2.
+            support_type: 'rigid' or 'flexible'. Default 'rigid'.
         """
         repo = get_repository()
         signal_data = repo.get_signal(signal_id)
@@ -1766,7 +1786,8 @@ def register(mcp: FastMCP) -> None:
             rpm=rpm,
             signal_id=signal_id,
             bearing_id=bearing_id,
-            machine_class=machine_class,
+            machine_group=machine_group,
+            support_type=support_type,
             signal_unit=signal_unit,
         )
 
@@ -1797,7 +1818,8 @@ def register(mcp: FastMCP) -> None:
             signal_id=result["signal_id"],
             rpm=result["rpm"],
             bearing_id=result["bearing_id"],
-            machine_class=result["machine_class"],
+            machine_group=result["machine_group"],
+            support_type=result["support_type"],
             fft_summary=result["fft_summary"],
             psd_summary=result["psd_summary"],
             stft_summary=result["stft_summary"],

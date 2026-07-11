@@ -88,6 +88,7 @@ class ISO20816Result(BaseModel):
     boundary_cd: float = Field(description="Zone C/D boundary (mm/s)")
     frequency_range: str = Field(description="Frequency range used for measurement")
     operating_speed_rpm: Optional[float] = Field(None, description="Operating speed in RPM")
+    threshold_provenance: Optional[str] = Field(None, description="Provenance of the zone boundary values (ISO edition note)")
 
 
 class FeatureExtractionResult(BaseModel):
@@ -215,18 +216,21 @@ class BearingFaultsSummary(BaseModel):
 
 
 class VibrationSeverityResult(BaseModel):
-    """ISO 10816/20816 severity result using signal_id pattern."""
+    """ISO 20816-3 severity result (zone boundaries from ISO 10816-3:2009) using signal_id pattern."""
     signal_id: str = Field(description="Signal identifier used")
     rms_velocity_mm_s: float = Field(description="RMS velocity in mm/s")
-    machine_class: str = Field(description="Machine class (I, II, III, or IV)")
+    machine_group: int = Field(description="ISO 20816-3 machine group: 1 (large, >300 kW) or 2 (medium, 15-300 kW)")
+    support_type: str = Field(description="Support type: 'rigid' or 'flexible'")
     axis: str = Field(description="Measurement axis")
     zone: str = Field(description="ISO zone: A, B, C, or D")
     zone_description: str = Field(description="Zone description")
     severity_level: str = Field(description="Good, Acceptable, Unsatisfactory, or Unacceptable")
     color_code: str = Field(description="green, yellow, orange, or red")
     boundaries: dict[str, float] = Field(description="Zone boundaries {AB, BC, CD} in mm/s")
+    frequency_range: str = Field(description="Actual evaluation band used (may be narrower than the ISO nominal 10-1000 Hz when fs limits it)")
     unit_conversion_performed: bool = Field(description="Whether acceleration-to-velocity conversion was done")
     original_unit: Optional[str] = Field(None, description="Original signal unit before conversion")
+    threshold_provenance: str = Field(description="Provenance of the zone boundary values (ISO edition note)")
 
 
 class DiagnosisResult(BaseModel):
@@ -234,7 +238,8 @@ class DiagnosisResult(BaseModel):
     signal_id: str = Field(description="Signal identifier used")
     rpm: float = Field(description="Machine speed (RPM)")
     bearing_id: Optional[str] = Field(None, description="Bearing used (if any)")
-    machine_class: str = Field(description="Machine class for ISO severity")
+    machine_group: int = Field(description="ISO 20816-3 machine group used for severity: 1 (large) or 2 (medium)")
+    support_type: str = Field(description="Support type used for severity: 'rigid' or 'flexible'")
     fft_summary: dict[str, Any] = Field(description="FFT key findings")
     psd_summary: dict[str, Any] = Field(description="PSD key findings")
     stft_summary: dict[str, Any] = Field(description="STFT key findings")

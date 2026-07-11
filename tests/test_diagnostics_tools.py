@@ -897,8 +897,8 @@ class TestAssessVibrationSeverityExtended:
     """Additional tests for assess_vibration_severity tool."""
 
     @pytest.mark.asyncio
-    async def test_different_machine_classes(self, tools, data_dir, mock_ctx):
-        """Machine class III and IV should use group 1 boundaries."""
+    async def test_group1_boundaries(self, tools, data_dir, mock_ctx):
+        """machine_group=1 uses the large-machine boundaries (A/B at 2.3 mm/s)."""
         from predictive_maintenance_mcp.signal_repository import get_repository
         repo = get_repository()
         repo.load_signal("iso_test.csv", signal_id="class_test", sampling_rate=10000)
@@ -906,10 +906,31 @@ class TestAssessVibrationSeverityExtended:
             result = await tools["assess_vibration_severity"](
                 ctx=mock_ctx,
                 signal_id="class_test",
-                machine_class="III",
+                machine_group=1,
+                support_type="rigid",
             )
             assert result is not None
             assert result.zone in ("A", "B", "C", "D")
+            assert result.machine_group == 1
+            assert result.support_type == "rigid"
+            assert result.boundaries["AB"] == 2.3
+            assert "10816-3:2009" in result.threshold_provenance
+        finally:
+            repo.clear_all()
+
+    @pytest.mark.asyncio
+    async def test_machine_class_parameter_removed(self, tools, data_dir, mock_ctx):
+        """The invented machine_class vocabulary is gone from the tool."""
+        from predictive_maintenance_mcp.signal_repository import get_repository
+        repo = get_repository()
+        repo.load_signal("iso_test.csv", signal_id="class_test", sampling_rate=10000)
+        try:
+            with pytest.raises(TypeError):
+                await tools["assess_vibration_severity"](
+                    ctx=mock_ctx,
+                    signal_id="class_test",
+                    machine_class="III",
+                )
         finally:
             repo.clear_all()
 

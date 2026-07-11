@@ -93,7 +93,7 @@ mcp = FastMCP(
     - Degradation onset detection (baseline deviation)
 
     Decision Support (ISO 13374 Block 6):
-    - ISO 10816 vibration alert classification (zone A/B/C/D)
+    - ISO 20816-3 vibration alert classification (zones A-D; boundary values from ISO 10816-3:2009)
     - Custom threshold alerting
     - Maintenance recommendation generation (severity + fault-specific)
 

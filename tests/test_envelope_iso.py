@@ -181,53 +181,25 @@ class TestISO20816:
     
     
     def test_iso_zone_classification_group1(self):
-        """Test ISO 20816-3 zone classification for Group 1."""
-        # Group 1 thresholds (large machines)
-        # Zone A: < 2.3 mm/s
-        # Zone B: 2.3 - 4.5 mm/s
-        # Zone C: 4.5 - 7.1 mm/s
-        # Zone D: > 7.1 mm/s
-        
-        def classify_zone(rms_velocity, machine_group=1):
-            if machine_group == 1:
-                if rms_velocity < 2.3:
-                    return 'A'
-                elif rms_velocity < 4.5:
-                    return 'B'
-                elif rms_velocity < 7.1:
-                    return 'C'
-                else:
-                    return 'D'
-        
-        assert classify_zone(1.0, 1) == 'A'
-        assert classify_zone(3.0, 1) == 'B'
-        assert classify_zone(5.0, 1) == 'C'
-        assert classify_zone(10.0, 1) == 'D'
-    
-    
+        """Zone classification for Group 1 rigid — asserts on production code."""
+        from predictive_maintenance_mcp.diagnostics.iso10816 import classify_zone
+
+        # Group 1 rigid boundaries (ISO 10816-3:2009): 2.3 / 4.5 / 7.1 mm/s
+        assert classify_zone(1.0, machine_group=1, support_type="rigid")["zone"] == "A"
+        assert classify_zone(3.0, machine_group=1, support_type="rigid")["zone"] == "B"
+        assert classify_zone(5.0, machine_group=1, support_type="rigid")["zone"] == "C"
+        assert classify_zone(10.0, machine_group=1, support_type="rigid")["zone"] == "D"
+
+
     def test_iso_zone_classification_group2(self):
-        """Test ISO 20816-3 zone classification for Group 2."""
-        # Group 2 thresholds (medium machines)
-        # Zone A: < 1.4 mm/s
-        # Zone B: 1.4 - 2.8 mm/s
-        # Zone C: 2.8 - 4.5 mm/s
-        # Zone D: > 4.5 mm/s
-        
-        def classify_zone(rms_velocity, machine_group=2):
-            if machine_group == 2:
-                if rms_velocity < 1.4:
-                    return 'A'
-                elif rms_velocity < 2.8:
-                    return 'B'
-                elif rms_velocity < 4.5:
-                    return 'C'
-                else:
-                    return 'D'
-        
-        assert classify_zone(1.0, 2) == 'A'
-        assert classify_zone(2.0, 2) == 'B'
-        assert classify_zone(3.5, 2) == 'C'
-        assert classify_zone(6.0, 2) == 'D'
+        """Zone classification for Group 2 rigid — asserts on production code."""
+        from predictive_maintenance_mcp.diagnostics.iso10816 import classify_zone
+
+        # Group 2 rigid boundaries (ISO 10816-3:2009): 1.4 / 2.8 / 4.5 mm/s
+        assert classify_zone(1.0, machine_group=2, support_type="rigid")["zone"] == "A"
+        assert classify_zone(2.0, machine_group=2, support_type="rigid")["zone"] == "B"
+        assert classify_zone(3.5, machine_group=2, support_type="rigid")["zone"] == "C"
+        assert classify_zone(6.0, machine_group=2, support_type="rigid")["zone"] == "D"
     
     
     def test_iso_velocity_integration(self):
@@ -270,45 +242,35 @@ class TestISO20816:
         # In practice, check if value is reasonable
     
     
-    def test_iso_foundation_type_impact(self):
-        """Test that foundation type affects thresholds (if applicable)."""
-        # Note: ISO 20816-3 thresholds are primarily based on machine group
-        # Foundation type (rigid vs flexible) is mentioned but thresholds
-        # in the standard are the same. This test verifies parameter handling.
-        
-        rms_velocity = 3.0
-        
-        # Both foundation types should use same thresholds for same group
-        def classify(foundation='rigid'):
-            # Group 1 thresholds
-            if rms_velocity < 2.3:
-                return 'A'
-            elif rms_velocity < 4.5:
-                return 'B'
-            return 'C'
-        
-        result_rigid = classify('rigid')
-        result_flexible = classify('flexible')
-        
-        # Should be same classification
-        assert result_rigid == result_flexible == 'B'
-    
-    
+    def test_iso_support_type_changes_thresholds(self):
+        """Rigid and flexible supports have DIFFERENT zone boundaries.
+
+        ISO 10816-3:2009 Table A.1: group 1 rigid is 2.3/4.5/7.1 mm/s,
+        group 1 flexible is 3.5/7.1/11.0 mm/s. Replaces a former test that
+        asserted the false domain claim rigid == flexible.
+        """
+        from predictive_maintenance_mcp.diagnostics.iso10816 import classify_zone
+
+        rigid = classify_zone(3.0, machine_group=1, support_type="rigid")
+        flexible = classify_zone(3.0, machine_group=1, support_type="flexible")
+
+        assert rigid["zone"] == "B"  # 2.3 < 3.0 <= 4.5
+        assert flexible["zone"] == "A"  # 3.0 <= 3.5
+        assert rigid["boundaries"] != flexible["boundaries"]
+
+
     def test_iso_error_handling_negative_rms(self):
-        """Test error handling for invalid RMS values."""
-        rms_negative = -1.0
-        
-        # Negative RMS is physically impossible
-        with pytest.raises((ValueError, AssertionError)):
-            if rms_negative < 0:
-                raise ValueError("RMS cannot be negative")
-    
-    
+        """Negative RMS is physically impossible: production code must raise."""
+        from predictive_maintenance_mcp.diagnostics.iso10816 import classify_zone
+
+        with pytest.raises(ValueError):
+            classify_zone(-1.0, machine_group=2, support_type="rigid")
+
+
     def test_iso_error_handling_invalid_machine_group(self):
-        """Test error handling for invalid machine group."""
-        invalid_groups = [0, 3, 5, -1]
-        
-        for group in invalid_groups:
-            with pytest.raises((ValueError, KeyError)):
-                if group not in [1, 2]:
-                    raise ValueError(f"Invalid machine group: {group}")
+        """Invalid machine group must be rejected by production code."""
+        from predictive_maintenance_mcp.diagnostics.iso10816 import classify_zone
+
+        for group in [0, 3, 5, -1]:
+            with pytest.raises(ValueError):
+                classify_zone(1.0, machine_group=group, support_type="rigid")
