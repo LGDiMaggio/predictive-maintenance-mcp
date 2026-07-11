@@ -20,11 +20,15 @@ from mcp.server.fastmcp import FastMCP, Context
 
 from ..config import DATA_DIR, MODELS_DIR, RESOURCES_DIR, REPORTS_DIR, CACHE_DIR
 from ..signal_loader import load_signal_data, get_metadata_path, extract_segment, SUPPORTED_EXTENSIONS
-from ..signal_repository import get_repository
+from ..signal_repository import (
+    get_repository,
+    normalize_signal_unit,
+    VALID_SIGNAL_UNITS,
+)
 from ..models import (
     ISO20816Result, AnomalyModelResult, AnomalyPredictionResult,
     BearingFaultCheckResult, BearingFaultsSummary, VibrationSeverityResult,
-    DiagnosisResult, StoredSignalInfo
+    ISOSeverityRefusal, DiagnosisResult, StoredSignalInfo
 )
 from ..report_generator import save_iso_report, REPORTS_DIR as REPORTS_DIR_PATH
 from ..document_reader import (
@@ -186,11 +190,11 @@ def register(mcp: FastMCP) -> None:
     async def evaluate_iso_20816(
         ctx: Context,
         signal_file: str,
-        sampling_rate: float = 10000.0,
-        machine_group: int = 2,  # CHANGED: Default 2 (medium) - most common industrial case
+        sampling_rate: Optional[float] = None,
+        machine_group: int = 2,  # Default 2 (medium) - most common industrial case
         support_type: str = "rigid",  # Default rigid - most common for horizontal machines
         operating_speed_rpm: Optional[float] = None,
-        signal_unit: Optional[str] = None  # NEW: 'g' for acceleration, 'mm/s' for velocity, None for auto-detect
+        signal_unit: Optional[str] = None  # 'g'/'m/s2' (acceleration) or 'mm/s'/'m/s' (velocity); None = read from metadata
     ) -> ISO20816Result:
         """
         Evaluate vibration severity according to the ISO 20816-3 standard.
@@ -237,25 +241,36 @@ def register(mcp: FastMCP) -> None:
         - Zone C (Orange): Unsatisfactory - limited operation, plan maintenance
         - Zone D (Red): Sufficient severity to cause damage - immediate action
 
+        **Parameter discipline (no guessing):**
+        - Sampling rate: explicit parameter > companion metadata file >
+          structured error. There is NO silent default rate.
+        - Signal unit: explicit parameter > companion metadata 'signal_unit'
+          field > structured error. The unit is NEVER inferred from signal
+          amplitude \u2014 a wrong unit completely invalidates ISO 20816-3 results.
+
         Args:
             signal_file: Name of the CSV file in data/signals/
-            sampling_rate: Sampling frequency in Hz (default: 10000)
+            sampling_rate: Sampling frequency in Hz. If None, it is read from
+                the companion _metadata.json; if neither is available the tool
+                raises ValueError.
             machine_group: Machine group 1 (large) or 2 (medium) (default: 2 - medium)
             support_type: 'rigid' or 'flexible' (default: 'rigid')
             operating_speed_rpm: Operating speed in RPM (optional, for frequency range selection)
-            signal_unit: Signal unit - 'g' or 'm/s2' (acceleration) or 'mm/s' or 'm/s' (velocity).
-
-                         **PRIORITY ORDER FOR UNIT DETECTION:**
-                         1. Check metadata file for 'signal_unit' field (recommended)
-                         2. Use this parameter if explicitly provided
-                         3. If neither exists: LLM will ask user to confirm based on RMS hypothesis
-                         4. Default assumption: 'g' (most common for vibration sensors)
-
-                         **IMPORTANT**: Wrong unit completely invalidates ISO 20816-3 results!
-                         Best practice: Add 'signal_unit' field to metadata JSON files.
+            signal_unit: DECLARED signal unit - 'g' or 'm/s2' (acceleration) or
+                'mm/s' or 'm/s' (velocity). If None, it is read from the
+                companion metadata 'signal_unit' field; if neither declares a
+                recognized unit the tool raises ValueError naming how to
+                declare it.
 
         Returns:
             ISO20816Result with evaluation zone, severity level, and recommendations
+
+        Raises:
+            FileNotFoundError: If the signal file does not exist.
+            ValueError: If the sampling rate or the signal unit is not
+                declared anywhere (parameter or metadata), if the declared
+                unit is invalid, or if the sampling rate cannot cover the
+                ISO evaluation band (Nyquist < 1 kHz).
 
         Example:
             await evaluate_iso_20816(
@@ -265,7 +280,7 @@ def register(mcp: FastMCP) -> None:
                 machine_group=2,
                 support_type="rigid",
                 operating_speed_rpm=1500,
-                signal_unit="g"  # Explicitly specify: 'g' or 'mm/s'
+                signal_unit="g"  # Explicitly declare: 'g'/'m/s2' or 'mm/s'/'m/s'
             )
         """
         from ..iso10816 import assess_severity_raw
@@ -279,111 +294,57 @@ def register(mcp: FastMCP) -> None:
         if signal_data is None:
             raise ValueError(f"Could not load signal data from: {signal_file}")
 
-        # Try to read metadata JSON (single read for sampling_rate + signal_unit)
+        # Companion metadata (single read for sampling_rate + signal_unit)
         metadata_file = filepath.parent / (filepath.stem + "_metadata.json")
-        metadata_found = False
-        metadata = {}
-        user_provided_sampling_rate = (sampling_rate != 10000.0)  # Check if user changed default
-
+        metadata: dict = {}
         if metadata_file.exists():
             with open(metadata_file, 'r') as f:
                 metadata = json.load(f)
-                if 'sampling_rate' in metadata:
-                    old_sampling_rate = sampling_rate
-                    sampling_rate = metadata['sampling_rate']
-                    metadata_found = True
-                    if ctx:
-                        await ctx.info(f"Found metadata: sampling_rate = {sampling_rate} Hz")
-                        if user_provided_sampling_rate and old_sampling_rate != sampling_rate:
-                            await ctx.info(f"   (Overriding user-provided {old_sampling_rate} Hz with metadata value)")
 
-        # CRITICAL: If no metadata and user didn't provide sampling_rate, ASK!
-        if not metadata_found and not user_provided_sampling_rate:
+        # Sampling rate: explicit parameter > metadata > structured error.
+        if sampling_rate is not None:
             if ctx:
-                await ctx.info(f"CRITICAL: No metadata found and no sampling_rate provided!")
-                await ctx.info(f"   Sampling rate is REQUIRED for accurate ISO 20816-3 evaluation.")
-                await ctx.info(f"   Using default {sampling_rate} Hz may give INCORRECT results.")
-                await ctx.info(f"")
-                await ctx.info(f"PLEASE CONFIRM:")
-                await ctx.info(f"   - Do you know the sampling rate of '{signal_file}'?")
-                await ctx.info(f"   - If YES: Re-run with correct sampling_rate parameter")
-                await ctx.info(f"   - If NO: Results may be unreliable - use with caution")
-                await ctx.info(f"")
-                await ctx.info(f"PROCEEDING WITH DEFAULT {sampling_rate} Hz (may be incorrect!)")
-        elif not metadata_found and user_provided_sampling_rate:
+                await ctx.info(f"Using provided sampling_rate = {sampling_rate} Hz")
+        elif metadata.get('sampling_rate') is not None:
+            sampling_rate = metadata['sampling_rate']
             if ctx:
-                await ctx.info(f"Using user-provided sampling_rate = {sampling_rate} Hz (no metadata verification)")
+                await ctx.info(f"Using sampling_rate = {sampling_rate} Hz from {metadata_file.name}")
+        else:
+            raise ValueError(
+                f"No sampling rate for '{signal_file}' \u2014 pass the sampling_rate "
+                f"parameter explicitly or add a 'sampling_rate' field to "
+                f"'{metadata_file.name}'. ISO 20816-3 evaluation never proceeds "
+                f"on a guessed rate."
+            )
+
+        # Signal unit: explicit parameter > metadata > structured error.
+        # NEVER guessed from signal amplitude.
+        if signal_unit is not None:
+            unit = normalize_signal_unit(signal_unit)
+            if unit is None:
+                raise ValueError(
+                    f"Invalid signal_unit '{signal_unit}' \u2014 declare one of "
+                    f"{list(VALID_SIGNAL_UNITS)} ('g'/'m/s2' for acceleration, "
+                    f"'mm/s'/'m/s' for velocity)."
+                )
+            if ctx:
+                await ctx.info(f"Signal unit '{unit}' (declared via parameter)")
+        else:
+            unit = normalize_signal_unit(metadata.get('signal_unit'))
+            if unit is not None and ctx:
+                await ctx.info(f"Signal unit '{unit}' (declared in {metadata_file.name})")
+        if unit is None:
+            raise ValueError(
+                f"Signal unit not declared for '{signal_file}' \u2014 ISO 20816-3 "
+                f"severity requires a declared unit and never guesses it from "
+                f"amplitude. Pass signal_unit='g'|'m/s2'|'mm/s'|'m/s' or add a "
+                f"'signal_unit' field to '{metadata_file.name}'."
+            )
 
         # Notify about machine parameters
         if ctx:
             await ctx.info(f"Machine parameters: Group {machine_group} ({'Large' if machine_group == 1 else 'Medium'}), Support '{support_type}'")
             await ctx.info(f"   If incorrect, provide machine_group and support_type parameters")
-
-        # ========================================================================
-        # SIGNAL UNIT DETECTION WITH HYPOTHESIS FLOW
-        # ========================================================================
-        rms_raw = np.sqrt(np.mean(signal_data**2))
-        detected_unit = None
-
-        # STEP 1: Check metadata for signal_unit
-        if metadata_found and 'signal_unit' in metadata:
-            detected_unit = metadata['signal_unit'].lower()
-            if ctx:
-                await ctx.info(f"")
-                await ctx.info(f"SIGNAL UNIT from metadata: '{metadata['signal_unit']}'")
-
-        # STEP 2: User explicitly provided signal_unit parameter
-        if signal_unit is not None:
-            detected_unit = signal_unit.lower()
-            if ctx:
-                await ctx.info(f"")
-                await ctx.info(f"SIGNAL UNIT from user parameter: '{signal_unit}'")
-
-        # STEP 3: No metadata, no user input -> ASK USER with hypothesis
-        if detected_unit is None:
-            if rms_raw > 0.5:
-                hypothesis = 'g'
-                hypothesis_reason = f"RMS={rms_raw:.2f} > 0.5 (typical for acceleration)"
-            else:
-                hypothesis = 'mm/s'
-                hypothesis_reason = f"RMS={rms_raw:.2f} < 0.5 (typical for velocity)"
-
-            if ctx:
-                await ctx.info(f"")
-                await ctx.info(f"SIGNAL UNIT UNKNOWN - ASKING USER FOR CONFIRMATION")
-                await ctx.info(f"")
-                await ctx.info(f"HYPOTHESIS: Signal appears to be in '{hypothesis}' units")
-                await ctx.info(f"   Reasoning: {hypothesis_reason}")
-                await ctx.info(f"")
-                await ctx.info(f"PLEASE CONFIRM SIGNAL UNITS:")
-                await ctx.info(f"   - Is the signal in 'g' (acceleration) or 'm/s2' (acceleration)?")
-                await ctx.info(f"   - Or is it already in 'mm/s' (velocity)?")
-                await ctx.info(f"")
-                await ctx.info(f"HOW TO SPECIFY:")
-                await ctx.info(f"   1. Add 'signal_unit' field to metadata file: {metadata_file.name}")
-                await ctx.info(f"      Example: {{'signal_unit': 'g', ...}}")
-                await ctx.info(f"   2. OR provide signal_unit parameter when calling this tool")
-                await ctx.info(f"      Example: signal_unit='g' or signal_unit='mm/s'")
-                await ctx.info(f"")
-                await ctx.info(f"DEFAULT ASSUMPTION: Using '{hypothesis}' (most common for vibration sensors)")
-                await ctx.info(f"   If this is incorrect, results will be INVALID!")
-
-            detected_unit = hypothesis
-
-        # Validate detected unit
-        if detected_unit not in ['g', 'm/s\u00b2', 'mm/s', 'm/s']:
-            if ctx:
-                await ctx.info(f"ERROR: Invalid signal_unit '{detected_unit}'")
-                await ctx.info(f"   Valid values: 'g', 'm/s\u00b2' (acceleration) or 'mm/s', 'm/s' (velocity)")
-            raise ValueError(f"Invalid signal_unit: '{detected_unit}'. Must be 'g', 'm/s\u00b2', 'mm/s', or 'm/s'")
-
-        # Notify about unit conversion
-        if detected_unit in ['g', 'm/s\u00b2']:
-            if ctx:
-                await ctx.info(f"")
-                await ctx.info(f"UNIT CONVERSION: Acceleration ({detected_unit}) -> Velocity (mm/s)")
-                await ctx.info(f"   ISO 20816-3 requires velocity measurements")
-                await ctx.info(f"   Performing frequency-domain integration...")
 
         # ========================================================================
         # DELEGATE MATH to iso10816.assess_severity_raw (single source of truth)
@@ -393,21 +354,24 @@ def register(mcp: FastMCP) -> None:
             fs=sampling_rate,
             machine_group=machine_group,
             support_type=support_type,
-            signal_unit=detected_unit,
+            signal_unit=unit,
             operating_speed_rpm=operating_speed_rpm,
         )
 
         # Post-computation ctx messages
         if ctx:
             if result["unit_conversion_performed"]:
-                await ctx.info(f"Conversion complete: {rms_raw:.2f} {detected_unit} -> {result['rms_velocity_mm_s']:.2f} mm/s RMS")
-            elif detected_unit == 'mm/s':
+                await ctx.info(
+                    f"Acceleration ({unit}) integrated to velocity: "
+                    f"{result['rms_velocity_mm_s']:.2f} mm/s RMS"
+                )
+            elif unit == 'mm/s':
                 await ctx.info(f"Signal already in velocity (mm/s) - no conversion needed")
 
         # Build zone description with conversion notice
         zone_desc = result["zone_description"]
         if result["unit_conversion_performed"]:
-            zone_desc = f"SIGNAL CONVERTED: Acceleration ({detected_unit}) -> Velocity (mm/s). {zone_desc}"
+            zone_desc = f"SIGNAL CONVERTED: Acceleration ({unit}) -> Velocity (mm/s). {zone_desc}"
 
         return ISO20816Result(
             rms_velocity=result["rms_velocity_mm_s"],
@@ -436,6 +400,7 @@ def register(mcp: FastMCP) -> None:
         machine_group: int = 1,
         support_type: str = "rigid",
         operating_speed_rpm: Optional[float] = None,
+        signal_unit: Optional[str] = None,
         ctx: Context | None = None
     ) -> str:
         """
@@ -453,10 +418,17 @@ def register(mcp: FastMCP) -> None:
             machine_group: 1 (large >300kW) or 2 (medium 15-300kW)
             support_type: 'rigid' or 'flexible'
             operating_speed_rpm: Operating speed in RPM (optional)
+            signal_unit: DECLARED signal unit ('g', 'm/s2', 'mm/s', 'm/s').
+                If None, it must be declared in the companion metadata —
+                units are never guessed from amplitude.
             ctx: MCP context
 
         Returns:
             Path to generated HTML file with ISO chart
+
+        Raises:
+            ValueError: If the signal unit is not declared anywhere
+                (parameter or metadata).
         """
         if ctx:
             await ctx.info(f"Evaluating ISO 20816-3 for {filename}...")
@@ -468,7 +440,8 @@ def register(mcp: FastMCP) -> None:
             sampling_rate=sampling_rate,
             machine_group=machine_group,
             support_type=support_type,
-            operating_speed_rpm=operating_speed_rpm
+            operating_speed_rpm=operating_speed_rpm,
+            signal_unit=signal_unit,
         )
 
         # Create figure
@@ -1090,7 +1063,14 @@ def register(mcp: FastMCP) -> None:
             if meta_path.exists():
                 with open(meta_path, 'r') as f:
                     signal_meta = json.load(f)
-                sampling_rate_val = float(signal_meta.get('sampling_rate', 10000.0))
+                meta_rate = signal_meta.get('sampling_rate')
+                if meta_rate is None:
+                    raise ValueError(
+                        f"No 'sampling_rate' field in {meta_path.name} — add it "
+                        f"to the metadata file; prediction never proceeds on a "
+                        f"guessed rate."
+                    )
+                sampling_rate_val = float(meta_rate)
             else:
                 raise ValueError(
                     f"Model was trained with per-file sampling rates but no metadata found for {signal_file}. "
@@ -1709,8 +1689,10 @@ def register(mcp: FastMCP) -> None:
         included in the result. Scope: machines rated above 15 kW; results
         for smaller machines are not covered by these boundaries.
 
-        Uses the signal_id pattern (load once, reference by ID).
-        Signal unit is read from metadata; defaults to 'g' if unknown.
+        Uses the signal_id pattern (load once, reference by ID). The signal
+        unit must be DECLARED — via load_signal(signal_unit=...) or the
+        companion _metadata.json — and is never guessed from amplitude; an
+        undeclared unit is a structured error, not a silent assumption.
 
         Args:
             signal_id: ID of the stored signal.
@@ -1718,15 +1700,32 @@ def register(mcp: FastMCP) -> None:
                 2 (medium machines, 15-300 kW). Default 2.
             support_type: 'rigid' or 'flexible'. Default 'rigid'.
             axis: Measurement axis (informational).
+
+        Raises:
+            ValueError: If the stored signal has no sampling rate or no
+                declared unit, or if the sampling rate cannot cover the ISO
+                evaluation band (Nyquist < 1 kHz).
         """
         repo = get_repository()
         signal_data = repo.get_signal(signal_id)
         info = repo.get_signal_info(signal_id)
         fs = info.get("sampling_rate")
         if fs is None:
-            raise ValueError(f"No sampling_rate for signal '{signal_id}'.")
+            raise ValueError(
+                f"No sampling rate for signal '{signal_id}' — re-load with "
+                f"load_signal(filepath=..., sampling_rate=...) or add a "
+                f"'sampling_rate' field to the companion _metadata.json."
+            )
 
-        signal_unit = info.get("signal_unit", "g")
+        signal_unit = info.get("signal_unit")
+        if signal_unit is None:
+            raise ValueError(
+                f"ISO severity refused for '{signal_id}': signal unit not "
+                f"declared — units are never guessed from amplitude. Re-load "
+                f"with load_signal(filepath=..., signal_unit='g'|'m/s2'|"
+                f"'mm/s'|'m/s') or add a 'signal_unit' field to the companion "
+                f"_metadata.json."
+            )
         if ctx:
             await ctx.info(
                 f"Assessing ISO severity for '{signal_id}' "
@@ -1764,6 +1763,14 @@ def register(mcp: FastMCP) -> None:
         The ISO severity block uses ISO 20816-3 machine group/support type
         (zone boundaries from ISO 10816-3:2009, provenance noted in output).
 
+        The diagnosis DEGRADES instead of failing when the ISO verdict cannot
+        be produced honestly: if the stored signal has no declared unit (or
+        the sampling rate cannot cover the ISO evaluation band), the
+        iso_severity block is a structured refusal (status='refused' with
+        reason and remedy) while the spectral, bearing, and anomaly blocks
+        still run. Units are never guessed from amplitude — declare them via
+        load_signal(signal_unit=...) or the companion _metadata.json.
+
         Args:
             signal_id: ID of the stored signal.
             rpm: Machine operating speed in RPM.
@@ -1771,15 +1778,24 @@ def register(mcp: FastMCP) -> None:
             machine_group: 1 (large, >300 kW) or 2 (medium, 15-300 kW).
                 Default 2.
             support_type: 'rigid' or 'flexible'. Default 'rigid'.
+
+        Raises:
+            ValueError: If the stored signal has no sampling rate.
         """
         repo = get_repository()
         signal_data = repo.get_signal(signal_id)
         info = repo.get_signal_info(signal_id)
         fs = info.get("sampling_rate")
         if fs is None:
-            raise ValueError(f"No sampling_rate for signal '{signal_id}'.")
+            raise ValueError(
+                f"No sampling rate for signal '{signal_id}' — re-load with "
+                f"load_signal(filepath=..., sampling_rate=...) or add a "
+                f"'sampling_rate' field to the companion _metadata.json."
+            )
 
-        signal_unit = info.get("signal_unit", "g")
+        # None = undeclared: pipeline degrades to a refused ISO block while
+        # the other diagnosis blocks still run (no unit guessing).
+        signal_unit = info.get("signal_unit")
         if ctx:
             await ctx.info(f"Running full diagnosis for '{signal_id}' at {rpm} RPM")
             if bearing_id:
@@ -1811,13 +1827,27 @@ def register(mcp: FastMCP) -> None:
                 most_likely_fault=bf["most_likely_fault"],
             )
 
-        iso_model = VibrationSeverityResult(**result["iso_severity"])
+        # ISO block: assessed result or schema-level refusal (reason + remedy)
+        iso_block = result["iso_severity"]
+        if iso_block.get("status") == "refused":
+            iso_model: VibrationSeverityResult | ISOSeverityRefusal = (
+                ISOSeverityRefusal(
+                    signal_id=iso_block.get("signal_id", signal_id),
+                    reason=iso_block["reason"],
+                    remedy=iso_block["remedy"],
+                )
+            )
+        else:
+            iso_model = VibrationSeverityResult(**iso_block)
 
         if ctx:
             await ctx.info(
                 f"Diagnosis complete: {result['evidence_strength']} fault evidence"
             )
-            await ctx.info(f"ISO Zone: {result['iso_severity']['zone']}")
+            if iso_block.get("status") == "refused":
+                await ctx.info(f"ISO severity: refused — {iso_block['reason']}")
+            else:
+                await ctx.info(f"ISO Zone: {iso_block['zone']}")
             for rec in result["recommendations"]:
                 await ctx.info(f"  -> {rec}")
 

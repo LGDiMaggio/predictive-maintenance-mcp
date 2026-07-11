@@ -360,20 +360,68 @@ class TestEvaluateISO20816Extended:
         assert "2-1000" in result.frequency_range
 
     @pytest.mark.asyncio
-    async def test_no_metadata_no_explicit_rate(self, tools, data_dir, mock_ctx):
-        """Signal without metadata and default sampling_rate triggers ctx warnings."""
+    async def test_no_metadata_no_explicit_rate_raises(self, tools, data_dir, mock_ctx):
+        """No metadata + no sampling_rate → structured error, no silent 10 kHz."""
         # Create a signal with no metadata file
         fs = 10000
         t = np.linspace(0, 1.0, fs, endpoint=False)
         sig = 0.1 * np.random.randn(len(t))
         pd.DataFrame(sig).to_csv(data_dir / "no_meta.csv", index=False, header=False)
 
+        with pytest.raises(ValueError, match="No sampling rate"):
+            await tools["evaluate_iso_20816"](
+                ctx=mock_ctx,
+                signal_file="no_meta.csv",
+            )
+
+    @pytest.mark.asyncio
+    async def test_undeclared_unit_raises(self, tools, data_dir, mock_ctx):
+        """Rate known but unit undeclared → structured error naming the fix
+        (no RMS-based 'HYPOTHESIS ... PROCEEDING' guess)."""
+        fs = 10000
+        t = np.linspace(0, 1.0, fs, endpoint=False)
+        # RMS ~4 (the amplitude the old heuristic guessed as 'g')
+        sig = 4.0 * np.sqrt(2) * np.sin(2 * np.pi * 50 * t)
+        pd.DataFrame(sig).to_csv(data_dir / "no_unit.csv", index=False, header=False)
+        with open(data_dir / "no_unit_metadata.json", "w") as f:
+            json.dump({"sampling_rate": fs}, f)  # rate but NO signal_unit
+
+        with pytest.raises(ValueError, match="unit not declared"):
+            await tools["evaluate_iso_20816"](
+                ctx=mock_ctx,
+                signal_file="no_unit.csv",
+            )
+
+    @pytest.mark.asyncio
+    async def test_invalid_unit_raises(self, tools, data_dir, mock_ctx):
+        with pytest.raises(ValueError, match="Invalid signal_unit"):
+            await tools["evaluate_iso_20816"](
+                ctx=mock_ctx,
+                signal_file="iso_test.csv",
+                sampling_rate=10000.0,
+                signal_unit="furlongs",
+            )
+
+    @pytest.mark.asyncio
+    async def test_velocity_declared_unit_no_integration(self, tools, data_dir, mock_ctx):
+        """mm/s declared → severity without acc→vel integration, correct zone."""
+        fs = 10000
+        t = np.linspace(0, 2.0, 2 * fs, endpoint=False)
+        # RMS = 4.0 mm/s → Group 2 rigid: zone C (2.8 < 4.0 <= 4.5)
+        vel = 4.0 * np.sqrt(2) * np.sin(2 * np.pi * 50 * t)
+        pd.DataFrame(vel).to_csv(data_dir / "vel4.csv", index=False, header=False)
+        with open(data_dir / "vel4_metadata.json", "w") as f:
+            json.dump({"sampling_rate": fs, "signal_unit": "mm/s"}, f)
+
         result = await tools["evaluate_iso_20816"](
             ctx=mock_ctx,
-            signal_file="no_meta.csv",
+            signal_file="vel4.csv",
+            machine_group=2,
+            support_type="rigid",
         )
-        assert result is not None
-        assert result.zone in ("A", "B", "C", "D")
+        assert result.zone == "C"
+        assert result.rms_velocity == pytest.approx(4.0, rel=0.05)
+        assert "CONVERTED" not in result.zone_description
 
 
 # ---------------------------------------------------------------------------
@@ -957,6 +1005,132 @@ class TestAssessVibrationSeverityExtended:
                     ctx=mock_ctx,
                     signal_id="no_sr_test",
                 )
+        finally:
+            repo.clear_all()
+
+    @pytest.mark.asyncio
+    async def test_undeclared_unit_refused_names_load_signal(self, tools, data_dir, mock_ctx):
+        """Severity on a stored signal without a declared unit → structured
+        error naming load_signal(signal_unit=...) — never a silent 'g'."""
+        from predictive_maintenance_mcp.signal_repository import get_repository
+
+        fs = 10000
+        t = np.linspace(0, 1.0, fs, endpoint=False)
+        sig = 4.0 * np.sqrt(2) * np.sin(2 * np.pi * 50 * t)  # RMS ~4
+        pd.DataFrame(sig).to_csv(data_dir / "no_unit_sev.csv", index=False, header=False)
+        # No metadata → unit undeclared
+
+        repo = get_repository()
+        try:
+            repo.load_signal("no_unit_sev.csv", signal_id="no_unit_sev", sampling_rate=fs)
+            with pytest.raises(ValueError, match=r"load_signal.*signal_unit="):
+                await tools["assess_vibration_severity"](
+                    ctx=mock_ctx,
+                    signal_id="no_unit_sev",
+                )
+        finally:
+            repo.clear_all()
+
+    @pytest.mark.asyncio
+    async def test_metadata_unit_g_assessed_without_confirmation(self, tools, data_dir, mock_ctx):
+        """Unit 'g' from _metadata.json → acc→vel integration and a verdict,
+        no fake confirmation step."""
+        from predictive_maintenance_mcp.signal_repository import get_repository
+
+        repo = get_repository()
+        try:
+            repo.load_signal("iso_test.csv", signal_id="meta_g")  # metadata: fs + 'g'
+            result = await tools["assess_vibration_severity"](
+                ctx=mock_ctx,
+                signal_id="meta_g",
+            )
+            assert result.status == "assessed"
+            assert result.zone in ("A", "B", "C", "D")
+            assert result.unit_conversion_performed is True
+        finally:
+            repo.clear_all()
+
+
+class TestDiagnoseVibrationRefusedISO:
+    """diagnose_vibration degrades: refused ISO block, other blocks run."""
+
+    @pytest.mark.asyncio
+    async def test_diagnosis_without_unit_iso_refused(self, tools, data_dir, mock_ctx):
+        from predictive_maintenance_mcp.models import ISOSeverityRefusal
+        from predictive_maintenance_mcp.signal_repository import get_repository
+
+        fs = 10000
+        t = np.linspace(0, 1.0, fs, endpoint=False)
+        sig = 0.5 * np.sin(2 * np.pi * 50 * t)
+        pd.DataFrame(sig).to_csv(data_dir / "diag_no_unit.csv", index=False, header=False)
+        # No metadata → unit undeclared
+
+        repo = get_repository()
+        try:
+            repo.load_signal("diag_no_unit.csv", signal_id="diag_no_unit", sampling_rate=fs)
+            result = await tools["diagnose_vibration_tool"](
+                ctx=mock_ctx,
+                signal_id="diag_no_unit",
+                rpm=1800.0,
+                bearing_id="6205",
+            )
+            # ISO block is a schema-level refusal
+            assert isinstance(result.iso_severity, ISOSeverityRefusal)
+            assert result.iso_severity.status == "refused"
+            assert "load_signal" in result.iso_severity.remedy
+            # The other blocks still ran
+            assert result.fft_summary
+            assert result.psd_summary
+            assert result.bearing_faults is not None
+            assert result.evidence_strength in ("none", "weak", "moderate", "strong")
+        finally:
+            repo.clear_all()
+
+    @pytest.mark.asyncio
+    async def test_diagnosis_nyquist_too_low_iso_refused(self, tools, data_dir, mock_ctx):
+        """fs < 2 kHz (Nyquist below the ISO band, U2 refusal) → ISO block
+        refused with reason, while the diagnosis itself succeeds."""
+        from predictive_maintenance_mcp.models import ISOSeverityRefusal
+        from predictive_maintenance_mcp.signal_repository import get_repository
+
+        fs = 1600
+        t = np.linspace(0, 1.0, fs, endpoint=False)
+        sig = 0.5 * np.sin(2 * np.pi * 50 * t)
+        pd.DataFrame(sig).to_csv(data_dir / "diag_low_fs.csv", index=False, header=False)
+        with open(data_dir / "diag_low_fs_metadata.json", "w") as f:
+            json.dump({"sampling_rate": fs, "signal_unit": "g"}, f)
+
+        repo = get_repository()
+        try:
+            repo.load_signal("diag_low_fs.csv", signal_id="diag_low_fs")
+            result = await tools["diagnose_vibration_tool"](
+                ctx=mock_ctx,
+                signal_id="diag_low_fs",
+                rpm=1800.0,
+            )
+            assert isinstance(result.iso_severity, ISOSeverityRefusal)
+            assert "Nyquist" in result.iso_severity.reason
+            assert result.fft_summary
+        finally:
+            repo.clear_all()
+
+    @pytest.mark.asyncio
+    async def test_diagnosis_with_declared_unit_assessed(self, tools, data_dir, mock_ctx):
+        """Declared unit → assessed ISO block (status discriminator present)."""
+        from predictive_maintenance_mcp.models import VibrationSeverityResult
+        from predictive_maintenance_mcp.signal_repository import get_repository
+
+        repo = get_repository()
+        try:
+            repo.load_signal("normal.csv", signal_id="diag_ok")  # metadata: fs + 'g'
+            result = await tools["diagnose_vibration_tool"](
+                ctx=mock_ctx,
+                signal_id="diag_ok",
+                rpm=1800.0,
+            )
+            assert isinstance(result.iso_severity, VibrationSeverityResult)
+            assert result.iso_severity.status == "assessed"
+            assert result.iso_severity.zone in ("A", "B", "C", "D")
         finally:
             repo.clear_all()
 

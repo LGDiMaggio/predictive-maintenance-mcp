@@ -117,6 +117,99 @@ class TestDiagnoseVibration:
         assert result["bearing_faults"] is None
 
 
+class TestISOSeverityRefusal:
+    """U5: the ISO block is refused (schema-level) instead of guessed/failed."""
+
+    def _velocity_signal(self, rms_mm_s=4.0, freq=50.0, fs=10000):
+        """Velocity signal with a given RMS in mm/s (the audit case: today's
+        heuristic would guess RMS 4 > 0.5 as 'g' acceleration)."""
+        t = np.linspace(0, 1.0, fs, endpoint=False)
+        amp = rms_mm_s * np.sqrt(2)
+        return amp * np.sin(2 * np.pi * freq * t), fs
+
+    def test_undeclared_unit_refuses_iso_block(self, healthy_signal):
+        """No unit → status='refused' with reason + remedy; other blocks run."""
+        signal, fs = healthy_signal
+        result = diagnose_vibration(
+            signal, fs, rpm=1500, signal_id="no_unit",
+            anomaly_model_name="nonexistent_model_u5",
+        )
+        iso = result["iso_severity"]
+        assert iso["status"] == "refused"
+        assert "unit" in iso["reason"].lower()
+        assert "load_signal" in iso["remedy"]
+        assert "signal_unit=" in iso["remedy"]
+        # Refusal carries no verdict fields
+        assert "zone" not in iso
+        # Other diagnosis blocks still ran
+        assert "peak_frequency_hz" in result["fft_summary"]
+        assert "total_power" in result["psd_summary"]
+        assert "num_time_bins" in result["stft_summary"]
+        # Remedy surfaces in the recommendations, refusal in the text
+        assert any("load_signal" in r for r in result["recommendations"])
+        assert "not assessed" in result["overall_diagnosis"]
+
+    def test_no_heuristic_on_velocity_amplitude(self):
+        """RMS 4 mm/s velocity signal: the old heuristic guessed 'g' and
+        integrated it into a wrong-but-plausible zone. Now: refusal without a
+        declared unit, correct verdict only WITH the declared unit."""
+        signal, fs = self._velocity_signal(rms_mm_s=4.0)
+
+        # Without declared unit → refused, no verdict at all
+        result = diagnose_vibration(
+            signal, fs, rpm=3000, anomaly_model_name="nonexistent_model_u5"
+        )
+        assert result["iso_severity"]["status"] == "refused"
+
+        # With declared unit 'mm/s' → assessed without integration, zone C
+        # (group 2 rigid: 2.8 < 4.0 <= 4.5)
+        result2 = diagnose_vibration(
+            signal, fs, rpm=3000, signal_unit="mm/s",
+            anomaly_model_name="nonexistent_model_u5",
+        )
+        iso2 = result2["iso_severity"]
+        assert iso2["status"] == "assessed"
+        assert iso2["unit_conversion_performed"] is False
+        assert iso2["zone"] == "C"
+        assert iso2["rms_velocity_mm_s"] == pytest.approx(4.0, rel=0.05)
+
+    def test_declared_g_integrates_without_confirmation(self, healthy_signal):
+        """Unit 'g' declared → acc→vel integration and verdict, no fake step."""
+        signal, fs = healthy_signal
+        result = diagnose_vibration(signal, fs, rpm=1500, signal_unit="g")
+        iso = result["iso_severity"]
+        assert iso["status"] == "assessed"
+        assert iso["unit_conversion_performed"] is True
+        assert iso["zone"] in ("A", "B", "C", "D")
+
+    def test_nyquist_below_iso_band_refuses_iso_only(self):
+        """fs too low for the ISO band (U2 ValueError) → refused ISO block,
+        while spectral blocks still run."""
+        fs = 1600  # Nyquist 800 Hz < 1000 Hz ISO band upper edge
+        t = np.linspace(0, 1.0, fs, endpoint=False)
+        signal = 0.5 * np.sin(2 * np.pi * 50 * t)
+        result = diagnose_vibration(
+            signal, fs, rpm=3000, signal_unit="g",
+            anomaly_model_name="nonexistent_model_u5",
+        )
+        iso = result["iso_severity"]
+        assert iso["status"] == "refused"
+        assert "Nyquist" in iso["reason"]
+        assert "re-acquire" in iso["remedy"] or "fs >=" in iso["remedy"]
+        assert "peak_frequency_hz" in result["fft_summary"]
+
+    def test_invalid_unit_string_raises(self, healthy_signal):
+        """A provided-but-unrecognized unit is caller misuse → ValueError."""
+        signal, fs = healthy_signal
+        with pytest.raises(ValueError, match="signal_unit"):
+            diagnose_vibration(signal, fs, rpm=1500, signal_unit="furlongs")
+
+    def test_assessed_block_has_status(self, healthy_signal):
+        signal, fs = healthy_signal
+        result = diagnose_vibration(signal, fs, rpm=1500, signal_unit="g")
+        assert result["iso_severity"]["status"] == "assessed"
+
+
 class TestFFTSummary:
     def test_fft_summary_structure(self, healthy_signal):
         signal, fs = healthy_signal

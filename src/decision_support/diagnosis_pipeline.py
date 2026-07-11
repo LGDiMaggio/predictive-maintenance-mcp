@@ -24,10 +24,26 @@ from ..config import MODELS_DIR
 from ..path_safety import resolve_model_paths
 from ..signal_processing.spectral import compute_psd, compute_stft_spectrogram
 from ..signal_processing.features import extract_time_domain_features as _extract_time_domain_features
+from ..signal_repository import VALID_SIGNAL_UNITS, normalize_signal_unit
 from ..diagnostics.bearing_analyzer import check_all_bearing_faults
 from ..diagnostics.iso10816 import assess_vibration_severity
 
 logger = logging.getLogger(__name__)
+
+
+def _refused_iso_block(signal_id: str, reason: str, remedy: str) -> dict:
+    """Build the schema-level refused ISO severity block.
+
+    Compatible with :class:`~predictive_maintenance_mcp.models.ISOSeverityRefusal`.
+    The refusal lives in the result SCHEMA (status/reason/remedy fields), not
+    in log prose an LLM client can lose.
+    """
+    return {
+        "status": "refused",
+        "signal_id": signal_id,
+        "reason": reason,
+        "remedy": remedy,
+    }
 
 
 def _compute_fft_summary(
@@ -164,7 +180,7 @@ def diagnose_vibration(
     bearing_id: Optional[str] = None,
     machine_group: Literal[1, 2] = 2,
     support_type: Literal["rigid", "flexible"] = "rigid",
-    signal_unit: str = "g",
+    signal_unit: Optional[str] = None,
     anomaly_model_name: str = "bearing_health_model",
 ) -> dict:
     """Integrated vibration diagnosis pipeline.
@@ -179,6 +195,14 @@ def diagnose_vibration(
     6. Anomaly detection (OneClassSVM, if model available)
     7. Synthesis into overall diagnosis
 
+    The pipeline DEGRADES instead of failing when the ISO verdict cannot be
+    produced honestly: with an undeclared signal unit, or a sampling rate
+    that cannot cover the ISO evaluation band (Nyquist < 1 kHz), the
+    ``iso_severity`` block becomes a structured refusal
+    (``status: "refused"`` + ``reason`` + ``remedy``) while the spectral,
+    bearing, and anomaly blocks still run. Units are never guessed from
+    signal amplitude.
+
     Args:
         signal: 1D vibration signal.
         fs: Sampling frequency (Hz).
@@ -188,12 +212,33 @@ def diagnose_vibration(
         machine_group: ISO 20816-3 machine group — 1 (large, >300 kW) or
             2 (medium, 15-300 kW).
         support_type: Support type — 'rigid' or 'flexible'.
-        signal_unit: Signal unit ('g', 'm/s²', 'mm/s').
+        signal_unit: DECLARED signal unit — 'g', 'm/s2', 'mm/s', or 'm/s'
+            (aliases like 'm/s²' are normalized). None means undeclared:
+            the ISO severity block is refused with a remedy naming
+            ``load_signal(signal_unit=...)``.
         anomaly_model_name: Name of trained anomaly model (default: 'bearing_health_model').
 
     Returns:
-        Dict compatible with DiagnosisResult.
+        Dict compatible with DiagnosisResult — ``iso_severity`` is either an
+        assessed block (``status: "assessed"``) or a refusal
+        (``status: "refused"``).
+
+    Raises:
+        ValueError: If signal_unit is provided but is not a recognized unit
+            (caller misuse — distinct from the honest "undeclared" refusal).
     """
+    # Validate a provided unit up front; None stays None (undeclared).
+    declared_unit: Optional[str] = None
+    if signal_unit is not None:
+        declared_unit = normalize_signal_unit(signal_unit)
+        if declared_unit is None:
+            raise ValueError(
+                f"Invalid signal_unit '{signal_unit}' — declare one of "
+                f"{list(VALID_SIGNAL_UNITS)} ('g'/'m/s2' for acceleration, "
+                f"'mm/s'/'m/s' for velocity), or omit it to get a structured "
+                f"ISO refusal instead of a verdict."
+            )
+
     # 1. FFT
     fft_summary = _compute_fft_summary(signal, fs)
 
@@ -229,16 +274,50 @@ def diagnose_vibration(
             logger.warning(f"Bearing analysis skipped: {e}")
             bearing_faults = None
 
-    # 5. ISO severity
-    iso_result = assess_vibration_severity(
-        signal=signal,
-        fs=fs,
-        machine_group=machine_group,
-        support_type=support_type,
-        signal_unit=signal_unit,
-        operating_speed_rpm=rpm,
-    )
-    iso_result["signal_id"] = signal_id
+    # 5. ISO severity — assessed only on a DECLARED unit and a sufficient
+    # sampling rate; otherwise a schema-level refusal (the other blocks
+    # above/below still run).
+    if declared_unit is None:
+        iso_result = _refused_iso_block(
+            signal_id=signal_id,
+            reason=(
+                "Signal unit not declared — ISO 20816-3 severity requires "
+                "knowing whether the signal is acceleration ('g'/'m/s2') or "
+                "velocity ('mm/s'/'m/s'); units are never guessed from "
+                "amplitude."
+            ),
+            remedy=(
+                "Re-load the signal with load_signal(filepath=..., "
+                "signal_unit='g'|'m/s2'|'mm/s'|'m/s') or add a 'signal_unit' "
+                "field to the companion _metadata.json, then re-run the "
+                "diagnosis."
+            ),
+        )
+    else:
+        try:
+            iso_result = assess_vibration_severity(
+                signal=signal,
+                fs=fs,
+                machine_group=machine_group,
+                support_type=support_type,
+                signal_unit=declared_unit,
+                operating_speed_rpm=rpm,
+            )
+            iso_result["signal_id"] = signal_id
+            iso_result["status"] = "assessed"
+        except ValueError as e:
+            # E.g. Nyquist below the 1 kHz ISO evaluation band (U2 refusal).
+            iso_result = _refused_iso_block(
+                signal_id=signal_id,
+                reason=str(e),
+                remedy=(
+                    "Resolve the condition in 'reason' — e.g. re-acquire the "
+                    "signal at fs >= 2000 Hz so the ISO 20816-3 evaluation "
+                    "band (up to 1 kHz) is covered — then re-run the "
+                    "diagnosis. The spectral/bearing/anomaly blocks in this "
+                    "result are unaffected."
+                ),
+            )
 
     # 6. Anomaly detection
     anomaly_result = _run_anomaly_detection(signal, fs, model_name=anomaly_model_name)
@@ -288,7 +367,8 @@ def _synthesize_diagnosis(
 
     - ISO severity: zone C +1.0, zone D +2.0 (elevated broadband vibration
       is direct physical evidence of a problem, but on its own it is not
-      corroborated).
+      corroborated). A refused ISO block (undeclared unit, insufficient
+      sampling rate) contributes NO evidence — no verdict, no points.
     - Shaft signature: dominant peak at 1x or 2x shaft speed +1.0.
     - Bearing fault frequencies: best detected check contributes
       high +2.0 / moderate +1.0 / low +0.5.
@@ -302,22 +382,26 @@ def _synthesize_diagnosis(
     recommendations = []
     evidence_points = 0.0
 
-    # ISO severity assessment
-    zone = iso_severity["zone"]
-    rms_vel = iso_severity["rms_velocity_mm_s"]
-
-    if zone == "A":
-        lines.append(f"ISO Severity: Zone A (Good) — RMS velocity {rms_vel:.2f} mm/s.")
-    elif zone == "B":
-        lines.append(f"ISO Severity: Zone B (Acceptable) — RMS velocity {rms_vel:.2f} mm/s.")
-    elif zone == "C":
-        lines.append(f"ISO Severity: Zone C (Unsatisfactory) — RMS velocity {rms_vel:.2f} mm/s.")
-        evidence_points += 1.0
-        recommendations.append("Schedule maintenance within next planned shutdown.")
+    # ISO severity assessment (may be a schema-level refusal)
+    if iso_severity.get("status") == "refused":
+        lines.append(f"ISO Severity: not assessed — {iso_severity['reason']}")
+        recommendations.append(iso_severity["remedy"])
     else:
-        lines.append(f"ISO Severity: Zone D (Unacceptable) — RMS velocity {rms_vel:.2f} mm/s.")
-        evidence_points += 2.0
-        recommendations.append("IMMEDIATE ACTION: Stop machine and inspect.")
+        zone = iso_severity["zone"]
+        rms_vel = iso_severity["rms_velocity_mm_s"]
+
+        if zone == "A":
+            lines.append(f"ISO Severity: Zone A (Good) — RMS velocity {rms_vel:.2f} mm/s.")
+        elif zone == "B":
+            lines.append(f"ISO Severity: Zone B (Acceptable) — RMS velocity {rms_vel:.2f} mm/s.")
+        elif zone == "C":
+            lines.append(f"ISO Severity: Zone C (Unsatisfactory) — RMS velocity {rms_vel:.2f} mm/s.")
+            evidence_points += 1.0
+            recommendations.append("Schedule maintenance within next planned shutdown.")
+        else:
+            lines.append(f"ISO Severity: Zone D (Unacceptable) — RMS velocity {rms_vel:.2f} mm/s.")
+            evidence_points += 2.0
+            recommendations.append("IMMEDIATE ACTION: Stop machine and inspect.")
 
     # FFT dominant frequency
     peak_f = fft_summary["peak_frequency_hz"]

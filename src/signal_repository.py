@@ -24,6 +24,35 @@ from .signal_loader import load_signal_data
 
 logger = logging.getLogger(__name__)
 
+#: Canonical signal-unit vocabulary. ISO severity verdicts require one of
+#: these to be DECLARED (never guessed from signal amplitude).
+VALID_SIGNAL_UNITS: tuple[str, ...] = ("g", "m/s2", "mm/s", "m/s")
+
+#: Accepted spellings mapped to the canonical vocabulary.
+_UNIT_ALIASES: dict[str, str] = {
+    "m/s²": "m/s2",
+    "m/s^2": "m/s2",
+    "mm/sec": "mm/s",
+}
+
+
+def normalize_signal_unit(unit: Optional[str]) -> Optional[str]:
+    """Normalize a signal-unit string to the canonical vocabulary.
+
+    Args:
+        unit: Raw unit string (e.g. "G", "m/s²", "mm/s") or None.
+
+    Returns:
+        The canonical unit ("g", "m/s2", "mm/s", "m/s"), or None when the
+        input is None or not a recognized unit. No guessing is performed —
+        unrecognized strings map to None, never to a default unit.
+    """
+    if unit is None:
+        return None
+    u = str(unit).strip().lower()
+    u = _UNIT_ALIASES.get(u, u)
+    return u if u in VALID_SIGNAL_UNITS else None
+
 
 class SignalRepository:
     """In-memory signal cache with LRU eviction.
@@ -48,21 +77,38 @@ class SignalRepository:
         filepath: str,
         signal_id: Optional[str] = None,
         sampling_rate: Optional[float] = None,
+        signal_unit: Optional[str] = None,
     ) -> dict:
         """Load a signal file into the repository.
 
         Args:
             filepath: Filename relative to DATA_DIR, or absolute path.
             signal_id: Custom ID. Defaults to the filename stem.
-            sampling_rate: Override sampling rate (Hz).
+            sampling_rate: Override sampling rate (Hz). Takes precedence
+                over the companion metadata file.
+            signal_unit: Declared signal unit — 'g', 'm/s2', 'mm/s', or
+                'm/s'. Takes precedence over the companion metadata file.
+                Required (here or in metadata) for ISO severity verdicts;
+                units are never guessed from amplitude.
 
         Returns:
             Metadata dict compatible with StoredSignalInfo.
 
         Raises:
             FileNotFoundError: If signal file does not exist.
-            ValueError: If signal data cannot be loaded.
+            ValueError: If signal data cannot be loaded, or if signal_unit
+                is not one of the valid units.
         """
+        # Validate the explicitly declared unit up front (fail fast).
+        declared_unit: Optional[str] = None
+        if signal_unit is not None:
+            declared_unit = normalize_signal_unit(signal_unit)
+            if declared_unit is None:
+                raise ValueError(
+                    f"Invalid signal_unit '{signal_unit}' — declare one of "
+                    f"{list(VALID_SIGNAL_UNITS)} ('g'/'m/s2' for acceleration, "
+                    f"'mm/s'/'m/s' for velocity)."
+                )
         # Resolve path
         fp = Path(filepath)
         if not fp.is_absolute():
@@ -90,12 +136,15 @@ class SignalRepository:
         if data is None:
             raise ValueError(f"Unable to load signal from {filepath}")
 
-        # Read companion metadata
+        # Read companion metadata. Precedence: explicitly declared
+        # parameter > companion _metadata.json > None (undeclared).
         meta = self._read_metadata(fp)
         if sampling_rate is not None:
             meta["sampling_rate"] = sampling_rate
         elif "sampling_rate" not in meta:
             meta["sampling_rate"] = None
+        if declared_unit is not None:
+            meta["signal_unit"] = declared_unit
 
         size_bytes = data.nbytes
 
@@ -209,15 +258,27 @@ class SignalRepository:
             self._remove_entry(oldest_id)
 
     def _read_metadata(self, filepath: Path) -> dict:
-        """Read companion _metadata.json if it exists."""
+        """Read companion _metadata.json if it exists.
+
+        The metadata 'signal_unit' is normalized to the canonical vocabulary;
+        an unrecognized value is treated as undeclared (None) with a warning —
+        it is never coerced to a default unit.
+        """
         meta_path = filepath.parent / f"{filepath.stem}_metadata.json"
         if meta_path.exists():
             try:
                 with open(meta_path, "r", encoding="utf-8") as f:
                     meta = json.load(f)
+                raw_unit = meta.get("signal_unit")
+                unit = normalize_signal_unit(raw_unit)
+                if raw_unit is not None and unit is None:
+                    logger.warning(
+                        f"Unrecognized signal_unit '{raw_unit}' in {meta_path.name} — "
+                        f"treating as undeclared; valid units: {list(VALID_SIGNAL_UNITS)}"
+                    )
                 return {
                     "sampling_rate": meta.get("sampling_rate"),
-                    "signal_unit": meta.get("signal_unit"),
+                    "signal_unit": unit,
                 }
             except Exception as e:
                 logger.warning(f"Error reading metadata {meta_path}: {e}")

@@ -111,6 +111,18 @@ class TestAnalyzeFFT:
                 ctx=mock_ctx, filename="nonexistent.csv", sampling_rate=10000.0
             )
 
+    @pytest.mark.asyncio
+    async def test_no_rate_anywhere_raises(self, tools, data_dir, mock_ctx):
+        """No sampling_rate param and no metadata → structured error, never
+        a silent 1 kHz default."""
+        fs = 10000
+        t = np.linspace(0, 0.5, fs // 2, endpoint=False)
+        sig = np.sin(2 * np.pi * 50 * t)
+        pd.DataFrame(sig).to_csv(data_dir / "no_meta_fft.csv", index=False, header=False)
+
+        with pytest.raises(ValueError, match="No sampling rate"):
+            await tools["analyze_fft"](ctx=mock_ctx, filename="no_meta_fft.csv")
+
 
 # ---------------------------------------------------------------------------
 # analyze_envelope
@@ -228,3 +240,26 @@ class TestAnalyzeStatistics:
         result = tools["analyze_statistics"](filename="sine50.csv")
         assert result is not None
         assert hasattr(result, "rms")
+
+    def test_unit_reported_only_when_declared(self, tools, data_dir):
+        """Declared metadata unit is reported as-is (no amplitude heuristic)."""
+        if "analyze_statistics" not in tools:
+            pytest.skip("analyze_statistics not registered")
+        result = tools["analyze_statistics"](filename="sine50.csv")
+        assert result.signal_unit == "g"  # from sine50_metadata.json
+        assert "declared" in result.unit_note
+
+    def test_undeclared_unit_not_guessed(self, tools, data_dir):
+        """High-RMS signal without metadata: the old heuristic guessed 'g';
+        now the unit stays None and the note names the declaration path."""
+        if "analyze_statistics" not in tools:
+            pytest.skip("analyze_statistics not registered")
+        fs = 10000
+        t = np.linspace(0, 0.5, fs // 2, endpoint=False)
+        sig = 4.0 * np.sqrt(2) * np.sin(2 * np.pi * 50 * t)  # RMS ~4 > 0.5
+        pd.DataFrame(sig).to_csv(data_dir / "loud_no_meta.csv", index=False, header=False)
+
+        result = tools["analyze_statistics"](filename="loud_no_meta.csv")
+        assert result.signal_unit is None
+        assert "load_signal" in result.unit_note
+        assert "signal_unit=" in result.unit_note

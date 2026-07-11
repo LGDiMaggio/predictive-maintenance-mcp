@@ -3,7 +3,7 @@
 import logging
 import json
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 import numpy as np
 import pandas as pd
@@ -365,21 +365,47 @@ def register(mcp: FastMCP) -> None:
         filepath: str,
         signal_id: Optional[str] = None,
         sampling_rate: Optional[float] = None,
+        signal_unit: Optional[Literal["g", "m/s2", "mm/s", "m/s"]] = None,
     ) -> StoredSignalInfo:
         """Load a signal into the in-memory repository for fast repeated access.
 
         Once loaded, reference the signal by its signal_id in other tools like
         compute_power_spectral_density, diagnose_vibration, etc.
 
+        Signal unit discipline: ISO 20816-3 severity verdicts require a
+        DECLARED unit — either via this parameter or a 'signal_unit' field in
+        the companion _metadata.json (explicit parameter wins). Units are
+        never guessed from signal amplitude; without a declared unit the ISO
+        severity block is refused with a structured reason and remedy.
+
         Args:
             filepath: Filename relative to data/signals/, or absolute path.
             signal_id: Custom ID (defaults to filename stem).
             sampling_rate: Sampling rate in Hz (overrides metadata file).
+            signal_unit: Declared signal unit — 'g' or 'm/s2' (acceleration),
+                'mm/s' or 'm/s' (velocity). Overrides the metadata file.
+
+        Raises:
+            ValueError: If signal_unit is not one of the valid units, or the
+                signal data cannot be loaded.
         """
         repo = get_repository()
-        info = repo.load_signal(filepath, signal_id=signal_id, sampling_rate=sampling_rate)
+        info = repo.load_signal(
+            filepath,
+            signal_id=signal_id,
+            sampling_rate=sampling_rate,
+            signal_unit=signal_unit,
+        )
         if ctx:
             await ctx.info(f"Loaded signal '{info['signal_id']}': {info['num_samples']} samples, {info['size_bytes'] / 1024:.1f} KB")
+            if info.get("signal_unit"):
+                await ctx.info(f"Signal unit: '{info['signal_unit']}' (declared)")
+            else:
+                await ctx.info(
+                    "Signal unit: not declared — ISO severity verdicts will be "
+                    "refused until the unit is declared "
+                    "(load_signal(signal_unit=...) or metadata 'signal_unit')."
+                )
         return StoredSignalInfo(**info)
 
     @mcp.tool()

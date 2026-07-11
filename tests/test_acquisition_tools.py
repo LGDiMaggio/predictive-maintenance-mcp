@@ -69,7 +69,11 @@ def mock_ctx():
 # ---------------------------------------------------------------------------
 
 class TestLoadAndValidateMetadata:
-    """Tests for load_and_validate_metadata helper."""
+    """Tests for load_and_validate_metadata helper.
+
+    Sampling-rate discipline: explicit parameter > metadata > structured
+    error — never a silent default and never a sentinel-value comparison.
+    """
 
     @pytest.mark.asyncio
     async def test_uses_metadata_sampling_rate(self, data_dir, mock_ctx):
@@ -78,38 +82,53 @@ class TestLoadAndValidateMetadata:
             data_dir=data_dir,
             load_signal_data_fn=load_signal_data,
             provided_sampling_rate=None,
-            default_sampling_rate=1000.0,
             provided_segment_duration=None,
             default_segment_duration=1.0,
         )
-        assert rate == 10000  # from metadata, not default
+        assert rate == 10000  # from metadata
 
     @pytest.mark.asyncio
-    async def test_uses_default_when_no_metadata(self, data_dir, mock_ctx):
-        rate, seg = await load_and_validate_metadata(
-            mock_ctx, "real_train/baseline_1.csv",
-            data_dir=data_dir,
-            load_signal_data_fn=load_signal_data,
-            provided_sampling_rate=None,
-            default_sampling_rate=1000.0,
-            provided_segment_duration=None,
-            default_segment_duration=1.0,
-        )
-        # No metadata → falls through to default
-        assert rate == 1000.0
+    async def test_no_metadata_no_param_raises(self, data_dir, mock_ctx):
+        """No metadata and no explicit rate → structured error, no silent default."""
+        with pytest.raises(ValueError, match="No sampling rate"):
+            await load_and_validate_metadata(
+                mock_ctx, "real_train/baseline_1.csv",
+                data_dir=data_dir,
+                load_signal_data_fn=load_signal_data,
+                provided_sampling_rate=None,
+                provided_segment_duration=None,
+                default_segment_duration=1.0,
+            )
 
     @pytest.mark.asyncio
-    async def test_metadata_overrides_user_on_conflict(self, data_dir, mock_ctx):
+    async def test_explicit_rate_overrides_metadata(self, data_dir, mock_ctx):
+        """Explicitly provided rate wins over metadata (declared > metadata)."""
         rate, seg = await load_and_validate_metadata(
             mock_ctx, "test_sine.csv",
             data_dir=data_dir,
             load_signal_data_fn=load_signal_data,
             provided_sampling_rate=5000.0,  # different from metadata (10000)
-            default_sampling_rate=1000.0,
             provided_segment_duration=None,
             default_segment_duration=1.0,
         )
-        assert rate == 10000  # metadata wins
+        assert rate == 5000.0  # explicit parameter wins
+
+    @pytest.mark.asyncio
+    async def test_explicit_rate_equal_to_old_sentinel_is_respected(self, data_dir, mock_ctx):
+        """A legitimate explicit rate is used even without metadata.
+
+        The old code compared against a sentinel default (10000.0), so users
+        passing exactly that value were treated as 'not provided'.
+        """
+        rate, _ = await load_and_validate_metadata(
+            mock_ctx, "real_train/baseline_1.csv",  # no metadata
+            data_dir=data_dir,
+            load_signal_data_fn=load_signal_data,
+            provided_sampling_rate=10000.0,
+            provided_segment_duration=None,
+            default_segment_duration=1.0,
+        )
+        assert rate == 10000.0
 
     @pytest.mark.asyncio
     async def test_segment_duration_default(self, data_dir, mock_ctx):
@@ -118,7 +137,6 @@ class TestLoadAndValidateMetadata:
             data_dir=data_dir,
             load_signal_data_fn=load_signal_data,
             provided_sampling_rate=None,
-            default_sampling_rate=1000.0,
             provided_segment_duration=None,
             default_segment_duration=2.0,
         )
@@ -131,7 +149,6 @@ class TestLoadAndValidateMetadata:
             data_dir=data_dir,
             load_signal_data_fn=load_signal_data,
             provided_sampling_rate=None,
-            default_sampling_rate=1000.0,
             provided_segment_duration=0.5,
             default_segment_duration=2.0,
         )
@@ -243,3 +260,52 @@ class TestSignalRepository:
         await tools["load_signal"](ctx=mock_ctx, filepath="test_sine.csv", signal_id="s1")
         result = await tools["clear_all_signals"](ctx=mock_ctx)
         assert result["cleared_count"] >= 1
+
+
+class TestLoadSignalUnit:
+    """load_signal signal_unit declaration (U5: no ISO verdicts on guessed units)."""
+
+    @pytest.mark.asyncio
+    async def test_unit_from_metadata(self, mcp, data_dir, mock_ctx):
+        tools = {t.name: t.fn for t in mcp._tool_manager._tools.values()}
+        try:
+            result = await tools["load_signal"](
+                ctx=mock_ctx, filepath="test_sine.csv", signal_id="meta_unit"
+            )
+            assert result.signal_unit == "g"  # declared in companion metadata
+        finally:
+            await tools["clear_all_signals"](ctx=mock_ctx)
+
+    @pytest.mark.asyncio
+    async def test_explicit_unit_overrides_metadata(self, mcp, data_dir, mock_ctx):
+        tools = {t.name: t.fn for t in mcp._tool_manager._tools.values()}
+        try:
+            result = await tools["load_signal"](
+                ctx=mock_ctx, filepath="test_sine.csv", signal_id="param_unit",
+                signal_unit="mm/s",
+            )
+            assert result.signal_unit == "mm/s"  # declared > metadata ('g')
+        finally:
+            await tools["clear_all_signals"](ctx=mock_ctx)
+
+    @pytest.mark.asyncio
+    async def test_no_declaration_is_none(self, mcp, data_dir, mock_ctx):
+        """Without any declaration the unit stays None — never guessed."""
+        tools = {t.name: t.fn for t in mcp._tool_manager._tools.values()}
+        try:
+            result = await tools["load_signal"](
+                ctx=mock_ctx, filepath="real_train/baseline_1.csv",
+                signal_id="no_unit",
+            )
+            assert result.signal_unit is None
+        finally:
+            await tools["clear_all_signals"](ctx=mock_ctx)
+
+    @pytest.mark.asyncio
+    async def test_invalid_unit_raises(self, mcp, data_dir, mock_ctx):
+        tools = {t.name: t.fn for t in mcp._tool_manager._tools.values()}
+        with pytest.raises(ValueError, match="signal_unit"):
+            await tools["load_signal"](
+                ctx=mock_ctx, filepath="test_sine.csv", signal_id="bad_unit",
+                signal_unit="furlongs",
+            )

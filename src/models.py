@@ -53,7 +53,12 @@ class EnvelopeResult(BaseModel):
 
 
 class StatisticalResult(BaseModel):
-    """Statistical analysis result of the signal."""
+    """Statistical analysis result of the signal.
+
+    Values are in the signal's native unit. The unit is reported only when
+    DECLARED (companion ``_metadata.json`` or ``load_signal(signal_unit=...)``)
+    — it is never guessed from signal amplitude.
+    """
     rms: float = Field(description="Root Mean Square (effective value)")
     peak_to_peak: float = Field(description="Peak-to-peak value")
     peak: float = Field(description="Peak value")
@@ -62,8 +67,14 @@ class StatisticalResult(BaseModel):
     skewness: float = Field(description="Skewness (asymmetry)")
     mean: float = Field(description="Mean value")
     std_dev: float = Field(description="Standard deviation")
-    detected_unit: str = Field(description="Auto-detected signal unit (g acceleration or mm/s velocity)")
-    unit_note: str = Field(description="Important note about signal units and conversion requirements")
+    signal_unit: Optional[str] = Field(
+        None,
+        description=(
+            "Declared signal unit ('g', 'm/s2', 'mm/s', 'm/s') from companion "
+            "metadata — never guessed from amplitude. None when not declared."
+        ),
+    )
+    unit_note: str = Field(description="Unit declaration status and how to declare the unit for ISO severity assessment")
 
 
 class SignalInfo(BaseModel):
@@ -143,7 +154,15 @@ class StoredSignalInfo(BaseModel):
     sampling_rate: Optional[float] = Field(None, description="Sampling rate in Hz")
     duration_s: Optional[float] = Field(None, description="Duration in seconds")
     size_bytes: int = Field(description="Approximate memory size in bytes")
-    signal_unit: Optional[str] = Field(None, description="Signal unit (g, mm/s, m/s², etc.)")
+    signal_unit: Optional[Literal["g", "m/s2", "mm/s", "m/s"]] = Field(
+        None,
+        description=(
+            "DECLARED signal unit — from load_signal(signal_unit=...) or the "
+            "companion _metadata.json ('signal_unit' field). Never guessed. "
+            "None means undeclared: ISO severity verdicts will be refused "
+            "until the unit is declared."
+        ),
+    )
 
 
 class PSDResult(BaseModel):
@@ -221,8 +240,32 @@ class BearingFaultsSummary(BaseModel):
     most_likely_fault: Optional[str] = Field(None, description="Most likely fault type if any")
 
 
+class ISOSeverityRefusal(BaseModel):
+    """Structured refusal of an ISO severity verdict.
+
+    Returned in place of a severity assessment when the verdict cannot be
+    produced honestly (undeclared signal unit, sampling rate too low for the
+    ISO evaluation band, machine out of scope). The refusal is part of the
+    SCHEMA — not prose in a log message — so LLM clients cannot lose it.
+    """
+    status: Literal["refused"] = Field(
+        "refused", description="Always 'refused' — discriminates from an assessed result"
+    )
+    signal_id: str = Field(default="", description="Signal identifier used")
+    reason: str = Field(description="Why the ISO severity verdict was refused")
+    remedy: str = Field(
+        description=(
+            "Concrete action to obtain a verdict, e.g. re-load with "
+            "load_signal(signal_unit=...) or re-acquire at a higher sampling rate"
+        )
+    )
+
+
 class VibrationSeverityResult(BaseModel):
     """ISO 20816-3 severity result (zone boundaries from ISO 10816-3:2009) using signal_id pattern."""
+    status: Literal["assessed"] = Field(
+        "assessed", description="Always 'assessed' — discriminates from a refused result"
+    )
     signal_id: str = Field(description="Signal identifier used")
     rms_velocity_mm_s: float = Field(description="RMS velocity in mm/s")
     machine_group: int = Field(description="ISO 20816-3 machine group: 1 (large, >300 kW) or 2 (medium, 15-300 kW)")
@@ -250,7 +293,15 @@ class DiagnosisResult(BaseModel):
     psd_summary: dict[str, Any] = Field(description="PSD key findings")
     stft_summary: dict[str, Any] = Field(description="STFT key findings")
     bearing_faults: Optional[BearingFaultsSummary] = Field(None, description="Bearing fault results")
-    iso_severity: VibrationSeverityResult = Field(description="ISO severity assessment")
+    iso_severity: VibrationSeverityResult | ISOSeverityRefusal = Field(
+        description=(
+            "ISO severity assessment, or a structured refusal "
+            "(status='refused' with reason + remedy) when the verdict cannot "
+            "be produced honestly — e.g. undeclared signal unit or Nyquist "
+            "below the ISO evaluation band. The other diagnosis blocks "
+            "(spectral, bearing, anomaly) still run."
+        )
+    )
     anomaly_detection: Optional[dict[str, Any]] = Field(None, description="Anomaly detection results (health, ratio, score)")
     overall_diagnosis: str = Field(description="Combined diagnostic text")
     evidence_strength: str = Field(

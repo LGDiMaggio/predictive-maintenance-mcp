@@ -31,108 +31,91 @@ async def load_and_validate_metadata(
     data_dir: Path,
     load_signal_data_fn,
     provided_sampling_rate: Optional[float],
-    default_sampling_rate: float,
     provided_segment_duration: Optional[float],
     default_segment_duration: float,
 ) -> tuple[float, float]:
-    """Load metadata and validate/confirm analysis parameters with user.
+    """Resolve sampling rate and segment duration for a signal file.
 
-    Critical parameter validation strategy:
-    1. SAMPLING RATE:
-       - Check metadata file first
-       - If metadata exists: use it, notify user
-       - If no metadata AND user provided: use user value, warn no verification
-       - If no metadata AND no user input: CRITICAL WARNING, ask user to confirm
+    Sampling-rate discipline (no silent defaults, no sentinel comparisons):
 
-    2. SEGMENT DURATION:
-       - Always notify user of value being used
-       - Suggest they can modify if needed
+    1. An explicitly provided ``provided_sampling_rate`` wins (``None``
+       means "not provided" — never a magic default value).
+    2. Otherwise the companion ``<stem>_metadata.json`` value is used.
+    3. Otherwise a ValueError is raised naming the fix — analysis never
+       proceeds on a guessed sampling rate.
 
     Args:
         ctx: MCP context for user communication.
         filename: Signal filename.
         data_dir: Base data directory.
-        load_signal_data_fn: Callable to load signal arrays.
-        provided_sampling_rate: Sampling rate provided by user (None if using default).
-        default_sampling_rate: Default sampling rate (e.g., 1000.0).
-        provided_segment_duration: Segment duration provided by user (None if using default).
+        load_signal_data_fn: Callable to load signal arrays (for info logging).
+        provided_sampling_rate: Explicitly provided sampling rate, or None.
+        provided_segment_duration: Explicitly provided segment duration, or None.
         default_segment_duration: Default segment duration (e.g., 1.0).
 
     Returns:
-        Tuple of (validated_sampling_rate, validated_segment_duration).
+        Tuple of (sampling_rate, segment_duration).
+
+    Raises:
+        ValueError: If no sampling rate is provided and none can be read
+            from the companion metadata file.
     """
     filepath = data_dir / filename
     metadata_file = filepath.parent / (filepath.stem + "_metadata.json")
 
-    # Initialize with provided or default values
-    sampling_rate = provided_sampling_rate if provided_sampling_rate is not None else default_sampling_rate
-    segment_duration = provided_segment_duration if provided_segment_duration is not None else default_segment_duration
-
-    # Check if user explicitly provided values (not using defaults)
-    user_provided_sampling_rate = (provided_sampling_rate is not None and provided_sampling_rate != default_sampling_rate)
-    user_provided_segment_duration = (provided_segment_duration is not None and provided_segment_duration != default_segment_duration)
-
-    # STEP 1: Validate SAMPLING RATE (CRITICAL)
-    metadata_found = False
+    # Read companion metadata (if any)
+    metadata_sampling_rate: Optional[float] = None
     if metadata_file.exists():
-        with open(metadata_file, 'r') as f:
-            metadata = json.load(f)
-            if 'sampling_rate' in metadata:
-                metadata_sampling_rate = metadata['sampling_rate']
-                metadata_found = True
+        try:
+            with open(metadata_file, "r") as f:
+                metadata = json.load(f)
+            metadata_sampling_rate = metadata.get("sampling_rate")
+        except Exception as e:
+            logger.warning(f"Error reading metadata {metadata_file}: {e}")
 
-                if user_provided_sampling_rate and abs(sampling_rate - metadata_sampling_rate) > 0.1:
-                    await ctx.info(f"⚠️  CONFLICT: User provided {sampling_rate} Hz, but metadata says {metadata_sampling_rate} Hz")
-                    await ctx.info(f"   Using METADATA value: {metadata_sampling_rate} Hz (more reliable)")
-                    sampling_rate = metadata_sampling_rate
-                else:
-                    await ctx.info(f"✅ Metadata found: sampling_rate = {metadata_sampling_rate} Hz")
-                    sampling_rate = metadata_sampling_rate
-
-    # CRITICAL: No metadata found
-    if not metadata_found:
-        if user_provided_sampling_rate:
-            await ctx.info(f"📌 Using user-provided sampling_rate = {sampling_rate} Hz")
-            await ctx.info(f"   ⚠️  No metadata file to verify - cannot confirm correctness")
+    # Resolve sampling rate: explicit parameter > metadata > structured error.
+    if provided_sampling_rate is not None:
+        sampling_rate = provided_sampling_rate
+        if (
+            metadata_sampling_rate is not None
+            and abs(sampling_rate - metadata_sampling_rate) > 0.1
+        ):
+            await ctx.info(
+                f"Using explicitly provided sampling_rate = {sampling_rate} Hz "
+                f"(overrides metadata value {metadata_sampling_rate} Hz)"
+            )
         else:
-            await ctx.info(f"")
-            await ctx.info(f"❌ CRITICAL: No metadata found and no sampling_rate provided!")
-            await ctx.info(f"")
-            await ctx.info(f"   File: {filename}")
-            await ctx.info(f"   Expected metadata: {metadata_file.name}")
-            await ctx.info(f"")
-            await ctx.info(f"   Sampling rate is CRITICAL for frequency analysis accuracy.")
-            await ctx.info(f"   Using default {sampling_rate} Hz may give COMPLETELY WRONG results!")
-            await ctx.info(f"")
-            await ctx.info(f"⚠️  PLEASE CONFIRM:")
-            await ctx.info(f"   • Do you know the sampling rate for '{filename}'?")
-            await ctx.info(f"   • If YES: Please provide sampling_rate parameter and re-run")
-            await ctx.info(f"   • If NO: Results will be UNRELIABLE - interpretation requires caution")
-            await ctx.info(f"")
-            await ctx.info(f"⚠️  PROCEEDING WITH DEFAULT {sampling_rate} Hz (likely incorrect!)")
-            await ctx.info(f"")
-
-    # STEP 2: Validate SEGMENT DURATION (important but less critical)
-    if user_provided_segment_duration:
-        await ctx.info(f"📊 Using segment_duration = {segment_duration}s (user-provided)")
+            await ctx.info(f"Using provided sampling_rate = {sampling_rate} Hz")
+    elif metadata_sampling_rate is not None:
+        sampling_rate = metadata_sampling_rate
+        await ctx.info(
+            f"Using sampling_rate = {sampling_rate} Hz from {metadata_file.name}"
+        )
     else:
-        await ctx.info(f"📊 Using segment_duration = {segment_duration}s (default)")
-        await ctx.info(f"   💡 You can modify by providing segment_duration parameter")
+        raise ValueError(
+            f"No sampling rate for '{filename}' — pass the sampling_rate "
+            f"parameter explicitly or add a 'sampling_rate' field to the "
+            f"companion metadata file '{metadata_file.name}'. Analysis never "
+            f"proceeds on a guessed sampling rate."
+        )
 
-    # Calculate signal info
+    # Segment duration: explicit or documented default (non-critical parameter).
+    segment_duration = (
+        provided_segment_duration
+        if provided_segment_duration is not None
+        else default_segment_duration
+    )
+    await ctx.info(f"Using segment_duration = {segment_duration}s")
+
+    # Informational: signal length/duration
     try:
         signal_data = load_signal_data_fn(filename)
-        if signal_data is None:
-            raise ValueError(f"Could not load signal data from: {filename}")
-        signal_duration_sec = len(signal_data) / sampling_rate
-        await ctx.info(f"")
-        await ctx.info(f"📏 Signal info: {len(signal_data)} samples, {signal_duration_sec:.2f}s duration at {sampling_rate} Hz")
-
-        if segment_duration is not None and segment_duration < signal_duration_sec:
-            await ctx.info(f"   Analyzing {segment_duration}s segment from {signal_duration_sec:.2f}s total")
-        else:
-            await ctx.info(f"   Analyzing full signal")
-        await ctx.info(f"")
+        if signal_data is not None:
+            signal_duration_sec = len(signal_data) / sampling_rate
+            await ctx.info(
+                f"Signal info: {len(signal_data)} samples, "
+                f"{signal_duration_sec:.2f}s at {sampling_rate} Hz"
+            )
     except Exception as e:
         logger.warning(f"Could not load signal for info: {e}")
 

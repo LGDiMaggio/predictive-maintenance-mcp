@@ -63,17 +63,19 @@ mcp = FastMCP(
     5) Always cite which analyses and thresholds support each conclusion. If data or parameters are missing, ask for them instead of guessing.
     6) NEVER suggest parameters, thresholds, or recommendations not explicitly provided in tool outputs or prompt workflows. Do NOT invent frequency ranges, filter settings, or maintenance actions. Only use guidance from STEP 6 of diagnostic prompts.
 
-    Signal unit confirmation policy (CRITICAL - Hypothesis-based flow):
-    - When calling evaluate_iso_20816(), tool follows hypothesis-based unit detection:
-      1. Check metadata file for 'signal_unit' field (best practice)
-      2. Use user-provided signal_unit parameter if explicitly given
-      3. If neither exists: Tool generates RMS-based hypothesis and ASKS USER to confirm
-      4. Default assumption: 'g' (acceleration) if user doesn't know
-    - Tool will display hypothesis reasoning and request user confirmation
-    - ALWAYS inform user about the hypothesis and ask for confirmation
-    - If user confirms hypothesis is wrong, they must provide correct signal_unit parameter
-    - Wrong unit conversion (g vs mm/s) completely invalidates ISO 20816-3 results!
-    - Best practice: Recommend user adds 'signal_unit' field to metadata JSON files
+    Signal unit policy (CRITICAL - declared units only, never guessed):
+    - ISO 20816-3 severity verdicts require a DECLARED signal unit:
+      1. Explicit parameter: load_signal(signal_unit='g'|'m/s2'|'mm/s'|'m/s')
+         or the signal_unit parameter of evaluate_iso_20816()
+      2. Companion metadata: 'signal_unit' field in <name>_metadata.json
+      (explicit parameter takes precedence over metadata)
+    - Units are NEVER inferred from signal amplitude — there is no
+      amplitude-based guessing flow and no default assumption
+    - Without a declared unit: severity tools raise a structured error, and
+      diagnose_vibration returns an iso_severity block with status='refused'
+      plus reason and remedy (the other diagnosis blocks still run)
+    - If the unit is unknown, ask the user for it — do not guess
+    - Wrong unit declaration (g vs mm/s) completely invalidates ISO 20816-3 results!
 
     Output formatting rules:
     - Keep responses brief (<=300 words, bullet points)

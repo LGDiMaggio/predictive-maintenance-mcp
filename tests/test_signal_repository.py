@@ -6,7 +6,11 @@ import pandas as pd
 import pytest
 from pathlib import Path
 
-from predictive_maintenance_mcp.signal_repository import SignalRepository
+from predictive_maintenance_mcp.signal_repository import (
+    SignalRepository,
+    VALID_SIGNAL_UNITS,
+    normalize_signal_unit,
+)
 
 
 @pytest.fixture
@@ -68,6 +72,46 @@ class TestLoadSignal:
         repo.load_signal(str(signal_file), signal_id="dup")
         repo.load_signal(str(signal_file), signal_id="dup")
         assert repo.signal_count == 1
+
+
+class TestSignalUnitDeclaration:
+    """U5: signal units are DECLARED (param or metadata), never guessed."""
+
+    def test_explicit_unit_overrides_metadata(self, repo, signal_file):
+        """Precedence: explicitly declared > companion metadata ('g')."""
+        info = repo.load_signal(str(signal_file), signal_unit="mm/s")
+        assert info["signal_unit"] == "mm/s"
+
+    def test_invalid_explicit_unit_raises(self, repo, signal_file):
+        with pytest.raises(ValueError, match="signal_unit"):
+            repo.load_signal(str(signal_file), signal_unit="furlongs")
+
+    def test_unit_alias_normalized(self, repo, signal_file):
+        """'m/s²' (superscript) normalizes to canonical 'm/s2'."""
+        info = repo.load_signal(str(signal_file), signal_unit="m/s²")
+        assert info["signal_unit"] == "m/s2"
+
+    def test_unit_case_insensitive(self, repo, signal_file):
+        info = repo.load_signal(str(signal_file), signal_unit="G")
+        assert info["signal_unit"] == "g"
+
+    def test_unrecognized_metadata_unit_treated_as_undeclared(self, repo, tmp_path):
+        """Garbage metadata unit → None (undeclared), never coerced."""
+        signal = np.random.randn(500)
+        csv_path = tmp_path / "weird_unit.csv"
+        pd.DataFrame(signal).to_csv(csv_path, index=False, header=False)
+        with open(tmp_path / "weird_unit_metadata.json", "w") as f:
+            json.dump({"sampling_rate": 1000, "signal_unit": "banana"}, f)
+        info = repo.load_signal(str(csv_path))
+        assert info["signal_unit"] is None
+
+    def test_normalize_signal_unit_vocabulary(self):
+        for unit in VALID_SIGNAL_UNITS:
+            assert normalize_signal_unit(unit) == unit
+        assert normalize_signal_unit(None) is None
+        assert normalize_signal_unit("nonsense") is None
+        assert normalize_signal_unit("mm/sec") == "mm/s"
+        assert normalize_signal_unit("m/s^2") == "m/s2"
 
 
 class TestGetSignal:

@@ -16,7 +16,7 @@ from mcp.server.fastmcp import FastMCP, Context
 
 from ..config import DATA_DIR, MODELS_DIR
 from ..signal_loader import load_signal_data, get_metadata_path, SUPPORTED_EXTENSIONS
-from ..signal_repository import get_repository
+from ..signal_repository import get_repository, normalize_signal_unit
 from ..models import (
     FFTResult, SpectralPeak, EnvelopeResult, StatisticalResult, SignalInfo,
     FeatureExtractionResult, PSDResult, STFTResult, EnvelopeSpectrumResult,
@@ -80,15 +80,16 @@ def register(mcp: FastMCP) -> None:
         - If filename suggests a characteristic but data shows otherwise, report the data findings
 
         **CRITICAL - Parameter Validation:**
-        - Sampling rate is auto-detected from metadata if available
-        - If no metadata: user MUST provide sampling_rate or results will be UNRELIABLE
+        - Sampling rate resolution: explicit parameter > companion metadata file
+          > structured error. There is NO silent default sampling rate.
         - Segment duration defaults to 1.0s but can be customized
-        - User will be notified of all assumptions before analysis proceeds
 
         Args:
             ctx: MCP context for user communication
             filename: Name of the file containing the signal
-            sampling_rate: Sampling frequency in Hz (auto-detect from metadata if None)
+            sampling_rate: Sampling frequency in Hz. If None, it is read from
+                the companion _metadata.json; if neither is available the tool
+                raises ValueError (analysis never proceeds on a guessed rate).
             max_frequency: Maximum frequency to analyze (default: Nyquist frequency)
             segment_duration: Duration in seconds to analyze (default: 1.0s random segment).
                              Set to None to analyze full signal.
@@ -96,15 +97,18 @@ def register(mcp: FastMCP) -> None:
 
         Returns:
             FFTResult with frequencies, magnitudes and dominant peak
+
+        Raises:
+            ValueError: If no sampling rate is provided and none is found in
+                the companion metadata file.
         """
-        # Validate and load metadata with user confirmation
+        # Resolve sampling rate (explicit > metadata > error) and segment duration
         sampling_rate, segment_duration = await _load_and_validate_metadata(
             ctx=ctx,
             filename=filename,
             data_dir=DATA_DIR,
             load_signal_data_fn=load_signal_data,
             provided_sampling_rate=sampling_rate,
-            default_sampling_rate=1000.0,
             provided_segment_duration=segment_duration,
             default_segment_duration=1.0,
         )
@@ -226,15 +230,16 @@ def register(mcp: FastMCP) -> None:
         - If filename suggests a fault but analysis shows no evidence, report "No fault detected despite filename"
 
         **CRITICAL - Parameter Validation:**
-        - Sampling rate is auto-detected from metadata if available
-        - If no metadata: user MUST provide sampling_rate or results will be UNRELIABLE
+        - Sampling rate resolution: explicit parameter > companion metadata file
+          > structured error. There is NO silent default sampling rate.
         - Segment duration defaults to 1.0s but can be customized
-        - User will be notified of all assumptions before analysis proceeds
 
         Args:
             ctx: MCP context for user communication
             filename: Name of the file containing the signal
-            sampling_rate: Sampling frequency in Hz (auto-detect from metadata if None)
+            sampling_rate: Sampling frequency in Hz. If None, it is read from
+                the companion _metadata.json; if neither is available the tool
+                raises ValueError (analysis never proceeds on a guessed rate).
             filter_low: Low frequency of bandpass filter in Hz (default: 500 Hz)
             filter_high: High frequency of bandpass filter in Hz (default: 2000 Hz)
             num_peaks: Number of main peaks to identify (default: 5)
@@ -244,15 +249,18 @@ def register(mcp: FastMCP) -> None:
 
         Returns:
             EnvelopeResult with peak information and diagnosis (optimized for chat display)
+
+        Raises:
+            ValueError: If no sampling rate is provided and none is found in
+                the companion metadata file.
         """
-        # Validate and load metadata with user confirmation
+        # Resolve sampling rate (explicit > metadata > error) and segment duration
         sampling_rate, segment_duration = await _load_and_validate_metadata(
             ctx=ctx,
             filename=filename,
             data_dir=DATA_DIR,
             load_signal_data_fn=load_signal_data,
             provided_sampling_rate=sampling_rate,
-            default_sampling_rate=1000.0,
             provided_segment_duration=segment_duration,
             default_segment_duration=1.0,
         )
@@ -393,6 +401,11 @@ def register(mcp: FastMCP) -> None:
         - High kurtosis indicates "possible fault" - NOT "confirmed fault"
         - Must be combined with frequency-domain evidence for diagnosis
 
+        **Signal units:** all values are in the signal's native unit. The unit
+        is reported only when DECLARED in the companion _metadata.json — it is
+        never guessed from signal amplitude. ISO 20816-3 severity tools refuse
+        to produce a verdict until the unit is declared.
+
         Args:
             filename: Name of the file containing the signal
 
@@ -420,15 +433,31 @@ def register(mcp: FastMCP) -> None:
         kurtosis_val = float(kurtosis(signal_data, fisher=True))  # Fisher=True for excess kurtosis
         skewness_val = float(skew(signal_data))
 
-        # Auto-detect signal units based on RMS magnitude
-        # Heuristic: acceleration signals typically have RMS > 0.5 g
-        # velocity signals typically have RMS < 100 mm/s (usually 1-50 mm/s range)
-        if rms > 0.5:
-            detected_unit = "g (acceleration)"
-            unit_note = "⚠️ Signal detected as ACCELERATION in 'g' units. For ISO 20816-3 evaluation, use evaluate_iso_20816() which converts to velocity (mm/s)."
+        # Signal unit: DECLARED only (companion metadata) — never guessed
+        # from amplitude. An unrecognized declaration counts as undeclared.
+        declared_unit = None
+        metadata_path = get_metadata_path(filename)
+        if metadata_path.exists():
+            try:
+                with open(metadata_path) as f:
+                    metadata = json.load(f)
+                declared_unit = normalize_signal_unit(metadata.get("signal_unit"))
+            except Exception as e:
+                logger.warning(f"Error reading metadata {metadata_path}: {e}")
+
+        if declared_unit is not None:
+            unit_note = (
+                f"Signal unit declared as '{declared_unit}' in "
+                f"{metadata_path.name}. All values above are in this unit."
+            )
         else:
-            detected_unit = "mm/s (velocity) or g (low-amplitude acceleration)"
-            unit_note = "💡 Signal has low amplitude. If this is acceleration in 'g', values are very low. If velocity in 'mm/s', this is typical for healthy machines."
+            unit_note = (
+                "Signal unit NOT declared — values are in the signal's native "
+                "(unknown) unit; the unit is never guessed from amplitude. For "
+                "ISO 20816-3 severity assessment, declare it via "
+                "load_signal(filepath=..., signal_unit='g'|'m/s2'|'mm/s'|'m/s') "
+                "or add a 'signal_unit' field to the companion _metadata.json."
+            )
 
         return StatisticalResult(
             rms=rms,
@@ -439,7 +468,7 @@ def register(mcp: FastMCP) -> None:
             skewness=skewness_val,
             mean=mean_val,
             std_dev=std_dev,
-            detected_unit=detected_unit,
+            signal_unit=declared_unit,
             unit_note=unit_note
         )
 
@@ -463,13 +492,19 @@ def register(mcp: FastMCP) -> None:
 
         Args:
             signal_file: Name of the CSV file in data/signals/
-            sampling_rate: Sampling frequency in Hz (auto-detect from metadata if None)
+            sampling_rate: Sampling frequency in Hz. If None, it is read from
+                the companion _metadata.json; if neither is available the tool
+                raises ValueError (never a silent default rate).
             segment_duration: Duration of each segment in seconds (default: 0.1)
             overlap_ratio: Overlap between segments, 0-1 (default: 0.5 = 50%)
             ctx: MCP context for progress/logging
 
         Returns:
             FeatureExtractionResult with features matrix and metadata
+
+        Raises:
+            ValueError: If no sampling rate is provided and none is found in
+                the companion metadata file.
 
         Example:
             extract_features_from_signal(
@@ -482,22 +517,11 @@ def register(mcp: FastMCP) -> None:
         if ctx:
             await ctx.info(f"Extracting features from {signal_file}...")
 
-        # Auto-detect sampling rate from metadata if not provided
-        if sampling_rate is None:
-            metadata_path = get_metadata_path(signal_file)
-            if metadata_path.exists():
-                with open(metadata_path) as f:
-                    metadata = json.load(f)
-                    sampling_rate = metadata.get("sampling_rate", 10000.0)
-                    if ctx:
-                        await ctx.info(f"Auto-detected sampling rate from metadata: {sampling_rate} Hz")
-            else:
-                sampling_rate = 10000.0  # fallback default
-                if ctx:
-                    await ctx.info(f"No metadata found, using default sampling rate: {sampling_rate} Hz")
-        else:
-            if ctx:
-                await ctx.info(f"Using specified sampling rate: {sampling_rate} Hz")
+        # Resolve sampling rate: explicit > metadata > structured error
+        # (never a silent default rate).
+        sampling_rate = _resolve_sampling_rate(signal_file, sampling_rate, strict=True)
+        if ctx:
+            await ctx.info(f"Using sampling rate: {sampling_rate} Hz")
 
         # Load signal
         filepath = DATA_DIR / signal_file

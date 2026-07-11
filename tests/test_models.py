@@ -18,6 +18,8 @@ from predictive_maintenance_mcp.models import (
     StatisticalResult,
     SignalInfo,
     ISO20816Result,
+    ISOSeverityRefusal,
+    VibrationSeverityResult,
     FeatureExtractionResult,
     AnomalyModelResult,
     AnomalyPredictionResult,
@@ -115,15 +117,26 @@ class TestEnvelopeResult:
 
 class TestStatisticalResult:
 
-    def test_creation(self):
+    def test_creation_with_declared_unit(self):
         r = StatisticalResult(
             rms=5.234, peak_to_peak=18.5, peak=9.25,
             crest_factor=1.77, kurtosis=3.0, skewness=0.01,
             mean=0.001, std_dev=5.234,
-            detected_unit="g", unit_note="Acceleration (g)",
+            signal_unit="g", unit_note="Signal unit declared as 'g' in metadata.",
         )
         assert r.rms == 5.234
-        assert r.detected_unit == "g"
+        assert r.signal_unit == "g"
+
+    def test_undeclared_unit_is_none(self):
+        """The unit is None when not declared — never guessed from amplitude."""
+        r = StatisticalResult(
+            rms=5.234, peak_to_peak=18.5, peak=9.25,
+            crest_factor=1.77, kurtosis=3.0, skewness=0.01,
+            mean=0.001, std_dev=5.234,
+            unit_note="Signal unit NOT declared.",
+        )
+        assert r.signal_unit is None
+        assert "detected_unit" not in StatisticalResult.model_fields
 
 
 # ── SignalInfo ─────────────────────────────────────────────────────────────
@@ -173,6 +186,48 @@ class TestISO20816Result:
             boundary_cd=4.5, frequency_range="10 Hz - 1 kHz",
         )
         assert r.operating_speed_rpm is None
+
+
+# ── ISOSeverityRefusal ────────────────────────────────────────────────────
+
+class TestISOSeverityRefusal:
+
+    def test_creation(self):
+        r = ISOSeverityRefusal(
+            signal_id="sig1",
+            reason="Signal unit not declared.",
+            remedy="Re-load with load_signal(signal_unit=...).",
+        )
+        assert r.status == "refused"
+        assert "load_signal" in r.remedy
+
+    def test_status_is_schema_level(self):
+        """The refusal discriminator is part of the schema, not prose."""
+        assert "status" in ISOSeverityRefusal.model_fields
+        assert "reason" in ISOSeverityRefusal.model_fields
+        assert "remedy" in ISOSeverityRefusal.model_fields
+
+    def test_json_roundtrip(self):
+        r = ISOSeverityRefusal(
+            signal_id="s", reason="why", remedy="how",
+        )
+        restored = ISOSeverityRefusal.model_validate_json(r.model_dump_json())
+        assert restored.status == "refused"
+        assert restored.reason == "why"
+
+    def test_assessed_result_discriminates(self):
+        """VibrationSeverityResult carries status='assessed'."""
+        r = VibrationSeverityResult(
+            signal_id="s", rms_velocity_mm_s=2.0, machine_group=2,
+            support_type="rigid", axis="vertical",
+            zone="B", zone_description="Acceptable",
+            severity_level="Acceptable", color_code="yellow",
+            boundaries={"AB": 1.4, "BC": 2.8, "CD": 4.5},
+            frequency_range="10-1000 Hz",
+            unit_conversion_performed=False,
+            threshold_provenance="ISO 10816-3:2009",
+        )
+        assert r.status == "assessed"
 
 
 # ── FeatureExtractionResult ────────────────────────────────────────────────
