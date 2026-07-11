@@ -670,7 +670,8 @@ class TestAnomalyDetectionExtended:
             ctx=mock_ctx,
         )
         assert result.overall_health in ("Healthy", "Suspicious", "Faulty")
-        assert result.confidence in ("High", "Medium")
+        # The invented per-prediction "confidence" label was removed.
+        assert not hasattr(result, "confidence")
         assert result.num_segments > 0
         assert 0 <= result.anomaly_ratio <= 1.0
 
@@ -872,7 +873,8 @@ class TestDiagnoseVibrationExtended:
             assert result is not None
             assert result.bearing_faults is not None
             assert result.iso_severity is not None
-            assert result.confidence.lower() in ("low", "medium", "high")
+            assert result.evidence_strength in ("none", "weak", "moderate", "strong")
+            assert not hasattr(result, "confidence")
         finally:
             repo.clear_all()
 

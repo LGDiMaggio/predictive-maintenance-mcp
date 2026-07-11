@@ -192,11 +192,22 @@ class TestGenerateMaintenanceRecommendations:
             ctx=mock_ctx,
             severity_zone="C",
             fault_types="outer_race,misalignment",
-            confidence=0.8,
         )
         assert isinstance(result, str)
         assert "outer_race" in result or "bearing" in result.lower()
         assert "misalignment" in result.lower() or "alignment" in result.lower()
+        assert "confidence" not in result.lower()
+
+    @pytest.mark.asyncio
+    async def test_confidence_input_rejected(self, tools, mock_ctx):
+        """The tool must reject a caller-supplied confidence number."""
+        with pytest.raises(TypeError):
+            await tools["generate_maintenance_recommendations"](
+                ctx=mock_ctx,
+                severity_zone="C",
+                fault_types="outer_race",
+                confidence=0.87,
+            )
 
     @pytest.mark.asyncio
     async def test_empty_fault_types(self, tools, mock_ctx):

@@ -232,7 +232,7 @@ class TestAnomalyPredictionResult:
         r = AnomalyPredictionResult(
             num_segments=100, anomaly_count=2, anomaly_ratio=0.02,
             predictions=[1] * 98 + [-1] * 2,
-            overall_health="Healthy", confidence="High",
+            overall_health="Healthy",
         )
         assert r.overall_health == "Healthy"
         assert r.anomaly_ratio == 0.02
@@ -241,15 +241,25 @@ class TestAnomalyPredictionResult:
         r = AnomalyPredictionResult(
             num_segments=100, anomaly_count=90, anomaly_ratio=0.90,
             predictions=[-1] * 90 + [1] * 10,
-            overall_health="Faulty", confidence="High",
+            overall_health="Faulty",
         )
         assert r.overall_health == "Faulty"
+
+    def test_confidence_field_removed(self):
+        """The invented High/Medium 'confidence' label no longer exists."""
+        r = AnomalyPredictionResult(
+            num_segments=10, anomaly_count=0, anomaly_ratio=0.0,
+            predictions=[1] * 10,
+            overall_health="Healthy",
+        )
+        assert "confidence" not in AnomalyPredictionResult.model_fields
+        assert not hasattr(r, "confidence")
 
     def test_optional_scores(self):
         r = AnomalyPredictionResult(
             num_segments=10, anomaly_count=0, anomaly_ratio=0.0,
             predictions=[1] * 10,
-            overall_health="Healthy", confidence="High",
+            overall_health="Healthy",
         )
         assert r.anomaly_scores is None
 
@@ -257,7 +267,7 @@ class TestAnomalyPredictionResult:
         r = AnomalyPredictionResult(
             num_segments=50, anomaly_count=5, anomaly_ratio=0.1,
             predictions=[1] * 45 + [-1] * 5,
-            overall_health="Suspicious", confidence="Medium",
+            overall_health="Suspicious",
             anomaly_scores=[0.1] * 45 + [0.9] * 5,
         )
         restored = AnomalyPredictionResult.model_validate_json(r.model_dump_json())

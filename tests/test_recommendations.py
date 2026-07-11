@@ -31,7 +31,6 @@ class TestGenerateRecommendations:
         recs = generate_recommendations(
             "C",
             fault_types=["outer_race", "misalignment"],
-            confidence=0.85,
         )
 
         # 1 zone rec + 2 fault recs
@@ -39,6 +38,18 @@ class TestGenerateRecommendations:
         actions = [r["action"] for r in recs]
         assert any("bearing" in a.lower() for a in actions)
         assert any("align" in a.lower() for a in actions)
+
+    def test_confidence_parameter_removed(self):
+        """The engine must not accept a caller-dictated confidence."""
+        with pytest.raises(TypeError):
+            generate_recommendations("C", fault_types=["outer_race"], confidence=0.85)
+
+    def test_no_confidence_in_output_text(self):
+        """Recommendation text must not echo any confidence figure."""
+        recs = generate_recommendations("C", fault_types=["outer_race"])
+        for rec in recs:
+            assert "confidence" not in rec["description"].lower()
+            assert "confidence" not in rec["action"].lower()
 
     def test_unknown_zone_fallback(self):
         """Unknown zone should return a fallback recommendation."""

@@ -88,9 +88,11 @@ mcp = FastMCP(
     - If ambiguous, ask user to clarify
 
     Prognostics (ISO 13374 Block 5):
-    - Remaining Useful Life estimation (linear, exponential, weibull, kalman)
-    - Signal trend analysis (increasing/decreasing/stable detection)
-    - Degradation onset detection (baseline deviation)
+    - Remaining Useful Life estimation (linear, exponential, kalman) —
+      requires a series of measurements taken over time (values or
+      signal_ids + timestamps); a single recording is refused
+    - Within-recording trend screening (increasing/decreasing/stable, p-value based)
+    - Within-recording degradation onset detection (post-baseline deviation)
 
     Decision Support (ISO 13374 Block 6):
     - ISO 20816-3 vibration alert classification (zones A-D; boundary values from ISO 10816-3:2009)

@@ -21,16 +21,18 @@ _FAULT_RECOMMENDATIONS: dict[str, str] = {
 def generate_recommendations(
     severity_zone: str,
     fault_types: list[str] | None = None,
-    confidence: float = 0.0,
 ) -> list[dict]:
     """Generate maintenance recommendations based on severity and faults.
+
+    Deliberately takes no "confidence" input: a caller-supplied
+    confidence number would be repeated verbatim in advisory output
+    without any evidential basis.
 
     Args:
         severity_zone: ISO 20816-3 zone letter — ``"A"``, ``"B"``,
             ``"C"``, or ``"D"``.
         fault_types: Optional list of detected fault keywords (e.g.
             ``["outer_race", "misalignment"]``).
-        confidence: Overall diagnostic confidence in ``[0, 1]``.
 
     Returns:
         List of recommendation dicts, each containing ``action``,
@@ -88,10 +90,7 @@ def generate_recommendations(
                     {
                         "action": _FAULT_RECOMMENDATIONS[key],
                         "urgency": urgency,
-                        "description": (
-                            f"Detected fault: {fault} "
-                            f"(confidence: {confidence:.0%})."
-                        ),
+                        "description": f"Detected fault: {fault}.",
                     }
                 )
 

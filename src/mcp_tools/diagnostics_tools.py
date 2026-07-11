@@ -1127,16 +1127,14 @@ def register(mcp: FastMCP) -> None:
         anomaly_count = int(np.sum(predictions == -1))
         anomaly_ratio = float(anomaly_count / len(predictions))
 
-        # Assess overall health
+        # Assess overall health (thresholds on the anomaly ratio itself —
+        # no separate "confidence" label is derived from them).
         if anomaly_ratio < 0.1:
             overall_health = "Healthy"
-            confidence = "High"
         elif anomaly_ratio < 0.3:
             overall_health = "Suspicious"
-            confidence = "Medium"
         else:
             overall_health = "Faulty"
-            confidence = "High"
 
         if ctx:
             await ctx.info(f"Analyzed {len(predictions)} segments")
@@ -1150,7 +1148,6 @@ def register(mcp: FastMCP) -> None:
             predictions=predictions.tolist(),
             anomaly_scores=anomaly_scores,
             overall_health=overall_health,
-            confidence=confidence
         )
 
     # ------------------------------------------------------------------
@@ -1817,7 +1814,9 @@ def register(mcp: FastMCP) -> None:
         iso_model = VibrationSeverityResult(**result["iso_severity"])
 
         if ctx:
-            await ctx.info(f"Diagnosis complete: {result['confidence']} confidence")
+            await ctx.info(
+                f"Diagnosis complete: {result['evidence_strength']} fault evidence"
+            )
             await ctx.info(f"ISO Zone: {result['iso_severity']['zone']}")
             for rec in result["recommendations"]:
                 await ctx.info(f"  -> {rec}")
@@ -1835,6 +1834,6 @@ def register(mcp: FastMCP) -> None:
             iso_severity=iso_model,
             anomaly_detection=result.get("anomaly_detection"),
             overall_diagnosis=result["overall_diagnosis"],
-            confidence=result["confidence"],
+            evidence_strength=result["evidence_strength"],
             recommendations=result["recommendations"],
         )

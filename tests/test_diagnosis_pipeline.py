@@ -59,7 +59,8 @@ class TestDiagnoseVibration:
         assert "stft_summary" in result
         assert "iso_severity" in result
         assert "overall_diagnosis" in result
-        assert "confidence" in result
+        assert "evidence_strength" in result
+        assert "confidence" not in result
         assert "recommendations" in result
         assert len(result["recommendations"]) > 0
 
@@ -152,10 +153,37 @@ class TestRecommendations:
         result = diagnose_vibration(signal, fs, rpm=1500, signal_unit="g")
         assert len(result["recommendations"]) >= 1
 
-    def test_confidence_level(self, healthy_signal):
+    def test_evidence_strength_vocabulary(self, healthy_signal):
         signal, fs = healthy_signal
         result = diagnose_vibration(signal, fs, rpm=1500, signal_unit="g")
-        assert result["confidence"] in ("high", "moderate", "low")
+        assert result["evidence_strength"] in ("none", "weak", "moderate", "strong")
+
+    def test_quiet_machine_evidence_not_high(self, healthy_signal):
+        """A very quiet machine must NOT get strong fault evidence.
+
+        The old code derived 'confidence' from the severity score and
+        returned 'high' for a machine with zero findings.
+        """
+        signal, fs = healthy_signal
+        result = diagnose_vibration(
+            signal, fs, rpm=1500, signal_unit="g",
+            anomaly_model_name="nonexistent_model_u4",
+        )
+        assert result["iso_severity"]["zone"] == "A"
+        assert result["evidence_strength"] in ("none", "weak")
+
+    def test_quiet_machine_no_findings_evidence_none(self):
+        """Quiet machine with no shaft signature → no fault evidence at all."""
+        fs = 10000
+        rpm = 1500  # shaft = 25 Hz; dominant peak at 60 Hz is 2.4x — no match
+        t = np.linspace(0, 1.0, fs, endpoint=False)
+        signal = 0.01 * np.sin(2 * np.pi * 60 * t)
+        result = diagnose_vibration(
+            signal, fs, rpm=rpm, signal_unit="g",
+            anomaly_model_name="nonexistent_model_u4",
+        )
+        assert result["iso_severity"]["zone"] == "A"
+        assert result["evidence_strength"] == "none"
 
 
 class TestAnomalyDetection:
@@ -213,7 +241,7 @@ class TestSynthesisEdgeCases:
         return amp * np.sin(2 * np.pi * freq * t), fs
 
     def test_zone_b_diagnosis(self):
-        """Zone B should produce 'moderate' confidence."""
+        """Zone B alone is not corroborated fault evidence."""
         signal, fs = self._make_signal(2.0, 50)
         result = diagnose_vibration(signal, fs, rpm=3000, signal_unit="mm/s")
         assert result["iso_severity"]["zone"] == "B"
@@ -224,6 +252,20 @@ class TestSynthesisEdgeCases:
         result = diagnose_vibration(signal, fs, rpm=3000, signal_unit="mm/s")
         assert result["iso_severity"]["zone"] == "D"
         assert any("IMMEDIATE" in r for r in result["recommendations"])
+
+    def test_zone_d_alone_not_strong_evidence(self):
+        """Severity alone (even zone D) must never reach 'strong' evidence.
+
+        Elevated broadband vibration is one finding; 'strong' requires
+        corroboration from independent analyses.
+        """
+        signal, fs = self._make_signal(10.0, 70)  # 70 Hz ≠ 1x/2x of 50 Hz shaft
+        result = diagnose_vibration(
+            signal, fs, rpm=3000, signal_unit="mm/s",
+            anomaly_model_name="nonexistent_model_u4",
+        )
+        assert result["iso_severity"]["zone"] == "D"
+        assert result["evidence_strength"] != "strong"
 
     def test_1x_unbalance_detection(self):
         """Dominant peak at 1x shaft speed should suggest unbalance."""

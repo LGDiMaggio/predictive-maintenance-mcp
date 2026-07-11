@@ -5,7 +5,7 @@ These models define the data contracts for all MCP tool responses,
 ensuring consistent and well-documented return types.
 """
 
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 from pydantic import BaseModel, Field
 
 
@@ -125,8 +125,7 @@ class AnomalyPredictionResult(BaseModel):
     anomaly_ratio: float = Field(description="Ratio of anomalies (0-1)")
     predictions: list[int] = Field(description="Predictions per segment: 1=normal, -1=anomaly")
     anomaly_scores: Optional[list[float]] = Field(None, description="Anomaly scores if available")
-    overall_health: str = Field(description="Overall health status: 'Healthy', 'Suspicious', 'Faulty'")
-    confidence: str = Field(description="Confidence level: 'High', 'Medium', 'Low'")
+    overall_health: str = Field(description="Overall health status: 'Healthy', 'Suspicious', 'Faulty' (thresholded on anomaly_ratio: <0.1, <0.3, >=0.3)")
 
 
 # ============================================================================
@@ -200,7 +199,14 @@ class BearingFaultCheckResult(BaseModel):
     magnitude: Optional[float] = Field(None, description="Magnitude at detected frequency")
     deviation_pct: Optional[float] = Field(None, description="Deviation from expected (%)")
     harmonics_detected: list[dict[str, float]] = Field(default=[], description="Harmonics found")
-    confidence: str = Field(description="Confidence: high, moderate, low, or none")
+    evidence_strength: str = Field(
+        description=(
+            "Strength of the spectral evidence for this fault: 'high' "
+            "(fundamental + >=2 harmonics), 'moderate' (fundamental, weaker "
+            "harmonics), 'low' (harmonics only), or 'none'. Derived from "
+            "detected peaks — not a probability."
+        )
+    )
 
 
 class BearingFaultsSummary(BaseModel):
@@ -247,7 +253,16 @@ class DiagnosisResult(BaseModel):
     iso_severity: VibrationSeverityResult = Field(description="ISO severity assessment")
     anomaly_detection: Optional[dict[str, Any]] = Field(None, description="Anomaly detection results (health, ratio, score)")
     overall_diagnosis: str = Field(description="Combined diagnostic text")
-    confidence: str = Field(description="Overall confidence: high, moderate, or low")
+    evidence_strength: str = Field(
+        description=(
+            "Strength of corroborating fault evidence: 'none', 'weak', "
+            "'moderate', or 'strong'. Derived from the number and quality of "
+            "independent findings (bearing fault frequency matches, shaft "
+            "signatures, anomaly detection, ISO severity) — NOT from severity "
+            "alone and NOT a probability. 'none' means no fault evidence was "
+            "found (machine appears healthy)."
+        )
+    )
     recommendations: list[str] = Field(description="Recommended actions")
 
 
@@ -257,34 +272,136 @@ class DiagnosisResult(BaseModel):
 
 
 class RULEstimationResult(BaseModel):
-    """Remaining Useful Life estimation result."""
-    rul: float = Field(description="Estimated remaining useful life in time units")
-    confidence: float = Field(description="R-squared or confidence metric (0-1)")
-    method: str = Field(description="Estimation method used")
-    confidence_interval: list[float] | None = Field(default=None, description="[lower, upper] RUL bounds (Kalman only)")
-    shape: float | None = Field(default=None, description="Weibull shape parameter (Weibull only)")
-    scale: float | None = Field(default=None, description="Weibull scale parameter (Weibull only)")
-    estimated_rate: float | None = Field(default=None, description="Estimated degradation rate (Kalman only)")
+    """Remaining Useful Life estimate from repeated measurements over time.
+
+    RUL is only physically meaningful when fitted on a degradation trend
+    across multiple measurements of the same machine (days/weeks/months).
+    ``fit_r_squared`` describes how well the degradation curve fits the
+    observed series; it is NOT a probability that the estimate is correct.
+    Extrapolation beyond the observation horizon is inherently uncertain.
+    """
+    status: Literal["estimated", "no_degradation_trend", "threshold_already_exceeded"] = Field(
+        description=(
+            "'estimated' (RUL computed), 'no_degradation_trend' (no "
+            "statistically significant trend toward the threshold — healthy "
+            "outcome, no RUL number), or 'threshold_already_exceeded' (last "
+            "measurement is at/above the failure threshold)."
+        )
+    )
+    method: str = Field(description="Estimation method used: linear, exponential, or kalman")
+    feature_name: str = Field(description="Degradation indicator tracked (e.g. 'rms')")
+    num_measurements: int = Field(description="Number of measurements in the series")
+    observation_horizon: float = Field(
+        description=(
+            "Time span covered by the measurement series (last minus first "
+            "timestamp), in time_unit. RUL estimates far beyond this horizon "
+            "are extrapolations with low reliability."
+        )
+    )
+    time_unit: str = Field(description="Unit of timestamps, observation_horizon, and rul")
+    failure_threshold: float = Field(description="Indicator value considered as failure")
+    current_value: float = Field(description="Most recent measured indicator value")
+    trend_p_value: Optional[float] = Field(
+        None,
+        description=(
+            "Two-sided p-value of the series' linear slope (None when not "
+            "computable). The trend gate requires p < 0.05."
+        ),
+    )
+    rul: Optional[float] = Field(
+        None,
+        description="Estimated remaining useful life in time_unit (only when status='estimated')",
+    )
+    fit_r_squared: Optional[float] = Field(
+        None,
+        description=(
+            "R-squared of the fitted degradation curve on the observed data. "
+            "Goodness of fit only — NOT a confidence or probability. None for "
+            "the kalman method."
+        ),
+    )
+    estimated_rate: Optional[float] = Field(
+        None,
+        description="Estimated degradation rate in feature units per time_unit (linear/kalman)",
+    )
+    rul_interval_95: Optional[list[float]] = Field(
+        None,
+        description=(
+            "[lower, upper] approximate 95% interval from the delta-method "
+            "variance (kalman only). Coverage not validated — treat as an "
+            "order-of-magnitude band."
+        ),
+    )
+    precision_heuristic: Optional[float] = Field(
+        None,
+        description=(
+            "Heuristic in [0,1]: 1 - rul_std/rul, clipped (kalman only). "
+            "This is a heuristic, NOT a statistical confidence — do not "
+            "present it as a probability of correctness."
+        ),
+    )
+    message: str = Field(description="Human-readable explanation of the outcome and its caveats")
 
 
 class TrendAnalysisResult(BaseModel):
-    """Signal trend analysis result."""
+    """Within-recording feature trend — screening only, NOT a prognosis.
+
+    Segments a single recording (seconds of data) and fits a trend on the
+    per-segment feature values. Use it to screen whether a recording is
+    stationary. It cannot estimate Remaining Useful Life: for RUL, collect
+    repeated measurements over days/weeks and pass them to estimate_rul.
+    """
     feature_name: str = Field(description="Feature analyzed")
-    slope: float = Field(description="Trend slope per segment")
+    slope: float = Field(description="Trend slope in feature units per second (within the recording)")
     intercept: float = Field(description="Trend intercept")
-    r_squared: float = Field(description="R-squared goodness of fit")
-    trend_direction: str = Field(description="increasing, decreasing, or stable")
-    p_value: float = Field(description="Statistical significance")
+    r_squared: float = Field(description="R-squared goodness of fit of the linear trend")
+    trend_direction: str = Field(
+        description=(
+            "increasing, decreasing, or stable — based on the slope "
+            "significance test (p < 0.05), not on an R-squared cutoff"
+        )
+    )
+    p_value: Optional[float] = Field(
+        None,
+        description="Two-sided p-value of the slope (None when not computable)",
+    )
     num_segments: int = Field(description="Number of segments analyzed")
+    analysis_scope: str = Field(
+        description=(
+            "Always 'within_recording_screening': this trend spans seconds "
+            "of one recording, not the machine's life"
+        )
+    )
+    feature_series: list[float] = Field(
+        description=(
+            "Per-segment feature values (evenly subsampled to at most 50 "
+            "points). One recording yields ONE point for estimate_rul (e.g. "
+            "the recording's overall feature value) — accumulate recordings "
+            "over time to build its input series."
+        )
+    )
+    segment_times_s: list[float] = Field(
+        description="Segment center times in seconds for feature_series (same subsampling)"
+    )
+    series_truncated: bool = Field(
+        description="True when feature_series was subsampled to the 50-point cap"
+    )
 
 
 class DegradationOnsetResult(BaseModel):
-    """Degradation onset detection result."""
+    """Degradation onset detection result (within-recording screening)."""
     feature_name: str = Field(description="Feature analyzed")
     onset_detected: bool = Field(description="Whether degradation onset was detected")
     onset_segment_index: int | None = Field(default=None, description="Segment index where degradation starts")
     threshold_sigma: float = Field(description="Sigma threshold used for detection")
     num_segments: int = Field(description="Total number of segments")
+    baseline_segments: int = Field(
+        description=(
+            "Number of leading segments used as the baseline window. Onset "
+            "is only searched AFTER this window; degradation starting inside "
+            "the baseline cannot be detected by this method."
+        )
+    )
 
 
 class AlertResult(BaseModel):

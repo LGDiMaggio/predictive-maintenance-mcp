@@ -196,7 +196,7 @@ def register(mcp):
     This saves an interactive HTML report to the reports/ directory showing:
     - Filtered signal with envelope overlay (time domain)
     - Envelope spectrum in dB scale with bearing frequency markers
-    - Automatic bearing fault detection with confidence levels
+    - Automatic bearing fault detection with evidence-strength ratings
     The tool returns the file path. Tell user to open the returned HTML file path in their browser to view the interactive envelope analysis with bearing fault markers.
 
     ═══════════════════════════════════════════════════════════════════════════════
@@ -214,9 +214,9 @@ def register(mcp):
        • Peak at BSF (±5%) → **Rolling element (ball) fault**
        • Peak at FTF (±5%) → **Cage fault**
 
-       Confidence level:
-       - High confidence: Peak + harmonics present AND (CF>6 OR Kurtosis>6)
-       - Moderate confidence: Peak present but weaker harmonics OR moderate stats (CF 4-6, Kurt 3-6)
+       Evidence strength:
+       - High evidence: Peak + harmonics present AND (CF>6 OR Kurtosis>6)
+       - Moderate evidence: Peak present but weaker harmonics OR moderate stats (CF 4-6, Kurt 3-6)
        - Note: Even without extreme statistics, clear envelope peaks ARE diagnostic
 
     B) IF envelope shows ambiguous/borderline peaks:

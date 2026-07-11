@@ -3,7 +3,8 @@ Bearing fault detection functions.
 
 Checks envelope spectrum peaks against expected bearing fault frequencies
 (BPFO, BPFI, BSF, FTF) with tolerance matching, harmonic detection,
-and confidence scoring.
+and evidence-strength rating (derived from detected peaks/harmonics,
+never presented as a probability).
 """
 
 import logging
@@ -82,17 +83,17 @@ def check_bearing_fault_peak(
                 })
                 break
 
-    # Confidence scoring
+    # Evidence-strength rating from detected fundamental + harmonics.
     if detected and len(harmonics) >= 2:
-        confidence = "high"
+        evidence_strength = "high"
     elif detected and len(harmonics) >= 1:
-        confidence = "moderate"
+        evidence_strength = "moderate"
     elif detected:
-        confidence = "moderate"
+        evidence_strength = "moderate"
     elif len(harmonics) > 0:
-        confidence = "low"
+        evidence_strength = "low"
     else:
-        confidence = "none"
+        evidence_strength = "none"
 
     return {
         "signal_id": signal_id,
@@ -104,7 +105,7 @@ def check_bearing_fault_peak(
         "magnitude": round(detected_mag, 6) if detected_mag else None,
         "deviation_pct": round(deviation, 2) if deviation is not None else None,
         "harmonics_detected": harmonics,
-        "confidence": confidence,
+        "evidence_strength": evidence_strength,
     }
 
 
@@ -163,13 +164,13 @@ def check_all_bearing_faults(
         )
         checks.append(result)
 
-    # Determine most likely fault (highest confidence detected)
-    confidence_order = {"high": 3, "moderate": 2, "low": 1, "none": 0}
+    # Determine most likely fault (strongest evidence among detected)
+    evidence_order = {"high": 3, "moderate": 2, "low": 1, "none": 0}
     detected_faults = [
-        c for c in checks if c["detected"] and c["confidence"] != "none"
+        c for c in checks if c["detected"] and c["evidence_strength"] != "none"
     ]
     detected_faults.sort(
-        key=lambda c: confidence_order.get(c["confidence"], 0), reverse=True
+        key=lambda c: evidence_order.get(c["evidence_strength"], 0), reverse=True
     )
 
     most_likely = detected_faults[0]["fault_type"] if detected_faults else None
@@ -182,7 +183,7 @@ def check_all_bearing_faults(
         )
     else:
         fault_list = ", ".join(
-            f"{c['fault_type']} ({c['confidence']} confidence)"
+            f"{c['fault_type']} ({c['evidence_strength']} evidence)"
             for c in detected_faults
         )
         assessment = (

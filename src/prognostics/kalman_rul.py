@@ -34,10 +34,21 @@ def estimate_rul_kalman(
         measurement_noise: Measurement noise variance *R*.
 
     Returns:
-        Dict with ``rul``, ``confidence``, ``method`` (``"kalman"``),
-        ``confidence_interval`` (``[lower, upper]``),
-        ``estimated_rate``, and ``final_level``.  Returns *None* when
-        the estimate is not feasible.
+        Dict with:
+            - ``rul``: Estimated remaining useful life (time units).
+            - ``rul_std``: Delta-method standard deviation of the RUL.
+            - ``rul_interval_95``: ``[lower, upper]`` approximate 95%
+              interval from the delta-method variance. Coverage has not
+              been validated — treat as an order-of-magnitude band.
+            - ``precision_heuristic``: Heuristic in [0, 1] computed as
+              ``1 − rul_std / rul`` (clipped). It is NOT a statistical
+              confidence or a probability of correctness — only a rough
+              indication of how noisy the extrapolation is.
+            - ``estimated_rate``, ``final_level``, ``method``
+              (``"kalman"``).
+        Returns *None* when the estimate is not feasible (fewer than 3
+        points, non-positive filtered rate, or threshold already
+        exceeded).
     """
     y = np.asarray(feature_series, dtype=float)
     n = len(y)
@@ -98,31 +109,41 @@ def estimate_rul_kalman(
     # Extrapolate: RUL = (threshold - level) / rate.
     rul = (failure_threshold - final_level) / final_rate
 
-    # --- Confidence interval from state covariance P ---
-    # Variance of RUL ≈ Var(level)/rate² + level²·Var(rate)/rate⁴
-    # (first-order delta-method approximation).
+    # --- Uncertainty interval from state covariance P ---
+    # First-order delta method for g(L, r) = (T − L) / r with gap = T − L:
+    #   ∂g/∂L = −1/r,  ∂g/∂r = −gap/r²
+    #   Var(RUL) ≈ Var(L)/r² + gap²·Var(r)/r⁴ + 2·gap·Cov(L, r)/r³
+    # The cross-covariance term Cov(L, r) = P[0, 1] must be included:
+    # level and rate estimates from the same filter are correlated.
     var_level = float(P[0, 0])
     var_rate = float(P[1, 1])
+    cov_level_rate = float(P[0, 1])
     gap = failure_threshold - final_level
 
-    rul_variance = var_level / (final_rate ** 2) + (gap ** 2) * var_rate / (final_rate ** 4)
+    rul_variance = (
+        var_level / (final_rate**2)
+        + (gap**2) * var_rate / (final_rate**4)
+        + 2.0 * gap * cov_level_rate / (final_rate**3)
+    )
     rul_std = float(np.sqrt(max(rul_variance, 0.0)))
 
-    ci_lower = max(0.0, rul - 1.96 * rul_std)
-    ci_upper = rul + 1.96 * rul_std
+    interval_lower = max(0.0, rul - 1.96 * rul_std)
+    interval_upper = rul + 1.96 * rul_std
 
-    # Confidence: use normalised innovation-based heuristic.
-    # Map RUL standard deviation relative to RUL itself into [0, 1].
+    # Heuristic precision indicator: RUL standard deviation relative to
+    # the RUL itself, mapped into [0, 1]. This is a heuristic, NOT a
+    # statistical confidence — do not present it as a probability.
     if rul > 0:
-        confidence = max(0.0, min(1.0, 1.0 - rul_std / rul))
+        precision_heuristic = max(0.0, min(1.0, 1.0 - rul_std / rul))
     else:
-        confidence = 0.0
+        precision_heuristic = 0.0
 
     return {
         "rul": float(rul),
-        "confidence": confidence,
+        "rul_std": rul_std,
+        "rul_interval_95": [interval_lower, interval_upper],
+        "precision_heuristic": precision_heuristic,
         "method": "kalman",
-        "confidence_interval": [ci_lower, ci_upper],
         "estimated_rate": final_rate,
         "final_level": final_level,
     }

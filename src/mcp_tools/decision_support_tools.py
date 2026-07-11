@@ -110,18 +110,19 @@ def register(mcp: FastMCP) -> None:
         ctx: Context,
         severity_zone: str,
         fault_types: str = "",
-        confidence: float = 0.0,
     ) -> str:
         """Generate maintenance recommendations based on severity and detected faults.
 
-        Combines ISO zone-based urgency with fault-specific maintenance actions.
+        Combines ISO zone-based urgency with fault-specific maintenance
+        actions. This tool intentionally does NOT accept a confidence
+        value: any number supplied by the caller would be echoed into
+        advisory output without evidential basis.
 
         Args:
             ctx: MCP context for user communication.
             severity_zone: ISO zone letter — "A", "B", "C", or "D".
             fault_types: Comma-separated fault type keywords, e.g.
                 "outer_race,misalignment". Leave empty for zone-only advice.
-            confidence: Diagnostic confidence (0-1, default: 0.0).
 
         Returns:
             Formatted string listing all maintenance recommendations.
@@ -136,7 +137,7 @@ def register(mcp: FastMCP) -> None:
             + " ..."
         )
 
-        recs = generate_recommendations(severity_zone, fault_list, confidence)
+        recs = generate_recommendations(severity_zone, fault_list)
 
         lines: list[str] = []
         for i, rec in enumerate(recs, 1):

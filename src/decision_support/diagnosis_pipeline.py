@@ -3,7 +3,11 @@ Integrated vibration diagnosis pipeline.
 
 Combines FFT, PSD, STFT, bearing fault detection, ISO severity,
 and anomaly detection (OneClassSVM) into a single coherent diagnostic
-result with confidence scoring and actionable recommendations.
+result with an evidence-strength rating and actionable recommendations.
+
+The ``evidence_strength`` field is categorical (none/weak/moderate/strong)
+and derived from the number and quality of independent corroborating
+findings — never from severity alone and never presented as a probability.
 """
 
 import json
@@ -240,7 +244,7 @@ def diagnose_vibration(
     anomaly_result = _run_anomaly_detection(signal, fs, model_name=anomaly_model_name)
 
     # 7. Synthesis
-    diagnosis_text, confidence, recommendations = _synthesize_diagnosis(
+    diagnosis_text, evidence_strength, recommendations = _synthesize_diagnosis(
         fft_summary=fft_summary,
         psd_summary=psd_summary,
         stft_summary=stft_summary,
@@ -263,7 +267,7 @@ def diagnose_vibration(
         "iso_severity": iso_result,
         "anomaly_detection": anomaly_result,
         "overall_diagnosis": diagnosis_text,
-        "confidence": confidence,
+        "evidence_strength": evidence_strength,
         "recommendations": recommendations,
     }
 
@@ -277,10 +281,26 @@ def _synthesize_diagnosis(
     anomaly: Optional[dict],
     rpm: float,
 ) -> tuple[str, str, list[str]]:
-    """Combine analysis results into diagnosis, confidence, and recommendations."""
+    """Combine analysis results into diagnosis, evidence strength, and recommendations.
+
+    The evidence strength is categorical (none/weak/moderate/strong) and
+    accumulates points from independent corroborating findings:
+
+    - ISO severity: zone C +1.0, zone D +2.0 (elevated broadband vibration
+      is direct physical evidence of a problem, but on its own it is not
+      corroborated).
+    - Shaft signature: dominant peak at 1x or 2x shaft speed +1.0.
+    - Bearing fault frequencies: best detected check contributes
+      high +2.0 / moderate +1.0 / low +0.5.
+    - Anomaly model: Faulty +1.0, Suspicious +0.5.
+
+    Mapping: 0 -> "none", <2 -> "weak", <3 -> "moderate", >=3 -> "strong".
+    A quiet machine with no findings therefore gets "none" — severity alone
+    can never produce "strong".
+    """
     lines = []
     recommendations = []
-    severity_score = 0  # 0=good, 1=watch, 2=action, 3=critical
+    evidence_points = 0.0
 
     # ISO severity assessment
     zone = iso_severity["zone"]
@@ -290,14 +310,13 @@ def _synthesize_diagnosis(
         lines.append(f"ISO Severity: Zone A (Good) — RMS velocity {rms_vel:.2f} mm/s.")
     elif zone == "B":
         lines.append(f"ISO Severity: Zone B (Acceptable) — RMS velocity {rms_vel:.2f} mm/s.")
-        severity_score = max(severity_score, 1)
     elif zone == "C":
         lines.append(f"ISO Severity: Zone C (Unsatisfactory) — RMS velocity {rms_vel:.2f} mm/s.")
-        severity_score = max(severity_score, 2)
+        evidence_points += 1.0
         recommendations.append("Schedule maintenance within next planned shutdown.")
     else:
         lines.append(f"ISO Severity: Zone D (Unacceptable) — RMS velocity {rms_vel:.2f} mm/s.")
-        severity_score = max(severity_score, 3)
+        evidence_points += 2.0
         recommendations.append("IMMEDIATE ACTION: Stop machine and inspect.")
 
     # FFT dominant frequency
@@ -310,11 +329,11 @@ def _synthesize_diagnosis(
         ratio = peak_f / shaft_freq
         if 0.9 < ratio < 1.1:
             lines.append("Dominant peak at 1x shaft speed — possible unbalance.")
-            severity_score = max(severity_score, 1)
+            evidence_points += 1.0
             recommendations.append("Check rotor balance.")
         elif 1.9 < ratio < 2.1:
             lines.append("Dominant peak at 2x shaft speed — possible misalignment.")
-            severity_score = max(severity_score, 1)
+            evidence_points += 1.0
             recommendations.append("Check alignment and coupling condition.")
 
     # Bearing fault analysis
@@ -323,23 +342,24 @@ def _synthesize_diagnosis(
         if most_likely:
             detected = [
                 c for c in bearing_faults["fault_checks"]
-                if c["detected"] and c["confidence"] != "none"
+                if c["detected"] and c["evidence_strength"] != "none"
             ]
             fault_text = ", ".join(
-                f"{c['fault_type']} ({c['confidence']})" for c in detected
+                f"{c['fault_type']} ({c['evidence_strength']} evidence)"
+                for c in detected
             )
             lines.append(f"Bearing faults detected: {fault_text}.")
             lines.append(f"Most likely: {most_likely}.")
 
-            high_conf = any(c["confidence"] == "high" for c in detected)
-            if high_conf:
-                severity_score = max(severity_score, 2)
+            strengths = {c["evidence_strength"] for c in detected}
+            if "high" in strengths:
+                evidence_points += 2.0
                 recommendations.append(
                     f"Bearing {bearing_faults['bearing_id']}: "
                     f"plan replacement at next opportunity."
                 )
             else:
-                severity_score = max(severity_score, 1)
+                evidence_points += 1.0 if "moderate" in strengths else 0.5
                 recommendations.append(
                     f"Bearing {bearing_faults['bearing_id']}: "
                     f"monitor closely, confirm with additional measurements."
@@ -356,23 +376,27 @@ def _synthesize_diagnosis(
             f"({ratio * 100:.1f}% anomalous segments)."
         )
         if health == "Faulty":
-            severity_score = max(severity_score, 2)
+            evidence_points += 1.0
             recommendations.append(
                 "Anomaly model flagged signal as faulty — investigate root cause."
             )
         elif health == "Suspicious":
-            severity_score = max(severity_score, 1)
+            evidence_points += 0.5
             recommendations.append(
                 "Anomaly model detected suspicious patterns — increase monitoring frequency."
             )
 
-    # Overall confidence
-    if severity_score >= 2:
-        confidence = "high"
-    elif severity_score == 1:
-        confidence = "moderate"
+    # Overall evidence strength — from corroborating findings, NOT severity.
+    if evidence_points == 0.0:
+        evidence_strength = "none"
+    elif evidence_points < 2.0:
+        evidence_strength = "weak"
+    elif evidence_points < 3.0:
+        evidence_strength = "moderate"
     else:
-        confidence = "high"
+        evidence_strength = "strong"
+
+    lines.append(f"Fault evidence strength: {evidence_strength}.")
 
     # Default recommendation if none generated
     if not recommendations:
@@ -380,4 +404,4 @@ def _synthesize_diagnosis(
 
     diagnosis_text = " ".join(lines)
 
-    return diagnosis_text, confidence, recommendations
+    return diagnosis_text, evidence_strength, recommendations

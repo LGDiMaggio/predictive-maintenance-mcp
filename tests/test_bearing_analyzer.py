@@ -79,7 +79,7 @@ class TestCheckBearingFaultPeak:
             tolerance_pct=5.0,
         )
         assert result["detected"] is True
-        assert result["confidence"] in ("high", "moderate")
+        assert result["evidence_strength"] in ("high", "moderate")
         assert abs(result["detected_frequency_hz"] - bpfo) < bpfo * 0.05
 
     def test_no_detection_wrong_frequency(self, signal_with_bpfo):
@@ -92,9 +92,9 @@ class TestCheckBearingFaultPeak:
             bearing_id="6205",
             tolerance_pct=3.0,
         )
-        # May or may not detect depending on noise, but confidence should be low
+        # May or may not detect depending on noise, but evidence should be low
         if not result["detected"]:
-            assert result["confidence"] in ("none", "low")
+            assert result["evidence_strength"] in ("none", "low")
 
     def test_harmonics_detected(self, signal_with_bpfo):
         signal, fs, bpfo = signal_with_bpfo
