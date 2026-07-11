@@ -5,22 +5,19 @@ from typing import Optional
 from mcp.server.fastmcp import FastMCP
 
 
-def register(mcp):
-    """Register diagnostic prompts on the MCP server."""
 
-    @mcp.prompt()
-    def diagnose_bearing(
-        signal_file: str,
-        sampling_rate: Optional[float] = None,
-        machine_group: int = 2,  # CHANGED: Default 2 (medium) - most common
-        support_type: str = "rigid",  # Default rigid - most common
-        operating_speed_rpm: Optional[float] = None,
-        bpfo: Optional[float] = None,
-        bpfi: Optional[float] = None,
-        bsf: Optional[float] = None,
-        ftf: Optional[float] = None
-    ) -> str:
-        """
+def diagnose_bearing(
+    signal_file: str,
+    sampling_rate: Optional[float] = None,
+    machine_group: int = 2,  # CHANGED: Default 2 (medium) - most common
+    support_type: str = "rigid",  # Default rigid - most common
+    operating_speed_rpm: Optional[float] = None,
+    bpfo: Optional[float] = None,
+    bpfi: Optional[float] = None,
+    bsf: Optional[float] = None,
+    ftf: Optional[float] = None
+) -> str:
+    """
         Guided workflow for bearing diagnostics with ISO 20816-3 compliance.
 
         Evidence-based policy:
@@ -44,18 +41,18 @@ def register(mcp):
             bsf: Ball Spin Frequency (Hz) - if known
             ftf: Fundamental Train Frequency (Hz) - if known
         """
-        # Build frequency reference string
-        freq_refs = []
-        if bpfo: freq_refs.append(f"BPFO={bpfo:.2f} Hz")
-        if bpfi: freq_refs.append(f"BPFI={bpfi:.2f} Hz")
-        if bsf: freq_refs.append(f"BSF={bsf:.2f} Hz")
-        if ftf: freq_refs.append(f"FTF={ftf:.2f} Hz")
-        freq_info = ", ".join(freq_refs) if freq_refs else "NOT PROVIDED - must request from user"
+    # Build frequency reference string
+    freq_refs = []
+    if bpfo: freq_refs.append(f"BPFO={bpfo:.2f} Hz")
+    if bpfi: freq_refs.append(f"BPFI={bpfi:.2f} Hz")
+    if bsf: freq_refs.append(f"BSF={bsf:.2f} Hz")
+    if ftf: freq_refs.append(f"FTF={ftf:.2f} Hz")
+    freq_info = ", ".join(freq_refs) if freq_refs else "NOT PROVIDED - must request from user"
 
-        rpm_info = f", {operating_speed_rpm}" if operating_speed_rpm else ""
-        fs_info = f"{sampling_rate}" if sampling_rate else "UNKNOWN"
+    rpm_info = f", {operating_speed_rpm}" if operating_speed_rpm else ""
+    fs_info = f"{sampling_rate}" if sampling_rate else "UNKNOWN"
 
-        return f"""Perform evidence-based bearing diagnostic on "{signal_file}":
+    return f"""Perform evidence-based bearing diagnostic on "{signal_file}":
 
     ⚠️  CRITICAL INFERENCE POLICY ⚠️
     ═══════════════════════════════════════════════════════════════════════════════
@@ -262,14 +259,13 @@ def register(mcp):
     """
 
 
-    @mcp.prompt()
-    def diagnose_gear(
-        signal_file: str,
-        sampling_rate: Optional[float] = None,
-        num_teeth: Optional[int] = None,
-        rotation_speed_rpm: Optional[float] = None
-    ) -> str:
-        """
+def diagnose_gear(
+    signal_file: str,
+    sampling_rate: Optional[float] = None,
+    num_teeth: Optional[int] = None,
+    rotation_speed_rpm: Optional[float] = None
+) -> str:
+    """
         Evidence-based guided workflow for gear diagnostics with strict anti-speculation rules.
 
         Args:
@@ -278,11 +274,11 @@ def register(mcp):
             num_teeth: Number of gear teeth (REQUIRED for GMF calculation)
             rotation_speed_rpm: Shaft rotation speed in RPM (REQUIRED for GMF and sideband identification)
         """
-        fs_info = f"{sampling_rate}" if sampling_rate else "UNKNOWN"
-        teeth_info = f"{num_teeth}" if num_teeth else "NOT PROVIDED"
-        rpm_info = f"{rotation_speed_rpm}" if rotation_speed_rpm else "NOT PROVIDED"
+    fs_info = f"{sampling_rate}" if sampling_rate else "UNKNOWN"
+    teeth_info = f"{num_teeth}" if num_teeth else "NOT PROVIDED"
+    rpm_info = f"{rotation_speed_rpm}" if rotation_speed_rpm else "NOT PROVIDED"
 
-        return f"""Perform an evidence-based gear diagnostic on signal "{signal_file}":
+    return f"""Perform an evidence-based gear diagnostic on signal "{signal_file}":
 
     ⚠️  CRITICAL INFERENCE POLICY ⚠️
     ═══════════════════════════════════════════════════════════════════════════════
@@ -400,15 +396,14 @@ def register(mcp):
     """
 
 
-    @mcp.prompt()
-    def quick_diagnostic_report(signal_file: str) -> str:
-        """
+def quick_diagnostic_report(signal_file: str) -> str:
+    """
         Quick, evidence-aware screening report (non-definitive).
 
         Args:
             signal_file: Name of the signal file
         """
-        return f"""Generate a concise screening report for "{signal_file}" using only observable evidence:
+    return f"""Generate a concise screening report for "{signal_file}" using only observable evidence:
 
     STEP 0 — FILENAME RESOLUTION
     Call list_available_signals() to verify exact filename.
@@ -447,17 +442,16 @@ def register(mcp):
     """
 
 
-    @mcp.prompt()
-    def generate_iso_diagnostic_report(
-        signal_file: str,
-        sampling_rate: float = 10000.0,
-        machine_group: int = 1,
-        support_type: str = "rigid",
-        operating_speed_rpm: Optional[float] = None,
-        machine_name: str = "Machine",
-        measurement_location: str = "Bearing"
-    ) -> str:
-        """
+def generate_iso_diagnostic_report(
+    signal_file: str,
+    sampling_rate: float = 10000.0,
+    machine_group: int = 1,
+    support_type: str = "rigid",
+    operating_speed_rpm: Optional[float] = None,
+    machine_name: str = "Machine",
+    measurement_location: str = "Bearing"
+) -> str:
+    """
         Generate comprehensive diagnostic report with ISO 20816-3 compliance evaluation.
 
         Creates a structured diagnostic report including:
@@ -476,9 +470,9 @@ def register(mcp):
             machine_name: Machine identifier
             measurement_location: Measurement point description
         """
-        rpm_param = f", operating_speed_rpm={operating_speed_rpm}" if operating_speed_rpm else ""
+    rpm_param = f", operating_speed_rpm={operating_speed_rpm}" if operating_speed_rpm else ""
 
-        return f"""Generate a comprehensive diagnostic report for {machine_name} - {measurement_location}
+    return f"""Generate a comprehensive diagnostic report for {machine_name} - {measurement_location}
 
     SIGNAL: {signal_file}
     SAMPLING RATE: {sampling_rate} Hz
@@ -617,3 +611,11 @@ def register(mcp):
     ANALYZED BY: ISO 20816-3 Diagnostic System
     ================================================================================
     """
+
+
+def register(mcp):
+    """Register diagnostic prompts on the MCP server."""
+    mcp.prompt()(diagnose_bearing)
+    mcp.prompt()(diagnose_gear)
+    mcp.prompt()(quick_diagnostic_report)
+    mcp.prompt()(generate_iso_diagnostic_report)

@@ -1,0 +1,392 @@
+"""U6 contract tests: module-level importability + single error semantic.
+
+Two rails, one contract:
+- failures / misuse  -> raised exceptions (FastMCP converts them into MCP
+  ``isError`` responses) with "problem — actionable suggestion" messages;
+- legitimate negative outcomes (bearing not in catalog, no trend detected)
+  -> TYPED results with a ``suggestion``/``status`` field.
+
+Forbidden everywhere: dicts with an ``"error"`` key returned as success and
+JSON built by interpolating exception text into f-strings.
+"""
+
+import importlib
+import inspect
+import json
+import re
+from pathlib import Path
+from unittest.mock import AsyncMock
+
+import numpy as np
+import pandas as pd
+import pytest
+from mcp.server.fastmcp import FastMCP
+from pydantic import BaseModel
+
+from predictive_maintenance_mcp.mcp_tools import register_all
+from predictive_maintenance_mcp.models import BearingCatalogMiss
+
+SRC_MCP_TOOLS = Path(__file__).parent.parent / "src" / "mcp_tools"
+
+
+@pytest.fixture(scope="module")
+def mcp():
+    server = FastMCP("test-error-contract")
+    register_all(server)
+    return server
+
+
+@pytest.fixture(scope="module")
+def tools(mcp):
+    return {t.name: t for t in mcp._tool_manager._tools.values()}
+
+
+@pytest.fixture
+def mock_ctx():
+    ctx = AsyncMock()
+    return ctx
+
+
+@pytest.fixture
+def sandbox_dirs(tmp_path, monkeypatch):
+    """Point every directory-bearing module at an empty sandbox."""
+    signals_dir = tmp_path / "data" / "signals"
+    signals_dir.mkdir(parents=True)
+    models_dir = tmp_path / "models"
+    models_dir.mkdir()
+    reports_dir = tmp_path / "reports"
+    reports_dir.mkdir()
+
+    for target in (
+        "predictive_maintenance_mcp.config.DATA_DIR",
+        "predictive_maintenance_mcp.signal_loader.DATA_DIR",
+        "predictive_maintenance_mcp.signal_repository.DATA_DIR",
+        "predictive_maintenance_mcp.mcp_tools.acquisition_tools.DATA_DIR",
+        "predictive_maintenance_mcp.mcp_tools.analysis_tools.DATA_DIR",
+        "predictive_maintenance_mcp.mcp_tools.diagnostics_tools.DATA_DIR",
+        "predictive_maintenance_mcp.mcp_tools.report_tools.DATA_DIR",
+        "predictive_maintenance_mcp.mcp_tools.prognostics_tools.DATA_DIR",
+    ):
+        monkeypatch.setattr(target, signals_dir)
+    for target in (
+        "predictive_maintenance_mcp.mcp_tools.diagnostics_tools.MODELS_DIR",
+        "predictive_maintenance_mcp.mcp_tools.report_tools.MODELS_DIR",
+    ):
+        monkeypatch.setattr(target, models_dir)
+    for target in (
+        "predictive_maintenance_mcp.report_generator.REPORTS_DIR",
+        "predictive_maintenance_mcp.mcp_tools.report_tools.REPORTS_DIR",
+        "predictive_maintenance_mcp.mcp_tools.diagnostics_tools.REPORTS_DIR",
+    ):
+        monkeypatch.setattr(target, reports_dir)
+    return signals_dir
+
+
+# ---------------------------------------------------------------------------
+# R10 (importability): every tool is a module-level function
+# ---------------------------------------------------------------------------
+
+
+class TestModuleLevelTools:
+    """Every registered endpoint is importable directly from its module."""
+
+    def test_no_tool_is_a_closure(self, mcp):
+        for t in mcp._tool_manager._tools.values():
+            assert "<locals>" not in t.fn.__qualname__, (
+                f"Tool '{t.name}' is still a closure ({t.fn.__qualname__}) — "
+                f"U6 requires module-level functions"
+            )
+
+    def test_every_tool_importable_by_name(self, mcp):
+        for t in mcp._tool_manager._tools.values():
+            module = importlib.import_module(t.fn.__module__)
+            assert getattr(module, t.name) is t.fn, (
+                f"Tool '{t.name}' is not importable as "
+                f"{t.fn.__module__}.{t.name}"
+            )
+
+    def test_prompts_are_module_level(self, mcp):
+        for p in mcp._prompt_manager._prompts.values():
+            # FastMCP wraps prompt fns (validate_call) — unwrap to compare.
+            fn = inspect.unwrap(p.fn)
+            assert "<locals>" not in fn.__qualname__
+            module = importlib.import_module(fn.__module__)
+            assert getattr(module, p.name) is fn
+
+    @pytest.mark.asyncio
+    async def test_direct_import_happy_path(
+        self, sandbox_dirs, mock_ctx
+    ):
+        """analyze_fft works via direct import, no FastMCP involved."""
+        from predictive_maintenance_mcp.mcp_tools.analysis_tools import (
+            analyze_fft,
+        )
+
+        fs = 10000
+        t = np.linspace(0, 1.0, fs, endpoint=False)
+        sig = np.sin(2 * np.pi * 50 * t)
+        pd.DataFrame(sig).to_csv(
+            sandbox_dirs / "direct.csv", index=False, header=False
+        )
+        with open(sandbox_dirs / "direct_metadata.json", "w") as f:
+            json.dump({"sampling_rate": fs, "signal_unit": "g"}, f)
+
+        result = await analyze_fft(
+            ctx=mock_ctx, filename="direct.csv", sampling_rate=float(fs)
+        )
+        assert abs(result.peak_frequency - 50.0) < 2.0
+
+
+# ---------------------------------------------------------------------------
+# Blanket: failure paths raise — never an error-shaped dict as success
+# ---------------------------------------------------------------------------
+
+# Curated obviously-wrong inputs per tool. Tools omitted here either have no
+# reachable failure path without heavy side effects (list_signals,
+# list_html_reports, generate_test_signal, search_documentation/RAG,
+# calculate_bearing_characteristic_frequencies) or express their negative
+# outcome as a typed result by design (search_bearing_catalog, clear_signal),
+# which is covered separately below.
+FAILURE_CASES = {
+    "analyze_fft": {"filename": "__missing__.csv", "sampling_rate": 1000.0},
+    "analyze_envelope": {"filename": "__missing__.csv", "sampling_rate": 1000.0},
+    "analyze_statistics": {"filename": "__missing__.csv"},
+    "extract_features_from_signal": {"signal_file": "__missing__.csv"},
+    "compute_power_spectral_density": {"signal_id": "__not_loaded__"},
+    "compute_spectrogram_stft": {"signal_id": "__not_loaded__"},
+    "compute_envelope_spectrum_tool": {"signal_id": "__not_loaded__"},
+    "evaluate_iso_20816": {"signal_file": "__missing__.csv"},
+    "plot_iso_20816_chart": {"filename": "__missing__.csv", "sampling_rate": 10000.0},
+    "train_anomaly_model": {
+        "healthy_signal_files": ["x.csv"],
+        "model_name": "../evil",
+    },
+    "predict_anomalies": {"signal_file": "x.csv", "model_name": "__no_model__"},
+    "extract_manual_specs": {"manual_filename": "__missing__.pdf"},
+    "read_manual_excerpt": {"manual_filename": "__missing__.pdf"},
+    "check_bearing_fault_peak_tool": {
+        "signal_id": "__not_loaded__",
+        "bearing_id": "6205",
+        "fault_type": "BPFO",
+        "rpm": 1500.0,
+    },
+    "check_bearing_faults_direct": {
+        "signal_id": "__not_loaded__",
+        "bearing_id": "6205",
+        "rpm": 1500.0,
+    },
+    "lookup_bearing_and_compute_tool": {
+        "bearing_type": "6205",
+        "rpm": 1500.0,
+        "signal_id": "__not_loaded__",
+    },
+    "assess_vibration_severity": {"signal_id": "__not_loaded__"},
+    "diagnose_vibration_tool": {"signal_id": "__not_loaded__", "rpm": 1500.0},
+    "plot_signal": {"signal_file": "__missing__.csv"},
+    "plot_spectrum": {"signal_file": "__missing__.csv"},
+    "plot_envelope": {"signal_file": "__missing__.csv"},
+    "generate_fft_report": {"signal_file": "__missing__.csv"},
+    "generate_envelope_report": {"signal_file": "__missing__.csv"},
+    "generate_iso_report": {"signal_file": "__missing__.csv"},
+    "get_report_info": {"file_name": "__missing__.html"},
+    "generate_pca_visualization_report": {"model_name": "__no_model__"},
+    "estimate_rul": {
+        "failure_threshold": 10.0,
+        "timestamps": [0.0],
+        "feature_values": [1.0],
+    },
+    "analyze_signal_trend": {"signal_file": "__missing__.csv"},
+    "detect_signal_degradation_onset": {"signal_file": "__missing__.csv"},
+    "load_signal": {"filepath": "__missing__.csv"},
+    "get_signal_info": {"signal_id": "__not_loaded__"},
+}
+
+
+def _payload_has_error_key(value) -> bool:
+    if isinstance(value, dict):
+        return "error" in value
+    if isinstance(value, BaseModel):
+        return "error" in value.model_dump()
+    return False
+
+
+class TestFailuresRaise:
+    """Known failure paths raise instead of returning error-shaped dicts."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("tool_name", sorted(FAILURE_CASES))
+    async def test_failure_raises(
+        self, tool_name, tools, sandbox_dirs, mock_ctx
+    ):
+        tool = tools[tool_name]
+        kwargs = dict(FAILURE_CASES[tool_name])
+        if "ctx" in inspect.signature(tool.fn).parameters:
+            kwargs["ctx"] = mock_ctx
+
+        try:
+            result = tool.fn(**kwargs)
+            if inspect.isawaitable(result):
+                result = await result
+        except Exception:
+            return  # raised — correct rail for a failure
+
+        pytest.fail(
+            f"{tool_name} returned {type(result).__name__} instead of "
+            f"raising on invalid input"
+            + (
+                " — and the payload is an error-shaped dict"
+                if _payload_has_error_key(result)
+                else ""
+            )
+        )
+
+    @pytest.mark.asyncio
+    async def test_docx_missing_dependency_raises(
+        self, tools, sandbox_dirs, mock_ctx, monkeypatch
+    ):
+        """Missing python-docx is a failure — raised, not an error dict."""
+        monkeypatch.setattr(
+            "predictive_maintenance_mcp.report_generator.HAS_DOCX", False
+        )
+        with pytest.raises(ValueError, match="python-docx"):
+            await tools["generate_diagnostic_report_docx"].fn(
+                ctx=mock_ctx,
+                signal_file="x.csv",
+                sections={"diagnosis": "text"},
+            )
+
+
+# ---------------------------------------------------------------------------
+# Typed results for legitimate negative outcomes
+# ---------------------------------------------------------------------------
+
+
+class TestTypedNegativeOutcomes:
+    @pytest.mark.asyncio
+    async def test_bearing_catalog_miss_is_typed(self, tools, mock_ctx):
+        result = await tools["search_bearing_catalog"].fn(
+            bearing_designation="ZZZ_NOT_A_BEARING_999", ctx=mock_ctx
+        )
+        assert isinstance(result, BearingCatalogMiss)
+        assert result.status == "not_found"
+        assert result.suggestion  # actionable next step present
+        assert "6205" in result.catalog_contains
+        # No invented geometry and no 'error' key masquerading as success
+        dumped = result.model_dump()
+        assert "error" not in dumped
+        for key in ("num_balls", "ball_diameter_mm", "pitch_diameter_mm"):
+            assert key not in dumped
+
+
+# ---------------------------------------------------------------------------
+# Resources: no hand-built JSON, hostile characters stay safe
+# ---------------------------------------------------------------------------
+
+
+class TestResourceOutputs:
+    def test_read_signal_file_success_is_valid_json(self, sandbox_dirs):
+        from predictive_maintenance_mcp.mcp_tools.acquisition_tools import (
+            read_signal_file,
+        )
+
+        pd.DataFrame([0.1, 0.2, 0.3]).to_csv(
+            sandbox_dirs / "ok.csv", index=False, header=False
+        )
+        out = read_signal_file("ok.csv")
+        parsed = json.loads(out)  # must be valid JSON
+        assert parsed["filename"] == "ok.csv"
+
+    def test_read_signal_file_hostile_error_never_malformed(
+        self, sandbox_dirs, monkeypatch
+    ):
+        """An exception message with quotes and Windows backslashes must
+        surface as a raised exception (clean protocol error) — never as a
+        hand-interpolated, malformed JSON string."""
+        from predictive_maintenance_mcp.mcp_tools import acquisition_tools
+
+        pd.DataFrame([0.1]).to_csv(
+            sandbox_dirs / "hostile.csv", index=False, header=False
+        )
+        hostile = 'boom "quoted" path C:\\Users\\evil\\x.csv'
+
+        def explode(_filename):
+            raise RuntimeError(hostile)
+
+        monkeypatch.setattr(
+            acquisition_tools, "load_signal_data", explode
+        )
+        with pytest.raises(RuntimeError, match="quoted"):
+            acquisition_tools.read_signal_file("hostile.csv")
+
+    def test_read_signal_file_missing_raises(self, sandbox_dirs):
+        from predictive_maintenance_mcp.mcp_tools.acquisition_tools import (
+            read_signal_file,
+        )
+
+        with pytest.raises(FileNotFoundError, match="list_signals"):
+            read_signal_file("__nope__.csv")
+
+    def test_read_manual_resource_missing_raises(self, tmp_path, monkeypatch):
+        from predictive_maintenance_mcp.mcp_tools import acquisition_tools
+
+        resources = tmp_path / "resources"
+        (resources / "machine_manuals").mkdir(parents=True)
+        monkeypatch.setattr(acquisition_tools, "RESOURCES_DIR", resources)
+        with pytest.raises(FileNotFoundError, match="available manuals"):
+            acquisition_tools.read_manual_resource("__nope__.pdf")
+
+
+# ---------------------------------------------------------------------------
+# Source-level guards (cheap tripwires for the audit's offender patterns)
+# ---------------------------------------------------------------------------
+
+
+class TestSourceGuards:
+    def test_no_monolith_imports_in_mcp_tools(self):
+        offenders = [
+            p.name
+            for p in SRC_MCP_TOOLS.glob("*.py")
+            if "machinery_diagnostics_server" in p.read_text(encoding="utf-8")
+        ]
+        assert offenders == [], (
+            f"mcp_tools must not import from the deprecated monolith: "
+            f"{offenders}"
+        )
+
+    def test_no_fstring_json_error_returns(self):
+        pattern = re.compile(r"f['\"]\{\{\s*\"error\"")
+        offenders = [
+            p.name
+            for p in SRC_MCP_TOOLS.glob("*.py")
+            if pattern.search(p.read_text(encoding="utf-8"))
+        ]
+        assert offenders == [], (
+            f"JSON must never be built via f-string interpolation: "
+            f"{offenders}"
+        )
+
+    def test_no_error_key_dict_literals_returned(self):
+        """No dict literal with an 'error' key anywhere in mcp_tools.
+
+        Legitimate negative outcomes are typed models; failures raise.
+        AST-based so comments and docstrings cannot false-positive.
+        """
+        import ast
+
+        offenders: dict[str, int] = {}
+        for path in SRC_MCP_TOOLS.glob("*.py"):
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            hits = sum(
+                1
+                for node in ast.walk(tree)
+                if isinstance(node, ast.Dict)
+                and any(
+                    isinstance(k, ast.Constant) and k.value == "error"
+                    for k in node.keys
+                )
+            )
+            if hits:
+                offenders[path.name] = hits
+        assert offenders == {}, (
+            f"error-keyed dict literals found in: {offenders}"
+        )

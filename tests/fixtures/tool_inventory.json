@@ -1,0 +1,1867 @@
+{
+  "prompts": {
+    "diagnose_bearing": [
+      "bpfi",
+      "bpfo",
+      "bsf",
+      "ftf",
+      "machine_group",
+      "operating_speed_rpm",
+      "sampling_rate",
+      "signal_file",
+      "support_type"
+    ],
+    "diagnose_gear": [
+      "num_teeth",
+      "rotation_speed_rpm",
+      "sampling_rate",
+      "signal_file"
+    ],
+    "generate_iso_diagnostic_report": [
+      "machine_group",
+      "machine_name",
+      "measurement_location",
+      "operating_speed_rpm",
+      "sampling_rate",
+      "signal_file",
+      "support_type"
+    ],
+    "quick_diagnostic_report": [
+      "signal_file"
+    ]
+  },
+  "resources": [
+    "manual://list",
+    "manual://read/{filename}",
+    "signal://list",
+    "signal://read/{filename}"
+  ],
+  "tools": {
+    "analyze_envelope": {
+      "context_kwarg": "ctx",
+      "is_async": true,
+      "parameters": {
+        "properties": {
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "filter_high": {
+            "default": 2000.0,
+            "title": "Filter High",
+            "type": "number"
+          },
+          "filter_low": {
+            "default": 500.0,
+            "title": "Filter Low",
+            "type": "number"
+          },
+          "num_peaks": {
+            "default": 5,
+            "title": "Num Peaks",
+            "type": "integer"
+          },
+          "random_seed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Random Seed"
+          },
+          "sampling_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sampling Rate"
+          },
+          "segment_duration": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Segment Duration"
+          }
+        },
+        "required": [
+          "filename"
+        ],
+        "title": "analyze_envelopeArguments",
+        "type": "object"
+      }
+    },
+    "analyze_fft": {
+      "context_kwarg": "ctx",
+      "is_async": true,
+      "parameters": {
+        "properties": {
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "max_frequency": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Max Frequency"
+          },
+          "random_seed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Random Seed"
+          },
+          "sampling_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sampling Rate"
+          },
+          "segment_duration": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Segment Duration"
+          }
+        },
+        "required": [
+          "filename"
+        ],
+        "title": "analyze_fftArguments",
+        "type": "object"
+      }
+    },
+    "analyze_signal_trend": {
+      "context_kwarg": "ctx",
+      "is_async": true,
+      "parameters": {
+        "properties": {
+          "feature_name": {
+            "default": "rms",
+            "title": "Feature Name",
+            "type": "string"
+          },
+          "overlap_ratio": {
+            "default": 0.5,
+            "title": "Overlap Ratio",
+            "type": "number"
+          },
+          "sampling_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sampling Rate"
+          },
+          "segment_duration": {
+            "default": 0.1,
+            "title": "Segment Duration",
+            "type": "number"
+          },
+          "signal_file": {
+            "title": "Signal File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "signal_file"
+        ],
+        "title": "analyze_signal_trendArguments",
+        "type": "object"
+      }
+    },
+    "analyze_statistics": {
+      "context_kwarg": null,
+      "is_async": false,
+      "parameters": {
+        "properties": {
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          }
+        },
+        "required": [
+          "filename"
+        ],
+        "title": "analyze_statisticsArguments",
+        "type": "object"
+      }
+    },
+    "assess_vibration_severity": {
+      "context_kwarg": "ctx",
+      "is_async": true,
+      "parameters": {
+        "properties": {
+          "axis": {
+            "default": "vertical",
+            "title": "Axis",
+            "type": "string"
+          },
+          "machine_group": {
+            "default": 2,
+            "enum": [
+              1,
+              2
+            ],
+            "title": "Machine Group",
+            "type": "integer"
+          },
+          "signal_id": {
+            "title": "Signal Id",
+            "type": "string"
+          },
+          "support_type": {
+            "default": "rigid",
+            "enum": [
+              "rigid",
+              "flexible"
+            ],
+            "title": "Support Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "signal_id"
+        ],
+        "title": "assess_vibration_severityArguments",
+        "type": "object"
+      }
+    },
+    "calculate_bearing_characteristic_frequencies": {
+      "context_kwarg": "ctx",
+      "is_async": true,
+      "parameters": {
+        "properties": {
+          "ball_diameter_mm": {
+            "title": "Ball Diameter Mm",
+            "type": "number"
+          },
+          "contact_angle_deg": {
+            "default": 0.0,
+            "title": "Contact Angle Deg",
+            "type": "number"
+          },
+          "num_balls": {
+            "title": "Num Balls",
+            "type": "integer"
+          },
+          "pitch_diameter_mm": {
+            "title": "Pitch Diameter Mm",
+            "type": "number"
+          },
+          "shaft_speed_rpm": {
+            "default": 1500.0,
+            "title": "Shaft Speed Rpm",
+            "type": "number"
+          }
+        },
+        "required": [
+          "num_balls",
+          "ball_diameter_mm",
+          "pitch_diameter_mm"
+        ],
+        "title": "calculate_bearing_characteristic_frequenciesArguments",
+        "type": "object"
+      }
+    },
+    "check_bearing_fault_peak_tool": {
+      "context_kwarg": "ctx",
+      "is_async": true,
+      "parameters": {
+        "properties": {
+          "bearing_id": {
+            "title": "Bearing Id",
+            "type": "string"
+          },
+          "fault_type": {
+            "title": "Fault Type",
+            "type": "string"
+          },
+          "rpm": {
+            "title": "Rpm",
+            "type": "number"
+          },
+          "signal_id": {
+            "title": "Signal Id",
+            "type": "string"
+          },
+          "tolerance_pct": {
+            "default": 5.0,
+            "title": "Tolerance Pct",
+            "type": "number"
+          }
+        },
+        "required": [
+          "signal_id",
+          "bearing_id",
+          "fault_type",
+          "rpm"
+        ],
+        "title": "check_bearing_fault_peak_toolArguments",
+        "type": "object"
+      }
+    },
+    "check_bearing_faults_direct": {
+      "context_kwarg": "ctx",
+      "is_async": true,
+      "parameters": {
+        "properties": {
+          "bearing_id": {
+            "title": "Bearing Id",
+            "type": "string"
+          },
+          "rpm": {
+            "title": "Rpm",
+            "type": "number"
+          },
+          "signal_id": {
+            "title": "Signal Id",
+            "type": "string"
+          },
+          "tolerance_pct": {
+            "default": 5.0,
+            "title": "Tolerance Pct",
+            "type": "number"
+          }
+        },
+        "required": [
+          "signal_id",
+          "bearing_id",
+          "rpm"
+        ],
+        "title": "check_bearing_faults_directArguments",
+        "type": "object"
+      }
+    },
+    "check_custom_vibration_alert": {
+      "context_kwarg": "ctx",
+      "is_async": true,
+      "parameters": {
+        "properties": {
+          "alarm_threshold": {
+            "title": "Alarm Threshold",
+            "type": "number"
+          },
+          "danger_threshold": {
+            "title": "Danger Threshold",
+            "type": "number"
+          },
+          "rms_velocity": {
+            "title": "Rms Velocity",
+            "type": "number"
+          },
+          "warning_threshold": {
+            "title": "Warning Threshold",
+            "type": "number"
+          }
+        },
+        "required": [
+          "rms_velocity",
+          "warning_threshold",
+          "alarm_threshold",
+          "danger_threshold"
+        ],
+        "title": "check_custom_vibration_alertArguments",
+        "type": "object"
+      }
+    },
+    "check_vibration_alert": {
+      "context_kwarg": "ctx",
+      "is_async": true,
+      "parameters": {
+        "properties": {
+          "machine_group": {
+            "default": 2,
+            "title": "Machine Group",
+            "type": "integer"
+          },
+          "rms_velocity": {
+            "title": "Rms Velocity",
+            "type": "number"
+          },
+          "support_type": {
+            "default": "rigid",
+            "title": "Support Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rms_velocity"
+        ],
+        "title": "check_vibration_alertArguments",
+        "type": "object"
+      }
+    },
+    "clear_all_signals": {
+      "context_kwarg": "ctx",
+      "is_async": true,
+      "parameters": {
+        "properties": {},
+        "title": "clear_all_signalsArguments",
+        "type": "object"
+      }
+    },
+    "clear_signal": {
+      "context_kwarg": "ctx",
+      "is_async": true,
+      "parameters": {
+        "properties": {
+          "signal_id": {
+            "title": "Signal Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "signal_id"
+        ],
+        "title": "clear_signalArguments",
+        "type": "object"
+      }
+    },
+    "compute_envelope_spectrum_tool": {
+      "context_kwarg": "ctx",
+      "is_async": true,
+      "parameters": {
+        "properties": {
+          "filter_high": {
+            "default": 5000.0,
+            "title": "Filter High",
+            "type": "number"
+          },
+          "filter_low": {
+            "default": 500.0,
+            "title": "Filter Low",
+            "type": "number"
+          },
+          "method": {
+            "default": "hilbert",
+            "title": "Method",
+            "type": "string"
+          },
+          "signal_id": {
+            "title": "Signal Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "signal_id"
+        ],
+        "title": "compute_envelope_spectrum_toolArguments",
+        "type": "object"
+      }
+    },
+    "compute_power_spectral_density": {
+      "context_kwarg": "ctx",
+      "is_async": true,
+      "parameters": {
+        "properties": {
+          "noverlap": {
+            "default": 128,
+            "title": "Noverlap",
+            "type": "integer"
+          },
+          "nperseg": {
+            "default": 256,
+            "title": "Nperseg",
+            "type": "integer"
+          },
+          "signal_id": {
+            "title": "Signal Id",
+            "type": "string"
+          },
+          "window": {
+            "default": "hann",
+            "title": "Window",
+            "type": "string"
+          }
+        },
+        "required": [
+          "signal_id"
+        ],
+        "title": "compute_power_spectral_densityArguments",
+        "type": "object"
+      }
+    },
+    "compute_spectrogram_stft": {
+      "context_kwarg": "ctx",
+      "is_async": true,
+      "parameters": {
+        "properties": {
+          "noverlap": {
+            "default": 128,
+            "title": "Noverlap",
+            "type": "integer"
+          },
+          "nperseg": {
+            "default": 256,
+            "title": "Nperseg",
+            "type": "integer"
+          },
+          "signal_id": {
+            "title": "Signal Id",
+            "type": "string"
+          },
+          "window": {
+            "default": "hann",
+            "title": "Window",
+            "type": "string"
+          }
+        },
+        "required": [
+          "signal_id"
+        ],
+        "title": "compute_spectrogram_stftArguments",
+        "type": "object"
+      }
+    },
+    "detect_signal_degradation_onset": {
+      "context_kwarg": "ctx",
+      "is_async": true,
+      "parameters": {
+        "properties": {
+          "feature_name": {
+            "default": "rms",
+            "title": "Feature Name",
+            "type": "string"
+          },
+          "overlap_ratio": {
+            "default": 0.5,
+            "title": "Overlap Ratio",
+            "type": "number"
+          },
+          "sampling_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sampling Rate"
+          },
+          "segment_duration": {
+            "default": 0.1,
+            "title": "Segment Duration",
+            "type": "number"
+          },
+          "signal_file": {
+            "title": "Signal File",
+            "type": "string"
+          },
+          "threshold_sigma": {
+            "default": 3.0,
+            "title": "Threshold Sigma",
+            "type": "number"
+          }
+        },
+        "required": [
+          "signal_file"
+        ],
+        "title": "detect_signal_degradation_onsetArguments",
+        "type": "object"
+      }
+    },
+    "diagnose_vibration_tool": {
+      "context_kwarg": "ctx",
+      "is_async": true,
+      "parameters": {
+        "properties": {
+          "bearing_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Bearing Id"
+          },
+          "machine_group": {
+            "default": 2,
+            "enum": [
+              1,
+              2
+            ],
+            "title": "Machine Group",
+            "type": "integer"
+          },
+          "rpm": {
+            "title": "Rpm",
+            "type": "number"
+          },
+          "signal_id": {
+            "title": "Signal Id",
+            "type": "string"
+          },
+          "support_type": {
+            "default": "rigid",
+            "enum": [
+              "rigid",
+              "flexible"
+            ],
+            "title": "Support Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "signal_id",
+          "rpm"
+        ],
+        "title": "diagnose_vibration_toolArguments",
+        "type": "object"
+      }
+    },
+    "estimate_rul": {
+      "context_kwarg": "ctx",
+      "is_async": true,
+      "parameters": {
+        "properties": {
+          "failure_threshold": {
+            "title": "Failure Threshold",
+            "type": "number"
+          },
+          "feature_name": {
+            "default": "rms",
+            "title": "Feature Name",
+            "type": "string"
+          },
+          "feature_values": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Feature Values"
+          },
+          "method": {
+            "default": "linear",
+            "enum": [
+              "linear",
+              "exponential",
+              "kalman"
+            ],
+            "title": "Method",
+            "type": "string"
+          },
+          "signal_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Signal Ids"
+          },
+          "time_unit": {
+            "default": "hours",
+            "title": "Time Unit",
+            "type": "string"
+          },
+          "timestamps": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Timestamps",
+            "type": "array"
+          }
+        },
+        "required": [
+          "failure_threshold",
+          "timestamps"
+        ],
+        "title": "estimate_rulArguments",
+        "type": "object"
+      }
+    },
+    "evaluate_iso_20816": {
+      "context_kwarg": "ctx",
+      "is_async": true,
+      "parameters": {
+        "properties": {
+          "machine_group": {
+            "default": 2,
+            "title": "Machine Group",
+            "type": "integer"
+          },
+          "operating_speed_rpm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Operating Speed Rpm"
+          },
+          "sampling_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sampling Rate"
+          },
+          "signal_file": {
+            "title": "Signal File",
+            "type": "string"
+          },
+          "signal_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Signal Unit"
+          },
+          "support_type": {
+            "default": "rigid",
+            "title": "Support Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "signal_file"
+        ],
+        "title": "evaluate_iso_20816Arguments",
+        "type": "object"
+      }
+    },
+    "extract_features_from_signal": {
+      "context_kwarg": "ctx",
+      "is_async": true,
+      "parameters": {
+        "properties": {
+          "overlap_ratio": {
+            "default": 0.5,
+            "title": "Overlap Ratio",
+            "type": "number"
+          },
+          "sampling_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sampling Rate"
+          },
+          "segment_duration": {
+            "default": 0.1,
+            "title": "Segment Duration",
+            "type": "number"
+          },
+          "signal_file": {
+            "title": "Signal File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "signal_file"
+        ],
+        "title": "extract_features_from_signalArguments",
+        "type": "object"
+      }
+    },
+    "extract_manual_specs": {
+      "context_kwarg": "ctx",
+      "is_async": true,
+      "parameters": {
+        "properties": {
+          "manual_filename": {
+            "title": "Manual Filename",
+            "type": "string"
+          },
+          "use_cache": {
+            "default": true,
+            "title": "Use Cache",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "manual_filename"
+        ],
+        "title": "extract_manual_specsArguments",
+        "type": "object"
+      }
+    },
+    "generate_diagnostic_report_docx": {
+      "context_kwarg": "ctx",
+      "is_async": true,
+      "parameters": {
+        "properties": {
+          "sections": {
+            "additionalProperties": true,
+            "title": "Sections",
+            "type": "object"
+          },
+          "signal_file": {
+            "title": "Signal File",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Title"
+          }
+        },
+        "required": [
+          "signal_file",
+          "sections"
+        ],
+        "title": "generate_diagnostic_report_docxArguments",
+        "type": "object"
+      }
+    },
+    "generate_envelope_report": {
+      "context_kwarg": "ctx",
+      "is_async": true,
+      "parameters": {
+        "properties": {
+          "bearing_freqs": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "number"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Bearing Freqs"
+          },
+          "filter_high": {
+            "default": 5000.0,
+            "title": "Filter High",
+            "type": "number"
+          },
+          "filter_low": {
+            "default": 500.0,
+            "title": "Filter Low",
+            "type": "number"
+          },
+          "max_freq": {
+            "default": 500.0,
+            "title": "Max Freq",
+            "type": "number"
+          },
+          "num_peaks": {
+            "default": 15,
+            "title": "Num Peaks",
+            "type": "integer"
+          },
+          "sampling_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sampling Rate"
+          },
+          "signal_file": {
+            "title": "Signal File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "signal_file"
+        ],
+        "title": "generate_envelope_reportArguments",
+        "type": "object"
+      }
+    },
+    "generate_feature_comparison_report": {
+      "context_kwarg": "ctx",
+      "is_async": true,
+      "parameters": {
+        "properties": {
+          "features_to_plot": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Features To Plot"
+          },
+          "overlap_ratio": {
+            "default": 0.5,
+            "title": "Overlap Ratio",
+            "type": "number"
+          },
+          "sampling_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sampling Rate"
+          },
+          "segment_duration": {
+            "default": 0.1,
+            "title": "Segment Duration",
+            "type": "number"
+          },
+          "signal_groups": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "title": "Signal Groups",
+            "type": "object"
+          }
+        },
+        "required": [
+          "signal_groups"
+        ],
+        "title": "generate_feature_comparison_reportArguments",
+        "type": "object"
+      }
+    },
+    "generate_fft_report": {
+      "context_kwarg": "ctx",
+      "is_async": true,
+      "parameters": {
+        "properties": {
+          "max_freq": {
+            "default": 5000.0,
+            "title": "Max Freq",
+            "type": "number"
+          },
+          "num_peaks": {
+            "default": 15,
+            "title": "Num Peaks",
+            "type": "integer"
+          },
+          "rotation_freq": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Rotation Freq"
+          },
+          "sampling_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sampling Rate"
+          },
+          "signal_file": {
+            "title": "Signal File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "signal_file"
+        ],
+        "title": "generate_fft_reportArguments",
+        "type": "object"
+      }
+    },
+    "generate_iso_report": {
+      "context_kwarg": "ctx",
+      "is_async": true,
+      "parameters": {
+        "properties": {
+          "machine_group": {
+            "default": 2,
+            "title": "Machine Group",
+            "type": "integer"
+          },
+          "operating_speed_rpm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Operating Speed Rpm"
+          },
+          "sampling_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sampling Rate"
+          },
+          "signal_file": {
+            "title": "Signal File",
+            "type": "string"
+          },
+          "support_type": {
+            "default": "rigid",
+            "title": "Support Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "signal_file"
+        ],
+        "title": "generate_iso_reportArguments",
+        "type": "object"
+      }
+    },
+    "generate_maintenance_recommendations": {
+      "context_kwarg": "ctx",
+      "is_async": true,
+      "parameters": {
+        "properties": {
+          "fault_types": {
+            "default": "",
+            "title": "Fault Types",
+            "type": "string"
+          },
+          "severity_zone": {
+            "title": "Severity Zone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "severity_zone"
+        ],
+        "title": "generate_maintenance_recommendationsArguments",
+        "type": "object"
+      }
+    },
+    "generate_pca_visualization_report": {
+      "context_kwarg": "ctx",
+      "is_async": true,
+      "parameters": {
+        "properties": {
+          "model_name": {
+            "title": "Model Name",
+            "type": "string"
+          },
+          "overlap_ratio": {
+            "default": 0.5,
+            "title": "Overlap Ratio",
+            "type": "number"
+          },
+          "sampling_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sampling Rate"
+          },
+          "segment_duration": {
+            "default": 0.1,
+            "title": "Segment Duration",
+            "type": "number"
+          },
+          "test_signal_files": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Test Signal Files"
+          },
+          "true_labels": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "True Labels"
+          }
+        },
+        "required": [
+          "model_name"
+        ],
+        "title": "generate_pca_visualization_reportArguments",
+        "type": "object"
+      }
+    },
+    "generate_test_signal": {
+      "context_kwarg": "ctx",
+      "is_async": true,
+      "parameters": {
+        "properties": {
+          "duration": {
+            "default": 10.0,
+            "title": "Duration",
+            "type": "number"
+          },
+          "noise_level": {
+            "default": 0.1,
+            "title": "Noise Level",
+            "type": "number"
+          },
+          "random_seed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Random Seed"
+          },
+          "sampling_rate": {
+            "default": 10000.0,
+            "title": "Sampling Rate",
+            "type": "number"
+          },
+          "signal_type": {
+            "default": "bearing_fault",
+            "title": "Signal Type",
+            "type": "string"
+          }
+        },
+        "title": "generate_test_signalArguments",
+        "type": "object"
+      }
+    },
+    "get_report_info": {
+      "context_kwarg": null,
+      "is_async": false,
+      "parameters": {
+        "properties": {
+          "file_name": {
+            "title": "File Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file_name"
+        ],
+        "title": "get_report_infoArguments",
+        "type": "object"
+      }
+    },
+    "get_signal_info": {
+      "context_kwarg": "ctx",
+      "is_async": true,
+      "parameters": {
+        "properties": {
+          "signal_id": {
+            "title": "Signal Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "signal_id"
+        ],
+        "title": "get_signal_infoArguments",
+        "type": "object"
+      }
+    },
+    "list_html_reports": {
+      "context_kwarg": null,
+      "is_async": false,
+      "parameters": {
+        "properties": {},
+        "title": "list_html_reportsArguments",
+        "type": "object"
+      }
+    },
+    "list_machine_manuals": {
+      "context_kwarg": "ctx",
+      "is_async": true,
+      "parameters": {
+        "properties": {},
+        "title": "list_machine_manualsArguments",
+        "type": "object"
+      }
+    },
+    "list_signals": {
+      "context_kwarg": null,
+      "is_async": false,
+      "parameters": {
+        "properties": {},
+        "title": "list_signalsArguments",
+        "type": "object"
+      }
+    },
+    "list_stored_signals": {
+      "context_kwarg": "ctx",
+      "is_async": true,
+      "parameters": {
+        "properties": {},
+        "title": "list_stored_signalsArguments",
+        "type": "object"
+      }
+    },
+    "load_signal": {
+      "context_kwarg": "ctx",
+      "is_async": true,
+      "parameters": {
+        "properties": {
+          "filepath": {
+            "title": "Filepath",
+            "type": "string"
+          },
+          "sampling_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sampling Rate"
+          },
+          "signal_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Signal Id"
+          },
+          "signal_unit": {
+            "anyOf": [
+              {
+                "enum": [
+                  "g",
+                  "m/s2",
+                  "mm/s",
+                  "m/s"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Signal Unit"
+          }
+        },
+        "required": [
+          "filepath"
+        ],
+        "title": "load_signalArguments",
+        "type": "object"
+      }
+    },
+    "lookup_bearing_and_compute_tool": {
+      "context_kwarg": "ctx",
+      "is_async": true,
+      "parameters": {
+        "properties": {
+          "bearing_type": {
+            "title": "Bearing Type",
+            "type": "string"
+          },
+          "rpm": {
+            "title": "Rpm",
+            "type": "number"
+          },
+          "signal_id": {
+            "title": "Signal Id",
+            "type": "string"
+          },
+          "tolerance_pct": {
+            "default": 5.0,
+            "title": "Tolerance Pct",
+            "type": "number"
+          }
+        },
+        "required": [
+          "bearing_type",
+          "rpm",
+          "signal_id"
+        ],
+        "title": "lookup_bearing_and_compute_toolArguments",
+        "type": "object"
+      }
+    },
+    "plot_envelope": {
+      "context_kwarg": "ctx",
+      "is_async": true,
+      "parameters": {
+        "properties": {
+          "filter_band": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Filter Band"
+          },
+          "freq_labels": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Freq Labels"
+          },
+          "freq_range": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Freq Range"
+          },
+          "highlight_freqs": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Highlight Freqs"
+          },
+          "sampling_rate": {
+            "default": 10000.0,
+            "title": "Sampling Rate",
+            "type": "number"
+          },
+          "signal_file": {
+            "title": "Signal File",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Title"
+          }
+        },
+        "required": [
+          "signal_file"
+        ],
+        "title": "plot_envelopeArguments",
+        "type": "object"
+      }
+    },
+    "plot_iso_20816_chart": {
+      "context_kwarg": "ctx",
+      "is_async": true,
+      "parameters": {
+        "properties": {
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "machine_group": {
+            "default": 1,
+            "title": "Machine Group",
+            "type": "integer"
+          },
+          "operating_speed_rpm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Operating Speed Rpm"
+          },
+          "sampling_rate": {
+            "title": "Sampling Rate",
+            "type": "number"
+          },
+          "signal_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Signal Unit"
+          },
+          "support_type": {
+            "default": "rigid",
+            "title": "Support Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "filename",
+          "sampling_rate"
+        ],
+        "title": "plot_iso_20816_chartArguments",
+        "type": "object"
+      }
+    },
+    "plot_signal": {
+      "context_kwarg": "ctx",
+      "is_async": true,
+      "parameters": {
+        "properties": {
+          "sampling_rate": {
+            "default": 10000.0,
+            "title": "Sampling Rate",
+            "type": "number"
+          },
+          "show_statistics": {
+            "default": true,
+            "title": "Show Statistics",
+            "type": "boolean"
+          },
+          "signal_file": {
+            "title": "Signal File",
+            "type": "string"
+          },
+          "time_range": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Time Range"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Title"
+          }
+        },
+        "required": [
+          "signal_file"
+        ],
+        "title": "plot_signalArguments",
+        "type": "object"
+      }
+    },
+    "plot_spectrum": {
+      "context_kwarg": "ctx",
+      "is_async": true,
+      "parameters": {
+        "properties": {
+          "freq_range": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Freq Range"
+          },
+          "min_peak_distance": {
+            "default": 1.0,
+            "title": "Min Peak Distance",
+            "type": "number"
+          },
+          "num_peaks": {
+            "default": 10,
+            "title": "Num Peaks",
+            "type": "integer"
+          },
+          "rotation_freq": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Rotation Freq"
+          },
+          "sampling_rate": {
+            "default": 10000.0,
+            "title": "Sampling Rate",
+            "type": "number"
+          },
+          "signal_file": {
+            "title": "Signal File",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Title"
+          }
+        },
+        "required": [
+          "signal_file"
+        ],
+        "title": "plot_spectrumArguments",
+        "type": "object"
+      }
+    },
+    "predict_anomalies": {
+      "context_kwarg": "ctx",
+      "is_async": true,
+      "parameters": {
+        "properties": {
+          "model_name": {
+            "default": "anomaly_model",
+            "title": "Model Name",
+            "type": "string"
+          },
+          "signal_file": {
+            "title": "Signal File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "signal_file"
+        ],
+        "title": "predict_anomaliesArguments",
+        "type": "object"
+      }
+    },
+    "read_manual_excerpt": {
+      "context_kwarg": "ctx",
+      "is_async": true,
+      "parameters": {
+        "properties": {
+          "manual_filename": {
+            "title": "Manual Filename",
+            "type": "string"
+          },
+          "max_pages": {
+            "default": 10,
+            "title": "Max Pages",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "manual_filename"
+        ],
+        "title": "read_manual_excerptArguments",
+        "type": "object"
+      }
+    },
+    "search_bearing_catalog": {
+      "context_kwarg": "ctx",
+      "is_async": true,
+      "parameters": {
+        "properties": {
+          "bearing_designation": {
+            "title": "Bearing Designation",
+            "type": "string"
+          }
+        },
+        "required": [
+          "bearing_designation"
+        ],
+        "title": "search_bearing_catalogArguments",
+        "type": "object"
+      }
+    },
+    "search_documentation": {
+      "context_kwarg": "ctx",
+      "is_async": true,
+      "parameters": {
+        "properties": {
+          "force_reindex": {
+            "default": false,
+            "title": "Force Reindex",
+            "type": "boolean"
+          },
+          "query": {
+            "title": "Query",
+            "type": "string"
+          },
+          "top_k": {
+            "default": 5,
+            "title": "Top K",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "search_documentationArguments",
+        "type": "object"
+      }
+    },
+    "train_anomaly_model": {
+      "context_kwarg": "ctx",
+      "is_async": true,
+      "parameters": {
+        "properties": {
+          "fault_signal_files": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Fault Signal Files"
+          },
+          "healthy_signal_files": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Healthy Signal Files",
+            "type": "array"
+          },
+          "healthy_validation_files": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Healthy Validation Files"
+          },
+          "model_name": {
+            "default": "anomaly_model",
+            "title": "Model Name",
+            "type": "string"
+          },
+          "model_type": {
+            "default": "OneClassSVM",
+            "title": "Model Type",
+            "type": "string"
+          },
+          "overlap_ratio": {
+            "default": 0.5,
+            "title": "Overlap Ratio",
+            "type": "number"
+          },
+          "pca_variance": {
+            "default": 0.95,
+            "title": "Pca Variance",
+            "type": "number"
+          },
+          "sampling_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sampling Rate"
+          },
+          "segment_duration": {
+            "default": 0.1,
+            "title": "Segment Duration",
+            "type": "number"
+          }
+        },
+        "required": [
+          "healthy_signal_files"
+        ],
+        "title": "train_anomaly_modelArguments",
+        "type": "object"
+      }
+    }
+  }
+}

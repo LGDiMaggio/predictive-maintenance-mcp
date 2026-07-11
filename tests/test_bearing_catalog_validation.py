@@ -258,18 +258,27 @@ class TestBearingNotFound:
         assert lookup_bearing_in_catalog("ZZZ_NOT_A_BEARING_999") is None
 
     @pytest.mark.asyncio
-    async def test_search_tool_returns_error_and_suggestion(self, diag_tools):
+    async def test_search_tool_returns_typed_miss(self, diag_tools):
+        """U6 error contract: a catalog miss is a legitimate negative
+        outcome — a TYPED result (status + suggestion), never a dict with
+        an 'error' key returned as success."""
+        from predictive_maintenance_mcp.models import BearingCatalogMiss
+
         result = await diag_tools["search_bearing_catalog"](
             bearing_designation="99999",
             ctx=AsyncMock(),
         )
-        assert "error" in result
-        assert "suggestion" in result
+        assert isinstance(result, BearingCatalogMiss)
+        assert result.status == "not_found"
+        assert result.bearing_designation == "99999"
+        assert result.suggestion
         # No invented geometry in the payload
+        dumped = result.model_dump()
+        assert "error" not in dumped
         for key in ("num_balls", "ball_diameter_mm", "pitch_diameter_mm"):
-            assert key not in result
+            assert key not in dumped
         # The payload lists the real verified designations
-        assert "6205" in result["catalog_contains"]
+        assert "6205" in result.catalog_contains
 
 
 # ---------------------------------------------------------------------------

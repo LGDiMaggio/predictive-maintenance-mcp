@@ -816,15 +816,17 @@ class TestBearingCatalogTools:
             bearing_designation="6205",
         )
         # Should find bearing 6205 in the verified JSON catalog
-        assert result is not None
-        if "error" not in result:
-            assert result["num_balls"] == 9
-            assert result["ball_diameter_mm"] > 0
-            assert result["source"]  # mandatory source citation
+        assert isinstance(result, dict)
+        assert result["num_balls"] == 9
+        assert result["ball_diameter_mm"] > 0
+        assert result["source"]  # mandatory source citation
 
     @pytest.mark.asyncio
     async def test_search_bearing_catalog_unknown(self, tools, data_dir, mock_ctx):
-        """Search for a non-existent bearing should return error dict."""
+        """Search for a non-existent bearing returns a TYPED miss result
+        (U6 error contract), never a dict with an 'error' key."""
+        from predictive_maintenance_mcp.models import BearingCatalogMiss
+
         if "search_bearing_catalog" not in tools:
             pytest.skip("search_bearing_catalog not registered")
 
@@ -832,7 +834,9 @@ class TestBearingCatalogTools:
             ctx=mock_ctx,
             bearing_designation="ZZZZZ999",
         )
-        assert "error" in result or "suggestion" in result
+        assert isinstance(result, BearingCatalogMiss)
+        assert result.status == "not_found"
+        assert result.suggestion
 
     @pytest.mark.asyncio
     async def test_search_bearing_catalog_with_prefix(self, tools, data_dir, mock_ctx):
@@ -844,9 +848,8 @@ class TestBearingCatalogTools:
             ctx=mock_ctx,
             bearing_designation="SKF 6205-2RS",
         )
-        assert result is not None
-        if "error" not in result:
-            assert result["num_balls"] == 9
+        assert isinstance(result, dict)
+        assert result["num_balls"] == 9
 
     @pytest.mark.asyncio
     async def test_calculate_bearing_frequencies_tool(self, tools, data_dir, mock_ctx):

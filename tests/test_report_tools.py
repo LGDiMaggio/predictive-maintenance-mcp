@@ -48,11 +48,9 @@ def data_dir(tmp_path, monkeypatch):
     monkeypatch.setattr("predictive_maintenance_mcp.config.DATA_DIR", signals_dir)
     monkeypatch.setattr("predictive_maintenance_mcp.signal_loader.DATA_DIR", signals_dir)
     monkeypatch.setattr("predictive_maintenance_mcp.signal_repository.DATA_DIR", signals_dir)
-    # Also patch legacy monolith DATA_DIR (used by generate_iso_report → evaluate_iso_20816)
-    try:
-        monkeypatch.setattr("predictive_maintenance_mcp.machinery_diagnostics_server.DATA_DIR", signals_dir)
-    except AttributeError:
-        pass  # monolith may not be imported yet
+    # generate_iso_report delegates to the modular evaluate_iso_20816
+    # (diagnostics_tools) since U6 — patch its DATA_DIR too.
+    monkeypatch.setattr("predictive_maintenance_mcp.mcp_tools.diagnostics_tools.DATA_DIR", signals_dir)
     return signals_dir
 
 
@@ -356,11 +354,13 @@ class TestListReports:
 class TestGetReportInfo:
     """Tests for get_report_info tool."""
 
-    def test_report_not_found(self, tools, reports_dir):
+    def test_report_not_found_raises(self, tools, reports_dir):
+        """U6 error contract: a missing report is misuse — raise with an
+        actionable message, never an error-shaped dict as success."""
         if "get_report_info" not in tools:
             pytest.skip("get_report_info not registered")
-        result = tools["get_report_info"](file_name="nonexistent.html")
-        assert "error" in result
+        with pytest.raises(ValueError, match="list_html_reports"):
+            tools["get_report_info"](file_name="nonexistent.html")
 
     def test_report_found_with_metadata(self, tools, reports_dir):
         if "get_report_info" not in tools:
@@ -378,14 +378,13 @@ class TestGetReportInfo:
         assert result["metadata"]["report_type"] == "envelope"
         assert result["metadata"]["num_peaks"] == 10
 
-    def test_report_without_metadata_block(self, tools, reports_dir):
-        """Report file exists but has no metadata JSON block."""
+    def test_report_without_metadata_block_raises(self, tools, reports_dir):
+        """Report file exists but has no metadata JSON block → raise."""
         if "get_report_info" not in tools:
             pytest.skip("get_report_info not registered")
         (reports_dir / "no_meta.html").write_text("<html><body>plain</body></html>")
-        result = tools["get_report_info"](file_name="no_meta.html")
-        assert "error" in result
-        assert "Metadata not found" in result["error"]
+        with pytest.raises(ValueError, match="Metadata not found"):
+            tools["get_report_info"](file_name="no_meta.html")
 
 
 # ---------------------------------------------------------------------------
@@ -737,57 +736,84 @@ class TestGenerateFeatureComparisonReport:
 # DOCX report generation
 # ---------------------------------------------------------------------------
 
+def _docx_installed() -> bool:
+    try:
+        import docx  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
 class TestDocxReport:
-    """Tests for generate_diagnostic_report_docx tool."""
+    """Tests for generate_diagnostic_report_docx tool.
+
+    Since U6 the tool RAISES ValueError when python-docx is missing (error
+    contract: failures raise, never error dicts) — so the happy-path tests
+    are skipped when the optional dependency is not installed.
+    """
 
     @pytest.mark.asyncio
     async def test_generates_docx(self, tools, data_dir, reports_dir, mock_ctx):
         if "generate_diagnostic_report_docx" not in tools:
             pytest.skip("generate_diagnostic_report_docx not registered")
-        try:
-            result = await tools["generate_diagnostic_report_docx"](
-                ctx=mock_ctx,
-                signal_file="report_test.csv",
-                sections={"diagnosis": "Test diagnosis summary"},
-            )
-            assert result is not None
-        except ImportError:
+        if not _docx_installed():
             pytest.skip("python-docx not installed")
+        result = await tools["generate_diagnostic_report_docx"](
+            ctx=mock_ctx,
+            signal_file="report_test.csv",
+            sections={"diagnosis": "Test diagnosis summary"},
+        )
+        assert result is not None
 
     @pytest.mark.asyncio
     async def test_docx_with_all_sections(self, tools, data_dir, reports_dir, mock_ctx):
         if "generate_diagnostic_report_docx" not in tools:
             pytest.skip("generate_diagnostic_report_docx not registered")
-        try:
-            result = await tools["generate_diagnostic_report_docx"](
-                ctx=mock_ctx,
-                signal_file="report_test.csv",
-                sections={
-                    "statistics": {"RMS": 0.707, "Kurtosis": 3.0, "Crest Factor": 1.414},
-                    "fft_peaks": [{"frequency": 50.0, "magnitude_db": 0.0, "note": "1x"}],
-                    "diagnosis": "All parameters within normal range.",
-                },
-                title="Custom DOCX Title",
-            )
-            assert result is not None
-            if "error" not in result:
-                assert "file_path" in result
-        except ImportError:
+        if not _docx_installed():
             pytest.skip("python-docx not installed")
+        result = await tools["generate_diagnostic_report_docx"](
+            ctx=mock_ctx,
+            signal_file="report_test.csv",
+            sections={
+                "statistics": {"RMS": 0.707, "Kurtosis": 3.0, "Crest Factor": 1.414},
+                "fft_peaks": [{"frequency": 50.0, "magnitude_db": 0.0, "note": "1x"}],
+                "diagnosis": "All parameters within normal range.",
+            },
+            title="Custom DOCX Title",
+        )
+        assert result is not None
+        assert "error" not in result
+        assert "file_path" in result
 
     @pytest.mark.asyncio
     async def test_docx_no_ctx(self, tools, data_dir, reports_dir):
         """DOCX generation without ctx should still work."""
         if "generate_diagnostic_report_docx" not in tools:
             pytest.skip("generate_diagnostic_report_docx not registered")
-        try:
-            result = await tools["generate_diagnostic_report_docx"](
+        if not _docx_installed():
+            pytest.skip("python-docx not installed")
+        result = await tools["generate_diagnostic_report_docx"](
+            signal_file="report_test.csv",
+            sections={"diagnosis": "Summary"},
+        )
+        assert result is not None
+
+    @pytest.mark.asyncio
+    async def test_docx_missing_dependency_raises(
+        self, tools, data_dir, reports_dir, mock_ctx, monkeypatch
+    ):
+        """Missing python-docx → raised ValueError, never an error dict."""
+        if "generate_diagnostic_report_docx" not in tools:
+            pytest.skip("generate_diagnostic_report_docx not registered")
+        monkeypatch.setattr(
+            "predictive_maintenance_mcp.report_generator.HAS_DOCX", False
+        )
+        with pytest.raises(ValueError, match="python-docx"):
+            await tools["generate_diagnostic_report_docx"](
+                ctx=mock_ctx,
                 signal_file="report_test.csv",
                 sections={"diagnosis": "Summary"},
             )
-            assert result is not None
-        except ImportError:
-            pytest.skip("python-docx not installed")
 
 
 # ---------------------------------------------------------------------------

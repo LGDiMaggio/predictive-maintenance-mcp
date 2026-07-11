@@ -473,10 +473,24 @@ class TestAnalyzeSignalTrend:
 
     @pytest.mark.asyncio
     async def test_file_not_found(self, tools, data_dir, mock_ctx):
+        """Missing file (no metadata, no explicit rate) raises the strict
+        sampling-rate error first — never a silent 10 kHz fallback (U6)."""
+        with pytest.raises(ValueError, match="sampling_rate"):
+            await tools["analyze_signal_trend"](
+                ctx=mock_ctx,
+                signal_file="nonexistent.csv",
+            )
+
+    @pytest.mark.asyncio
+    async def test_file_not_found_with_explicit_rate(
+        self, tools, data_dir, mock_ctx
+    ):
+        """With the rate given explicitly, the missing file itself raises."""
         with pytest.raises(FileNotFoundError):
             await tools["analyze_signal_trend"](
                 ctx=mock_ctx,
                 signal_file="nonexistent.csv",
+                sampling_rate=10000.0,
             )
 
 

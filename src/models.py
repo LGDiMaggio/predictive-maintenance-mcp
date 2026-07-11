@@ -240,6 +240,29 @@ class BearingFaultsSummary(BaseModel):
     most_likely_fault: Optional[str] = Field(None, description="Most likely fault type if any")
 
 
+class BearingCatalogMiss(BaseModel):
+    """Typed 'not in catalog' result for a bearing catalog lookup.
+
+    A missing catalog entry is a legitimate negative outcome, not a tool
+    failure — the catalog is intentionally small (verified geometry only),
+    so the miss is expressed in the SCHEMA (status + suggestion) instead of
+    an ad-hoc dict with an 'error' key. No geometry is ever invented.
+    """
+    status: Literal["not_found"] = Field(
+        "not_found",
+        description="Always 'not_found' — discriminates from a catalog hit",
+    )
+    bearing_designation: str = Field(
+        description="The designation that was searched for"
+    )
+    suggestion: str = Field(
+        description="Concrete next step to obtain the bearing geometry"
+    )
+    catalog_contains: list[str] = Field(
+        description="Designations actually present in the verified catalog"
+    )
+
+
 class ISOSeverityRefusal(BaseModel):
     """Structured refusal of an ISO severity verdict.
 
