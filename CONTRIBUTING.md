@@ -194,10 +194,10 @@ You know what matters in the field. Open a discussion or issue describing:
 
 ### Review the Bearing Catalog
 
-The file `resources/bearing_catalogs/common_bearings_catalog.json` contains ~20 bearings. You can:
-- Verify the geometry data is correct
-- Suggest additional common bearing models that should be included
-- Provide corrections for contact angles, ball counts, or pitch diameters
+The file `resources/bearing_catalogs/common_bearings_catalog.json` contains a small set of bearings whose geometry is traceable to a public source — every entry carries a mandatory `source` citation, and `tests/test_bearing_catalog_validation.py` enforces physical validity. You can:
+- Verify the geometry data against the cited sources
+- Suggest additional bearing models **with a verifiable public source** (manufacturer datasheet, dataset documentation, or peer-reviewed paper)
+- Provide corrections for contact angles, ball counts, or pitch diameters (with source)
 
 This is a JSON file — you can edit it directly or provide the data in any format and we'll add it.
 

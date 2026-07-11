@@ -840,13 +840,11 @@ async def analyze_envelope(
     
     diagnosis_lines.extend([
         "",
-        "Bearing frequency reference (example @ 1500 RPM):",
-        "  • BPFO (outer race): ~81.13 Hz",
-        "  • BPFI (inner race): ~118.88 Hz",
-        "  • BSF (ball spin):   ~63.91 Hz",
-        "  • FTF (cage):        ~14.84 Hz",
-        "",
-        "⚠️ Compare peaks above with actual bearing frequencies for your system.",
+        "No reference bearing frequencies are assumed for this machine.",
+        "Compare the peaks above against BPFO/BPFI/BSF/FTF computed for the",
+        "actual bearing and shaft speed: use search_bearing_catalog(...) for a",
+        "verified catalog entry, or calculate_bearing_characteristic_frequencies(...)",
+        "with the bearing geometry from the machine manual.",
         "💡 Use plot_envelope(...) for visual analysis and harmonic identification."
     ])
     
@@ -2381,8 +2379,10 @@ async def calculate_bearing_characteristic_frequencies(
 ) -> dict[str, float]:
     """
     Calculate bearing characteristic frequencies from geometry.
-    
-    Uses formulas from ISO 15243:2017 and SKF bearing handbook.
+
+    Uses the standard rolling-element bearing kinematic formulas (see
+    Randall & Antoni 2011, "Rolling element bearing diagnostics - A
+    tutorial", Mech. Systems and Signal Processing 25(2), 485-520).
     Essential for bearing fault diagnosis when you know bearing geometry
     but don't have pre-calculated frequencies.
     
@@ -2393,7 +2393,7 @@ async def calculate_bearing_characteristic_frequencies(
     - If geometry is unknown, tell user to:
       1. Check manual using read_manual_excerpt()
       2. Look up bearing in manufacturer catalog (e.g., SKF, FAG, NSK)
-      3. Use lookup_bearing_in_catalog() if bearing designation is known
+      3. Use search_bearing_catalog() if bearing designation is known
       4. Measure the bearing physically if necessary
     - ONLY calculate with geometry explicitly provided by user or found in manual
     - DO NOT make assumptions about contact angle (use 0° if unknown and inform user)
@@ -2410,16 +2410,16 @@ async def calculate_bearing_characteristic_frequencies(
         Dictionary with BPFO, BPFI, BSF, FTF in Hz
     
     Example:
-        >>> # For SKF 6205 bearing at 1797 RPM
+        >>> # 6205 geometry (CWRU Bearing Data Center) at 1797 RPM
         >>> freqs = calculate_bearing_characteristic_frequencies(
         ...     num_balls=9,
         ...     ball_diameter_mm=7.94,
-        ...     pitch_diameter_mm=34.55,
+        ...     pitch_diameter_mm=39.04,
         ...     contact_angle_deg=0.0,
         ...     shaft_speed_rpm=1797
         ... )
         >>> print(f"BPFO: {freqs['BPFO']:.2f} Hz")
-        BPFO: 81.13 Hz
+        BPFO: 107.36 Hz
     
     Common bearing geometries:
     - Deep groove ball bearings: contact_angle = 0°
@@ -2522,16 +2522,16 @@ async def search_bearing_catalog(
     - DO NOT use this as primary source - manual takes precedence
     - If bearing not found here, ask user for specifications
     - DO NOT guess or estimate if bearing not in catalog
-    - This catalog contains ~20 common ISO bearings (6200-6210, 6300-6310 series)
-    - For uncommon bearings, tell user: "Bearing {X} not in catalog. Please provide geometry or upload manufacturer catalog to bearing_catalogs/"
-    
+    - The catalog is small BY DESIGN: it contains only bearings whose geometry
+      is traceable to a public source (each entry carries a `source` citation)
+    - For bearings not in the catalog, tell user: "Bearing {X} not in catalog. Please provide geometry or upload manufacturer catalog to bearing_catalogs/"
+
     Search order:
-    1. JSON catalog (common_bearings_catalog.json) - 20 common bearings
-    2. In-memory fallback (legacy 6205, 6206)
-    3. Returns None if not found
-    
+    1. JSON catalog (common_bearings_catalog.json) - verified entries only
+    2. Structured not-found payload if the designation is absent
+
     Args:
-        bearing_designation: Bearing designation (e.g., "6205", "SKF 6205-2RS", "FAG 6206")
+        bearing_designation: Bearing designation (e.g., "6205", "SKF 6205-2RS", "UER204")
         ctx: MCP context
     
     Returns:
@@ -2562,10 +2562,11 @@ async def search_bearing_catalog(
             if ctx:
                 await ctx.warning(f"✗ Bearing {bearing_designation} not found in catalog")
                 await ctx.warning("  LLM should ask user for bearing geometry or suggest uploading manufacturer catalog")
+            available = sorted(b["designation"] for b in _list_catalog())
             return {
                 "error": f"Bearing {bearing_designation} not found in catalog",
                 "suggestion": "Ask user for bearing geometry (num_balls, ball_diameter_mm, pitch_diameter_mm, contact_angle_deg) or upload manufacturer catalog PDF to resources/bearing_catalogs/",
-                "catalog_contains": "Common ISO bearings: 6200-6210, 6300-6310 series"
+                "catalog_contains": available
             }
     
     except Exception as e:
@@ -3456,9 +3457,11 @@ async def generate_envelope_report(
         Dictionary with file path, metadata, and summary (NO HTML content)
     
     Example:
+        >>> # Bearing frequencies computed for YOUR bearing/rpm (here: 6205
+        >>> # per CWRU geometry at 1797 RPM)
         >>> result = generate_envelope_report(
         ...     "real_train/OuterRaceFault_1.csv",
-        ...     bearing_freqs={"BPFO": 81.13, "BPFI": 118.88, "BSF": 63.91, "FTF": 14.84}
+        ...     bearing_freqs={"BPFO": 107.36, "BPFI": 162.19, "BSF": 70.58, "FTF": 11.93}
         ... )
     """
     if ctx:

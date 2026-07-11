@@ -346,13 +346,11 @@ def register(mcp: FastMCP) -> None:
 
         diagnosis_lines.extend([
             "",
-            "Bearing frequency reference (example @ 1500 RPM):",
-            "  • BPFO (outer race): ~81.13 Hz",
-            "  • BPFI (inner race): ~118.88 Hz",
-            "  • BSF (ball spin):   ~63.91 Hz",
-            "  • FTF (cage):        ~14.84 Hz",
-            "",
-            "⚠️ Compare peaks above with actual bearing frequencies for your system.",
+            "No reference bearing frequencies are assumed for this machine.",
+            "Compare the peaks above against BPFO/BPFI/BSF/FTF computed for the",
+            "actual bearing and shaft speed: use search_bearing_catalog(...) for a",
+            "verified catalog entry, or calculate_bearing_characteristic_frequencies(...)",
+            "with the bearing geometry from the machine manual.",
             "💡 Use plot_envelope(...) for visual analysis and harmonic identification."
         ])
 

@@ -140,29 +140,33 @@ def calculate_bearing_frequencies(
 ) -> Dict[str, float]:
     """
     Calculate bearing characteristic frequencies from geometry.
-    
-    Formulas from ISO 15243:2017 and SKF bearing handbook.
-    
+
+    Uses the standard rolling-element bearing kinematic formulas; see
+    Randall, R.B. & Antoni, J. (2011), "Rolling element bearing
+    diagnostics - A tutorial", Mechanical Systems and Signal Processing
+    25(2), 485-520, doi:10.1016/j.ymssp.2010.07.017.
+
     Args:
         num_balls: Number of rolling elements (Z)
         ball_diameter_mm: Ball/roller diameter (Bd) in mm
         pitch_diameter_mm: Pitch circle diameter (Pd) in mm
         contact_angle_deg: Contact angle (α) in degrees (0° for deep groove)
         shaft_speed_rpm: Shaft rotation speed in RPM
-    
+
     Returns:
         Dictionary with BPFO, BPFI, BSF, FTF in Hz
-    
+
     Example:
+        >>> # 6205 geometry as documented by the CWRU Bearing Data Center
         >>> freqs = calculate_bearing_frequencies(
         ...     num_balls=9,
         ...     ball_diameter_mm=7.94,
-        ...     pitch_diameter_mm=34.55,
+        ...     pitch_diameter_mm=39.04,
         ...     contact_angle_deg=0.0,
         ...     shaft_speed_rpm=1797
         ... )
         >>> print(f"BPFO: {freqs['BPFO']:.2f} Hz")
-        BPFO: 81.13 Hz
+        BPFO: 107.36 Hz
     """
     # Convert to radians
     alpha = math.radians(contact_angle_deg)
@@ -271,20 +275,59 @@ def extract_power_ratings(text: str) -> List[Dict[str, any]]:
 
 
 # ============================================================================
-# BEARING CATALOG LOOKUP (ONLINE + CACHED)
+# BEARING CATALOG LOOKUP (JSON single source of truth)
 # ============================================================================
+
+_CATALOG_RELATIVE_PATH = Path("bearing_catalogs") / "common_bearings_catalog.json"
+
+
+def _catalog_candidate_paths() -> List[Path]:
+    """Candidate locations for the bearing catalog JSON file.
+
+    Order:
+    1. Configured resources directory (``config.RESOURCES_DIR``).
+    2. Package-relative path (repository checkout layout), used when the
+       configured directory does not contain the catalog (e.g. the server
+       was launched from an arbitrary working directory).
+    """
+    return [
+        RESOURCES_DIR / _CATALOG_RELATIVE_PATH,
+        Path(__file__).resolve().parent.parent / "resources" / _CATALOG_RELATIVE_PATH,
+    ]
+
+
+def load_bearing_catalog() -> Dict:
+    """Load the bearing catalog JSON — the single source of truth.
+
+    All bearing geometry served by this project comes from this one file;
+    there is no duplicated in-memory copy. Every entry carries a mandatory
+    ``source`` field tracing its geometry to a public reference; entries
+    that could not be verified were removed, not approximated.
+
+    Returns:
+        Parsed catalog dict, or an empty dict if no catalog file is found.
+    """
+    for path in _catalog_candidate_paths():
+        if path.exists():
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception as e:
+                logger.warning(f"Error reading bearing catalog {path}: {e}")
+    logger.warning("Bearing catalog JSON not found in any known location")
+    return {}
+
 
 def lookup_bearing_in_catalog(bearing_designation: str) -> Optional[Dict]:
     """
-    Look up bearing specifications in local catalog.
-    
-    Search order:
-    1. JSON catalog in resources/bearing_catalogs/
-    2. In-memory fallback (6205, 6206)
-    
+    Look up bearing specifications in the local JSON catalog.
+
+    The catalog contains ONLY entries whose geometry is traceable to a
+    public source (see each entry's mandatory ``source`` field).
+
     Args:
         bearing_designation: Bearing designation (e.g., "6205", "SKF 6205-2RS")
-    
+
     Returns:
         Dictionary with bearing specifications if found:
         {
@@ -292,20 +335,21 @@ def lookup_bearing_in_catalog(bearing_designation: str) -> Optional[Dict]:
             "type": "Deep Groove Ball Bearing",
             "num_balls": 9,
             "ball_diameter_mm": 7.94,
-            "pitch_diameter_mm": 34.55,
+            "pitch_diameter_mm": 39.04,
             "contact_angle_deg": 0.0,
             "bore_mm": 25,
             "outer_diameter_mm": 52,
             "width_mm": 15,
-            "source": "catalog_json" | "local_cache"
+            "source": "<citation or URL for the geometry data>"
         }
-    
+        or None if the bearing is not in the catalog.
+
     Note:
-        This is a FALLBACK for when manual doesn't contain geometry.
+        This is a FALLBACK for when the manual doesn't contain geometry.
         LLM should ALWAYS try these sources first:
         1. Machine manual (resources/machine_manuals/)
-        2. Bearing catalogs (resources/bearing_catalogs/)
-        3. This function (in-memory cache)
+        2. Manufacturer catalogs (resources/bearing_catalogs/ PDFs)
+        3. This function (verified JSON catalog)
         4. Ask user for specifications
     """
     # Clean designation (remove suffix, prefix)
@@ -313,56 +357,15 @@ def lookup_bearing_in_catalog(bearing_designation: str) -> Optional[Dict]:
     for prefix in ["SKF", "FAG", "NSK", "NTN", "TIMKEN", "KOYO", "INA"]:
         clean_designation = clean_designation.replace(prefix, "").strip()
     clean_designation = clean_designation.split("-")[0].strip()  # Remove -2RS, -ZZ
-    
-    # Try loading from JSON catalog first
-    catalog_path = RESOURCES_DIR / "bearing_catalogs" / "common_bearings_catalog.json"
-    if catalog_path.exists():
-        try:
-            with open(catalog_path, 'r', encoding='utf-8') as f:
-                catalog = json.load(f)
-            
-            if clean_designation in catalog.get("bearings", {}):
-                bearing_data = catalog["bearings"][clean_designation].copy()
-                bearing_data["source"] = "catalog_json"
-                logger.info(f"Found bearing {clean_designation} in JSON catalog")
-                return bearing_data
-        except Exception as e:
-            logger.warning(f"Error reading JSON catalog: {e}")
-    
-    # Fallback to in-memory cache (legacy, minimal)
-    COMMON_BEARINGS = {
-        "6205": {
-            "designation": "6205",
-            "type": "Deep Groove Ball Bearing",
-            "num_balls": 9,
-            "ball_diameter_mm": 7.94,
-            "pitch_diameter_mm": 34.55,
-            "contact_angle_deg": 0.0,
-            "bore_mm": 25,
-            "outer_diameter_mm": 52,
-            "width_mm": 15,
-            "source": "local_cache"
-        },
-        "6206": {
-            "designation": "6206",
-            "type": "Deep Groove Ball Bearing",
-            "num_balls": 9,
-            "ball_diameter_mm": 9.525,
-            "pitch_diameter_mm": 42.50,
-            "contact_angle_deg": 0.0,
-            "bore_mm": 30,
-            "outer_diameter_mm": 62,
-            "width_mm": 16,
-            "source": "local_cache"
-        }
-    }
-    
-    # Check in-memory cache
-    if clean_designation in COMMON_BEARINGS:
-        logger.info(f"Found bearing {clean_designation} in legacy cache")
-        return COMMON_BEARINGS[clean_designation]
-    
-    # Not found anywhere
+
+    catalog = load_bearing_catalog()
+    bearings = catalog.get("bearings", {})
+    if clean_designation in bearings:
+        bearing_data = bearings[clean_designation].copy()
+        logger.info(f"Found bearing {clean_designation} in JSON catalog")
+        return bearing_data
+
+    # Not found — never invent geometry
     logger.warning(
         f"Bearing {bearing_designation} (cleaned: {clean_designation}) not found in catalog. "
         f"LLM should: 1) Check machine manual, 2) Check bearing_catalogs/ PDFs, 3) Ask user."
@@ -492,11 +495,11 @@ if __name__ == "__main__":
     freqs = calculate_bearing_frequencies(
         num_balls=9,
         ball_diameter_mm=7.94,
-        pitch_diameter_mm=34.55,
+        pitch_diameter_mm=39.04,
         contact_angle_deg=0.0,
         shaft_speed_rpm=1797
     )
-    print(f"Input: 9 balls, Bd=7.94mm, Pd=34.55mm, α=0°, RPM=1797")
+    print(f"Input: 9 balls, Bd=7.94mm, Pd=39.04mm, α=0°, RPM=1797 (CWRU 6205)")
     print(f"Results:")
     for key, value in freqs.items():
         if isinstance(value, dict):
@@ -618,7 +621,7 @@ if __name__ == "__main__":
     print("  ❓ 'How many vanes does the impeller have?'")
     print("     → 5 vanes, closed type, bronze material")
     print("  ❓ 'What are the expected bearing fault frequencies?'")
-    print("     → BPFO=66.66 Hz, BPFI=106.46 Hz (calculated from catalog data)")
+    print("     → BPFO/BPFI computed from catalog geometry (see Step 3 output)")
     
     print("\n" + "=" * 80)
     print("CONCLUSION: Hybrid approach works!")

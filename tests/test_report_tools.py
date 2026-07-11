@@ -490,7 +490,8 @@ class TestGenerateEnvelopeReport:
         # Add bearing freqs to metadata
         meta_path = data_dir / "report_test_metadata.json"
         meta = json.loads(meta_path.read_text())
-        meta.update({"BPFO": 81.13, "BPFI": 118.88, "BSF": 63.91, "FTF": 14.84})
+        # 6205 (CWRU geometry) at 1797 RPM
+        meta.update({"BPFO": 107.36, "BPFI": 162.19, "BSF": 70.58, "FTF": 11.93})
         meta_path.write_text(json.dumps(meta))
 
         result = await tools["generate_envelope_report"](

@@ -102,11 +102,12 @@ async def run_report_tests():
         env_frequencies = env_freqs[pos_mask]
         env_magnitudes = np.abs(env_fft[pos_mask]) / N * 2
 
+        # 6205 (CWRU geometry) at 1797 RPM
         bearing_freqs = {
-            'BPFO': 81.13,
-            'BPFI': 138.87,
-            'BSF': 58.48,
-            'FTF': 11.29
+            'BPFO': 107.36,
+            'BPFI': 162.19,
+            'BSF': 70.58,
+            'FTF': 11.93
         }
 
         report_result = save_envelope_report(

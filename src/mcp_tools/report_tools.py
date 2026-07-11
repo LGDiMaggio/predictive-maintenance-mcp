@@ -747,9 +747,11 @@ def register(mcp: FastMCP) -> None:
             Dictionary with file path, metadata, and summary (NO HTML content)
 
         Example:
+            >>> # Bearing frequencies computed for YOUR bearing/rpm (here: 6205
+            >>> # per CWRU geometry at 1797 RPM)
             >>> result = generate_envelope_report(
             ...     "real_train/OuterRaceFault_1.csv",
-            ...     bearing_freqs={"BPFO": 81.13, "BPFI": 118.88, "BSF": 63.91, "FTF": 14.84}
+            ...     bearing_freqs={"BPFO": 107.36, "BPFI": 162.19, "BSF": 70.58, "FTF": 11.93}
             ... )
         """
         if ctx:

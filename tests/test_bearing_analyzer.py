@@ -45,10 +45,13 @@ class TestBearingCatalog:
         assert compute_fault_frequencies("NONEXISTENT", 1500) is None
 
     def test_list_catalog(self):
+        # The catalog is small by design: verified, source-traceable entries only.
         bearings = list_catalog_bearings()
-        assert len(bearings) >= 20
+        assert len(bearings) >= 3
         designations = {b["designation"] for b in bearings}
         assert "6205" in designations
+        # Every listed entry must carry its source citation
+        assert all(b["source"] for b in bearings)
 
 
 class TestCheckBearingFaultPeak:

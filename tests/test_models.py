@@ -93,7 +93,7 @@ class TestEnvelopeResult:
             num_samples=10000,
             sampling_rate=10000.0,
             filter_band=(500.0, 5000.0),
-            peak_frequencies=[81.13, 162.26],
+            peak_frequencies=[107.36, 214.72],
             peak_magnitudes=[0.05, 0.03],
             diagnosis="Possible outer race fault (BPFO harmonics detected).",
         )

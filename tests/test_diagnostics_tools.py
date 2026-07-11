@@ -766,11 +766,12 @@ class TestBearingCatalogTools:
             ctx=mock_ctx,
             bearing_designation="6205",
         )
-        # Should find bearing 6205 (at least in the in-memory fallback)
+        # Should find bearing 6205 in the verified JSON catalog
         assert result is not None
         if "error" not in result:
             assert result["num_balls"] == 9
             assert result["ball_diameter_mm"] > 0
+            assert result["source"]  # mandatory source citation
 
     @pytest.mark.asyncio
     async def test_search_bearing_catalog_unknown(self, tools, data_dir, mock_ctx):
@@ -800,7 +801,7 @@ class TestBearingCatalogTools:
 
     @pytest.mark.asyncio
     async def test_calculate_bearing_frequencies_tool(self, tools, data_dir, mock_ctx):
-        """Calculate frequencies for known SKF 6205 geometry at 1797 RPM."""
+        """Calculate frequencies for CWRU-documented 6205 geometry at 1797 RPM."""
         if "calculate_bearing_characteristic_frequencies" not in tools:
             pytest.skip("calculate_bearing_characteristic_frequencies not registered")
 
@@ -808,7 +809,7 @@ class TestBearingCatalogTools:
             ctx=mock_ctx,
             num_balls=9,
             ball_diameter_mm=7.94,
-            pitch_diameter_mm=34.55,
+            pitch_diameter_mm=39.04,
             contact_angle_deg=0.0,
             shaft_speed_rpm=1797.0,
         )
@@ -816,8 +817,8 @@ class TestBearingCatalogTools:
         assert "BPFI" in result
         assert "BSF" in result
         assert "FTF" in result
-        # BPFO for 6205 at 1797 RPM should be approximately 107 Hz
-        assert result["BPFO"] > 50
+        # CWRU publishes BPFO = 3.5848 x shaft speed -> 107.36 Hz at 1797 RPM
+        assert result["BPFO"] == pytest.approx(107.36, rel=0.005)
         assert result["BPFI"] > result["BPFO"]  # BPFI > BPFO always
 
 
