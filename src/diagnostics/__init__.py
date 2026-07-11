@@ -14,7 +14,7 @@ from .bearing_catalog import (  # noqa: F401
     compute_fault_frequencies,
     list_catalog_bearings,
 )
-from .iso10816 import (  # noqa: F401
+from .iso20816 import (  # noqa: F401
     THRESHOLD_PROVENANCE,
     assess_severity_raw,
     assess_vibration_severity,

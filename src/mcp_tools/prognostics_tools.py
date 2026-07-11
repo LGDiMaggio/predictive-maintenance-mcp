@@ -20,12 +20,12 @@ import numpy as np
 from mcp.server.fastmcp import FastMCP, Context
 
 from ..config import DATA_DIR
-from ..signal_loader import load_signal_data
+from ..signal_acquisition.loaders import load_signal_data
 from ..signal_processing.features import (
     extract_time_domain_features,
     resolve_sampling_rate as _resolve_sampling_rate_strict,
 )
-from ..signal_repository import get_repository
+from ..signal_acquisition.repository import get_repository
 from ..prognostics import (
     estimate_rul_linear,
     estimate_rul_exponential,

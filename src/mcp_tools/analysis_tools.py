@@ -15,19 +15,19 @@ from scipy.stats import entropy, kurtosis, skew
 from mcp.server.fastmcp import FastMCP, Context
 
 from ..config import DATA_DIR, MODELS_DIR
-from ..signal_loader import (
+from ..signal_acquisition.loaders import (
     load_signal_data,
     extract_segment,
     get_metadata_path,
     SUPPORTED_EXTENSIONS,
 )
-from ..signal_repository import normalize_signal_unit
+from ..signal_acquisition.repository import normalize_signal_unit
 from ..models import (
     FFTResult, SpectralPeak, EnvelopeResult, StatisticalResult, SignalInfo,
     FeatureExtractionResult, PSDResult, STFTResult, EnvelopeSpectrumResult,
     StoredSignalInfo
 )
-from ..spectral import (
+from ..signal_processing.spectral import (
     compute_psd as _compute_psd,
     compute_stft_spectrogram as _compute_stft,
     compute_envelope_spectrum as _compute_envelope,

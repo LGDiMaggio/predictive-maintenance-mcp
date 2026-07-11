@@ -182,7 +182,7 @@ class TestISO20816:
     
     def test_iso_zone_classification_group1(self):
         """Zone classification for Group 1 rigid — asserts on production code."""
-        from predictive_maintenance_mcp.diagnostics.iso10816 import classify_zone
+        from predictive_maintenance_mcp.diagnostics.iso20816 import classify_zone
 
         # Group 1 rigid boundaries (ISO 10816-3:2009): 2.3 / 4.5 / 7.1 mm/s
         assert classify_zone(1.0, machine_group=1, support_type="rigid")["zone"] == "A"
@@ -193,7 +193,7 @@ class TestISO20816:
 
     def test_iso_zone_classification_group2(self):
         """Zone classification for Group 2 rigid — asserts on production code."""
-        from predictive_maintenance_mcp.diagnostics.iso10816 import classify_zone
+        from predictive_maintenance_mcp.diagnostics.iso20816 import classify_zone
 
         # Group 2 rigid boundaries (ISO 10816-3:2009): 1.4 / 2.8 / 4.5 mm/s
         assert classify_zone(1.0, machine_group=2, support_type="rigid")["zone"] == "A"
@@ -249,7 +249,7 @@ class TestISO20816:
         group 1 flexible is 3.5/7.1/11.0 mm/s. Replaces a former test that
         asserted the false domain claim rigid == flexible.
         """
-        from predictive_maintenance_mcp.diagnostics.iso10816 import classify_zone
+        from predictive_maintenance_mcp.diagnostics.iso20816 import classify_zone
 
         rigid = classify_zone(3.0, machine_group=1, support_type="rigid")
         flexible = classify_zone(3.0, machine_group=1, support_type="flexible")
@@ -261,7 +261,7 @@ class TestISO20816:
 
     def test_iso_error_handling_negative_rms(self):
         """Negative RMS is physically impossible: production code must raise."""
-        from predictive_maintenance_mcp.diagnostics.iso10816 import classify_zone
+        from predictive_maintenance_mcp.diagnostics.iso20816 import classify_zone
 
         with pytest.raises(ValueError):
             classify_zone(-1.0, machine_group=2, support_type="rigid")
@@ -269,7 +269,7 @@ class TestISO20816:
 
     def test_iso_error_handling_invalid_machine_group(self):
         """Invalid machine group must be rejected by production code."""
-        from predictive_maintenance_mcp.diagnostics.iso10816 import classify_zone
+        from predictive_maintenance_mcp.diagnostics.iso20816 import classify_zone
 
         for group in [0, 3, 5, -1]:
             with pytest.raises(ValueError):

@@ -11,8 +11,8 @@ import pandas as pd
 from mcp.server.fastmcp import FastMCP, Context
 
 from ..config import DATA_DIR, MODELS_DIR, RESOURCES_DIR, REPORTS_DIR
-from ..signal_loader import load_signal_data, SUPPORTED_EXTENSIONS, get_metadata_path
-from ..signal_repository import get_repository
+from ..signal_acquisition.loaders import load_signal_data, SUPPORTED_EXTENSIONS, get_metadata_path
+from ..signal_acquisition.repository import get_repository
 from ..models import StoredSignalInfo, SignalInfo
 from ..document_reader import extract_text_from_pdf
 from ._utils import safe_resolve

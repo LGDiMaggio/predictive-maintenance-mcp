@@ -5,8 +5,8 @@ Test Report Generation System
 import asyncio
 from pathlib import Path
 
-from predictive_maintenance_mcp.signal_loader import load_signal_data
-from predictive_maintenance_mcp.machinery_diagnostics_server import (
+from predictive_maintenance_mcp.signal_acquisition.loaders import load_signal_data
+from predictive_maintenance_mcp.mcp_tools.diagnostics_tools import (
     evaluate_iso_20816,
 )
 from predictive_maintenance_mcp.config import DATA_DIR
@@ -140,7 +140,8 @@ async def run_report_tests():
     signal_file = "real_train/baseline_1.csv"
 
     iso_result = await evaluate_iso_20816(
-        signal_file,
+        ctx=None,
+        signal_file=signal_file,
         sampling_rate=97656,
         machine_group=2,
         support_type="rigid"

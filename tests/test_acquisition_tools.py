@@ -11,7 +11,7 @@ from mcp.server.fastmcp import FastMCP
 
 from predictive_maintenance_mcp.mcp_tools.acquisition_tools import register
 from predictive_maintenance_mcp.mcp_tools._utils import load_and_validate_metadata
-from predictive_maintenance_mcp.signal_loader import load_signal_data
+from predictive_maintenance_mcp.signal_acquisition.loaders import load_signal_data
 
 
 # ---------------------------------------------------------------------------
@@ -50,8 +50,8 @@ def data_dir(tmp_path, monkeypatch):
 
     monkeypatch.setattr("predictive_maintenance_mcp.mcp_tools.acquisition_tools.DATA_DIR", signals_dir)
     monkeypatch.setattr("predictive_maintenance_mcp.config.DATA_DIR", signals_dir)
-    monkeypatch.setattr("predictive_maintenance_mcp.signal_loader.DATA_DIR", signals_dir)
-    monkeypatch.setattr("predictive_maintenance_mcp.signal_repository.DATA_DIR", signals_dir)
+    monkeypatch.setattr("predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR", signals_dir)
+    monkeypatch.setattr("predictive_maintenance_mcp.signal_acquisition.repository.DATA_DIR", signals_dir)
     return signals_dir
 
 

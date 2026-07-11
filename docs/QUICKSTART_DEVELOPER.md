@@ -81,7 +81,8 @@ pytest -v
 ```
 predictive-maintenance-mcp/
 ├── src/
-│   ├── machinery_diagnostics_server.py  ← THE SERVER (all MCP tools defined here)
+│   ├── server.py                        ← THE SERVER (FastMCP orchestrator)
+│   ├── mcp_tools/                       ← All MCP tools (one module per ISO 13374 block)
 │   ├── document_reader.py               ← PDF/manual processing module (pypdf)
 │   ├── report_generator.py              ← HTML report generation (Plotly)
 │   └── html_templates.py                ← Report HTML templates
@@ -102,31 +103,25 @@ predictive-maintenance-mcp/
 └── tests/                               ← Comprehensive test suite
 ```
 
-### The Core: `machinery_diagnostics_server.py`
+### The Core: `server.py` + `mcp_tools/`
 
-This **single file** contains the entire MCP server. Open it and you'll see a very clean pattern:
+`src/server.py` creates the FastMCP instance and delegates registration to
+`src/mcp_tools/` (one module per ISO 13374 block). Each tool is a plain
+module-level function, registered by reference:
 
 ```python
-from mcp.server.fastmcp import FastMCP
-
-# Create the server
-mcp = FastMCP("Predictive Maintenance Server")
-
-# Define a RESOURCE (direct data access for the LLM)
-@mcp.resource("signal://list")
-def list_signals() -> str:
-    """List all available vibration signals."""
-    # ... returns signal listing
-    
-# Define a TOOL (computation the LLM can invoke)
-@mcp.tool()
-def analyze_fft(file_path: str, sampling_rate: float = None, ...) -> dict:
+# src/mcp_tools/analysis_tools.py
+async def analyze_fft(ctx, filename: str, sampling_rate: float | None = None, ...):
     """FFT spectrum analysis with automatic peak detection."""
     # ... performs actual signal processing
     # ... returns structured results
+
+def register(mcp):
+    mcp.tool()(analyze_fft)
 ```
 
-**That's it.** A `@mcp.tool()` decorator + a Python function = an LLM-accessible tool.
+**That's it.** A module-level Python function + one `mcp.tool()(fn)` line in
+`register()` = an LLM-accessible tool that is also directly importable in tests.
 
 ### Resources vs Tools
 
@@ -152,7 +147,7 @@ npx @modelcontextprotocol/inspector npx predictive-maintenance-mcp
 Or from source:
 
 ```bash
-uv run mcp dev src/machinery_diagnostics_server.py
+npx @modelcontextprotocol/inspector uv run predictive-maintenance-mcp
 ```
 
 This opens a web UI where you can:
@@ -179,10 +174,10 @@ Let's add a new tool: **thermographic analysis** (simplified example). This demo
 
 ### 4.1 — Write the Tool Function
 
-Add to `src/machinery_diagnostics_server.py`:
+Add to the relevant `src/mcp_tools/*.py` module (e.g. `analysis_tools.py`)
+and register it in that module's `register()`:
 
 ```python
-@mcp.tool()
 def analyze_temperature_trend(
     temperatures: list[float],
     timestamps: list[str],
@@ -244,7 +239,9 @@ import pytest
 
 def test_analyze_temperature_normal():
     """Test normal temperature classification."""
-    from machinery_diagnostics_server import analyze_temperature_trend
+    from predictive_maintenance_mcp.mcp_tools.analysis_tools import (
+        analyze_temperature_trend,
+    )
     
     result = analyze_temperature_trend(
         temperatures=[45.0, 46.0, 45.5, 46.2, 45.8],
@@ -258,7 +255,9 @@ def test_analyze_temperature_normal():
 
 def test_analyze_temperature_critical():
     """Test critical temperature detection."""
-    from machinery_diagnostics_server import analyze_temperature_trend
+    from predictive_maintenance_mcp.mcp_tools.analysis_tools import (
+        analyze_temperature_trend,
+    )
     
     result = analyze_temperature_trend(
         temperatures=[60.0, 75.0, 90.0, 105.0, 110.0],
@@ -307,7 +306,7 @@ Claude will automatically discover and call your new tool.
 
 ### Design Principles
 
-1. **One file, one server** — The entire MCP interface is in `machinery_diagnostics_server.py`. This makes it easy to understand, test, and deploy.
+1. **One thin orchestrator, one module per block** — `server.py` only creates the FastMCP instance; every tool lives as an importable module-level function in `src/mcp_tools/`. This makes tools easy to understand, test, and deploy.
 
 2. **Tools are pure functions** — Each tool takes parameters, does computation, returns structured data. No side effects except file I/O (reports, models).
 
@@ -362,7 +361,7 @@ Browse all open issues: [GitHub Issues](https://github.com/LGDiMaggio/predictive
 ## What's Next?
 
 1. **Read the full examples**: [EXAMPLES.md](../EXAMPLES.md) — 7 complete workflows showing every tool
-2. **Browse the server code**: `src/machinery_diagnostics_server.py` is well-documented
+2. **Browse the server code**: `src/mcp_tools/` is well-documented
 3. **Pick an issue**: [Issues · good first issue](https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
 4. **Read the contributing guide**: [CONTRIBUTING.md](../CONTRIBUTING.md)
 5. **Think bigger**: What domain could YOU build an MCP server for?

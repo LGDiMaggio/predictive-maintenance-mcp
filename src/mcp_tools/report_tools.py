@@ -18,7 +18,7 @@ from sklearn.decomposition import PCA
 from mcp.server.fastmcp import FastMCP, Context
 
 from ..config import DATA_DIR, MODELS_DIR, RESOURCES_DIR, REPORTS_DIR
-from ..signal_loader import load_signal_data, get_metadata_path, extract_segment, SUPPORTED_EXTENSIONS
+from ..signal_acquisition.loaders import load_signal_data, get_metadata_path, extract_segment, SUPPORTED_EXTENSIONS
 from ..report_generator import (
     save_fft_report,
     save_envelope_report,
@@ -71,12 +71,9 @@ async def generate_diagnostic_report_docx(
     if ctx:
         await ctx.info(f"Generating DOCX diagnostic report for {signal_file}")
 
+    # Raises ValueError when the optional python-docx dependency is missing
+    # (error contract: failures raise, never error-shaped dicts).
     result = save_diagnostic_report_docx(signal_file, sections, title=title)
-
-    # A missing optional dependency is a tool failure, not a result: raise
-    # instead of returning an {"error": ...} dict as success.
-    if "error" in result:
-        raise ValueError(result["error"])
 
     if ctx:
         await ctx.info(f"DOCX report saved: {result['file_name']}")
@@ -930,19 +927,10 @@ def get_report_info(file_name: str) -> dict[str, Any]:
             >>> print(f"Signal: {info['metadata']['signal_file']}")
             >>> print(f"Peaks detected: {info['metadata']['num_peaks']}")
         """
-    result = read_report_metadata(file_name)
     # Invalid names, missing reports, and reports without a metadata block
-    # are failures/misuse — raise instead of returning an error-shaped dict.
-    if "error" in result:
-        message = result["error"]
-        available = result.get("available_reports")
-        if available is not None:
-            message += (
-                f" — available reports: {available if available else 'none'}. "
-                f"Use list_html_reports() to see them."
-            )
-        raise ValueError(message)
-    return result
+    # raise ValueError in read_report_metadata (error contract: failures
+    # raise, never error-shaped dicts).
+    return read_report_metadata(file_name)
 
 async def generate_pca_visualization_report(
     model_name: str,

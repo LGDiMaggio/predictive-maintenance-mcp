@@ -46,8 +46,8 @@ def data_dir(tmp_path, monkeypatch):
 
     monkeypatch.setattr("predictive_maintenance_mcp.mcp_tools.report_tools.DATA_DIR", signals_dir)
     monkeypatch.setattr("predictive_maintenance_mcp.config.DATA_DIR", signals_dir)
-    monkeypatch.setattr("predictive_maintenance_mcp.signal_loader.DATA_DIR", signals_dir)
-    monkeypatch.setattr("predictive_maintenance_mcp.signal_repository.DATA_DIR", signals_dir)
+    monkeypatch.setattr("predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR", signals_dir)
+    monkeypatch.setattr("predictive_maintenance_mcp.signal_acquisition.repository.DATA_DIR", signals_dir)
     # generate_iso_report delegates to the modular evaluate_iso_20816
     # (diagnostics_tools) since U6 — patch its DATA_DIR too.
     monkeypatch.setattr("predictive_maintenance_mcp.mcp_tools.diagnostics_tools.DATA_DIR", signals_dir)

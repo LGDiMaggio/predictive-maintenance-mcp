@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 from pathlib import Path
 
-from predictive_maintenance_mcp.signal_repository import (
+from predictive_maintenance_mcp.signal_acquisition.repository import (
     SignalRepository,
     VALID_SIGNAL_UNITS,
     normalize_signal_unit,

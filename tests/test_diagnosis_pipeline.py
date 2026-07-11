@@ -5,7 +5,7 @@ import pickle
 import numpy as np
 import pytest
 
-from predictive_maintenance_mcp.diagnosis_pipeline import (
+from predictive_maintenance_mcp.decision_support.diagnosis_pipeline import (
     diagnose_vibration,
     _run_anomaly_detection,
     _extract_time_domain_features,

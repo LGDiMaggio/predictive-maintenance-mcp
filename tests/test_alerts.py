@@ -1,7 +1,7 @@
 """Tests for decision_support.alerts — ISO 20816-3 alert thresholds.
 
 The alert path must classify with the SAME zone boundaries as the severity
-engine (``diagnostics.iso10816``): boundary values from ISO 10816-3:2009.
+engine (``diagnostics.iso20816``): boundary values from ISO 10816-3:2009.
 Before unification the two paths disagreed (audit finding 2.4).
 """
 
@@ -13,7 +13,7 @@ from predictive_maintenance_mcp.decision_support.alerts import (
     check_custom_alert,
     define_custom_thresholds,
 )
-from predictive_maintenance_mcp.diagnostics.iso10816 import assess_severity_raw
+from predictive_maintenance_mcp.diagnostics.iso20816 import assess_severity_raw
 
 
 def _velocity_signal(

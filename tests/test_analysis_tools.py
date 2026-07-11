@@ -52,8 +52,8 @@ def data_dir(tmp_path, monkeypatch):
     # Patch all relevant modules
     monkeypatch.setattr("predictive_maintenance_mcp.mcp_tools.analysis_tools.DATA_DIR", signals_dir)
     monkeypatch.setattr("predictive_maintenance_mcp.config.DATA_DIR", signals_dir)
-    monkeypatch.setattr("predictive_maintenance_mcp.signal_loader.DATA_DIR", signals_dir)
-    monkeypatch.setattr("predictive_maintenance_mcp.signal_repository.DATA_DIR", signals_dir)
+    monkeypatch.setattr("predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR", signals_dir)
+    monkeypatch.setattr("predictive_maintenance_mcp.signal_acquisition.repository.DATA_DIR", signals_dir)
     return signals_dir
 
 
@@ -183,7 +183,7 @@ class TestSpectralDelegation:
     @pytest.mark.asyncio
     async def test_compute_psd(self, tools, data_dir, mock_ctx):
         # Load signal first
-        from predictive_maintenance_mcp.signal_repository import get_repository
+        from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
         repo = get_repository()
         repo.load_signal("sine50.csv", signal_id="psd_test", sampling_rate=10000)
         try:
@@ -196,7 +196,7 @@ class TestSpectralDelegation:
 
     @pytest.mark.asyncio
     async def test_compute_stft(self, tools, data_dir, mock_ctx):
-        from predictive_maintenance_mcp.signal_repository import get_repository
+        from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
         repo = get_repository()
         repo.load_signal("sine50.csv", signal_id="stft_test", sampling_rate=10000)
         try:
@@ -215,7 +215,7 @@ class TestSpectralDelegation:
 
     @pytest.mark.asyncio
     async def test_compute_envelope_spectrum(self, tools, data_dir, mock_ctx):
-        from predictive_maintenance_mcp.signal_repository import get_repository
+        from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
         repo = get_repository()
         repo.load_signal("sine50.csv", signal_id="env_test", sampling_rate=10000)
         try:

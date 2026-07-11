@@ -3,13 +3,13 @@ ISO 13374 Block 6 — Decision Support: Alert Thresholds.
 
 Threshold-based alerting for vibration monitoring per ISO 20816-3.
 Zone boundaries come from the single severity engine
-(``diagnostics.iso10816``, values from ISO 10816-3:2009); this module
+(``diagnostics.iso20816``, values from ISO 10816-3:2009); this module
 holds NO threshold table of its own.
 """
 
 from __future__ import annotations
 
-from ..diagnostics.iso10816 import classify_zone
+from ..diagnostics.iso20816 import classify_zone
 
 # Zone letter -> alert level for the ISO path.
 _ZONE_TO_ALERT = {"A": "none", "B": "warning", "C": "alarm", "D": "danger"}

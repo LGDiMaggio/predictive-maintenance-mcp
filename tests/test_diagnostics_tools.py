@@ -43,7 +43,7 @@ def data_dir(tmp_path, monkeypatch):
     with open(signals_dir / "normal_metadata.json", "w") as f:
         json.dump({"sampling_rate": fs, "signal_unit": "g"}, f)
 
-    # Signal with known velocity RMS (for ISO 10816 testing)
+    # Signal with known velocity RMS (for ISO 20816-3 testing)
     # Generate a signal that, when integrated, produces ~5 mm/s RMS velocity
     freq = 50.0  # Hz
     amplitude = 0.5  # g
@@ -55,8 +55,8 @@ def data_dir(tmp_path, monkeypatch):
     # Patch directories
     monkeypatch.setattr("predictive_maintenance_mcp.mcp_tools.diagnostics_tools.DATA_DIR", signals_dir)
     monkeypatch.setattr("predictive_maintenance_mcp.config.DATA_DIR", signals_dir)
-    monkeypatch.setattr("predictive_maintenance_mcp.signal_loader.DATA_DIR", signals_dir)
-    monkeypatch.setattr("predictive_maintenance_mcp.signal_repository.DATA_DIR", signals_dir)
+    monkeypatch.setattr("predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR", signals_dir)
+    monkeypatch.setattr("predictive_maintenance_mcp.signal_acquisition.repository.DATA_DIR", signals_dir)
 
     models_dir = tmp_path / "models"
     models_dir.mkdir()
@@ -112,7 +112,7 @@ class TestAssessVibrationSeverity:
 
     @pytest.mark.asyncio
     async def test_returns_severity(self, tools, data_dir, mock_ctx):
-        from predictive_maintenance_mcp.signal_repository import get_repository
+        from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
         repo = get_repository()
         repo.load_signal("iso_test.csv", signal_id="sev_test", sampling_rate=10000)
         try:
@@ -152,7 +152,7 @@ class TestBearingTools:
         if "check_bearing_faults_direct" not in tools:
             pytest.skip("check_bearing_faults_direct not registered")
 
-        from predictive_maintenance_mcp.signal_repository import get_repository
+        from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
         repo = get_repository()
         repo.load_signal("normal.csv", signal_id="bearing_test", sampling_rate=10000)
         try:
@@ -225,7 +225,7 @@ class TestDiagnoseVibration:
         if "diagnose_vibration" not in tools:
             pytest.skip("diagnose_vibration not registered")
 
-        from predictive_maintenance_mcp.signal_repository import get_repository
+        from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
         repo = get_repository()
         repo.load_signal("normal.csv", signal_id="diag_test", sampling_rate=10000)
         try:
@@ -437,7 +437,7 @@ class TestBearingToolsExtended:
         if "check_bearing_fault_peak_tool" not in tools:
             pytest.skip("check_bearing_fault_peak_tool not registered")
 
-        from predictive_maintenance_mcp.signal_repository import get_repository
+        from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
         repo = get_repository()
         repo.load_signal("normal.csv", signal_id="peak_test", sampling_rate=10000)
         try:
@@ -459,7 +459,7 @@ class TestBearingToolsExtended:
         if "check_bearing_fault_peak_tool" not in tools:
             pytest.skip("check_bearing_fault_peak_tool not registered")
 
-        from predictive_maintenance_mcp.signal_repository import get_repository
+        from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
         repo = get_repository()
         repo.load_signal("normal.csv", signal_id="bpfi_test", sampling_rate=10000)
         try:
@@ -480,7 +480,7 @@ class TestBearingToolsExtended:
         if "check_bearing_fault_peak_tool" not in tools:
             pytest.skip("check_bearing_fault_peak_tool not registered")
 
-        from predictive_maintenance_mcp.signal_repository import get_repository
+        from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
         repo = get_repository()
         repo.load_signal("normal.csv", signal_id="invalid_ft", sampling_rate=10000)
         try:
@@ -501,7 +501,7 @@ class TestBearingToolsExtended:
         if "check_bearing_faults_direct" not in tools:
             pytest.skip("check_bearing_faults_direct not registered")
 
-        from predictive_maintenance_mcp.signal_repository import get_repository
+        from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
         repo = get_repository()
         repo.load_signal("normal.csv", signal_id="faults_all", sampling_rate=10000)
         try:
@@ -526,7 +526,7 @@ class TestBearingToolsExtended:
         if "lookup_bearing_and_compute_tool" not in tools:
             pytest.skip("lookup_bearing_and_compute_tool not registered")
 
-        from predictive_maintenance_mcp.signal_repository import get_repository
+        from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
         repo = get_repository()
         repo.load_signal("normal.csv", signal_id="lookup_test", sampling_rate=10000)
         try:
@@ -548,7 +548,7 @@ class TestBearingToolsExtended:
         if "check_bearing_faults_direct" not in tools:
             pytest.skip("check_bearing_faults_direct not registered")
 
-        from predictive_maintenance_mcp.signal_repository import get_repository
+        from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
         repo = get_repository()
         repo.load_signal("normal.csv", signal_id="unknown_brg", sampling_rate=10000)
         try:
@@ -911,7 +911,7 @@ class TestDiagnoseVibrationExtended:
         if "diagnose_vibration_tool" not in tools:
             pytest.skip("diagnose_vibration_tool not registered")
 
-        from predictive_maintenance_mcp.signal_repository import get_repository
+        from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
         repo = get_repository()
         repo.load_signal("normal.csv", signal_id="diag_brg", sampling_rate=10000)
         try:
@@ -953,7 +953,7 @@ class TestAssessVibrationSeverityExtended:
     @pytest.mark.asyncio
     async def test_group1_boundaries(self, tools, data_dir, mock_ctx):
         """machine_group=1 uses the large-machine boundaries (A/B at 2.3 mm/s)."""
-        from predictive_maintenance_mcp.signal_repository import get_repository
+        from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
         repo = get_repository()
         repo.load_signal("iso_test.csv", signal_id="class_test", sampling_rate=10000)
         try:
@@ -975,7 +975,7 @@ class TestAssessVibrationSeverityExtended:
     @pytest.mark.asyncio
     async def test_machine_class_parameter_removed(self, tools, data_dir, mock_ctx):
         """The invented machine_class vocabulary is gone from the tool."""
-        from predictive_maintenance_mcp.signal_repository import get_repository
+        from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
         repo = get_repository()
         repo.load_signal("iso_test.csv", signal_id="class_test", sampling_rate=10000)
         try:
@@ -991,7 +991,7 @@ class TestAssessVibrationSeverityExtended:
     @pytest.mark.asyncio
     async def test_signal_without_metadata_sampling_rate(self, tools, data_dir, mock_ctx):
         """Signal with no metadata and no explicit sampling_rate should raise."""
-        from predictive_maintenance_mcp.signal_repository import get_repository
+        from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
 
         # Create a signal file with NO companion metadata
         fs = 10000
@@ -1015,7 +1015,7 @@ class TestAssessVibrationSeverityExtended:
     async def test_undeclared_unit_refused_names_load_signal(self, tools, data_dir, mock_ctx):
         """Severity on a stored signal without a declared unit → structured
         error naming load_signal(signal_unit=...) — never a silent 'g'."""
-        from predictive_maintenance_mcp.signal_repository import get_repository
+        from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
 
         fs = 10000
         t = np.linspace(0, 1.0, fs, endpoint=False)
@@ -1038,7 +1038,7 @@ class TestAssessVibrationSeverityExtended:
     async def test_metadata_unit_g_assessed_without_confirmation(self, tools, data_dir, mock_ctx):
         """Unit 'g' from _metadata.json → acc→vel integration and a verdict,
         no fake confirmation step."""
-        from predictive_maintenance_mcp.signal_repository import get_repository
+        from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
 
         repo = get_repository()
         try:
@@ -1060,7 +1060,7 @@ class TestDiagnoseVibrationRefusedISO:
     @pytest.mark.asyncio
     async def test_diagnosis_without_unit_iso_refused(self, tools, data_dir, mock_ctx):
         from predictive_maintenance_mcp.models import ISOSeverityRefusal
-        from predictive_maintenance_mcp.signal_repository import get_repository
+        from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
 
         fs = 10000
         t = np.linspace(0, 1.0, fs, endpoint=False)
@@ -1094,7 +1094,7 @@ class TestDiagnoseVibrationRefusedISO:
         """fs < 2 kHz (Nyquist below the ISO band, U2 refusal) → ISO block
         refused with reason, while the diagnosis itself succeeds."""
         from predictive_maintenance_mcp.models import ISOSeverityRefusal
-        from predictive_maintenance_mcp.signal_repository import get_repository
+        from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
 
         fs = 1600
         t = np.linspace(0, 1.0, fs, endpoint=False)
@@ -1121,7 +1121,7 @@ class TestDiagnoseVibrationRefusedISO:
     async def test_diagnosis_with_declared_unit_assessed(self, tools, data_dir, mock_ctx):
         """Declared unit → assessed ISO block (status discriminator present)."""
         from predictive_maintenance_mcp.models import VibrationSeverityResult
-        from predictive_maintenance_mcp.signal_repository import get_repository
+        from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
 
         repo = get_repository()
         try:

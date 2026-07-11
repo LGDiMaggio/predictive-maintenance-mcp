@@ -219,7 +219,7 @@ pip install -e .
      "mcpServers": {
        "predictive-maintenance": {
          "command": "C:/full/path/to/.venv/Scripts/python.exe",
-         "args": ["C:/full/path/to/src/machinery_diagnostics_server.py"]
+         "args": ["-m", "predictive_maintenance_mcp"]
        }
      }
    }
@@ -232,9 +232,8 @@ pip install -e .
    - ✅ `"command": "C:/path/.venv/Scripts/python.exe"` (Windows)
    - ✅ `"command": "/path/.venv/bin/python"` (macOS/Linux)
 
-4. **Module import**: If installed via `pip install -e .`, you can also use:
-   - ✅ `"args": ["-m", "predictive_maintenance_mcp"]`
-   - ✅ `"args": ["C:/path/src/machinery_diagnostics_server.py"]`
+4. **Module import**: The package must be installed (`pip install -e .`) so that
+   `"args": ["-m", "predictive_maintenance_mcp"]` resolves
 
 5. **Restart Claude Desktop completely** after config changes
 

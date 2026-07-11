@@ -139,7 +139,7 @@ def print_project_info():
     print(f"   Data: {root / 'data' / 'signals'}")
     
     print("\n🚀 Quick Start:")
-    print("   1. Test server:  uv run mcp dev src/machinery_diagnostics_server.py")
+    print("   1. Test server:  uv run predictive-maintenance-mcp")
     print("   2. Run tests:    uv run python test_suite.py")
     print("   3. Read docs:    type README.md")
     
@@ -199,7 +199,7 @@ def main():
     
     if passed == total:
         print("\n🎉 All tests passed! Server is ready to use.")
-        print("\n   Start with: uv run mcp dev src/machinery_diagnostics_server.py")
+        print("\n   Start with: uv run predictive-maintenance-mcp")
     else:
         print("\n⚠️  Some tests failed. Please check the errors above.")
     

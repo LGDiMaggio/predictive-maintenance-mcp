@@ -150,12 +150,11 @@ class TestDocxReportGeneration:
 
 # ── Missing python-docx ───────────────────────────────────────────────────
 
-def test_missing_docx_returns_error():
-    """When HAS_DOCX is False, should return error dict."""
+def test_missing_docx_raises():
+    """When HAS_DOCX is False, raise ValueError (never an error dict)."""
     with patch("predictive_maintenance_mcp.report_generator.HAS_DOCX", False):
-        result = save_diagnostic_report_docx(
-            signal_file="test.csv",
-            sections={"statistics": {"RMS": 1.0}},
-        )
-        assert "error" in result
-        assert "python-docx" in result["error"]
+        with pytest.raises(ValueError, match="python-docx"):
+            save_diagnostic_report_docx(
+                signal_file="test.csv",
+                sections={"statistics": {"RMS": 1.0}},
+            )

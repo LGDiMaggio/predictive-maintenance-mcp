@@ -147,7 +147,8 @@ def resolve_sampling_rate(
         sampling_rate: User-provided sampling rate (None = auto-detect).
         strict: If True, raise on missing rate; if False, return None.
         metadata_resolver: Callable(signal_file) -> Path returning the
-            metadata file path. If None, uses the default from signal_loader.
+            metadata file path. If None, uses the default from
+            signal_acquisition.loaders.
 
     Returns:
         Resolved sampling rate, or None if strict=False and not found.
@@ -159,7 +160,7 @@ def resolve_sampling_rate(
         return sampling_rate
 
     if metadata_resolver is None:
-        from ..signal_loader import get_metadata_path
+        from ..signal_acquisition.loaders import get_metadata_path
         metadata_resolver = get_metadata_path
 
     metadata_path = metadata_resolver(signal_file)

@@ -309,10 +309,10 @@ def analysis_tools_env(tmp_path, monkeypatch):
     )
     monkeypatch.setattr("predictive_maintenance_mcp.config.DATA_DIR", signals_dir)
     monkeypatch.setattr(
-        "predictive_maintenance_mcp.signal_loader.DATA_DIR", signals_dir
+        "predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR", signals_dir
     )
     monkeypatch.setattr(
-        "predictive_maintenance_mcp.signal_repository.DATA_DIR", signals_dir
+        "predictive_maintenance_mcp.signal_acquisition.repository.DATA_DIR", signals_dir
     )
 
     server = FastMCP("test-envelope-honesty")

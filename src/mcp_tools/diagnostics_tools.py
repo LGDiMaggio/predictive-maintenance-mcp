@@ -19,8 +19,8 @@ from sklearn.neighbors import LocalOutlierFactor
 from mcp.server.fastmcp import FastMCP, Context
 
 from ..config import DATA_DIR, MODELS_DIR, RESOURCES_DIR, REPORTS_DIR, CACHE_DIR
-from ..signal_loader import load_signal_data, get_metadata_path, extract_segment, SUPPORTED_EXTENSIONS
-from ..signal_repository import (
+from ..signal_acquisition.loaders import load_signal_data, get_metadata_path, extract_segment, SUPPORTED_EXTENSIONS
+from ..signal_acquisition.repository import (
     normalize_signal_unit,
     VALID_SIGNAL_UNITS,
 )
@@ -40,26 +40,26 @@ from ..document_reader import (
     extract_text_from_pdf,
     lookup_bearing_in_catalog,
 )
-from ..spectral import (
+from ..signal_processing.spectral import (
     compute_psd as _compute_psd,
     compute_stft_spectrogram as _compute_stft,
     compute_envelope_spectrum as _compute_envelope,
 )
-from ..bearing_catalog import (
+from ..diagnostics.bearing_catalog import (
     lookup_bearing as _lookup_bearing,
     compute_fault_frequencies as _compute_fault_freqs,
     list_catalog_bearings as _list_catalog,
 )
-from ..bearing_analyzer import (
+from ..diagnostics.bearing_analyzer import (
     check_bearing_fault_peak as _check_fault_peak,
     check_all_bearing_faults as _check_all_faults,
     lookup_bearing_and_compute as _lookup_and_compute,
 )
-from ..iso10816 import (
+from ..diagnostics.iso20816 import (
     assess_severity_raw,
     assess_vibration_severity as _assess_severity,
 )
-from ..diagnosis_pipeline import diagnose_vibration as _diagnose_vibration
+from ..decision_support.diagnosis_pipeline import diagnose_vibration as _diagnose_vibration
 
 from ..signal_processing.features import (
     extract_time_domain_features,
@@ -339,7 +339,7 @@ async def evaluate_iso_20816(
         await ctx.info(f"   If incorrect, provide machine_group and support_type parameters")
 
     # ========================================================================
-    # DELEGATE MATH to iso10816.assess_severity_raw (single source of truth)
+    # DELEGATE MATH to iso20816.assess_severity_raw (single source of truth)
     # ========================================================================
     result = assess_severity_raw(
         signal=signal_data,

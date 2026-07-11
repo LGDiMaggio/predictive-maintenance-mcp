@@ -23,7 +23,7 @@ from ..path_safety import (  # noqa: F401
     resolve_model_paths,
     ModelPaths,
 )
-from ..signal_repository import get_repository
+from ..signal_acquisition.repository import get_repository
 
 logger = logging.getLogger(__name__)
 

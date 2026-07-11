@@ -3,12 +3,12 @@
 import numpy as np
 import pytest
 
-from predictive_maintenance_mcp.bearing_catalog import (
+from predictive_maintenance_mcp.diagnostics.bearing_catalog import (
     lookup_bearing,
     compute_fault_frequencies,
     list_catalog_bearings,
 )
-from predictive_maintenance_mcp.bearing_analyzer import (
+from predictive_maintenance_mcp.diagnostics.bearing_analyzer import (
     check_bearing_fault_peak,
     check_all_bearing_faults,
     lookup_bearing_and_compute,

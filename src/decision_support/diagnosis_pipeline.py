@@ -24,9 +24,9 @@ from ..config import MODELS_DIR
 from ..path_safety import resolve_model_paths
 from ..signal_processing.spectral import compute_psd, compute_stft_spectrogram
 from ..signal_processing.features import extract_time_domain_features as _extract_time_domain_features
-from ..signal_repository import VALID_SIGNAL_UNITS, normalize_signal_unit
+from ..signal_acquisition.repository import VALID_SIGNAL_UNITS, normalize_signal_unit
 from ..diagnostics.bearing_analyzer import check_all_bearing_faults
-from ..diagnostics.iso10816 import assess_vibration_severity
+from ..diagnostics.iso20816 import assess_vibration_severity
 
 logger = logging.getLogger(__name__)
 

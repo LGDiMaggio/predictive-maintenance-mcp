@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from predictive_maintenance_mcp.spectral import (
+from predictive_maintenance_mcp.signal_processing.spectral import (
     compute_psd,
     compute_stft_spectrogram,
     compute_envelope_spectrum,

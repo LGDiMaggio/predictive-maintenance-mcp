@@ -59,8 +59,8 @@ def sandbox_dirs(tmp_path, monkeypatch):
 
     for target in (
         "predictive_maintenance_mcp.config.DATA_DIR",
-        "predictive_maintenance_mcp.signal_loader.DATA_DIR",
-        "predictive_maintenance_mcp.signal_repository.DATA_DIR",
+        "predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR",
+        "predictive_maintenance_mcp.signal_acquisition.repository.DATA_DIR",
         "predictive_maintenance_mcp.mcp_tools.acquisition_tools.DATA_DIR",
         "predictive_maintenance_mcp.mcp_tools.analysis_tools.DATA_DIR",
         "predictive_maintenance_mcp.mcp_tools.diagnostics_tools.DATA_DIR",
@@ -343,10 +343,13 @@ class TestResourceOutputs:
 
 class TestSourceGuards:
     def test_no_monolith_imports_in_mcp_tools(self):
+        # Needle built by concatenation so this guard file itself never
+        # shows up in repo-wide greps for the removed monolith's name.
+        monolith_name = "machinery_diagnostics" + "_server"
         offenders = [
             p.name
             for p in SRC_MCP_TOOLS.glob("*.py")
-            if "machinery_diagnostics_server" in p.read_text(encoding="utf-8")
+            if monolith_name in p.read_text(encoding="utf-8")
         ]
         assert offenders == [], (
             f"mcp_tools must not import from the deprecated monolith: "

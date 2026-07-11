@@ -23,15 +23,15 @@ import numpy as np
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from predictive_maintenance_mcp.signal_repository import SignalRepository
-from predictive_maintenance_mcp.spectral import (
+from predictive_maintenance_mcp.signal_acquisition.repository import SignalRepository
+from predictive_maintenance_mcp.signal_processing.spectral import (
     compute_psd,
     compute_stft_spectrogram,
     compute_envelope_spectrum,
 )
-from predictive_maintenance_mcp.bearing_analyzer import check_all_bearing_faults
-from predictive_maintenance_mcp.iso10816 import assess_vibration_severity
-from predictive_maintenance_mcp.diagnosis_pipeline import diagnose_vibration
+from predictive_maintenance_mcp.diagnostics.bearing_analyzer import check_all_bearing_faults
+from predictive_maintenance_mcp.diagnostics.iso20816 import assess_vibration_severity
+from predictive_maintenance_mcp.decision_support.diagnosis_pipeline import diagnose_vibration
 
 
 def _fmt(ms: float, target: float) -> str:
@@ -85,7 +85,7 @@ def bench_signal_repository(signal_sizes: dict[str, int]):
 def bench_fft(signal_sizes: dict[str, int], fs: float = 10000):
     """Benchmark FFT computation."""
     print("\n=== FFT (via diagnosis pipeline) ===")
-    from predictive_maintenance_mcp.diagnosis_pipeline import _compute_fft_summary
+    from predictive_maintenance_mcp.decision_support.diagnosis_pipeline import _compute_fft_summary
 
     for label, n_samples in signal_sizes.items():
         signal = np.random.randn(n_samples)

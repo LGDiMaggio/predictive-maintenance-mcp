@@ -341,12 +341,17 @@ def save_iso_report(
 def read_report_metadata(file_name: str) -> Dict[str, Any]:
     """
     Read metadata from HTML report without loading entire file.
-    
+
     Args:
         file_name: Report filename in reports/ directory
-    
+
     Returns:
-        Dictionary with metadata, or error dict if file not found
+        Dictionary with the extracted metadata.
+
+    Raises:
+        ValueError: If the filename escapes the reports directory, the
+            report does not exist, or the report carries no (valid)
+            metadata block.
     """
     # Contain the user-supplied filename before touching the filesystem —
     # otherwise ``../../secret`` turns this into a file-existence/size oracle
@@ -355,55 +360,51 @@ def read_report_metadata(file_name: str) -> Dict[str, Any]:
         file_path = safe_resolve(REPORTS_DIR, file_name)
     except ValueError:
         logger.warning("Rejected out-of-bounds report filename: %r", file_name)
-        return {'error': f"Invalid report filename: {file_name}"}
+        # Deliberately terse: no directory listing here (oracle stays closed).
+        raise ValueError(f"Invalid report filename: {file_name}") from None
 
     if not file_path.exists():
         available = [f.name for f in REPORTS_DIR.glob("*.html")]
-        return {
-            'error': f"Report not found: {file_name}",
-            'available_reports': available
-        }
-    
+        raise ValueError(
+            f"Report not found: {file_name} — available reports: "
+            f"{available if available else 'none'}. "
+            f"Use list_html_reports() to see them."
+        )
+
+    # Read file and extract JSON metadata
+    with open(file_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+
+    # Find metadata JSON block
+    start_marker = '<script type="application/json" id="report-metadata">'
+    end_marker = '</script>'
+
+    start_idx = content.find(start_marker)
+    if start_idx == -1:
+        raise ValueError(
+            f"Metadata not found in report {file_name} — the file has no "
+            f"embedded report-metadata block."
+        )
+
+    start_idx += len(start_marker)
+    end_idx = content.find(end_marker, start_idx)
+
+    if end_idx == -1:
+        raise ValueError(f"Malformed metadata in report {file_name}")
+
+    metadata_json = content[start_idx:end_idx].strip()
     try:
-        # Read file and extract JSON metadata
-        with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
-        
-        # Find metadata JSON block
-        start_marker = '<script type="application/json" id="report-metadata">'
-        end_marker = '</script>'
-        
-        start_idx = content.find(start_marker)
-        if start_idx == -1:
-            return {
-                'error': 'Metadata not found in report',
-                'file_name': file_name,
-                'file_size_kb': file_path.stat().st_size / 1024
-            }
-        
-        start_idx += len(start_marker)
-        end_idx = content.find(end_marker, start_idx)
-        
-        if end_idx == -1:
-            return {'error': 'Malformed metadata in report'}
-        
-        metadata_json = content[start_idx:end_idx].strip()
         metadata = json.loads(metadata_json)
-        
-        return {
-            'file_name': file_name,
-            'file_path': str(file_path.absolute()),
-            'file_size_kb': file_path.stat().st_size / 1024,
-            'metadata': metadata,
-            'message': f"Metadata loaded from {file_name}"
-        }
-    
-    except Exception as e:
-        logger.error(f"Error reading report metadata: {e}")
-        return {
-            'error': f"Failed to read metadata: {str(e)}",
-            'file_name': file_name
-        }
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Malformed metadata in report {file_name}: {e}") from e
+
+    return {
+        'file_name': file_name,
+        'file_path': str(file_path.absolute()),
+        'file_size_kb': file_path.stat().st_size / 1024,
+        'metadata': metadata,
+        'message': f"Metadata loaded from {file_name}"
+    }
 
 
 def list_reports() -> List[Dict[str, Any]]:
@@ -414,20 +415,23 @@ def list_reports() -> List[Dict[str, Any]]:
         List of dicts with report information
     """
     reports = []
-    
+
     for html_file in REPORTS_DIR.glob("*.html"):
-        # Try to read metadata
-        metadata_info = read_report_metadata(html_file.name)
-        
-        if 'error' not in metadata_info:
-            meta = metadata_info.get('metadata', {})
-            reports.append({
-                'file_name': html_file.name,
-                'file_size_kb': html_file.stat().st_size / 1024,
-                'report_type': meta.get('report_type', 'unknown'),
-                'signal_file': meta.get('signal_file', 'unknown'),
-                'created': html_file.stat().st_mtime
-            })
+        # Skip files without a readable metadata block (legitimate for
+        # non-report HTML files sitting in the directory).
+        try:
+            metadata_info = read_report_metadata(html_file.name)
+        except ValueError:
+            continue
+
+        meta = metadata_info.get('metadata', {})
+        reports.append({
+            'file_name': html_file.name,
+            'file_size_kb': html_file.stat().st_size / 1024,
+            'report_type': meta.get('report_type', 'unknown'),
+            'signal_file': meta.get('signal_file', 'unknown'),
+            'created': html_file.stat().st_mtime
+        })
     
     # Sort by creation time (newest first)
     reports.sort(key=lambda x: x['created'], reverse=True)
@@ -458,13 +462,16 @@ def save_diagnostic_report_docx(
     - ``diagnosis``   –  free-text diagnostic summary (str)
 
     Returns:
-        Dictionary with file path and metadata, or an error dict when
-        python-docx is not installed.
+        Dictionary with file path and metadata.
+
+    Raises:
+        ValueError: If the optional python-docx dependency is not installed.
     """
     if not HAS_DOCX:
-        return {
-            "error": "python-docx is not installed. Install with: pip install predictive-maintenance-mcp[docx]",
-        }
+        raise ValueError(
+            "python-docx is not installed. Install with: "
+            "pip install predictive-maintenance-mcp[docx]"
+        )
 
     doc = DocxDocument()
 

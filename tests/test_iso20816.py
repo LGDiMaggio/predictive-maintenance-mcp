@@ -1,19 +1,15 @@
-"""Tests for the single ISO severity engine (``src/diagnostics/iso10816.py``).
+"""Tests for the single ISO severity engine (``src/diagnostics/iso20816.py``).
 
 Zone boundary values are those of ISO 10816-3:2009 (four-zone A-D scheme;
 ISO 20816-3:2022 supersedes that edition and merges zones A and B). This
 file is the tabular specification of the ONLY threshold table allowed in
 the codebase.
-
-NOTE: the module keeps its historical filename (``iso10816.py``) until the
-monolith and root shims are removed; content and citations are already
-aligned to the ISO 20816-3 family.
 """
 
 import numpy as np
 import pytest
 
-from predictive_maintenance_mcp.diagnostics.iso10816 import (
+from predictive_maintenance_mcp.diagnostics.iso20816 import (
     THRESHOLD_PROVENANCE,
     assess_severity_raw,
     assess_vibration_severity,
@@ -309,11 +305,11 @@ class TestUnitConversion:
         result = assess_vibration_severity(signal, fs=fs, signal_unit="m/s2")
         assert result["unit_conversion_performed"] is True
 
-    def test_unknown_unit_assumed_mm_s(self):
-        """Unknown unit should assume mm/s with warning."""
+    def test_unknown_unit_raises(self):
+        """Unknown unit must be refused — units are never assumed."""
         signal = np.random.randn(10000) * 0.1
-        result = assess_vibration_severity(signal, fs=10000, signal_unit="mils")
-        assert result["unit_conversion_performed"] is False
+        with pytest.raises(ValueError, match="Unknown signal_unit"):
+            assess_vibration_severity(signal, fs=10000, signal_unit="mils")
 
 
 class TestInvalidParameters:

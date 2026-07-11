@@ -162,7 +162,7 @@ The AI doesn't guess — it calls **52 specialized MCP endpoints** (46 tools, 2 
 
 | Tool | Description |
 |------|-------------|
-| `check_vibration_alert` | ISO 10816 vibration severity alert classification (zones A/B/C/D) |
+| `check_vibration_alert` | ISO 20816-3 vibration severity alert classification (zones A/B/C/D) |
 | `check_custom_vibration_alert` | Custom threshold-based vibration alerting |
 | `generate_maintenance_recommendations` | Context-aware maintenance recommendations from diagnosis |
 

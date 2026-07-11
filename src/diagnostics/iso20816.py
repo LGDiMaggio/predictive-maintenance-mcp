@@ -3,9 +3,9 @@ ISO 20816-3 vibration severity assessment — single source of truth.
 
 Zone boundary values are those published in ISO 10816-3:2009 (velocity
 criteria). The four-zone A-D scheme of that edition is kept because it is
-what practitioners know; ISO 20816-3:2022, which supersedes ISO 10816-3,
-merges zones A and B into a single acceptance region. Every result carries
-this provenance note (see ``THRESHOLD_PROVENANCE``).
+what practitioners know; ISO 20816-3:2022, which supersedes it, merges
+zones A and B into a single acceptance region. Every result carries this
+provenance note (see ``THRESHOLD_PROVENANCE``).
 
 Scope: industrial machines with rated power above 15 kW measured on
 non-rotating parts. When the machine power is declared and falls below
@@ -19,19 +19,12 @@ Consumers (import, never redefine):
 - ``decision_support.alerts.check_alert_thresholds``
 
 Pure functions — no MCP context, no file I/O.
-
-NOTE: the file keeps its historical name (``iso10816.py``) until the
-monolith and the root shims that import it are removed; the physical
-rename to ``iso20816.py`` happens together with that cleanup.
 """
 
-import logging
 from typing import Literal, Optional
 
 import numpy as np
 from scipy.signal import butter, sosfiltfilt
-
-logger = logging.getLogger(__name__)
 
 #: Provenance note attached to every assessment result.
 THRESHOLD_PROVENANCE = (
@@ -172,6 +165,10 @@ def _convert_to_velocity_mm_s(
 
     Returns:
         (velocity_mm_s, conversion_performed, original_unit)
+
+    Raises:
+        ValueError: If ``signal_unit`` is not one of the declared vocabulary
+            ('g', 'm/s²'/'m/s2', 'm/s', 'mm/s'). Units are never assumed.
     """
     unit = signal_unit.lower()
 
@@ -204,8 +201,12 @@ def _convert_to_velocity_mm_s(
         return signal.copy(), False, unit
 
     else:
-        logger.warning(f"Unknown signal_unit '{signal_unit}', assuming mm/s")
-        return signal.copy(), False, unit
+        raise ValueError(
+            f"Unknown signal_unit '{signal_unit}' — declare one of "
+            f"'g'/'m/s2' (acceleration) or 'mm/s'/'m/s' (velocity). "
+            f"Units are never assumed; a wrong unit invalidates the "
+            f"ISO 20816-3 verdict."
+        )
 
 
 def assess_severity_raw(
@@ -336,7 +337,7 @@ def assess_vibration_severity(
 
     Thin wrapper over :func:`assess_severity_raw` that records the
     measurement axis. The former ``machine_class`` (I-IV) parameter was
-    removed: that mapping is not part of ISO 10816-3/20816-3, whose
+    removed: that mapping is not part of ISO 10816-3:2009 or ISO 20816-3:2022, whose
     vocabulary is machine group + support type.
 
     Args:

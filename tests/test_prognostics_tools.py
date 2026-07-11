@@ -18,7 +18,7 @@ from unittest.mock import AsyncMock
 from mcp.server.fastmcp import FastMCP
 
 from predictive_maintenance_mcp.mcp_tools.prognostics_tools import register
-from predictive_maintenance_mcp.signal_repository import get_repository
+from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
 from predictive_maintenance_mcp.models import (
     RULEstimationResult,
     TrendAnalysisResult,
@@ -76,7 +76,7 @@ def data_dir(tmp_path, monkeypatch):
         signals_dir,
     )
     monkeypatch.setattr("predictive_maintenance_mcp.config.DATA_DIR", signals_dir)
-    monkeypatch.setattr("predictive_maintenance_mcp.signal_loader.DATA_DIR", signals_dir)
+    monkeypatch.setattr("predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR", signals_dir)
 
     return signals_dir
 

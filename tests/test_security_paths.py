@@ -198,74 +198,20 @@ class TestReportMetadataReadSide:
     def test_read_report_metadata_rejects_traversal(self, reports_sandbox, name):
         from predictive_maintenance_mcp.report_generator import read_report_metadata
 
-        result = read_report_metadata(name)
-        assert "error" in result
-        assert "Invalid report filename" in result["error"]
-        # The oracle is closed: no leak of the sibling file's existence/size.
-        assert "available_reports" not in result
+        with pytest.raises(ValueError, match="Invalid report filename") as exc_info:
+            read_report_metadata(name)
+        # The oracle is closed: no leak of the sibling file's existence/size
+        # (no directory listing in the rejection message).
+        assert "secret" not in str(exc_info.value).replace(name, "")
+        assert "available" not in str(exc_info.value)
 
     @pytest.mark.skipif(os.name != "nt", reason="backslash is a separator only on Windows")
     def test_read_report_metadata_rejects_windows_backslash(self, reports_sandbox):
         from predictive_maintenance_mcp.report_generator import read_report_metadata
 
-        result = read_report_metadata("..\\..\\x")
-        assert "error" in result
-        assert "Invalid report filename" in result["error"]
-        assert "available_reports" not in result
-
-
-# ---------------------------------------------------------------------------
-# Legacy monolith — same sites, until it is removed in U7
-# ---------------------------------------------------------------------------
-
-
-class TestMonolithModelSites:
-    @pytest.fixture
-    def monolith_sandbox(self, tmp_path, monkeypatch):
-        models_dir = tmp_path / "models"
-        models_dir.mkdir()
-        (tmp_path / "models_evil").mkdir()
-        monkeypatch.setattr(
-            "predictive_maintenance_mcp.machinery_diagnostics_server.MODELS_DIR",
-            models_dir,
-        )
-        return tmp_path, models_dir
-
-    @pytest.mark.asyncio
-    @pytest.mark.parametrize("name", ["../../evil", "../models_evil/x", ".."])
-    async def test_monolith_train_rejects(self, monolith_sandbox, mock_ctx, name):
-        from predictive_maintenance_mcp.machinery_diagnostics_server import (
-            train_anomaly_model,
-        )
-
-        tmp_path, _ = monolith_sandbox
-        with pytest.raises(ValueError):
-            await train_anomaly_model(
-                healthy_signal_files=[], model_name=name, ctx=mock_ctx
-            )
-        assert _no_files_written(tmp_path)
-
-    @pytest.mark.asyncio
-    @pytest.mark.parametrize("name", ["../../evil", "../models_evil/x", ".."])
-    async def test_monolith_predict_rejects(self, monolith_sandbox, mock_ctx, name):
-        from predictive_maintenance_mcp.machinery_diagnostics_server import (
-            predict_anomalies,
-        )
-
-        with pytest.raises(ValueError):
-            await predict_anomalies(
-                signal_file="whatever.csv", model_name=name, ctx=mock_ctx
-            )
-
-    @pytest.mark.asyncio
-    @pytest.mark.parametrize("name", ["../../evil", "../models_evil/x", ".."])
-    async def test_monolith_pca_report_rejects(self, monolith_sandbox, mock_ctx, name):
-        from predictive_maintenance_mcp.machinery_diagnostics_server import (
-            generate_pca_visualization_report,
-        )
-
-        with pytest.raises(ValueError):
-            await generate_pca_visualization_report(model_name=name, ctx=mock_ctx)
+        with pytest.raises(ValueError, match="Invalid report filename") as exc_info:
+            read_report_metadata("..\\..\\x")
+        assert "available" not in str(exc_info.value)
 
 
 class TestDefenseInDepthPipeline:
@@ -338,9 +284,9 @@ class TestSignalReadContainment:
         secret = tmp_path / "secret.csv"
         pd.DataFrame([1.0, 2.0, 3.0]).to_csv(secret, index=False, header=False)
         monkeypatch.setattr(
-            "predictive_maintenance_mcp.signal_loader.DATA_DIR", data_dir
+            "predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR", data_dir
         )
-        from predictive_maintenance_mcp.signal_loader import load_signal_data
+        from predictive_maintenance_mcp.signal_acquisition.loaders import load_signal_data
 
         # Traversal is contained: the outside file's contents are never returned.
         assert load_signal_data(name) is None
@@ -354,9 +300,9 @@ class TestSignalReadContainment:
             data_dir / "sub" / "good.csv", index=False, header=False
         )
         monkeypatch.setattr(
-            "predictive_maintenance_mcp.signal_loader.DATA_DIR", data_dir
+            "predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR", data_dir
         )
-        from predictive_maintenance_mcp.signal_loader import load_signal_data
+        from predictive_maintenance_mcp.signal_acquisition.loaders import load_signal_data
 
         # A legitimate relative path inside DATA_DIR still loads (no over-rejection).
         result = load_signal_data("sub/good.csv")
