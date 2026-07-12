@@ -158,8 +158,6 @@ FAILURE_CASES = {
     "extract_features_from_signal": {"signal_id": "__not_loaded__"},
     "compute_power_spectral_density": {"signal_id": "__not_loaded__"},
     "compute_spectrogram_stft": {"signal_id": "__not_loaded__"},
-    "compute_envelope_spectrum_tool": {"signal_id": "__not_loaded__"},
-    "evaluate_iso_20816": {"signal_id": "__not_loaded__"},
     "plot_iso_20816_chart": {"signal_id": "__not_loaded__"},
     "train_anomaly_model": {
         "healthy_signal_ids": ["x"],
@@ -168,23 +166,12 @@ FAILURE_CASES = {
     "predict_anomalies": {"signal_id": "__not_loaded__", "model_name": "__no_model__"},
     "extract_manual_specs": {"manual_filename": "__missing__.pdf"},
     "read_manual_excerpt": {"manual_filename": "__missing__.pdf"},
-    "check_bearing_fault_peak_tool": {
-        "signal_id": "__not_loaded__",
-        "bearing_id": "6205",
-        "fault_type": "BPFO",
-        "rpm": 1500.0,
-    },
-    "check_bearing_faults_direct": {
+    "check_bearing_faults": {
         "signal_id": "__not_loaded__",
         "bearing_id": "6205",
         "rpm": 1500.0,
     },
-    "lookup_bearing_and_compute_tool": {
-        "bearing_type": "6205",
-        "rpm": 1500.0,
-        "signal_id": "__not_loaded__",
-    },
-    "assess_vibration_severity": {"signal_id": "__not_loaded__"},
+    "assess_severity": {"signal_id": "__not_loaded__"},
     "diagnose_vibration_tool": {"signal_id": "__not_loaded__", "rpm": 1500.0},
     "plot_signal": {"signal_id": "__not_loaded__"},
     "plot_spectrum": {"signal_id": "__not_loaded__"},
@@ -204,7 +191,6 @@ FAILURE_CASES = {
         "feature_values": [1.0],
     },
     "analyze_signal_trend": {"signal_id": "__not_loaded__"},
-    "detect_signal_degradation_onset": {"signal_id": "__not_loaded__"},
     "load_signal": {"filepath": "__missing__.csv"},
     "get_signal_info": {"signal_id": "__not_loaded__"},
 }

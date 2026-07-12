@@ -18,6 +18,15 @@ from ..signal_processing.spectral import compute_envelope_spectrum
 
 logger = logging.getLogger(__name__)
 
+#: Canonical fault vocabulary: acronym -> canonical fault type. Arbitrary
+#: labels (e.g. "GMF" for a gear-mesh check) have no canonical mapping.
+FAULT_TYPE_CANONICAL: dict[str, str] = {
+    "BPFO": "outer_race",
+    "BPFI": "inner_race",
+    "BSF": "ball",
+    "FTF": "cage",
+}
+
 
 def check_bearing_fault_peak(
     signal: np.ndarray,
@@ -99,6 +108,7 @@ def check_bearing_fault_peak(
         "signal_id": signal_id,
         "bearing_id": bearing_id,
         "fault_type": fault_type,
+        "fault_type_canonical": FAULT_TYPE_CANONICAL.get(fault_type.upper()),
         "expected_frequency_hz": round(expected_freq, 2),
         "detected": detected,
         "detected_frequency_hz": round(detected_freq, 2) if detected_freq else None,
@@ -164,7 +174,31 @@ def check_all_bearing_faults(
         )
         checks.append(result)
 
-    # Determine most likely fault (strongest evidence among detected)
+    most_likely, assessment = _summarize_fault_checks(checks)
+
+    bearing_freqs = {k: v for k, v in fault_types.items()}
+    bearing_freqs["shaft_freq_hz"] = shaft_freq
+
+    return {
+        "signal_id": signal_id,
+        "bearing_id": bearing_id,
+        "rpm": rpm,
+        "shaft_frequency_hz": shaft_freq,
+        "bearing_frequencies": bearing_freqs,
+        "fault_checks": checks,
+        "overall_assessment": assessment,
+        "most_likely_fault": most_likely,
+        "most_likely_fault_canonical": (
+            FAULT_TYPE_CANONICAL.get(most_likely) if most_likely else None
+        ),
+        # Catalog traceability: every catalog entry carries a mandatory
+        # source citation — echo it so results stay auditable.
+        "source": (freq_data.get("bearing_info") or {}).get("source"),
+    }
+
+
+def _summarize_fault_checks(checks: list[dict]) -> tuple[Optional[str], str]:
+    """Rank detected checks by evidence strength -> (most_likely, assessment)."""
     evidence_order = {"high": 3, "moderate": 2, "low": 1, "none": 0}
     detected_faults = [
         c for c in checks if c["detected"] and c["evidence_strength"] != "none"
@@ -175,7 +209,6 @@ def check_all_bearing_faults(
 
     most_likely = detected_faults[0]["fault_type"] if detected_faults else None
 
-    # Assessment text
     if not detected_faults:
         assessment = (
             "No bearing fault frequencies detected within tolerance. "
@@ -190,19 +223,82 @@ def check_all_bearing_faults(
             f"Bearing fault frequencies detected: {fault_list}. "
             f"Most likely fault: {most_likely}."
         )
+    return most_likely, assessment
 
-    bearing_freqs = {k: v for k, v in fault_types.items()}
-    bearing_freqs["shaft_freq_hz"] = shaft_freq
+
+def check_frequency_set(
+    signal: np.ndarray,
+    fs: float,
+    frequencies: dict[str, float],
+    rpm: float,
+    signal_id: str = "",
+    tolerance_pct: float = 5.0,
+    envelope_freq_range: tuple[float, float] = (500, 5000),
+) -> dict:
+    """Check an arbitrary set of labeled expected frequencies in the envelope.
+
+    Covers the out-of-catalog and gearbox paths: labels may be the bearing
+    acronyms (BPFO/BPFI/BSF/FTF — mapped to the canonical fault vocabulary)
+    or any user label such as "GMF" (no canonical mapping).
+
+    Args:
+        signal: 1D vibration signal.
+        fs: Sampling frequency (Hz).
+        frequencies: {label: expected frequency in Hz}, all values > 0.
+        rpm: Shaft speed in RPM (echoed; shaft frequency = rpm/60).
+        signal_id: Signal identifier (for result labeling).
+        tolerance_pct: Frequency tolerance in percent.
+        envelope_freq_range: Bandpass filter range for envelope.
+
+    Returns:
+        Dict compatible with BearingFaultsSummary (bearing_id/source None).
+
+    Raises:
+        ValueError: If frequencies is empty or contains non-positive values.
+    """
+    if not frequencies:
+        raise ValueError(
+            "frequencies is empty — pass at least one {label: hz} entry, "
+            "e.g. {'BPFO': 107.4} or {'GMF': 350.0}."
+        )
+    bad = {k: v for k, v in frequencies.items() if not v or v <= 0}
+    if bad:
+        raise ValueError(
+            f"frequencies contains non-positive values: {bad} — every "
+            f"expected frequency must be > 0 Hz."
+        )
+
+    checks = [
+        check_bearing_fault_peak(
+            signal=signal,
+            fs=fs,
+            expected_freq=float(freq),
+            fault_type=label,
+            bearing_id="",
+            signal_id=signal_id,
+            tolerance_pct=tolerance_pct,
+            envelope_freq_range=envelope_freq_range,
+        )
+        for label, freq in frequencies.items()
+    ]
+    most_likely, assessment = _summarize_fault_checks(checks)
+
+    freq_echo = {k: float(v) for k, v in frequencies.items()}
+    freq_echo["shaft_freq_hz"] = rpm / 60.0
 
     return {
         "signal_id": signal_id,
-        "bearing_id": bearing_id,
+        "bearing_id": None,
         "rpm": rpm,
-        "shaft_frequency_hz": shaft_freq,
-        "bearing_frequencies": bearing_freqs,
+        "shaft_frequency_hz": rpm / 60.0,
+        "bearing_frequencies": freq_echo,
         "fault_checks": checks,
         "overall_assessment": assessment,
         "most_likely_fault": most_likely,
+        "most_likely_fault_canonical": (
+            FAULT_TYPE_CANONICAL.get(most_likely) if most_likely else None
+        ),
+        "source": None,
     }
 
 

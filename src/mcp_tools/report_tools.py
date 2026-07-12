@@ -33,7 +33,8 @@ from ._utils import resolve_model_paths, resolve_signal, sanitize_filename
 
 # Canonical modular twin of the ISO evaluation tool (module-level function
 # since U6) — replaces the former runtime import from the deprecated monolith.
-from .diagnostics_tools import evaluate_iso_20816
+from .diagnostics_tools import assess_severity
+from ..signal_processing.spectral import validate_bandpass_band
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +73,7 @@ async def generate_diagnostic_report_docx(
           - fft_peaks:            list  [{frequency, magnitude_db, note}, …]
           - envelope_peaks:       list  [{frequency, magnitude_db, match}, …]
           - bearing_frequencies:  dict  {BPFO, BPFI, BSF, FTF}
-          - iso:                  dict  (from evaluate_iso_20816 output)
+          - iso:                  dict  (mapped from assess_severity output)
           - diagnosis:            str   (free-text diagnostic summary)
 
         Args:
@@ -772,6 +773,10 @@ async def generate_envelope_report(
     signal_data, info = resolve_signal(signal_id)
     sampling_rate = info.sampling_rate
 
+    # U9 band-validation sweep: an invalid band vs Nyquist raises — this
+    # used to feed scipy an unnormalizable corner (or silently mis-filter).
+    validate_bandpass_band(filter_low, filter_high, sampling_rate)
+
     # Optional extras: reference bearing frequencies from the companion
     # metadata of the source file (never required).
     if bearing_freqs is None:
@@ -784,9 +789,11 @@ async def generate_envelope_report(
                 "FTF": metadata.get("FTF")
             }
 
-    # Bandpass filter
+    # Bandpass filter (a corner exactly AT Nyquist is realized 1 Hz below
+    # it — a digital filter corner cannot sit at Nyquist)
     nyquist = sampling_rate / 2
-    sos = butter(4, [filter_low / nyquist, filter_high / nyquist], btype='band', output='sos')
+    high_norm = min(filter_high, nyquist - 1.0) / nyquist
+    sos = butter(4, [filter_low / nyquist, high_norm], btype='band', output='sos')
     filtered_signal = sosfiltfilt(sos, signal_data)
 
     # Envelope via Hilbert
@@ -863,9 +870,8 @@ async def generate_iso_report(
     if ctx:
         await ctx.info(f"Generating ISO 20816-3 report for '{signal_id}'...")
 
-    # Perform ISO evaluation via the canonical modular tool (module-level
-    # function in diagnostics_tools — the monolith import is gone).
-    iso_result = await evaluate_iso_20816(
+    # Perform ISO evaluation via the unified severity tool (U9 merge).
+    sev = await assess_severity(
         ctx=ctx,
         signal_id=signal_id,
         machine_group=machine_group,
@@ -873,8 +879,22 @@ async def generate_iso_report(
         operating_speed_rpm=operating_speed_rpm
     )
 
-    # Convert Pydantic model to dict
-    iso_dict = iso_result.model_dump()
+    # Map the unified model onto the report template's expected keys.
+    iso_dict = {
+        "rms_velocity": sev.rms_velocity_mm_s,
+        "zone": sev.zone,
+        "zone_description": sev.zone_description,
+        "severity_level": sev.severity_level,
+        "color_code": sev.color_code,
+        "machine_group": sev.machine_group,
+        "support_type": sev.support_type,
+        "boundary_ab": sev.boundaries["AB"],
+        "boundary_bc": sev.boundaries["BC"],
+        "boundary_cd": sev.boundaries["CD"],
+        "frequency_range": sev.frequency_range,
+        "operating_speed_rpm": sev.operating_speed_rpm,
+        "threshold_provenance": sev.threshold_provenance,
+    }
 
     # Generate and save report (signal_id is the report's signal label)
     result = save_iso_report(

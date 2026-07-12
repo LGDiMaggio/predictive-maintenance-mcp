@@ -22,7 +22,6 @@ from predictive_maintenance_mcp.signal_acquisition.repository import get_reposit
 from predictive_maintenance_mcp.models import (
     RULEstimationResult,
     TrendAnalysisResult,
-    DegradationOnsetResult,
 )
 
 
@@ -489,23 +488,26 @@ class TestAnalyzeSignalTrend:
 
 
 # ---------------------------------------------------------------------------
-# detect_signal_degradation_onset (within-recording screening)
+# Degradation onset (merged into analyze_signal_trend in U9)
 # ---------------------------------------------------------------------------
 
-class TestDetectDegradationOnset:
-    """Tests for detect_signal_degradation_onset tool."""
+class TestDegradationOnsetMerged:
+    """Onset detection now lives inside analyze_signal_trend (U9 merge)."""
+
+    def test_old_onset_tool_gone(self, tools):
+        assert "detect_signal_degradation_onset" not in tools
 
     @pytest.mark.asyncio
     async def test_degrading_detects_onset(self, tools, repo, mock_ctx):
-        result = await tools["detect_signal_degradation_onset"](
+        result = await tools["analyze_signal_trend"](
             ctx=mock_ctx,
             signal_id="degrading",
             feature_name="rms",
-            threshold_sigma=2.0,
+            onset_threshold_sigma=2.0,
             segment_duration=0.1,
             overlap_ratio=0.5,
         )
-        assert isinstance(result, DegradationOnsetResult)
+        assert isinstance(result, TrendAnalysisResult)
         assert result.feature_name == "rms"
         assert result.onset_detected is True
         assert result.onset_segment_index is not None
@@ -513,38 +515,32 @@ class TestDetectDegradationOnset:
         # Onset can never be flagged inside the baseline window.
         assert result.onset_segment_index >= result.baseline_segments
         assert result.baseline_segments == result.num_segments // 2
+        # Onset time maps to the segment center within the recording.
+        assert result.onset_time_s is not None
+        assert 0.0 <= result.onset_time_s <= 2.0
 
     @pytest.mark.asyncio
     async def test_stationary_no_onset(self, tools, repo, mock_ctx):
-        result = await tools["detect_signal_degradation_onset"](
+        result = await tools["analyze_signal_trend"](
             ctx=mock_ctx,
             signal_id="stationary",
             feature_name="rms",
-            threshold_sigma=3.0,
+            onset_threshold_sigma=3.0,
             segment_duration=0.1,
             overlap_ratio=0.5,
         )
-        assert isinstance(result, DegradationOnsetResult)
         assert result.onset_detected is False
         assert result.onset_segment_index is None
+        assert result.onset_time_s is None
 
     @pytest.mark.asyncio
     async def test_custom_threshold_sigma(self, tools, repo, mock_ctx):
-        result = await tools["detect_signal_degradation_onset"](
+        result = await tools["analyze_signal_trend"](
             ctx=mock_ctx,
             signal_id="degrading",
             feature_name="rms",
-            threshold_sigma=10.0,
+            onset_threshold_sigma=10.0,
             segment_duration=0.1,
             overlap_ratio=0.5,
         )
-        assert isinstance(result, DegradationOnsetResult)
-        assert result.threshold_sigma == 10.0
-
-    @pytest.mark.asyncio
-    async def test_signal_not_loaded_raises(self, tools, repo, mock_ctx):
-        with pytest.raises(ValueError, match="load_signal"):
-            await tools["detect_signal_degradation_onset"](
-                ctx=mock_ctx,
-                signal_id="nonexistent",
-            )
+        assert result.onset_threshold_sigma == 10.0

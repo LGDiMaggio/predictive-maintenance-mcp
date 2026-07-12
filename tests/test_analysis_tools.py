@@ -164,20 +164,41 @@ class TestAnalyzeFFT:
 # ---------------------------------------------------------------------------
 
 class TestAnalyzeEnvelope:
-    """Tests for analyze_envelope tool (signal_id handle)."""
+    """Tests for the unified analyze_envelope tool (signal_id handle)."""
 
     @pytest.mark.asyncio
     async def test_envelope_returns_result(self, tools, repo, mock_ctx):
         result = await tools["analyze_envelope"](ctx=mock_ctx, signal_id="sine50")
         assert result is not None
-        assert hasattr(result, "peak_frequencies")
+        assert len(result.top_peaks) > 0
+        assert result.signal_id == "sine50"
+
+    @pytest.mark.asyncio
+    async def test_envelope_default_band_echoed(self, tools, repo, mock_ctx):
+        """Unified default band is 500-5000 Hz, echoed in the output."""
+        result = await tools["analyze_envelope"](ctx=mock_ctx, signal_id="sine50")
+        assert tuple(result.filter_band) == (500.0, 5000.0)
+
+    @pytest.mark.asyncio
+    async def test_envelope_invalid_band_raises(self, tools, repo, mock_ctx):
+        """Band above Nyquist raises — never a silent clamp (U9)."""
+        with pytest.raises(ValueError, match="Nyquist"):
+            await tools["analyze_envelope"](
+                ctx=mock_ctx, signal_id="sine50", filter_high=6000.0
+            )
 
     @pytest.mark.asyncio
     async def test_envelope_deterministic_repeat_calls(self, tools, repo, mock_ctx):
         r1 = await tools["analyze_envelope"](ctx=mock_ctx, signal_id="multi")
         r2 = await tools["analyze_envelope"](ctx=mock_ctx, signal_id="multi")
-        assert r1.peak_frequencies == r2.peak_frequencies
-        assert r1.peak_magnitudes == r2.peak_magnitudes
+        assert [p.model_dump() for p in r1.top_peaks] == [
+            p.model_dump() for p in r2.top_peaks
+        ]
+
+    @pytest.mark.asyncio
+    async def test_old_spectrum_tool_gone(self, tools):
+        """compute_envelope_spectrum_tool merged into analyze_envelope."""
+        assert "compute_envelope_spectrum_tool" not in tools
 
 
 # ---------------------------------------------------------------------------
@@ -241,12 +262,6 @@ class TestSpectralDelegation:
             # Known issue: energy_per_band band names are strings not floats
             pytest.skip("STFT model validation issue with energy_per_band")
 
-    @pytest.mark.asyncio
-    async def test_compute_envelope_spectrum(self, tools, repo, mock_ctx):
-        result = await tools["compute_envelope_spectrum_tool"](
-            ctx=mock_ctx, signal_id="sine50"
-        )
-        assert result is not None
 
 
 # ---------------------------------------------------------------------------

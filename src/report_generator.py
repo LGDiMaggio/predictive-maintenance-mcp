@@ -295,7 +295,7 @@ def save_iso_report(
     
     Args:
         signal_file: Signal filename
-        iso_result: ISO evaluation result from evaluate_iso_20816()
+        iso_result: ISO evaluation dict (mapped from assess_severity output)
     
     Returns:
         Dictionary with file path, metadata, and summary
@@ -458,7 +458,7 @@ def save_diagnostic_report_docx(
     - ``fft_peaks``   –  list of ``{frequency, magnitude_db, note}``
     - ``envelope_peaks`` – list of ``{frequency, magnitude_db, match}``
     - ``bearing_frequencies`` – dict with BPFO, BPFI, BSF, FTF
-    - ``iso``         –  dict from ``evaluate_iso_20816`` output
+    - ``iso``         –  dict mapped from ``assess_severity`` output
     - ``diagnosis``   –  free-text diagnostic summary (str)
 
     Returns:

@@ -17,7 +17,16 @@ Fixture history:
 - U8: regenerated intentionally — every analysis/diagnosis/report/
   prognostics tool switched its handle to signal_id (filename-era
   parameters removed) and load_signal gained batch + overwrite. Tool/
-  resource/prompt COUNTS are unchanged (46/4/4); U9 changes the counts.
+  resource/prompt COUNTS were unchanged (46/4/4).
+- U9a: regenerated intentionally — the four MAJOR merges landed:
+  assess_severity (<- evaluate_iso_20816 + assess_vibration_severity +
+  check_vibration_alert + check_custom_vibration_alert), analyze_envelope
+  (<- compute_envelope_spectrum_tool), check_bearing_faults
+  (<- check_bearing_fault_peak_tool + check_bearing_faults_direct +
+  lookup_bearing_and_compute_tool), analyze_signal_trend
+  (<- detect_signal_degradation_onset). Counts: 46 -> 39 tools;
+  resources/prompts unchanged (4/4). U9b brings the minor merges,
+  resource/prompt drops, and the 33/0/3 target surface.
 
 Snapshot recipe (run from the repo root):
     python -c "from tests.test_tool_inventory import build_inventory, \\
@@ -94,11 +103,34 @@ class TestInventoryCharacterization:
         assert inventory["prompts"] == reference["prompts"]
 
     def test_expected_counts(self, inventory):
-        """54 endpoints: 46 tools + 4 resources + 4 prompts (audit inventory).
+        """47 endpoints after U9a: 39 tools + 4 resources + 4 prompts.
 
-        Updated intentionally in U9 when the surface consolidates to
-        33 tools + 3 prompts + 0 resources.
+        U9a executed the four major merges (46 - 9 old + 2 new = 39
+        tools). U9b consolidates further to the target surface of
+        33 tools + 0 resources + 3 prompts.
         """
-        assert len(inventory["tools"]) == 46
+        assert len(inventory["tools"]) == 39
         assert len(inventory["resources"]) == 4
         assert len(inventory["prompts"]) == 4
+
+    def test_merged_tools_absent_new_tools_present(self, inventory):
+        """U9a clean cut: absorbed tool names gone, unified names present."""
+        absorbed = {
+            "evaluate_iso_20816",
+            "assess_vibration_severity",
+            "check_vibration_alert",
+            "check_custom_vibration_alert",
+            "compute_envelope_spectrum_tool",
+            "check_bearing_fault_peak_tool",
+            "check_bearing_faults_direct",
+            "lookup_bearing_and_compute_tool",
+            "detect_signal_degradation_onset",
+        }
+        assert absorbed.isdisjoint(inventory["tools"])
+        for unified in (
+            "assess_severity",
+            "analyze_envelope",
+            "check_bearing_faults",
+            "analyze_signal_trend",
+        ):
+            assert unified in inventory["tools"]

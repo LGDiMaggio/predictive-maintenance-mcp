@@ -43,7 +43,7 @@
       "parameters": {
         "properties": {
           "filter_high": {
-            "default": 2000.0,
+            "default": 5000.0,
             "title": "Filter High",
             "type": "number"
           },
@@ -156,6 +156,11 @@
             "title": "Feature Name",
             "type": "string"
           },
+          "onset_threshold_sigma": {
+            "default": 3.0,
+            "title": "Onset Threshold Sigma",
+            "type": "number"
+          },
           "overlap_ratio": {
             "default": 0.5,
             "title": "Overlap Ratio",
@@ -195,16 +200,11 @@
         "type": "object"
       }
     },
-    "assess_vibration_severity": {
+    "assess_severity": {
       "context_kwarg": "ctx",
       "is_async": true,
       "parameters": {
         "properties": {
-          "axis": {
-            "default": "vertical",
-            "title": "Axis",
-            "type": "string"
-          },
           "machine_group": {
             "default": 2,
             "enum": [
@@ -214,9 +214,53 @@
             "title": "Machine Group",
             "type": "integer"
           },
+          "machine_power_kw": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Machine Power Kw"
+          },
+          "operating_speed_rpm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Operating Speed Rpm"
+          },
+          "rms_velocity_mm_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Rms Velocity Mm S"
+          },
           "signal_id": {
-            "title": "Signal Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Signal Id"
           },
           "support_type": {
             "default": "rigid",
@@ -226,12 +270,24 @@
             ],
             "title": "Support Type",
             "type": "string"
+          },
+          "thresholds": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "number"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Thresholds"
           }
         },
-        "required": [
-          "signal_id"
-        ],
-        "title": "assess_vibration_severityArguments",
+        "title": "assess_severityArguments",
         "type": "object"
       }
     },
@@ -272,18 +328,78 @@
         "type": "object"
       }
     },
-    "check_bearing_fault_peak_tool": {
+    "check_bearing_faults": {
       "context_kwarg": "ctx",
       "is_async": true,
       "parameters": {
         "properties": {
-          "bearing_id": {
-            "title": "Bearing Id",
-            "type": "string"
+          "ball_diameter_mm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Ball Diameter Mm"
           },
-          "fault_type": {
-            "title": "Fault Type",
-            "type": "string"
+          "bearing_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Bearing Id"
+          },
+          "contact_angle_deg": {
+            "default": 0.0,
+            "title": "Contact Angle Deg",
+            "type": "number"
+          },
+          "frequencies": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "number"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Frequencies"
+          },
+          "num_balls": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Num Balls"
+          },
+          "pitch_diameter_mm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Pitch Diameter Mm"
           },
           "rpm": {
             "title": "Rpm",
@@ -301,102 +417,9 @@
         },
         "required": [
           "signal_id",
-          "bearing_id",
-          "fault_type",
           "rpm"
         ],
-        "title": "check_bearing_fault_peak_toolArguments",
-        "type": "object"
-      }
-    },
-    "check_bearing_faults_direct": {
-      "context_kwarg": "ctx",
-      "is_async": true,
-      "parameters": {
-        "properties": {
-          "bearing_id": {
-            "title": "Bearing Id",
-            "type": "string"
-          },
-          "rpm": {
-            "title": "Rpm",
-            "type": "number"
-          },
-          "signal_id": {
-            "title": "Signal Id",
-            "type": "string"
-          },
-          "tolerance_pct": {
-            "default": 5.0,
-            "title": "Tolerance Pct",
-            "type": "number"
-          }
-        },
-        "required": [
-          "signal_id",
-          "bearing_id",
-          "rpm"
-        ],
-        "title": "check_bearing_faults_directArguments",
-        "type": "object"
-      }
-    },
-    "check_custom_vibration_alert": {
-      "context_kwarg": "ctx",
-      "is_async": true,
-      "parameters": {
-        "properties": {
-          "alarm_threshold": {
-            "title": "Alarm Threshold",
-            "type": "number"
-          },
-          "danger_threshold": {
-            "title": "Danger Threshold",
-            "type": "number"
-          },
-          "rms_velocity": {
-            "title": "Rms Velocity",
-            "type": "number"
-          },
-          "warning_threshold": {
-            "title": "Warning Threshold",
-            "type": "number"
-          }
-        },
-        "required": [
-          "rms_velocity",
-          "warning_threshold",
-          "alarm_threshold",
-          "danger_threshold"
-        ],
-        "title": "check_custom_vibration_alertArguments",
-        "type": "object"
-      }
-    },
-    "check_vibration_alert": {
-      "context_kwarg": "ctx",
-      "is_async": true,
-      "parameters": {
-        "properties": {
-          "machine_group": {
-            "default": 2,
-            "title": "Machine Group",
-            "type": "integer"
-          },
-          "rms_velocity": {
-            "title": "Rms Velocity",
-            "type": "number"
-          },
-          "support_type": {
-            "default": "rigid",
-            "title": "Support Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "rms_velocity"
-        ],
-        "title": "check_vibration_alertArguments",
+        "title": "check_bearing_faultsArguments",
         "type": "object"
       }
     },
@@ -423,38 +446,6 @@
           "signal_id"
         ],
         "title": "clear_signalArguments",
-        "type": "object"
-      }
-    },
-    "compute_envelope_spectrum_tool": {
-      "context_kwarg": "ctx",
-      "is_async": true,
-      "parameters": {
-        "properties": {
-          "filter_high": {
-            "default": 5000.0,
-            "title": "Filter High",
-            "type": "number"
-          },
-          "filter_low": {
-            "default": 500.0,
-            "title": "Filter Low",
-            "type": "number"
-          },
-          "method": {
-            "default": "hilbert",
-            "title": "Method",
-            "type": "string"
-          },
-          "signal_id": {
-            "title": "Signal Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "signal_id"
-        ],
-        "title": "compute_envelope_spectrum_toolArguments",
         "type": "object"
       }
     },
@@ -519,43 +510,6 @@
           "signal_id"
         ],
         "title": "compute_spectrogram_stftArguments",
-        "type": "object"
-      }
-    },
-    "detect_signal_degradation_onset": {
-      "context_kwarg": "ctx",
-      "is_async": true,
-      "parameters": {
-        "properties": {
-          "feature_name": {
-            "default": "rms",
-            "title": "Feature Name",
-            "type": "string"
-          },
-          "overlap_ratio": {
-            "default": 0.5,
-            "title": "Overlap Ratio",
-            "type": "number"
-          },
-          "segment_duration": {
-            "default": 0.1,
-            "title": "Segment Duration",
-            "type": "number"
-          },
-          "signal_id": {
-            "title": "Signal Id",
-            "type": "string"
-          },
-          "threshold_sigma": {
-            "default": 3.0,
-            "title": "Threshold Sigma",
-            "type": "number"
-          }
-        },
-        "required": [
-          "signal_id"
-        ],
-        "title": "detect_signal_degradation_onsetArguments",
         "type": "object"
       }
     },
@@ -683,45 +637,6 @@
           "timestamps"
         ],
         "title": "estimate_rulArguments",
-        "type": "object"
-      }
-    },
-    "evaluate_iso_20816": {
-      "context_kwarg": "ctx",
-      "is_async": true,
-      "parameters": {
-        "properties": {
-          "machine_group": {
-            "default": 2,
-            "title": "Machine Group",
-            "type": "integer"
-          },
-          "operating_speed_rpm": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Operating Speed Rpm"
-          },
-          "signal_id": {
-            "title": "Signal Id",
-            "type": "string"
-          },
-          "support_type": {
-            "default": "rigid",
-            "title": "Support Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "signal_id"
-        ],
-        "title": "evaluate_iso_20816Arguments",
         "type": "object"
       }
     },
@@ -1249,38 +1164,6 @@
           "filepath"
         ],
         "title": "load_signalArguments",
-        "type": "object"
-      }
-    },
-    "lookup_bearing_and_compute_tool": {
-      "context_kwarg": "ctx",
-      "is_async": true,
-      "parameters": {
-        "properties": {
-          "bearing_type": {
-            "title": "Bearing Type",
-            "type": "string"
-          },
-          "rpm": {
-            "title": "Rpm",
-            "type": "number"
-          },
-          "signal_id": {
-            "title": "Signal Id",
-            "type": "string"
-          },
-          "tolerance_pct": {
-            "default": 5.0,
-            "title": "Tolerance Pct",
-            "type": "number"
-          }
-        },
-        "required": [
-          "bearing_type",
-          "rpm",
-          "signal_id"
-        ],
-        "title": "lookup_bearing_and_compute_toolArguments",
         "type": "object"
       }
     },

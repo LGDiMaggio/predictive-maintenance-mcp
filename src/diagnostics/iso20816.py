@@ -14,8 +14,7 @@ documented but not enforceable.
 
 This module is the ONLY place in the codebase where zone boundaries live.
 Consumers (import, never redefine):
-- ``assess_vibration_severity`` / ``diagnose_vibration`` MCP tools
-- ``evaluate_iso_20816`` (legacy filename-based MCP tool)
+- ``assess_severity`` / ``diagnose_vibration`` MCP tools
 - ``decision_support.alerts.check_alert_thresholds``
 
 Pure functions — no MCP context, no file I/O.
@@ -95,6 +94,48 @@ def get_zone_boundaries(
             f"and support_type must be 'rigid' or 'flexible'."
         )
     return _ZONE_BOUNDARIES[key]
+
+
+def describe_zone(zone: Literal["A", "B", "C", "D"]) -> dict:
+    """Return the standard description/severity/color for an ISO zone letter.
+
+    Used by consumers that classify against NON-ISO boundaries (custom
+    thresholds) but still report the familiar zone vocabulary.
+
+    Raises:
+        ValueError: If zone is not one of 'A', 'B', 'C', 'D'.
+    """
+    if zone not in _ZONE_INFO:
+        raise ValueError(
+            f"Unknown zone '{zone}' — valid zones are A, B, C, D."
+        )
+    desc, severity, color = _ZONE_INFO[zone]
+    return {
+        "zone_description": desc,
+        "severity_level": severity,
+        "color_code": color,
+    }
+
+
+def check_power_scope(machine_power_kw: Optional[float]) -> None:
+    """Refuse a DECLARED machine power below the 15 kW ISO scope floor.
+
+    ``None`` means "unknown" and passes: without the power figure the
+    scope condition is not detectable, so the limit stays documented but
+    unenforced.
+
+    Raises:
+        ValueError: If machine_power_kw is declared and below 15 kW.
+    """
+    if machine_power_kw is not None and machine_power_kw < _ISO_POWER_FLOOR_KW:
+        raise ValueError(
+            f"ISO assessment refused: declared machine power "
+            f"{machine_power_kw:g} kW is below the 15 kW scope floor of "
+            f"ISO 20816-3 (thresholds from ISO 10816-3:2009) — these zone "
+            f"boundaries do not apply to small machines; use manufacturer "
+            f"acceptance limits instead, or omit machine_power_kw only if "
+            f"the power is genuinely unknown."
+        )
 
 
 def classify_zone(
@@ -250,15 +291,7 @@ def assess_severity_raw(
     # Validate group/support before any signal processing.
     get_zone_boundaries(machine_group, support_type)
 
-    if machine_power_kw is not None and machine_power_kw < _ISO_POWER_FLOOR_KW:
-        raise ValueError(
-            f"ISO assessment refused: declared machine power "
-            f"{machine_power_kw:g} kW is below the 15 kW scope floor of "
-            f"ISO 20816-3 (thresholds from ISO 10816-3:2009) — these zone "
-            f"boundaries do not apply to small machines; use manufacturer "
-            f"acceptance limits instead, or omit machine_power_kw only if "
-            f"the power is genuinely unknown."
-        )
+    check_power_scope(machine_power_kw)
 
     nyquist = fs / 2.0
     if nyquist < _ISO_BAND_UPPER_HZ:

@@ -64,11 +64,12 @@ mcp = FastMCP(
     6) NEVER suggest parameters, thresholds, or recommendations not explicitly provided in tool outputs or prompt workflows. Do NOT invent frequency ranges, filter settings, or maintenance actions. Only use guidance from STEP 6 of diagnostic prompts.
 
     Signal unit policy (CRITICAL - declared units only, never guessed):
-    - ISO 20816-3 severity verdicts require a DECLARED signal unit:
+    - ISO 20816-3 severity verdicts on stored signals require a DECLARED unit:
       1. Explicit parameter: load_signal(signal_unit='g'|'m/s2'|'mm/s'|'m/s')
-         or the signal_unit parameter of evaluate_iso_20816()
       2. Companion metadata: 'signal_unit' field in <name>_metadata.json
-      (explicit parameter takes precedence over metadata)
+      (explicit parameter takes precedence over metadata; the direct
+      rms_velocity_mm_s route of assess_severity needs no declaration —
+      the value is by definition mm/s)
     - Units are NEVER inferred from signal amplitude — there is no
       amplitude-based guessing flow and no default assumption
     - Without a declared unit: severity tools raise a structured error, and
@@ -93,12 +94,14 @@ mcp = FastMCP(
     - Remaining Useful Life estimation (linear, exponential, kalman) —
       requires a series of measurements taken over time (values or
       signal_ids + timestamps); a single recording is refused
-    - Within-recording trend screening (increasing/decreasing/stable, p-value based)
-    - Within-recording degradation onset detection (post-baseline deviation)
+    - Within-recording trend + degradation-onset screening
+      (analyze_signal_trend: p-value based direction, post-baseline onset)
 
-    Decision Support (ISO 13374 Block 6):
-    - ISO 20816-3 vibration alert classification (zones A-D; boundary values from ISO 10816-3:2009)
-    - Custom threshold alerting
+    Severity & Decision Support (ISO 13374 Blocks 4/6):
+    - assess_severity: unified ISO 20816-3 severity + alert classification
+      (zones A-D; boundary values from ISO 10816-3:2009). Accepts a stored
+      signal_id OR a direct rms_velocity_mm_s reading, plus optional
+      custom thresholds {'warning','alarm','danger'}
     - Maintenance recommendation generation (severity + fault-specific)
 
     Workflow Prompts (use these for guided analysis):

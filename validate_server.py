@@ -100,7 +100,7 @@ key_tools = [
     "generate_iso_report",
     "analyze_fft",
     "analyze_envelope",
-    "evaluate_iso_20816",
+    "assess_severity",
     "train_anomaly_model",
     "predict_anomalies",
 ]

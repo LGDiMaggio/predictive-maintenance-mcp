@@ -1,4 +1,10 @@
-"""Tests for MCP decision support tools (ISO 13374 Block 6)."""
+"""Tests for MCP decision support tools (ISO 13374 Block 6).
+
+The former alert tools (check_vibration_alert / check_custom_vibration_alert)
+were absorbed into the unified ``assess_severity`` diagnostics tool in U9 —
+their behavior is characterized in tests/test_golden_merges.py. This module
+keeps only generate_maintenance_recommendations.
+"""
 
 import pytest
 from unittest.mock import AsyncMock
@@ -6,7 +12,6 @@ from unittest.mock import AsyncMock
 from mcp.server.fastmcp import FastMCP
 
 from predictive_maintenance_mcp.mcp_tools.decision_support_tools import register
-from predictive_maintenance_mcp.models import AlertResult
 
 
 # ---------------------------------------------------------------------------
@@ -34,131 +39,14 @@ def mock_ctx():
 
 
 # ---------------------------------------------------------------------------
-# check_vibration_alert
+# Surface: the alert tools are gone (merged into assess_severity)
 # ---------------------------------------------------------------------------
 
-class TestCheckVibrationAlert:
-    """Tests for check_vibration_alert tool."""
-
-    @pytest.mark.asyncio
-    async def test_zone_a(self, tools, mock_ctx):
-        result = await tools["check_vibration_alert"](
-            ctx=mock_ctx,
-            rms_velocity=1.0,
-            machine_group=2,
-            support_type="rigid",
-        )
-        assert isinstance(result, AlertResult)
-        assert result.alert_level == "none"
-        assert result.zone == "A"
-        assert result.rms_velocity == 1.0
-
-    @pytest.mark.asyncio
-    async def test_zone_b(self, tools, mock_ctx):
-        # Group 2 rigid boundaries (ISO 10816-3:2009): 1.4 / 2.8 / 4.5 mm/s
-        result = await tools["check_vibration_alert"](
-            ctx=mock_ctx,
-            rms_velocity=2.0,
-            machine_group=2,
-            support_type="rigid",
-        )
-        assert isinstance(result, AlertResult)
-        assert result.alert_level == "warning"
-        assert result.zone == "B"
-
-    @pytest.mark.asyncio
-    async def test_zone_c(self, tools, mock_ctx):
-        # 3.0 mm/s group 2 rigid is Zone C (2.8 < 3.0 <= 4.5); the old
-        # duplicated table wrongly called it Zone B.
-        result = await tools["check_vibration_alert"](
-            ctx=mock_ctx,
-            rms_velocity=3.0,
-            machine_group=2,
-            support_type="rigid",
-        )
-        assert isinstance(result, AlertResult)
-        assert result.alert_level == "alarm"
-        assert result.zone == "C"
-
-    @pytest.mark.asyncio
-    async def test_zone_d(self, tools, mock_ctx):
-        result = await tools["check_vibration_alert"](
-            ctx=mock_ctx,
-            rms_velocity=10.0,
-            machine_group=2,
-            support_type="rigid",
-        )
-        assert isinstance(result, AlertResult)
-        assert result.alert_level == "danger"
-        assert result.zone == "D"
-
-    @pytest.mark.asyncio
-    async def test_flexible_support(self, tools, mock_ctx):
-        result = await tools["check_vibration_alert"](
-            ctx=mock_ctx,
-            rms_velocity=4.0,
-            machine_group=2,
-            support_type="flexible",
-        )
-        assert isinstance(result, AlertResult)
-        assert result.zone == "B"
-
-    @pytest.mark.asyncio
-    async def test_unknown_group(self, tools, mock_ctx):
-        result = await tools["check_vibration_alert"](
-            ctx=mock_ctx,
-            rms_velocity=5.0,
-            machine_group=99,
-            support_type="rigid",
-        )
-        assert isinstance(result, AlertResult)
-        assert result.zone == "unknown"
-
-
-# ---------------------------------------------------------------------------
-# check_custom_vibration_alert
-# ---------------------------------------------------------------------------
-
-class TestCheckCustomVibrationAlert:
-    """Tests for check_custom_vibration_alert tool."""
-
-    @pytest.mark.asyncio
-    async def test_normal_zone(self, tools, mock_ctx):
-        result = await tools["check_custom_vibration_alert"](
-            ctx=mock_ctx,
-            rms_velocity=0.5,
-            warning_threshold=1.0,
-            alarm_threshold=3.0,
-            danger_threshold=5.0,
-        )
-        assert isinstance(result, AlertResult)
-        assert result.alert_level == "none"
-        assert result.zone == "A"
-
-    @pytest.mark.asyncio
-    async def test_warning_zone(self, tools, mock_ctx):
-        result = await tools["check_custom_vibration_alert"](
-            ctx=mock_ctx,
-            rms_velocity=2.0,
-            warning_threshold=1.0,
-            alarm_threshold=3.0,
-            danger_threshold=5.0,
-        )
-        assert isinstance(result, AlertResult)
-        assert result.alert_level == "warning"
-
-    @pytest.mark.asyncio
-    async def test_danger_zone(self, tools, mock_ctx):
-        result = await tools["check_custom_vibration_alert"](
-            ctx=mock_ctx,
-            rms_velocity=6.0,
-            warning_threshold=1.0,
-            alarm_threshold=3.0,
-            danger_threshold=5.0,
-        )
-        assert isinstance(result, AlertResult)
-        assert result.alert_level == "danger"
-        assert result.zone == "D"
+class TestAlertToolsMerged:
+    def test_alert_tools_not_registered(self, tools):
+        assert "check_vibration_alert" not in tools
+        assert "check_custom_vibration_alert" not in tools
+        assert set(tools) == {"generate_maintenance_recommendations"}
 
 
 # ---------------------------------------------------------------------------

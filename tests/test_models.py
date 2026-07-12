@@ -17,7 +17,6 @@ from predictive_maintenance_mcp.models import (
     EnvelopeResult,
     StatisticalResult,
     SignalInfo,
-    ISO20816Result,
     ISOSeverityRefusal,
     VibrationSeverityResult,
     FeatureExtractionResult,
@@ -92,25 +91,24 @@ class TestEnvelopeResult:
 
     def test_creation(self):
         r = EnvelopeResult(
+            signal_id="sig1",
             num_samples=10000,
             sampling_rate=10000.0,
             filter_band=(500.0, 5000.0),
-            peak_frequencies=[107.36, 214.72],
-            peak_magnitudes=[0.05, 0.03],
-            diagnosis="Possible outer race fault (BPFO harmonics detected).",
+            top_peaks=[
+                SpectralPeak(frequency_hz=107.36, magnitude=0.05, magnitude_db=0.0),
+                SpectralPeak(frequency_hz=214.72, magnitude=0.03, magnitude_db=-4.4),
+            ],
+            diagnosis="Peaks listed; compare against computed bearing frequencies.",
         )
         assert r.num_samples == 10000
-        assert len(r.peak_frequencies) == 2
+        assert len(r.top_peaks) == 2
+        assert r.filter_band == (500.0, 5000.0)
 
-    def test_empty_preview_defaults(self):
-        r = EnvelopeResult(
-            num_samples=100, sampling_rate=1000.0,
-            filter_band=(100.0, 500.0),
-            peak_frequencies=[], peak_magnitudes=[],
-            diagnosis="No significant peaks.",
-        )
-        assert r.spectrum_preview_freq == []
-        assert r.spectrum_preview_mag == []
+    def test_preview_fields_removed(self):
+        """U9: the spectrum preview arrays are gone (compact output only)."""
+        assert "spectrum_preview_freq" not in EnvelopeResult.model_fields
+        assert "spectrum_preview_mag" not in EnvelopeResult.model_fields
 
 
 # ── StatisticalResult ──────────────────────────────────────────────────────
@@ -155,37 +153,48 @@ class TestSignalInfo:
         assert s2.num_samples == 10000
 
 
-# ── ISO20816Result ─────────────────────────────────────────────────────────
+# ── VibrationSeverityResult (unified severity model) ─────────────────────
 
-class TestISO20816Result:
+class TestVibrationSeverityResult:
 
-    def test_all_zones(self):
-        """Create an ISO result for each zone (A/B/C/D)."""
-        zones = [
-            ("A", "Good", "green"),
-            ("B", "Acceptable", "yellow"),
-            ("C", "Unsatisfactory", "orange"),
-            ("D", "Unacceptable", "red"),
-        ]
-        for zone, severity, color in zones:
-            r = ISO20816Result(
-                rms_velocity=3.0, machine_group=2, support_type="rigid",
-                zone=zone, zone_description=f"Zone {zone}",
-                severity_level=severity, color_code=color,
-                boundary_ab=1.4, boundary_bc=2.8, boundary_cd=4.5,
-                frequency_range="10 Hz - 1 kHz",
-            )
-            assert r.zone == zone
-            assert r.color_code == color
-
-    def test_optional_speed(self):
-        r = ISO20816Result(
-            rms_velocity=1.0, machine_group=1, support_type="flexible",
-            zone="A", zone_description="Good", severity_level="Good",
-            color_code="green", boundary_ab=1.4, boundary_bc=2.8,
-            boundary_cd=4.5, frequency_range="10 Hz - 1 kHz",
+    def _make(self, zone="B", **kwargs):
+        base = dict(
+            signal_id="s", rms_velocity_mm_s=2.0, machine_group=2,
+            support_type="rigid",
+            zone=zone, zone_description="desc",
+            severity_level="Acceptable", color_code="yellow",
+            boundaries={"AB": 1.4, "BC": 2.8, "CD": 4.5},
+            frequency_range="10-1000 Hz",
+            unit_conversion_performed=False,
+            threshold_provenance="ISO 10816-3:2009",
         )
-        assert r.operating_speed_rpm is None
+        base.update(kwargs)
+        return VibrationSeverityResult(**base)
+
+    def test_alert_level_derived_from_zone(self):
+        """Alert fields (absorbed check_vibration_alert) auto-derive."""
+        expected = {"A": "none", "B": "warning", "C": "alarm", "D": "danger"}
+        for zone, level in expected.items():
+            assert self._make(zone=zone).alert_level == level
+
+    def test_exceeded_threshold_derived(self):
+        assert self._make(zone="A").exceeded_threshold is None
+        assert self._make(zone="B").exceeded_threshold == 1.4
+        assert self._make(zone="C").exceeded_threshold == 2.8
+        assert self._make(zone="D").exceeded_threshold == 4.5
+
+    def test_signal_id_optional_for_direct_rms_route(self):
+        r = self._make(signal_id=None)
+        assert r.signal_id is None
+        assert r.status == "assessed"
+
+    def test_old_iso20816result_model_removed(self):
+        """U9 clean cut: the duplicate ISO result model is gone."""
+        import predictive_maintenance_mcp.models as models
+        assert not hasattr(models, "ISO20816Result")
+        assert not hasattr(models, "AlertResult")
+        assert not hasattr(models, "EnvelopeSpectrumResult")
+        assert not hasattr(models, "DegradationOnsetResult")
 
 
 # ── ISOSeverityRefusal ────────────────────────────────────────────────────

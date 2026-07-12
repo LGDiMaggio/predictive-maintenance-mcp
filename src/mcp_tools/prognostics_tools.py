@@ -1,15 +1,15 @@
 """MCP tools for prognostic assessment (ISO 13374 Block 5).
 
-Exposes RUL estimation on multi-measurement series, plus within-recording
-trend/onset screening tools.
+Exposes RUL estimation on multi-measurement series, plus a within-recording
+trend + onset screening tool.
 
 Honest-prognosis contract:
 - ``estimate_rul`` requires a series of measurements taken over time
   (explicit values or multiple stored signals, each with a timestamp).
   It refuses a single recording/point: segmenting seconds of stationary
   signal yields noise, not a degradation trend.
-- ``analyze_signal_trend`` and ``detect_signal_degradation_onset`` are
-  within-recording SCREENING tools. They look at seconds of data inside
+- ``analyze_signal_trend`` (trend + onset, unified in U9) is a
+  within-recording SCREENING tool. It looks at seconds of data inside
   one recording and cannot produce a prognosis.
 """
 
@@ -32,7 +32,6 @@ from ..prognostics.kalman_rul import estimate_rul_kalman
 from ..models import (
     RULEstimationResult,
     TrendAnalysisResult,
-    DegradationOnsetResult,
 )
 
 logger = logging.getLogger(__name__)
@@ -367,14 +366,20 @@ async def analyze_signal_trend(
     feature_name: str = "rms",
     segment_duration: float = 0.1,
     overlap_ratio: float = 0.5,
+    onset_threshold_sigma: float = 3.0,
 ) -> TrendAnalysisResult:
-    """Within-recording screening: feature trend across one stored recording.
+    """Within-recording screening: feature trend + degradation onset.
 
-        Segments a single recording (seconds of data), extracts the
-        requested feature per segment, and tests whether the per-segment
-        values show a statistically significant trend (slope p < 0.05).
-        Requires the signal loaded via load_signal() first; the sampling
-        rate comes from the stored signal metadata.
+        THE unified screening tool: feature trend AND degradation
+        onset in one call. Segments a single recording
+        (seconds of data), extracts the requested feature per segment,
+        tests whether the per-segment values show a statistically
+        significant trend (slope p < 0.05), and detects the first segment
+        AFTER the baseline window (first half of the series) whose value
+        exceeds baseline mean + onset_threshold_sigma standard deviations.
+        Onset inside the baseline window cannot be detected (the baseline
+        defines "normal"). Requires the signal loaded via load_signal()
+        first; the sampling rate comes from the stored signal metadata.
 
         This is a SCREENING tool, not a prognosis: a trend inside seconds
         of signal says whether the recording is stationary, not how long
@@ -389,10 +394,14 @@ async def analyze_signal_trend(
             feature_name: Time-domain feature to analyze (default: "rms").
             segment_duration: Duration of each segment in seconds.
             overlap_ratio: Overlap between segments (0-1).
+            onset_threshold_sigma: Baseline standard deviations above the
+                baseline mean that trigger onset detection (default: 3.0).
 
         Returns:
             TrendAnalysisResult with slope, direction (p-value based),
-            fit quality, and the (truncated) per-segment feature series.
+            fit quality, the (truncated) per-segment feature series, and
+            the onset-detection outcome (onset_detected,
+            onset_segment_index, onset_time_s, baseline_segments).
 
         Raises:
             ValueError: If the signal_id is not loaded, or the stored
@@ -417,6 +426,15 @@ async def analyze_signal_trend(
         feature_series, segment_times
     )
 
+    # Onset detection (merged detect_signal_degradation_onset): scan only
+    # AFTER the baseline window — the baseline defines "normal".
+    onset_index = detect_degradation_onset(
+        feature_series, onset_threshold_sigma
+    )
+    onset_time_s = (
+        round(segment_times[onset_index], 4) if onset_index is not None else None
+    )
+
     return TrendAnalysisResult(
         feature_name=feature_name,
         slope=trend["slope"],
@@ -429,67 +447,10 @@ async def analyze_signal_trend(
         feature_series=series_out,
         segment_times_s=times_out,
         series_truncated=truncated,
-    )
-
-async def detect_signal_degradation_onset(
-    ctx: Context,
-    signal_id: str,
-    feature_name: str = "rms",
-    threshold_sigma: float = 3.0,
-    segment_duration: float = 0.1,
-    overlap_ratio: float = 0.5,
-) -> DegradationOnsetResult:
-    """Within-recording screening: detect where a stored recording starts degrading.
-
-        Extracts a feature series from one recording, uses the first half of
-        the segments as a baseline, and reports the first segment AFTER the
-        baseline window whose value exceeds baseline mean +
-        *threshold_sigma* standard deviations. Onset inside the baseline
-        window cannot be detected (the baseline defines "normal").
-        Requires the signal loaded via load_signal() first; the sampling
-        rate comes from the stored signal metadata.
-
-        This is a SCREENING tool over seconds of data — for machine-life
-        trends, accumulate measurements over time and use estimate_rul.
-
-        Args:
-            ctx: MCP context for user communication.
-            signal_id: ID of the stored signal (from load_signal).
-            feature_name: Time-domain feature to monitor (default: "rms").
-            threshold_sigma: Number of baseline standard deviations to trigger
-                degradation onset (default: 3.0).
-            segment_duration: Duration of each segment in seconds.
-            overlap_ratio: Overlap between segments (0-1).
-
-        Returns:
-            DegradationOnsetResult with onset detection outcome and the
-            baseline window size.
-
-        Raises:
-            ValueError: If the signal_id is not loaded, or the stored
-                signal has no sampling rate.
-        """
-    signal_data, info = resolve_signal(signal_id)
-    sr = info.sampling_rate
-    await ctx.info(
-        f"Detecting degradation onset for '{feature_name}' in '{signal_id}' ..."
-    )
-
-    feature_series, _segment_times = _extract_feature_series(
-        signal_data, feature_name, sr, segment_duration, overlap_ratio,
-    )
-    await ctx.info(
-        f"Extracted {len(feature_series)} segments, checking onset ..."
-    )
-
-    onset_index = detect_degradation_onset(feature_series, threshold_sigma)
-
-    return DegradationOnsetResult(
-        feature_name=feature_name,
         onset_detected=onset_index is not None,
         onset_segment_index=onset_index,
-        threshold_sigma=threshold_sigma,
-        num_segments=len(feature_series),
+        onset_time_s=onset_time_s,
+        onset_threshold_sigma=onset_threshold_sigma,
         baseline_segments=len(feature_series) // 2,
     )
 
@@ -498,4 +459,3 @@ def register(mcp: FastMCP) -> None:
     """Register prognostics MCP tools on *mcp*."""
     mcp.tool()(estimate_rul)
     mcp.tool()(analyze_signal_trend)
-    mcp.tool()(detect_signal_degradation_onset)

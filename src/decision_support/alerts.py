@@ -35,16 +35,13 @@ def check_alert_thresholds(
     Returns:
         Dict with ``alert_level``, ``zone``, ``exceeded_threshold``,
         and ``message``.
+
+    Raises:
+        ValueError: If the machine group/support combination is invalid or
+            the reading is negative — misuse raises (U9 error contract);
+            there is no "unknown zone" soft fallback.
     """
-    try:
-        zone_info = classify_zone(rms_velocity, machine_group, support_type)
-    except ValueError as exc:
-        return {
-            "alert_level": "warning",
-            "zone": "unknown",
-            "exceeded_threshold": None,
-            "message": f"{exc} Manual review required.",
-        }
+    zone_info = classify_zone(rms_velocity, machine_group, support_type)
 
     zone = zone_info["zone"]
     bounds = zone_info["boundaries"]

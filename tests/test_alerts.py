@@ -116,12 +116,12 @@ class TestCheckAlertThresholds:
         assert result["zone"] == "A"
         assert result["alert_level"] == "none"
 
-    def test_unknown_group_requests_manual_review(self):
-        """Invalid group falls back to a manual-review alert, not a crash."""
-        result = check_alert_thresholds(5.0, machine_group=99, support_type="rigid")
-        assert result["zone"] == "unknown"
-        assert result["alert_level"] == "warning"
-        assert result["exceeded_threshold"] is None
+    def test_unknown_group_raises(self):
+        """U9 error contract: invalid group is misuse and RAISES — the old
+        soft fallback ('unknown' zone + manual-review warning) returned a
+        wrong-looking success instead of an actionable error."""
+        with pytest.raises(ValueError, match="machine_group"):
+            check_alert_thresholds(5.0, machine_group=99, support_type="rigid")
 
 
 class TestCustomThresholds:

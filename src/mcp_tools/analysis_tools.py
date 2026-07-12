@@ -6,7 +6,6 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 from scipy.fft import fft, fftfreq
-from scipy.signal import hilbert, butter, find_peaks, sosfiltfilt
 from scipy.stats import kurtosis, skew
 from mcp.server.fastmcp import FastMCP, Context
 
@@ -14,7 +13,7 @@ from ..config import DATA_DIR
 from ..signal_acquisition.loaders import extract_segment
 from ..models import (
     FFTResult, SpectralPeak, EnvelopeResult, StatisticalResult,
-    FeatureExtractionResult, PSDResult, STFTResult, EnvelopeSpectrumResult,
+    FeatureExtractionResult, PSDResult, STFTResult,
 )
 from ..signal_processing.spectral import (
     compute_psd as _compute_psd,
@@ -192,49 +191,54 @@ async def analyze_envelope(
     ctx: Context,
     signal_id: str,
     filter_low: float = 500.0,
-    filter_high: float = 2000.0,
+    filter_high: float = 5000.0,
     num_peaks: int = 5,
     segment_duration: Optional[float] = 1.0,
     random_seed: Optional[int] = None
 ) -> EnvelopeResult:
     """
-        Perform Envelope Analysis on a stored signal to detect bearing faults.
+        Envelope-spectrum analysis of a stored signal (bearing fault screening).
 
-        Envelope analysis is particularly effective for detecting faults in ball/roller bearings.
-        The signal is bandpass filtered, the envelope is calculated via Hilbert
-        transform, and the envelope spectrum is analyzed. Requires the signal
-        loaded via load_signal() first; the sampling rate comes from the
-        stored signal metadata.
+        THE unified envelope tool: bandpass filter -> Hilbert
+        envelope -> mean subtraction + Hann window -> FFT -> top peaks.
+        The mean subtraction/window step is an intentional U9 fix: the
+        envelope's DC leakage used to bury the low-frequency FTF zone.
+        Requires the signal loaded via load_signal() first; the sampling
+        rate comes from the stored signal metadata.
+
+        The requested band must fit the signal: an invalid band (low <= 0,
+        low >= high, high > Nyquist) raises a ValueError — it is NEVER
+        silently clamped. The band used is echoed in the result.
 
         By default analyzes the LEADING 1.0-second segment (deterministic:
         two identical calls return identical results). Set
         segment_duration=None to analyze the entire signal, or pass
         random_seed to sample a seeded random segment position instead.
 
-        Returns ONLY peak information and diagnosis text (no full arrays) to avoid context overflow.
-
-        **CRITICAL - LLM Inference Policy:**
-        - **NEVER infer fault type from a signal_id or filename**
-        - Treat ALL signal_ids as opaque identifiers
-        - Base diagnosis ONLY on frequency-domain evidence (peaks matching BPFO/BPFI/BSF/FTF)
+        No reference bearing frequencies are assumed: compare the returned
+        peaks against frequencies computed for the actual bearing and
+        shaft speed (check_bearing_faults or
+        calculate_bearing_characteristic_frequencies).
 
         Args:
             ctx: MCP context for user communication
             signal_id: ID of the stored signal (from load_signal).
-            filter_low: Low frequency of bandpass filter in Hz (default: 500 Hz)
-            filter_high: High frequency of bandpass filter in Hz (default: 2000 Hz)
-            num_peaks: Number of main peaks to identify (default: 5)
-            segment_duration: Duration in seconds to analyze (default: leading
-                1.0 s). Set to None to analyze the full signal.
+            filter_low: Bandpass low edge in Hz (default: 500).
+            filter_high: Bandpass high edge in Hz (default: 5000). Must
+                not exceed the signal's Nyquist frequency.
+            num_peaks: Number of top peaks to return (default: 5).
+            segment_duration: Duration in seconds to analyze (default:
+                leading 1.0 s). None analyzes the full signal.
             random_seed: Seed for random segment position (default: None =
                 deterministic leading segment).
 
         Returns:
-            EnvelopeResult with peak information and diagnosis (optimized for chat display)
+            EnvelopeResult with the band actually used, top peaks, and
+            comparison guidance.
 
         Raises:
-            ValueError: If the signal_id is not loaded, or the stored signal
-                has no sampling rate.
+            ValueError: If the signal_id is not loaded, the stored signal
+                has no sampling rate, or the band is invalid vs Nyquist.
         """
     signal_data, info = resolve_signal(signal_id)
     sampling_rate = info.sampling_rate
@@ -256,99 +260,45 @@ async def analyze_envelope(
             f"{full_signal_length} samples)"
         )
 
-    # Design Butterworth bandpass filter using SOS (numerically stable)
-    nyquist = sampling_rate / 2
-    low = filter_low / nyquist
-    high = filter_high / nyquist
-
-    # Clamp to valid range (0, 1) and ensure low < high
-    low = max(low, 0.01)
-    high = min(high, 0.99)
-    if low >= high:
-        low = 0.01
-        high = 0.99
-
-    sos = butter(4, [low, high], btype='band', output='sos')
-
-    # Apply filter
-    filtered_signal = sosfiltfilt(sos, signal_data)
-
-    # Calculate envelope using Hilbert transform
-    analytic_signal = hilbert(filtered_signal)
-    envelope = np.abs(analytic_signal)
-
-    # Calculate envelope spectrum
-    N = len(envelope)
-    envelope_fft = fft(envelope)
-    envelope_frequencies = fftfreq(N, 1/sampling_rate)
-
-    # Take only positive frequencies
-    positive_idx = envelope_frequencies > 0
-    envelope_frequencies = envelope_frequencies[positive_idx]
-    envelope_magnitudes = np.abs(envelope_fft[positive_idx])
-
-    # Find main peaks using scipy.signal.find_peaks (same method as HTML reports)
-    # Convert to dB for prominence calculation
-    max_magnitude = np.max(envelope_magnitudes)
-    envelope_magnitudes_db = 20 * np.log10(np.maximum(envelope_magnitudes / max_magnitude, 1e-10))
-
-    # Find peaks with minimum prominence (at least 2 dB above surroundings)
-    # and minimum distance (avoid adjacent FFT bins of same peak)
-    freq_resolution = sampling_rate / N
-    min_distance_samples = max(1, int(1.0 / freq_resolution))  # At least 1 Hz spacing
-
-    peak_indices, _ = find_peaks(
-        envelope_magnitudes_db,
-        distance=min_distance_samples,
-        prominence=2  # At least 2 dB prominence
+    # Single envelope engine: band validation (raise, never clamp),
+    # Hilbert demodulation, detrend + Hann window, FFT, peak picking.
+    result = _compute_envelope(
+        signal_data,
+        sampling_rate,
+        frequency_range=(filter_low, filter_high),
+        num_peaks=num_peaks,
     )
+    top_peaks = [SpectralPeak(**p) for p in result["top_peaks"]]
 
-    # Sort by magnitude and keep top num_peaks
-    if len(peak_indices) > num_peaks:
-        sorted_indices = np.argsort(envelope_magnitudes[peak_indices])[::-1]
-        peak_indices = peak_indices[sorted_indices[:num_peaks]]
-    elif len(peak_indices) == 0:
-        # Fallback: if no peaks found with find_peaks, use simple sorting
-        peak_indices = np.argsort(envelope_magnitudes)[-num_peaks:][::-1]
-
-    peak_frequencies = envelope_frequencies[peak_indices].tolist()
-    peak_magnitudes = envelope_magnitudes[peak_indices].tolist()
-
-    # Create diagnosis text
+    # Diagnosis text: peaks + comparison guidance (no invented references)
     diagnosis_lines = [
-        f"Envelope Analysis Results:",
-        f"Filter band: {filter_low}-{filter_high} Hz",
-        f"",
-        f"Top {num_peaks} peaks in envelope spectrum:"
+        "Envelope Analysis Results:",
+        f"Filter band: {filter_low:g}-{filter_high:g} Hz",
+        "",
+        f"Top {len(top_peaks)} peaks in envelope spectrum:",
     ]
-
-    for i, (freq, mag) in enumerate(zip(peak_frequencies, peak_magnitudes), 1):
-        diagnosis_lines.append(f"  {i}. {freq:7.2f} Hz  (magnitude: {mag:.2e})")
-
+    for i, p in enumerate(top_peaks, 1):
+        diagnosis_lines.append(
+            f"  {i}. {p.frequency_hz:7.2f} Hz  (magnitude: {p.magnitude:.2e})"
+        )
     diagnosis_lines.extend([
         "",
         "No reference bearing frequencies are assumed for this machine.",
         "Compare the peaks above against BPFO/BPFI/BSF/FTF computed for the",
-        "actual bearing and shaft speed: use search_bearing_catalog(...) for a",
-        "verified catalog entry, or calculate_bearing_characteristic_frequencies(...)",
-        "with the bearing geometry from the machine manual.",
-        "💡 Use plot_envelope(...) for visual analysis and harmonic identification."
+        "actual bearing and shaft speed: use check_bearing_faults(...) with a",
+        "catalog bearing_id, explicit frequencies, or the bearing geometry",
+        "from the machine manual.",
+        "Use generate_envelope_report(...) for visual analysis and harmonic "
+        "identification.",
     ])
 
-    diagnosis = "\n".join(diagnosis_lines)
-
-    # Small preview (first 100 points for hint/context)
-    preview_size = min(100, len(envelope_frequencies))
-
     return EnvelopeResult(
-        num_samples=len(envelope),
+        signal_id=signal_id,
+        num_samples=result["num_envelope_samples"],
         sampling_rate=sampling_rate,
         filter_band=(filter_low, filter_high),
-        peak_frequencies=peak_frequencies,
-        peak_magnitudes=peak_magnitudes,
-        diagnosis=diagnosis,
-        spectrum_preview_freq=envelope_frequencies[:preview_size].tolist(),
-        spectrum_preview_mag=envelope_magnitudes[:preview_size].tolist()
+        top_peaks=top_peaks,
+        diagnosis="\n".join(diagnosis_lines),
     )
 
 # ================================================================
@@ -611,47 +561,6 @@ async def compute_spectrogram_stft(
         energy_per_band=result["energy_per_band"],
     )
 
-async def compute_envelope_spectrum_tool(
-    ctx: Context,
-    signal_id: str,
-    filter_low: float = 500.0,
-    filter_high: float = 5000.0,
-    method: str = "hilbert",
-) -> EnvelopeSpectrumResult:
-    """Compute envelope spectrum for a stored signal (signal_id pattern).
-
-        Use for bearing fault detection. The envelope spectrum reveals
-        modulation patterns caused by bearing defects.
-
-        Args:
-            signal_id: ID of the stored signal.
-            filter_low: Bandpass filter low frequency (Hz).
-            filter_high: Bandpass filter high frequency (Hz).
-            method: Envelope method (default 'hilbert').
-        """
-    signal_data, info = resolve_signal(signal_id)
-    fs = info.sampling_rate
-
-    if ctx:
-        await ctx.info(f"Computing envelope spectrum for '{signal_id}' ({filter_low}-{filter_high} Hz)")
-
-    result = _compute_envelope(
-        signal_data, fs,
-        frequency_range=(filter_low, filter_high),
-        method=method,
-    )
-
-    return EnvelopeSpectrumResult(
-        signal_id=signal_id,
-        num_samples=result["num_envelope_samples"],
-        sampling_rate=fs,
-        method=method,
-        frequency_range=(filter_low, filter_high),
-        top_peaks=[SpectralPeak(**p) for p in result["top_peaks"]],
-        diagnosis=result["diagnosis"],
-    )
-
-
 def register(mcp: FastMCP) -> None:
     """Register signal-analysis MCP tools on *mcp*."""
     mcp.tool()(analyze_fft)
@@ -660,4 +569,3 @@ def register(mcp: FastMCP) -> None:
     mcp.tool()(extract_features_from_signal)
     mcp.tool()(compute_power_spectral_density)
     mcp.tool()(compute_spectrogram_stft)
-    mcp.tool()(compute_envelope_spectrum_tool)

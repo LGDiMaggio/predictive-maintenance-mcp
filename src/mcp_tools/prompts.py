@@ -50,6 +50,9 @@ def diagnose_bearing(
     freq_info = ", ".join(freq_refs) if freq_refs else "NOT PROVIDED - must request from user"
 
     rpm_info = f", {operating_speed_rpm}" if operating_speed_rpm else ""
+    rpm_kwarg = (
+        f", operating_speed_rpm={operating_speed_rpm}" if operating_speed_rpm else ""
+    )
     fs_info = f"{sampling_rate}" if sampling_rate else "UNKNOWN"
 
     return f"""Perform evidence-based bearing diagnostic on "{signal_file}":
@@ -106,7 +109,7 @@ def diagnose_bearing(
     STEP 1 — ISO 20816-3 (Severity Context)
     ═══════════════════════════════════════════════════════════════════════════════
 
-    BEFORE calling evaluate_iso_20816, ASK USER to confirm machine parameters:
+    BEFORE calling assess_severity, ASK USER to confirm machine parameters:
 
     "For ISO 20816-3 evaluation, I need to know:
     1. Machine group:
@@ -124,7 +127,7 @@ def diagnose_bearing(
     Is this correct, or should I use different values?"
 
     If user confirms or provides values, proceed with:
-    Call: evaluate_iso_20816("{signal_file}", {fs_info}, {machine_group}, "{support_type}"{rpm_info})
+    Call: assess_severity(signal_id="{signal_file}", machine_group={machine_group}, support_type="{support_type}"{rpm_kwarg})
     Report: RMS velocity and ISO zone (A/B/C/D) in 1-2 sentences.
     Note: This provides overall severity but is NOT bearing-specific. Use for maintenance urgency only.
 
@@ -433,7 +436,7 @@ def quick_diagnostic_report(signal_file: str) -> str:
     4) Next-step guidance (evidence-first)
     - If strong impulsiveness (CF>6 or Kurtosis>6), suggest: "Use diagnose_bearing prompt for targeted bearing analysis"
     - If tonal/harmonic pattern dominates, suggest: "Use diagnose_gear prompt if gear suspected"
-    - If broadband increase, suggest: ISO 20816-3 check with evaluate_iso_20816()
+    - If broadband increase, suggest: ISO 20816-3 check with assess_severity()
 
     Output format (≤200 words):
     - Screening summary with measured values (bullet points)
@@ -484,7 +487,7 @@ def generate_iso_diagnostic_report(
     SECTION 1: ISO 20816-3 VIBRATION SEVERITY ASSESSMENT
     ================================================================================
 
-    Execute: evaluate_iso_20816("{signal_file}", {sampling_rate}, {machine_group}, "{support_type}"{rpm_param})
+    Execute: assess_severity(signal_id="{signal_file}", machine_group={machine_group}, support_type="{support_type}"{rpm_param})
 
     Present results in this format:
 

@@ -345,10 +345,12 @@ class TestNoFictitiousReferenceInEnvelopeOutput:
     @pytest.mark.asyncio
     async def test_diagnosis_points_to_real_frequency_sources(self, analysis_tools_env):
         """Instead of invented numbers, the output must direct the user to
-        compute frequencies for their actual bearing."""
+        compute frequencies for their actual bearing (post-U9 the unified
+        check_bearing_faults covers catalog, explicit frequencies, and
+        explicit geometry routes)."""
         ctx = AsyncMock()
         result = await analysis_tools_env["analyze_envelope"](
             ctx=ctx, signal_id="env_test"
         )
-        assert "search_bearing_catalog" in result.diagnosis
-        assert "calculate_bearing_characteristic_frequencies" in result.diagnosis
+        assert "check_bearing_faults" in result.diagnosis
+        assert "No reference bearing frequencies are assumed" in result.diagnosis

@@ -7,7 +7,7 @@ from pathlib import Path
 
 from predictive_maintenance_mcp.signal_acquisition.loaders import load_signal_data
 from predictive_maintenance_mcp.mcp_tools.diagnostics_tools import (
-    evaluate_iso_20816,
+    assess_severity,
 )
 from predictive_maintenance_mcp.config import DATA_DIR
 from predictive_maintenance_mcp.report_generator import (
@@ -139,8 +139,8 @@ async def run_report_tests():
 
     signal_file = "real_train/baseline_1.csv"
 
-    # U8: evaluate_iso_20816 takes a stored signal_id (rate + unit declared
-    # at load time).
+    # U9: the unified assess_severity takes a stored signal_id (rate + unit
+    # declared at load time).
     from predictive_maintenance_mcp.signal_acquisition.repository import (
         get_repository,
     )
@@ -150,7 +150,7 @@ async def run_report_tests():
         signal_file, sampling_rate=97656, signal_unit="g", overwrite=True
     )
 
-    iso_result = await evaluate_iso_20816(
+    sev = await assess_severity(
         ctx=None,
         signal_id=info["signal_id"],
         machine_group=2,
@@ -158,9 +158,24 @@ async def run_report_tests():
     )
     repo.clear_signal(info["signal_id"])
 
+    # Map the unified model onto the report template's expected keys.
+    iso_dict = {
+        "rms_velocity": sev.rms_velocity_mm_s,
+        "zone": sev.zone,
+        "zone_description": sev.zone_description,
+        "severity_level": sev.severity_level,
+        "color_code": sev.color_code,
+        "machine_group": sev.machine_group,
+        "support_type": sev.support_type,
+        "boundary_ab": sev.boundaries["AB"],
+        "boundary_bc": sev.boundaries["BC"],
+        "boundary_cd": sev.boundaries["CD"],
+        "frequency_range": sev.frequency_range,
+    }
+
     report_result = save_iso_report(
         signal_file=signal_file,
-        iso_result=iso_result.model_dump()  # Convert Pydantic to dict
+        iso_result=iso_dict
     )
 
     print(f"✓ {report_result['message']}")

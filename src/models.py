@@ -6,7 +6,7 @@ ensuring consistent and well-documented return types.
 """
 
 from typing import Any, Literal, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class SpectralPeak(BaseModel):
@@ -34,22 +34,29 @@ class FFTResult(BaseModel):
 
 
 class EnvelopeResult(BaseModel):
-    """Envelope analysis result - optimized for chat display."""
-    # Summary statistics instead of full arrays
-    num_samples: int = Field(description="Number of samples in envelope signal")
+    """Unified envelope-spectrum analysis result (U9 merge).
+
+    Compact summary: top peaks + the band ACTUALLY used — no full arrays.
+    The envelope FFT is computed after mean subtraction + Hann window
+    (audit 2.8 fix), so low-frequency (FTF-zone) peaks are not buried by
+    DC leakage.
+    """
+    signal_id: str = Field(description="Signal identifier used")
+    num_samples: int = Field(description="Number of samples analyzed (envelope length)")
     sampling_rate: float = Field(description="Sampling rate (Hz)")
-    filter_band: tuple[float, float] = Field(description="Bandpass filter band (Hz)")
-
-    # Only top peaks (not full spectrum)
-    peak_frequencies: list[float] = Field(description="Top peak frequencies (Hz)")
-    peak_magnitudes: list[float] = Field(description="Top peak magnitudes")
-
-    # Human-readable diagnosis
-    diagnosis: str = Field(description="Interpretive diagnosis text with bearing frequency analysis")
-
-    # Optional: small preview of spectrum (first 100 points for visualization hint)
-    spectrum_preview_freq: list[float] = Field(default=[], description="First 100 freq points (Hz)")
-    spectrum_preview_mag: list[float] = Field(default=[], description="First 100 magnitude points")
+    filter_band: tuple[float, float] = Field(
+        description="Bandpass filter band (Hz) actually used — echoed from the request"
+    )
+    top_peaks: list[SpectralPeak] = Field(
+        description="Top peaks in the envelope spectrum, sorted by frequency"
+    )
+    diagnosis: str = Field(
+        description=(
+            "Peak listing and comparison guidance. No reference bearing "
+            "frequencies are assumed — compare against frequencies computed "
+            "for the actual bearing and shaft speed."
+        )
+    )
 
 
 class StatisticalResult(BaseModel):
@@ -83,23 +90,6 @@ class SignalInfo(BaseModel):
     path: str = Field(description="Full path")
     size_bytes: int = Field(description="File size in bytes")
     num_samples: Optional[int] = Field(None, description="Number of samples (if available)")
-
-
-class ISO20816Result(BaseModel):
-    """ISO 20816-3 vibration severity evaluation result."""
-    rms_velocity: float = Field(description="RMS velocity in mm/s (broadband)")
-    machine_group: int = Field(description="Machine group (1 or 2)")
-    support_type: str = Field(description="Support type: 'rigid' or 'flexible'")
-    zone: str = Field(description="Evaluation zone: 'A', 'B', 'C', or 'D'")
-    zone_description: str = Field(description="Zone description and recommendation")
-    severity_level: str = Field(description="Severity level: 'Good', 'Acceptable', 'Unsatisfactory', 'Unacceptable'")
-    color_code: str = Field(description="Color code: 'green', 'yellow', 'orange', 'red'")
-    boundary_ab: float = Field(description="Zone A/B boundary (mm/s)")
-    boundary_bc: float = Field(description="Zone B/C boundary (mm/s)")
-    boundary_cd: float = Field(description="Zone C/D boundary (mm/s)")
-    frequency_range: str = Field(description="Frequency range used for measurement")
-    operating_speed_rpm: Optional[float] = Field(None, description="Operating speed in RPM")
-    threshold_provenance: Optional[str] = Field(None, description="Provenance of the zone boundary values (ISO edition note)")
 
 
 class FeatureExtractionResult(BaseModel):
@@ -196,22 +186,28 @@ class STFTResult(BaseModel):
     energy_per_band: list[dict[str, float]] = Field(description="Energy in predefined frequency bands")
 
 
-class EnvelopeSpectrumResult(BaseModel):
-    """Envelope spectrum result using signal_id pattern."""
-    signal_id: str = Field(description="Signal identifier used")
-    num_samples: int = Field(description="Number of samples analyzed")
-    sampling_rate: float = Field(description="Sampling rate (Hz)")
-    method: str = Field(description="Envelope extraction method")
-    frequency_range: tuple[float, float] = Field(description="Analysis frequency range (Hz)")
-    top_peaks: list[SpectralPeak] = Field(description="Top peaks in envelope spectrum")
-    diagnosis: str = Field(description="Interpretive diagnosis text")
-
-
 class BearingFaultCheckResult(BaseModel):
-    """Result of checking for a specific bearing fault frequency."""
+    """Result of checking for a specific expected fault frequency."""
     signal_id: str = Field(description="Signal identifier used")
-    bearing_id: str = Field(description="Bearing designation")
-    fault_type: str = Field(description="Fault type: BPFO, BPFI, BSF, or FTF")
+    bearing_id: Optional[str] = Field(
+        None, description="Bearing designation (None for arbitrary-frequency checks)"
+    )
+    fault_type: str = Field(
+        description=(
+            "Checked label: BPFO, BPFI, BSF, FTF, or an arbitrary "
+            "user-provided label (e.g. 'GMF')"
+        )
+    )
+    fault_type_canonical: Optional[Literal[
+        "outer_race", "inner_race", "ball", "cage"
+    ]] = Field(
+        None,
+        description=(
+            "Canonical fault vocabulary for the standard acronyms "
+            "(BPFO=outer_race, BPFI=inner_race, BSF=ball, FTF=cage); "
+            "None for arbitrary labels"
+        ),
+    )
     expected_frequency_hz: float = Field(description="Expected fault frequency")
     detected: bool = Field(description="Whether a peak was detected within tolerance")
     detected_frequency_hz: Optional[float] = Field(None, description="Actual peak frequency")
@@ -229,15 +225,37 @@ class BearingFaultCheckResult(BaseModel):
 
 
 class BearingFaultsSummary(BaseModel):
-    """Summary of all fault checks for one bearing."""
+    """Summary of all expected-frequency checks for one bearing/machine."""
     signal_id: str = Field(description="Signal identifier used")
-    bearing_id: str = Field(description="Bearing designation")
+    bearing_id: Optional[str] = Field(
+        None,
+        description=(
+            "Bearing designation (catalog route); None for the "
+            "explicit-frequencies and explicit-geometry routes"
+        ),
+    )
     rpm: float = Field(description="Shaft speed (RPM)")
     shaft_frequency_hz: float = Field(description="Shaft frequency (Hz)")
-    bearing_frequencies: dict[str, float] = Field(description="Calculated BPFO/BPFI/BSF/FTF (Hz)")
-    fault_checks: list[BearingFaultCheckResult] = Field(description="Results for each fault type")
+    bearing_frequencies: dict[str, float] = Field(
+        description="Expected frequencies checked (Hz), plus shaft_freq_hz"
+    )
+    fault_checks: list[BearingFaultCheckResult] = Field(description="Results for each checked frequency")
     overall_assessment: str = Field(description="Summary assessment text")
-    most_likely_fault: Optional[str] = Field(None, description="Most likely fault type if any")
+    most_likely_fault: Optional[str] = Field(None, description="Most likely fault label if any")
+    most_likely_fault_canonical: Optional[Literal[
+        "outer_race", "inner_race", "ball", "cage"
+    ]] = Field(
+        None,
+        description="Canonical form of most_likely_fault (None for arbitrary labels)",
+    )
+    source: Optional[str] = Field(
+        None,
+        description=(
+            "Provenance of the expected frequencies: the catalog entry's "
+            "source citation (bearing_id route), or a note for "
+            "user-provided geometry/frequencies"
+        ),
+    )
 
 
 class BearingCatalogMiss(BaseModel):
@@ -285,24 +303,78 @@ class ISOSeverityRefusal(BaseModel):
 
 
 class VibrationSeverityResult(BaseModel):
-    """ISO 20816-3 severity result (zone boundaries from ISO 10816-3:2009) using signal_id pattern."""
+    """Unified severity assessment result (U9 merge — ``assess_severity``).
+
+    Zone boundaries from ISO 10816-3:2009 unless user-defined custom
+    thresholds were supplied (see ``threshold_provenance``). Covers both
+    input routes: a stored signal (``signal_id`` set) or a direct broadband
+    RMS velocity reading (``signal_id`` None). Alert fields
+    (``alert_level``, ``exceeded_threshold``) are derived from the zone.
+    """
     status: Literal["assessed"] = Field(
         "assessed", description="Always 'assessed' — discriminates from a refused result"
     )
-    signal_id: str = Field(description="Signal identifier used")
+    signal_id: Optional[str] = Field(
+        None,
+        description="Signal identifier used (None for a direct rms_velocity_mm_s reading)",
+    )
     rms_velocity_mm_s: float = Field(description="RMS velocity in mm/s")
     machine_group: int = Field(description="ISO 20816-3 machine group: 1 (large, >300 kW) or 2 (medium, 15-300 kW)")
     support_type: str = Field(description="Support type: 'rigid' or 'flexible'")
-    axis: str = Field(description="Measurement axis")
+    axis: str = Field("vertical", description="Measurement axis (informational)")
     zone: str = Field(description="ISO zone: A, B, C, or D")
     zone_description: str = Field(description="Zone description")
     severity_level: str = Field(description="Good, Acceptable, Unsatisfactory, or Unacceptable")
     color_code: str = Field(description="green, yellow, orange, or red")
-    boundaries: dict[str, float] = Field(description="Zone boundaries {AB, BC, CD} in mm/s")
-    frequency_range: str = Field(description="Actual evaluation band used (may be narrower than the ISO nominal 10-1000 Hz when fs limits it)")
+    boundaries: dict[str, float] = Field(
+        description="Zone boundaries {AB, BC, CD} in mm/s (ISO or custom)"
+    )
+    frequency_range: str = Field(description="Actual evaluation band used (may be narrower than the ISO nominal 10-1000 Hz when fs limits it); 'not applicable' for direct RMS readings")
     unit_conversion_performed: bool = Field(description="Whether acceleration-to-velocity conversion was done")
     original_unit: Optional[str] = Field(None, description="Original signal unit before conversion")
-    threshold_provenance: str = Field(description="Provenance of the zone boundary values (ISO edition note)")
+    operating_speed_rpm: Optional[float] = Field(
+        None, description="Operating speed in RPM, when provided (selects the band's lower edge)"
+    )
+    machine_power_kw: Optional[float] = Field(
+        None,
+        description=(
+            "Declared rated machine power in kW, when provided. Values "
+            "below 15 kW are refused as out of ISO 20816-3 scope."
+        ),
+    )
+    alert_level: Optional[Literal["none", "warning", "alarm", "danger"]] = Field(
+        None,
+        description=(
+            "Alert level derived from the zone: A=none, B=warning, "
+            "C=alarm, D=danger (filled automatically)"
+        ),
+    )
+    exceeded_threshold: Optional[float] = Field(
+        None,
+        description=(
+            "The boundary (mm/s) exceeded by the reading (None in zone A; "
+            "filled automatically from zone + boundaries)"
+        ),
+    )
+    threshold_provenance: str = Field(description="Provenance of the zone boundary values (ISO edition note, or custom-threshold note)")
+
+    @model_validator(mode="after")
+    def _derive_alert_fields(self):
+        """Derive alert_level/exceeded_threshold from zone + boundaries."""
+        if self.alert_level is None:
+            self.alert_level = {
+                "A": "none",
+                "B": "warning",
+                "C": "alarm",
+                "D": "danger",
+            }.get(self.zone)
+        if self.exceeded_threshold is None and self.zone in ("B", "C", "D"):
+            self.exceeded_threshold = {
+                "B": self.boundaries.get("AB"),
+                "C": self.boundaries.get("BC"),
+                "D": self.boundaries.get("CD"),
+            }[self.zone]
+        return self
 
 
 class DiagnosisResult(BaseModel):
@@ -460,15 +532,28 @@ class TrendAnalysisResult(BaseModel):
     series_truncated: bool = Field(
         description="True when feature_series was subsampled to the 50-point cap"
     )
-
-
-class DegradationOnsetResult(BaseModel):
-    """Degradation onset detection result (within-recording screening)."""
-    feature_name: str = Field(description="Feature analyzed")
-    onset_detected: bool = Field(description="Whether degradation onset was detected")
-    onset_segment_index: int | None = Field(default=None, description="Segment index where degradation starts")
-    threshold_sigma: float = Field(description="Sigma threshold used for detection")
-    num_segments: int = Field(description="Total number of segments")
+    # Onset detection (U9 merge: absorbed detect_signal_degradation_onset)
+    onset_detected: bool = Field(
+        description=(
+            "Whether a degradation onset was detected after the baseline "
+            "window (first value exceeding baseline mean + "
+            "onset_threshold_sigma * std)"
+        )
+    )
+    onset_segment_index: Optional[int] = Field(
+        None,
+        description=(
+            "Segment index where degradation starts (always >= "
+            "baseline_segments); None when no onset detected"
+        ),
+    )
+    onset_time_s: Optional[float] = Field(
+        None,
+        description="Center time (s) of the onset segment within the recording",
+    )
+    onset_threshold_sigma: float = Field(
+        description="Baseline standard deviations used as the onset trigger"
+    )
     baseline_segments: int = Field(
         description=(
             "Number of leading segments used as the baseline window. Onset "
@@ -476,12 +561,3 @@ class DegradationOnsetResult(BaseModel):
             "the baseline cannot be detected by this method."
         )
     )
-
-
-class AlertResult(BaseModel):
-    """Vibration alert assessment result."""
-    alert_level: str = Field(description="none, warning, alarm, or danger")
-    zone: str = Field(description="ISO zone classification (A/B/C/D)")
-    rms_velocity: float = Field(description="Input RMS velocity value")
-    exceeded_threshold: float | None = Field(default=None, description="Threshold that was exceeded")
-    message: str = Field(description="Human-readable alert message")

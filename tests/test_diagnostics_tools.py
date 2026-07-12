@@ -106,37 +106,42 @@ def repo(data_dir):
 # ISO 20816 evaluation
 # ---------------------------------------------------------------------------
 
-class TestEvaluateISO20816:
-    """Tests for evaluate_iso_20816 tool (signal_id handle)."""
+class TestAssessSeverity:
+    """Tests for the unified assess_severity tool (U9 merge)."""
 
     @pytest.mark.asyncio
-    async def test_returns_result(self, tools, repo, mock_ctx):
-        result = await tools["evaluate_iso_20816"](
+    async def test_signal_route_returns_result(self, tools, repo, mock_ctx):
+        result = await tools["assess_severity"](
             ctx=mock_ctx,
             signal_id="iso_test",
             machine_group=2,
             support_type="rigid",
         )
         assert result is not None
-        # Should have a zone classification
-        assert hasattr(result, "zone") or hasattr(result, "severity_zone")
-
-
-class TestAssessVibrationSeverity:
-    """Tests for assess_vibration_severity tool."""
+        assert result.status == "assessed"
+        assert result.zone in ("A", "B", "C", "D")
 
     @pytest.mark.asyncio
-    async def test_returns_severity(self, tools, data_dir, mock_ctx):
-        from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
-        repo = get_repository()
-        repo.load_signal("iso_test.csv", signal_id="sev_test", sampling_rate=10000)
-        try:
-            result = await tools["assess_vibration_severity"](
-                ctx=mock_ctx, signal_id="sev_test"
-            )
-            assert result is not None
-        finally:
-            repo.clear_all()
+    async def test_rms_route_returns_result(self, tools, repo, mock_ctx):
+        result = await tools["assess_severity"](
+            ctx=mock_ctx,
+            rms_velocity_mm_s=3.0,
+            machine_group=2,
+            support_type="rigid",
+        )
+        assert result.zone == "C"  # 2.8 < 3.0 <= 4.5 (group 2 rigid)
+        assert result.alert_level == "alarm"
+        assert result.signal_id is None
+
+    def test_old_tool_names_gone(self, tools):
+        """Clean cut: the four absorbed severity/alert tools are gone."""
+        for old in (
+            "evaluate_iso_20816",
+            "assess_vibration_severity",
+            "check_vibration_alert",
+            "check_custom_vibration_alert",
+        ):
+            assert old not in tools
 
 
 # ---------------------------------------------------------------------------
@@ -163,21 +168,19 @@ class TestBearingTools:
         assert result is not None
 
     @pytest.mark.asyncio
-    async def test_check_bearing_faults_direct(self, tools, data_dir, mock_ctx):
-        if "check_bearing_faults_direct" not in tools:
-            pytest.skip("check_bearing_faults_direct not registered")
-
+    async def test_check_bearing_faults_catalog_route(self, tools, data_dir, mock_ctx):
         from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
         repo = get_repository()
         repo.load_signal("normal.csv", signal_id="bearing_test", sampling_rate=10000)
         try:
-            result = await tools["check_bearing_faults_direct"](
+            result = await tools["check_bearing_faults"](
                 ctx=mock_ctx,
                 signal_id="bearing_test",
                 bearing_id="6205",
                 rpm=1800.0,
             )
             assert result is not None
+            assert result.source  # catalog source echoed
         finally:
             repo.clear_all()
 
@@ -260,25 +263,25 @@ class TestDiagnoseVibration:
 # Extended ISO 20816 tests
 # ---------------------------------------------------------------------------
 
-class TestEvaluateISO20816Extended:
-    """Additional coverage for evaluate_iso_20816 tool (signal_id handle)."""
+class TestAssessSeverityExtended:
+    """Additional coverage for assess_severity (signal route)."""
 
     @pytest.mark.asyncio
     async def test_zone_classification_is_valid(self, tools, repo, mock_ctx):
         """Zone must be one of A/B/C/D."""
-        result = await tools["evaluate_iso_20816"](
+        result = await tools["assess_severity"](
             ctx=mock_ctx,
             signal_id="iso_test",
             machine_group=2,
             support_type="rigid",
         )
         assert result.zone in ("A", "B", "C", "D")
-        assert result.rms_velocity > 0
+        assert result.rms_velocity_mm_s > 0
 
     @pytest.mark.asyncio
     async def test_flexible_support(self, tools, repo, mock_ctx):
         """Flexible support uses different zone boundaries."""
-        result = await tools["evaluate_iso_20816"](
+        result = await tools["assess_severity"](
             ctx=mock_ctx,
             signal_id="iso_test",
             machine_group=2,
@@ -286,30 +289,30 @@ class TestEvaluateISO20816Extended:
         )
         assert result.zone in ("A", "B", "C", "D")
         # Flexible boundaries are larger than rigid: AB=2.3 vs 1.4
-        assert result.boundary_ab == 2.3
+        assert result.boundaries["AB"] == 2.3
 
     @pytest.mark.asyncio
     async def test_group1_rigid(self, tools, repo, mock_ctx):
         """Group 1 rigid machines use different thresholds."""
-        result = await tools["evaluate_iso_20816"](
+        result = await tools["assess_severity"](
             ctx=mock_ctx,
             signal_id="iso_test",
             machine_group=1,
             support_type="rigid",
         )
         assert result.machine_group == 1
-        assert result.boundary_ab == 2.3
+        assert result.boundaries["AB"] == 2.3
 
     @pytest.mark.asyncio
     async def test_group1_flexible(self, tools, repo, mock_ctx):
         """Group 1 flexible machines."""
-        result = await tools["evaluate_iso_20816"](
+        result = await tools["assess_severity"](
             ctx=mock_ctx,
             signal_id="iso_test",
             machine_group=1,
             support_type="flexible",
         )
-        assert result.boundary_ab == 3.5
+        assert result.boundaries["AB"] == 3.5
 
     @pytest.mark.asyncio
     async def test_unit_declared_at_load_time(self, tools, data_dir, repo, mock_ctx):
@@ -321,13 +324,13 @@ class TestEvaluateISO20816Extended:
         pd.DataFrame(sig).to_csv(data_dir / "load_unit.csv", index=False, header=False)
         repo.load_signal("load_unit.csv", sampling_rate=fs, signal_unit="g")
 
-        result = await tools["evaluate_iso_20816"](
+        result = await tools["assess_severity"](
             ctx=mock_ctx,
             signal_id="load_unit",
             machine_group=2,
             support_type="rigid",
         )
-        assert result.rms_velocity > 0
+        assert result.rms_velocity_mm_s > 0
 
     @pytest.mark.asyncio
     async def test_velocity_signal_mm_s(self, tools, data_dir, repo, mock_ctx):
@@ -341,13 +344,13 @@ class TestEvaluateISO20816Extended:
             json.dump({"sampling_rate": fs, "signal_unit": "mm/s"}, f)
         repo.load_signal("vel_signal.csv")
 
-        result = await tools["evaluate_iso_20816"](
+        result = await tools["assess_severity"](
             ctx=mock_ctx,
             signal_id="vel_signal",
             machine_group=2,
             support_type="rigid",
         )
-        assert result.rms_velocity > 0
+        assert result.rms_velocity_mm_s > 0
         # For a 3.0 mm/s amplitude sine, RMS ~ 2.12
         assert result.zone in ("A", "B", "C", "D")
 
@@ -355,7 +358,7 @@ class TestEvaluateISO20816Extended:
     async def test_signal_not_loaded_raises(self, tools, repo, mock_ctx):
         """Unknown signal_id → standard error naming load_signal."""
         with pytest.raises(ValueError, match="load_signal"):
-            await tools["evaluate_iso_20816"](
+            await tools["assess_severity"](
                 ctx=mock_ctx,
                 signal_id="nonexistent",
                 machine_group=2,
@@ -365,7 +368,7 @@ class TestEvaluateISO20816Extended:
     @pytest.mark.asyncio
     async def test_operating_speed_rpm_low(self, tools, repo, mock_ctx):
         """Low RPM should use 2-1000 Hz frequency range."""
-        result = await tools["evaluate_iso_20816"](
+        result = await tools["assess_severity"](
             ctx=mock_ctx,
             signal_id="iso_test",
             machine_group=2,
@@ -385,7 +388,7 @@ class TestEvaluateISO20816Extended:
         repo.load_signal("no_meta.csv")  # no metadata → no rate
 
         with pytest.raises(ValueError, match="No sampling rate"):
-            await tools["evaluate_iso_20816"](
+            await tools["assess_severity"](
                 ctx=mock_ctx,
                 signal_id="no_meta",
             )
@@ -404,7 +407,7 @@ class TestEvaluateISO20816Extended:
         repo.load_signal("no_unit.csv")
 
         with pytest.raises(ValueError, match="unit not declared"):
-            await tools["evaluate_iso_20816"](
+            await tools["assess_severity"](
                 ctx=mock_ctx,
                 signal_id="no_unit",
             )
@@ -421,14 +424,14 @@ class TestEvaluateISO20816Extended:
             json.dump({"sampling_rate": fs, "signal_unit": "mm/s"}, f)
         repo.load_signal("vel4.csv")
 
-        result = await tools["evaluate_iso_20816"](
+        result = await tools["assess_severity"](
             ctx=mock_ctx,
             signal_id="vel4",
             machine_group=2,
             support_type="rigid",
         )
         assert result.zone == "C"
-        assert result.rms_velocity == pytest.approx(4.0, rel=0.05)
+        assert result.rms_velocity_mm_s == pytest.approx(4.0, rel=0.05)
         assert "CONVERTED" not in result.zone_description
 
 
@@ -437,83 +440,39 @@ class TestEvaluateISO20816Extended:
 # ---------------------------------------------------------------------------
 
 class TestBearingToolsExtended:
-    """Extended tests for bearing fault detection tools."""
+    """Extended tests for the unified check_bearing_faults tool."""
 
     @pytest.mark.asyncio
-    async def test_check_bearing_fault_peak_single(self, tools, data_dir, mock_ctx):
-        """Check a single fault type (BPFO)."""
-        if "check_bearing_fault_peak_tool" not in tools:
-            pytest.skip("check_bearing_fault_peak_tool not registered")
-
+    async def test_single_frequency_check_via_frequencies_route(
+        self, tools, data_dir, mock_ctx
+    ):
+        """The former single-fault check is the frequencies route with one
+        labeled entry."""
         from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
         repo = get_repository()
         repo.load_signal("normal.csv", signal_id="peak_test", sampling_rate=10000)
         try:
-            result = await tools["check_bearing_fault_peak_tool"](
+            result = await tools["check_bearing_faults"](
                 ctx=mock_ctx,
                 signal_id="peak_test",
-                bearing_id="6205",
-                fault_type="BPFO",
+                frequencies={"BPFO": 107.5},
                 rpm=1800.0,
             )
-            assert result is not None
-            assert result.fault_type == "BPFO"
+            assert len(result.fault_checks) == 1
+            check = result.fault_checks[0]
+            assert check.fault_type == "BPFO"
+            assert check.fault_type_canonical == "outer_race"
         finally:
             repo.clear_all()
 
     @pytest.mark.asyncio
-    async def test_check_bearing_fault_peak_bpfi(self, tools, data_dir, mock_ctx):
-        """Check BPFI fault type."""
-        if "check_bearing_fault_peak_tool" not in tools:
-            pytest.skip("check_bearing_fault_peak_tool not registered")
-
-        from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
-        repo = get_repository()
-        repo.load_signal("normal.csv", signal_id="bpfi_test", sampling_rate=10000)
-        try:
-            result = await tools["check_bearing_fault_peak_tool"](
-                ctx=mock_ctx,
-                signal_id="bpfi_test",
-                bearing_id="6205",
-                fault_type="BPFI",
-                rpm=1800.0,
-            )
-            assert result.fault_type == "BPFI"
-        finally:
-            repo.clear_all()
-
-    @pytest.mark.asyncio
-    async def test_check_bearing_fault_peak_invalid_fault_type(self, tools, data_dir, mock_ctx):
-        """Invalid fault_type should raise ValueError."""
-        if "check_bearing_fault_peak_tool" not in tools:
-            pytest.skip("check_bearing_fault_peak_tool not registered")
-
-        from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
-        repo = get_repository()
-        repo.load_signal("normal.csv", signal_id="invalid_ft", sampling_rate=10000)
-        try:
-            with pytest.raises(ValueError, match="Invalid fault_type"):
-                await tools["check_bearing_fault_peak_tool"](
-                    ctx=mock_ctx,
-                    signal_id="invalid_ft",
-                    bearing_id="6205",
-                    fault_type="INVALID",
-                    rpm=1800.0,
-                )
-        finally:
-            repo.clear_all()
-
-    @pytest.mark.asyncio
-    async def test_check_bearing_faults_direct_returns_summary(self, tools, data_dir, mock_ctx):
-        """check_bearing_faults_direct should return a BearingFaultsSummary with all 4 checks."""
-        if "check_bearing_faults_direct" not in tools:
-            pytest.skip("check_bearing_faults_direct not registered")
-
+    async def test_catalog_route_returns_summary(self, tools, data_dir, mock_ctx):
+        """Catalog route returns a BearingFaultsSummary with all 4 checks."""
         from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
         repo = get_repository()
         repo.load_signal("normal.csv", signal_id="faults_all", sampling_rate=10000)
         try:
-            result = await tools["check_bearing_faults_direct"](
+            result = await tools["check_bearing_faults"](
                 ctx=mock_ctx,
                 signal_id="faults_all",
                 bearing_id="6205",
@@ -523,45 +482,42 @@ class TestBearingToolsExtended:
             assert len(result.fault_checks) == 4
             fault_types = {fc.fault_type for fc in result.fault_checks}
             assert fault_types == {"BPFO", "BPFI", "BSF", "FTF"}
+            canonical = {fc.fault_type_canonical for fc in result.fault_checks}
+            assert canonical == {"outer_race", "inner_race", "ball", "cage"}
             assert result.bearing_id == "6205"
             assert result.rpm == 1800.0
+            assert result.source  # catalog entries carry a source citation
         finally:
             repo.clear_all()
 
     @pytest.mark.asyncio
-    async def test_lookup_bearing_and_compute_tool(self, tools, data_dir, mock_ctx):
-        """End-to-end: lookup bearing + compute freqs + check signal."""
-        if "lookup_bearing_and_compute_tool" not in tools:
-            pytest.skip("lookup_bearing_and_compute_tool not registered")
-
+    async def test_designation_with_prefix(self, tools, data_dir, mock_ctx):
+        """Manufacturer-prefixed designations resolve via the catalog
+        (former lookup_bearing_and_compute_tool path)."""
         from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
         repo = get_repository()
         repo.load_signal("normal.csv", signal_id="lookup_test", sampling_rate=10000)
         try:
-            result = await tools["lookup_bearing_and_compute_tool"](
+            result = await tools["check_bearing_faults"](
                 ctx=mock_ctx,
-                bearing_type="6205",
+                bearing_id="SKF 6205-2RS",
                 rpm=1800.0,
                 signal_id="lookup_test",
             )
             assert result is not None
-            assert result.bearing_id == "6205"
             assert len(result.fault_checks) == 4
         finally:
             repo.clear_all()
 
     @pytest.mark.asyncio
-    async def test_check_bearing_faults_unknown_bearing(self, tools, data_dir, mock_ctx):
+    async def test_unknown_bearing_raises(self, tools, data_dir, mock_ctx):
         """Unknown bearing ID should raise ValueError."""
-        if "check_bearing_faults_direct" not in tools:
-            pytest.skip("check_bearing_faults_direct not registered")
-
         from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
         repo = get_repository()
         repo.load_signal("normal.csv", signal_id="unknown_brg", sampling_rate=10000)
         try:
             with pytest.raises((ValueError, KeyError)):
-                await tools["check_bearing_faults_direct"](
+                await tools["check_bearing_faults"](
                     ctx=mock_ctx,
                     signal_id="unknown_brg",
                     bearing_id="NONEXISTENT_999",
@@ -569,6 +525,16 @@ class TestBearingToolsExtended:
                 )
         finally:
             repo.clear_all()
+
+    def test_old_bearing_tool_names_gone(self, tools):
+        """Clean cut: the three absorbed bearing tools are gone."""
+        for old in (
+            "check_bearing_fault_peak_tool",
+            "check_bearing_faults_direct",
+            "lookup_bearing_and_compute_tool",
+        ):
+            assert old not in tools
+
 
 
 # ---------------------------------------------------------------------------
@@ -968,8 +934,8 @@ class TestDiagnoseVibrationExtended:
 # Assess vibration severity extended
 # ---------------------------------------------------------------------------
 
-class TestAssessVibrationSeverityExtended:
-    """Additional tests for assess_vibration_severity tool."""
+class TestAssessSeverityUnitsExtended:
+    """Unit/rate discipline tests for assess_severity (signal route)."""
 
     @pytest.mark.asyncio
     async def test_group1_boundaries(self, tools, data_dir, mock_ctx):
@@ -978,7 +944,7 @@ class TestAssessVibrationSeverityExtended:
         repo = get_repository()
         repo.load_signal("iso_test.csv", signal_id="class_test", sampling_rate=10000)
         try:
-            result = await tools["assess_vibration_severity"](
+            result = await tools["assess_severity"](
                 ctx=mock_ctx,
                 signal_id="class_test",
                 machine_group=1,
@@ -1001,7 +967,7 @@ class TestAssessVibrationSeverityExtended:
         repo.load_signal("iso_test.csv", signal_id="class_test", sampling_rate=10000)
         try:
             with pytest.raises(TypeError):
-                await tools["assess_vibration_severity"](
+                await tools["assess_severity"](
                     ctx=mock_ctx,
                     signal_id="class_test",
                     machine_class="III",
@@ -1025,7 +991,7 @@ class TestAssessVibrationSeverityExtended:
         try:
             repo.load_signal("no_meta_sr.csv", signal_id="no_sr_test")
             with pytest.raises((ValueError, TypeError)):
-                await tools["assess_vibration_severity"](
+                await tools["assess_severity"](
                     ctx=mock_ctx,
                     signal_id="no_sr_test",
                 )
@@ -1048,7 +1014,7 @@ class TestAssessVibrationSeverityExtended:
         try:
             repo.load_signal("no_unit_sev.csv", signal_id="no_unit_sev", sampling_rate=fs)
             with pytest.raises(ValueError, match=r"load_signal.*signal_unit="):
-                await tools["assess_vibration_severity"](
+                await tools["assess_severity"](
                     ctx=mock_ctx,
                     signal_id="no_unit_sev",
                 )
@@ -1064,7 +1030,7 @@ class TestAssessVibrationSeverityExtended:
         repo = get_repository()
         try:
             repo.load_signal("iso_test.csv", signal_id="meta_g")  # metadata: fs + 'g'
-            result = await tools["assess_vibration_severity"](
+            result = await tools["assess_severity"](
                 ctx=mock_ctx,
                 signal_id="meta_g",
             )
