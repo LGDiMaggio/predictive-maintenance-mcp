@@ -71,14 +71,22 @@ def data_dir(tmp_path, monkeypatch):
         json.dump({"sampling_rate": fs}, f)
 
     # Patch DATA_DIR
-    monkeypatch.setattr(
-        "predictive_maintenance_mcp.mcp_tools.prognostics_tools.DATA_DIR",
-        signals_dir,
-    )
     monkeypatch.setattr("predictive_maintenance_mcp.config.DATA_DIR", signals_dir)
     monkeypatch.setattr("predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR", signals_dir)
+    monkeypatch.setattr("predictive_maintenance_mcp.signal_acquisition.repository.DATA_DIR", signals_dir)
 
     return signals_dir
+
+
+@pytest.fixture
+def repo(data_dir):
+    """Repository with the screening signals loaded; cleaned afterwards."""
+    repo = get_repository()
+    repo.clear_all()
+    repo.load_signal("stationary.csv")  # metadata: fs=10000
+    repo.load_signal("degrading.csv")
+    yield repo
+    repo.clear_all()
 
 
 @pytest.fixture
@@ -406,15 +414,14 @@ class TestEstimateRULOutcomes:
 # ---------------------------------------------------------------------------
 
 class TestAnalyzeSignalTrend:
-    """Tests for the analyze_signal_trend screening tool."""
+    """Tests for the analyze_signal_trend screening tool (signal_id handle)."""
 
     @pytest.mark.asyncio
-    async def test_degrading_shows_increasing(self, tools, data_dir, mock_ctx):
+    async def test_degrading_shows_increasing(self, tools, repo, mock_ctx):
         result = await tools["analyze_signal_trend"](
             ctx=mock_ctx,
-            signal_file="degrading.csv",
+            signal_id="degrading",
             feature_name="rms",
-            sampling_rate=10000.0,
             segment_duration=0.1,
             overlap_ratio=0.5,
         )
@@ -427,12 +434,11 @@ class TestAnalyzeSignalTrend:
         assert result.analysis_scope == "within_recording_screening"
 
     @pytest.mark.asyncio
-    async def test_stationary_shows_stable(self, tools, data_dir, mock_ctx):
+    async def test_stationary_shows_stable(self, tools, repo, mock_ctx):
         result = await tools["analyze_signal_trend"](
             ctx=mock_ctx,
-            signal_file="stationary.csv",
+            signal_id="stationary",
             feature_name="rms",
-            sampling_rate=10000.0,
             segment_duration=0.1,
             overlap_ratio=0.5,
         )
@@ -440,13 +446,12 @@ class TestAnalyzeSignalTrend:
         assert result.trend_direction == "stable"
 
     @pytest.mark.asyncio
-    async def test_returns_feature_series(self, tools, data_dir, mock_ctx):
+    async def test_returns_feature_series(self, tools, repo, mock_ctx):
         """The screening tool echoes the per-segment series for follow-up."""
         result = await tools["analyze_signal_trend"](
             ctx=mock_ctx,
-            signal_file="degrading.csv",
+            signal_id="degrading",
             feature_name="rms",
-            sampling_rate=10000.0,
             segment_duration=0.1,
             overlap_ratio=0.5,
         )
@@ -457,13 +462,12 @@ class TestAnalyzeSignalTrend:
         assert all(0.0 <= t <= 2.0 for t in result.segment_times_s)
 
     @pytest.mark.asyncio
-    async def test_series_truncated_to_cap(self, tools, data_dir, mock_ctx):
+    async def test_series_truncated_to_cap(self, tools, repo, mock_ctx):
         """Long recordings are subsampled to at most 50 echoed points."""
         result = await tools["analyze_signal_trend"](
             ctx=mock_ctx,
-            signal_file="degrading.csv",
+            signal_id="degrading",
             feature_name="rms",
-            sampling_rate=10000.0,
             segment_duration=0.05,
             overlap_ratio=0.5,
         )
@@ -472,26 +476,16 @@ class TestAnalyzeSignalTrend:
         assert result.series_truncated is True
 
     @pytest.mark.asyncio
-    async def test_file_not_found(self, tools, data_dir, mock_ctx):
-        """Missing file (no metadata, no explicit rate) raises the strict
-        sampling-rate error first — never a silent 10 kHz fallback (U6)."""
-        with pytest.raises(ValueError, match="sampling_rate"):
+    async def test_signal_not_loaded_names_remedy(self, tools, repo, mock_ctx):
+        """Unknown signal_id → standard error naming load_signal/list_signals."""
+        with pytest.raises(ValueError) as exc:
             await tools["analyze_signal_trend"](
                 ctx=mock_ctx,
-                signal_file="nonexistent.csv",
+                signal_id="nonexistent",
             )
-
-    @pytest.mark.asyncio
-    async def test_file_not_found_with_explicit_rate(
-        self, tools, data_dir, mock_ctx
-    ):
-        """With the rate given explicitly, the missing file itself raises."""
-        with pytest.raises(FileNotFoundError):
-            await tools["analyze_signal_trend"](
-                ctx=mock_ctx,
-                signal_file="nonexistent.csv",
-                sampling_rate=10000.0,
-            )
+        msg = str(exc.value)
+        assert "load_signal" in msg
+        assert "list_signals" in msg
 
 
 # ---------------------------------------------------------------------------
@@ -502,13 +496,12 @@ class TestDetectDegradationOnset:
     """Tests for detect_signal_degradation_onset tool."""
 
     @pytest.mark.asyncio
-    async def test_degrading_detects_onset(self, tools, data_dir, mock_ctx):
+    async def test_degrading_detects_onset(self, tools, repo, mock_ctx):
         result = await tools["detect_signal_degradation_onset"](
             ctx=mock_ctx,
-            signal_file="degrading.csv",
+            signal_id="degrading",
             feature_name="rms",
             threshold_sigma=2.0,
-            sampling_rate=10000.0,
             segment_duration=0.1,
             overlap_ratio=0.5,
         )
@@ -522,13 +515,12 @@ class TestDetectDegradationOnset:
         assert result.baseline_segments == result.num_segments // 2
 
     @pytest.mark.asyncio
-    async def test_stationary_no_onset(self, tools, data_dir, mock_ctx):
+    async def test_stationary_no_onset(self, tools, repo, mock_ctx):
         result = await tools["detect_signal_degradation_onset"](
             ctx=mock_ctx,
-            signal_file="stationary.csv",
+            signal_id="stationary",
             feature_name="rms",
             threshold_sigma=3.0,
-            sampling_rate=10000.0,
             segment_duration=0.1,
             overlap_ratio=0.5,
         )
@@ -537,15 +529,22 @@ class TestDetectDegradationOnset:
         assert result.onset_segment_index is None
 
     @pytest.mark.asyncio
-    async def test_custom_threshold_sigma(self, tools, data_dir, mock_ctx):
+    async def test_custom_threshold_sigma(self, tools, repo, mock_ctx):
         result = await tools["detect_signal_degradation_onset"](
             ctx=mock_ctx,
-            signal_file="degrading.csv",
+            signal_id="degrading",
             feature_name="rms",
             threshold_sigma=10.0,
-            sampling_rate=10000.0,
             segment_duration=0.1,
             overlap_ratio=0.5,
         )
         assert isinstance(result, DegradationOnsetResult)
         assert result.threshold_sigma == 10.0
+
+    @pytest.mark.asyncio
+    async def test_signal_not_loaded_raises(self, tools, repo, mock_ctx):
+        with pytest.raises(ValueError, match="load_signal"):
+            await tools["detect_signal_degradation_onset"](
+                ctx=mock_ctx,
+                signal_id="nonexistent",
+            )

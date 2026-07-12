@@ -161,7 +161,7 @@ class TestModularTrainWriteSide:
         tmp_path, _ = models_sandbox
         train = diagnostics_tools["train_anomaly_model"]
         with pytest.raises(ValueError):
-            await train(healthy_signal_files=[], model_name=name, ctx=mock_ctx)
+            await train(healthy_signal_ids=[], model_name=name, ctx=mock_ctx)
         assert _no_files_written(tmp_path), "traversal name must not write any file"
 
 
@@ -173,7 +173,7 @@ class TestModularReadSide:
     ):
         predict = diagnostics_tools["predict_anomalies"]
         with pytest.raises(ValueError):
-            await predict(signal_file="whatever.csv", model_name=name, ctx=mock_ctx)
+            await predict(signal_id="whatever", model_name=name, ctx=mock_ctx)
 
 
 class TestReportMetadataReadSide:

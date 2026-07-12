@@ -8,8 +8,16 @@ BEFORE the conversion (tests/fixtures/tool_inventory.json).
 
 Output models are deliberately NOT frozen here: the U6 error-contract work
 intentionally replaces error-shaped dict returns with raises/typed results,
-and U9 consolidates the surface. When U9 lands, regenerate the fixture on
-purpose (see the snapshot recipe below) — never edit it by hand.
+and U9 consolidates the surface. When a unit intentionally changes tool
+signatures, regenerate the fixture on purpose (see the snapshot recipe
+below) — never edit it by hand.
+
+Fixture history:
+- U6: original pre-conversion snapshot (closure -> module-level parity).
+- U8: regenerated intentionally — every analysis/diagnosis/report/
+  prognostics tool switched its handle to signal_id (filename-era
+  parameters removed) and load_signal gained batch + overwrite. Tool/
+  resource/prompt COUNTS are unchanged (46/4/4); U9 changes the counts.
 
 Snapshot recipe (run from the repo root):
     python -c "from tests.test_tool_inventory import build_inventory, \\

@@ -11,6 +11,7 @@ import numpy as np
 
 from predictive_maintenance_mcp.mcp_tools.analysis_tools import analyze_statistics
 from predictive_maintenance_mcp.signal_acquisition.loaders import load_signal_data
+from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
 
 # Paths relative to data/signals/
 BASELINE_TRAIN = [
@@ -51,16 +52,24 @@ def test_real_data():
     print("\n[TEST 1] STATISTICAL ANALYSIS")
     print("-"*70)
 
-    for name, file in [("Baseline", BASELINE_TRAIN[0]),
-                       ("Inner Fault", INNER_FAULT_TRAIN[0]),
-                       ("Outer Fault", OUTER_FAULT_TRAIN[0])]:
-        print(f"\n{name}: {file}")
-        result = analyze_statistics(file)
-        assert result.rms > 0
-        assert result.crest_factor > 0
-        print(f"  RMS: {result.rms:.4f}")
-        print(f"  Crest Factor: {result.crest_factor:.4f}")
-        print(f"  Kurtosis: {result.kurtosis:.4f}")
+    repo = get_repository()
+    loaded_ids = []
+    try:
+        for name, file in [("Baseline", BASELINE_TRAIN[0]),
+                           ("Inner Fault", INNER_FAULT_TRAIN[0]),
+                           ("Outer Fault", OUTER_FAULT_TRAIN[0])]:
+            print(f"\n{name}: {file}")
+            sid = repo.load_signal(file, overwrite=True)["signal_id"]
+            loaded_ids.append(sid)
+            result = analyze_statistics(sid)
+            assert result.rms > 0
+            assert result.crest_factor > 0
+            print(f"  RMS: {result.rms:.4f}")
+            print(f"  Crest Factor: {result.crest_factor:.4f}")
+            print(f"  Kurtosis: {result.kurtosis:.4f}")
+    finally:
+        for sid in loaded_ids:
+            repo.clear_signal(sid)
 
     # Test 2: Signal loading and FFT computation (non-MCP)
     print("\n\n[TEST 2] FFT SPECTRUM ANALYSIS (direct computation)")

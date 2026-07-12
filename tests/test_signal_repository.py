@@ -68,9 +68,18 @@ class TestLoadSignal:
         with pytest.raises(FileNotFoundError):
             repo.load_signal("/nonexistent/path/signal.csv")
 
-    def test_duplicate_id_replaces(self, repo, signal_file):
+    def test_duplicate_id_is_explicit_collision_error(self, repo, signal_file):
+        """U8: re-loading the same id without overwrite=True raises — no
+        silent replacement."""
         repo.load_signal(str(signal_file), signal_id="dup")
+        with pytest.raises(ValueError, match="overwrite=True"):
+            repo.load_signal(str(signal_file), signal_id="dup")
+        assert repo.signal_count == 1
+
+    def test_duplicate_id_with_overwrite_replaces(self, repo, signal_file):
         repo.load_signal(str(signal_file), signal_id="dup")
+        info = repo.load_signal(str(signal_file), signal_id="dup", overwrite=True)
+        assert info["signal_id"] == "dup"
         assert repo.signal_count == 1
 
 
@@ -122,7 +131,7 @@ class TestGetSignal:
         assert len(arr) == 1000
 
     def test_get_missing_raises(self, repo):
-        with pytest.raises(KeyError, match="not found"):
+        with pytest.raises(KeyError, match="load_signal"):
             repo.get_signal("missing")
 
 
@@ -197,6 +206,179 @@ class TestEdgeCases:
         np.save(path, np.random.randn(10000))
         info = repo.load_signal(str(path), sampling_rate=10000)
         assert info["duration_s"] == pytest.approx(1.0, abs=0.01)
+
+
+@pytest.fixture
+def data_dir(tmp_path, monkeypatch):
+    """A DATA_DIR with same-named files in two subfolders (audit 3.6)."""
+    signals_dir = tmp_path / "data" / "signals"
+    (signals_dir / "real_train").mkdir(parents=True)
+    (signals_dir / "real_test").mkdir(parents=True)
+    train = np.sin(np.linspace(0, 10, 1000))
+    test = 2.0 * np.sin(np.linspace(0, 10, 1000))
+    pd.DataFrame(train).to_csv(
+        signals_dir / "real_train" / "baseline_1.csv", index=False, header=False
+    )
+    pd.DataFrame(test).to_csv(
+        signals_dir / "real_test" / "baseline_1.csv", index=False, header=False
+    )
+    monkeypatch.setattr(
+        "predictive_maintenance_mcp.signal_acquisition.repository.DATA_DIR",
+        signals_dir,
+    )
+    monkeypatch.setattr(
+        "predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR",
+        signals_dir,
+    )
+    return signals_dir
+
+
+class TestDefaultSignalIds:
+    """U8: default ids derive from the relative path — no stem collisions."""
+
+    def test_same_stem_different_dirs_get_distinct_ids(self, repo, data_dir):
+        i1 = repo.load_signal("real_train/baseline_1.csv")
+        i2 = repo.load_signal("real_test/baseline_1.csv")
+        assert i1["signal_id"] == "real_train_baseline_1"
+        assert i2["signal_id"] == "real_test_baseline_1"
+        ids = {s["signal_id"] for s in repo.list_signals()}
+        assert ids == {"real_train_baseline_1", "real_test_baseline_1"}
+        # The two entries hold DIFFERENT data (nothing was shadowed).
+        a = repo.get_signal("real_train_baseline_1")
+        b = repo.get_signal("real_test_baseline_1")
+        assert not np.array_equal(a, b)
+
+    def test_reload_same_path_collides_without_overwrite(self, repo, data_dir):
+        repo.load_signal("real_train/baseline_1.csv")
+        with pytest.raises(ValueError, match="overwrite=True"):
+            repo.load_signal("real_train/baseline_1.csv")
+
+    def test_absolute_path_outside_data_dir_loads_that_file(
+        self, repo, data_dir, tmp_path
+    ):
+        """A same-named file INSIDE DATA_DIR must never silently win over
+        the absolute path the caller asked for (old _load_direct fallback)."""
+        outside = tmp_path / "baseline_1.csv"
+        pd.DataFrame(np.full(50, 7.0)).to_csv(outside, index=False, header=False)
+        # Decoy with the same name inside DATA_DIR
+        pd.DataFrame(np.zeros(50)).to_csv(
+            data_dir / "baseline_1.csv", index=False, header=False
+        )
+
+        info = repo.load_signal(str(outside))
+        arr = repo.get_signal(info["signal_id"])
+        assert len(arr) == 50
+        assert float(arr[0]) == 7.0  # the outside file, not the decoy
+
+
+class TestReadOnlyArrays:
+    """U8: repository arrays are read-only views — tools cannot corrupt the cache."""
+
+    def test_mutating_returned_array_raises(self, repo, signal_file):
+        repo.load_signal(str(signal_file), signal_id="ro")
+        arr = repo.get_signal("ro")
+        with pytest.raises(ValueError, match="read-only"):
+            arr[0] = 123.0
+
+    def test_view_cannot_be_made_writeable(self, repo, signal_file):
+        repo.load_signal(str(signal_file), signal_id="ro2")
+        arr = repo.get_signal("ro2")
+        with pytest.raises(ValueError):
+            arr.setflags(write=True)
+
+    def test_copy_is_still_usable(self, repo, signal_file):
+        repo.load_signal(str(signal_file), signal_id="ro3")
+        arr = repo.get_signal("ro3")
+        copy = np.array(arr)
+        copy[0] = 1.0  # copies are writeable as usual
+        assert copy[0] == 1.0
+
+
+class TestNotFoundMessage:
+    """U8: the standard not-found message names the remedy and eviction."""
+
+    def test_message_names_remedy_and_eviction(self, repo, signal_file):
+        repo.load_signal(str(signal_file), signal_id="present")
+        with pytest.raises(KeyError) as exc:
+            repo.get_signal("ghost")
+        msg = exc.value.args[0]
+        assert "load_signal" in msg
+        assert "list_signals" in msg
+        assert "evicted" in msg
+        assert "PMM_SIGNAL_CACHE_GB" in msg
+        assert "present" in msg  # available ids listed
+
+    def test_get_info_uses_same_message(self, repo):
+        with pytest.raises(KeyError) as exc:
+            repo.get_signal_info("ghost")
+        assert "load_signal" in exc.value.args[0]
+
+
+class TestBatchLoad:
+    """U8: load_signals is fail-fast and atomic (all-or-nothing)."""
+
+    @pytest.fixture
+    def batch_files(self, data_dir):
+        names = []
+        for i in range(3):
+            name = f"batch_{i}.csv"
+            pd.DataFrame(np.random.randn(200)).to_csv(
+                data_dir / name, index=False, header=False
+            )
+            names.append(name)
+        return names
+
+    def test_batch_loads_all(self, repo, data_dir, batch_files):
+        infos = repo.load_signals(batch_files, sampling_rate=1000)
+        assert len(infos) == 3
+        assert [i["signal_id"] for i in infos] == ["batch_0", "batch_1", "batch_2"]
+        assert repo.signal_count == 3
+        assert all(i["sampling_rate"] == 1000 for i in infos)
+
+    def test_batch_missing_file_loads_nothing(self, repo, data_dir, batch_files):
+        files = batch_files[:1] + ["__missing__.csv"] + batch_files[1:]
+        with pytest.raises(ValueError) as exc:
+            repo.load_signals(files)
+        msg = str(exc.value)
+        assert "__missing__.csv" in msg
+        assert "nothing was loaded" in msg
+        assert repo.signal_count == 0  # atomic: no partial state
+
+    def test_batch_empty_list_raises(self, repo, data_dir):
+        with pytest.raises(ValueError, match="empty list"):
+            repo.load_signals([])
+
+    def test_batch_collision_with_existing_loads_nothing(
+        self, repo, data_dir, batch_files
+    ):
+        repo.load_signal(batch_files[0])  # 'batch_0' now exists
+        with pytest.raises(ValueError) as exc:
+            repo.load_signals(batch_files)
+        assert "batch_0" in str(exc.value)
+        assert "overwrite=True" in str(exc.value)
+        # Only the pre-existing signal remains — none of the batch landed.
+        assert repo.signal_count == 1
+
+    def test_batch_collision_with_overwrite_succeeds(
+        self, repo, data_dir, batch_files
+    ):
+        repo.load_signal(batch_files[0])
+        infos = repo.load_signals(batch_files, overwrite=True)
+        assert len(infos) == 3
+        assert repo.signal_count == 3
+
+    def test_batch_duplicate_ids_within_batch_rejected(self, repo, data_dir):
+        pd.DataFrame(np.zeros(10)).to_csv(
+            data_dir / "dupe.csv", index=False, header=False
+        )
+        with pytest.raises(ValueError, match="already taken"):
+            repo.load_signals(["dupe.csv", "dupe.csv"])
+        assert repo.signal_count == 0
+
+    def test_batch_invalid_unit_rejected_upfront(self, repo, data_dir, batch_files):
+        with pytest.raises(ValueError, match="signal_unit"):
+            repo.load_signals(batch_files, signal_unit="furlongs")
+        assert repo.signal_count == 0
 
 
 class TestLRUEviction:

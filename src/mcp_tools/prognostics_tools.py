@@ -19,13 +19,9 @@ from typing import Literal, Optional
 import numpy as np
 from mcp.server.fastmcp import FastMCP, Context
 
-from ..config import DATA_DIR
-from ..signal_acquisition.loaders import load_signal_data
-from ..signal_processing.features import (
-    extract_time_domain_features,
-    resolve_sampling_rate as _resolve_sampling_rate_strict,
-)
+from ..signal_processing.features import extract_time_domain_features
 from ..signal_acquisition.repository import get_repository
+from ._utils import resolve_signal
 from ..prognostics import (
     estimate_rul_linear,
     estimate_rul_exponential,
@@ -66,21 +62,13 @@ _MULTI_MEASURE_ERROR = (
 # ---------------------------------------------------------------------------
 
 def _extract_feature_series(
-    signal_file: str,
+    signal_data: np.ndarray,
     feature_name: str,
     sampling_rate: float,
     segment_duration: float,
     overlap_ratio: float,
 ) -> tuple[list[float], list[float]]:
-    """Load a signal, segment it, and return (feature values, segment center times in s)."""
-    filepath = DATA_DIR / signal_file
-    if not filepath.exists():
-        raise FileNotFoundError(f"File not found: {signal_file}")
-
-    signal_data = load_signal_data(signal_file)
-    if signal_data is None:
-        raise ValueError(f"Could not load signal data from: {signal_file}")
-
+    """Segment a signal array and return (feature values, segment center times in s)."""
     segment_length = int(segment_duration * sampling_rate)
     hop_length = int(segment_length * (1 - overlap_ratio))
 
@@ -112,16 +100,6 @@ def _extract_feature_series(
     return feature_values, segment_times
 
 
-def _resolve_sampling_rate(signal_file: str, provided: Optional[float]) -> float:
-    """Return provided rate or auto-detect from metadata — never a silent default.
-
-    Delegates to the canonical strict resolver: explicit parameter >
-    companion _metadata.json > ValueError naming the fix. The historical
-    silent 10 kHz fallback is gone (same discipline as every other tool).
-    """
-    return _resolve_sampling_rate_strict(signal_file, provided, strict=True)
-
-
 def _truncate_series(
     values: list[float], times: list[float], max_points: int = MAX_SERIES_POINTS
 ) -> tuple[list[float], list[float], bool]:
@@ -147,13 +125,10 @@ def _measurement_series_from_signals(
     for sid in signal_ids:
         try:
             arr = repo.get_signal(sid)
-        except KeyError:
-            available = [info["signal_id"] for info in repo.list_signals()]
-            raise ValueError(
-                f"Signal '{sid}' not found in the repository — load each "
-                f"measurement recording first with load_signal. "
-                f"Currently loaded: {available or 'none'}."
-            )
+        except KeyError as exc:
+            # Standard repository not-found message (available ids,
+            # eviction explanation, load_signal/list_signals remedy).
+            raise ValueError(str(exc.args[0])) from None
         feats = extract_time_domain_features(np.asarray(arr, dtype=float))
         if feature_name not in feats:
             available_feats = ", ".join(sorted(feats.keys()))
@@ -388,17 +363,18 @@ async def estimate_rul(
 
 async def analyze_signal_trend(
     ctx: Context,
-    signal_file: str,
+    signal_id: str,
     feature_name: str = "rms",
-    sampling_rate: Optional[float] = None,
     segment_duration: float = 0.1,
     overlap_ratio: float = 0.5,
 ) -> TrendAnalysisResult:
-    """Within-recording screening: feature trend across one recording.
+    """Within-recording screening: feature trend across one stored recording.
 
         Segments a single recording (seconds of data), extracts the
         requested feature per segment, and tests whether the per-segment
         values show a statistically significant trend (slope p < 0.05).
+        Requires the signal loaded via load_signal() first; the sampling
+        rate comes from the stored signal metadata.
 
         This is a SCREENING tool, not a prognosis: a trend inside seconds
         of signal says whether the recording is stationary, not how long
@@ -409,26 +385,28 @@ async def analyze_signal_trend(
 
         Args:
             ctx: MCP context for user communication.
-            signal_file: CSV signal file in the data directory.
+            signal_id: ID of the stored signal (from load_signal).
             feature_name: Time-domain feature to analyze (default: "rms").
-            sampling_rate: Signal sampling rate in Hz. If None, it is read
-                from the companion _metadata.json; if neither is available
-                the tool raises ValueError (never a silent default rate).
             segment_duration: Duration of each segment in seconds.
             overlap_ratio: Overlap between segments (0-1).
 
         Returns:
             TrendAnalysisResult with slope, direction (p-value based),
             fit quality, and the (truncated) per-segment feature series.
+
+        Raises:
+            ValueError: If the signal_id is not loaded, or the stored
+                signal has no sampling rate.
         """
-    sr = _resolve_sampling_rate(signal_file, sampling_rate)
+    signal_data, info = resolve_signal(signal_id)
+    sr = info.sampling_rate
     await ctx.info(
         f"Screening within-recording trend of '{feature_name}' in "
-            f"{signal_file} ..."
+            f"'{signal_id}' ..."
     )
 
     feature_series, segment_times = _extract_feature_series(
-        signal_file, feature_name, sr, segment_duration, overlap_ratio,
+        signal_data, feature_name, sr, segment_duration, overlap_ratio,
     )
     await ctx.info(
         f"Extracted {len(feature_series)} segments, fitting trend ..."
@@ -455,47 +433,50 @@ async def analyze_signal_trend(
 
 async def detect_signal_degradation_onset(
     ctx: Context,
-    signal_file: str,
+    signal_id: str,
     feature_name: str = "rms",
     threshold_sigma: float = 3.0,
-    sampling_rate: Optional[float] = None,
     segment_duration: float = 0.1,
     overlap_ratio: float = 0.5,
 ) -> DegradationOnsetResult:
-    """Within-recording screening: detect where a recording starts degrading.
+    """Within-recording screening: detect where a stored recording starts degrading.
 
         Extracts a feature series from one recording, uses the first half of
         the segments as a baseline, and reports the first segment AFTER the
         baseline window whose value exceeds baseline mean +
         *threshold_sigma* standard deviations. Onset inside the baseline
         window cannot be detected (the baseline defines "normal").
+        Requires the signal loaded via load_signal() first; the sampling
+        rate comes from the stored signal metadata.
 
         This is a SCREENING tool over seconds of data — for machine-life
         trends, accumulate measurements over time and use estimate_rul.
 
         Args:
             ctx: MCP context for user communication.
-            signal_file: CSV signal file in the data directory.
+            signal_id: ID of the stored signal (from load_signal).
             feature_name: Time-domain feature to monitor (default: "rms").
             threshold_sigma: Number of baseline standard deviations to trigger
                 degradation onset (default: 3.0).
-            sampling_rate: Signal sampling rate in Hz. If None, it is read
-                from the companion _metadata.json; if neither is available
-                the tool raises ValueError (never a silent default rate).
             segment_duration: Duration of each segment in seconds.
             overlap_ratio: Overlap between segments (0-1).
 
         Returns:
             DegradationOnsetResult with onset detection outcome and the
             baseline window size.
+
+        Raises:
+            ValueError: If the signal_id is not loaded, or the stored
+                signal has no sampling rate.
         """
-    sr = _resolve_sampling_rate(signal_file, sampling_rate)
+    signal_data, info = resolve_signal(signal_id)
+    sr = info.sampling_rate
     await ctx.info(
-        f"Detecting degradation onset for '{feature_name}' in {signal_file} ..."
+        f"Detecting degradation onset for '{feature_name}' in '{signal_id}' ..."
     )
 
     feature_series, _segment_times = _extract_feature_series(
-        signal_file, feature_name, sr, segment_duration, overlap_ratio,
+        signal_data, feature_name, sr, segment_duration, overlap_ratio,
     )
     await ctx.info(
         f"Extracted {len(feature_series)} segments, checking onset ..."

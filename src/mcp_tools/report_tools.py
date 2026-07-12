@@ -17,8 +17,8 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 from mcp.server.fastmcp import FastMCP, Context
 
-from ..config import DATA_DIR, MODELS_DIR, RESOURCES_DIR, REPORTS_DIR
-from ..signal_acquisition.loaders import load_signal_data, get_metadata_path, extract_segment, SUPPORTED_EXTENSIONS
+from ..config import MODELS_DIR, REPORTS_DIR
+from ..models import StoredSignalInfo
 from ..report_generator import (
     save_fft_report,
     save_envelope_report,
@@ -28,9 +28,8 @@ from ..report_generator import (
     save_diagnostic_report_docx,
     REPORTS_DIR as REPORTS_DIR_PATH,
 )
-from ..document_reader import calculate_bearing_frequencies
 from ..signal_processing.features import extract_time_domain_features
-from ._utils import resolve_model_paths
+from ._utils import resolve_model_paths, resolve_signal, sanitize_filename
 
 # Canonical modular twin of the ISO evaluation tool (module-level function
 # since U6) — replaces the former runtime import from the deprecated monolith.
@@ -39,15 +38,32 @@ from .diagnostics_tools import evaluate_iso_20816
 logger = logging.getLogger(__name__)
 
 
+def _companion_metadata(info: StoredSignalInfo) -> dict:
+    """Read the companion _metadata.json of a stored signal's source file.
+
+    Used only for OPTIONAL extras (e.g. reference bearing frequencies) —
+    sampling rate and unit always come from the repository entry itself.
+    """
+    src = Path(info.filepath)
+    meta_path = src.parent / f"{src.stem}_metadata.json"
+    if meta_path.exists():
+        try:
+            with open(meta_path, encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:  # pragma: no cover - corrupt metadata is rare
+            logger.warning(f"Error reading metadata {meta_path}: {e}")
+    return {}
+
+
 
 async def generate_diagnostic_report_docx(
-    signal_file: str,
+    signal_id: str,
     sections: dict[str, Any],
     title: str | None = None,
     ctx: Context | None = None,
 ) -> dict[str, Any]:
     """
-        Generate a structured Word (.docx) diagnostic report.
+        Generate a structured Word (.docx) diagnostic report for a stored signal.
 
         Requires: ``pip install predictive-maintenance-mcp[docx]``
 
@@ -60,20 +76,28 @@ async def generate_diagnostic_report_docx(
           - diagnosis:            str   (free-text diagnostic summary)
 
         Args:
-            signal_file: Signal filename used for the report title / filename
+            signal_id: ID of the stored signal (from load_signal); used for
+                the report title / filename.
             sections: Content sections to include (see above)
             title: Optional custom report title
             ctx: MCP context
 
         Returns:
             Dictionary with file_path, file_name, and per-section summary.
+
+        Raises:
+            ValueError: If the signal_id is not loaded, or python-docx is
+                not installed.
         """
+    # Validate the handle: reports are only produced for loaded signals.
+    resolve_signal(signal_id, require_sampling_rate=False)
+
     if ctx:
-        await ctx.info(f"Generating DOCX diagnostic report for {signal_file}")
+        await ctx.info(f"Generating DOCX diagnostic report for '{signal_id}'")
 
     # Raises ValueError when the optional python-docx dependency is missing
     # (error contract: failures raise, never error-shaped dicts).
-    result = save_diagnostic_report_docx(signal_file, sections, title=title)
+    result = save_diagnostic_report_docx(signal_id, sections, title=title)
 
     if ctx:
         await ctx.info(f"DOCX report saved: {result['file_name']}")
@@ -81,22 +105,22 @@ async def generate_diagnostic_report_docx(
     return result
 
 async def plot_signal(
-    signal_file: str,
-    sampling_rate: float = 10000.0,
+    signal_id: str,
     time_range: Optional[list[float]] = None,
     show_statistics: bool = True,
     title: Optional[str] = None,
     ctx: Context | None = None
 ) -> str:
     """
-        Generate interactive time-domain signal plot.
+        Generate interactive time-domain plot for a stored signal.
 
         Creates an interactive HTML plot showing the signal in the time domain.
-        Useful for inspecting signal quality, identifying anomalies, and visualizing transients.
+        Useful for inspecting signal quality, identifying anomalies, and
+        visualizing transients. Requires the signal loaded via load_signal()
+        first; the sampling rate comes from the stored signal metadata.
 
         Args:
-            signal_file: Name of the CSV file in data/signals/
-            sampling_rate: Sampling frequency in Hz (default: 10000)
+            signal_id: ID of the stored signal (from load_signal).
             time_range: [start_time, end_time] in seconds to zoom on a portion (optional)
             show_statistics: Show RMS, peak levels as horizontal lines (default: True)
             title: Custom plot title (optional)
@@ -105,25 +129,22 @@ async def plot_signal(
         Returns:
             Path to generated HTML file
 
+        Raises:
+            ValueError: If the signal_id is not loaded, or the stored signal
+                has no sampling rate.
+
         Example:
             plot_signal(
-                "bearing_signal.csv",
-                sampling_rate=10000,
+                "bearing_signal",
                 time_range=[0.1, 0.3],  # Zoom on 100-300 ms
                 show_statistics=True
             )
         """
     if ctx:
-        await ctx.info(f"Generating time-domain plot for {signal_file}...")
+        await ctx.info(f"Generating time-domain plot for '{signal_id}'...")
 
-    # Read signal
-    filepath = DATA_DIR / signal_file
-    if not filepath.exists():
-        raise FileNotFoundError(f"File not found: {signal_file}")
-
-    signal_data = load_signal_data(signal_file)
-    if signal_data is None:
-        raise ValueError(f"Could not load signal data from: {signal_file}")
+    signal_data, info = resolve_signal(signal_id)
+    sampling_rate = info.sampling_rate
 
     # Time array
     n = len(signal_data)
@@ -210,7 +231,7 @@ async def plot_signal(
             ))
 
     # Layout
-    plot_title = title or f"Time-Domain Signal - {signal_file}"
+    plot_title = title or f"Time-Domain Signal - {signal_id}"
     duration = time_plot[-1] - time_plot[0]
 
     fig.update_layout(
@@ -234,7 +255,7 @@ async def plot_signal(
     )
 
     # Save HTML to reports directory
-    safe_name = Path(signal_file).stem.replace('/', '_').replace('\\', '_')
+    safe_name = sanitize_filename(signal_id)
     output_file = REPORTS_DIR / f"plot_signal_{safe_name}.html"
     fig.write_html(str(output_file))
 
@@ -245,8 +266,7 @@ async def plot_signal(
     return f"Interactive plot saved to: {output_file}\nUse list_html_reports() to see all reports, or open file in browser"
 
 async def plot_spectrum(
-    signal_file: str,
-    sampling_rate: float = 10000.0,
+    signal_id: str,
     freq_range: Optional[list[float]] = None,
     num_peaks: int = 10,
     min_peak_distance: float = 1.0,
@@ -255,15 +275,16 @@ async def plot_spectrum(
     ctx: Context | None = None
 ) -> str:
     """
-        Generate interactive FFT spectrum plot with automatic peak detection.
+        Generate interactive FFT spectrum plot for a stored signal.
 
         Creates an interactive HTML plot showing the frequency spectrum up to Nyquist frequency (Fs/2).
         Automatically identifies and labels the most significant peaks. If rotation frequency is provided,
-        identifies harmonics as 1x, 2x, 3x RPM.
+        identifies harmonics as 1x, 2x, 3x RPM. Requires the signal loaded via
+        load_signal() first; the sampling rate comes from the stored signal
+        metadata.
 
         Args:
-            signal_file: Name of the CSV file in data/signals/
-            sampling_rate: Sampling frequency in Hz (default: 10000)
+            signal_id: ID of the stored signal (from load_signal).
             freq_range: [min_freq, max_freq] to limit the plot range (default: [0, Fs/2])
             num_peaks: Number of peaks to identify and label (default: 10)
             min_peak_distance: Minimum distance between peaks in Hz (default: 1.0)
@@ -274,25 +295,22 @@ async def plot_spectrum(
         Returns:
             Path to generated HTML file with peak information
 
+        Raises:
+            ValueError: If the signal_id is not loaded, or the stored signal
+                has no sampling rate.
+
         Example:
             plot_spectrum(
-                "bearing_signal.csv",
-                sampling_rate=10000,
+                "bearing_signal",
                 rotation_freq=25.0,  # 1500 RPM = 25 Hz
                 num_peaks=15
             )
         """
     if ctx:
-        await ctx.info(f"Generating spectrum plot for {signal_file}...")
+        await ctx.info(f"Generating spectrum plot for '{signal_id}'...")
 
-    # Read signal
-    filepath = DATA_DIR / signal_file
-    if not filepath.exists():
-        raise FileNotFoundError(f"File not found: {signal_file}")
-
-    signal_data = load_signal_data(signal_file)
-    if signal_data is None:
-        raise ValueError(f"Could not load signal data from: {signal_file}")
+    signal_data, info = resolve_signal(signal_id)
+    sampling_rate = info.sampling_rate
 
     # Apply Hamming window to reduce spectral leakage
     n = len(signal_data)
@@ -389,7 +407,7 @@ async def plot_spectrum(
         ))
 
     # Layout
-    plot_title = title or f"FFT Spectrum - {signal_file}"
+    plot_title = title or f"FFT Spectrum - {signal_id}"
     fig.update_layout(
         title=plot_title,
         xaxis_title="Frequency (Hz)",
@@ -403,7 +421,7 @@ async def plot_spectrum(
     )
 
     # Save HTML to reports directory
-    safe_name = Path(signal_file).stem.replace('/', '_').replace('\\', '_')
+    safe_name = sanitize_filename(signal_id)
     output_file = REPORTS_DIR / f"plot_spectrum_{safe_name}.html"
     fig.write_html(str(output_file))
 
@@ -415,8 +433,7 @@ async def plot_spectrum(
     return f"Interactive plot saved to: {output_file}\nUse list_html_reports() to see all reports, or open file in browser"
 
 async def plot_envelope(
-    signal_file: str,
-    sampling_rate: float = 10000.0,
+    signal_id: str,
     filter_band: Optional[list[float]] = None,
     freq_range: Optional[list[float]] = None,
     highlight_freqs: Optional[list[float]] = None,
@@ -425,14 +442,15 @@ async def plot_envelope(
     ctx: Context | None = None
 ) -> str:
     """
-        Generate interactive envelope spectrum plot.
+        Generate interactive envelope spectrum plot for a stored signal.
 
         Creates an interactive HTML plot showing both the envelope spectrum and optionally
-        the filtered signal. Can highlight bearing/gear frequencies.
+        the filtered signal. Can highlight bearing/gear frequencies. Requires
+        the signal loaded via load_signal() first; the sampling rate comes
+        from the stored signal metadata.
 
         Args:
-            signal_file: Name of the CSV file in data/signals/
-            sampling_rate: Sampling frequency in Hz (default: 10000)
+            signal_id: ID of the stored signal (from load_signal).
             filter_band: [low_freq, high_freq] for bandpass filter (optional, default: [500, 5000])
             freq_range: [min_freq, max_freq] to limit the envelope spectrum plot (optional)
             highlight_freqs: List of frequencies (Hz) to mark (e.g., BPFO, BPFI) (optional)
@@ -443,10 +461,14 @@ async def plot_envelope(
         Returns:
             Path to generated HTML file
 
+        Raises:
+            ValueError: If the signal_id is not loaded, the stored signal has
+                no sampling rate, or the filter band is invalid for the
+                signal's Nyquist frequency.
+
         Example:
             plot_envelope(
-                "bearing_signal.csv",
-                sampling_rate=10000,
+                "bearing_signal",
                 filter_band=[500, 5000],
                 freq_range=[0, 300],
                 highlight_freqs=[120.5, 241.0],
@@ -454,16 +476,10 @@ async def plot_envelope(
             )
         """
     if ctx:
-        await ctx.info(f"Generating envelope plot for {signal_file}...")
+        await ctx.info(f"Generating envelope plot for '{signal_id}'...")
 
-    # Read signal
-    filepath = DATA_DIR / signal_file
-    if not filepath.exists():
-        raise FileNotFoundError(f"File not found: {signal_file}")
-
-    signal_data = load_signal_data(signal_file)
-    if signal_data is None:
-        raise ValueError(f"Could not load signal data from: {signal_file}")
+    signal_data, info = resolve_signal(signal_id)
+    sampling_rate = info.sampling_rate
 
     # Default filter band if not specified
     if filter_band is None:
@@ -616,7 +632,7 @@ async def plot_envelope(
     fig.update_yaxes(range=[-80, 5], row=2, col=1)
 
     # Layout
-    plot_title = title or f"Envelope Analysis - {signal_file}"
+    plot_title = title or f"Envelope Analysis - {signal_id}"
     fig.update_layout(
         title_text=plot_title,
         hovermode='x unified',
@@ -627,7 +643,7 @@ async def plot_envelope(
     )
 
     # Save HTML to reports directory
-    safe_name = Path(signal_file).stem.replace('/', '_').replace('\\', '_')
+    safe_name = sanitize_filename(signal_id)
     output_file = REPORTS_DIR / f"plot_envelope_{safe_name}.html"
     fig.write_html(str(output_file))
 
@@ -638,22 +654,22 @@ async def plot_envelope(
     return f"Interactive plot saved to: {output_file}\nUse list_html_reports() to see all reports, or open file in browser"
 
 async def generate_fft_report(
-    signal_file: str,
-    sampling_rate: Optional[float] = None,
+    signal_id: str,
     max_freq: float = 5000.0,
     num_peaks: int = 15,
     rotation_freq: Optional[float] = None,
     ctx: Context | None = None
 ) -> dict[str, Any]:
     """
-        Generate professional FFT spectrum report as HTML file.
+        Generate professional FFT spectrum report (HTML) for a stored signal.
 
-        **NEW PREFERRED METHOD**: Generates a professional HTML report file
-        instead of inline content. Saves to reports/ directory.
+        Generates a professional HTML report file instead of inline content.
+        Saves to reports/ directory. Requires the signal loaded via
+        load_signal() first; the sampling rate comes from the stored signal
+        metadata.
 
         Args:
-            signal_file: Signal filename in data/signals/
-            sampling_rate: Sampling rate in Hz (auto-detect if None)
+            signal_id: ID of the stored signal (from load_signal).
             max_freq: Maximum frequency to display (Hz). Default 5000 Hz
             num_peaks: Number of peaks to detect and label. Default 15
             rotation_freq: Optional shaft rotation frequency for harmonic labels
@@ -662,28 +678,19 @@ async def generate_fft_report(
         Returns:
             Dictionary with file path, metadata, and summary (NO HTML content)
 
+        Raises:
+            ValueError: If the signal_id is not loaded, or the stored signal
+                has no sampling rate.
+
         Example:
-            >>> result = generate_fft_report("real_train/baseline_1.csv")
+            >>> result = generate_fft_report("real_train_baseline_1")
             >>> # User can open: result['file_path']
         """
     if ctx:
-        await ctx.info(f"Generating FFT report for {signal_file}...")
+        await ctx.info(f"Generating FFT report for '{signal_id}'...")
 
-    # Load signal
-    signal_data = load_signal_data(signal_file)
-    if signal_data is None:
-        raise ValueError(f"Unable to load signal from {signal_file}")
-
-    # Auto-detect sampling rate
-    if sampling_rate is None:
-        metadata_path = get_metadata_path(signal_file)
-        if metadata_path.exists():
-            with open(metadata_path) as f:
-                metadata = json.load(f)
-                sampling_rate = metadata.get("sampling_rate")
-
-        if sampling_rate is None:
-            raise ValueError("sampling_rate required (not found in metadata)")
+    signal_data, info = resolve_signal(signal_id)
+    sampling_rate = info.sampling_rate
 
     # Perform FFT
     N = len(signal_data)
@@ -698,9 +705,9 @@ async def generate_fft_report(
     frequencies = frequencies[positive_idx]
     magnitudes = 2.0 * np.abs(fft_values[positive_idx]) / N
 
-    # Generate and save report
+    # Generate and save report (signal_id is the report's signal label)
     result = save_fft_report(
-        signal_file=signal_file,
+        signal_file=signal_id,
         sampling_rate=sampling_rate,
         frequencies=frequencies,
         magnitudes=magnitudes,
@@ -717,8 +724,7 @@ async def generate_fft_report(
     return result
 
 async def generate_envelope_report(
-    signal_file: str,
-    sampling_rate: Optional[float] = None,
+    signal_id: str,
     filter_low: float = 500.0,
     filter_high: float = 5000.0,
     max_freq: float = 500.0,
@@ -727,14 +733,17 @@ async def generate_envelope_report(
     ctx: Context | None = None
 ) -> dict[str, Any]:
     """
-        Generate professional envelope analysis report as HTML file.
+        Generate professional envelope analysis report (HTML) for a stored signal.
 
-        **NEW PREFERRED METHOD**: Generates a professional HTML report file
-        instead of inline content. Saves to reports/ directory.
+        Generates a professional HTML report file instead of inline content.
+        Saves to reports/ directory. Requires the signal loaded via
+        load_signal() first; the sampling rate comes from the stored signal
+        metadata. Reference bearing frequencies (BPFO/BPFI/BSF/FTF) can be
+        passed explicitly or, if omitted, are read from the source file's
+        companion _metadata.json when present.
 
         Args:
-            signal_file: Signal filename in data/signals/
-            sampling_rate: Sampling rate in Hz (auto-detect if None)
+            signal_id: ID of the stored signal (from load_signal).
             filter_low: Bandpass filter low cutoff (Hz). Default 500 Hz
             filter_high: Bandpass filter high cutoff (Hz). Default 5000 Hz
             max_freq: Max envelope spectrum frequency to display. Default 500 Hz
@@ -745,40 +754,35 @@ async def generate_envelope_report(
         Returns:
             Dictionary with file path, metadata, and summary (NO HTML content)
 
+        Raises:
+            ValueError: If the signal_id is not loaded, or the stored signal
+                has no sampling rate.
+
         Example:
             >>> # Bearing frequencies computed for YOUR bearing/rpm (here: 6205
             >>> # per CWRU geometry at 1797 RPM)
             >>> result = generate_envelope_report(
-            ...     "real_train/OuterRaceFault_1.csv",
+            ...     "real_train_OuterRaceFault_1",
             ...     bearing_freqs={"BPFO": 107.36, "BPFI": 162.19, "BSF": 70.58, "FTF": 11.93}
             ... )
         """
     if ctx:
-        await ctx.info(f"Generating envelope analysis report for {signal_file}...")
+        await ctx.info(f"Generating envelope analysis report for '{signal_id}'...")
 
-    # Load signal
-    signal_data = load_signal_data(signal_file)
-    if signal_data is None:
-        raise ValueError(f"Unable to load signal from {signal_file}")
+    signal_data, info = resolve_signal(signal_id)
+    sampling_rate = info.sampling_rate
 
-    # Auto-detect sampling rate and bearing freqs
-    if sampling_rate is None or bearing_freqs is None:
-        metadata_path = get_metadata_path(signal_file)
-        if metadata_path.exists():
-            with open(metadata_path) as f:
-                metadata = json.load(f)
-                if sampling_rate is None:
-                    sampling_rate = metadata.get("sampling_rate")
-                if bearing_freqs is None:
-                    bearing_freqs = {
-                        "BPFO": metadata.get("BPFO"),
-                        "BPFI": metadata.get("BPFI"),
-                        "BSF": metadata.get("BSF"),
-                        "FTF": metadata.get("FTF")
-                    }
-
-        if sampling_rate is None:
-            raise ValueError("sampling_rate required")
+    # Optional extras: reference bearing frequencies from the companion
+    # metadata of the source file (never required).
+    if bearing_freqs is None:
+        metadata = _companion_metadata(info)
+        if any(k in metadata for k in ("BPFO", "BPFI", "BSF", "FTF")):
+            bearing_freqs = {
+                "BPFO": metadata.get("BPFO"),
+                "BPFI": metadata.get("BPFI"),
+                "BSF": metadata.get("BSF"),
+                "FTF": metadata.get("FTF")
+            }
 
     # Bandpass filter
     nyquist = sampling_rate / 2
@@ -798,9 +802,9 @@ async def generate_envelope_report(
     env_frequencies = env_frequencies[positive_idx]
     env_magnitudes = 2.0 * np.abs(env_fft[positive_idx]) / N
 
-    # Generate and save report
+    # Generate and save report (signal_id is the report's signal label)
     result = save_envelope_report(
-        signal_file=signal_file,
+        signal_file=signal_id,
         sampling_rate=sampling_rate,
         filter_band=(filter_low, filter_high),
         filtered_signal=filtered_signal,
@@ -821,22 +825,22 @@ async def generate_envelope_report(
     return result
 
 async def generate_iso_report(
-    signal_file: str,
-    sampling_rate: Optional[float] = None,
+    signal_id: str,
     machine_group: int = 2,
     support_type: str = "rigid",
     operating_speed_rpm: Optional[float] = None,
     ctx: Context | None = None
 ) -> dict[str, Any]:
     """
-        Generate professional ISO 20816-3 evaluation report as HTML file.
+        Generate professional ISO 20816-3 evaluation report (HTML) for a stored signal.
 
-        **NEW PREFERRED METHOD**: Generates a professional HTML report file
-        instead of inline content. Saves to reports/ directory.
+        Generates a professional HTML report file instead of inline content.
+        Saves to reports/ directory. Requires the signal loaded via
+        load_signal() first; sampling rate AND declared signal unit come from
+        the stored signal metadata (units are never guessed).
 
         Args:
-            signal_file: Signal filename in data/signals/
-            sampling_rate: Sampling rate in Hz (auto-detect if None)
+            signal_id: ID of the stored signal (from load_signal).
             machine_group: ISO machine group (1=large >300kW, 2=medium 15-300kW)
             support_type: 'rigid' or 'flexible'
             operating_speed_rpm: Operating speed in RPM (optional)
@@ -845,32 +849,25 @@ async def generate_iso_report(
         Returns:
             Dictionary with file path, metadata, and summary (NO HTML content)
 
+        Raises:
+            ValueError: If the signal_id is not loaded, or the stored signal
+                has no sampling rate or no declared unit.
+
         Example:
             >>> result = generate_iso_report(
-            ...     "real_train/baseline_1.csv",
+            ...     "real_train_baseline_1",
             ...     machine_group=2,
             ...     support_type="rigid"
             ... )
         """
     if ctx:
-        await ctx.info(f"Generating ISO 20816-3 report for {signal_file}...")
-
-    # Auto-detect sampling rate
-    if sampling_rate is None:
-        metadata_path = get_metadata_path(signal_file)
-        if metadata_path.exists():
-            with open(metadata_path) as f:
-                sampling_rate = json.load(f).get("sampling_rate")
-
-        if sampling_rate is None:
-            raise ValueError("sampling_rate required")
+        await ctx.info(f"Generating ISO 20816-3 report for '{signal_id}'...")
 
     # Perform ISO evaluation via the canonical modular tool (module-level
     # function in diagnostics_tools — the monolith import is gone).
     iso_result = await evaluate_iso_20816(
         ctx=ctx,
-        signal_file=signal_file,
-        sampling_rate=sampling_rate,
+        signal_id=signal_id,
         machine_group=machine_group,
         support_type=support_type,
         operating_speed_rpm=operating_speed_rpm
@@ -879,9 +876,9 @@ async def generate_iso_report(
     # Convert Pydantic model to dict
     iso_dict = iso_result.model_dump()
 
-    # Generate and save report
+    # Generate and save report (signal_id is the report's signal label)
     result = save_iso_report(
-        signal_file=signal_file,
+        signal_file=signal_id,
         iso_result=iso_dict
     )
 
@@ -934,18 +931,16 @@ def get_report_info(file_name: str) -> dict[str, Any]:
 
 async def generate_pca_visualization_report(
     model_name: str,
-    test_signal_files: Optional[list[str]] = None,
+    test_signal_ids: Optional[list[str]] = None,
     true_labels: Optional[dict[str, str]] = None,
-    sampling_rate: Optional[float] = None,
     segment_duration: float = 0.1,
     overlap_ratio: float = 0.5,
     ctx: Context | None = None
 ) -> dict[str, Any]:
     """
-        Generate PCA visualization HTML report showing training and test data in 2D PCA space.
+        Generate PCA visualization HTML report showing test data in 2D PCA space.
 
         Creates interactive scatter plot with:
-        - Training data (blue dots) - healthy baseline
         - Test/prediction data (green = predicted healthy, red = predicted anomaly)
         - PC1 vs PC2 axes with variance explained
         - Hover information showing segment details and prediction status
@@ -953,16 +948,16 @@ async def generate_pca_visualization_report(
         **IMPORTANT**: Labels show MODEL PREDICTIONS, not ground truth. Use `true_labels`
         parameter to provide actual labels for validation visualization.
 
-        **Strategy**: Same HTML report approach as FFT/Envelope/ISO reports.
-        Saved to reports/ directory for LLM to reference without consuming tokens.
+        Requires the test signals loaded via load_signal() first; each
+        signal's sampling rate comes from its stored metadata.
 
         Args:
             model_name: Name of trained model (e.g., 'bearing_health_model')
-            test_signal_files: Optional list of signals to predict and visualize
-            true_labels: Optional dict mapping signal filenames to true labels.
-                        Format: {"baseline_3.csv": "healthy", "InnerRaceFault_vload_6.csv": "faulty"}
+            test_signal_ids: Optional list of stored signal IDs to predict and visualize
+            true_labels: Optional dict mapping signal_ids to true labels.
+                        Format: {"real_test_baseline_3": "healthy",
+                                 "real_test_InnerRaceFault_vload_6": "faulty"}
                         When provided, legend shows both true and predicted labels for validation.
-            sampling_rate: Sampling rate (auto-detect from metadata if None)
             segment_duration: Segment duration in seconds (default: 0.1s for ML)
             overlap_ratio: Overlap ratio 0-1 (default: 0.5)
             ctx: MCP context
@@ -970,17 +965,16 @@ async def generate_pca_visualization_report(
         Returns:
             Dictionary with file path, metadata, and summary (includes validation metrics if true_labels provided)
 
-        Example (predictions only):
-            >>> generate_pca_visualization_report(
-            ...     model_name="bearing_health_model",
-            ...     test_signal_files=["real_test/baseline_3.csv", "real_test/InnerRaceFault_vload_6.csv"]
-            ... )
+        Raises:
+            FileNotFoundError: If the model does not exist.
+            ValueError: If a signal_id is not loaded or has no sampling rate.
 
         Example (with validation):
             >>> generate_pca_visualization_report(
             ...     model_name="bearing_health_model",
-            ...     test_signal_files=["real_test/baseline_3.csv", "real_test/InnerRaceFault_vload_6.csv"],
-            ...     true_labels={"baseline_3.csv": "healthy", "InnerRaceFault_vload_6.csv": "faulty"}
+            ...     test_signal_ids=["real_test_baseline_3", "real_test_InnerRaceFault_vload_6"],
+            ...     true_labels={"real_test_baseline_3": "healthy",
+            ...                  "real_test_InnerRaceFault_vload_6": "faulty"}
             ... )
         """
     if ctx:
@@ -1006,10 +1000,6 @@ async def generate_pca_visualization_report(
     with open(metadata_path, 'r') as f:
         model_metadata = json.load(f)
 
-    # Use model's sampling rate if not provided
-    if sampling_rate is None:
-        sampling_rate = model_metadata.get('sampling_rate', 10000.0)
-
     # Collect training data (reconstruct from model metadata if available)
     # For now, we'll just note that training data would be visualized
     # In production, you'd save training features during train_anomaly_model
@@ -1018,20 +1008,16 @@ async def generate_pca_visualization_report(
 
     # Process test signals if provided
     test_data_list = []
+    last_sampling_rate: Optional[float] = None
 
-    if test_signal_files:
-        for signal_file in test_signal_files:
-            filepath = DATA_DIR / signal_file
-            if not filepath.exists():
-                logger.warning(f"File not found: {signal_file}, skipping...")
-                continue
+    if test_signal_ids:
+        for sid in test_signal_ids:
+            signal_data, sig_info = resolve_signal(sid)
+            fs = sig_info.sampling_rate
+            last_sampling_rate = fs
 
-            signal_data = load_signal_data(signal_file)
-            if signal_data is None:
-                raise ValueError(f"Could not load signal data from: {signal_file}")
-
-            # Segment and extract features
-            segment_length_samples = int(segment_duration * sampling_rate)
+            # Segment and extract features (per-signal sampling rate)
+            segment_length_samples = int(segment_duration * fs)
             hop_length = int(segment_length_samples * (1 - overlap_ratio))
 
             features_list = []
@@ -1050,7 +1036,7 @@ async def generate_pca_visualization_report(
             predictions = model.predict(X_pca)
 
             test_data_list.append({
-                'signal_file': signal_file,
+                'signal_id': sid,
                 'pca_data': X_pca,
                 'predictions': predictions
             })
@@ -1062,15 +1048,12 @@ async def generate_pca_visualization_report(
     for test_data in test_data_list:
         X_pca = test_data['pca_data']
         predictions = test_data['predictions']
-        signal_file = test_data['signal_file']
+        sid = test_data['signal_id']
 
-        # Extract filename without path for label matching
-        file_basename = signal_file.split('/')[-1]
-
-        # Determine true label if provided
+        # Determine true label if provided (keyed by signal_id)
         true_label = None
-        if true_labels and file_basename in true_labels:
-            true_label = true_labels[file_basename].lower()
+        if true_labels and sid in true_labels:
+            true_label = true_labels[sid].lower()
 
         # Separate healthy and anomalous predictions
         healthy_idx = predictions == 1
@@ -1079,20 +1062,20 @@ async def generate_pca_visualization_report(
         # Create legend labels
         if true_label:
             # Show both true and predicted labels for validation
-            healthy_legend = f'{signal_file} (True: {true_label}, Predicted: Healthy)'
-            anomaly_legend = f'{signal_file} (True: {true_label}, Predicted: Anomaly)'
+            healthy_legend = f'{sid} (True: {true_label}, Predicted: Healthy)'
+            anomaly_legend = f'{sid} (True: {true_label}, Predicted: Anomaly)'
 
             # Update hover template to show both
-            healthy_hover = f'<b>{signal_file}</b><br>PC1: %{{x:.3f}}<br>PC2: %{{y:.3f}}<br>True Label: {true_label}<br>Predicted: Healthy<extra></extra>'
-            anomaly_hover = f'<b>{signal_file}</b><br>PC1: %{{x:.3f}}<br>PC2: %{{y:.3f}}<br>True Label: {true_label}<br>Predicted: ANOMALY<extra></extra>'
+            healthy_hover = f'<b>{sid}</b><br>PC1: %{{x:.3f}}<br>PC2: %{{y:.3f}}<br>True Label: {true_label}<br>Predicted: Healthy<extra></extra>'
+            anomaly_hover = f'<b>{sid}</b><br>PC1: %{{x:.3f}}<br>PC2: %{{y:.3f}}<br>True Label: {true_label}<br>Predicted: ANOMALY<extra></extra>'
         else:
             # Show only predictions (no ground truth assumed)
-            healthy_legend = f'{signal_file} (Predicted: Healthy)'
-            anomaly_legend = f'{signal_file} (Predicted: Anomaly)'
+            healthy_legend = f'{sid} (Predicted: Healthy)'
+            anomaly_legend = f'{sid} (Predicted: Anomaly)'
 
             # Hover template clarifies these are predictions
-            healthy_hover = f'<b>{signal_file}</b><br>PC1: %{{x:.3f}}<br>PC2: %{{y:.3f}}<br>Predicted: Healthy<extra></extra>'
-            anomaly_hover = f'<b>{signal_file}</b><br>PC1: %{{x:.3f}}<br>PC2: %{{y:.3f}}<br>Predicted: ANOMALY<extra></extra>'
+            healthy_hover = f'<b>{sid}</b><br>PC1: %{{x:.3f}}<br>PC2: %{{y:.3f}}<br>Predicted: Healthy<extra></extra>'
+            anomaly_hover = f'<b>{sid}</b><br>PC1: %{{x:.3f}}<br>PC2: %{{y:.3f}}<br>Predicted: ANOMALY<extra></extra>'
 
         if np.any(healthy_idx):
             fig.add_trace(go.Scatter(
@@ -1136,13 +1119,15 @@ async def generate_pca_visualization_report(
     metadata = {
         'report_type': 'pca_visualization',
         'model_name': model_name,
-        'test_signals': test_signal_files or [],
+        'test_signals': test_signal_ids or [],
         'pca_components': int(pca.n_components_),
         'variance_explained_pc1': float(variance_explained[0]),
         'variance_explained_pc2': float(variance_explained[1]),
         'total_variance_2d': float(variance_explained[0] + variance_explained[1]),
         'segment_duration': float(segment_duration),
-        'sampling_rate': float(sampling_rate) if sampling_rate is not None else None,
+        'sampling_rate': (
+            float(last_sampling_rate) if last_sampling_rate is not None else None
+        ),
         'validation_mode': true_labels is not None
     }
 
@@ -1163,12 +1148,11 @@ async def generate_pca_visualization_report(
         per_file_accuracy = {}
 
         for test_data in test_data_list:
-            signal_file = test_data['signal_file']
-            file_basename = signal_file.split('/')[-1]
+            sid = test_data['signal_id']
 
-            if file_basename in true_labels:
+            if sid in true_labels:
                 predictions = test_data['predictions']
-                true_label = true_labels[file_basename].lower()
+                true_label = true_labels[sid].lower()
 
                 # Determine expected predictions (1 = healthy, -1 = anomaly)
                 expected_prediction = 1 if true_label in ['healthy', 'normal', 'baseline'] else -1
@@ -1179,7 +1163,7 @@ async def generate_pca_visualization_report(
                 correct_predictions += file_correct
                 total_with_labels += file_total
 
-                per_file_accuracy[file_basename] = {
+                per_file_accuracy[sid] = {
                     'correct': file_correct,
                     'total': file_total,
                     'accuracy': float(file_correct / file_total) if file_total > 0 else 0.0,
@@ -1216,7 +1200,6 @@ async def generate_pca_visualization_report(
 
 async def generate_feature_comparison_report(
     signal_groups: dict[str, list[str]],
-    sampling_rate: Optional[float] = None,
     segment_duration: float = 0.1,
     overlap_ratio: float = 0.5,
     features_to_plot: Optional[list[str]] = None,
@@ -1227,15 +1210,17 @@ async def generate_feature_comparison_report(
 
         Creates interactive HTML report with violin plots showing distribution of 17
         time-domain features across different signal groups (e.g., Healthy vs Faulty).
+        Requires every signal loaded via load_signal() first; each signal's
+        sampling rate comes from its stored metadata.
 
         **Strategy**: Same HTML report approach as other reports. Useful for understanding
         which features are most discriminative for fault detection.
 
         Args:
-            signal_groups: Dictionary mapping group names to list of signal files.
-                          Example: {"Healthy": ["baseline_1.csv", "baseline_2.csv"],
-                                   "Faulty": ["InnerRaceFault_1.csv", "OuterRaceFault_1.csv"]}
-            sampling_rate: Sampling rate (auto-detect from metadata if None)
+            signal_groups: Dictionary mapping group names to lists of stored
+                          signal IDs.
+                          Example: {"Healthy": ["real_train_baseline_1"],
+                                   "Faulty": ["real_train_OuterRaceFault_1"]}
             segment_duration: Segment duration in seconds (default: 0.1s for ML)
             overlap_ratio: Overlap ratio 0-1 (default: 0.5)
             features_to_plot: List of feature names to plot (default: all 17 features)
@@ -1244,12 +1229,15 @@ async def generate_feature_comparison_report(
         Returns:
             Dictionary with file path, metadata, and summary
 
+        Raises:
+            ValueError: If a signal_id is not loaded or has no sampling rate.
+
         Example:
             >>> generate_feature_comparison_report(
             ...     signal_groups={
-            ...         "Healthy": ["real_train/baseline_1.csv", "real_train/baseline_2.csv"],
-            ...         "Inner Fault": ["real_train/InnerRaceFault_vload_1.csv"],
-            ...         "Outer Fault": ["real_train/OuterRaceFault_1.csv"]
+            ...         "Healthy": ["real_train_baseline_1", "real_train_baseline_2"],
+            ...         "Inner Fault": ["real_train_InnerRaceFault_vload_1"],
+            ...         "Outer Fault": ["real_train_OuterRaceFault_1"]
             ...     }
             ... )
         """
@@ -1268,32 +1256,18 @@ async def generate_feature_comparison_report(
 
     # Extract features from all signal groups
     group_features = {}
+    last_sampling_rate: Optional[float] = None
 
-    for group_name, signal_files in signal_groups.items():
+    for group_name, signal_ids in signal_groups.items():
         all_features_for_group = []
 
-        for signal_file in signal_files:
-            filepath = DATA_DIR / signal_file
-            if not filepath.exists():
-                logger.warning(f"File not found: {signal_file}, skipping...")
-                continue
+        for sid in signal_ids:
+            signal_data, sig_info = resolve_signal(sid)
+            fs = sig_info.sampling_rate
+            last_sampling_rate = fs
 
-            # Auto-detect sampling rate if not provided
-            if sampling_rate is None:
-                metadata_path = get_metadata_path(signal_file)
-                if metadata_path.exists():
-                    with open(metadata_path) as f:
-                        metadata = json.load(f)
-                        sampling_rate = metadata.get("sampling_rate", 10000.0)
-                else:
-                    sampling_rate = 10000.0  # fallback
-
-            signal_data = load_signal_data(signal_file)
-            if signal_data is None:
-                raise ValueError(f"Could not load signal data from: {signal_file}")
-
-            # Segment and extract features
-            segment_length_samples = int(segment_duration * sampling_rate)
+            # Segment and extract features (per-signal sampling rate)
+            segment_length_samples = int(segment_duration * fs)
             hop_length = int(segment_length_samples * (1 - overlap_ratio))
 
             for start in range(0, len(signal_data) - segment_length_samples + 1, hop_length):
@@ -1365,10 +1339,10 @@ async def generate_feature_comparison_report(
     # Prepare metadata
     metadata = {
         'report_type': 'feature_comparison',
-        'groups': {name: len(files) for name, files in signal_groups.items()},
+        'groups': {name: len(ids) for name, ids in signal_groups.items()},
         'features_plotted': features_to_plot,
         'segment_duration': segment_duration,
-        'sampling_rate': sampling_rate,
+        'sampling_rate': last_sampling_rate,
         'segments_per_group': {name: len(df) for name, df in group_features.items()}
     }
 

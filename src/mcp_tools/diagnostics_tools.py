@@ -19,11 +19,6 @@ from sklearn.neighbors import LocalOutlierFactor
 from mcp.server.fastmcp import FastMCP, Context
 
 from ..config import DATA_DIR, MODELS_DIR, RESOURCES_DIR, REPORTS_DIR, CACHE_DIR
-from ..signal_acquisition.loaders import load_signal_data, get_metadata_path, extract_segment, SUPPORTED_EXTENSIONS
-from ..signal_acquisition.repository import (
-    normalize_signal_unit,
-    VALID_SIGNAL_UNITS,
-)
 from ..models import (
     ISO20816Result, AnomalyModelResult, AnomalyPredictionResult,
     BearingCatalogMiss, BearingFaultCheckResult, BearingFaultsSummary,
@@ -64,11 +59,11 @@ from ..decision_support.diagnosis_pipeline import diagnose_vibration as _diagnos
 from ..signal_processing.features import (
     extract_time_domain_features,
     segment_and_extract_features as _segment_and_extract_features,
-    resolve_sampling_rate as _resolve_sampling_rate,
 )
 from ._utils import (
     resolve_signal,
     safe_resolve,
+    sanitize_filename,
     resolve_model_paths,
     validate_name_component,
 )
@@ -76,60 +71,40 @@ from ._utils import (
 logger = logging.getLogger(__name__)
 
 
-async def _extract_features_from_files(
-    signal_files: list[str],
-    sampling_rate: Optional[float],
+async def _extract_features_from_ids(
+    signal_ids: list[str],
     segment_duration: float,
     overlap_ratio: float,
-    strict: bool = True,
     ctx: Context = None,
-) -> tuple[list[dict], list[float]]:
+) -> tuple[list[dict], dict[str, float]]:
     """
-    Load signals, resolve sampling rates, segment, and extract features.
+    Resolve stored signals, segment them, and extract features.
+
+    Every signal must already be in the repository (load_signal — the batch
+    form accepts a list of files) and must carry a sampling rate; a missing
+    id or rate raises the standard actionable error (fail fast: a training
+    set silently missing entries would train a misleading model).
 
     Args:
-        signal_files: List of signal filenames relative to DATA_DIR
-        sampling_rate: User-provided sampling rate (None = auto-detect per file)
+        signal_ids: Stored signal IDs (from load_signal)
         segment_duration: Segment duration in seconds
         overlap_ratio: Overlap ratio (0-1)
-        strict: If True, raise on missing files/rates; if False, skip them
         ctx: MCP context for logging
 
     Returns:
-        Tuple of (all_features_list, detected_rates)
+        Tuple of (all_features_list, {signal_id: sampling_rate})
     """
     all_features = []
-    detected_rates = []
+    detected_rates: dict[str, float] = {}
 
-    for signal_file in signal_files:
-        filepath = DATA_DIR / signal_file
-        if not filepath.exists():
-            if strict:
-                raise FileNotFoundError(f"File not found: {signal_file}")
-            else:
-                if ctx:
-                    await ctx.warning(f"File not found: {signal_file}, skipping")
-                continue
+    for sid in signal_ids:
+        signal_data, info = resolve_signal(sid)
+        file_rate = info.sampling_rate
 
-        file_rate = _resolve_sampling_rate(signal_file, sampling_rate, strict=strict)
-        if file_rate is None:
-            if ctx:
-                await ctx.warning(f"No sampling rate for {signal_file}, skipping")
-            continue
+        if ctx:
+            await ctx.info(f"  '{sid}': {file_rate} Hz")
 
-        if ctx and sampling_rate is None:
-            await ctx.info(f"  {signal_file}: detected {file_rate} Hz from metadata")
-
-        detected_rates.append(file_rate)
-
-        signal_data = load_signal_data(signal_file)
-        if signal_data is None:
-            if strict:
-                raise ValueError(f"Could not load signal data from: {signal_file}")
-            else:
-                if ctx:
-                    await ctx.warning(f"Could not load {signal_file}, skipping")
-                continue
+        detected_rates[sid] = file_rate
 
         features = _segment_and_extract_features(signal_data, file_rate, segment_duration, overlap_ratio)
         all_features.extend(features)
@@ -138,34 +113,29 @@ async def _extract_features_from_files(
 
 
 async def _extract_and_transform_validation_features(
-    signal_files: list[str],
-    sampling_rate: Optional[float],
+    signal_ids: list[str],
     segment_duration: float,
     overlap_ratio: float,
     scaler,
     pca,
-    strict: bool = False,
     ctx: Context = None,
 ) -> Optional[np.ndarray]:
     """
-    Extract features from validation files and apply scaler + PCA transform.
+    Extract features from stored validation signals and apply scaler + PCA.
 
     Args:
-        signal_files: List of signal filenames relative to DATA_DIR
-        sampling_rate: User-provided sampling rate (None = auto-detect)
+        signal_ids: Stored signal IDs (from load_signal)
         segment_duration: Segment duration in seconds
         overlap_ratio: Overlap ratio (0-1)
         scaler: Fitted StandardScaler
         pca: Fitted PCA transformer
-        strict: If True, raise on errors; if False, skip problematic files
         ctx: MCP context for logging
 
     Returns:
         PCA-transformed feature matrix, or None if no features extracted
     """
-    features_list, _ = await _extract_features_from_files(
-        signal_files, sampling_rate, segment_duration, overlap_ratio,
-        strict=strict, ctx=ctx
+    features_list, _ = await _extract_features_from_ids(
+        signal_ids, segment_duration, overlap_ratio, ctx=ctx
     )
 
     if not features_list:
@@ -183,15 +153,13 @@ async def _extract_and_transform_validation_features(
 
 async def evaluate_iso_20816(
     ctx: Context,
-    signal_file: str,
-    sampling_rate: Optional[float] = None,
+    signal_id: str,
     machine_group: int = 2,  # Default 2 (medium) - most common industrial case
     support_type: str = "rigid",  # Default rigid - most common for horizontal machines
     operating_speed_rpm: Optional[float] = None,
-    signal_unit: Optional[str] = None  # 'g'/'m/s2' (acceleration) or 'mm/s'/'m/s' (velocity); None = read from metadata
 ) -> ISO20816Result:
     """
-        Evaluate vibration severity according to the ISO 20816-3 standard.
+        Evaluate vibration severity of a stored signal per ISO 20816-3.
 
         ISO 20816-3 defines vibration severity zones for rotating machinery based on
         broadband RMS velocity measurements on non-rotating parts (bearings, housings).
@@ -199,12 +167,16 @@ async def evaluate_iso_20816(
         ISO 20816-3:2022 merges zones A/B) — the provenance note is included in the
         result. Scope: machines rated above 15 kW.
 
+        Requires the signal loaded via load_signal() first: BOTH the sampling
+        rate and the DECLARED signal unit come from the stored signal
+        metadata (load_signal parameters or the companion _metadata.json).
+        Units are never guessed from amplitude — an undeclared unit is a
+        structured error naming the declaration path.
+
         **CRITICAL - LLM Inference Policy:**
-        - **NEVER infer fault type or severity from filename** (e.g., "OuterRaceFault_1.csv" does NOT mean outer race fault)
-        - **NEVER assume baseline/healthy from filename** (e.g., "baseline" does NOT guarantee Zone A)
-        - Treat ALL filenames as opaque identifiers
-        - Report ONLY the ISO zone returned by measurement, regardless of filename
-        - If filename suggests "baseline" but measurement shows Zone C/D, report Zone C/D
+        - **NEVER infer fault type or severity from a signal_id or filename**
+        - Treat ALL signal_ids as opaque identifiers
+        - Report ONLY the ISO zone returned by measurement
 
         **DEFAULTS** (use if user doesn't specify):
         - machine_group = 2 (medium-sized machines, most common)
@@ -223,115 +195,56 @@ async def evaluate_iso_20816(
         - "flexible": Machine on soft supports, vertical, or large turbine-generator sets
           Examples: Vertical pumps, machines on springs, large turbogenerators
 
-        **When to ask user**:
-        - If power/dimensions unknown -> use defaults (Group 2, rigid)
-        - If clearly large turbine (>10 MW) -> suggest Group 1, flexible
-        - If vertical machine -> suggest flexible
-        - If user provides machine specs -> use guide above
-
         Evaluation Zones:
         - Zone A (Green): New machine condition - excellent
         - Zone B (Yellow): Acceptable for long-term unrestricted operation
         - Zone C (Orange): Unsatisfactory - limited operation, plan maintenance
         - Zone D (Red): Sufficient severity to cause damage - immediate action
 
-        **Parameter discipline (no guessing):**
-        - Sampling rate: explicit parameter > companion metadata file >
-          structured error. There is NO silent default rate.
-        - Signal unit: explicit parameter > companion metadata 'signal_unit'
-          field > structured error. The unit is NEVER inferred from signal
-          amplitude \u2014 a wrong unit completely invalidates ISO 20816-3 results.
-
         Args:
-            signal_file: Name of the CSV file in data/signals/
-            sampling_rate: Sampling frequency in Hz. If None, it is read from
-                the companion _metadata.json; if neither is available the tool
-                raises ValueError.
+            signal_id: ID of the stored signal (from load_signal).
             machine_group: Machine group 1 (large) or 2 (medium) (default: 2 - medium)
             support_type: 'rigid' or 'flexible' (default: 'rigid')
             operating_speed_rpm: Operating speed in RPM (optional, for frequency range selection)
-            signal_unit: DECLARED signal unit - 'g' or 'm/s2' (acceleration) or
-                'mm/s' or 'm/s' (velocity). If None, it is read from the
-                companion metadata 'signal_unit' field; if neither declares a
-                recognized unit the tool raises ValueError naming how to
-                declare it.
 
         Returns:
             ISO20816Result with evaluation zone, severity level, and recommendations
 
         Raises:
-            FileNotFoundError: If the signal file does not exist.
-            ValueError: If the sampling rate or the signal unit is not
-                declared anywhere (parameter or metadata), if the declared
-                unit is invalid, or if the sampling rate cannot cover the
-                ISO evaluation band (Nyquist < 1 kHz).
+            ValueError: If the signal_id is not loaded, the stored signal has
+                no sampling rate or no declared unit, or the sampling rate
+                cannot cover the ISO evaluation band (Nyquist < 1 kHz).
 
         Example:
             await evaluate_iso_20816(
                 ctx,
-                "motor_vibration.csv",
-                sampling_rate=10000,
+                "motor_vibration",
                 machine_group=2,
                 support_type="rigid",
                 operating_speed_rpm=1500,
-                signal_unit="g"  # Explicitly declare: 'g'/'m/s2' or 'mm/s'/'m/s'
             )
         """
-    # Load signal
-    filepath = DATA_DIR / signal_file
-    if not filepath.exists():
-        raise FileNotFoundError(f"File not found: {signal_file}")
-
-    signal_data = load_signal_data(signal_file)
-    if signal_data is None:
-        raise ValueError(f"Could not load signal data from: {signal_file}")
-
-    # Companion metadata (single read for sampling_rate + signal_unit)
-    metadata_file = filepath.parent / (filepath.stem + "_metadata.json")
-    metadata: dict = {}
-    if metadata_file.exists():
-        with open(metadata_file, 'r') as f:
-            metadata = json.load(f)
-
-    # Sampling rate: explicit parameter > metadata > structured error.
-    if sampling_rate is not None:
-        if ctx:
-            await ctx.info(f"Using provided sampling_rate = {sampling_rate} Hz")
-    elif metadata.get('sampling_rate') is not None:
-        sampling_rate = metadata['sampling_rate']
-        if ctx:
-            await ctx.info(f"Using sampling_rate = {sampling_rate} Hz from {metadata_file.name}")
-    else:
-        raise ValueError(
-            f"No sampling rate for '{signal_file}' \u2014 pass the sampling_rate "
-                f"parameter explicitly or add a 'sampling_rate' field to "
-                f"'{metadata_file.name}'. ISO 20816-3 evaluation never proceeds "
-                f"on a guessed rate."
+    signal_data, info = resolve_signal(signal_id)
+    sampling_rate = info.sampling_rate
+    if ctx:
+        await ctx.info(
+            f"Using sampling_rate = {sampling_rate} Hz (stored signal metadata)"
         )
 
-    # Signal unit: explicit parameter > metadata > structured error.
-    # NEVER guessed from signal amplitude.
-    if signal_unit is not None:
-        unit = normalize_signal_unit(signal_unit)
-        if unit is None:
-            raise ValueError(
-                f"Invalid signal_unit '{signal_unit}' \u2014 declare one of "
-                    f"{list(VALID_SIGNAL_UNITS)} ('g'/'m/s2' for acceleration, "
-                    f"'mm/s'/'m/s' for velocity)."
-            )
-        if ctx:
-            await ctx.info(f"Signal unit '{unit}' (declared via parameter)")
-    else:
-        unit = normalize_signal_unit(metadata.get('signal_unit'))
-        if unit is not None and ctx:
-            await ctx.info(f"Signal unit '{unit}' (declared in {metadata_file.name})")
+    # Signal unit: DECLARED at load time (load_signal parameter or companion
+    # metadata, already normalized by the repository). NEVER guessed from
+    # signal amplitude.
+    unit = info.signal_unit
     if unit is None:
         raise ValueError(
-            f"Signal unit not declared for '{signal_file}' \u2014 ISO 20816-3 "
+            f"Signal unit not declared for '{signal_id}' \u2014 ISO 20816-3 "
                 f"severity requires a declared unit and never guesses it from "
-                f"amplitude. Pass signal_unit='g'|'m/s2'|'mm/s'|'m/s' or add a "
-                f"'signal_unit' field to '{metadata_file.name}'."
+                f"amplitude. Re-load with load_signal(filepath=..., "
+                f"signal_unit='g'|'m/s2'|'mm/s'|'m/s', overwrite=True) or add "
+                f"a 'signal_unit' field to the companion _metadata.json."
         )
+    if ctx:
+        await ctx.info(f"Signal unit '{unit}' (declared)")
 
     # Notify about machine parameters
     if ctx:
@@ -386,16 +299,14 @@ async def evaluate_iso_20816(
 # ------------------------------------------------------------------
 
 async def plot_iso_20816_chart(
-    filename: str,
-    sampling_rate: float,
+    signal_id: str,
     machine_group: int = 1,
     support_type: str = "rigid",
     operating_speed_rpm: Optional[float] = None,
-    signal_unit: Optional[str] = None,
     ctx: Context | None = None
 ) -> str:
     """
-        Generate visual chart showing ISO 20816-3 zone position for the analyzed signal.
+        Generate visual chart showing ISO 20816-3 zone position for a stored signal.
 
         Creates an interactive HTML plot with:
         - Horizontal bar chart showing zones A/B/C/D with boundaries
@@ -403,36 +314,34 @@ async def plot_iso_20816_chart(
         - Color-coded zones (green/yellow/orange/red)
         - Zone descriptions
 
+        Requires the signal loaded via load_signal() first: sampling rate and
+        DECLARED signal unit come from the stored signal metadata (units are
+        never guessed from amplitude).
+
         Args:
-            filename: Name of the signal file
-            sampling_rate: Sampling frequency (Hz)
+            signal_id: ID of the stored signal (from load_signal).
             machine_group: 1 (large >300kW) or 2 (medium 15-300kW)
             support_type: 'rigid' or 'flexible'
             operating_speed_rpm: Operating speed in RPM (optional)
-            signal_unit: DECLARED signal unit ('g', 'm/s2', 'mm/s', 'm/s').
-                If None, it must be declared in the companion metadata —
-                units are never guessed from amplitude.
             ctx: MCP context
 
         Returns:
             Path to generated HTML file with ISO chart
 
         Raises:
-            ValueError: If the signal unit is not declared anywhere
-                (parameter or metadata).
+            ValueError: If the signal_id is not loaded, or the stored signal
+                has no sampling rate or no declared unit.
         """
     if ctx:
-        await ctx.info(f"Evaluating ISO 20816-3 for {filename}...")
+        await ctx.info(f"Evaluating ISO 20816-3 for '{signal_id}'...")
 
     # First, perform ISO evaluation
     iso_result = await evaluate_iso_20816(
         ctx=ctx,
-        signal_file=filename,
-        sampling_rate=sampling_rate,
+        signal_id=signal_id,
         machine_group=machine_group,
         support_type=support_type,
         operating_speed_rpm=operating_speed_rpm,
-        signal_unit=signal_unit,
     )
 
     # Create figure
@@ -479,7 +388,7 @@ async def plot_iso_20816_chart(
     max_x = boundaries[-1]
     fig.update_layout(
         title=dict(
-            text=f"ISO 20816-3 Evaluation: {filename}<br>" +
+            text=f"ISO 20816-3 Evaluation: {signal_id}<br>" +
                  f"<span style='font-size:14px'>RMS Velocity: {iso_result.rms_velocity:.2f} mm/s | " +
                  f"Zone <b>{iso_result.zone}</b> ({iso_result.severity_level})</span>",
             x=0.5,
@@ -519,7 +428,7 @@ async def plot_iso_20816_chart(
     )
 
     # Save HTML to reports directory
-    safe_name = Path(filename).stem.replace('/', '_').replace('\\', '_')
+    safe_name = sanitize_filename(signal_id)
     output_file = REPORTS_DIR / f"plot_iso_{safe_name}.html"
     fig.write_html(str(output_file))
 
@@ -534,19 +443,23 @@ async def plot_iso_20816_chart(
 # ------------------------------------------------------------------
 
 async def train_anomaly_model(
-    healthy_signal_files: list[str],
-    sampling_rate: Optional[float] = None,
+    healthy_signal_ids: list[str],
     segment_duration: float = 0.1,
     overlap_ratio: float = 0.5,
     model_type: str = "OneClassSVM",
     pca_variance: float = 0.95,
-    fault_signal_files: Optional[list[str]] = None,
-    healthy_validation_files: Optional[list[str]] = None,
+    fault_signal_ids: Optional[list[str]] = None,
+    healthy_validation_ids: Optional[list[str]] = None,
     model_name: str = "anomaly_model",
     ctx: Context = None
 ) -> AnomalyModelResult:
     """
         Train ML-based anomaly detection model on healthy data (UNSUPERVISED/SEMI-SUPERVISED).
+
+        All signals are referenced by signal_id: load them first with
+        load_signal — its batch form accepts a list of file paths, e.g.
+        load_signal(filepath=["real_train/baseline_1.csv", ...]). Each
+        signal's sampling rate comes from its stored metadata.
 
         Complete pipeline:
         1. Extract features from healthy signals (segmentation + time-domain features)
@@ -564,37 +477,39 @@ async def train_anomaly_model(
         Fault data (if provided) is used ONLY for hyperparameter tuning after training.
 
         **Validation Strategy:**
-        - If healthy_validation_files provided: Use those explicitly (no split)
-        - If healthy_validation_files NOT provided: Automatic 80/20 split of training data
-        - If fault_signal_files provided: Enable semi-supervised mode (hyperparameter tuning)
+        - If healthy_validation_ids provided: Use those explicitly (no split)
+        - If healthy_validation_ids NOT provided: Automatic 80/20 split of training data
+        - If fault_signal_ids provided: Enable semi-supervised mode (hyperparameter tuning)
 
         Args:
-            healthy_signal_files: List of CSV files with healthy machine data (for training)
-            sampling_rate: Sampling frequency in Hz (auto-detect from metadata if None)
+            healthy_signal_ids: Stored signal IDs with healthy machine data (for training)
             segment_duration: Segment duration in seconds (default: 0.1)
             overlap_ratio: Overlap ratio 0-1 (default: 0.5)
             model_type: 'OneClassSVM' or 'LocalOutlierFactor' (default: 'OneClassSVM')
             pca_variance: Cumulative variance to explain with PCA (default: 0.95)
-            fault_signal_files: Optional list of fault signals for HYPERPARAMETER TUNING (semi-supervised)
-            healthy_validation_files: Optional list of healthy signals for validation (specificity check).
+            fault_signal_ids: Optional stored signal IDs for HYPERPARAMETER TUNING (semi-supervised)
+            healthy_validation_ids: Optional stored healthy signal IDs for validation (specificity check).
                                       If not provided, 20% of training data will be used.
             model_name: Name for saved model files (default: 'anomaly_model')
             ctx: MCP context for progress/logging
 
         Returns:
             AnomalyModelResult with model paths and performance metrics
+
+        Raises:
+            ValueError: If a signal_id is not loaded or has no sampling rate,
+                or model_name/model_type is invalid.
         """
     # Fail fast on an unsafe model_name before doing any expensive work or
     # touching the filesystem (the write happens in step 6).
     validate_name_component(model_name, kind="model_name")
 
     if ctx:
-        await ctx.info(f"Training {model_type} model on {len(healthy_signal_files)} healthy signals...")
+        await ctx.info(f"Training {model_type} model on {len(healthy_signal_ids)} healthy signals...")
 
     # Step 1: Extract features from all healthy signals
-    all_features, detected_rates = await _extract_features_from_files(
-        healthy_signal_files, sampling_rate, segment_duration, overlap_ratio,
-        strict=True, ctx=ctx
+    all_features, detected_rates = await _extract_features_from_ids(
+        healthy_signal_ids, segment_duration, overlap_ratio, ctx=ctx
     )
 
     features_df = pd.DataFrame(all_features)
@@ -620,7 +535,7 @@ async def train_anomaly_model(
     # Strategy: Train on healthy data only (unsupervised), then use validation for hyperparameter tuning
 
     if model_type == "OneClassSVM":
-        if fault_signal_files:
+        if fault_signal_ids:
             # SEMI-SUPERVISED MODE: Train on healthy, tune hyperparameters with validation (healthy + fault)
             if ctx:
                 await ctx.info("Training in SEMI-SUPERVISED mode")
@@ -630,16 +545,16 @@ async def train_anomaly_model(
 
             # Prepare validation features for fault signals
             X_fault = await _extract_and_transform_validation_features(
-                fault_signal_files, sampling_rate, segment_duration, overlap_ratio,
-                scaler, pca, strict=False, ctx=ctx
+                fault_signal_ids, segment_duration, overlap_ratio,
+                scaler, pca, ctx=ctx
             )
 
             # Prepare validation features for healthy signals
             X_healthy_val = None
-            if healthy_validation_files:
+            if healthy_validation_ids:
                 X_healthy_val = await _extract_and_transform_validation_features(
-                    healthy_validation_files, sampling_rate, segment_duration, overlap_ratio,
-                    scaler, pca, strict=False, ctx=ctx
+                    healthy_validation_ids, segment_duration, overlap_ratio,
+                    scaler, pca, ctx=ctx
                 )
 
             # Hyperparameter grid
@@ -720,7 +635,7 @@ async def train_anomaly_model(
                 await ctx.info(f"Auto-calculated nu={nu_auto:.4f} based on sample size")
 
     elif model_type == "LocalOutlierFactor":
-        if fault_signal_files:
+        if fault_signal_ids:
             # SEMI-SUPERVISED MODE with LOF
             if ctx:
                 await ctx.info("Training LOF in SEMI-SUPERVISED mode")
@@ -729,16 +644,16 @@ async def train_anomaly_model(
 
             # Prepare validation features for fault signals
             X_fault = await _extract_and_transform_validation_features(
-                fault_signal_files, sampling_rate, segment_duration, overlap_ratio,
-                scaler, pca, strict=False, ctx=ctx
+                fault_signal_ids, segment_duration, overlap_ratio,
+                scaler, pca, ctx=ctx
             )
 
             # Prepare healthy validation features
             X_healthy_val = None
-            if healthy_validation_files:
+            if healthy_validation_ids:
                 X_healthy_val = await _extract_and_transform_validation_features(
-                    healthy_validation_files, sampling_rate, segment_duration, overlap_ratio,
-                    scaler, pca, strict=False, ctx=ctx
+                    healthy_validation_ids, segment_duration, overlap_ratio,
+                    scaler, pca, ctx=ctx
                 )
 
             # Hyperparameter search for LOF
@@ -821,21 +736,21 @@ async def train_anomaly_model(
     validation_details = None
     validation_metrics = None
 
-    if fault_signal_files or healthy_validation_files:
+    if fault_signal_ids or healthy_validation_ids:
         # Part A: Validate on HEALTHY data
         # Two options:
-        # 1. User provides explicit healthy_validation_files -> Use those
+        # 1. User provides explicit healthy_validation_ids -> Use those
         # 2. User doesn't provide -> Auto-split training data 80/20
 
-        if healthy_validation_files:
+        if healthy_validation_ids:
             # Option 1: User provided explicit healthy validation files
             if ctx:
-                await ctx.info(f"Using {len(healthy_validation_files)} explicitly provided healthy validation files")
+                await ctx.info(f"Using {len(healthy_validation_ids)} explicitly provided healthy validation files")
 
-            # Extract and transform features from validation files
+            # Extract and transform features from validation signals
             X_pca_healthy_val = await _extract_and_transform_validation_features(
-                healthy_validation_files, sampling_rate, segment_duration, overlap_ratio,
-                scaler, pca, strict=True, ctx=ctx
+                healthy_validation_ids, segment_duration, overlap_ratio,
+                scaler, pca, ctx=ctx
             )
 
             if X_pca_healthy_val is not None:
@@ -884,10 +799,10 @@ async def train_anomaly_model(
 
         # Part B: Validate on FAULT data (only if fault files were provided)
         X_fault_pca = None
-        if fault_signal_files:
+        if fault_signal_ids:
             X_fault_pca = await _extract_and_transform_validation_features(
-                fault_signal_files, sampling_rate, segment_duration, overlap_ratio,
-                scaler, pca, strict=True, ctx=ctx
+                fault_signal_ids, segment_duration, overlap_ratio,
+                scaler, pca, ctx=ctx
             )
 
         if X_fault_pca is not None:
@@ -942,22 +857,25 @@ async def train_anomaly_model(
     with open(pca_path, 'wb') as f:
         pickle.dump(pca, f)
 
-    # Save metadata
+    # Save metadata. Each training signal carries its own stored sampling
+    # rate; a single uniform rate is recorded numerically, mixed rates as
+    # 'per_file' (prediction then uses the test signal's own stored rate).
+    unique_rates = sorted(set(detected_rates.values()))
     metadata = {
         'model_type': model_type,
-        'training_mode': 'supervised' if fault_signal_files else 'unsupervised',
+        'training_mode': 'supervised' if fault_signal_ids else 'unsupervised',
         'feature_names': list(features_df.columns),
         'num_features_original': X_train.shape[1],
         'num_features_pca': X_pca.shape[1],
         'pca_variance': float(pca.explained_variance_ratio_.sum()),
         'best_params': best_params,
-        'sampling_rate': sampling_rate if sampling_rate is not None else 'per_file',
-        'sampling_rates_detected': detected_rates if sampling_rate is None else None,
+        'sampling_rate': unique_rates[0] if len(unique_rates) == 1 else 'per_file',
+        'sampling_rates_detected': detected_rates,
         'segment_duration': segment_duration,
         'overlap_ratio': overlap_ratio,
-        'multi_rate_training': sampling_rate is None,
-        'validation_with_faults': fault_signal_files is not None,
-        'num_validation_files': len(fault_signal_files) if fault_signal_files else 0
+        'multi_rate_training': len(unique_rates) > 1,
+        'validation_with_faults': fault_signal_ids is not None,
+        'num_validation_files': len(fault_signal_ids) if fault_signal_ids else 0
     }
 
     metadata_path = _model_paths.metadata
@@ -989,12 +907,14 @@ async def train_anomaly_model(
 # ------------------------------------------------------------------
 
 async def predict_anomalies(
-    signal_file: str,
+    signal_id: str,
     model_name: str = "anomaly_model",
     ctx: Context = None
 ) -> AnomalyPredictionResult:
     """
-        Predict anomalies in new signal using trained model.
+        Predict anomalies in a stored signal using a trained model.
+
+        Requires the signal loaded via load_signal() first.
 
         Applies the complete pipeline:
         1. Segment signal
@@ -1005,15 +925,20 @@ async def predict_anomalies(
         6. Calculate anomaly ratio and overall health
 
         Args:
-            signal_file: Name of CSV file to analyze
+            signal_id: ID of the stored signal to analyze (from load_signal)
             model_name: Name of trained model (default: 'anomaly_model')
             ctx: MCP context for progress/logging
 
         Returns:
             AnomalyPredictionResult with predictions and health assessment
+
+        Raises:
+            FileNotFoundError: If the model does not exist.
+            ValueError: If the signal_id is not loaded, or no sampling rate
+                is available for segmentation.
         """
     if ctx:
-        await ctx.info(f"Predicting anomalies in {signal_file}...")
+        await ctx.info(f"Predicting anomalies in '{signal_id}'...")
 
     # Validate model_name and contain every derived path (single source of
     # truth shared with the training/PCA/pipeline model-load sites).
@@ -1035,36 +960,24 @@ async def predict_anomalies(
     with open(metadata_path, 'r') as f:
         metadata = json.load(f)
 
-    # Load signal
-    filepath = DATA_DIR / signal_file
-    if not filepath.exists():
-        raise FileNotFoundError(f"File not found: {signal_file}")
-
-    signal_data = load_signal_data(signal_file)
-    if signal_data is None:
-        raise ValueError(f"Could not load signal data from: {signal_file}")
+    # Resolve the stored signal (fail fast with the standard message).
+    # The stored rate is only REQUIRED when the model was trained with
+    # per-file rates; a uniform-rate model segments at its training rate.
+    signal_data, info = resolve_signal(signal_id, require_sampling_rate=False)
 
     # Extract features
     sampling_rate_val = metadata['sampling_rate']
     if isinstance(sampling_rate_val, str):
-        # Model was trained with per-file metadata detection; read from signal metadata
-        meta_path = get_metadata_path(signal_file)
-        if meta_path.exists():
-            with open(meta_path, 'r') as f:
-                signal_meta = json.load(f)
-            meta_rate = signal_meta.get('sampling_rate')
-            if meta_rate is None:
-                raise ValueError(
-                    f"No 'sampling_rate' field in {meta_path.name} — add it "
-                        f"to the metadata file; prediction never proceeds on a "
-                        f"guessed rate."
-                )
-            sampling_rate_val = float(meta_rate)
-        else:
+        # Model was trained with per-file rates: use the stored signal's rate.
+        if info.sampling_rate is None:
             raise ValueError(
-                f"Model was trained with per-file sampling rates but no metadata found for {signal_file}. "
-                    "Please provide a _metadata.json file alongside the signal CSV."
+                f"Model '{model_name}' was trained with per-file sampling "
+                    f"rates, but signal '{signal_id}' has no stored rate — "
+                    f"re-load it with load_signal(filepath=..., "
+                    f"sampling_rate=..., overwrite=True) or add a "
+                    f"'sampling_rate' field to the companion _metadata.json."
             )
+        sampling_rate_val = info.sampling_rate
     sampling_rate_val = float(sampling_rate_val)
     segment_duration = metadata['segment_duration']
     overlap_ratio = metadata['overlap_ratio']

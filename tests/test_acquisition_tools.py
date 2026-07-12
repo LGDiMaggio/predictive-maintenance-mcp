@@ -10,8 +10,6 @@ from unittest.mock import AsyncMock, MagicMock
 from mcp.server.fastmcp import FastMCP
 
 from predictive_maintenance_mcp.mcp_tools.acquisition_tools import register
-from predictive_maintenance_mcp.mcp_tools._utils import load_and_validate_metadata
-from predictive_maintenance_mcp.signal_acquisition.loaders import load_signal_data
 
 
 # ---------------------------------------------------------------------------
@@ -62,97 +60,6 @@ def mock_ctx():
     ctx.info = AsyncMock()
     ctx.warning = AsyncMock()
     return ctx
-
-
-# ---------------------------------------------------------------------------
-# load_and_validate_metadata (module-level helper)
-# ---------------------------------------------------------------------------
-
-class TestLoadAndValidateMetadata:
-    """Tests for load_and_validate_metadata helper.
-
-    Sampling-rate discipline: explicit parameter > metadata > structured
-    error — never a silent default and never a sentinel-value comparison.
-    """
-
-    @pytest.mark.asyncio
-    async def test_uses_metadata_sampling_rate(self, data_dir, mock_ctx):
-        rate, seg = await load_and_validate_metadata(
-            mock_ctx, "test_sine.csv",
-            data_dir=data_dir,
-            load_signal_data_fn=load_signal_data,
-            provided_sampling_rate=None,
-            provided_segment_duration=None,
-            default_segment_duration=1.0,
-        )
-        assert rate == 10000  # from metadata
-
-    @pytest.mark.asyncio
-    async def test_no_metadata_no_param_raises(self, data_dir, mock_ctx):
-        """No metadata and no explicit rate → structured error, no silent default."""
-        with pytest.raises(ValueError, match="No sampling rate"):
-            await load_and_validate_metadata(
-                mock_ctx, "real_train/baseline_1.csv",
-                data_dir=data_dir,
-                load_signal_data_fn=load_signal_data,
-                provided_sampling_rate=None,
-                provided_segment_duration=None,
-                default_segment_duration=1.0,
-            )
-
-    @pytest.mark.asyncio
-    async def test_explicit_rate_overrides_metadata(self, data_dir, mock_ctx):
-        """Explicitly provided rate wins over metadata (declared > metadata)."""
-        rate, seg = await load_and_validate_metadata(
-            mock_ctx, "test_sine.csv",
-            data_dir=data_dir,
-            load_signal_data_fn=load_signal_data,
-            provided_sampling_rate=5000.0,  # different from metadata (10000)
-            provided_segment_duration=None,
-            default_segment_duration=1.0,
-        )
-        assert rate == 5000.0  # explicit parameter wins
-
-    @pytest.mark.asyncio
-    async def test_explicit_rate_equal_to_old_sentinel_is_respected(self, data_dir, mock_ctx):
-        """A legitimate explicit rate is used even without metadata.
-
-        The old code compared against a sentinel default (10000.0), so users
-        passing exactly that value were treated as 'not provided'.
-        """
-        rate, _ = await load_and_validate_metadata(
-            mock_ctx, "real_train/baseline_1.csv",  # no metadata
-            data_dir=data_dir,
-            load_signal_data_fn=load_signal_data,
-            provided_sampling_rate=10000.0,
-            provided_segment_duration=None,
-            default_segment_duration=1.0,
-        )
-        assert rate == 10000.0
-
-    @pytest.mark.asyncio
-    async def test_segment_duration_default(self, data_dir, mock_ctx):
-        _, seg = await load_and_validate_metadata(
-            mock_ctx, "test_sine.csv",
-            data_dir=data_dir,
-            load_signal_data_fn=load_signal_data,
-            provided_sampling_rate=None,
-            provided_segment_duration=None,
-            default_segment_duration=2.0,
-        )
-        assert seg == 2.0
-
-    @pytest.mark.asyncio
-    async def test_segment_duration_user_provided(self, data_dir, mock_ctx):
-        _, seg = await load_and_validate_metadata(
-            mock_ctx, "test_sine.csv",
-            data_dir=data_dir,
-            load_signal_data_fn=load_signal_data,
-            provided_sampling_rate=None,
-            provided_segment_duration=0.5,
-            default_segment_duration=2.0,
-        )
-        assert seg == 0.5
 
 
 # ---------------------------------------------------------------------------
@@ -260,6 +167,86 @@ class TestSignalRepository:
         await tools["load_signal"](ctx=mock_ctx, filepath="test_sine.csv", signal_id="s1")
         result = await tools["clear_all_signals"](ctx=mock_ctx)
         assert result["cleared_count"] >= 1
+
+
+class TestLoadSignalIdsAndBatch:
+    """U8: relative-path default ids, explicit collisions, atomic batch."""
+
+    @pytest.mark.asyncio
+    async def test_default_id_from_relative_path(self, mcp, data_dir, mock_ctx):
+        tools = {t.name: t.fn for t in mcp._tool_manager._tools.values()}
+        try:
+            result = await tools["load_signal"](
+                ctx=mock_ctx, filepath="real_train/baseline_1.csv"
+            )
+            assert result.signal_id == "real_train_baseline_1"
+        finally:
+            await tools["clear_all_signals"](ctx=mock_ctx)
+
+    @pytest.mark.asyncio
+    async def test_reload_collision_requires_overwrite(self, mcp, data_dir, mock_ctx):
+        tools = {t.name: t.fn for t in mcp._tool_manager._tools.values()}
+        try:
+            await tools["load_signal"](ctx=mock_ctx, filepath="test_sine.csv")
+            with pytest.raises(ValueError, match="overwrite=True"):
+                await tools["load_signal"](ctx=mock_ctx, filepath="test_sine.csv")
+            result = await tools["load_signal"](
+                ctx=mock_ctx, filepath="test_sine.csv", overwrite=True
+            )
+            assert result.signal_id == "test_sine"
+        finally:
+            await tools["clear_all_signals"](ctx=mock_ctx)
+
+    @pytest.mark.asyncio
+    async def test_batch_load_returns_all_infos(self, mcp, data_dir, mock_ctx):
+        """Batch form: list in → list of StoredSignalInfo out, one per file."""
+        tools = {t.name: t.fn for t in mcp._tool_manager._tools.values()}
+        try:
+            results = await tools["load_signal"](
+                ctx=mock_ctx,
+                filepath=["test_sine.csv", "real_train/baseline_1.csv"],
+                sampling_rate=10000.0,
+            )
+            assert isinstance(results, list)
+            assert [r.signal_id for r in results] == [
+                "test_sine",
+                "real_train_baseline_1",
+            ]
+            stored = await tools["list_stored_signals"](ctx=mock_ctx)
+            assert len(stored) == 2
+        finally:
+            await tools["clear_all_signals"](ctx=mock_ctx)
+
+    @pytest.mark.asyncio
+    async def test_batch_missing_file_is_atomic(self, mcp, data_dir, mock_ctx):
+        """One bad entry → one error naming it, NOTHING loaded."""
+        tools = {t.name: t.fn for t in mcp._tool_manager._tools.values()}
+        try:
+            with pytest.raises(ValueError, match="__missing__.csv"):
+                await tools["load_signal"](
+                    ctx=mock_ctx,
+                    filepath=["test_sine.csv", "__missing__.csv"],
+                )
+            stored = await tools["list_stored_signals"](ctx=mock_ctx)
+            assert len(stored) == 0
+        finally:
+            await tools["clear_all_signals"](ctx=mock_ctx)
+
+    @pytest.mark.asyncio
+    async def test_batch_empty_list_raises(self, mcp, data_dir, mock_ctx):
+        tools = {t.name: t.fn for t in mcp._tool_manager._tools.values()}
+        with pytest.raises(ValueError, match="empty list"):
+            await tools["load_signal"](ctx=mock_ctx, filepath=[])
+
+    @pytest.mark.asyncio
+    async def test_batch_rejects_custom_signal_id(self, mcp, data_dir, mock_ctx):
+        tools = {t.name: t.fn for t in mcp._tool_manager._tools.values()}
+        with pytest.raises(ValueError, match="batch"):
+            await tools["load_signal"](
+                ctx=mock_ctx,
+                filepath=["test_sine.csv"],
+                signal_id="custom",
+            )
 
 
 class TestLoadSignalUnit:

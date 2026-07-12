@@ -64,8 +64,6 @@ def sandbox_dirs(tmp_path, monkeypatch):
         "predictive_maintenance_mcp.mcp_tools.acquisition_tools.DATA_DIR",
         "predictive_maintenance_mcp.mcp_tools.analysis_tools.DATA_DIR",
         "predictive_maintenance_mcp.mcp_tools.diagnostics_tools.DATA_DIR",
-        "predictive_maintenance_mcp.mcp_tools.report_tools.DATA_DIR",
-        "predictive_maintenance_mcp.mcp_tools.prognostics_tools.DATA_DIR",
     ):
         monkeypatch.setattr(target, signals_dir)
     for target in (
@@ -117,9 +115,12 @@ class TestModuleLevelTools:
     async def test_direct_import_happy_path(
         self, sandbox_dirs, mock_ctx
     ):
-        """analyze_fft works via direct import, no FastMCP involved."""
+        """load_signal + analyze_fft work via direct import, no FastMCP."""
         from predictive_maintenance_mcp.mcp_tools.analysis_tools import (
             analyze_fft,
+        )
+        from predictive_maintenance_mcp.signal_acquisition.repository import (
+            get_repository,
         )
 
         fs = 10000
@@ -131,10 +132,13 @@ class TestModuleLevelTools:
         with open(sandbox_dirs / "direct_metadata.json", "w") as f:
             json.dump({"sampling_rate": fs, "signal_unit": "g"}, f)
 
-        result = await analyze_fft(
-            ctx=mock_ctx, filename="direct.csv", sampling_rate=float(fs)
-        )
-        assert abs(result.peak_frequency - 50.0) < 2.0
+        repo = get_repository()
+        try:
+            repo.load_signal("direct.csv", overwrite=True)
+            result = await analyze_fft(ctx=mock_ctx, signal_id="direct")
+            assert abs(result.peak_frequency - 50.0) < 2.0
+        finally:
+            repo.clear_signal("direct")
 
 
 # ---------------------------------------------------------------------------
@@ -148,20 +152,20 @@ class TestModuleLevelTools:
 # outcome as a typed result by design (search_bearing_catalog, clear_signal),
 # which is covered separately below.
 FAILURE_CASES = {
-    "analyze_fft": {"filename": "__missing__.csv", "sampling_rate": 1000.0},
-    "analyze_envelope": {"filename": "__missing__.csv", "sampling_rate": 1000.0},
-    "analyze_statistics": {"filename": "__missing__.csv"},
-    "extract_features_from_signal": {"signal_file": "__missing__.csv"},
+    "analyze_fft": {"signal_id": "__not_loaded__"},
+    "analyze_envelope": {"signal_id": "__not_loaded__"},
+    "analyze_statistics": {"signal_id": "__not_loaded__"},
+    "extract_features_from_signal": {"signal_id": "__not_loaded__"},
     "compute_power_spectral_density": {"signal_id": "__not_loaded__"},
     "compute_spectrogram_stft": {"signal_id": "__not_loaded__"},
     "compute_envelope_spectrum_tool": {"signal_id": "__not_loaded__"},
-    "evaluate_iso_20816": {"signal_file": "__missing__.csv"},
-    "plot_iso_20816_chart": {"filename": "__missing__.csv", "sampling_rate": 10000.0},
+    "evaluate_iso_20816": {"signal_id": "__not_loaded__"},
+    "plot_iso_20816_chart": {"signal_id": "__not_loaded__"},
     "train_anomaly_model": {
-        "healthy_signal_files": ["x.csv"],
+        "healthy_signal_ids": ["x"],
         "model_name": "../evil",
     },
-    "predict_anomalies": {"signal_file": "x.csv", "model_name": "__no_model__"},
+    "predict_anomalies": {"signal_id": "__not_loaded__", "model_name": "__no_model__"},
     "extract_manual_specs": {"manual_filename": "__missing__.pdf"},
     "read_manual_excerpt": {"manual_filename": "__missing__.pdf"},
     "check_bearing_fault_peak_tool": {
@@ -182,12 +186,16 @@ FAILURE_CASES = {
     },
     "assess_vibration_severity": {"signal_id": "__not_loaded__"},
     "diagnose_vibration_tool": {"signal_id": "__not_loaded__", "rpm": 1500.0},
-    "plot_signal": {"signal_file": "__missing__.csv"},
-    "plot_spectrum": {"signal_file": "__missing__.csv"},
-    "plot_envelope": {"signal_file": "__missing__.csv"},
-    "generate_fft_report": {"signal_file": "__missing__.csv"},
-    "generate_envelope_report": {"signal_file": "__missing__.csv"},
-    "generate_iso_report": {"signal_file": "__missing__.csv"},
+    "plot_signal": {"signal_id": "__not_loaded__"},
+    "plot_spectrum": {"signal_id": "__not_loaded__"},
+    "plot_envelope": {"signal_id": "__not_loaded__"},
+    "generate_fft_report": {"signal_id": "__not_loaded__"},
+    "generate_envelope_report": {"signal_id": "__not_loaded__"},
+    "generate_iso_report": {"signal_id": "__not_loaded__"},
+    "generate_diagnostic_report_docx": {
+        "signal_id": "__not_loaded__",
+        "sections": {"diagnosis": "text"},
+    },
     "get_report_info": {"file_name": "__missing__.html"},
     "generate_pca_visualization_report": {"model_name": "__no_model__"},
     "estimate_rul": {
@@ -195,8 +203,8 @@ FAILURE_CASES = {
         "timestamps": [0.0],
         "feature_values": [1.0],
     },
-    "analyze_signal_trend": {"signal_file": "__missing__.csv"},
-    "detect_signal_degradation_onset": {"signal_file": "__missing__.csv"},
+    "analyze_signal_trend": {"signal_id": "__not_loaded__"},
+    "detect_signal_degradation_onset": {"signal_id": "__not_loaded__"},
     "load_signal": {"filepath": "__missing__.csv"},
     "get_signal_info": {"signal_id": "__not_loaded__"},
 }
@@ -245,15 +253,27 @@ class TestFailuresRaise:
         self, tools, sandbox_dirs, mock_ctx, monkeypatch
     ):
         """Missing python-docx is a failure — raised, not an error dict."""
+        from predictive_maintenance_mcp.signal_acquisition.repository import (
+            get_repository,
+        )
+
         monkeypatch.setattr(
             "predictive_maintenance_mcp.report_generator.HAS_DOCX", False
         )
-        with pytest.raises(ValueError, match="python-docx"):
-            await tools["generate_diagnostic_report_docx"].fn(
-                ctx=mock_ctx,
-                signal_file="x.csv",
-                sections={"diagnosis": "text"},
-            )
+        pd.DataFrame([0.1, 0.2, 0.3]).to_csv(
+            sandbox_dirs / "docx_sig.csv", index=False, header=False
+        )
+        repo = get_repository()
+        try:
+            repo.load_signal("docx_sig.csv", overwrite=True)
+            with pytest.raises(ValueError, match="python-docx"):
+                await tools["generate_diagnostic_report_docx"].fn(
+                    ctx=mock_ctx,
+                    signal_id="docx_sig",
+                    sections={"diagnosis": "text"},
+                )
+        finally:
+            repo.clear_signal("docx_sig")
 
 
 # ---------------------------------------------------------------------------

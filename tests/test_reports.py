@@ -139,13 +139,24 @@ async def run_report_tests():
 
     signal_file = "real_train/baseline_1.csv"
 
+    # U8: evaluate_iso_20816 takes a stored signal_id (rate + unit declared
+    # at load time).
+    from predictive_maintenance_mcp.signal_acquisition.repository import (
+        get_repository,
+    )
+
+    repo = get_repository()
+    info = repo.load_signal(
+        signal_file, sampling_rate=97656, signal_unit="g", overwrite=True
+    )
+
     iso_result = await evaluate_iso_20816(
         ctx=None,
-        signal_file=signal_file,
-        sampling_rate=97656,
+        signal_id=info["signal_id"],
         machine_group=2,
         support_type="rigid"
     )
+    repo.clear_signal(info["signal_id"])
 
     report_result = save_iso_report(
         signal_file=signal_file,

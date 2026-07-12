@@ -350,15 +350,31 @@ async def generate_test_signal(
 
 async def load_signal(
     ctx: Context,
-    filepath: str,
+    filepath: str | list[str],
     signal_id: Optional[str] = None,
     sampling_rate: Optional[float] = None,
     signal_unit: Optional[Literal["g", "m/s2", "mm/s", "m/s"]] = None,
-) -> StoredSignalInfo:
-    """Load a signal into the in-memory repository for fast repeated access.
+    overwrite: bool = False,
+) -> StoredSignalInfo | list[StoredSignalInfo]:
+    """Load one signal — or a batch — into the in-memory repository.
 
-        Once loaded, reference the signal by its signal_id in other tools like
-        compute_power_spectral_density, diagnose_vibration, etc.
+        Once loaded, reference the signal by its signal_id in every analysis,
+        diagnosis, report, and prognostics tool (the load -> analyze ->
+        diagnose -> report flow uses signal_id as the single handle).
+
+        Batch form: pass a LIST of file paths (e.g. for training sets). The
+        batch is fail-fast and atomic — all paths and derived ids are
+        validated up front, and on the first problem ONE error names the
+        offending entries and nothing is loaded. One declared sampling_rate/
+        signal_unit applies to all files; per-file metadata wins only when
+        the parameter is omitted. Custom signal_id is not allowed for a
+        batch (ids derive from each file's relative path).
+
+        signal_id default: the path relative to data/signals/ with separators
+        replaced by underscores — 'real_train/baseline_1.csv' loads as
+        'real_train_baseline_1', so same-named files in different folders
+        never collide silently. Re-loading a path whose id already exists is
+        an explicit error unless overwrite=True.
 
         Signal unit discipline: ISO 20816-3 severity verdicts require a
         DECLARED unit — either via this parameter or a 'signal_unit' field in
@@ -367,22 +383,60 @@ async def load_signal(
         severity block is refused with a structured reason and remedy.
 
         Args:
-            filepath: Filename relative to data/signals/, or absolute path.
-            signal_id: Custom ID (defaults to filename stem).
+            filepath: Filename relative to data/signals/ or absolute path —
+                or a list of such paths for an atomic batch load.
+            signal_id: Custom ID (single-file loads only; default derives
+                from the relative path).
             sampling_rate: Sampling rate in Hz (overrides metadata file).
             signal_unit: Declared signal unit — 'g' or 'm/s2' (acceleration),
                 'mm/s' or 'm/s' (velocity). Overrides the metadata file.
+            overwrite: Replace existing entries on signal_id collision
+                instead of raising.
+
+        Returns:
+            StoredSignalInfo for a single load; a list of StoredSignalInfo
+            (input order) for a batch.
 
         Raises:
-            ValueError: If signal_unit is not one of the valid units, or the
-                signal data cannot be loaded.
+            ValueError: If signal_unit is invalid, the signal data cannot be
+                loaded, a signal_id collides without overwrite=True, or a
+                batch contains any invalid entry (nothing is loaded).
         """
     repo = get_repository()
+
+    if isinstance(filepath, list):
+        if signal_id is not None:
+            raise ValueError(
+                "signal_id cannot be combined with a batch load — batch ids "
+                "derive from each file's relative path. Load files "
+                "individually to assign custom ids."
+            )
+        infos = repo.load_signals(
+            filepath,
+            sampling_rate=sampling_rate,
+            signal_unit=signal_unit,
+            overwrite=overwrite,
+        )
+        if ctx:
+            ids = [i["signal_id"] for i in infos]
+            await ctx.info(f"Loaded {len(infos)} signals: {ids}")
+            undeclared = [
+                i["signal_id"] for i in infos if not i.get("signal_unit")
+            ]
+            if undeclared:
+                await ctx.info(
+                    f"Signal unit not declared for {undeclared} — ISO "
+                        f"severity verdicts will be refused for these until "
+                        f"the unit is declared."
+                )
+        return [StoredSignalInfo(**i) for i in infos]
+
     info = repo.load_signal(
         filepath,
         signal_id=signal_id,
         sampling_rate=sampling_rate,
         signal_unit=signal_unit,
+        overwrite=overwrite,
     )
     if ctx:
         await ctx.info(f"Loaded signal '{info['signal_id']}': {info['num_samples']} samples, {info['size_bytes'] / 1024:.1f} KB")

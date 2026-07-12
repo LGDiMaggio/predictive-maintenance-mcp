@@ -1,4 +1,8 @@
-"""Tests for MCP diagnostics tools (ISO 13374 Blocks 3-4)."""
+"""Tests for MCP diagnostics tools (ISO 13374 Blocks 3-4).
+
+Since U8 every diagnostics tool takes signal_id as its only signal handle:
+signals are loaded once via the repository and referenced by id.
+"""
 
 import json
 import pytest
@@ -10,6 +14,7 @@ from unittest.mock import AsyncMock
 from mcp.server.fastmcp import FastMCP
 
 from predictive_maintenance_mcp.mcp_tools.diagnostics_tools import register
+from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
 
 
 # ---------------------------------------------------------------------------
@@ -86,21 +91,31 @@ def mock_ctx():
     return ctx
 
 
+@pytest.fixture
+def repo(data_dir):
+    """Repository with the diagnostics signals loaded; cleaned afterwards."""
+    repo = get_repository()
+    repo.clear_all()
+    repo.load_signal("normal.csv")    # metadata: fs=10000, unit 'g'
+    repo.load_signal("iso_test.csv")  # metadata: fs=10000, unit 'g'
+    yield repo
+    repo.clear_all()
+
+
 # ---------------------------------------------------------------------------
 # ISO 20816 evaluation
 # ---------------------------------------------------------------------------
 
 class TestEvaluateISO20816:
-    """Tests for evaluate_iso_20816 tool."""
+    """Tests for evaluate_iso_20816 tool (signal_id handle)."""
 
     @pytest.mark.asyncio
-    async def test_returns_result(self, tools, data_dir, mock_ctx):
+    async def test_returns_result(self, tools, repo, mock_ctx):
         result = await tools["evaluate_iso_20816"](
             ctx=mock_ctx,
-            signal_file="iso_test.csv",
+            signal_id="iso_test",
             machine_group=2,
             support_type="rigid",
-            sampling_rate=10000.0,
         )
         assert result is not None
         # Should have a zone classification
@@ -175,16 +190,19 @@ class TestAnomalyDetection:
     """Tests for train_anomaly_model and predict_anomalies tools."""
 
     @pytest.fixture
-    def training_signals(self, data_dir):
-        """Create multiple training signal files."""
+    def training_signals(self, data_dir, repo):
+        """Create training signal files and load them as a BATCH (U8)."""
         fs = 10000
+        files = []
         for i in range(5):
             t = np.linspace(0, 1.0, fs, endpoint=False)
             sig = 0.05 * np.random.randn(len(t))
             pd.DataFrame(sig).to_csv(data_dir / f"train_{i}.csv", index=False, header=False)
             with open(data_dir / f"train_{i}_metadata.json", "w") as f:
                 json.dump({"sampling_rate": fs}, f)
-        return [f"train_{i}.csv" for i in range(5)]
+            files.append(f"train_{i}.csv")
+        infos = repo.load_signals(files)
+        return [info["signal_id"] for info in infos]
 
     @pytest.mark.asyncio
     async def test_train_and_predict(self, tools, data_dir, mock_ctx, training_signals):
@@ -193,9 +211,8 @@ class TestAnomalyDetection:
 
         # Train
         train_result = await tools["train_anomaly_model"](
-            healthy_signal_files=training_signals,
+            healthy_signal_ids=training_signals,
             model_name="test_model",
-            sampling_rate=10000.0,
             segment_duration=0.5,
             ctx=mock_ctx,
         )
@@ -206,7 +223,7 @@ class TestAnomalyDetection:
             pytest.skip("predict_anomalies not registered")
 
         predict_result = await tools["predict_anomalies"](
-            signal_file="train_0.csv",
+            signal_id="train_0",
             model_name="test_model",
             ctx=mock_ctx,
         )
@@ -244,75 +261,76 @@ class TestDiagnoseVibration:
 # ---------------------------------------------------------------------------
 
 class TestEvaluateISO20816Extended:
-    """Additional coverage for evaluate_iso_20816 tool."""
+    """Additional coverage for evaluate_iso_20816 tool (signal_id handle)."""
 
     @pytest.mark.asyncio
-    async def test_zone_classification_is_valid(self, tools, data_dir, mock_ctx):
+    async def test_zone_classification_is_valid(self, tools, repo, mock_ctx):
         """Zone must be one of A/B/C/D."""
         result = await tools["evaluate_iso_20816"](
             ctx=mock_ctx,
-            signal_file="iso_test.csv",
+            signal_id="iso_test",
             machine_group=2,
             support_type="rigid",
-            sampling_rate=10000.0,
         )
         assert result.zone in ("A", "B", "C", "D")
         assert result.rms_velocity > 0
 
     @pytest.mark.asyncio
-    async def test_flexible_support(self, tools, data_dir, mock_ctx):
+    async def test_flexible_support(self, tools, repo, mock_ctx):
         """Flexible support uses different zone boundaries."""
         result = await tools["evaluate_iso_20816"](
             ctx=mock_ctx,
-            signal_file="iso_test.csv",
+            signal_id="iso_test",
             machine_group=2,
             support_type="flexible",
-            sampling_rate=10000.0,
         )
         assert result.zone in ("A", "B", "C", "D")
         # Flexible boundaries are larger than rigid: AB=2.3 vs 1.4
         assert result.boundary_ab == 2.3
 
     @pytest.mark.asyncio
-    async def test_group1_rigid(self, tools, data_dir, mock_ctx):
+    async def test_group1_rigid(self, tools, repo, mock_ctx):
         """Group 1 rigid machines use different thresholds."""
         result = await tools["evaluate_iso_20816"](
             ctx=mock_ctx,
-            signal_file="iso_test.csv",
+            signal_id="iso_test",
             machine_group=1,
             support_type="rigid",
-            sampling_rate=10000.0,
         )
         assert result.machine_group == 1
         assert result.boundary_ab == 2.3
 
     @pytest.mark.asyncio
-    async def test_group1_flexible(self, tools, data_dir, mock_ctx):
+    async def test_group1_flexible(self, tools, repo, mock_ctx):
         """Group 1 flexible machines."""
         result = await tools["evaluate_iso_20816"](
             ctx=mock_ctx,
-            signal_file="iso_test.csv",
+            signal_id="iso_test",
             machine_group=1,
             support_type="flexible",
-            sampling_rate=10000.0,
         )
         assert result.boundary_ab == 3.5
 
     @pytest.mark.asyncio
-    async def test_explicit_signal_unit_g(self, tools, data_dir, mock_ctx):
-        """Passing signal_unit='g' explicitly should still work."""
+    async def test_unit_declared_at_load_time(self, tools, data_dir, repo, mock_ctx):
+        """The unit declared via load_signal(signal_unit=...) drives the
+        evaluation (the tool itself no longer takes a unit parameter)."""
+        fs = 10000
+        t = np.linspace(0, 2.0, 2 * fs, endpoint=False)
+        sig = 0.5 * np.sin(2 * np.pi * 50 * t)
+        pd.DataFrame(sig).to_csv(data_dir / "load_unit.csv", index=False, header=False)
+        repo.load_signal("load_unit.csv", sampling_rate=fs, signal_unit="g")
+
         result = await tools["evaluate_iso_20816"](
             ctx=mock_ctx,
-            signal_file="iso_test.csv",
+            signal_id="load_unit",
             machine_group=2,
             support_type="rigid",
-            sampling_rate=10000.0,
-            signal_unit="g",
         )
         assert result.rms_velocity > 0
 
     @pytest.mark.asyncio
-    async def test_velocity_signal_mm_s(self, tools, data_dir, mock_ctx):
+    async def test_velocity_signal_mm_s(self, tools, data_dir, repo, mock_ctx):
         """Signal already in mm/s should skip conversion."""
         # Create a velocity signal in mm/s
         fs = 10000
@@ -321,61 +339,59 @@ class TestEvaluateISO20816Extended:
         pd.DataFrame(vel_signal).to_csv(data_dir / "vel_signal.csv", index=False, header=False)
         with open(data_dir / "vel_signal_metadata.json", "w") as f:
             json.dump({"sampling_rate": fs, "signal_unit": "mm/s"}, f)
+        repo.load_signal("vel_signal.csv")
 
         result = await tools["evaluate_iso_20816"](
             ctx=mock_ctx,
-            signal_file="vel_signal.csv",
+            signal_id="vel_signal",
             machine_group=2,
             support_type="rigid",
-            sampling_rate=10000.0,
         )
         assert result.rms_velocity > 0
         # For a 3.0 mm/s amplitude sine, RMS ~ 2.12
         assert result.zone in ("A", "B", "C", "D")
 
     @pytest.mark.asyncio
-    async def test_missing_file_raises(self, tools, data_dir, mock_ctx):
-        """Requesting a non-existent file should raise FileNotFoundError."""
-        with pytest.raises(FileNotFoundError):
+    async def test_signal_not_loaded_raises(self, tools, repo, mock_ctx):
+        """Unknown signal_id → standard error naming load_signal."""
+        with pytest.raises(ValueError, match="load_signal"):
             await tools["evaluate_iso_20816"](
                 ctx=mock_ctx,
-                signal_file="nonexistent.csv",
+                signal_id="nonexistent",
                 machine_group=2,
                 support_type="rigid",
-                sampling_rate=10000.0,
             )
 
     @pytest.mark.asyncio
-    async def test_operating_speed_rpm_low(self, tools, data_dir, mock_ctx):
+    async def test_operating_speed_rpm_low(self, tools, repo, mock_ctx):
         """Low RPM should use 2-1000 Hz frequency range."""
         result = await tools["evaluate_iso_20816"](
             ctx=mock_ctx,
-            signal_file="iso_test.csv",
+            signal_id="iso_test",
             machine_group=2,
             support_type="rigid",
-            sampling_rate=10000.0,
             operating_speed_rpm=400.0,
         )
         assert result.operating_speed_rpm == 400.0
         assert "2-1000" in result.frequency_range
 
     @pytest.mark.asyncio
-    async def test_no_metadata_no_explicit_rate_raises(self, tools, data_dir, mock_ctx):
-        """No metadata + no sampling_rate → structured error, no silent 10 kHz."""
-        # Create a signal with no metadata file
+    async def test_stored_signal_without_rate_raises(self, tools, data_dir, repo, mock_ctx):
+        """Signal stored without a rate → structured error, no silent 10 kHz."""
         fs = 10000
         t = np.linspace(0, 1.0, fs, endpoint=False)
         sig = 0.1 * np.random.randn(len(t))
         pd.DataFrame(sig).to_csv(data_dir / "no_meta.csv", index=False, header=False)
+        repo.load_signal("no_meta.csv")  # no metadata → no rate
 
         with pytest.raises(ValueError, match="No sampling rate"):
             await tools["evaluate_iso_20816"](
                 ctx=mock_ctx,
-                signal_file="no_meta.csv",
+                signal_id="no_meta",
             )
 
     @pytest.mark.asyncio
-    async def test_undeclared_unit_raises(self, tools, data_dir, mock_ctx):
+    async def test_undeclared_unit_raises(self, tools, data_dir, repo, mock_ctx):
         """Rate known but unit undeclared → structured error naming the fix
         (no RMS-based 'HYPOTHESIS ... PROCEEDING' guess)."""
         fs = 10000
@@ -385,25 +401,16 @@ class TestEvaluateISO20816Extended:
         pd.DataFrame(sig).to_csv(data_dir / "no_unit.csv", index=False, header=False)
         with open(data_dir / "no_unit_metadata.json", "w") as f:
             json.dump({"sampling_rate": fs}, f)  # rate but NO signal_unit
+        repo.load_signal("no_unit.csv")
 
         with pytest.raises(ValueError, match="unit not declared"):
             await tools["evaluate_iso_20816"](
                 ctx=mock_ctx,
-                signal_file="no_unit.csv",
+                signal_id="no_unit",
             )
 
     @pytest.mark.asyncio
-    async def test_invalid_unit_raises(self, tools, data_dir, mock_ctx):
-        with pytest.raises(ValueError, match="Invalid signal_unit"):
-            await tools["evaluate_iso_20816"](
-                ctx=mock_ctx,
-                signal_file="iso_test.csv",
-                sampling_rate=10000.0,
-                signal_unit="furlongs",
-            )
-
-    @pytest.mark.asyncio
-    async def test_velocity_declared_unit_no_integration(self, tools, data_dir, mock_ctx):
+    async def test_velocity_declared_unit_no_integration(self, tools, data_dir, repo, mock_ctx):
         """mm/s declared → severity without acc→vel integration, correct zone."""
         fs = 10000
         t = np.linspace(0, 2.0, 2 * fs, endpoint=False)
@@ -412,10 +419,11 @@ class TestEvaluateISO20816Extended:
         pd.DataFrame(vel).to_csv(data_dir / "vel4.csv", index=False, header=False)
         with open(data_dir / "vel4_metadata.json", "w") as f:
             json.dump({"sampling_rate": fs, "signal_unit": "mm/s"}, f)
+        repo.load_signal("vel4.csv")
 
         result = await tools["evaluate_iso_20816"](
             ctx=mock_ctx,
-            signal_file="vel4.csv",
+            signal_id="vel4",
             machine_group=2,
             support_type="rigid",
         )
@@ -571,21 +579,25 @@ class TestAnomalyDetectionExtended:
     """Additional coverage for anomaly detection tools."""
 
     @pytest.fixture
-    def training_signals(self, data_dir):
-        """Create multiple training signal files."""
+    def training_signals(self, data_dir, repo):
+        """Create training signal files and load them as a BATCH (U8)."""
         fs = 10000
+        files = []
         for i in range(5):
             t = np.linspace(0, 1.0, fs, endpoint=False)
             sig = 0.05 * np.random.randn(len(t))
             pd.DataFrame(sig).to_csv(data_dir / f"train_{i}.csv", index=False, header=False)
             with open(data_dir / f"train_{i}_metadata.json", "w") as f:
                 json.dump({"sampling_rate": fs}, f)
-        return [f"train_{i}.csv" for i in range(5)]
+            files.append(f"train_{i}.csv")
+        infos = repo.load_signals(files)
+        return [info["signal_id"] for info in infos]
 
     @pytest.fixture
-    def fault_signals(self, data_dir):
-        """Create fault signal files with higher amplitude."""
+    def fault_signals(self, data_dir, repo):
+        """Create fault signal files (higher amplitude) and load them."""
         fs = 10000
+        files = []
         for i in range(3):
             t = np.linspace(0, 1.0, fs, endpoint=False)
             # Much higher amplitude + periodic component to simulate fault
@@ -593,7 +605,9 @@ class TestAnomalyDetectionExtended:
             pd.DataFrame(sig).to_csv(data_dir / f"fault_{i}.csv", index=False, header=False)
             with open(data_dir / f"fault_{i}_metadata.json", "w") as f:
                 json.dump({"sampling_rate": fs}, f)
-        return [f"fault_{i}.csv" for i in range(3)]
+            files.append(f"fault_{i}.csv")
+        infos = repo.load_signals(files)
+        return [info["signal_id"] for info in infos]
 
     @pytest.mark.asyncio
     async def test_train_lof_model(self, tools, data_dir, mock_ctx, training_signals):
@@ -602,9 +616,8 @@ class TestAnomalyDetectionExtended:
             pytest.skip("train_anomaly_model not registered")
 
         result = await tools["train_anomaly_model"](
-            healthy_signal_files=training_signals,
+            healthy_signal_ids=training_signals,
             model_name="lof_model",
-            sampling_rate=10000.0,
             segment_duration=0.5,
             model_type="LocalOutlierFactor",
             ctx=mock_ctx,
@@ -620,45 +633,57 @@ class TestAnomalyDetectionExtended:
 
         with pytest.raises(ValueError, match="Unknown model_type"):
             await tools["train_anomaly_model"](
-                healthy_signal_files=training_signals,
+                healthy_signal_ids=training_signals,
                 model_name="bad_model",
-                sampling_rate=10000.0,
                 segment_duration=0.5,
                 model_type="InvalidModel",
                 ctx=mock_ctx,
             )
 
     @pytest.mark.asyncio
-    async def test_predict_missing_model(self, tools, data_dir, mock_ctx):
+    async def test_train_unloaded_ids_fail_fast(self, tools, data_dir, repo, mock_ctx):
+        """Training with an unloaded signal_id raises the standard error —
+        no silent skipping that would train a misleading model."""
+        if "train_anomaly_model" not in tools:
+            pytest.skip("train_anomaly_model not registered")
+
+        with pytest.raises(ValueError, match="load_signal"):
+            await tools["train_anomaly_model"](
+                healthy_signal_ids=["__not_loaded__"],
+                model_name="never_written",
+                ctx=mock_ctx,
+            )
+
+    @pytest.mark.asyncio
+    async def test_predict_missing_model(self, tools, data_dir, repo, mock_ctx):
         """Predicting with non-existent model should raise FileNotFoundError."""
         if "predict_anomalies" not in tools:
             pytest.skip("predict_anomalies not registered")
 
         with pytest.raises(FileNotFoundError, match="Model not found"):
             await tools["predict_anomalies"](
-                signal_file="normal.csv",
+                signal_id="normal",
                 model_name="nonexistent_model",
                 ctx=mock_ctx,
             )
 
     @pytest.mark.asyncio
     async def test_predict_missing_signal(self, tools, data_dir, mock_ctx, training_signals):
-        """Predicting on non-existent signal should raise FileNotFoundError."""
+        """Predicting on an unloaded signal_id should raise the standard error."""
         if "train_anomaly_model" not in tools or "predict_anomalies" not in tools:
             pytest.skip("tools not registered")
 
         # Train first
         await tools["train_anomaly_model"](
-            healthy_signal_files=training_signals,
+            healthy_signal_ids=training_signals,
             model_name="pred_test_model",
-            sampling_rate=10000.0,
             segment_duration=0.5,
             ctx=mock_ctx,
         )
 
-        with pytest.raises(FileNotFoundError):
+        with pytest.raises(ValueError, match="load_signal"):
             await tools["predict_anomalies"](
-                signal_file="missing_signal.csv",
+                signal_id="missing_signal",
                 model_name="pred_test_model",
                 ctx=mock_ctx,
             )
@@ -670,10 +695,9 @@ class TestAnomalyDetectionExtended:
             pytest.skip("train_anomaly_model not registered")
 
         result = await tools["train_anomaly_model"](
-            healthy_signal_files=training_signals,
-            fault_signal_files=fault_signals,
+            healthy_signal_ids=training_signals,
+            fault_signal_ids=fault_signals,
             model_name="semi_svm",
-            sampling_rate=10000.0,
             segment_duration=0.5,
             model_type="OneClassSVM",
             ctx=mock_ctx,
@@ -688,10 +712,9 @@ class TestAnomalyDetectionExtended:
             pytest.skip("train_anomaly_model not registered")
 
         result = await tools["train_anomaly_model"](
-            healthy_signal_files=training_signals,
-            fault_signal_files=fault_signals,
+            healthy_signal_ids=training_signals,
+            fault_signal_ids=fault_signals,
             model_name="semi_lof",
-            sampling_rate=10000.0,
             segment_duration=0.5,
             model_type="LocalOutlierFactor",
             ctx=mock_ctx,
@@ -706,14 +729,13 @@ class TestAnomalyDetectionExtended:
             pytest.skip("tools not registered")
 
         await tools["train_anomaly_model"](
-            healthy_signal_files=training_signals,
+            healthy_signal_ids=training_signals,
             model_name="health_model",
-            sampling_rate=10000.0,
             segment_duration=0.5,
             ctx=mock_ctx,
         )
         result = await tools["predict_anomalies"](
-            signal_file="train_0.csv",
+            signal_id="train_0",
             model_name="health_model",
             ctx=mock_ctx,
         )
@@ -879,18 +901,17 @@ class TestBearingCatalogTools:
 # ---------------------------------------------------------------------------
 
 class TestPlotISO20816Chart:
-    """Tests for plot_iso_20816_chart tool."""
+    """Tests for plot_iso_20816_chart tool (signal_id handle)."""
 
     @pytest.mark.asyncio
-    async def test_generates_html(self, tools, data_dir, mock_ctx, tmp_path):
+    async def test_generates_html(self, tools, repo, mock_ctx, tmp_path):
         """Chart tool should generate an HTML file."""
         if "plot_iso_20816_chart" not in tools:
             pytest.skip("plot_iso_20816_chart not registered")
 
         result = await tools["plot_iso_20816_chart"](
             ctx=mock_ctx,
-            filename="iso_test.csv",
-            sampling_rate=10000.0,
+            signal_id="iso_test",
             machine_group=2,
             support_type="rigid",
         )

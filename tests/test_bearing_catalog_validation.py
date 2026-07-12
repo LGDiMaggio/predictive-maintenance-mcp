@@ -317,7 +317,16 @@ def analysis_tools_env(tmp_path, monkeypatch):
 
     server = FastMCP("test-envelope-honesty")
     register(server)
-    return {t.name: t.fn for t in server._tool_manager._tools.values()}
+    tools = {t.name: t.fn for t in server._tool_manager._tools.values()}
+
+    from predictive_maintenance_mcp.signal_acquisition.repository import (
+        get_repository,
+    )
+
+    repo = get_repository()
+    repo.load_signal("env_test.csv", overwrite=True)  # metadata: fs + 'g'
+    yield tools
+    repo.clear_signal("env_test")
 
 
 class TestNoFictitiousReferenceInEnvelopeOutput:
@@ -327,7 +336,7 @@ class TestNoFictitiousReferenceInEnvelopeOutput:
     async def test_diagnosis_contains_no_hardcoded_reference(self, analysis_tools_env):
         ctx = AsyncMock()
         result = await analysis_tools_env["analyze_envelope"](
-            ctx=ctx, filename="env_test.csv", sampling_rate=10000.0
+            ctx=ctx, signal_id="env_test"
         )
         assert result.diagnosis is not None
         assert "81.13" not in result.diagnosis
@@ -339,7 +348,7 @@ class TestNoFictitiousReferenceInEnvelopeOutput:
         compute frequencies for their actual bearing."""
         ctx = AsyncMock()
         result = await analysis_tools_env["analyze_envelope"](
-            ctx=ctx, filename="env_test.csv", sampling_rate=10000.0
+            ctx=ctx, signal_id="env_test"
         )
         assert "search_bearing_catalog" in result.diagnosis
         assert "calculate_bearing_characteristic_frequencies" in result.diagnosis

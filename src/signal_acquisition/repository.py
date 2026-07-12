@@ -78,129 +78,152 @@ class SignalRepository:
         signal_id: Optional[str] = None,
         sampling_rate: Optional[float] = None,
         signal_unit: Optional[str] = None,
+        overwrite: bool = False,
     ) -> dict:
         """Load a signal file into the repository.
 
         Args:
             filepath: Filename relative to DATA_DIR, or absolute path.
-            signal_id: Custom ID. Defaults to the filename stem.
+            signal_id: Custom ID. Defaults to the file's path relative to
+                DATA_DIR with separators replaced by underscores (e.g.
+                'real_train/baseline_1.csv' -> 'real_train_baseline_1'),
+                or the filename stem for files outside DATA_DIR.
             sampling_rate: Override sampling rate (Hz). Takes precedence
                 over the companion metadata file.
             signal_unit: Declared signal unit — 'g', 'm/s2', 'mm/s', or
                 'm/s'. Takes precedence over the companion metadata file.
                 Required (here or in metadata) for ISO severity verdicts;
                 units are never guessed from amplitude.
+            overwrite: Replace an existing entry with the same signal_id.
+                Without it a collision is an explicit error, so two files
+                that derive the same id can never silently shadow each
+                other.
 
         Returns:
             Metadata dict compatible with StoredSignalInfo.
 
         Raises:
             FileNotFoundError: If signal file does not exist.
-            ValueError: If signal data cannot be loaded, or if signal_unit
-                is not one of the valid units.
+            ValueError: If signal data cannot be loaded, if signal_unit is
+                not one of the valid units, or if signal_id collides with
+                an existing entry and overwrite is False.
         """
-        # Validate the explicitly declared unit up front (fail fast).
-        declared_unit: Optional[str] = None
-        if signal_unit is not None:
-            declared_unit = normalize_signal_unit(signal_unit)
-            if declared_unit is None:
-                raise ValueError(
-                    f"Invalid signal_unit '{signal_unit}' — declare one of "
-                    f"{list(VALID_SIGNAL_UNITS)} ('g'/'m/s2' for acceleration, "
-                    f"'mm/s'/'m/s' for velocity)."
+        declared_unit = self._validate_unit(signal_unit)
+        entry = self._prepare_entry(filepath, signal_id, sampling_rate, declared_unit)
+        return self._insert_entry(entry, overwrite=overwrite)
+
+    def load_signals(
+        self,
+        filepaths: list[str],
+        sampling_rate: Optional[float] = None,
+        signal_unit: Optional[str] = None,
+        overwrite: bool = False,
+    ) -> list[dict]:
+        """Load a batch of signal files atomically (fail-fast, all-or-nothing).
+
+        All paths, derived signal_ids, and collisions are validated up
+        front; the arrays are then all read from disk BEFORE anything is
+        stored. On the first problem a single actionable ValueError names
+        the offending entries and nothing is loaded — the repository is
+        never left half-populated.
+
+        Args:
+            filepaths: Signal file paths (relative to DATA_DIR or absolute).
+                signal_ids are derived from each file's relative path.
+            sampling_rate: One sampling rate applied to every file
+                (overrides companion metadata). None = per-file metadata.
+            signal_unit: One declared unit applied to every file. None =
+                per-file metadata.
+            overwrite: Allow replacing existing entries with the same ids.
+
+        Returns:
+            One StoredSignalInfo-compatible dict per file, in input order.
+
+        Raises:
+            ValueError: Empty list, invalid unit, missing files, duplicate
+                or colliding signal_ids — raised BEFORE any signal is
+                stored.
+        """
+        if not filepaths:
+            raise ValueError(
+                "load_signal received an empty list — pass at least one "
+                "signal file path (see list_signals() for the files on disk)."
+            )
+        declared_unit = self._validate_unit(signal_unit)
+
+        # Phase 1: validate every path and every derived id up front.
+        problems: list[str] = []
+        planned: list[tuple[str, str]] = []  # (filepath, signal_id)
+        batch_ids: dict[str, str] = {}
+        for raw in filepaths:
+            fp = Path(raw)
+            if not fp.is_absolute():
+                fp = DATA_DIR / raw
+            sid = self._default_signal_id(fp)
+            if not fp.exists():
+                problems.append(f"'{raw}': file not found")
+                continue
+            if sid in batch_ids:
+                problems.append(
+                    f"'{raw}': derives signal_id '{sid}' already taken by "
+                    f"'{batch_ids[sid]}' in this batch"
                 )
-        # Resolve path
-        fp = Path(filepath)
-        if not fp.is_absolute():
-            fp = DATA_DIR / filepath
+                continue
+            if not overwrite:
+                with self._lock:
+                    already = sid in self._store
+                if already:
+                    problems.append(
+                        f"'{raw}': signal_id '{sid}' is already loaded "
+                        f"(pass overwrite=True to replace it)"
+                    )
+                    continue
+            batch_ids[sid] = raw
+            planned.append((raw, sid))
+        if problems:
+            raise ValueError(
+                "Batch load aborted, nothing was loaded — "
+                + "; ".join(problems)
+                + ". Fix these entries and retry (the repository is unchanged)."
+            )
 
-        if not fp.exists():
-            raise FileNotFoundError(f"Signal file not found: {fp}")
+        # Phase 2: read every array from disk before storing anything.
+        entries = [
+            self._prepare_entry(raw, sid, sampling_rate, declared_unit)
+            for raw, sid in planned
+        ]
 
-        # Determine signal_id
-        if signal_id is None:
-            signal_id = fp.stem
-
-        # Load data via existing loader (handles CSV, MAT, WAV, NPY, Parquet)
-        # load_signal_data expects filename relative to DATA_DIR
-        try:
-            rel = fp.relative_to(DATA_DIR)
-            data = load_signal_data(str(rel))
-        except (ValueError, TypeError):
-            # Absolute path outside DATA_DIR — load directly
-            data = load_signal_data(fp.name)
-            if data is None:
-                # Try loading with numpy/pandas directly
-                data = self._load_direct(fp)
-
-        if data is None:
-            raise ValueError(f"Unable to load signal from {filepath}")
-
-        # Read companion metadata. Precedence: explicitly declared
-        # parameter > companion _metadata.json > None (undeclared).
-        meta = self._read_metadata(fp)
-        if sampling_rate is not None:
-            meta["sampling_rate"] = sampling_rate
-        elif "sampling_rate" not in meta:
-            meta["sampling_rate"] = None
-        if declared_unit is not None:
-            meta["signal_unit"] = declared_unit
-
-        size_bytes = data.nbytes
-
-        with self._lock:
-            # If signal_id already exists, remove old entry first
-            if signal_id in self._store:
-                self._remove_entry(signal_id)
-
-            # Evict if needed
-            self._evict_if_needed(size_bytes)
-
-            # Store
-            now = datetime.now(timezone.utc).isoformat()
-            sr = meta.get("sampling_rate")
-            duration = float(len(data)) / sr if sr else None
-
-            info = {
-                "signal_id": signal_id,
-                "filepath": str(fp),
-                "load_timestamp": now,
-                "shape": list(data.shape),
-                "num_samples": len(data),
-                "sampling_rate": sr,
-                "duration_s": round(duration, 4) if duration else None,
-                "size_bytes": size_bytes,
-                "signal_unit": meta.get("signal_unit"),
-            }
-            self._store[signal_id] = {"array": data, "info": info}
-            self._current_memory += size_bytes
-
-        logger.info(
-            f"Loaded signal '{signal_id}': {len(data)} samples, "
-            f"{size_bytes / 1024:.1f} KB"
-        )
-        return info
+        # Phase 3: insert all.
+        return [self._insert_entry(e, overwrite=overwrite) for e in entries]
 
     def get_signal(self, signal_id: str) -> np.ndarray:
         """Get signal array by ID. Updates LRU order.
 
+        The returned array is a READ-ONLY view of the cached data: tools
+        may analyze it freely but cannot corrupt the cache in place
+        (in-place writes raise ``ValueError: assignment destination is
+        read-only``).
+
         Raises:
-            KeyError: If signal_id not found.
+            KeyError: If signal_id not found (message names the remedy).
         """
         with self._lock:
             if signal_id not in self._store:
-                raise KeyError(
-                    f"Signal '{signal_id}' not found. "
-                    f"Available: {list(self._store.keys())}"
-                )
+                raise KeyError(self._not_found_message(signal_id))
             self._store.move_to_end(signal_id)
-            return self._store[signal_id]["array"]
+            view = self._store[signal_id]["array"].view()
+            view.flags.writeable = False
+            return view
 
     def get_signal_info(self, signal_id: str) -> dict:
-        """Get metadata for a stored signal without touching LRU order."""
+        """Get metadata for a stored signal without touching LRU order.
+
+        Raises:
+            KeyError: If signal_id not found (message names the remedy).
+        """
         with self._lock:
             if signal_id not in self._store:
-                raise KeyError(f"Signal '{signal_id}' not found.")
+                raise KeyError(self._not_found_message(signal_id))
             return self._store[signal_id]["info"].copy()
 
     def list_signals(self) -> list[dict]:
@@ -237,6 +260,156 @@ class SignalRepository:
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
+
+    def _validate_unit(self, signal_unit: Optional[str]) -> Optional[str]:
+        """Normalize an explicitly declared unit or raise (fail fast)."""
+        if signal_unit is None:
+            return None
+        declared = normalize_signal_unit(signal_unit)
+        if declared is None:
+            raise ValueError(
+                f"Invalid signal_unit '{signal_unit}' — declare one of "
+                f"{list(VALID_SIGNAL_UNITS)} ('g'/'m/s2' for acceleration, "
+                f"'mm/s'/'m/s' for velocity)."
+            )
+        return declared
+
+    def _default_signal_id(self, fp: Path) -> str:
+        """Derive the default signal_id from the path relative to DATA_DIR.
+
+        'real_train/baseline_1.csv' -> 'real_train_baseline_1', so files
+        with the same name in different directories get DISTINCT ids
+        (stem-only ids let real_train/baseline_1 and real_test/baseline_1
+        silently shadow each other). Files outside DATA_DIR fall back to
+        the filename stem.
+        """
+        try:
+            rel = fp.relative_to(DATA_DIR)
+        except ValueError:
+            return fp.stem
+        return "_".join(rel.with_suffix("").parts)
+
+    def _not_found_message(self, signal_id: str) -> str:
+        """Standard actionable not-found message. Caller must hold lock."""
+        available = list(self._store.keys())
+        return (
+            f"Signal '{signal_id}' is not in the in-memory repository — it "
+            f"was never loaded, or it was evicted (least-recently-used "
+            f"signals are dropped when the cache exceeds its "
+            f"PMM_SIGNAL_CACHE_GB cap). Currently loaded: "
+            f"{available if available else 'none'}. Load it with "
+            f"load_signal(filepath=...); use list_signals() to see the "
+            f"files available on disk."
+        )
+
+    def _prepare_entry(
+        self,
+        filepath: str,
+        signal_id: Optional[str],
+        sampling_rate: Optional[float],
+        declared_unit: Optional[str],
+    ) -> dict:
+        """Resolve path/id, read the array and metadata — no store mutation."""
+        fp = Path(filepath)
+        if not fp.is_absolute():
+            fp = DATA_DIR / filepath
+
+        if not fp.exists():
+            raise FileNotFoundError(
+                f"Signal file not found: {fp} — use list_signals() to see "
+                f"the files available on disk."
+            )
+
+        if signal_id is None:
+            signal_id = self._default_signal_id(fp)
+
+        data = self._load_array(fp)
+        if data is None:
+            raise ValueError(
+                f"Unable to load signal from {filepath} — unsupported "
+                f"format or read error."
+            )
+
+        # Companion metadata. Precedence: explicitly declared parameter >
+        # companion _metadata.json > None (undeclared).
+        meta = self._read_metadata(fp)
+        if sampling_rate is not None:
+            meta["sampling_rate"] = sampling_rate
+        elif "sampling_rate" not in meta:
+            meta["sampling_rate"] = None
+        if declared_unit is not None:
+            meta["signal_unit"] = declared_unit
+
+        # Freeze the cached array: tools receive read-only views and can
+        # never corrupt the cache in place. The repository must OWN the
+        # memory (copy once if the loader returned a view into e.g. a
+        # pandas block), otherwise a caller could re-enable writing
+        # through the still-writeable ultimate base.
+        data = np.asarray(data)
+        if not data.flags.owndata:
+            data = data.copy()
+        data.setflags(write=False)
+
+        return {"signal_id": signal_id, "fp": fp, "data": data, "meta": meta}
+
+    def _insert_entry(self, entry: dict, overwrite: bool) -> dict:
+        """Insert a prepared entry into the store (collision-checked)."""
+        signal_id = entry["signal_id"]
+        data = entry["data"]
+        meta = entry["meta"]
+        size_bytes = data.nbytes
+
+        with self._lock:
+            if signal_id in self._store:
+                if not overwrite:
+                    existing = self._store[signal_id]["info"]["filepath"]
+                    raise ValueError(
+                        f"signal_id '{signal_id}' is already loaded (from "
+                        f"'{existing}') — pass overwrite=True to replace it, "
+                        f"or choose a different signal_id=..."
+                    )
+                self._remove_entry(signal_id)
+
+            self._evict_if_needed(size_bytes)
+
+            now = datetime.now(timezone.utc).isoformat()
+            sr = meta.get("sampling_rate")
+            duration = float(len(data)) / sr if sr else None
+
+            info = {
+                "signal_id": signal_id,
+                "filepath": str(entry["fp"]),
+                "load_timestamp": now,
+                "shape": list(data.shape),
+                "num_samples": len(data),
+                "sampling_rate": sr,
+                "duration_s": round(duration, 4) if duration else None,
+                "size_bytes": size_bytes,
+                "signal_unit": meta.get("signal_unit"),
+            }
+            self._store[signal_id] = {"array": data, "info": info}
+            self._current_memory += size_bytes
+
+        logger.info(
+            f"Loaded signal '{signal_id}': {len(data)} samples, "
+            f"{size_bytes / 1024:.1f} KB"
+        )
+        return info
+
+    def _load_array(self, fp: Path) -> Optional[np.ndarray]:
+        """Read the signal array for an already-resolved absolute path.
+
+        Files under DATA_DIR go through the shared loader; absolute paths
+        OUTSIDE DATA_DIR are read directly from THAT path — never via a
+        same-named file inside DATA_DIR (the old fallback passed fp.name to
+        the DATA_DIR-relative loader, silently loading the wrong file when
+        a name collision existed).
+        """
+        try:
+            rel = fp.relative_to(DATA_DIR)
+        except ValueError:
+            return self._load_direct(fp)
+        return load_signal_data(str(rel))
 
     def _remove_entry(self, signal_id: str) -> None:
         """Remove entry and update memory counter. Caller must hold lock."""

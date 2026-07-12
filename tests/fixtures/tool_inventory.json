@@ -42,10 +42,6 @@
       "is_async": true,
       "parameters": {
         "properties": {
-          "filename": {
-            "title": "Filename",
-            "type": "string"
-          },
           "filter_high": {
             "default": 2000.0,
             "title": "Filter High",
@@ -73,18 +69,6 @@
             "default": null,
             "title": "Random Seed"
           },
-          "sampling_rate": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Sampling Rate"
-          },
           "segment_duration": {
             "anyOf": [
               {
@@ -94,12 +78,16 @@
                 "type": "null"
               }
             ],
-            "default": null,
+            "default": 1.0,
             "title": "Segment Duration"
+          },
+          "signal_id": {
+            "title": "Signal Id",
+            "type": "string"
           }
         },
         "required": [
-          "filename"
+          "signal_id"
         ],
         "title": "analyze_envelopeArguments",
         "type": "object"
@@ -110,10 +98,6 @@
       "is_async": true,
       "parameters": {
         "properties": {
-          "filename": {
-            "title": "Filename",
-            "type": "string"
-          },
           "max_frequency": {
             "anyOf": [
               {
@@ -138,18 +122,6 @@
             "default": null,
             "title": "Random Seed"
           },
-          "sampling_rate": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Sampling Rate"
-          },
           "segment_duration": {
             "anyOf": [
               {
@@ -159,12 +131,16 @@
                 "type": "null"
               }
             ],
-            "default": null,
+            "default": 1.0,
             "title": "Segment Duration"
+          },
+          "signal_id": {
+            "title": "Signal Id",
+            "type": "string"
           }
         },
         "required": [
-          "filename"
+          "signal_id"
         ],
         "title": "analyze_fftArguments",
         "type": "object"
@@ -185,30 +161,18 @@
             "title": "Overlap Ratio",
             "type": "number"
           },
-          "sampling_rate": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Sampling Rate"
-          },
           "segment_duration": {
             "default": 0.1,
             "title": "Segment Duration",
             "type": "number"
           },
-          "signal_file": {
-            "title": "Signal File",
+          "signal_id": {
+            "title": "Signal Id",
             "type": "string"
           }
         },
         "required": [
-          "signal_file"
+          "signal_id"
         ],
         "title": "analyze_signal_trendArguments",
         "type": "object"
@@ -219,13 +183,13 @@
       "is_async": false,
       "parameters": {
         "properties": {
-          "filename": {
-            "title": "Filename",
+          "signal_id": {
+            "title": "Signal Id",
             "type": "string"
           }
         },
         "required": [
-          "filename"
+          "signal_id"
         ],
         "title": "analyze_statisticsArguments",
         "type": "object"
@@ -573,25 +537,13 @@
             "title": "Overlap Ratio",
             "type": "number"
           },
-          "sampling_rate": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Sampling Rate"
-          },
           "segment_duration": {
             "default": 0.1,
             "title": "Segment Duration",
             "type": "number"
           },
-          "signal_file": {
-            "title": "Signal File",
+          "signal_id": {
+            "title": "Signal Id",
             "type": "string"
           },
           "threshold_sigma": {
@@ -601,7 +553,7 @@
           }
         },
         "required": [
-          "signal_file"
+          "signal_id"
         ],
         "title": "detect_signal_degradation_onsetArguments",
         "type": "object"
@@ -756,33 +708,9 @@
             "default": null,
             "title": "Operating Speed Rpm"
           },
-          "sampling_rate": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Sampling Rate"
-          },
-          "signal_file": {
-            "title": "Signal File",
+          "signal_id": {
+            "title": "Signal Id",
             "type": "string"
-          },
-          "signal_unit": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Signal Unit"
           },
           "support_type": {
             "default": "rigid",
@@ -791,7 +719,7 @@
           }
         },
         "required": [
-          "signal_file"
+          "signal_id"
         ],
         "title": "evaluate_iso_20816Arguments",
         "type": "object"
@@ -807,30 +735,18 @@
             "title": "Overlap Ratio",
             "type": "number"
           },
-          "sampling_rate": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Sampling Rate"
-          },
           "segment_duration": {
             "default": 0.1,
             "title": "Segment Duration",
             "type": "number"
           },
-          "signal_file": {
-            "title": "Signal File",
+          "signal_id": {
+            "title": "Signal Id",
             "type": "string"
           }
         },
         "required": [
-          "signal_file"
+          "signal_id"
         ],
         "title": "extract_features_from_signalArguments",
         "type": "object"
@@ -868,8 +784,8 @@
             "title": "Sections",
             "type": "object"
           },
-          "signal_file": {
-            "title": "Signal File",
+          "signal_id": {
+            "title": "Signal Id",
             "type": "string"
           },
           "title": {
@@ -886,7 +802,7 @@
           }
         },
         "required": [
-          "signal_file",
+          "signal_id",
           "sections"
         ],
         "title": "generate_diagnostic_report_docxArguments",
@@ -933,25 +849,13 @@
             "title": "Num Peaks",
             "type": "integer"
           },
-          "sampling_rate": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Sampling Rate"
-          },
-          "signal_file": {
-            "title": "Signal File",
+          "signal_id": {
+            "title": "Signal Id",
             "type": "string"
           }
         },
         "required": [
-          "signal_file"
+          "signal_id"
         ],
         "title": "generate_envelope_reportArguments",
         "type": "object"
@@ -981,18 +885,6 @@
             "default": 0.5,
             "title": "Overlap Ratio",
             "type": "number"
-          },
-          "sampling_rate": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Sampling Rate"
           },
           "segment_duration": {
             "default": 0.1,
@@ -1044,25 +936,13 @@
             "default": null,
             "title": "Rotation Freq"
           },
-          "sampling_rate": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Sampling Rate"
-          },
-          "signal_file": {
-            "title": "Signal File",
+          "signal_id": {
+            "title": "Signal Id",
             "type": "string"
           }
         },
         "required": [
-          "signal_file"
+          "signal_id"
         ],
         "title": "generate_fft_reportArguments",
         "type": "object"
@@ -1090,20 +970,8 @@
             "default": null,
             "title": "Operating Speed Rpm"
           },
-          "sampling_rate": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Sampling Rate"
-          },
-          "signal_file": {
-            "title": "Signal File",
+          "signal_id": {
+            "title": "Signal Id",
             "type": "string"
           },
           "support_type": {
@@ -1113,7 +981,7 @@
           }
         },
         "required": [
-          "signal_file"
+          "signal_id"
         ],
         "title": "generate_iso_reportArguments",
         "type": "object"
@@ -1155,24 +1023,12 @@
             "title": "Overlap Ratio",
             "type": "number"
           },
-          "sampling_rate": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Sampling Rate"
-          },
           "segment_duration": {
             "default": 0.1,
             "title": "Segment Duration",
             "type": "number"
           },
-          "test_signal_files": {
+          "test_signal_ids": {
             "anyOf": [
               {
                 "items": {
@@ -1185,7 +1041,7 @@
               }
             ],
             "default": null,
-            "title": "Test Signal Files"
+            "title": "Test Signal Ids"
           },
           "true_labels": {
             "anyOf": [
@@ -1328,8 +1184,23 @@
       "parameters": {
         "properties": {
           "filepath": {
-            "title": "Filepath",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "title": "Filepath"
+          },
+          "overwrite": {
+            "default": false,
+            "title": "Overwrite",
+            "type": "boolean"
           },
           "sampling_rate": {
             "anyOf": [
@@ -1478,13 +1349,8 @@
             "default": null,
             "title": "Highlight Freqs"
           },
-          "sampling_rate": {
-            "default": 10000.0,
-            "title": "Sampling Rate",
-            "type": "number"
-          },
-          "signal_file": {
-            "title": "Signal File",
+          "signal_id": {
+            "title": "Signal Id",
             "type": "string"
           },
           "title": {
@@ -1501,7 +1367,7 @@
           }
         },
         "required": [
-          "signal_file"
+          "signal_id"
         ],
         "title": "plot_envelopeArguments",
         "type": "object"
@@ -1512,10 +1378,6 @@
       "is_async": true,
       "parameters": {
         "properties": {
-          "filename": {
-            "title": "Filename",
-            "type": "string"
-          },
           "machine_group": {
             "default": 1,
             "title": "Machine Group",
@@ -1533,21 +1395,9 @@
             "default": null,
             "title": "Operating Speed Rpm"
           },
-          "sampling_rate": {
-            "title": "Sampling Rate",
-            "type": "number"
-          },
-          "signal_unit": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Signal Unit"
+          "signal_id": {
+            "title": "Signal Id",
+            "type": "string"
           },
           "support_type": {
             "default": "rigid",
@@ -1556,8 +1406,7 @@
           }
         },
         "required": [
-          "filename",
-          "sampling_rate"
+          "signal_id"
         ],
         "title": "plot_iso_20816_chartArguments",
         "type": "object"
@@ -1568,18 +1417,13 @@
       "is_async": true,
       "parameters": {
         "properties": {
-          "sampling_rate": {
-            "default": 10000.0,
-            "title": "Sampling Rate",
-            "type": "number"
-          },
           "show_statistics": {
             "default": true,
             "title": "Show Statistics",
             "type": "boolean"
           },
-          "signal_file": {
-            "title": "Signal File",
+          "signal_id": {
+            "title": "Signal Id",
             "type": "string"
           },
           "time_range": {
@@ -1611,7 +1455,7 @@
           }
         },
         "required": [
-          "signal_file"
+          "signal_id"
         ],
         "title": "plot_signalArguments",
         "type": "object"
@@ -1659,13 +1503,8 @@
             "default": null,
             "title": "Rotation Freq"
           },
-          "sampling_rate": {
-            "default": 10000.0,
-            "title": "Sampling Rate",
-            "type": "number"
-          },
-          "signal_file": {
-            "title": "Signal File",
+          "signal_id": {
+            "title": "Signal Id",
             "type": "string"
           },
           "title": {
@@ -1682,7 +1521,7 @@
           }
         },
         "required": [
-          "signal_file"
+          "signal_id"
         ],
         "title": "plot_spectrumArguments",
         "type": "object"
@@ -1698,13 +1537,13 @@
             "title": "Model Name",
             "type": "string"
           },
-          "signal_file": {
-            "title": "Signal File",
+          "signal_id": {
+            "title": "Signal Id",
             "type": "string"
           }
         },
         "required": [
-          "signal_file"
+          "signal_id"
         ],
         "title": "predict_anomaliesArguments",
         "type": "object"
@@ -1781,7 +1620,7 @@
       "is_async": true,
       "parameters": {
         "properties": {
-          "fault_signal_files": {
+          "fault_signal_ids": {
             "anyOf": [
               {
                 "items": {
@@ -1794,16 +1633,16 @@
               }
             ],
             "default": null,
-            "title": "Fault Signal Files"
+            "title": "Fault Signal Ids"
           },
-          "healthy_signal_files": {
+          "healthy_signal_ids": {
             "items": {
               "type": "string"
             },
-            "title": "Healthy Signal Files",
+            "title": "Healthy Signal Ids",
             "type": "array"
           },
-          "healthy_validation_files": {
+          "healthy_validation_ids": {
             "anyOf": [
               {
                 "items": {
@@ -1816,7 +1655,7 @@
               }
             ],
             "default": null,
-            "title": "Healthy Validation Files"
+            "title": "Healthy Validation Ids"
           },
           "model_name": {
             "default": "anomaly_model",
@@ -1838,18 +1677,6 @@
             "title": "Pca Variance",
             "type": "number"
           },
-          "sampling_rate": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Sampling Rate"
-          },
           "segment_duration": {
             "default": 0.1,
             "title": "Segment Duration",
@@ -1857,7 +1684,7 @@
           }
         },
         "required": [
-          "healthy_signal_files"
+          "healthy_signal_ids"
         ],
         "title": "train_anomaly_modelArguments",
         "type": "object"

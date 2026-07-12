@@ -1,4 +1,8 @@
-"""Tests for MCP report generation tools (ISO 13374 Block 6)."""
+"""Tests for MCP report generation tools (ISO 13374 Block 6).
+
+Since U8 every report tool takes signal_id as its only signal handle:
+signals are loaded once via the repository and referenced by id.
+"""
 
 import json
 import pickle
@@ -6,7 +10,7 @@ import pytest
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock
 
 from mcp.server.fastmcp import FastMCP
 from sklearn.preprocessing import StandardScaler
@@ -14,6 +18,7 @@ from sklearn.decomposition import PCA
 from sklearn.svm import OneClassSVM
 
 from predictive_maintenance_mcp.mcp_tools.report_tools import register
+from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
 
 
 # ---------------------------------------------------------------------------
@@ -44,14 +49,23 @@ def data_dir(tmp_path, monkeypatch):
     with open(signals_dir / "report_test_metadata.json", "w") as f:
         json.dump({"sampling_rate": fs, "signal_unit": "g"}, f)
 
-    monkeypatch.setattr("predictive_maintenance_mcp.mcp_tools.report_tools.DATA_DIR", signals_dir)
     monkeypatch.setattr("predictive_maintenance_mcp.config.DATA_DIR", signals_dir)
     monkeypatch.setattr("predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR", signals_dir)
     monkeypatch.setattr("predictive_maintenance_mcp.signal_acquisition.repository.DATA_DIR", signals_dir)
     # generate_iso_report delegates to the modular evaluate_iso_20816
-    # (diagnostics_tools) since U6 — patch its DATA_DIR too.
+    # (diagnostics_tools) — patch its DATA_DIR too.
     monkeypatch.setattr("predictive_maintenance_mcp.mcp_tools.diagnostics_tools.DATA_DIR", signals_dir)
     return signals_dir
+
+
+@pytest.fixture
+def repo(data_dir):
+    """Repository with the report test signal loaded; cleaned afterwards."""
+    repo = get_repository()
+    repo.clear_all()
+    repo.load_signal("report_test.csv")  # metadata: fs=10000, unit 'g'
+    yield repo
+    repo.clear_all()
 
 
 @pytest.fixture
@@ -76,15 +90,17 @@ def mock_ctx():
     return ctx
 
 
-def _make_signal_file(signals_dir, name, fs=10000, duration=1.0, freq=50.0, noise=0.0):
-    """Helper: create a CSV signal file with optional metadata."""
+def _load_extra_signal(repo, signals_dir, name, fs=10000, duration=1.0,
+                       freq=50.0, noise=0.0, with_meta=True):
+    """Helper: create a CSV signal file and load it into the repository."""
     t = np.linspace(0, duration, int(fs * duration), endpoint=False)
     sig = np.sin(2 * np.pi * freq * t) + noise * np.random.randn(len(t))
     pd.DataFrame(sig).to_csv(signals_dir / name, index=False, header=False)
-    meta_path = signals_dir / name.replace(".csv", "_metadata.json")
-    with open(meta_path, "w") as f:
-        json.dump({"sampling_rate": fs, "signal_unit": "g"}, f)
-    return signals_dir / name
+    if with_meta:
+        meta_path = signals_dir / name.replace(".csv", "_metadata.json")
+        with open(meta_path, "w") as f:
+            json.dump({"sampling_rate": fs, "signal_unit": "g"}, f)
+    return repo.load_signal(name)["signal_id"]
 
 
 # ---------------------------------------------------------------------------
@@ -92,76 +108,55 @@ def _make_signal_file(signals_dir, name, fs=10000, duration=1.0, freq=50.0, nois
 # ---------------------------------------------------------------------------
 
 class TestPlotSignal:
-    """Tests for plot_signal tool."""
+    """Tests for plot_signal tool (signal_id handle)."""
 
     @pytest.mark.asyncio
-    async def test_creates_html(self, tools, data_dir, reports_dir, mock_ctx):
-        if "plot_signal" not in tools:
-            pytest.skip("plot_signal not registered")
-        result = await tools["plot_signal"](
-            signal_file="report_test.csv",
-            sampling_rate=10000.0,
-        )
+    async def test_creates_html(self, tools, repo, reports_dir, mock_ctx):
+        result = await tools["plot_signal"](signal_id="report_test")
         assert result is not None
 
     @pytest.mark.asyncio
-    async def test_plot_signal_with_time_range(self, tools, data_dir, reports_dir):
+    async def test_plot_signal_with_time_range(self, tools, repo, reports_dir):
         """plot_signal with time_range should produce a zoomed plot."""
-        if "plot_signal" not in tools:
-            pytest.skip("plot_signal not registered")
         result = await tools["plot_signal"](
-            signal_file="report_test.csv",
-            sampling_rate=10000.0,
+            signal_id="report_test",
             time_range=[0.1, 0.3],
         )
         assert "Interactive plot saved" in result
 
     @pytest.mark.asyncio
-    async def test_plot_signal_no_statistics(self, tools, data_dir, reports_dir):
+    async def test_plot_signal_no_statistics(self, tools, repo, reports_dir):
         """plot_signal with show_statistics=False omits reference lines."""
-        if "plot_signal" not in tools:
-            pytest.skip("plot_signal not registered")
         result = await tools["plot_signal"](
-            signal_file="report_test.csv",
-            sampling_rate=10000.0,
+            signal_id="report_test",
             show_statistics=False,
         )
         assert "Interactive plot saved" in result
 
     @pytest.mark.asyncio
-    async def test_plot_signal_custom_title(self, tools, data_dir, reports_dir):
+    async def test_plot_signal_custom_title(self, tools, repo, reports_dir):
         """plot_signal with custom title."""
-        if "plot_signal" not in tools:
-            pytest.skip("plot_signal not registered")
         result = await tools["plot_signal"](
-            signal_file="report_test.csv",
-            sampling_rate=10000.0,
+            signal_id="report_test",
             title="Custom Title Test",
         )
         assert "Interactive plot saved" in result
 
     @pytest.mark.asyncio
-    async def test_plot_signal_file_not_found(self, tools, data_dir, reports_dir):
-        """plot_signal should raise FileNotFoundError for missing file."""
-        if "plot_signal" not in tools:
-            pytest.skip("plot_signal not registered")
-        with pytest.raises(FileNotFoundError):
-            await tools["plot_signal"](
-                signal_file="nonexistent.csv",
-                sampling_rate=10000.0,
-            )
+    async def test_plot_signal_not_loaded(self, tools, repo, reports_dir):
+        """Unknown signal_id → standard error naming load_signal."""
+        with pytest.raises(ValueError, match="load_signal"):
+            await tools["plot_signal"](signal_id="nonexistent")
 
     @pytest.mark.asyncio
-    async def test_plot_signal_with_ctx(self, tools, data_dir, reports_dir, mock_ctx):
+    async def test_plot_signal_with_ctx(self, tools, repo, reports_dir, mock_ctx):
         """plot_signal with ctx should call ctx.info."""
-        if "plot_signal" not in tools:
-            pytest.skip("plot_signal not registered")
         result = await tools["plot_signal"](
-            signal_file="report_test.csv",
-            sampling_rate=10000.0,
+            signal_id="report_test",
             ctx=mock_ctx,
         )
         assert mock_ctx.info.call_count >= 1
+        assert "Interactive plot saved" in result
 
 
 # ---------------------------------------------------------------------------
@@ -169,51 +164,35 @@ class TestPlotSignal:
 # ---------------------------------------------------------------------------
 
 class TestPlotSpectrum:
-    """Tests for plot_spectrum tool."""
+    """Tests for plot_spectrum tool (signal_id handle)."""
 
     @pytest.mark.asyncio
-    async def test_creates_spectrum_html(self, tools, data_dir, reports_dir):
-        if "plot_spectrum" not in tools:
-            pytest.skip("plot_spectrum not registered")
-        result = await tools["plot_spectrum"](
-            signal_file="report_test.csv",
-            sampling_rate=10000.0,
-        )
+    async def test_creates_spectrum_html(self, tools, repo, reports_dir):
+        result = await tools["plot_spectrum"](signal_id="report_test")
         assert "Interactive plot saved" in result
 
     @pytest.mark.asyncio
-    async def test_spectrum_with_freq_range(self, tools, data_dir, reports_dir):
-        if "plot_spectrum" not in tools:
-            pytest.skip("plot_spectrum not registered")
+    async def test_spectrum_with_freq_range(self, tools, repo, reports_dir):
         result = await tools["plot_spectrum"](
-            signal_file="report_test.csv",
-            sampling_rate=10000.0,
+            signal_id="report_test",
             freq_range=[10.0, 200.0],
         )
         assert "Interactive plot saved" in result
 
     @pytest.mark.asyncio
-    async def test_spectrum_with_rotation_freq(self, tools, data_dir, reports_dir):
+    async def test_spectrum_with_rotation_freq(self, tools, repo, reports_dir):
         """Spectrum should label harmonics when rotation_freq is given."""
-        if "plot_spectrum" not in tools:
-            pytest.skip("plot_spectrum not registered")
         result = await tools["plot_spectrum"](
-            signal_file="report_test.csv",
-            sampling_rate=10000.0,
+            signal_id="report_test",
             rotation_freq=50.0,
             num_peaks=5,
         )
         assert "Interactive plot saved" in result
 
     @pytest.mark.asyncio
-    async def test_spectrum_file_not_found(self, tools, data_dir, reports_dir):
-        if "plot_spectrum" not in tools:
-            pytest.skip("plot_spectrum not registered")
-        with pytest.raises(FileNotFoundError):
-            await tools["plot_spectrum"](
-                signal_file="missing.csv",
-                sampling_rate=10000.0,
-            )
+    async def test_spectrum_signal_not_loaded(self, tools, repo, reports_dir):
+        with pytest.raises(ValueError, match="load_signal"):
+            await tools["plot_spectrum"](signal_id="missing")
 
 
 # ---------------------------------------------------------------------------
@@ -221,38 +200,27 @@ class TestPlotSpectrum:
 # ---------------------------------------------------------------------------
 
 class TestPlotEnvelope:
-    """Tests for plot_envelope tool."""
+    """Tests for plot_envelope tool (signal_id handle)."""
 
     @pytest.mark.asyncio
-    async def test_creates_envelope_html(self, tools, data_dir, reports_dir):
-        if "plot_envelope" not in tools:
-            pytest.skip("plot_envelope not registered")
+    async def test_creates_envelope_html(self, tools, repo, reports_dir):
         result = await tools["plot_envelope"](
-            signal_file="report_test.csv",
-            sampling_rate=10000.0,
+            signal_id="report_test",
             filter_band=[100.0, 4000.0],
         )
         assert "Interactive plot saved" in result
 
     @pytest.mark.asyncio
-    async def test_envelope_default_filter_band(self, tools, data_dir, reports_dir):
+    async def test_envelope_default_filter_band(self, tools, repo, reports_dir):
         """When filter_band is None, defaults to [500, 5000] and adjusts if needed."""
-        if "plot_envelope" not in tools:
-            pytest.skip("plot_envelope not registered")
-        result = await tools["plot_envelope"](
-            signal_file="report_test.csv",
-            sampling_rate=10000.0,
-        )
+        result = await tools["plot_envelope"](signal_id="report_test")
         assert "Interactive plot saved" in result
 
     @pytest.mark.asyncio
-    async def test_envelope_with_highlight_freqs(self, tools, data_dir, reports_dir):
+    async def test_envelope_with_highlight_freqs(self, tools, repo, reports_dir):
         """Envelope plot should mark highlighted bearing frequencies."""
-        if "plot_envelope" not in tools:
-            pytest.skip("plot_envelope not registered")
         result = await tools["plot_envelope"](
-            signal_file="report_test.csv",
-            sampling_rate=10000.0,
+            signal_id="report_test",
             filter_band=[100.0, 4000.0],
             freq_range=[0.0, 300.0],
             highlight_freqs=[50.0, 100.0],
@@ -261,37 +229,26 @@ class TestPlotEnvelope:
         assert "Interactive plot saved" in result
 
     @pytest.mark.asyncio
-    async def test_envelope_highlight_freqs_no_labels(self, tools, data_dir, reports_dir):
+    async def test_envelope_highlight_freqs_no_labels(self, tools, repo, reports_dir):
         """When highlight_freqs given but no labels, auto-generate labels."""
-        if "plot_envelope" not in tools:
-            pytest.skip("plot_envelope not registered")
         result = await tools["plot_envelope"](
-            signal_file="report_test.csv",
-            sampling_rate=10000.0,
+            signal_id="report_test",
             filter_band=[100.0, 4000.0],
             highlight_freqs=[50.0],
         )
         assert "Interactive plot saved" in result
 
     @pytest.mark.asyncio
-    async def test_envelope_file_not_found(self, tools, data_dir, reports_dir):
-        if "plot_envelope" not in tools:
-            pytest.skip("plot_envelope not registered")
-        with pytest.raises(FileNotFoundError):
-            await tools["plot_envelope"](
-                signal_file="missing.csv",
-                sampling_rate=10000.0,
-            )
+    async def test_envelope_signal_not_loaded(self, tools, repo, reports_dir):
+        with pytest.raises(ValueError, match="load_signal"):
+            await tools["plot_envelope"](signal_id="missing")
 
     @pytest.mark.asyncio
-    async def test_envelope_invalid_filter_band(self, tools, data_dir, reports_dir):
-        """Filter band exceeding Nyquist in a way that makes low >= 1 should raise."""
-        if "plot_envelope" not in tools:
-            pytest.skip("plot_envelope not registered")
+    async def test_envelope_invalid_filter_band(self, tools, repo, reports_dir):
+        """Filter band entirely above Nyquist should raise."""
         with pytest.raises(ValueError):
             await tools["plot_envelope"](
-                signal_file="report_test.csv",
-                sampling_rate=10000.0,
+                signal_id="report_test",
                 filter_band=[6000.0, 7000.0],  # both above Nyquist (5000)
             )
 
@@ -304,8 +261,6 @@ class TestListReports:
     """Tests for list_html_reports tool."""
 
     def test_empty_reports(self, tools, reports_dir):
-        if "list_html_reports" not in tools:
-            pytest.skip("list_html_reports not registered")
         result = tools["list_html_reports"]()
         assert result is not None
         assert isinstance(result, list)
@@ -313,16 +268,12 @@ class TestListReports:
 
     def test_finds_existing_report(self, tools, reports_dir):
         """Verify list_html_reports returns a list (report_generator uses its own REPORTS_DIR)."""
-        if "list_html_reports" not in tools:
-            pytest.skip("list_html_reports not registered")
         result = tools["list_html_reports"]()
         # Just verify it returns a list without error
         assert isinstance(result, list)
 
     def test_lists_html_files_with_metadata(self, tools, reports_dir):
         """list_html_reports should find HTML reports that contain metadata."""
-        if "list_html_reports" not in tools:
-            pytest.skip("list_html_reports not registered")
         # Create a fake HTML report with embedded metadata
         metadata = {"report_type": "fft_spectrum", "signal_file": "test.csv"}
         html_content = (
@@ -339,8 +290,6 @@ class TestListReports:
 
     def test_lists_ignores_html_without_metadata(self, tools, reports_dir):
         """HTML files without metadata block should be skipped."""
-        if "list_html_reports" not in tools:
-            pytest.skip("list_html_reports not registered")
         (reports_dir / "plain.html").write_text("<html><body>no metadata</body></html>")
         result = tools["list_html_reports"]()
         # File has no metadata so list_reports skips it (error branch)
@@ -357,14 +306,10 @@ class TestGetReportInfo:
     def test_report_not_found_raises(self, tools, reports_dir):
         """U6 error contract: a missing report is misuse — raise with an
         actionable message, never an error-shaped dict as success."""
-        if "get_report_info" not in tools:
-            pytest.skip("get_report_info not registered")
         with pytest.raises(ValueError, match="list_html_reports"):
             tools["get_report_info"](file_name="nonexistent.html")
 
     def test_report_found_with_metadata(self, tools, reports_dir):
-        if "get_report_info" not in tools:
-            pytest.skip("get_report_info not registered")
         metadata = {"report_type": "envelope", "signal_file": "sig.csv", "num_peaks": 10}
         html = (
             '<html><head>'
@@ -380,8 +325,6 @@ class TestGetReportInfo:
 
     def test_report_without_metadata_block_raises(self, tools, reports_dir):
         """Report file exists but has no metadata JSON block → raise."""
-        if "get_report_info" not in tools:
-            pytest.skip("get_report_info not registered")
         (reports_dir / "no_meta.html").write_text("<html><body>plain</body></html>")
         with pytest.raises(ValueError, match="Metadata not found"):
             tools["get_report_info"](file_name="no_meta.html")
@@ -392,69 +335,46 @@ class TestGetReportInfo:
 # ---------------------------------------------------------------------------
 
 class TestGenerateFFTReport:
-    """Tests for generate_fft_report tool."""
+    """Tests for generate_fft_report tool (signal_id handle)."""
 
     @pytest.mark.asyncio
-    async def test_generates_fft_report(self, tools, data_dir, reports_dir):
-        if "generate_fft_report" not in tools:
-            pytest.skip("generate_fft_report not registered")
-        result = await tools["generate_fft_report"](
-            signal_file="report_test.csv",
-            sampling_rate=10000.0,
-        )
+    async def test_generates_fft_report(self, tools, repo, reports_dir):
+        result = await tools["generate_fft_report"](signal_id="report_test")
         assert "file_path" in result
         assert Path(result["file_path"]).exists()
 
     @pytest.mark.asyncio
-    async def test_fft_report_auto_detect_sampling_rate(self, tools, data_dir, reports_dir):
-        """generate_fft_report auto-detects sampling_rate from metadata."""
-        if "generate_fft_report" not in tools:
-            pytest.skip("generate_fft_report not registered")
-        result = await tools["generate_fft_report"](
-            signal_file="report_test.csv",
-            # sampling_rate not specified; should be read from metadata
-        )
+    async def test_fft_report_uses_stored_sampling_rate(self, tools, repo, reports_dir):
+        """The rate comes from the stored signal (declared at load time)."""
+        result = await tools["generate_fft_report"](signal_id="report_test")
         assert "file_path" in result
 
     @pytest.mark.asyncio
-    async def test_fft_report_with_rotation_freq(self, tools, data_dir, reports_dir):
-        if "generate_fft_report" not in tools:
-            pytest.skip("generate_fft_report not registered")
+    async def test_fft_report_with_rotation_freq(self, tools, repo, reports_dir):
         result = await tools["generate_fft_report"](
-            signal_file="report_test.csv",
-            sampling_rate=10000.0,
+            signal_id="report_test",
             rotation_freq=50.0,
         )
         assert "file_path" in result
 
     @pytest.mark.asyncio
-    async def test_fft_report_no_sampling_rate_no_metadata(self, tools, data_dir, reports_dir):
-        """Should raise ValueError when no sampling_rate and no metadata."""
-        if "generate_fft_report" not in tools:
-            pytest.skip("generate_fft_report not registered")
-        # Create signal without metadata
+    async def test_fft_report_signal_without_rate(self, tools, data_dir, repo, reports_dir):
+        """A stored signal without a sampling rate → structured error."""
         sig = np.sin(2 * np.pi * 50 * np.linspace(0, 1, 1000, endpoint=False))
         pd.DataFrame(sig).to_csv(data_dir / "no_meta.csv", index=False, header=False)
-        with pytest.raises(ValueError, match="sampling_rate required"):
-            await tools["generate_fft_report"](signal_file="no_meta.csv")
+        repo.load_signal("no_meta.csv")  # no metadata → no rate
+        with pytest.raises(ValueError, match="No sampling rate"):
+            await tools["generate_fft_report"](signal_id="no_meta")
 
     @pytest.mark.asyncio
-    async def test_fft_report_missing_file(self, tools, data_dir, reports_dir):
-        if "generate_fft_report" not in tools:
-            pytest.skip("generate_fft_report not registered")
-        with pytest.raises((ValueError, FileNotFoundError)):
-            await tools["generate_fft_report"](
-                signal_file="does_not_exist.csv",
-                sampling_rate=10000.0,
-            )
+    async def test_fft_report_signal_not_loaded(self, tools, repo, reports_dir):
+        with pytest.raises(ValueError, match="load_signal"):
+            await tools["generate_fft_report"](signal_id="does_not_exist")
 
     @pytest.mark.asyncio
-    async def test_fft_report_with_ctx(self, tools, data_dir, reports_dir, mock_ctx):
-        if "generate_fft_report" not in tools:
-            pytest.skip("generate_fft_report not registered")
+    async def test_fft_report_with_ctx(self, tools, repo, reports_dir, mock_ctx):
         result = await tools["generate_fft_report"](
-            signal_file="report_test.csv",
-            sampling_rate=10000.0,
+            signal_id="report_test",
             ctx=mock_ctx,
         )
         assert mock_ctx.info.call_count >= 1
@@ -466,15 +386,12 @@ class TestGenerateFFTReport:
 # ---------------------------------------------------------------------------
 
 class TestGenerateEnvelopeReport:
-    """Tests for generate_envelope_report tool."""
+    """Tests for generate_envelope_report tool (signal_id handle)."""
 
     @pytest.mark.asyncio
-    async def test_generates_envelope_report(self, tools, data_dir, reports_dir):
-        if "generate_envelope_report" not in tools:
-            pytest.skip("generate_envelope_report not registered")
+    async def test_generates_envelope_report(self, tools, repo, reports_dir):
         result = await tools["generate_envelope_report"](
-            signal_file="report_test.csv",
-            sampling_rate=10000.0,
+            signal_id="report_test",
             filter_low=100.0,
             filter_high=4000.0,
         )
@@ -482,11 +399,11 @@ class TestGenerateEnvelopeReport:
         assert Path(result["file_path"]).exists()
 
     @pytest.mark.asyncio
-    async def test_envelope_report_auto_detect(self, tools, data_dir, reports_dir):
-        """Auto-detect sampling_rate and bearing_freqs from metadata."""
-        if "generate_envelope_report" not in tools:
-            pytest.skip("generate_envelope_report not registered")
-        # Add bearing freqs to metadata
+    async def test_envelope_report_bearing_freqs_from_companion_metadata(
+        self, tools, data_dir, repo, reports_dir
+    ):
+        """Optional bearing freqs are auto-read from the source file's
+        companion metadata when not passed explicitly."""
         meta_path = data_dir / "report_test_metadata.json"
         meta = json.loads(meta_path.read_text())
         # 6205 (CWRU geometry) at 1797 RPM
@@ -494,19 +411,16 @@ class TestGenerateEnvelopeReport:
         meta_path.write_text(json.dumps(meta))
 
         result = await tools["generate_envelope_report"](
-            signal_file="report_test.csv",
+            signal_id="report_test",
             filter_low=100.0,
             filter_high=4000.0,
         )
         assert "file_path" in result
 
     @pytest.mark.asyncio
-    async def test_envelope_report_with_bearing_freqs(self, tools, data_dir, reports_dir):
-        if "generate_envelope_report" not in tools:
-            pytest.skip("generate_envelope_report not registered")
+    async def test_envelope_report_with_bearing_freqs(self, tools, repo, reports_dir):
         result = await tools["generate_envelope_report"](
-            signal_file="report_test.csv",
-            sampling_rate=10000.0,
+            signal_id="report_test",
             filter_low=100.0,
             filter_high=4000.0,
             bearing_freqs={"BPFO": 81.0, "BPFI": 119.0, "BSF": 64.0, "FTF": 15.0},
@@ -514,23 +428,21 @@ class TestGenerateEnvelopeReport:
         assert "file_path" in result
 
     @pytest.mark.asyncio
-    async def test_envelope_report_no_sampling_rate_error(self, tools, data_dir, reports_dir):
-        """Should raise when sampling_rate cannot be determined."""
-        if "generate_envelope_report" not in tools:
-            pytest.skip("generate_envelope_report not registered")
+    async def test_envelope_report_signal_without_rate(
+        self, tools, data_dir, repo, reports_dir
+    ):
+        """Stored signal without a rate → structured error."""
         sig = np.random.randn(5000)
         pd.DataFrame(sig).to_csv(data_dir / "no_meta_env.csv", index=False, header=False)
-        with pytest.raises(ValueError, match="sampling_rate required"):
-            await tools["generate_envelope_report"](signal_file="no_meta_env.csv")
+        repo.load_signal("no_meta_env.csv")
+        with pytest.raises(ValueError, match="No sampling rate"):
+            await tools["generate_envelope_report"](signal_id="no_meta_env")
 
     @pytest.mark.asyncio
-    async def test_envelope_report_with_ctx_bearing_matches(self, tools, data_dir, reports_dir, mock_ctx):
+    async def test_envelope_report_with_ctx_bearing_matches(self, tools, repo, reports_dir, mock_ctx):
         """When bearing matches are found, ctx.info should report them."""
-        if "generate_envelope_report" not in tools:
-            pytest.skip("generate_envelope_report not registered")
-        result = await tools["generate_envelope_report"](
-            signal_file="report_test.csv",
-            sampling_rate=10000.0,
+        await tools["generate_envelope_report"](
+            signal_id="report_test",
             filter_low=100.0,
             filter_high=4000.0,
             bearing_freqs={"BPFO": 50.0, "BPFI": 100.0},
@@ -544,15 +456,12 @@ class TestGenerateEnvelopeReport:
 # ---------------------------------------------------------------------------
 
 class TestGenerateISOReport:
-    """Tests for generate_iso_report tool."""
+    """Tests for generate_iso_report tool (signal_id handle)."""
 
     @pytest.mark.asyncio
-    async def test_generates_iso_report(self, tools, data_dir, reports_dir, mock_ctx):
-        if "generate_iso_report" not in tools:
-            pytest.skip("generate_iso_report not registered")
+    async def test_generates_iso_report(self, tools, repo, reports_dir, mock_ctx):
         result = await tools["generate_iso_report"](
-            signal_file="report_test.csv",
-            sampling_rate=10000.0,
+            signal_id="report_test",
             machine_group=2,
             support_type="rigid",
             ctx=mock_ctx,
@@ -561,25 +470,59 @@ class TestGenerateISOReport:
         assert Path(result["file_path"]).exists()
 
     @pytest.mark.asyncio
-    async def test_iso_report_auto_detect_sampling_rate(self, tools, data_dir, reports_dir, mock_ctx):
-        if "generate_iso_report" not in tools:
-            pytest.skip("generate_iso_report not registered")
-        result = await tools["generate_iso_report"](
-            signal_file="report_test.csv",
-            machine_group=2,
-            support_type="rigid",
-            ctx=mock_ctx,
-        )
-        assert "file_path" in result
-
-    @pytest.mark.asyncio
-    async def test_iso_report_no_sampling_rate_error(self, tools, data_dir, reports_dir):
-        if "generate_iso_report" not in tools:
-            pytest.skip("generate_iso_report not registered")
+    async def test_iso_report_signal_without_rate(
+        self, tools, data_dir, repo, reports_dir
+    ):
         sig = np.random.randn(5000)
         pd.DataFrame(sig).to_csv(data_dir / "no_meta_iso.csv", index=False, header=False)
-        with pytest.raises(ValueError, match="sampling_rate required"):
-            await tools["generate_iso_report"](signal_file="no_meta_iso.csv")
+        repo.load_signal("no_meta_iso.csv")
+        with pytest.raises(ValueError, match="No sampling rate"):
+            await tools["generate_iso_report"](signal_id="no_meta_iso")
+
+    @pytest.mark.asyncio
+    async def test_iso_report_undeclared_unit_refused(
+        self, tools, data_dir, repo, reports_dir
+    ):
+        """Rate known but unit undeclared → structured error naming the fix."""
+        sig = np.random.randn(20000)
+        pd.DataFrame(sig).to_csv(data_dir / "no_unit_iso.csv", index=False, header=False)
+        repo.load_signal("no_unit_iso.csv", sampling_rate=10000)
+        with pytest.raises(ValueError, match="unit not declared"):
+            await tools["generate_iso_report"](signal_id="no_unit_iso")
+
+
+# ---------------------------------------------------------------------------
+# Load → analyze → report round-trip (R7 golden path)
+# ---------------------------------------------------------------------------
+
+class TestSignalIdRoundTrip:
+    """R7: load → analyze → report is walkable with ONE idiom (signal_id)."""
+
+    @pytest.mark.asyncio
+    async def test_load_analyze_report_single_idiom(
+        self, tools, data_dir, reports_dir, mock_ctx
+    ):
+        from predictive_maintenance_mcp.mcp_tools.acquisition_tools import (
+            load_signal,
+        )
+        from predictive_maintenance_mcp.mcp_tools.analysis_tools import (
+            analyze_fft,
+        )
+
+        repo = get_repository()
+        repo.clear_all()
+        try:
+            info = await load_signal(ctx=mock_ctx, filepath="report_test.csv")
+            sid = info.signal_id
+            assert sid == "report_test"
+
+            fft_result = await analyze_fft(ctx=mock_ctx, signal_id=sid)
+            assert abs(fft_result.peak_frequency - 50.0) < 2.0
+
+            report = await tools["generate_fft_report"](signal_id=sid)
+            assert Path(report["file_path"]).exists()
+        finally:
+            repo.clear_all()
 
 
 # ---------------------------------------------------------------------------
@@ -587,7 +530,7 @@ class TestGenerateISOReport:
 # ---------------------------------------------------------------------------
 
 class TestGeneratePCAReport:
-    """Tests for generate_pca_visualization_report tool."""
+    """Tests for generate_pca_visualization_report tool (signal_id handles)."""
 
     @pytest.fixture
     def models_dir(self, tmp_path, monkeypatch, data_dir):
@@ -620,10 +563,8 @@ class TestGeneratePCAReport:
         return md
 
     @pytest.mark.asyncio
-    async def test_pca_report_no_test_signals(self, tools, data_dir, reports_dir, models_dir, mock_ctx):
+    async def test_pca_report_no_test_signals(self, tools, repo, reports_dir, models_dir, mock_ctx):
         """PCA report with no test signals should still produce a report."""
-        if "generate_pca_visualization_report" not in tools:
-            pytest.skip("generate_pca_visualization_report not registered")
         result = await tools["generate_pca_visualization_report"](
             model_name="test_pca_model",
             ctx=mock_ctx,
@@ -633,13 +574,11 @@ class TestGeneratePCAReport:
         assert result["summary"]["total_segments"] == 0
 
     @pytest.mark.asyncio
-    async def test_pca_report_with_test_signals(self, tools, data_dir, reports_dir, models_dir, mock_ctx):
-        """PCA report with test signals should segment, predict, and produce a report."""
-        if "generate_pca_visualization_report" not in tools:
-            pytest.skip("generate_pca_visualization_report not registered")
+    async def test_pca_report_with_test_signals(self, tools, repo, reports_dir, models_dir, mock_ctx):
+        """PCA report with test signal_ids should segment, predict, and report."""
         result = await tools["generate_pca_visualization_report"](
             model_name="test_pca_model",
-            test_signal_files=["report_test.csv"],
+            test_signal_ids=["report_test"],
             segment_duration=0.1,
             overlap_ratio=0.5,
             ctx=mock_ctx,
@@ -648,14 +587,12 @@ class TestGeneratePCAReport:
         assert result["summary"]["total_segments"] > 0
 
     @pytest.mark.asyncio
-    async def test_pca_report_with_true_labels(self, tools, data_dir, reports_dir, models_dir, mock_ctx):
-        """PCA report with true_labels should compute validation metrics."""
-        if "generate_pca_visualization_report" not in tools:
-            pytest.skip("generate_pca_visualization_report not registered")
+    async def test_pca_report_with_true_labels(self, tools, repo, reports_dir, models_dir, mock_ctx):
+        """PCA report with true_labels (keyed by signal_id) computes metrics."""
         result = await tools["generate_pca_visualization_report"](
             model_name="test_pca_model",
-            test_signal_files=["report_test.csv"],
-            true_labels={"report_test.csv": "healthy"},
+            test_signal_ids=["report_test"],
+            true_labels={"report_test": "healthy"},
             segment_duration=0.1,
             ctx=mock_ctx,
         )
@@ -664,12 +601,19 @@ class TestGeneratePCAReport:
         assert "overall_accuracy" in result["summary"]["validation_metrics"]
 
     @pytest.mark.asyncio
-    async def test_pca_report_model_not_found(self, tools, data_dir, reports_dir, models_dir):
-        if "generate_pca_visualization_report" not in tools:
-            pytest.skip("generate_pca_visualization_report not registered")
+    async def test_pca_report_model_not_found(self, tools, repo, reports_dir, models_dir):
         with pytest.raises(FileNotFoundError):
             await tools["generate_pca_visualization_report"](
                 model_name="nonexistent_model",
+            )
+
+    @pytest.mark.asyncio
+    async def test_pca_report_signal_not_loaded(self, tools, repo, reports_dir, models_dir):
+        """Unknown test signal_id → fail fast, no silent skipping."""
+        with pytest.raises(ValueError, match="load_signal"):
+            await tools["generate_pca_visualization_report"](
+                model_name="test_pca_model",
+                test_signal_ids=["__ghost__"],
             )
 
 
@@ -678,26 +622,25 @@ class TestGeneratePCAReport:
 # ---------------------------------------------------------------------------
 
 class TestGenerateFeatureComparisonReport:
-    """Tests for generate_feature_comparison_report tool."""
+    """Tests for generate_feature_comparison_report tool (signal_id handles)."""
 
     @pytest.fixture
-    def multi_signal_dir(self, data_dir):
-        """Create two signal groups for comparison."""
-        _make_signal_file(data_dir, "healthy_1.csv", freq=50.0, noise=0.01)
-        _make_signal_file(data_dir, "healthy_2.csv", freq=50.0, noise=0.02)
-        _make_signal_file(data_dir, "faulty_1.csv", freq=50.0, noise=1.0)
-        return data_dir
+    def multi_signal_ids(self, repo, data_dir):
+        """Load two signal groups for comparison."""
+        ids = {
+            "healthy_1": _load_extra_signal(repo, data_dir, "healthy_1.csv", freq=50.0, noise=0.01),
+            "healthy_2": _load_extra_signal(repo, data_dir, "healthy_2.csv", freq=50.0, noise=0.02),
+            "faulty_1": _load_extra_signal(repo, data_dir, "faulty_1.csv", freq=50.0, noise=1.0),
+        }
+        return ids
 
     @pytest.mark.asyncio
-    async def test_feature_comparison_basic(self, tools, multi_signal_dir, reports_dir, mock_ctx):
-        if "generate_feature_comparison_report" not in tools:
-            pytest.skip("generate_feature_comparison_report not registered")
+    async def test_feature_comparison_basic(self, tools, multi_signal_ids, reports_dir, mock_ctx):
         result = await tools["generate_feature_comparison_report"](
             signal_groups={
-                "Healthy": ["healthy_1.csv", "healthy_2.csv"],
-                "Faulty": ["faulty_1.csv"],
+                "Healthy": ["healthy_1", "healthy_2"],
+                "Faulty": ["faulty_1"],
             },
-            sampling_rate=10000.0,
             segment_duration=0.1,
             ctx=mock_ctx,
         )
@@ -707,29 +650,23 @@ class TestGenerateFeatureComparisonReport:
         assert "Healthy" in result["metadata"]["groups"]
 
     @pytest.mark.asyncio
-    async def test_feature_comparison_subset_features(self, tools, multi_signal_dir, reports_dir):
+    async def test_feature_comparison_subset_features(self, tools, multi_signal_ids, reports_dir):
         """Only plot a subset of features."""
-        if "generate_feature_comparison_report" not in tools:
-            pytest.skip("generate_feature_comparison_report not registered")
         result = await tools["generate_feature_comparison_report"](
-            signal_groups={"A": ["healthy_1.csv"], "B": ["faulty_1.csv"]},
-            sampling_rate=10000.0,
+            signal_groups={"A": ["healthy_1"], "B": ["faulty_1"]},
             features_to_plot=["rms", "kurtosis", "crest_factor"],
         )
         assert len(result["metadata"]["features_plotted"]) == 3
 
     @pytest.mark.asyncio
-    async def test_feature_comparison_skips_missing(self, tools, multi_signal_dir, reports_dir):
-        """Missing files in a group should be skipped, not crash."""
-        if "generate_feature_comparison_report" not in tools:
-            pytest.skip("generate_feature_comparison_report not registered")
-        result = await tools["generate_feature_comparison_report"](
-            signal_groups={
-                "Mixed": ["healthy_1.csv", "does_not_exist.csv"],
-            },
-            sampling_rate=10000.0,
-        )
-        assert "file_path" in result
+    async def test_feature_comparison_unknown_id_raises(self, tools, multi_signal_ids, reports_dir):
+        """Unknown signal_ids fail fast — no silent skipping (U8 contract)."""
+        with pytest.raises(ValueError, match="load_signal"):
+            await tools["generate_feature_comparison_report"](
+                signal_groups={
+                    "Mixed": ["healthy_1", "__does_not_exist__"],
+                },
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -745,7 +682,7 @@ def _docx_installed() -> bool:
 
 
 class TestDocxReport:
-    """Tests for generate_diagnostic_report_docx tool.
+    """Tests for generate_diagnostic_report_docx tool (signal_id handle).
 
     Since U6 the tool RAISES ValueError when python-docx is missing (error
     contract: failures raise, never error dicts) — so the happy-path tests
@@ -753,27 +690,23 @@ class TestDocxReport:
     """
 
     @pytest.mark.asyncio
-    async def test_generates_docx(self, tools, data_dir, reports_dir, mock_ctx):
-        if "generate_diagnostic_report_docx" not in tools:
-            pytest.skip("generate_diagnostic_report_docx not registered")
+    async def test_generates_docx(self, tools, repo, reports_dir, mock_ctx):
         if not _docx_installed():
             pytest.skip("python-docx not installed")
         result = await tools["generate_diagnostic_report_docx"](
             ctx=mock_ctx,
-            signal_file="report_test.csv",
+            signal_id="report_test",
             sections={"diagnosis": "Test diagnosis summary"},
         )
         assert result is not None
 
     @pytest.mark.asyncio
-    async def test_docx_with_all_sections(self, tools, data_dir, reports_dir, mock_ctx):
-        if "generate_diagnostic_report_docx" not in tools:
-            pytest.skip("generate_diagnostic_report_docx not registered")
+    async def test_docx_with_all_sections(self, tools, repo, reports_dir, mock_ctx):
         if not _docx_installed():
             pytest.skip("python-docx not installed")
         result = await tools["generate_diagnostic_report_docx"](
             ctx=mock_ctx,
-            signal_file="report_test.csv",
+            signal_id="report_test",
             sections={
                 "statistics": {"RMS": 0.707, "Kurtosis": 3.0, "Crest Factor": 1.414},
                 "fft_peaks": [{"frequency": 50.0, "magnitude_db": 0.0, "note": "1x"}],
@@ -786,32 +719,37 @@ class TestDocxReport:
         assert "file_path" in result
 
     @pytest.mark.asyncio
-    async def test_docx_no_ctx(self, tools, data_dir, reports_dir):
+    async def test_docx_no_ctx(self, tools, repo, reports_dir):
         """DOCX generation without ctx should still work."""
-        if "generate_diagnostic_report_docx" not in tools:
-            pytest.skip("generate_diagnostic_report_docx not registered")
         if not _docx_installed():
             pytest.skip("python-docx not installed")
         result = await tools["generate_diagnostic_report_docx"](
-            signal_file="report_test.csv",
+            signal_id="report_test",
             sections={"diagnosis": "Summary"},
         )
         assert result is not None
 
     @pytest.mark.asyncio
+    async def test_docx_signal_not_loaded_raises(self, tools, repo, reports_dir):
+        """Reports are only produced for loaded signals."""
+        with pytest.raises(ValueError, match="load_signal"):
+            await tools["generate_diagnostic_report_docx"](
+                signal_id="__ghost__",
+                sections={"diagnosis": "Summary"},
+            )
+
+    @pytest.mark.asyncio
     async def test_docx_missing_dependency_raises(
-        self, tools, data_dir, reports_dir, mock_ctx, monkeypatch
+        self, tools, repo, reports_dir, mock_ctx, monkeypatch
     ):
         """Missing python-docx → raised ValueError, never an error dict."""
-        if "generate_diagnostic_report_docx" not in tools:
-            pytest.skip("generate_diagnostic_report_docx not registered")
         monkeypatch.setattr(
             "predictive_maintenance_mcp.report_generator.HAS_DOCX", False
         )
         with pytest.raises(ValueError, match="python-docx"):
             await tools["generate_diagnostic_report_docx"](
                 ctx=mock_ctx,
-                signal_file="report_test.csv",
+                signal_id="report_test",
                 sections={"diagnosis": "Summary"},
             )
 
