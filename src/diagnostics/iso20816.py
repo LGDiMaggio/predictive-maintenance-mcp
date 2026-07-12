@@ -356,7 +356,7 @@ def assess_severity_raw(
     }
 
 
-def assess_vibration_severity(
+def assess_severity_with_axis(
     signal: np.ndarray,
     fs: float,
     machine_group: Literal[1, 2] = 2,
@@ -369,7 +369,10 @@ def assess_vibration_severity(
     """Assess vibration severity using native ISO vocabulary.
 
     Thin wrapper over :func:`assess_severity_raw` that records the
-    measurement axis. The former ``machine_class`` (I-IV) parameter was
+    measurement axis. Renamed from ``assess_vibration_severity`` in U9b —
+    that name belonged to a removed MCP tool (merged into the unified
+    ``assess_severity``), and an engine function must not shadow a dead
+    endpoint name. The former ``machine_class`` (I-IV) parameter was
     removed: that mapping is not part of ISO 10816-3:2009 or ISO 20816-3:2022, whose
     vocabulary is machine group + support type.
 

@@ -4,17 +4,14 @@ import logging
 import json
 import pickle
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from scipy import signal
 from scipy.fft import fft, fftfreq
 from scipy.signal import hilbert, butter, sosfiltfilt
-from sklearn.preprocessing import StandardScaler
-from sklearn.decomposition import PCA
 from mcp.server.fastmcp import FastMCP, Context
 
 from ..config import MODELS_DIR, REPORTS_DIR
@@ -26,10 +23,10 @@ from ..report_generator import (
     read_report_metadata,
     list_reports,
     save_diagnostic_report_docx,
-    REPORTS_DIR as REPORTS_DIR_PATH,
+    timestamped_report_name,
 )
 from ..signal_processing.features import extract_time_domain_features
-from ._utils import resolve_model_paths, resolve_signal, sanitize_filename
+from ._utils import resolve_model_paths, resolve_signal
 
 # Canonical modular twin of the ISO evaluation tool (module-level function
 # since U6) — replaces the former runtime import from the deprecated monolith.
@@ -255,402 +252,15 @@ async def plot_signal(
         ]
     )
 
-    # Save HTML to reports directory
-    safe_name = sanitize_filename(signal_id)
-    output_file = REPORTS_DIR / f"plot_signal_{safe_name}.html"
+    # Save HTML to reports directory (timestamped: runs never overwrite)
+    output_file = REPORTS_DIR / timestamped_report_name("plot_signal", signal_id)
     fig.write_html(str(output_file))
 
     if ctx:
         await ctx.info(f"Plot saved to {output_file.name}")
-        await ctx.info(f"To view report metadata: list_html_reports() or get_report_info()")
-
-    return f"Interactive plot saved to: {output_file}\nUse list_html_reports() to see all reports, or open file in browser"
-
-async def plot_spectrum(
-    signal_id: str,
-    freq_range: Optional[list[float]] = None,
-    num_peaks: int = 10,
-    min_peak_distance: float = 1.0,
-    rotation_freq: Optional[float] = None,
-    title: Optional[str] = None,
-    ctx: Context | None = None
-) -> str:
-    """
-        Generate interactive FFT spectrum plot for a stored signal.
-
-        Creates an interactive HTML plot showing the frequency spectrum up to Nyquist frequency (Fs/2).
-        Automatically identifies and labels the most significant peaks. If rotation frequency is provided,
-        identifies harmonics as 1x, 2x, 3x RPM. Requires the signal loaded via
-        load_signal() first; the sampling rate comes from the stored signal
-        metadata.
-
-        Args:
-            signal_id: ID of the stored signal (from load_signal).
-            freq_range: [min_freq, max_freq] to limit the plot range (default: [0, Fs/2])
-            num_peaks: Number of peaks to identify and label (default: 10)
-            min_peak_distance: Minimum distance between peaks in Hz (default: 1.0)
-            rotation_freq: Rotation frequency in Hz for RPM harmonic labeling (optional)
-            title: Custom plot title (optional)
-            ctx: MCP context for progress/logging
-
-        Returns:
-            Path to generated HTML file with peak information
-
-        Raises:
-            ValueError: If the signal_id is not loaded, or the stored signal
-                has no sampling rate.
-
-        Example:
-            plot_spectrum(
-                "bearing_signal",
-                rotation_freq=25.0,  # 1500 RPM = 25 Hz
-                num_peaks=15
-            )
-        """
-    if ctx:
-        await ctx.info(f"Generating spectrum plot for '{signal_id}'...")
-
-    signal_data, info = resolve_signal(signal_id)
-    sampling_rate = info.sampling_rate
-
-    # Apply Hamming window to reduce spectral leakage
-    n = len(signal_data)
-    window = np.hamming(n)
-    signal_windowed = signal_data * window
-
-    # Compute FFT
-    freqs = fftfreq(n, d=1/sampling_rate)
-    fft_values = fft(signal_windowed)
-
-    # Keep only positive frequencies up to Nyquist (Fs/2)
-    nyquist = sampling_rate / 2.0
-    positive_freq_mask = (freqs > 0) & (freqs <= nyquist)
-    freqs = freqs[positive_freq_mask]
-
-    # Correct normalization for single-sided spectrum
-    amplitude = 2.0 * np.abs(fft_values[positive_freq_mask]) / n
-
-    # Convert to dB scale (normalized to maximum)
-    # Peak will be at 0 dB, everything else negative
-    max_amplitude = np.max(amplitude)
-    amplitude_db = 20 * np.log10(np.maximum(amplitude / max_amplitude, 1e-10))
-
-    # Default frequency range: 0 to Nyquist
-    if freq_range is None:
-        freq_range = [0, nyquist]
-
-    # Apply frequency range filter
-    mask = (freqs >= freq_range[0]) & (freqs <= freq_range[1])
-    freqs_plot = freqs[mask]
-    amplitude_plot = amplitude[mask]
-    amplitude_db_plot = amplitude_db[mask]
-
-    # Find peaks using scipy
-    from scipy.signal import find_peaks
-
-    # Convert min_peak_distance to number of samples
-    freq_resolution = sampling_rate / n
-    min_distance_samples = int(min_peak_distance / freq_resolution)
-
-    # Find peaks in the plot range
-    peak_indices, properties = find_peaks(
-        amplitude_db_plot,
-        distance=min_distance_samples,
-        prominence=2  # Only peaks with >2 dB prominence
-    )
-
-    # Sort by amplitude and keep top num_peaks
-    if len(peak_indices) > num_peaks:
-        sorted_indices = np.argsort(amplitude_db_plot[peak_indices])[::-1]
-        peak_indices = peak_indices[sorted_indices[:num_peaks]]
-
-    # Create plot
-    fig = go.Figure()
-
-    # Main spectrum in dB
-    fig.add_trace(go.Scatter(
-        x=freqs_plot,
-        y=amplitude_db_plot,
-        mode='lines',
-        name='Spectrum',
-        line=dict(color='blue', width=1),
-        hovertemplate='Frequency: %{x:.2f} Hz<br>Amplitude: %{y:.2f} dB<extra></extra>'
-    ))
-
-    # Mark detected peaks
-    for idx in peak_indices:
-        freq = freqs_plot[idx]
-        amp_db = amplitude_db_plot[idx]
-
-        # Generate label
-        if rotation_freq:
-            # Check if it's a harmonic of rotation frequency
-            harmonic_ratio = freq / rotation_freq
-            if abs(harmonic_ratio - round(harmonic_ratio)) < 0.1:  # Within 10% tolerance
-                harmonic_num = int(round(harmonic_ratio))
-                label = f"{harmonic_num}xRPM ({freq:.1f} Hz)"
-            else:
-                label = f"{freq:.1f} Hz"
-        else:
-            label = f"{freq:.1f} Hz"
-
-        # Add marker
-        fig.add_trace(go.Scatter(
-            x=[freq],
-            y=[amp_db],
-            mode='markers+text',
-            name=label,
-            marker=dict(color='red', size=8, symbol='diamond'),
-            text=[label],
-            textposition="top center",
-            textfont=dict(size=9, color='red'),
-            hovertemplate=f'{label}<br>Amplitude: {amp_db:.2f} dB<extra></extra>'
-        ))
-
-    # Layout
-    plot_title = title or f"FFT Spectrum - {signal_id}"
-    fig.update_layout(
-        title=plot_title,
-        xaxis_title="Frequency (Hz)",
-        yaxis_title="Amplitude (dB re. max)",
-        hovermode='x unified',
-        template='plotly_white',
-        width=1200,
-        height=600,
-        showlegend=False,  # Hide legend since we have text labels
-        yaxis=dict(range=[-80, 5])  # From -80 dB to +5 dB (peak at 0 dB)
-    )
-
-    # Save HTML to reports directory
-    safe_name = sanitize_filename(signal_id)
-    output_file = REPORTS_DIR / f"plot_spectrum_{safe_name}.html"
-    fig.write_html(str(output_file))
-
-    if ctx:
-        await ctx.info(f"Plot saved to {output_file.name}")
-        await ctx.info(f"Detected {len(peak_indices)} significant peaks")
-        await ctx.info(f"To view report metadata: list_html_reports() or get_report_info()")
-
-    return f"Interactive plot saved to: {output_file}\nUse list_html_reports() to see all reports, or open file in browser"
-
-async def plot_envelope(
-    signal_id: str,
-    filter_band: Optional[list[float]] = None,
-    freq_range: Optional[list[float]] = None,
-    highlight_freqs: Optional[list[float]] = None,
-    freq_labels: Optional[list[str]] = None,
-    title: Optional[str] = None,
-    ctx: Context | None = None
-) -> str:
-    """
-        Generate interactive envelope spectrum plot for a stored signal.
-
-        Creates an interactive HTML plot showing both the envelope spectrum and optionally
-        the filtered signal. Can highlight bearing/gear frequencies. Requires
-        the signal loaded via load_signal() first; the sampling rate comes
-        from the stored signal metadata.
-
-        Args:
-            signal_id: ID of the stored signal (from load_signal).
-            filter_band: [low_freq, high_freq] for bandpass filter (optional, default: [500, 5000])
-            freq_range: [min_freq, max_freq] to limit the envelope spectrum plot (optional)
-            highlight_freqs: List of frequencies (Hz) to mark (e.g., BPFO, BPFI) (optional)
-            freq_labels: Labels for highlighted frequencies (optional)
-            title: Custom plot title (optional)
-            ctx: MCP context for progress/logging
-
-        Returns:
-            Path to generated HTML file
-
-        Raises:
-            ValueError: If the signal_id is not loaded, the stored signal has
-                no sampling rate, or the filter band is invalid for the
-                signal's Nyquist frequency.
-
-        Example:
-            plot_envelope(
-                "bearing_signal",
-                filter_band=[500, 5000],
-                freq_range=[0, 300],
-                highlight_freqs=[120.5, 241.0],
-                freq_labels=["BPFO", "2xBPFO"]
-            )
-        """
-    if ctx:
-        await ctx.info(f"Generating envelope plot for '{signal_id}'...")
-
-    signal_data, info = resolve_signal(signal_id)
-    sampling_rate = info.sampling_rate
-
-    # Default filter band if not specified
-    if filter_band is None:
-        filter_band = [500, 5000]
-
-    # Validate filter band
-    nyquist = sampling_rate / 2
-    if filter_band[1] >= nyquist:
-        # Adjust upper frequency to be below Nyquist
-        filter_band[1] = nyquist * 0.95
-        if ctx:
-            await ctx.info(f"Adjusted filter upper limit to {filter_band[1]:.0f} Hz (< Nyquist)")
-
-    # Bandpass filter
-    low = filter_band[0] / nyquist
-    high = filter_band[1] / nyquist
-
-    # Ensure valid range
-    if low >= 1.0 or high >= 1.0 or low <= 0 or high <= 0:
-        raise ValueError(f"Invalid filter band [{filter_band[0]}, {filter_band[1]}] Hz for Fs={sampling_rate} Hz (Nyquist={nyquist} Hz)")
-
-    sos = butter(4, [low, high], btype='band', output='sos')
-    filtered_signal = sosfiltfilt(sos, signal_data)
-
-    # Envelope using Hilbert transform
-    analytic_signal = hilbert(filtered_signal)
-    envelope = np.abs(analytic_signal)
-
-    # Apply Hamming window to envelope before FFT
-    n = len(envelope)
-    window = np.hamming(n)
-    envelope_windowed = envelope * window
-
-    # FFT of envelope
-    freqs = fftfreq(n, d=1/sampling_rate)
-    fft_envelope = fft(envelope_windowed)
-
-    # Keep only positive frequencies (excluding DC at freq=0)
-    positive_freq_mask = freqs > 0
-    freqs = freqs[positive_freq_mask]
-
-    # Correct normalization for single-sided spectrum
-    amplitude = 2.0 * np.abs(fft_envelope[positive_freq_mask]) / n
-
-    # Convert to dB scale (normalized to maximum)
-    max_amplitude = np.max(amplitude)
-    amplitude_db = 20 * np.log10(np.maximum(amplitude / max_amplitude, 1e-10))
-
-    # Apply frequency range filter if specified
-    if freq_range:
-        mask = (freqs >= freq_range[0]) & (freqs <= freq_range[1])
-        freqs_plot = freqs[mask]
-        amplitude_plot = amplitude[mask]
-        amplitude_db_plot = amplitude_db[mask]
-    else:
-        freqs_plot = freqs
-        amplitude_plot = amplitude
-        amplitude_db_plot = amplitude_db
-
-    # Create subplots
-    fig = make_subplots(
-        rows=2, cols=1,
-        subplot_titles=(
-            f'Filtered Signal ({filter_band[0]}-{filter_band[1]} Hz)',
-            'Envelope Spectrum'
-        ),
-        vertical_spacing=0.12,
-        row_heights=[0.4, 0.6]
-    )
-
-    # Time array for signal plot
-    time = np.arange(len(filtered_signal)) / sampling_rate
-
-    # Plot 1: Filtered signal with envelope
-    fig.add_trace(
-        go.Scatter(
-            x=time,
-            y=filtered_signal,
-            mode='lines',
-            name='Filtered Signal',
-            line=dict(color='lightblue', width=1),
-            opacity=0.7
-        ),
-        row=1, col=1
-    )
-
-    fig.add_trace(
-        go.Scatter(
-            x=time,
-            y=envelope,
-            mode='lines',
-            name='Envelope',
-            line=dict(color='red', width=2)
-        ),
-        row=1, col=1
-    )
-
-    # Plot 2: Envelope spectrum in dB
-    fig.add_trace(
-        go.Scatter(
-            x=freqs_plot,
-            y=amplitude_db_plot,
-            mode='lines',
-            name='Envelope Spectrum',
-            line=dict(color='darkblue', width=1),
-            hovertemplate='Frequency: %{x:.2f} Hz<br>Amplitude: %{y:.2f} dB<extra></extra>'
-        ),
-        row=2, col=1
-    )
-
-    # Highlight specific frequencies in envelope spectrum
-    if highlight_freqs:
-        if not freq_labels:
-            freq_labels = [f"{f:.1f} Hz" for f in highlight_freqs]
-
-        for freq, label in zip(highlight_freqs, freq_labels):
-            # Find nearest frequency
-            idx = np.argmin(np.abs(freqs_plot - freq))
-
-            # Add vertical line
-            fig.add_vline(
-                x=freq,
-                line=dict(color='red', width=2, dash='dash'),
-                annotation_text=label,
-                annotation_position="top",
-                row=2, col=1
-            )
-
-            # Add marker
-            fig.add_trace(
-                go.Scatter(
-                    x=[freqs_plot[idx]],
-                    y=[amplitude_db_plot[idx]],
-                    mode='markers',
-                    name=label,
-                    marker=dict(color='red', size=10, symbol='diamond'),
-                    hovertemplate=f'{label}<br>Frequency: %{{x:.2f}} Hz<br>Amplitude: %{{y:.2f}} dB<extra></extra>',
-                    showlegend=True
-                ),
-                row=2, col=1
-            )
-
-    # Update axes
-    fig.update_xaxes(title_text="Time (s)", row=1, col=1)
-    fig.update_yaxes(title_text="Amplitude", row=1, col=1)
-    fig.update_xaxes(title_text="Frequency (Hz)", row=2, col=1)
-    fig.update_yaxes(title_text="Amplitude (dB re. max)", row=2, col=1)
-
-    # Set dB range for envelope spectrum (normalized to max)
-    fig.update_yaxes(range=[-80, 5], row=2, col=1)
-
-    # Layout
-    plot_title = title or f"Envelope Analysis - {signal_id}"
-    fig.update_layout(
-        title_text=plot_title,
-        hovermode='x unified',
-        template='plotly_white',
-        width=1200,
-        height=900,
-        showlegend=True
-    )
-
-    # Save HTML to reports directory
-    safe_name = sanitize_filename(signal_id)
-    output_file = REPORTS_DIR / f"plot_envelope_{safe_name}.html"
-    fig.write_html(str(output_file))
-
-    if ctx:
-        await ctx.info(f"Plot saved to {output_file.name}")
-        await ctx.info(f"To view report metadata: list_html_reports() or get_report_info()")
+        await ctx.info(
+            "To view report metadata: list_html_reports(file_name=...)"
+        )
 
     return f"Interactive plot saved to: {output_file}\nUse list_html_reports() to see all reports, or open file in browser"
 
@@ -658,22 +268,24 @@ async def generate_fft_report(
     signal_id: str,
     max_freq: float = 5000.0,
     num_peaks: int = 15,
-    rotation_freq: Optional[float] = None,
+    rpm: Optional[float] = None,
     ctx: Context | None = None
 ) -> dict[str, Any]:
     """
-        Generate professional FFT spectrum report (HTML) for a stored signal.
+        Generate an interactive FFT spectrum report (HTML) for a stored signal.
 
-        Generates a professional HTML report file instead of inline content.
-        Saves to reports/ directory. Requires the signal loaded via
-        load_signal() first; the sampling rate comes from the stored signal
-        metadata.
+        Saves a self-contained Plotly HTML report (spectrum in dB, automatic
+        peak detection, harmonic labels) to the reports/ directory with a
+        timestamped filename — consecutive runs produce distinct files.
+        Requires the signal loaded via load_signal() first; the sampling
+        rate comes from the stored signal metadata.
 
         Args:
             signal_id: ID of the stored signal (from load_signal).
             max_freq: Maximum frequency to display (Hz). Default 5000 Hz
             num_peaks: Number of peaks to detect and label. Default 15
-            rotation_freq: Optional shaft rotation frequency for harmonic labels
+            rpm: Optional shaft speed in RPM — peaks at integer multiples
+                of rpm/60 Hz are labeled as 1x/2x/... harmonics.
             ctx: MCP context
 
         Returns:
@@ -682,10 +294,6 @@ async def generate_fft_report(
         Raises:
             ValueError: If the signal_id is not loaded, or the stored signal
                 has no sampling rate.
-
-        Example:
-            >>> result = generate_fft_report("real_train_baseline_1")
-            >>> # User can open: result['file_path']
         """
     if ctx:
         await ctx.info(f"Generating FFT report for '{signal_id}'...")
@@ -706,7 +314,8 @@ async def generate_fft_report(
     frequencies = frequencies[positive_idx]
     magnitudes = 2.0 * np.abs(fft_values[positive_idx]) / N
 
-    # Generate and save report (signal_id is the report's signal label)
+    # Generate and save report (signal_id is the report's signal label).
+    # rpm is user-facing; the engine labels harmonics in Hz.
     result = save_fft_report(
         signal_file=signal_id,
         sampling_rate=sampling_rate,
@@ -715,7 +324,7 @@ async def generate_fft_report(
         signal_data=signal_data,
         max_freq=max_freq,
         num_peaks=num_peaks,
-        rotation_freq=rotation_freq
+        rotation_freq=(rpm / 60.0) if rpm is not None else None
     )
 
     if ctx:
@@ -833,24 +442,27 @@ async def generate_envelope_report(
 
 async def generate_iso_report(
     signal_id: str,
-    machine_group: int = 2,
-    support_type: str = "rigid",
-    operating_speed_rpm: Optional[float] = None,
+    machine_group: Literal[1, 2] = 2,
+    support_type: Literal["rigid", "flexible"] = "rigid",
+    rpm: Optional[float] = None,
     ctx: Context | None = None
 ) -> dict[str, Any]:
     """
-        Generate professional ISO 20816-3 evaluation report (HTML) for a stored signal.
+        Generate an ISO 20816-3 evaluation report (HTML) for a stored signal.
 
-        Generates a professional HTML report file instead of inline content.
-        Saves to reports/ directory. Requires the signal loaded via
-        load_signal() first; sampling rate AND declared signal unit come from
-        the stored signal metadata (units are never guessed).
+        Saves a self-contained Plotly HTML report (color-coded A-D zone
+        chart with the measured RMS marker, boundaries, severity text) to
+        the reports/ directory with a timestamped filename. The evaluation
+        itself is delegated to assess_severity — requires the signal loaded
+        via load_signal() first with sampling rate AND a declared unit
+        (units are never guessed).
 
         Args:
             signal_id: ID of the stored signal (from load_signal).
-            machine_group: ISO machine group (1=large >300kW, 2=medium 15-300kW)
+            machine_group: 1 (large, >300 kW) or 2 (medium, 15-300 kW)
             support_type: 'rigid' or 'flexible'
-            operating_speed_rpm: Operating speed in RPM (optional)
+            rpm: Operating speed in RPM (optional; selects the ISO band's
+                lower edge below 600 RPM)
             ctx: MCP context
 
         Returns:
@@ -859,13 +471,6 @@ async def generate_iso_report(
         Raises:
             ValueError: If the signal_id is not loaded, or the stored signal
                 has no sampling rate or no declared unit.
-
-        Example:
-            >>> result = generate_iso_report(
-            ...     "real_train_baseline_1",
-            ...     machine_group=2,
-            ...     support_type="rigid"
-            ... )
         """
     if ctx:
         await ctx.info(f"Generating ISO 20816-3 report for '{signal_id}'...")
@@ -876,7 +481,7 @@ async def generate_iso_report(
         signal_id=signal_id,
         machine_group=machine_group,
         support_type=support_type,
-        operating_speed_rpm=operating_speed_rpm
+        rpm=rpm
     )
 
     # Map the unified model onto the report template's expected keys.
@@ -908,46 +513,35 @@ async def generate_iso_report(
 
     return result
 
-def list_html_reports() -> list[dict[str, Any]]:
+def list_html_reports(
+    file_name: Optional[str] = None,
+) -> list[dict[str, Any]] | dict[str, Any]:
     """
-        List all available HTML reports in reports/ directory.
+        List HTML reports, or get one report's embedded metadata.
 
-        Returns list of reports with metadata (file name, type, signal, size).
-        Does NOT return HTML content - only metadata to avoid token consumption.
-
-        Returns:
-            List of dicts with report information
-
-        Example:
-            >>> reports = list_html_reports()
-            >>> print(f"Found {len(reports)} reports")
-            >>> for r in reports:
-            ...     print(f"- {r['file_name']}: {r['report_type']} for {r['signal_file']}")
-        """
-    return list_reports()
-
-def get_report_info(file_name: str) -> dict[str, Any]:
-    """
-        Get metadata from HTML report without loading entire file.
-
-        Extracts metadata JSON from HTML report file. This allows LLM to
-        understand report content without consuming tokens for HTML.
+        Without file_name: lists every report in reports/ with file name,
+        type, signal, and size. With file_name: returns that report's
+        embedded metadata block (absorbed get_report_info). Never returns
+        HTML content — metadata only, to avoid token consumption.
 
         Args:
-            file_name: Report filename in reports/ directory
+            file_name: Optional report filename inside reports/ — returns
+                its metadata instead of the listing.
 
         Returns:
-            Dictionary with metadata (NO HTML content)
+            List of report summaries (no file_name), or a dict with the
+            single report's metadata (file_name given).
 
-        Example:
-            >>> info = get_report_info("fft_spectrum_baseline_1.html")
-            >>> print(f"Signal: {info['metadata']['signal_file']}")
-            >>> print(f"Peaks detected: {info['metadata']['num_peaks']}")
+        Raises:
+            ValueError: If file_name escapes the reports directory, does
+                not exist, or carries no metadata block.
         """
-    # Invalid names, missing reports, and reports without a metadata block
-    # raise ValueError in read_report_metadata (error contract: failures
-    # raise, never error-shaped dicts).
-    return read_report_metadata(file_name)
+    if file_name is not None:
+        # Single-report route (former get_report_info). The read path stays
+        # on read_report_metadata, which contains the user-supplied name via
+        # safe_resolve(REPORTS_DIR, file_name) — U1 security fix preserved.
+        return read_report_metadata(file_name)
+    return list_reports()
 
 async def generate_pca_visualization_report(
     model_name: str,
@@ -1130,9 +724,10 @@ async def generate_pca_visualization_report(
         showlegend=True
     )
 
-    # Save HTML report
-    safe_name = model_name.replace("/", "_").replace("\\", "_")
-    output_file = REPORTS_DIR / f"pca_visualization_{safe_name}.html"
+    # Save HTML report (timestamped: consecutive runs never overwrite)
+    output_file = REPORTS_DIR / timestamped_report_name(
+        "pca_visualization", model_name
+    )
     fig.write_html(str(output_file))
 
     # Prepare metadata - convert all numpy types to Python natives
@@ -1351,9 +946,13 @@ async def generate_feature_comparison_report(
         )
     )
 
-    # Save HTML report
-    group_names_safe = "_vs_".join([name.replace(" ", "_") for name in signal_groups.keys()])
-    output_file = REPORTS_DIR / f"feature_comparison_{group_names_safe}.html"
+    # Save HTML report (timestamped: consecutive runs never overwrite)
+    group_names_safe = "_vs_".join(
+        [name.replace(" ", "_") for name in signal_groups.keys()]
+    )
+    output_file = REPORTS_DIR / timestamped_report_name(
+        "feature_comparison", group_names_safe
+    )
     fig.write_html(str(output_file))
 
     # Prepare metadata
@@ -1383,12 +982,9 @@ def register(mcp: FastMCP) -> None:
     """Register report generation and visualization tools with the MCP server."""
     mcp.tool()(generate_diagnostic_report_docx)
     mcp.tool()(plot_signal)
-    mcp.tool()(plot_spectrum)
-    mcp.tool()(plot_envelope)
     mcp.tool()(generate_fft_report)
     mcp.tool()(generate_envelope_report)
     mcp.tool()(generate_iso_report)
     mcp.tool()(list_html_reports)
-    mcp.tool()(get_report_info)
     mcp.tool()(generate_pca_visualization_report)
     mcp.tool()(generate_feature_comparison_report)

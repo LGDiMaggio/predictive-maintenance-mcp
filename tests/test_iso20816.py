@@ -12,7 +12,7 @@ import pytest
 from predictive_maintenance_mcp.diagnostics.iso20816 import (
     THRESHOLD_PROVENANCE,
     assess_severity_raw,
-    assess_vibration_severity,
+    assess_severity_with_axis,
     classify_zone,
     get_zone_boundaries,
 )
@@ -119,10 +119,10 @@ class TestProvenanceCitation:
 class TestMachineClassRemoved:
     """The invented machine_class I-IV -> group mapping no longer exists."""
 
-    def test_assess_vibration_severity_rejects_machine_class(self):
+    def test_assess_severity_with_axis_rejects_machine_class(self):
         signal = make_velocity_signal(1.0)
         with pytest.raises(TypeError):
-            assess_vibration_severity(signal, fs=10000, machine_class="II")
+            assess_severity_with_axis(signal, fs=10000, machine_class="II")
 
     def test_assess_severity_raw_rejects_machine_class(self):
         signal = make_velocity_signal(1.0)
@@ -132,7 +132,7 @@ class TestMachineClassRemoved:
     def test_native_vocabulary_in_output(self):
         # Group 2 rigid: 3.0 mm/s -> Zone C (2.8 < 3.0 <= 4.5)
         signal = make_velocity_signal(3.0)
-        result = assess_vibration_severity(
+        result = assess_severity_with_axis(
             signal,
             fs=10000,
             machine_group=2,
@@ -154,7 +154,7 @@ class TestZoneClassificationEndToEnd:
     )
     def test_group2_rigid_zones(self, rms, expected_zone):
         signal = make_velocity_signal(rms)
-        result = assess_vibration_severity(
+        result = assess_severity_with_axis(
             signal,
             fs=10000,
             machine_group=2,
@@ -166,7 +166,7 @@ class TestZoneClassificationEndToEnd:
     def test_group1_rigid(self):
         # 3.0 mm/s: Zone B for group 1 rigid (2.3 < 3.0 <= 4.5)
         signal = make_velocity_signal(3.0)
-        result = assess_vibration_severity(
+        result = assess_severity_with_axis(
             signal,
             fs=10000,
             machine_group=1,
@@ -178,7 +178,7 @@ class TestZoneClassificationEndToEnd:
     def test_group1_flexible(self):
         # 5.0 mm/s: Zone B for group 1 flexible (3.5 < 5.0 <= 7.1)
         signal = make_velocity_signal(5.0)
-        result = assess_vibration_severity(
+        result = assess_severity_with_axis(
             signal,
             fs=10000,
             machine_group=1,
@@ -189,7 +189,7 @@ class TestZoneClassificationEndToEnd:
 
     def test_severity_labels(self):
         signal = make_velocity_signal(1.0)
-        result = assess_vibration_severity(
+        result = assess_severity_with_axis(
             signal,
             fs=10000,
             machine_group=2,
@@ -267,7 +267,7 @@ class TestUnitConversion:
         t = np.linspace(0, 1.0, fs, endpoint=False)
         signal = 0.5 * np.sin(2 * np.pi * 50 * t)  # 0.5 g at 50 Hz
 
-        result = assess_vibration_severity(signal, fs=fs, signal_unit="g")
+        result = assess_severity_with_axis(signal, fs=fs, signal_unit="g")
         assert result["unit_conversion_performed"] is True
         assert result["original_unit"] == "g"
         assert result["rms_velocity_mm_s"] > 0
@@ -277,7 +277,7 @@ class TestUnitConversion:
         t = np.linspace(0, 1.0, fs, endpoint=False)
         signal = 5.0 * np.sin(2 * np.pi * 50 * t)  # 5 m/s²
 
-        result = assess_vibration_severity(signal, fs=fs, signal_unit="m/s²")
+        result = assess_severity_with_axis(signal, fs=fs, signal_unit="m/s²")
         assert result["unit_conversion_performed"] is True
 
     def test_mm_s_no_conversion(self):
@@ -285,7 +285,7 @@ class TestUnitConversion:
         t = np.linspace(0, 1.0, fs, endpoint=False)
         signal = 2.0 * np.sin(2 * np.pi * 50 * t)
 
-        result = assess_vibration_severity(signal, fs=fs, signal_unit="mm/s")
+        result = assess_severity_with_axis(signal, fs=fs, signal_unit="mm/s")
         assert result["unit_conversion_performed"] is False
 
     def test_m_s_unit(self):
@@ -293,7 +293,7 @@ class TestUnitConversion:
         fs = 10000
         t = np.linspace(0, 1.0, fs, endpoint=False)
         signal = 0.002 * np.sin(2 * np.pi * 50 * t)  # 2 mm/s = 0.002 m/s
-        result = assess_vibration_severity(signal, fs=fs, signal_unit="m/s")
+        result = assess_severity_with_axis(signal, fs=fs, signal_unit="m/s")
         assert result["unit_conversion_performed"] is True
         assert result["original_unit"] == "m/s"
 
@@ -302,14 +302,14 @@ class TestUnitConversion:
         fs = 10000
         t = np.linspace(0, 1.0, fs, endpoint=False)
         signal = 5.0 * np.sin(2 * np.pi * 50 * t)
-        result = assess_vibration_severity(signal, fs=fs, signal_unit="m/s2")
+        result = assess_severity_with_axis(signal, fs=fs, signal_unit="m/s2")
         assert result["unit_conversion_performed"] is True
 
     def test_unknown_unit_raises(self):
         """Unknown unit must be refused — units are never assumed."""
         signal = np.random.randn(10000) * 0.1
         with pytest.raises(ValueError, match="Unknown signal_unit"):
-            assess_vibration_severity(signal, fs=10000, signal_unit="mils")
+            assess_severity_with_axis(signal, fs=10000, signal_unit="mils")
 
 
 class TestInvalidParameters:
@@ -322,7 +322,7 @@ class TestInvalidParameters:
 class TestResultStructure:
     def test_result_keys(self):
         signal = make_velocity_signal(1.0)
-        result = assess_vibration_severity(signal, fs=10000, signal_unit="mm/s")
+        result = assess_severity_with_axis(signal, fs=10000, signal_unit="mm/s")
         expected_keys = {
             "rms_velocity_mm_s",
             "machine_group",
@@ -342,7 +342,7 @@ class TestResultStructure:
 
     def test_boundaries_dict(self):
         signal = make_velocity_signal(1.0)
-        result = assess_vibration_severity(
+        result = assess_severity_with_axis(
             signal, fs=10000, machine_group=2, support_type="rigid",
             signal_unit="mm/s",
         )

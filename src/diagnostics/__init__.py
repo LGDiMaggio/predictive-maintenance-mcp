@@ -17,7 +17,7 @@ from .bearing_catalog import (  # noqa: F401
 from .iso20816 import (  # noqa: F401
     THRESHOLD_PROVENANCE,
     assess_severity_raw,
-    assess_vibration_severity,
+    assess_severity_with_axis,
     classify_zone,
     get_zone_boundaries,
 )

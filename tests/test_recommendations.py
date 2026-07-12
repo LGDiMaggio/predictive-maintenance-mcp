@@ -64,3 +64,23 @@ class TestGenerateRecommendations:
         recs = generate_recommendations("B", fault_types=[])
         assert len(recs) == 1
         assert recs[0]["urgency"] == "medium"
+
+    def test_unknown_fault_type_raises_listing_vocabulary(self):
+        """U9: unknown fault types raise (the old silent drop hid typos);
+        the message names the full canonical vocabulary."""
+        with pytest.raises(ValueError) as exc:
+            generate_recommendations("C", fault_types=["BPFO"])
+        msg = str(exc.value)
+        assert "BPFO" in msg
+        assert "outer_race" in msg and "looseness" in msg
+
+    def test_vocabulary_covers_canonical_bearing_faults(self):
+        """VALID_FAULT_TYPES includes every canonical bearing fault."""
+        from predictive_maintenance_mcp.decision_support.recommendations import (
+            VALID_FAULT_TYPES,
+        )
+        from predictive_maintenance_mcp.diagnostics.bearing_analyzer import (
+            FAULT_TYPE_CANONICAL,
+        )
+
+        assert set(FAULT_TYPE_CANONICAL.values()) <= set(VALID_FAULT_TYPES)

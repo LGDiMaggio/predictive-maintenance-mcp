@@ -79,7 +79,7 @@ class TestGenerateMaintenanceRecommendations:
         result = await tools["generate_maintenance_recommendations"](
             ctx=mock_ctx,
             severity_zone="C",
-            fault_types="outer_race,misalignment",
+            fault_types=["outer_race", "misalignment"],
         )
         assert isinstance(result, str)
         assert "outer_race" in result or "bearing" in result.lower()
@@ -93,25 +93,55 @@ class TestGenerateMaintenanceRecommendations:
             await tools["generate_maintenance_recommendations"](
                 ctx=mock_ctx,
                 severity_zone="C",
-                fault_types="outer_race",
+                fault_types=["outer_race"],
                 confidence=0.87,
             )
 
     @pytest.mark.asyncio
-    async def test_empty_fault_types(self, tools, mock_ctx):
+    async def test_none_fault_types(self, tools, mock_ctx):
         result = await tools["generate_maintenance_recommendations"](
             ctx=mock_ctx,
             severity_zone="B",
-            fault_types="",
+            fault_types=None,
         )
         assert isinstance(result, str)
         assert len(result) > 0
 
     @pytest.mark.asyncio
-    async def test_unknown_zone(self, tools, mock_ctx):
-        result = await tools["generate_maintenance_recommendations"](
-            ctx=mock_ctx,
-            severity_zone="X",
+    async def test_unknown_fault_type_raises_with_vocabulary(
+        self, tools, mock_ctx
+    ):
+        """U9 loop closure: an acronym like 'BPFO' is NOT silently dropped —
+        the error names the canonical vocabulary and the acronym mapping."""
+        with pytest.raises(ValueError) as exc:
+            await tools["generate_maintenance_recommendations"](
+                ctx=mock_ctx,
+                severity_zone="C",
+                fault_types=["BPFO"],
+            )
+        msg = str(exc.value)
+        assert "BPFO" in msg
+        for allowed in (
+            "outer_race",
+            "inner_race",
+            "ball",
+            "cage",
+            "misalignment",
+            "unbalance",
+            "looseness",
+        ):
+            assert allowed in msg
+
+    def test_fault_type_literal_matches_engine_vocabulary(self, mcp):
+        """The tool's Literal vocabulary and the engine's VALID_FAULT_TYPES
+        are the same closed set (single source of truth, no drift)."""
+        from typing import get_args
+
+        from predictive_maintenance_mcp.decision_support.recommendations import (
+            VALID_FAULT_TYPES,
         )
-        assert isinstance(result, str)
-        assert len(result) > 0
+        from predictive_maintenance_mcp.mcp_tools.decision_support_tools import (
+            FaultType,
+        )
+
+        assert set(get_args(FaultType)) == set(VALID_FAULT_TYPES)

@@ -52,9 +52,6 @@ def data_dir(tmp_path, monkeypatch):
     monkeypatch.setattr("predictive_maintenance_mcp.config.DATA_DIR", signals_dir)
     monkeypatch.setattr("predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR", signals_dir)
     monkeypatch.setattr("predictive_maintenance_mcp.signal_acquisition.repository.DATA_DIR", signals_dir)
-    # generate_iso_report delegates to the unified assess_severity
-    # (diagnostics_tools) — patch its DATA_DIR too.
-    monkeypatch.setattr("predictive_maintenance_mcp.mcp_tools.diagnostics_tools.DATA_DIR", signals_dir)
     return signals_dir
 
 
@@ -160,97 +157,23 @@ class TestPlotSignal:
 
 
 # ---------------------------------------------------------------------------
-# Plot spectrum
+# Merged plot tools are gone (absorbed by the generate_* reports)
 # ---------------------------------------------------------------------------
 
-class TestPlotSpectrum:
-    """Tests for plot_spectrum tool (signal_id handle)."""
+class TestPlotToolsMerged:
+    """U9b clean cut: plot_spectrum/plot_envelope/plot_iso_20816_chart and
+    get_report_info are no longer registered — their capability lives in
+    generate_fft_report / generate_envelope_report / generate_iso_report /
+    list_html_reports(file_name=...)."""
 
-    @pytest.mark.asyncio
-    async def test_creates_spectrum_html(self, tools, repo, reports_dir):
-        result = await tools["plot_spectrum"](signal_id="report_test")
-        assert "Interactive plot saved" in result
-
-    @pytest.mark.asyncio
-    async def test_spectrum_with_freq_range(self, tools, repo, reports_dir):
-        result = await tools["plot_spectrum"](
-            signal_id="report_test",
-            freq_range=[10.0, 200.0],
-        )
-        assert "Interactive plot saved" in result
-
-    @pytest.mark.asyncio
-    async def test_spectrum_with_rotation_freq(self, tools, repo, reports_dir):
-        """Spectrum should label harmonics when rotation_freq is given."""
-        result = await tools["plot_spectrum"](
-            signal_id="report_test",
-            rotation_freq=50.0,
-            num_peaks=5,
-        )
-        assert "Interactive plot saved" in result
-
-    @pytest.mark.asyncio
-    async def test_spectrum_signal_not_loaded(self, tools, repo, reports_dir):
-        with pytest.raises(ValueError, match="load_signal"):
-            await tools["plot_spectrum"](signal_id="missing")
-
-
-# ---------------------------------------------------------------------------
-# Plot envelope
-# ---------------------------------------------------------------------------
-
-class TestPlotEnvelope:
-    """Tests for plot_envelope tool (signal_id handle)."""
-
-    @pytest.mark.asyncio
-    async def test_creates_envelope_html(self, tools, repo, reports_dir):
-        result = await tools["plot_envelope"](
-            signal_id="report_test",
-            filter_band=[100.0, 4000.0],
-        )
-        assert "Interactive plot saved" in result
-
-    @pytest.mark.asyncio
-    async def test_envelope_default_filter_band(self, tools, repo, reports_dir):
-        """When filter_band is None, defaults to [500, 5000] and adjusts if needed."""
-        result = await tools["plot_envelope"](signal_id="report_test")
-        assert "Interactive plot saved" in result
-
-    @pytest.mark.asyncio
-    async def test_envelope_with_highlight_freqs(self, tools, repo, reports_dir):
-        """Envelope plot should mark highlighted bearing frequencies."""
-        result = await tools["plot_envelope"](
-            signal_id="report_test",
-            filter_band=[100.0, 4000.0],
-            freq_range=[0.0, 300.0],
-            highlight_freqs=[50.0, 100.0],
-            freq_labels=["BPFO", "2xBPFO"],
-        )
-        assert "Interactive plot saved" in result
-
-    @pytest.mark.asyncio
-    async def test_envelope_highlight_freqs_no_labels(self, tools, repo, reports_dir):
-        """When highlight_freqs given but no labels, auto-generate labels."""
-        result = await tools["plot_envelope"](
-            signal_id="report_test",
-            filter_band=[100.0, 4000.0],
-            highlight_freqs=[50.0],
-        )
-        assert "Interactive plot saved" in result
-
-    @pytest.mark.asyncio
-    async def test_envelope_signal_not_loaded(self, tools, repo, reports_dir):
-        with pytest.raises(ValueError, match="load_signal"):
-            await tools["plot_envelope"](signal_id="missing")
-
-    @pytest.mark.asyncio
-    async def test_envelope_invalid_filter_band(self, tools, repo, reports_dir):
-        """Filter band entirely above Nyquist should raise."""
-        with pytest.raises(ValueError):
-            await tools["plot_envelope"](
-                signal_id="report_test",
-                filter_band=[6000.0, 7000.0],  # both above Nyquist (5000)
-            )
+    def test_absorbed_tools_not_registered(self, tools):
+        for old in (
+            "plot_spectrum",
+            "plot_envelope",
+            "plot_iso_20816_chart",
+            "get_report_info",
+        ):
+            assert old not in tools
 
 
 # ---------------------------------------------------------------------------
@@ -297,17 +220,17 @@ class TestListReports:
 
 
 # ---------------------------------------------------------------------------
-# Get report info
+# Single-report metadata route (merged get_report_info)
 # ---------------------------------------------------------------------------
 
-class TestGetReportInfo:
-    """Tests for get_report_info tool."""
+class TestListReportsFileNameRoute:
+    """list_html_reports(file_name=...) — the absorbed get_report_info."""
 
     def test_report_not_found_raises(self, tools, reports_dir):
         """U6 error contract: a missing report is misuse — raise with an
         actionable message, never an error-shaped dict as success."""
         with pytest.raises(ValueError, match="list_html_reports"):
-            tools["get_report_info"](file_name="nonexistent.html")
+            tools["list_html_reports"](file_name="nonexistent.html")
 
     def test_report_found_with_metadata(self, tools, reports_dir):
         metadata = {"report_type": "envelope", "signal_file": "sig.csv", "num_peaks": 10}
@@ -318,7 +241,7 @@ class TestGetReportInfo:
             '</script></head><body></body></html>'
         )
         (reports_dir / "env_report.html").write_text(html)
-        result = tools["get_report_info"](file_name="env_report.html")
+        result = tools["list_html_reports"](file_name="env_report.html")
         assert "error" not in result
         assert result["metadata"]["report_type"] == "envelope"
         assert result["metadata"]["num_peaks"] == 10
@@ -327,7 +250,33 @@ class TestGetReportInfo:
         """Report file exists but has no metadata JSON block → raise."""
         (reports_dir / "no_meta.html").write_text("<html><body>plain</body></html>")
         with pytest.raises(ValueError, match="Metadata not found"):
-            tools["get_report_info"](file_name="no_meta.html")
+            tools["list_html_reports"](file_name="no_meta.html")
+
+    def test_traversal_attempt_rejected(self, tools, reports_dir, tmp_path):
+        """U1 security regression: the merged read path still contains the
+        user-supplied name via safe_resolve — traversal is rejected and no
+        file outside reports/ is read (no existence oracle)."""
+        secret = tmp_path / "secret.txt"
+        secret.write_text("top secret")
+        for hostile in (
+            "../secret.txt",
+            "..\\secret.txt",
+            "../../etc/passwd",
+            str(secret),
+        ):
+            with pytest.raises(ValueError, match="Invalid report filename"):
+                tools["list_html_reports"](file_name=hostile)
+
+    def test_sibling_directory_bypass_rejected(self, tools, reports_dir):
+        """The d689886 bypass class: a name resolving into a SIBLING dir
+        of reports/ (prefix match) must be rejected too."""
+        evil = reports_dir.parent / (reports_dir.name + "_evil")
+        evil.mkdir()
+        (evil / "x.html").write_text("<html></html>")
+        with pytest.raises(ValueError, match="Invalid report filename"):
+            tools["list_html_reports"](
+                file_name=f"../{reports_dir.name}_evil/x.html"
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -350,12 +299,28 @@ class TestGenerateFFTReport:
         assert "file_path" in result
 
     @pytest.mark.asyncio
-    async def test_fft_report_with_rotation_freq(self, tools, repo, reports_dir):
+    async def test_fft_report_with_rpm(self, tools, repo, reports_dir):
+        """rpm (user-facing) is converted to Hz for harmonic labeling."""
         result = await tools["generate_fft_report"](
             signal_id="report_test",
-            rotation_freq=50.0,
+            rpm=3000.0,  # 50 Hz shaft — the test signal's tone
         )
         assert "file_path" in result
+        assert result["metadata"]["rotation_freq"] == pytest.approx(50.0)
+
+    @pytest.mark.asyncio
+    async def test_two_consecutive_runs_two_distinct_files(
+        self, tools, repo, reports_dir
+    ):
+        """U9 loop closure: timestamped filenames — a re-run never
+        overwrites, and list_html_reports lists both."""
+        r1 = await tools["generate_fft_report"](signal_id="report_test")
+        r2 = await tools["generate_fft_report"](signal_id="report_test")
+        assert r1["file_name"] != r2["file_name"]
+        assert Path(r1["file_path"]).exists()
+        assert Path(r2["file_path"]).exists()
+        listed = {r["file_name"] for r in tools["list_html_reports"]()}
+        assert {r1["file_name"], r2["file_name"]} <= listed
 
     @pytest.mark.asyncio
     async def test_fft_report_signal_without_rate(self, tools, data_dir, repo, reports_dir):
@@ -764,16 +729,12 @@ class TestToolRegistration:
     def test_all_expected_tools_registered(self, tools):
         expected = {
             "plot_signal",
-            "plot_spectrum",
-            "plot_envelope",
             "generate_fft_report",
             "generate_envelope_report",
             "generate_iso_report",
             "list_html_reports",
-            "get_report_info",
             "generate_pca_visualization_report",
             "generate_feature_comparison_report",
             "generate_diagnostic_report_docx",
         }
-        for name in expected:
-            assert name in tools, f"Expected tool '{name}' not registered"
+        assert set(tools) == expected

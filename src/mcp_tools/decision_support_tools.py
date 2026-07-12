@@ -7,12 +7,26 @@ custom thresholds.
 """
 
 import logging
+from typing import Literal, Optional
 
 from mcp.server.fastmcp import FastMCP, Context
 
 from ..decision_support import generate_recommendations
 
 logger = logging.getLogger(__name__)
+
+#: Closed fault vocabulary: canonical bearing faults (FAULT_TYPE_CANONICAL
+#: values) + machine-level faults. Kept in sync with
+#: decision_support.recommendations.VALID_FAULT_TYPES (asserted in tests).
+FaultType = Literal[
+    "ball",
+    "cage",
+    "inner_race",
+    "looseness",
+    "misalignment",
+    "outer_race",
+    "unbalance",
+]
 
 
 # ---------------------------------------------------------------------------
@@ -22,8 +36,8 @@ logger = logging.getLogger(__name__)
 
 async def generate_maintenance_recommendations(
     ctx: Context,
-    severity_zone: str,
-    fault_types: str = "",
+    severity_zone: Literal["A", "B", "C", "D"],
+    fault_types: Optional[list[FaultType]] = None,
 ) -> str:
     """Generate maintenance recommendations based on severity and detected faults.
 
@@ -35,15 +49,20 @@ async def generate_maintenance_recommendations(
         Args:
             ctx: MCP context for user communication.
             severity_zone: ISO zone letter — "A", "B", "C", or "D".
-            fault_types: Comma-separated fault type keywords, e.g.
-                "outer_race,misalignment". Leave empty for zone-only advice.
+            fault_types: Detected fault types from the closed canonical
+                vocabulary — outer_race/inner_race/ball/cage for bearings
+                (NOT the BPFO/BPFI/BSF/FTF acronyms) plus misalignment/
+                unbalance/looseness. None for zone-only advice.
 
         Returns:
             Formatted string listing all maintenance recommendations.
+
+        Raises:
+            ValueError: If any fault type is outside the canonical
+                vocabulary (the message lists the allowed values —
+                unknown values are never dropped silently).
         """
-    fault_list = [
-        ft.strip() for ft in fault_types.split(",") if ft.strip()
-    ] if fault_types else None
+    fault_list = list(fault_types) if fault_types else None
 
     await ctx.info(
         f"Generating recommendations for zone {severity_zone}"

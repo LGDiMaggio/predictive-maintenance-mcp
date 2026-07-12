@@ -21,7 +21,7 @@ class FFTResult(BaseModel):
     """FFT analysis result — compact summary (top peaks + stats, no full arrays).
     
     Full-length arrays are never returned to the LLM to avoid context overflow.
-    Use generate_fft_report() or plot_spectrum() for visual inspection."""
+    Use generate_fft_report() for visual inspection."""
     top_peaks: list[SpectralPeak] = Field(description="Top spectral peaks sorted by magnitude")
     peak_frequency: float = Field(description="Dominant peak frequency (Hz)")
     peak_magnitude: float = Field(description="Dominant peak magnitude")
@@ -105,6 +105,12 @@ class FeatureExtractionResult(BaseModel):
 
 class AnomalyModelResult(BaseModel):
     """Result of anomaly detection model training."""
+    model_name: str = Field(
+        description=(
+            "Name under which the model was saved — pass this to "
+            "predict_anomalies(model_name=...)"
+        )
+    )
     model_type: str = Field(description="Type of model: 'OneClassSVM' or 'LocalOutlierFactor'")
     num_training_samples: int = Field(description="Number of healthy samples used for training")
     num_features_original: int = Field(description="Number of original features")
@@ -120,12 +126,35 @@ class AnomalyModelResult(BaseModel):
 
 
 class AnomalyPredictionResult(BaseModel):
-    """Result of anomaly detection prediction on new data."""
+    """Result of anomaly detection prediction on new data.
+
+    Bounded output by design: counts, score percentiles, and the worst
+    segments only — never per-segment arrays (a 6M-sample signal would
+    dump tens of thousands of entries into the chat context).
+    """
+    model_name: str = Field(description="Name of the trained model used")
     num_segments: int = Field(description="Number of segments analyzed")
     anomaly_count: int = Field(description="Number of anomalies detected")
     anomaly_ratio: float = Field(description="Ratio of anomalies (0-1)")
-    predictions: list[int] = Field(description="Predictions per segment: 1=normal, -1=anomaly")
-    anomaly_scores: Optional[list[float]] = Field(None, description="Anomaly scores if available")
+    segment_duration_s: float = Field(
+        description="Segment length in seconds (from the model's training metadata)"
+    )
+    score_percentiles: Optional[dict[str, float]] = Field(
+        None,
+        description=(
+            "Percentiles (p5/p25/p50/p75/p95) of the model decision scores; "
+            "negative = anomalous side. None when the model exposes no "
+            "decision_function."
+        ),
+    )
+    worst_segments: list[dict[str, float]] = Field(
+        default=[],
+        description=(
+            "Up to 10 most anomalous segments, each with segment_index, "
+            "start_time_s, and score (when available) — enough to locate the "
+            "worst regions without dumping per-segment arrays."
+        ),
+    )
     overall_health: str = Field(description="Overall health status: 'Healthy', 'Suspicious', 'Faulty' (thresholded on anomaly_ratio: <0.1, <0.3, >=0.3)")
 
 
@@ -151,6 +180,14 @@ class StoredSignalInfo(BaseModel):
             "companion _metadata.json ('signal_unit' field). Never guessed. "
             "None means undeclared: ISO severity verdicts will be refused "
             "until the unit is declared."
+        ),
+    )
+    source_metadata: dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "Complete companion _metadata.json of the source file (rpm/"
+            "shaft_speed, reference frequencies, ...). Empty when the file "
+            "has no companion metadata."
         ),
     )
 
@@ -270,8 +307,8 @@ class BearingCatalogMiss(BaseModel):
         "not_found",
         description="Always 'not_found' — discriminates from a catalog hit",
     )
-    bearing_designation: str = Field(
-        description="The designation that was searched for"
+    bearing_id: str = Field(
+        description="The bearing designation that was searched for"
     )
     suggestion: str = Field(
         description="Concrete next step to obtain the bearing geometry"

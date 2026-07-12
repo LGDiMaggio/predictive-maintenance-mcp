@@ -57,8 +57,9 @@ def data_dir(tmp_path, monkeypatch):
     with open(signals_dir / "iso_test_metadata.json", "w") as f:
         json.dump({"sampling_rate": fs, "signal_unit": "g"}, f)
 
-    # Patch directories
-    monkeypatch.setattr("predictive_maintenance_mcp.mcp_tools.diagnostics_tools.DATA_DIR", signals_dir)
+    # Patch directories (diagnostics_tools now only holds MODELS_DIR and
+    # RESOURCES_DIR — DATA_DIR/REPORTS_DIR/CACHE_DIR imports were dead and
+    # removed in the U9b naming/import sweep).
     monkeypatch.setattr("predictive_maintenance_mcp.config.DATA_DIR", signals_dir)
     monkeypatch.setattr("predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR", signals_dir)
     monkeypatch.setattr("predictive_maintenance_mcp.signal_acquisition.repository.DATA_DIR", signals_dir)
@@ -67,18 +68,10 @@ def data_dir(tmp_path, monkeypatch):
     models_dir.mkdir()
     monkeypatch.setattr("predictive_maintenance_mcp.mcp_tools.diagnostics_tools.MODELS_DIR", models_dir)
 
-    reports_dir = tmp_path / "reports"
-    reports_dir.mkdir()
-    monkeypatch.setattr("predictive_maintenance_mcp.mcp_tools.diagnostics_tools.REPORTS_DIR", reports_dir)
-
     resources_dir = tmp_path / "resources"
     resources_dir.mkdir()
     (resources_dir / "machine_manuals").mkdir()
     monkeypatch.setattr("predictive_maintenance_mcp.mcp_tools.diagnostics_tools.RESOURCES_DIR", resources_dir)
-
-    cache_dir = resources_dir / "cache"
-    cache_dir.mkdir()
-    monkeypatch.setattr("predictive_maintenance_mcp.mcp_tools.diagnostics_tools.CACHE_DIR", cache_dir)
 
     return signals_dir
 
@@ -220,6 +213,8 @@ class TestAnomalyDetection:
             ctx=mock_ctx,
         )
         assert train_result is not None
+        # U9 loop closure: the result echoes the name to pass to predict.
+        assert train_result.model_name == "test_model"
 
         # Predict
         if "predict_anomalies" not in tools:
@@ -373,7 +368,7 @@ class TestAssessSeverityExtended:
             signal_id="iso_test",
             machine_group=2,
             support_type="rigid",
-            operating_speed_rpm=400.0,
+            rpm=400.0,
         )
         assert result.operating_speed_rpm == 400.0
         assert "2-1000" in result.frequency_range
@@ -626,7 +621,7 @@ class TestAnomalyDetectionExtended:
         if "predict_anomalies" not in tools:
             pytest.skip("predict_anomalies not registered")
 
-        with pytest.raises(FileNotFoundError, match="Model not found"):
+        with pytest.raises(FileNotFoundError, match="models on disk"):
             await tools["predict_anomalies"](
                 signal_id="normal",
                 model_name="nonexistent_model",
@@ -710,6 +705,14 @@ class TestAnomalyDetectionExtended:
         assert not hasattr(result, "confidence")
         assert result.num_segments > 0
         assert 0 <= result.anomaly_ratio <= 1.0
+        # U9 bounded output: no per-segment arrays, name echoed, worst
+        # segments capped at 10.
+        assert result.model_name == "health_model"
+        assert not hasattr(result, "predictions")
+        assert not hasattr(result, "anomaly_scores")
+        assert len(result.worst_segments) <= 10
+        if result.score_percentiles is not None:
+            assert set(result.score_percentiles) == {"p5", "p25", "p50", "p75", "p95"}
 
 
 # ---------------------------------------------------------------------------
@@ -756,7 +759,7 @@ class TestDocumentationTools:
 
         result = await tools["read_manual_excerpt"](
             ctx=mock_ctx,
-            manual_filename="pump_manual.txt",
+            file_name="pump_manual.txt",
         )
         assert "SKF 6205-2RS" in result
         assert "1800 RPM" in result
@@ -770,7 +773,7 @@ class TestDocumentationTools:
         with pytest.raises(FileNotFoundError):
             await tools["read_manual_excerpt"](
                 ctx=mock_ctx,
-                manual_filename="nonexistent_manual.pdf",
+                file_name="nonexistent_manual.pdf",
             )
 
     @pytest.mark.asyncio
@@ -782,7 +785,7 @@ class TestDocumentationTools:
         with pytest.raises(FileNotFoundError):
             await tools["extract_manual_specs"](
                 ctx=mock_ctx,
-                manual_filename="nonexistent.pdf",
+                file_name="nonexistent.pdf",
             )
 
 
@@ -801,7 +804,7 @@ class TestBearingCatalogTools:
 
         result = await tools["search_bearing_catalog"](
             ctx=mock_ctx,
-            bearing_designation="6205",
+            bearing_id="6205",
         )
         # Should find bearing 6205 in the verified JSON catalog
         assert isinstance(result, dict)
@@ -820,7 +823,7 @@ class TestBearingCatalogTools:
 
         result = await tools["search_bearing_catalog"](
             ctx=mock_ctx,
-            bearing_designation="ZZZZZ999",
+            bearing_id="ZZZZZ999",
         )
         assert isinstance(result, BearingCatalogMiss)
         assert result.status == "not_found"
@@ -834,7 +837,7 @@ class TestBearingCatalogTools:
 
         result = await tools["search_bearing_catalog"](
             ctx=mock_ctx,
-            bearing_designation="SKF 6205-2RS",
+            bearing_id="SKF 6205-2RS",
         )
         assert isinstance(result, dict)
         assert result["num_balls"] == 9
@@ -851,7 +854,7 @@ class TestBearingCatalogTools:
             ball_diameter_mm=7.94,
             pitch_diameter_mm=39.04,
             contact_angle_deg=0.0,
-            shaft_speed_rpm=1797.0,
+            rpm=1797.0,
         )
         assert "BPFO" in result
         assert "BPFI" in result
@@ -860,29 +863,6 @@ class TestBearingCatalogTools:
         # CWRU publishes BPFO = 3.5848 x shaft speed -> 107.36 Hz at 1797 RPM
         assert result["BPFO"] == pytest.approx(107.36, rel=0.005)
         assert result["BPFI"] > result["BPFO"]  # BPFI > BPFO always
-
-
-# ---------------------------------------------------------------------------
-# ISO 20816 chart
-# ---------------------------------------------------------------------------
-
-class TestPlotISO20816Chart:
-    """Tests for plot_iso_20816_chart tool (signal_id handle)."""
-
-    @pytest.mark.asyncio
-    async def test_generates_html(self, tools, repo, mock_ctx, tmp_path):
-        """Chart tool should generate an HTML file."""
-        if "plot_iso_20816_chart" not in tools:
-            pytest.skip("plot_iso_20816_chart not registered")
-
-        result = await tools["plot_iso_20816_chart"](
-            ctx=mock_ctx,
-            signal_id="iso_test",
-            machine_group=2,
-            support_type="rigid",
-        )
-        assert "plot_iso_" in result
-        assert ".html" in result
 
 
 # ---------------------------------------------------------------------------
@@ -895,14 +875,14 @@ class TestDiagnoseVibrationExtended:
     @pytest.mark.asyncio
     async def test_diagnosis_with_bearing(self, tools, data_dir, mock_ctx):
         """Full diagnosis including bearing fault detection."""
-        if "diagnose_vibration_tool" not in tools:
-            pytest.skip("diagnose_vibration_tool not registered")
+        if "diagnose_vibration" not in tools:
+            pytest.skip("diagnose_vibration not registered")
 
         from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
         repo = get_repository()
         repo.load_signal("normal.csv", signal_id="diag_brg", sampling_rate=10000)
         try:
-            result = await tools["diagnose_vibration_tool"](
+            result = await tools["diagnose_vibration"](
                 ctx=mock_ctx,
                 signal_id="diag_brg",
                 rpm=1800.0,
@@ -919,11 +899,11 @@ class TestDiagnoseVibrationExtended:
     @pytest.mark.asyncio
     async def test_diagnosis_missing_signal(self, tools, data_dir, mock_ctx):
         """Diagnosis on non-existent signal_id should raise."""
-        if "diagnose_vibration_tool" not in tools:
-            pytest.skip("diagnose_vibration_tool not registered")
+        if "diagnose_vibration" not in tools:
+            pytest.skip("diagnose_vibration not registered")
 
         with pytest.raises((KeyError, ValueError)):
-            await tools["diagnose_vibration_tool"](
+            await tools["diagnose_vibration"](
                 ctx=mock_ctx,
                 signal_id="nonexistent_signal_id",
                 rpm=1800.0,
@@ -1058,7 +1038,7 @@ class TestDiagnoseVibrationRefusedISO:
         repo = get_repository()
         try:
             repo.load_signal("diag_no_unit.csv", signal_id="diag_no_unit", sampling_rate=fs)
-            result = await tools["diagnose_vibration_tool"](
+            result = await tools["diagnose_vibration"](
                 ctx=mock_ctx,
                 signal_id="diag_no_unit",
                 rpm=1800.0,
@@ -1093,7 +1073,7 @@ class TestDiagnoseVibrationRefusedISO:
         repo = get_repository()
         try:
             repo.load_signal("diag_low_fs.csv", signal_id="diag_low_fs")
-            result = await tools["diagnose_vibration_tool"](
+            result = await tools["diagnose_vibration"](
                 ctx=mock_ctx,
                 signal_id="diag_low_fs",
                 rpm=1800.0,
@@ -1113,7 +1093,7 @@ class TestDiagnoseVibrationRefusedISO:
         repo = get_repository()
         try:
             repo.load_signal("normal.csv", signal_id="diag_ok")  # metadata: fs + 'g'
-            result = await tools["diagnose_vibration_tool"](
+            result = await tools["diagnose_vibration"](
                 ctx=mock_ctx,
                 signal_id="diag_ok",
                 rpm=1800.0,

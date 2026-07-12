@@ -38,17 +38,19 @@ mcp = FastMCP(
 
     Output efficiency:
     - All spectral tools return COMPACT summaries (top peaks + stats), NOT full arrays
-    - Signal resources return metadata + statistics only, NOT raw samples
+    - predict_anomalies returns counts/percentiles/worst segments, NOT per-segment arrays
     - Reports are saved as HTML files; only path + summary returned to chat
-    - Use generate_*_report() or plot_*() for full visual inspection
+    - Use generate_*_report() or plot_signal() for full visual inspection
     - NEVER attempt to display or return full-length arrays in chat
 
     Report Generation System:
     - All visualizations are generated as professional HTML files
-    - Reports are saved in reports/ directory with metadata
+    - Reports are saved in reports/ directory with timestamped filenames
+      (consecutive runs never overwrite) and embedded metadata
     - LLM should inform user about report location and NOT display HTML content
-    - Use list_html_reports() to see available reports
-    - Use get_report_info() to get report info without consuming tokens
+    - Use list_html_reports() to see available reports, and
+      list_html_reports(file_name=...) to read one report's metadata
+      without consuming tokens
 
     Documentation Search (RAG):
     - Use search_documentation() to find relevant passages in manuals and catalogs
@@ -85,10 +87,14 @@ mcp = FastMCP(
     - NEVER print large data directly
     - Reports are professional, self-contained HTML files
 
-    Filename resolution policy:
-    - FIRST call list_available_signals() to verify exact filename
-    - Do NOT auto-correct or guess filenames
-    - If ambiguous, ask user to clarify
+    Signal handle policy (signal_id is THE handle):
+    - list_signals(scope="disk") shows loadable files; load_signal() loads
+      one (or a batch) and returns the signal_id
+    - list_signals(scope="memory") shows the loaded signal_ids;
+      get_signal_info() exposes metadata including the companion
+      source_metadata (rpm, reference frequencies, ...)
+    - Every analysis/diagnosis/report/prognostics tool takes signal_id
+    - Do NOT auto-correct or guess file names or ids; if ambiguous, ask
 
     Prognostics (ISO 13374 Block 5):
     - Remaining Useful Life estimation (linear, exponential, kalman) —

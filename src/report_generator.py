@@ -8,6 +8,7 @@ Reports are saved in the reports/ directory as:
     Requires ``python-docx``: ``pip install predictive-maintenance-mcp[docx]``
 """
 
+import itertools
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
@@ -39,6 +40,33 @@ try:
     HAS_DOCX = True
 except ImportError:
     HAS_DOCX = False
+
+
+#: Process-local sequence for report filenames — the Windows clock can
+#: return identical microsecond timestamps for back-to-back calls, so a
+#: monotonic counter guarantees uniqueness within the process.
+_report_sequence = itertools.count()
+
+
+def timestamped_report_name(prefix: str, label: str, ext: str = "html") -> str:
+    """Build a unique, timestamped report filename.
+
+    Two consecutive runs always produce two distinct files (timestamp +
+    monotonic sequence), so a re-run never silently overwrites the
+    previous report.
+
+    Args:
+        prefix: Report family (e.g. 'fft_spectrum').
+        label: Signal/model label; path separators are flattened.
+        ext: File extension without the dot.
+
+    Returns:
+        Filename like 'fft_spectrum_baseline_1_20260712-153205-000042.html'.
+    """
+    safe_label = Path(label).stem.replace("/", "_").replace("\\", "_")
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    seq = next(_report_sequence)
+    return f"{prefix}_{safe_label}_{stamp}-{seq:06d}.{ext}"
 
 
 def save_fft_report(
@@ -135,9 +163,8 @@ def save_fft_report(
         metadata=metadata
     )
     
-    # Save HTML file
-    safe_name = Path(signal_file).stem.replace("/", "_").replace("\\", "_")
-    output_file = REPORTS_DIR / f"fft_spectrum_{safe_name}.html"
+    # Save HTML file (timestamped: consecutive runs never overwrite)
+    output_file = REPORTS_DIR / timestamped_report_name("fft_spectrum", signal_file)
     output_file.write_text(html, encoding='utf-8')
     
     logger.info(f"FFT report saved: {output_file.name}")
@@ -263,9 +290,10 @@ def save_envelope_report(
         metadata=metadata
     )
     
-    # Save HTML file
-    safe_name = Path(signal_file).stem.replace("/", "_").replace("\\", "_")
-    output_file = REPORTS_DIR / f"envelope_analysis_{safe_name}.html"
+    # Save HTML file (timestamped: consecutive runs never overwrite)
+    output_file = REPORTS_DIR / timestamped_report_name(
+        "envelope_analysis", signal_file
+    )
     output_file.write_text(html, encoding='utf-8')
     
     logger.info(f"Envelope report saved: {output_file.name}")
@@ -318,9 +346,8 @@ def save_iso_report(
         metadata=metadata
     )
     
-    # Save HTML file
-    safe_name = Path(signal_file).stem.replace("/", "_").replace("\\", "_")
-    output_file = REPORTS_DIR / f"iso_20816_{safe_name}.html"
+    # Save HTML file (timestamped: consecutive runs never overwrite)
+    output_file = REPORTS_DIR / timestamped_report_name("iso_20816", signal_file)
     output_file.write_text(html, encoding='utf-8')
     
     logger.info(f"ISO report saved: {output_file.name}")
@@ -561,9 +588,10 @@ def save_diagnostic_report_docx(
         doc.add_heading("Diagnostic Summary", level=1)
         doc.add_paragraph(str(diagnosis))
 
-    # -- save -------------------------------------------------------------
-    safe_name = Path(signal_file).stem.replace("/", "_").replace("\\", "_")
-    output_file = REPORTS_DIR / f"diagnostic_{safe_name}.docx"
+    # -- save (timestamped: consecutive runs never overwrite) --------------
+    output_file = REPORTS_DIR / timestamped_report_name(
+        "diagnostic", signal_file, ext="docx"
+    )
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     doc.save(str(output_file))
 

@@ -87,22 +87,36 @@ resources = list(mcp._resource_manager._resources) + list(
     mcp._resource_manager._templates
 )
 print("   [OK ] from predictive_maintenance_mcp.server import mcp")
-print(f"   MCP Tools: {len(tools)}")
-print(f"   MCP Prompts: {len(prompts)}")
-print(f"   MCP Resources: {len(resources)}")
+print(f"   MCP Tools: {len(tools)} (expected 33)")
+print(f"   MCP Prompts: {len(prompts)} (expected 3)")
+print(f"   MCP Resources: {len(resources)} (expected 0)")
+
+counts_ok = (len(tools), len(resources), len(prompts)) == (33, 0, 3)
+if not counts_ok:
+    print("   [FAIL] Registered surface differs from the frozen 33/0/3 target")
 print()
 
 # 6. Check for key MCP tools
 print("6. Key MCP tools:")
 key_tools = [
-    "generate_fft_report",
-    "generate_envelope_report",
-    "generate_iso_report",
+    "load_signal",
+    "list_signals",
+    "clear_signals",
+    "generate_test_signal",
     "analyze_fft",
     "analyze_envelope",
     "assess_severity",
+    "check_bearing_faults",
+    "diagnose_vibration",
     "train_anomaly_model",
     "predict_anomalies",
+    "generate_fft_report",
+    "generate_envelope_report",
+    "generate_iso_report",
+    "list_html_reports",
+    "analyze_signal_trend",
+    "estimate_rul",
+    "generate_maintenance_recommendations",
 ]
 
 missing = [t for t in key_tools if t not in tools]
@@ -114,8 +128,14 @@ print()
 
 # Summary
 print("=" * 60)
-if missing:
-    print("VALIDATION FAILED - missing tools:", ", ".join(missing))
+if missing or not counts_ok:
+    if missing:
+        print("VALIDATION FAILED - missing tools:", ", ".join(missing))
+    if not counts_ok:
+        print(
+            "VALIDATION FAILED - endpoint counts "
+            f"{len(tools)}/{len(resources)}/{len(prompts)} != 33/0/3"
+        )
     sys.exit(1)
 print("VALIDATION PASSED - Server ready for testing!")
 print()

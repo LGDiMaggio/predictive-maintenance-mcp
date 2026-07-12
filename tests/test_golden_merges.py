@@ -195,7 +195,7 @@ class TestGoldenAssessSeverity:
             signal_id="golden_iso",
             machine_group=2,
             support_type="rigid",
-            operating_speed_rpm=400.0,
+            rpm=400.0,
         )
         assert new.frequency_range == old["frequency_range"]
         assert "2-1000" in new.frequency_range

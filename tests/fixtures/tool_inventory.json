@@ -6,36 +6,22 @@
       "bsf",
       "ftf",
       "machine_group",
-      "operating_speed_rpm",
+      "rpm",
       "sampling_rate",
-      "signal_file",
+      "signal_id",
       "support_type"
     ],
     "diagnose_gear": [
       "num_teeth",
-      "rotation_speed_rpm",
+      "rpm",
       "sampling_rate",
-      "signal_file"
-    ],
-    "generate_iso_diagnostic_report": [
-      "machine_group",
-      "machine_name",
-      "measurement_location",
-      "operating_speed_rpm",
-      "sampling_rate",
-      "signal_file",
-      "support_type"
+      "signal_id"
     ],
     "quick_diagnostic_report": [
-      "signal_file"
+      "signal_id"
     ]
   },
-  "resources": [
-    "manual://list",
-    "manual://read/{filename}",
-    "signal://list",
-    "signal://read/{filename}"
-  ],
+  "resources": [],
   "tools": {
     "analyze_envelope": {
       "context_kwarg": "ctx",
@@ -226,18 +212,6 @@
             "default": null,
             "title": "Machine Power Kw"
           },
-          "operating_speed_rpm": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Operating Speed Rpm"
-          },
           "rms_velocity_mm_s": {
             "anyOf": [
               {
@@ -249,6 +223,18 @@
             ],
             "default": null,
             "title": "Rms Velocity Mm S"
+          },
+          "rpm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Rpm"
           },
           "signal_id": {
             "anyOf": [
@@ -313,9 +299,9 @@
             "title": "Pitch Diameter Mm",
             "type": "number"
           },
-          "shaft_speed_rpm": {
+          "rpm": {
             "default": 1500.0,
-            "title": "Shaft Speed Rpm",
+            "title": "Rpm",
             "type": "number"
           }
         },
@@ -423,29 +409,25 @@
         "type": "object"
       }
     },
-    "clear_all_signals": {
-      "context_kwarg": "ctx",
-      "is_async": true,
-      "parameters": {
-        "properties": {},
-        "title": "clear_all_signalsArguments",
-        "type": "object"
-      }
-    },
-    "clear_signal": {
+    "clear_signals": {
       "context_kwarg": "ctx",
       "is_async": true,
       "parameters": {
         "properties": {
           "signal_id": {
-            "title": "Signal Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Signal Id"
           }
         },
-        "required": [
-          "signal_id"
-        ],
-        "title": "clear_signalArguments",
+        "title": "clear_signalsArguments",
         "type": "object"
       }
     },
@@ -513,7 +495,7 @@
         "type": "object"
       }
     },
-    "diagnose_vibration_tool": {
+    "diagnose_vibration": {
       "context_kwarg": "ctx",
       "is_async": true,
       "parameters": {
@@ -561,7 +543,7 @@
           "signal_id",
           "rpm"
         ],
-        "title": "diagnose_vibration_toolArguments",
+        "title": "diagnose_vibrationArguments",
         "type": "object"
       }
     },
@@ -672,8 +654,8 @@
       "is_async": true,
       "parameters": {
         "properties": {
-          "manual_filename": {
-            "title": "Manual Filename",
+          "file_name": {
+            "title": "File Name",
             "type": "string"
           },
           "use_cache": {
@@ -683,7 +665,7 @@
           }
         },
         "required": [
-          "manual_filename"
+          "file_name"
         ],
         "title": "extract_manual_specsArguments",
         "type": "object"
@@ -839,7 +821,7 @@
             "title": "Num Peaks",
             "type": "integer"
           },
-          "rotation_freq": {
+          "rpm": {
             "anyOf": [
               {
                 "type": "number"
@@ -849,7 +831,7 @@
               }
             ],
             "default": null,
-            "title": "Rotation Freq"
+            "title": "Rpm"
           },
           "signal_id": {
             "title": "Signal Id",
@@ -870,10 +852,14 @@
         "properties": {
           "machine_group": {
             "default": 2,
+            "enum": [
+              1,
+              2
+            ],
             "title": "Machine Group",
             "type": "integer"
           },
-          "operating_speed_rpm": {
+          "rpm": {
             "anyOf": [
               {
                 "type": "number"
@@ -883,7 +869,7 @@
               }
             ],
             "default": null,
-            "title": "Operating Speed Rpm"
+            "title": "Rpm"
           },
           "signal_id": {
             "title": "Signal Id",
@@ -891,6 +877,10 @@
           },
           "support_type": {
             "default": "rigid",
+            "enum": [
+              "rigid",
+              "flexible"
+            ],
             "title": "Support Type",
             "type": "string"
           }
@@ -908,11 +898,36 @@
       "parameters": {
         "properties": {
           "fault_types": {
-            "default": "",
-            "title": "Fault Types",
-            "type": "string"
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "ball",
+                    "cage",
+                    "inner_race",
+                    "looseness",
+                    "misalignment",
+                    "outer_race",
+                    "unbalance"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Fault Types"
           },
           "severity_zone": {
+            "enum": [
+              "A",
+              "B",
+              "C",
+              "D"
+            ],
             "title": "Severity Zone",
             "type": "string"
           }
@@ -1015,28 +1030,17 @@
           },
           "signal_type": {
             "default": "bearing_fault",
+            "enum": [
+              "bearing_fault",
+              "gear_fault",
+              "imbalance",
+              "normal"
+            ],
             "title": "Signal Type",
             "type": "string"
           }
         },
         "title": "generate_test_signalArguments",
-        "type": "object"
-      }
-    },
-    "get_report_info": {
-      "context_kwarg": null,
-      "is_async": false,
-      "parameters": {
-        "properties": {
-          "file_name": {
-            "title": "File Name",
-            "type": "string"
-          }
-        },
-        "required": [
-          "file_name"
-        ],
-        "title": "get_report_infoArguments",
         "type": "object"
       }
     },
@@ -1061,7 +1065,20 @@
       "context_kwarg": null,
       "is_async": false,
       "parameters": {
-        "properties": {},
+        "properties": {
+          "file_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "File Name"
+          }
+        },
         "title": "list_html_reportsArguments",
         "type": "object"
       }
@@ -1076,20 +1093,21 @@
       }
     },
     "list_signals": {
-      "context_kwarg": null,
-      "is_async": false,
-      "parameters": {
-        "properties": {},
-        "title": "list_signalsArguments",
-        "type": "object"
-      }
-    },
-    "list_stored_signals": {
       "context_kwarg": "ctx",
       "is_async": true,
       "parameters": {
-        "properties": {},
-        "title": "list_stored_signalsArguments",
+        "properties": {
+          "scope": {
+            "default": "disk",
+            "enum": [
+              "disk",
+              "memory"
+            ],
+            "title": "Scope",
+            "type": "string"
+          }
+        },
+        "title": "list_signalsArguments",
         "type": "object"
       }
     },
@@ -1167,134 +1185,6 @@
         "type": "object"
       }
     },
-    "plot_envelope": {
-      "context_kwarg": "ctx",
-      "is_async": true,
-      "parameters": {
-        "properties": {
-          "filter_band": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "number"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Filter Band"
-          },
-          "freq_labels": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Freq Labels"
-          },
-          "freq_range": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "number"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Freq Range"
-          },
-          "highlight_freqs": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "number"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Highlight Freqs"
-          },
-          "signal_id": {
-            "title": "Signal Id",
-            "type": "string"
-          },
-          "title": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Title"
-          }
-        },
-        "required": [
-          "signal_id"
-        ],
-        "title": "plot_envelopeArguments",
-        "type": "object"
-      }
-    },
-    "plot_iso_20816_chart": {
-      "context_kwarg": "ctx",
-      "is_async": true,
-      "parameters": {
-        "properties": {
-          "machine_group": {
-            "default": 1,
-            "title": "Machine Group",
-            "type": "integer"
-          },
-          "operating_speed_rpm": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Operating Speed Rpm"
-          },
-          "signal_id": {
-            "title": "Signal Id",
-            "type": "string"
-          },
-          "support_type": {
-            "default": "rigid",
-            "title": "Support Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "signal_id"
-        ],
-        "title": "plot_iso_20816_chartArguments",
-        "type": "object"
-      }
-    },
     "plot_signal": {
       "context_kwarg": "ctx",
       "is_async": true,
@@ -1344,72 +1234,6 @@
         "type": "object"
       }
     },
-    "plot_spectrum": {
-      "context_kwarg": "ctx",
-      "is_async": true,
-      "parameters": {
-        "properties": {
-          "freq_range": {
-            "anyOf": [
-              {
-                "items": {
-                  "type": "number"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Freq Range"
-          },
-          "min_peak_distance": {
-            "default": 1.0,
-            "title": "Min Peak Distance",
-            "type": "number"
-          },
-          "num_peaks": {
-            "default": 10,
-            "title": "Num Peaks",
-            "type": "integer"
-          },
-          "rotation_freq": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Rotation Freq"
-          },
-          "signal_id": {
-            "title": "Signal Id",
-            "type": "string"
-          },
-          "title": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "title": "Title"
-          }
-        },
-        "required": [
-          "signal_id"
-        ],
-        "title": "plot_spectrumArguments",
-        "type": "object"
-      }
-    },
     "predict_anomalies": {
       "context_kwarg": "ctx",
       "is_async": true,
@@ -1437,8 +1261,8 @@
       "is_async": true,
       "parameters": {
         "properties": {
-          "manual_filename": {
-            "title": "Manual Filename",
+          "file_name": {
+            "title": "File Name",
             "type": "string"
           },
           "max_pages": {
@@ -1448,7 +1272,7 @@
           }
         },
         "required": [
-          "manual_filename"
+          "file_name"
         ],
         "title": "read_manual_excerptArguments",
         "type": "object"
@@ -1459,13 +1283,13 @@
       "is_async": true,
       "parameters": {
         "properties": {
-          "bearing_designation": {
-            "title": "Bearing Designation",
+          "bearing_id": {
+            "title": "Bearing Id",
             "type": "string"
           }
         },
         "required": [
-          "bearing_designation"
+          "bearing_id"
         ],
         "title": "search_bearing_catalogArguments",
         "type": "object"

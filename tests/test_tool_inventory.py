@@ -25,8 +25,19 @@ Fixture history:
   (<- check_bearing_fault_peak_tool + check_bearing_faults_direct +
   lookup_bearing_and_compute_tool), analyze_signal_trend
   (<- detect_signal_degradation_onset). Counts: 46 -> 39 tools;
-  resources/prompts unchanged (4/4). U9b brings the minor merges,
-  resource/prompt drops, and the 33/0/3 target surface.
+  resources/prompts unchanged (4/4).
+- U9b: regenerated intentionally — FINAL target surface 33/0/3. Minor
+  merges: list_signals(scope) <- list_stored_signals;
+  clear_signals(signal_id=None) <- clear_signal + clear_all_signals;
+  list_html_reports(file_name) <- get_report_info; generate_fft_report <-
+  plot_spectrum; generate_envelope_report <- plot_envelope;
+  generate_iso_report <- plot_iso_20816_chart. Dropped: all 4 resources
+  (covered by list_signals/get_signal_info/list_machine_manuals/
+  read_manual_excerpt) and the generate_iso_diagnostic_report prompt.
+  Renames: diagnose_vibration_tool -> diagnose_vibration; one-name-per-
+  concept sweep (rpm, file_name, bearing_id); typed vocabularies
+  (fault_types, severity_zone, scope). Full old->new mapping asserted in
+  tests/test_surface_parity.py.
 
 Snapshot recipe (run from the repo root):
     python -c "from tests.test_tool_inventory import build_inventory, \\
@@ -103,19 +114,15 @@ class TestInventoryCharacterization:
         assert inventory["prompts"] == reference["prompts"]
 
     def test_expected_counts(self, inventory):
-        """47 endpoints after U9a: 39 tools + 4 resources + 4 prompts.
-
-        U9a executed the four major merges (46 - 9 old + 2 new = 39
-        tools). U9b consolidates further to the target surface of
-        33 tools + 0 resources + 3 prompts.
-        """
-        assert len(inventory["tools"]) == 39
-        assert len(inventory["resources"]) == 4
-        assert len(inventory["prompts"]) == 4
+        """FINAL U9 target surface: 33 tools + 0 resources + 3 prompts."""
+        assert len(inventory["tools"]) == 33
+        assert len(inventory["resources"]) == 0
+        assert len(inventory["prompts"]) == 3
 
     def test_merged_tools_absent_new_tools_present(self, inventory):
-        """U9a clean cut: absorbed tool names gone, unified names present."""
+        """U9 clean cut: absorbed tool names gone, unified names present."""
         absorbed = {
+            # U9a major merges
             "evaluate_iso_20816",
             "assess_vibration_severity",
             "check_vibration_alert",
@@ -125,6 +132,15 @@ class TestInventoryCharacterization:
             "check_bearing_faults_direct",
             "lookup_bearing_and_compute_tool",
             "detect_signal_degradation_onset",
+            # U9b minor merges + renames
+            "list_stored_signals",
+            "clear_signal",
+            "clear_all_signals",
+            "get_report_info",
+            "plot_spectrum",
+            "plot_envelope",
+            "plot_iso_20816_chart",
+            "diagnose_vibration_tool",
         }
         assert absorbed.isdisjoint(inventory["tools"])
         for unified in (
@@ -132,5 +148,9 @@ class TestInventoryCharacterization:
             "analyze_envelope",
             "check_bearing_faults",
             "analyze_signal_trend",
+            "list_signals",
+            "clear_signals",
+            "list_html_reports",
+            "diagnose_vibration",
         ):
             assert unified in inventory["tools"]

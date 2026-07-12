@@ -262,6 +262,7 @@ class TestAnomalyModelResult:
 
     def test_creation(self):
         r = AnomalyModelResult(
+            model_name="bearing_health",
             model_type="OneClassSVM",
             num_training_samples=200,
             num_features_original=8,
@@ -273,9 +274,12 @@ class TestAnomalyModelResult:
             pca_path="/models/pca.pkl",
         )
         assert r.model_type == "OneClassSVM"
+        # U9 loop closure: the saved name is echoed for predict_anomalies.
+        assert r.model_name == "bearing_health"
 
     def test_optional_validation_fields(self):
         r = AnomalyModelResult(
+            model_name="lof",
             model_type="LocalOutlierFactor",
             num_training_samples=100,
             num_features_original=8, num_features_pca=4,
@@ -294,8 +298,8 @@ class TestAnomalyPredictionResult:
 
     def test_healthy(self):
         r = AnomalyPredictionResult(
-            num_segments=100, anomaly_count=2, anomaly_ratio=0.02,
-            predictions=[1] * 98 + [-1] * 2,
+            model_name="m", num_segments=100, anomaly_count=2,
+            anomaly_ratio=0.02, segment_duration_s=0.1,
             overall_health="Healthy",
         )
         assert r.overall_health == "Healthy"
@@ -303,8 +307,8 @@ class TestAnomalyPredictionResult:
 
     def test_faulty(self):
         r = AnomalyPredictionResult(
-            num_segments=100, anomaly_count=90, anomaly_ratio=0.90,
-            predictions=[-1] * 90 + [1] * 10,
+            model_name="m", num_segments=100, anomaly_count=90,
+            anomaly_ratio=0.90, segment_duration_s=0.1,
             overall_health="Faulty",
         )
         assert r.overall_health == "Faulty"
@@ -312,28 +316,40 @@ class TestAnomalyPredictionResult:
     def test_confidence_field_removed(self):
         """The invented High/Medium 'confidence' label no longer exists."""
         r = AnomalyPredictionResult(
-            num_segments=10, anomaly_count=0, anomaly_ratio=0.0,
-            predictions=[1] * 10,
+            model_name="m", num_segments=10, anomaly_count=0,
+            anomaly_ratio=0.0, segment_duration_s=0.1,
             overall_health="Healthy",
         )
         assert "confidence" not in AnomalyPredictionResult.model_fields
         assert not hasattr(r, "confidence")
 
+    def test_per_segment_arrays_removed(self):
+        """U9 bounded output: per-segment arrays are gone from the schema."""
+        assert "predictions" not in AnomalyPredictionResult.model_fields
+        assert "anomaly_scores" not in AnomalyPredictionResult.model_fields
+        for bounded in ("score_percentiles", "worst_segments"):
+            assert bounded in AnomalyPredictionResult.model_fields
+
     def test_optional_scores(self):
         r = AnomalyPredictionResult(
-            num_segments=10, anomaly_count=0, anomaly_ratio=0.0,
-            predictions=[1] * 10,
+            model_name="m", num_segments=10, anomaly_count=0,
+            anomaly_ratio=0.0, segment_duration_s=0.1,
             overall_health="Healthy",
         )
-        assert r.anomaly_scores is None
+        assert r.score_percentiles is None
+        assert r.worst_segments == []
 
     def test_json_roundtrip(self):
         r = AnomalyPredictionResult(
-            num_segments=50, anomaly_count=5, anomaly_ratio=0.1,
-            predictions=[1] * 45 + [-1] * 5,
+            model_name="m", num_segments=50, anomaly_count=5,
+            anomaly_ratio=0.1, segment_duration_s=0.1,
             overall_health="Suspicious",
-            anomaly_scores=[0.1] * 45 + [0.9] * 5,
+            score_percentiles={"p5": -0.5, "p25": -0.1, "p50": 0.1,
+                               "p75": 0.3, "p95": 0.6},
+            worst_segments=[{"segment_index": 3, "start_time_s": 0.15,
+                             "score": -0.5}],
         )
         restored = AnomalyPredictionResult.model_validate_json(r.model_dump_json())
         assert restored.anomaly_count == 5
-        assert len(restored.anomaly_scores) == 50
+        assert restored.score_percentiles["p50"] == 0.1
+        assert restored.worst_segments[0]["segment_index"] == 3

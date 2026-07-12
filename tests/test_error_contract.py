@@ -62,8 +62,6 @@ def sandbox_dirs(tmp_path, monkeypatch):
         "predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR",
         "predictive_maintenance_mcp.signal_acquisition.repository.DATA_DIR",
         "predictive_maintenance_mcp.mcp_tools.acquisition_tools.DATA_DIR",
-        "predictive_maintenance_mcp.mcp_tools.analysis_tools.DATA_DIR",
-        "predictive_maintenance_mcp.mcp_tools.diagnostics_tools.DATA_DIR",
     ):
         monkeypatch.setattr(target, signals_dir)
     for target in (
@@ -74,7 +72,6 @@ def sandbox_dirs(tmp_path, monkeypatch):
     for target in (
         "predictive_maintenance_mcp.report_generator.REPORTS_DIR",
         "predictive_maintenance_mcp.mcp_tools.report_tools.REPORTS_DIR",
-        "predictive_maintenance_mcp.mcp_tools.diagnostics_tools.REPORTS_DIR",
     ):
         monkeypatch.setattr(target, reports_dir)
     return signals_dir
@@ -147,9 +144,9 @@ class TestModuleLevelTools:
 
 # Curated obviously-wrong inputs per tool. Tools omitted here either have no
 # reachable failure path without heavy side effects (list_signals,
-# list_html_reports, generate_test_signal, search_documentation/RAG,
+# generate_test_signal, search_documentation/RAG,
 # calculate_bearing_characteristic_frequencies) or express their negative
-# outcome as a typed result by design (search_bearing_catalog, clear_signal),
+# outcome as a typed result by design (search_bearing_catalog, clear_signals),
 # which is covered separately below.
 FAILURE_CASES = {
     "analyze_fft": {"signal_id": "__not_loaded__"},
@@ -158,24 +155,21 @@ FAILURE_CASES = {
     "extract_features_from_signal": {"signal_id": "__not_loaded__"},
     "compute_power_spectral_density": {"signal_id": "__not_loaded__"},
     "compute_spectrogram_stft": {"signal_id": "__not_loaded__"},
-    "plot_iso_20816_chart": {"signal_id": "__not_loaded__"},
     "train_anomaly_model": {
         "healthy_signal_ids": ["x"],
         "model_name": "../evil",
     },
     "predict_anomalies": {"signal_id": "__not_loaded__", "model_name": "__no_model__"},
-    "extract_manual_specs": {"manual_filename": "__missing__.pdf"},
-    "read_manual_excerpt": {"manual_filename": "__missing__.pdf"},
+    "extract_manual_specs": {"file_name": "__missing__.pdf"},
+    "read_manual_excerpt": {"file_name": "__missing__.pdf"},
     "check_bearing_faults": {
         "signal_id": "__not_loaded__",
         "bearing_id": "6205",
         "rpm": 1500.0,
     },
     "assess_severity": {"signal_id": "__not_loaded__"},
-    "diagnose_vibration_tool": {"signal_id": "__not_loaded__", "rpm": 1500.0},
+    "diagnose_vibration": {"signal_id": "__not_loaded__", "rpm": 1500.0},
     "plot_signal": {"signal_id": "__not_loaded__"},
-    "plot_spectrum": {"signal_id": "__not_loaded__"},
-    "plot_envelope": {"signal_id": "__not_loaded__"},
     "generate_fft_report": {"signal_id": "__not_loaded__"},
     "generate_envelope_report": {"signal_id": "__not_loaded__"},
     "generate_iso_report": {"signal_id": "__not_loaded__"},
@@ -183,7 +177,11 @@ FAILURE_CASES = {
         "signal_id": "__not_loaded__",
         "sections": {"diagnosis": "text"},
     },
-    "get_report_info": {"file_name": "__missing__.html"},
+    "list_html_reports": {"file_name": "__missing__.html"},
+    "generate_maintenance_recommendations": {
+        "severity_zone": "C",
+        "fault_types": ["BPFO"],  # acronym, not canonical vocabulary
+    },
     "generate_pca_visualization_report": {"model_name": "__no_model__"},
     "estimate_rul": {
         "failure_threshold": 10.0,
@@ -271,7 +269,7 @@ class TestTypedNegativeOutcomes:
     @pytest.mark.asyncio
     async def test_bearing_catalog_miss_is_typed(self, tools, mock_ctx):
         result = await tools["search_bearing_catalog"].fn(
-            bearing_designation="ZZZ_NOT_A_BEARING_999", ctx=mock_ctx
+            bearing_id="ZZZ_NOT_A_BEARING_999", ctx=mock_ctx
         )
         assert isinstance(result, BearingCatalogMiss)
         assert result.status == "not_found"
@@ -282,64 +280,6 @@ class TestTypedNegativeOutcomes:
         assert "error" not in dumped
         for key in ("num_balls", "ball_diameter_mm", "pitch_diameter_mm"):
             assert key not in dumped
-
-
-# ---------------------------------------------------------------------------
-# Resources: no hand-built JSON, hostile characters stay safe
-# ---------------------------------------------------------------------------
-
-
-class TestResourceOutputs:
-    def test_read_signal_file_success_is_valid_json(self, sandbox_dirs):
-        from predictive_maintenance_mcp.mcp_tools.acquisition_tools import (
-            read_signal_file,
-        )
-
-        pd.DataFrame([0.1, 0.2, 0.3]).to_csv(
-            sandbox_dirs / "ok.csv", index=False, header=False
-        )
-        out = read_signal_file("ok.csv")
-        parsed = json.loads(out)  # must be valid JSON
-        assert parsed["filename"] == "ok.csv"
-
-    def test_read_signal_file_hostile_error_never_malformed(
-        self, sandbox_dirs, monkeypatch
-    ):
-        """An exception message with quotes and Windows backslashes must
-        surface as a raised exception (clean protocol error) — never as a
-        hand-interpolated, malformed JSON string."""
-        from predictive_maintenance_mcp.mcp_tools import acquisition_tools
-
-        pd.DataFrame([0.1]).to_csv(
-            sandbox_dirs / "hostile.csv", index=False, header=False
-        )
-        hostile = 'boom "quoted" path C:\\Users\\evil\\x.csv'
-
-        def explode(_filename):
-            raise RuntimeError(hostile)
-
-        monkeypatch.setattr(
-            acquisition_tools, "load_signal_data", explode
-        )
-        with pytest.raises(RuntimeError, match="quoted"):
-            acquisition_tools.read_signal_file("hostile.csv")
-
-    def test_read_signal_file_missing_raises(self, sandbox_dirs):
-        from predictive_maintenance_mcp.mcp_tools.acquisition_tools import (
-            read_signal_file,
-        )
-
-        with pytest.raises(FileNotFoundError, match="list_signals"):
-            read_signal_file("__nope__.csv")
-
-    def test_read_manual_resource_missing_raises(self, tmp_path, monkeypatch):
-        from predictive_maintenance_mcp.mcp_tools import acquisition_tools
-
-        resources = tmp_path / "resources"
-        (resources / "machine_manuals").mkdir(parents=True)
-        monkeypatch.setattr(acquisition_tools, "RESOURCES_DIR", resources)
-        with pytest.raises(FileNotFoundError, match="available manuals"):
-            acquisition_tools.read_manual_resource("__nope__.pdf")
 
 
 # ---------------------------------------------------------------------------

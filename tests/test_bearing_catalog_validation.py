@@ -265,12 +265,12 @@ class TestBearingNotFound:
         from predictive_maintenance_mcp.models import BearingCatalogMiss
 
         result = await diag_tools["search_bearing_catalog"](
-            bearing_designation="99999",
+            bearing_id="99999",
             ctx=AsyncMock(),
         )
         assert isinstance(result, BearingCatalogMiss)
         assert result.status == "not_found"
-        assert result.bearing_designation == "99999"
+        assert result.bearing_id == "99999"
         assert result.suggestion
         # No invented geometry in the payload
         dumped = result.model_dump()
@@ -304,9 +304,6 @@ def analysis_tools_env(tmp_path, monkeypatch):
     with open(signals_dir / "env_test_metadata.json", "w") as f:
         json.dump({"sampling_rate": fs, "signal_unit": "g"}, f)
 
-    monkeypatch.setattr(
-        "predictive_maintenance_mcp.mcp_tools.analysis_tools.DATA_DIR", signals_dir
-    )
     monkeypatch.setattr("predictive_maintenance_mcp.config.DATA_DIR", signals_dir)
     monkeypatch.setattr(
         "predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR", signals_dir

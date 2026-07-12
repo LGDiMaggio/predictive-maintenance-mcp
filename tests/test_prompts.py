@@ -23,22 +23,22 @@ class TestDiagnoseBearingPrompt:
     """Tests for diagnose_bearing prompt."""
 
     def test_returns_string(self, prompts):
-        result = prompts["diagnose_bearing"](signal_file="test.csv")
+        result = prompts["diagnose_bearing"](signal_id="test_signal")
         assert isinstance(result, str)
         assert len(result) > 100
 
-    def test_contains_signal_file(self, prompts):
-        result = prompts["diagnose_bearing"](signal_file="my_signal.csv")
-        assert "my_signal.csv" in result
+    def test_contains_signal_id(self, prompts):
+        result = prompts["diagnose_bearing"](signal_id="my_signal")
+        assert "my_signal" in result
 
     def test_contains_workflow_steps(self, prompts):
-        result = prompts["diagnose_bearing"](signal_file="test.csv")
+        result = prompts["diagnose_bearing"](signal_id="test_signal")
         # Should contain analysis steps
         assert "FFT" in result or "fft" in result or "spectrum" in result.lower()
 
     def test_with_frequencies(self, prompts):
         result = prompts["diagnose_bearing"](
-            signal_file="test.csv",
+            signal_id="test_signal",
             bpfo=81.0,
             bpfi=119.0,
             bsf=64.0,
@@ -48,7 +48,7 @@ class TestDiagnoseBearingPrompt:
         assert "119.00" in result
 
     def test_default_machine_group(self, prompts):
-        result = prompts["diagnose_bearing"](signal_file="test.csv")
+        result = prompts["diagnose_bearing"](signal_id="test_signal")
         # Default is machine_group=2
         assert "2" in result or "medium" in result.lower()
 
@@ -59,7 +59,7 @@ class TestDiagnoseGearPrompt:
     def test_returns_string(self, prompts):
         if "diagnose_gear" not in prompts:
             pytest.skip("diagnose_gear not registered")
-        result = prompts["diagnose_gear"](signal_file="test.csv")
+        result = prompts["diagnose_gear"](signal_id="test_signal")
         assert isinstance(result, str)
         assert len(result) > 50
 
@@ -70,6 +70,6 @@ class TestQuickDiagnosticPrompt:
     def test_returns_string(self, prompts):
         if "quick_diagnostic_report" not in prompts:
             pytest.skip("quick_diagnostic_report not registered")
-        result = prompts["quick_diagnostic_report"](signal_file="test.csv")
+        result = prompts["quick_diagnostic_report"](signal_id="test_signal")
         assert isinstance(result, str)
         assert len(result) > 50

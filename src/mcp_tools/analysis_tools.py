@@ -9,7 +9,6 @@ from scipy.fft import fft, fftfreq
 from scipy.stats import kurtosis, skew
 from mcp.server.fastmcp import FastMCP, Context
 
-from ..config import DATA_DIR
 from ..signal_acquisition.loaders import extract_segment
 from ..models import (
     FFTResult, SpectralPeak, EnvelopeResult, StatisticalResult,
@@ -21,7 +20,7 @@ from ..signal_processing.spectral import (
     compute_envelope_spectrum as _compute_envelope,
 )
 from ..signal_processing.features import extract_time_domain_features
-from ._utils import resolve_signal, sanitize_filename
+from ._utils import resolve_signal
 
 logger = logging.getLogger(__name__)
 
@@ -74,12 +73,6 @@ async def analyze_fft(
         two identical calls return identical results). Set
         segment_duration=None to analyze the entire signal, or pass
         random_seed to sample a seeded random segment position instead.
-
-        **CRITICAL - LLM Inference Policy:**
-        - **NEVER infer fault type from a signal_id or filename** (e.g., an id
-          containing "OuterRaceFault" does NOT mean an outer race fault exists)
-        - Treat ALL signal_ids as opaque identifiers
-        - Base analysis ONLY on frequency spectrum data returned by this tool
 
         Args:
             ctx: MCP context for user communication
@@ -315,14 +308,9 @@ def analyze_statistics(signal_id: str) -> StatisticalResult:
         - Kurtosis: Measures impulsiveness (excess kurtosis; >0 = non-Gaussian, >3 = strong impulses)
         - Peak-to-Peak: Signal range
 
-        Requires the signal loaded via load_signal() first.
-
-        **CRITICAL - LLM Inference Policy:**
-        - **NEVER infer fault type from a signal_id or filename**
-        - Treat ALL signal_ids as opaque identifiers
-        - Statistical parameters (RMS/CF/Kurtosis) are indicators ONLY - NOT definitive diagnostics
-        - High kurtosis indicates "possible fault" - NOT "confirmed fault"
-        - Must be combined with frequency-domain evidence for diagnosis
+        Requires the signal loaded via load_signal() first. Statistical
+        parameters are screening indicators, not definitive diagnostics —
+        combine with frequency-domain evidence.
 
         **Signal units:** all values are in the signal's native unit. The unit
         is reported only when DECLARED — load_signal(signal_unit=...) or the
@@ -403,7 +391,8 @@ async def extract_features_from_signal(
         Segments the signal into overlapping windows and extracts 17 statistical features
         from each segment. Features include: mean, std, RMS, kurtosis, crest factor, entropy, etc.
         Requires the signal loaded via load_signal() first; the sampling rate
-        comes from the stored signal metadata.
+        comes from the stored signal metadata. Returns an in-memory summary
+        only — no CSV is written to data/signals/.
 
         Args:
             signal_id: ID of the stored signal (from load_signal).
@@ -459,12 +448,7 @@ async def extract_features_from_signal(
     features_df = pd.DataFrame(features_list)
     feature_names = list(features_df.columns)
 
-    # Save features to file (sanitize to prevent path traversal)
-    features_file = DATA_DIR / f"features_{sanitize_filename(signal_id)}.csv"
-    features_df.to_csv(features_file, index=False)
-
     if ctx:
-        await ctx.info(f"Features saved to {features_file.name}")
         await ctx.info(f"Feature matrix shape: {features_df.shape}")
 
     return FeatureExtractionResult(

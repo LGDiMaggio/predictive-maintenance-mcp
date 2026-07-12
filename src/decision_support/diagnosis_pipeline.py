@@ -26,7 +26,7 @@ from ..signal_processing.spectral import compute_psd, compute_stft_spectrogram
 from ..signal_processing.features import extract_time_domain_features as _extract_time_domain_features
 from ..signal_acquisition.repository import VALID_SIGNAL_UNITS, normalize_signal_unit
 from ..diagnostics.bearing_analyzer import check_all_bearing_faults
-from ..diagnostics.iso20816 import assess_vibration_severity
+from ..diagnostics.iso20816 import assess_severity_with_axis
 
 logger = logging.getLogger(__name__)
 
@@ -295,7 +295,7 @@ def diagnose_vibration(
         )
     else:
         try:
-            iso_result = assess_vibration_severity(
+            iso_result = assess_severity_with_axis(
                 signal=signal,
                 fs=fs,
                 machine_group=machine_group,

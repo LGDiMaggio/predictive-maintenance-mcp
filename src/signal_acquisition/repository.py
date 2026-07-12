@@ -147,7 +147,8 @@ class SignalRepository:
         if not filepaths:
             raise ValueError(
                 "load_signal received an empty list — pass at least one "
-                "signal file path (see list_signals() for the files on disk)."
+                "signal file path (see list_signals(scope='disk') for the "
+                "files on disk)."
             )
         declared_unit = self._validate_unit(signal_unit)
 
@@ -298,8 +299,8 @@ class SignalRepository:
             f"signals are dropped when the cache exceeds its "
             f"PMM_SIGNAL_CACHE_GB cap). Currently loaded: "
             f"{available if available else 'none'}. Load it with "
-            f"load_signal(filepath=...); use list_signals() to see the "
-            f"files available on disk."
+            f"load_signal(filepath=...); use list_signals(scope='disk') to "
+            f"see the files available on disk."
         )
 
     def _prepare_entry(
@@ -316,8 +317,8 @@ class SignalRepository:
 
         if not fp.exists():
             raise FileNotFoundError(
-                f"Signal file not found: {fp} — use list_signals() to see "
-                f"the files available on disk."
+                f"Signal file not found: {fp} — use list_signals("
+                f"scope='disk') to see the files available on disk."
             )
 
         if signal_id is None:
@@ -386,6 +387,7 @@ class SignalRepository:
                 "duration_s": round(duration, 4) if duration else None,
                 "size_bytes": size_bytes,
                 "signal_unit": meta.get("signal_unit"),
+                "source_metadata": meta.get("source_metadata", {}),
             }
             self._store[signal_id] = {"array": data, "info": info}
             self._current_memory += size_bytes
@@ -435,7 +437,9 @@ class SignalRepository:
 
         The metadata 'signal_unit' is normalized to the canonical vocabulary;
         an unrecognized value is treated as undeclared (None) with a warning —
-        it is never coerced to a default unit.
+        it is never coerced to a default unit. The COMPLETE raw metadata dict
+        (rpm, shaft_speed, reference frequencies, ...) is preserved under
+        'source_metadata' so get_signal_info can expose it.
         """
         meta_path = filepath.parent / f"{filepath.stem}_metadata.json"
         if meta_path.exists():
@@ -452,6 +456,7 @@ class SignalRepository:
                 return {
                     "sampling_rate": meta.get("sampling_rate"),
                     "signal_unit": unit,
+                    "source_metadata": meta if isinstance(meta, dict) else {},
                 }
             except Exception as e:
                 logger.warning(f"Error reading metadata {meta_path}: {e}")

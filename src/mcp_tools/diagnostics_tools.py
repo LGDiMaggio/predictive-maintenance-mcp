@@ -3,46 +3,29 @@
 import logging
 import json
 import pickle
-from pathlib import Path
 from typing import Any, Literal, Optional
 
 import numpy as np
 import pandas as pd
-import plotly.graph_objects as go
-from scipy import signal
-from scipy.fft import fft, fftfreq
-from scipy.signal import hilbert, butter, sosfiltfilt
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 from sklearn.svm import OneClassSVM
 from sklearn.neighbors import LocalOutlierFactor
 from mcp.server.fastmcp import FastMCP, Context
 
-from ..config import DATA_DIR, MODELS_DIR, RESOURCES_DIR, REPORTS_DIR, CACHE_DIR
+from ..config import MODELS_DIR, RESOURCES_DIR
 from ..models import (
     AnomalyModelResult, AnomalyPredictionResult,
     BearingCatalogMiss, BearingFaultCheckResult, BearingFaultsSummary,
     VibrationSeverityResult, ISOSeverityRefusal, DiagnosisResult,
-    StoredSignalInfo
 )
-from ..report_generator import save_iso_report, REPORTS_DIR as REPORTS_DIR_PATH
 from ..document_reader import (
     calculate_bearing_frequencies,
     extract_machine_specs,
-    extract_bearing_designation,
-    extract_rpm_values,
-    extract_power_ratings,
     extract_text_from_pdf,
     lookup_bearing_in_catalog,
 )
-from ..signal_processing.spectral import (
-    compute_psd as _compute_psd,
-    compute_stft_spectrogram as _compute_stft,
-    compute_envelope_spectrum as _compute_envelope,
-)
 from ..diagnostics.bearing_catalog import (
-    lookup_bearing as _lookup_bearing,
-    compute_fault_frequencies as _compute_fault_freqs,
     list_catalog_bearings as _list_catalog,
 )
 from ..diagnostics.bearing_analyzer import (
@@ -56,7 +39,9 @@ from ..diagnostics.iso20816 import (
     check_power_scope,
 )
 from ..decision_support.alerts import check_custom_alert as _check_custom_alert
-from ..decision_support.diagnosis_pipeline import diagnose_vibration as _diagnose_vibration
+from ..decision_support.diagnosis_pipeline import (
+    diagnose_vibration as _diagnose_vibration,
+)
 
 from ..signal_processing.features import (
     extract_time_domain_features,
@@ -65,7 +50,6 @@ from ..signal_processing.features import (
 from ._utils import (
     resolve_signal,
     safe_resolve,
-    sanitize_filename,
     resolve_model_paths,
     validate_name_component,
 )
@@ -191,7 +175,7 @@ async def assess_severity(
     support_type: Literal["rigid", "flexible"] = "rigid",
     thresholds: Optional[dict[str, float]] = None,
     machine_power_kw: Optional[float] = None,
-    operating_speed_rpm: Optional[float] = None,
+    rpm: Optional[float] = None,
 ) -> VibrationSeverityResult:
     """Assess vibration severity (ISO 20816-3 zones A-D) and alert level.
 
@@ -224,8 +208,8 @@ async def assess_severity(
         machine_power_kw: Rated machine power, if known. Declared values
             below 15 kW are refused (out of ISO scope); None means
             unknown and is not refused.
-        operating_speed_rpm: Operating speed in RPM (signal route only:
-            selects the 2 Hz band lower edge below 600 RPM).
+        rpm: Operating speed in RPM (signal route only: selects the 2 Hz
+            band lower edge below 600 RPM).
 
     Returns:
         VibrationSeverityResult (status='assessed') with zone, severity,
@@ -282,7 +266,7 @@ async def assess_severity(
             machine_group=machine_group,
             support_type=support_type,
             signal_unit=unit,
-            operating_speed_rpm=operating_speed_rpm,
+            operating_speed_rpm=rpm,
             machine_power_kw=machine_power_kw,
         )
         rms = raw["rms_velocity_mm_s"]
@@ -346,158 +330,10 @@ async def assess_severity(
         frequency_range=frequency_range,
         unit_conversion_performed=unit_conversion,
         original_unit=original_unit,
-        operating_speed_rpm=operating_speed_rpm,
+        operating_speed_rpm=rpm,
         machine_power_kw=machine_power_kw,
         **zone_block,
     )
-
-# ------------------------------------------------------------------
-# ISO 20816 chart
-# ------------------------------------------------------------------
-
-async def plot_iso_20816_chart(
-    signal_id: str,
-    machine_group: int = 1,
-    support_type: str = "rigid",
-    operating_speed_rpm: Optional[float] = None,
-    ctx: Context | None = None
-) -> str:
-    """
-        Generate visual chart showing ISO 20816-3 zone position for a stored signal.
-
-        Creates an interactive HTML plot with:
-        - Horizontal bar chart showing zones A/B/C/D with boundaries
-        - Marker indicating actual RMS velocity position
-        - Color-coded zones (green/yellow/orange/red)
-        - Zone descriptions
-
-        Requires the signal loaded via load_signal() first: sampling rate and
-        DECLARED signal unit come from the stored signal metadata (units are
-        never guessed from amplitude).
-
-        Args:
-            signal_id: ID of the stored signal (from load_signal).
-            machine_group: 1 (large >300kW) or 2 (medium 15-300kW)
-            support_type: 'rigid' or 'flexible'
-            operating_speed_rpm: Operating speed in RPM (optional)
-            ctx: MCP context
-
-        Returns:
-            Path to generated HTML file with ISO chart
-
-        Raises:
-            ValueError: If the signal_id is not loaded, or the stored signal
-                has no sampling rate or no declared unit.
-        """
-    if ctx:
-        await ctx.info(f"Evaluating ISO 20816-3 for '{signal_id}'...")
-
-    # First, perform ISO evaluation via the unified severity tool
-    iso_result = await assess_severity(
-        ctx=ctx,
-        signal_id=signal_id,
-        machine_group=machine_group,
-        support_type=support_type,
-        operating_speed_rpm=operating_speed_rpm,
-    )
-    boundary_ab = iso_result.boundaries["AB"]
-    boundary_bc = iso_result.boundaries["BC"]
-    boundary_cd = iso_result.boundaries["CD"]
-    rms_velocity = iso_result.rms_velocity_mm_s
-
-    # Create figure
-    fig = go.Figure()
-
-    # Zone boundaries
-    boundaries = [0, boundary_ab, boundary_bc, boundary_cd, boundary_cd * 1.3]
-    zone_names = ["Zone A<br>(Good)", "Zone B<br>(Acceptable)", "Zone C<br>(Unsatisfactory)", "Zone D<br>(Unacceptable)"]
-    zone_colors = ["#28a745", "#ffc107", "#fd7e14", "#dc3545"]  # green, yellow, orange, red
-
-    # Add horizontal bars for each zone
-    for i in range(4):
-        fig.add_trace(go.Bar(
-            y=[f"ISO 20816-3<br>Group {machine_group}<br>{support_type.title()}"],
-            x=[boundaries[i+1] - boundaries[i]],
-            base=boundaries[i],
-            orientation='h',
-            name=zone_names[i],
-            marker=dict(color=zone_colors[i], opacity=0.7),
-            text=[zone_names[i]],
-            textposition='inside',
-            hovertemplate=f"{zone_names[i]}<br>Range: {boundaries[i]:.2f} - {boundaries[i+1]:.2f} mm/s<extra></extra>"
-        ))
-
-    # Add marker for actual value
-    fig.add_trace(go.Scatter(
-        x=[rms_velocity],
-        y=[f"ISO 20816-3<br>Group {machine_group}<br>{support_type.title()}"],
-        mode='markers+text',
-        name='Measured RMS',
-        marker=dict(
-            symbol='diamond',
-            size=20,
-            color='black',
-            line=dict(width=2, color='white')
-        ),
-        text=[f'<b>{rms_velocity:.2f} mm/s</b>'],
-        textposition="top center",
-        textfont=dict(size=14, color='black'),
-        hovertemplate=f"Measured: {rms_velocity:.2f} mm/s<br>Zone: {iso_result.zone}<br>{iso_result.severity_level}<extra></extra>"
-    ))
-
-    # Layout
-    max_x = boundaries[-1]
-    fig.update_layout(
-        title=dict(
-            text=f"ISO 20816-3 Evaluation: {signal_id}<br>" +
-                 f"<span style='font-size:14px'>RMS Velocity: {rms_velocity:.2f} mm/s | " +
-                 f"Zone <b>{iso_result.zone}</b> ({iso_result.severity_level})</span>",
-            x=0.5,
-            xanchor='center'
-        ),
-        xaxis=dict(
-            title="RMS Velocity (mm/s)",
-            range=[0, max_x],
-            showgrid=True,
-            gridcolor='lightgray'
-        ),
-        yaxis=dict(
-            title="",
-            showticklabels=True
-        ),
-        barmode='stack',
-        height=400,
-        width=1000,
-        template='plotly_white',
-        showlegend=True,
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="center",
-            x=0.5
-        ),
-        annotations=[
-            dict(
-                text=f"Zone Boundaries: A/B={boundary_ab:.1f} | B/C={boundary_bc:.1f} | C/D={boundary_cd:.1f} mm/s",
-                xref="paper", yref="paper",
-                x=0.5, y=-0.15,
-                showarrow=False,
-                font=dict(size=11, color="gray")
-            )
-        ]
-    )
-
-    # Save HTML to reports directory
-    safe_name = sanitize_filename(signal_id)
-    output_file = REPORTS_DIR / f"plot_iso_{safe_name}.html"
-    fig.write_html(str(output_file))
-
-    if ctx:
-        await ctx.info(f"ISO chart saved to {output_file.name}")
-        await ctx.info(f"To view report metadata: list_html_reports() or get_report_info()")
-
-    return f"ISO 20816-3 chart saved to: {output_file}\nUse list_html_reports() to see all reports, or open file in browser"
 
 # ------------------------------------------------------------------
 # ML anomaly detection – training
@@ -949,6 +785,7 @@ async def train_anomaly_model(
         await ctx.info(f"PCA saved to {pca_path}")
 
     return AnomalyModelResult(
+        model_name=model_name,
         model_type=model_type,
         num_training_samples=X_train.shape[0],
         num_features_original=X_train.shape[1],
@@ -975,15 +812,14 @@ async def predict_anomalies(
     """
         Predict anomalies in a stored signal using a trained model.
 
-        Requires the signal loaded via load_signal() first.
+        Requires the signal loaded via load_signal() first and a model
+        trained via train_anomaly_model (its result echoes the model_name
+        to pass here). Pipeline: segment -> features -> scaler -> PCA ->
+        predict -> aggregate.
 
-        Applies the complete pipeline:
-        1. Segment signal
-        2. Extract features
-        3. Apply scaler (from training)
-        4. Apply PCA (from training)
-        5. Predict with trained model
-        6. Calculate anomaly ratio and overall health
+        Output is BOUNDED: counts, anomaly ratio, score percentiles, and
+        up to 10 worst segments — never per-segment arrays, regardless of
+        signal length.
 
         Args:
             signal_id: ID of the stored signal to analyze (from load_signal)
@@ -991,10 +827,12 @@ async def predict_anomalies(
             ctx: MCP context for progress/logging
 
         Returns:
-            AnomalyPredictionResult with predictions and health assessment
+            AnomalyPredictionResult with aggregate statistics and health
+            assessment.
 
         Raises:
-            FileNotFoundError: If the model does not exist.
+            FileNotFoundError: If the model does not exist (the message
+                lists the models actually on disk).
             ValueError: If the signal_id is not loaded, or no sampling rate
                 is available for segmentation.
         """
@@ -1010,7 +848,15 @@ async def predict_anomalies(
     metadata_path = _model_paths.metadata
 
     if not model_path.exists():
-        raise FileNotFoundError(f"Model not found: {model_path}. Train model first.")
+        available = sorted(
+            p.name[: -len("_model.pkl")]
+            for p in MODELS_DIR.glob("*_model.pkl")
+        ) if MODELS_DIR.exists() else []
+        raise FileNotFoundError(
+            f"Model '{model_name}' not found — models on disk: "
+            f"{available if available else 'none'}. Train one with "
+            f"train_anomaly_model(model_name=...) first."
+        )
 
     with open(model_path, 'rb') as f:
         model = pickle.load(f)
@@ -1061,14 +907,42 @@ async def predict_anomalies(
     # Predict
     predictions = model.predict(X_pca)
 
-    # Get anomaly scores if available
-    anomaly_scores = None
+    # Decision scores when the model exposes them (negative = anomalous).
+    scores = None
     if hasattr(model, 'decision_function'):
-        anomaly_scores = model.decision_function(X_pca).tolist()
+        scores = np.asarray(model.decision_function(X_pca), dtype=float)
 
-    # Calculate statistics
+    # Aggregate statistics — the per-segment arrays never leave this
+    # function (bounded output regardless of signal length).
     anomaly_count = int(np.sum(predictions == -1))
     anomaly_ratio = float(anomaly_count / len(predictions))
+
+    score_percentiles = None
+    if scores is not None:
+        score_percentiles = {
+            f"p{p}": round(float(np.percentile(scores, p)), 6)
+            for p in (5, 25, 50, 75, 95)
+        }
+
+    # Worst segments: lowest decision score (or, without scores, the
+    # first predicted anomalies), capped at 10 entries.
+    hop_s = segment_duration * (1 - overlap_ratio)
+    if scores is not None:
+        worst_idx = np.argsort(scores)[:10]
+    else:
+        worst_idx = np.flatnonzero(predictions == -1)[:10]
+    worst_segments = [
+        {
+            "segment_index": int(i),
+            "start_time_s": round(float(i * hop_s), 4),
+            **(
+                {"score": round(float(scores[i]), 6)}
+                if scores is not None
+                else {}
+            ),
+        }
+        for i in worst_idx
+    ]
 
     # Assess overall health (thresholds on the anomaly ratio itself —
     # no separate "confidence" label is derived from them).
@@ -1085,11 +959,13 @@ async def predict_anomalies(
         await ctx.info(f"Health status: {overall_health}")
 
     return AnomalyPredictionResult(
+        model_name=model_name,
         num_segments=len(predictions),
         anomaly_count=anomaly_count,
         anomaly_ratio=anomaly_ratio,
-        predictions=predictions.tolist(),
-        anomaly_scores=anomaly_scores,
+        segment_duration_s=float(segment_duration),
+        score_percentiles=score_percentiles,
+        worst_segments=worst_segments,
         overall_health=overall_health,
     )
 
@@ -1099,26 +975,13 @@ async def predict_anomalies(
 
 async def list_machine_manuals(ctx: Context | None = None) -> list[dict[str, Any]]:
     """
-        List all available machine manuals in resources/machine_manuals/.
+        List all machine manuals in resources/machine_manuals/ (PDF/TXT).
 
-        Returns list of PDFs and text files with filename, size, and modification date.
-        Use this to see what manuals are available before extracting specs.
-
-        **IMPORTANT - LLM Usage Guidelines:**
-        - This tool returns ONLY the list of available files
-        - DO NOT make assumptions about manual content without reading it
-        - DO NOT infer specifications without using extract_manual_specs() or read_manual_excerpt()
-        - ALWAYS use the returned filenames exactly as-is when calling other tools
-        - If user asks about manual content, use read_manual_excerpt() or extract_manual_specs()
+        Use before read_manual_excerpt / extract_manual_specs, and pass the
+        returned filenames exactly as-is.
 
         Returns:
-            List of dictionaries with manual information
-
-        Example:
-            >>> manuals = list_machine_manuals()
-            >>> print(f"Found {len(manuals)} manuals")
-            >>> for m in manuals:
-            ...     print(f"- {m['filename']}: {m['size_mb']:.2f} MB")
+            List of dicts with filename, size_mb, modified, and path.
         """
     manuals_dir = RESOURCES_DIR / "machine_manuals"
     manuals = []
@@ -1140,59 +1003,39 @@ async def list_machine_manuals(ctx: Context | None = None) -> list[dict[str, Any
     return sorted(manuals, key=lambda x: x['filename'])
 
 async def extract_manual_specs(
-    manual_filename: str,
+    file_name: str,
     use_cache: bool = True,
     ctx: Context | None = None
 ) -> dict[str, Any]:
     """
-        Extract machine specifications from equipment manual PDF.
+        Extract machine specifications from an equipment manual (PDF).
 
-        Automatically extracts:
-        - Bearing designations (e.g., SKF 6205, FAG NU2205)
-        - Operating speeds (RPM values)
-        - Power ratings (kW, HP, MW)
-        - Text excerpt for LLM context
-
-        Results are cached for fast repeated access.
-
-        **IMPORTANT - LLM Usage Guidelines:**
-        - This tool returns ONLY data extracted from the manual text
-        - DO NOT add information not present in the extraction results
-        - DO NOT make assumptions about missing specifications
-        - If a specification is not in the results, tell the user it was not found
-        - ALWAYS base your response exclusively on the returned dictionary
-        - If user needs more detail, suggest using read_manual_excerpt() to read full text
-        - DO NOT invent bearing geometries, frequencies, or other technical data
-
-        **WORKFLOW for missing bearing geometry:**
-        1. Check if bearing geometry is in extraction results (rare in manuals)
-        2. If not found, use search_bearing_catalog(bearing_designation) tool
-        3. If bearing not in catalog, ask user to provide:
-           - All geometric parameters (num_balls, ball_diameter_mm, pitch_diameter_mm, contact_angle_deg)
-           - OR upload manufacturer catalog to bearing_catalogs/ directory
+        Extracts bearing designations (e.g. SKF 6205), operating speeds
+        (RPM), power ratings (kW/HP/MW), and a text excerpt. Results are
+        cached. If a bearing's geometry is not in the manual, follow up
+        with search_bearing_catalog(bearing_id=...); if it is not in the
+        catalog either, ask the user for the geometry — never invent it.
 
         Args:
-            manual_filename: PDF filename in resources/machine_manuals/
+            file_name: Manual filename in resources/machine_manuals/
             use_cache: Use cached extraction if available (default: True)
             ctx: MCP context
 
         Returns:
-            Dictionary with extracted specifications and text excerpt
+            Dictionary with extracted specifications and text excerpt.
 
-        Example:
-            >>> specs = extract_manual_specs("pump_XYZ_manual.pdf")
-            >>> print(f"Bearings: {specs['bearings']}")
-            >>> print(f"RPM: {specs['rpm_values']}")
-            >>> print(f"Power: {specs['power_ratings']}")
+        Raises:
+            FileNotFoundError: If the manual does not exist (the message
+                lists the available manuals).
         """
     if ctx:
-        await ctx.info(f"Extracting specifications from: {manual_filename}")
+        await ctx.info(f"Extracting specifications from: {file_name}")
 
-    manual_path = safe_resolve(RESOURCES_DIR / "machine_manuals", manual_filename)
+    manual_path = safe_resolve(RESOURCES_DIR / "machine_manuals", file_name)
 
     if not manual_path.exists():
         raise FileNotFoundError(
-            f"Manual not found: {manual_filename}\n"
+            f"Manual not found: {file_name}\n"
                 f"Available manuals: {[f.name for f in (RESOURCES_DIR / 'machine_manuals').glob('*.pdf')]}"
         )
 
@@ -1212,67 +1055,47 @@ async def calculate_bearing_characteristic_frequencies(
     ball_diameter_mm: float,
     pitch_diameter_mm: float,
     contact_angle_deg: float = 0.0,
-    shaft_speed_rpm: float = 1500.0,
+    rpm: float = 1500.0,
     ctx: Context | None = None
 ) -> dict[str, float]:
     """
         Calculate bearing characteristic frequencies from geometry.
 
-        Uses the standard rolling-element bearing kinematic formulas (see
-        Randall & Antoni 2011, "Rolling element bearing diagnostics - A
-        tutorial", Mech. Systems and Signal Processing 25(2), 485-520).
-        Essential for bearing fault diagnosis when you know bearing geometry
-        but don't have pre-calculated frequencies.
-
-        **IMPORTANT - LLM Usage Guidelines:**
-        - This tool REQUIRES exact bearing geometry parameters
-        - DO NOT guess or estimate bearing geometry if not provided
-        - DO NOT use "typical" or "standard" values without user confirmation
-        - If geometry is unknown, tell user to:
-          1. Check manual using read_manual_excerpt()
-          2. Look up bearing in manufacturer catalog (e.g., SKF, FAG, NSK)
-          3. Use search_bearing_catalog() if bearing designation is known
-          4. Measure the bearing physically if necessary
-        - ONLY calculate with geometry explicitly provided by user or found in manual
-        - DO NOT make assumptions about contact angle (use 0 deg if unknown and inform user)
+        Standard rolling-element kinematic formulas (Randall & Antoni 2011,
+        "Rolling element bearing diagnostics — A tutorial", MSSP 25(2)).
+        Requires the EXACT geometry — from the manual, the catalog
+        (search_bearing_catalog), or the user; never guessed. Deep-groove
+        ball bearings have contact_angle_deg = 0.
 
         Args:
             num_balls: Number of rolling elements (Z)
             ball_diameter_mm: Ball/roller diameter (Bd) in mm
             pitch_diameter_mm: Pitch circle diameter (Pd) in mm
-            contact_angle_deg: Contact angle (alpha) in degrees (0 deg for deep groove ball bearings)
-            shaft_speed_rpm: Shaft rotation speed in RPM
+            contact_angle_deg: Contact angle (alpha) in degrees
+            rpm: Shaft rotation speed in RPM
             ctx: MCP context
 
         Returns:
-            Dictionary with BPFO, BPFI, BSF, FTF in Hz
+            Dictionary with BPFO, BPFI, BSF, FTF in Hz.
 
         Example:
             >>> # 6205 geometry (CWRU Bearing Data Center) at 1797 RPM
             >>> freqs = calculate_bearing_characteristic_frequencies(
-            ...     num_balls=9,
-            ...     ball_diameter_mm=7.94,
-            ...     pitch_diameter_mm=39.04,
-            ...     contact_angle_deg=0.0,
-            ...     shaft_speed_rpm=1797
+            ...     num_balls=9, ball_diameter_mm=7.94,
+            ...     pitch_diameter_mm=39.04, rpm=1797
             ... )
-            >>> print(f"BPFO: {freqs['BPFO']:.2f} Hz")
-            BPFO: 107.36 Hz
-
-        Common bearing geometries:
-        - Deep groove ball bearings: contact_angle = 0 deg
-        - Angular contact bearings: contact_angle = 15-40 deg
-        - Cylindrical roller bearings: contact_angle = 0 deg
+            >>> round(freqs['BPFO'], 2)
+            107.36
         """
     if ctx:
-        await ctx.info(f"Calculating bearing frequencies for {num_balls} balls at {shaft_speed_rpm} RPM")
+        await ctx.info(f"Calculating bearing frequencies for {num_balls} balls at {rpm} RPM")
 
     freqs = calculate_bearing_frequencies(
         num_balls=num_balls,
         ball_diameter_mm=ball_diameter_mm,
         pitch_diameter_mm=pitch_diameter_mm,
         contact_angle_deg=contact_angle_deg,
-        shaft_speed_rpm=shaft_speed_rpm
+        shaft_speed_rpm=rpm
     )
 
     if ctx:
@@ -1284,47 +1107,45 @@ async def calculate_bearing_characteristic_frequencies(
     return freqs
 
 async def read_manual_excerpt(
-    manual_filename: str,
+    file_name: str,
     max_pages: int = 10,
     ctx: Context | None = None
 ) -> str:
     """
-        Read text excerpt from machine manual (PDF or TXT).
+        Read a text excerpt from a machine manual (PDF or TXT).
 
-        Useful for providing context to LLM for questions about
-        specific machine parameters, maintenance procedures, etc.
-
-        **Token Warning**: Reading many pages can consume significant tokens.
-        Start with max_pages=10 and increase if needed.
-
-        **IMPORTANT - LLM Usage Guidelines:**
-        - This tool returns ONLY the text extracted from the manual
-        - Base your answers EXCLUSIVELY on the returned text
-        - DO NOT add information not present in the extracted text
-        - If information is not found in the text, clearly state "Not found in manual"
-        - DO NOT make assumptions or fill gaps with general knowledge
-        - If user needs more pages, suggest increasing max_pages parameter
-        - ALWAYS cite the manual when answering: "According to the manual..."
+        Use for consecutive-page reading; for targeted questions prefer
+        search_documentation. Start with max_pages=10 and increase only if
+        needed (pages consume tokens).
 
         Args:
-            manual_filename: Manual filename in resources/machine_manuals/ (PDF or TXT)
-            max_pages: Maximum number of pages to extract (default: 10, ignored for TXT files)
+            file_name: Manual filename in resources/machine_manuals/
+                (PDF or TXT)
+            max_pages: Maximum pages to extract (ignored for TXT files)
             ctx: MCP context
 
         Returns:
-            Extracted text from manual
+            Extracted text from the manual.
 
-        Example:
-            >>> text = read_manual_excerpt("pump_manual.pdf", max_pages=5)
-            >>> # LLM can now answer: "What bearings are recommended for this pump?"
+        Raises:
+            FileNotFoundError: If the manual does not exist.
         """
     if ctx:
-        await ctx.info(f"Reading from: {manual_filename}")
+        await ctx.info(f"Reading from: {file_name}")
 
-    manual_path = safe_resolve(RESOURCES_DIR / "machine_manuals", manual_filename)
+    manual_path = safe_resolve(RESOURCES_DIR / "machine_manuals", file_name)
 
     if not manual_path.exists():
-        raise FileNotFoundError(f"Manual not found: {manual_filename}")
+        available = [
+            f.name
+            for f in (RESOURCES_DIR / "machine_manuals").glob("*")
+            if f.suffix.lower() in (".pdf", ".txt")
+        ]
+        raise FileNotFoundError(
+            f"Manual not found: {file_name} — available manuals: "
+            f"{available if available else 'none'} "
+            f"(see list_machine_manuals())."
+        )
 
     # Read based on file type
     if manual_path.suffix.lower() == '.txt':
@@ -1340,34 +1161,20 @@ async def read_manual_excerpt(
     return text
 
 async def search_bearing_catalog(
-    bearing_designation: str,
+    bearing_id: str,
     ctx: Context | None = None
 ) -> dict[str, Any] | BearingCatalogMiss:
     """
-        Search for bearing specifications in local bearing catalogs.
+        Search for bearing specifications in the local verified catalog.
 
-        This is a FALLBACK tool. LLM should use this ONLY when:
-        1. Bearing designation found in machine manual
-        2. Bearing geometry NOT found in machine manual
-        3. Need geometry to calculate characteristic frequencies
-
-        **IMPORTANT - LLM Usage Guidelines:**
-        - Use this tool ONLY after checking machine manual first
-        - DO NOT use this as primary source - manual takes precedence
-        - If bearing not found here, ask user for specifications
-        - DO NOT guess or estimate if bearing not in catalog
-        - The catalog is small BY DESIGN: it contains only bearings whose
-          geometry is traceable to a public source (each entry carries a
-          mandatory `source` citation). Unverifiable entries were removed.
-        - For bearings not in the catalog, tell user: "Bearing {X} not in catalog. Please provide geometry or upload manufacturer catalog to bearing_catalogs/"
-
-        Search order:
-        1. JSON catalog (common_bearings_catalog.json) — verified entries only
-        2. Typed not-found result (status='not_found' + suggestion) if the
-           designation is absent — a legitimate negative outcome, not an error
+        Fallback for when the machine manual names a bearing but not its
+        geometry. The catalog is small BY DESIGN: only entries whose
+        geometry is traceable to a public source (mandatory `source`
+        citation). A miss is a legitimate negative outcome — ask the user
+        for the geometry; never guess it.
 
         Args:
-            bearing_designation: Bearing designation (e.g., "6205", "SKF 6205-2RS", "UER204")
+            bearing_id: Bearing designation (e.g. "6205", "SKF 6205-2RS")
             ctx: MCP context
 
         Returns:
@@ -1377,18 +1184,12 @@ async def search_bearing_catalog(
 
         Raises:
             Exception: If the catalog itself cannot be read (missing or
-                malformed common_bearings_catalog.json) — a tool failure,
-                surfaced as an MCP error rather than a result.
-
-        Example:
-            >>> specs = search_bearing_catalog("SKF 6205-2RS")
-            >>> print(f"Balls: {specs['num_balls']}, Diameter: {specs['ball_diameter_mm']} mm")
-            Balls: 9, Diameter: 7.94 mm
+                malformed common_bearings_catalog.json).
         """
     if ctx:
-        await ctx.info(f"Searching catalog for bearing: {bearing_designation}")
+        await ctx.info(f"Searching catalog for bearing: {bearing_id}")
 
-    bearing_specs = lookup_bearing_in_catalog(bearing_designation)
+    bearing_specs = lookup_bearing_in_catalog(bearing_id)
 
     if bearing_specs:
         if ctx:
@@ -1401,12 +1202,12 @@ async def search_bearing_catalog(
     # Not in catalog: a legitimate negative outcome — typed result, never an
     # ad-hoc {"error": ...} dict returned as success. No geometry is invented.
     if ctx:
-        await ctx.warning(f"Bearing {bearing_designation} not found in catalog")
+        await ctx.warning(f"Bearing {bearing_id} not found in catalog")
         await ctx.warning("  LLM should ask user for bearing geometry or suggest uploading manufacturer catalog")
 
     available = sorted(b["designation"] for b in _list_catalog())
     return BearingCatalogMiss(
-        bearing_designation=bearing_designation,
+        bearing_id=bearing_id,
         suggestion=(
             "Ask user for bearing geometry (num_balls, ball_diameter_mm, "
             "pitch_diameter_mm, contact_angle_deg) or upload manufacturer "
@@ -1647,7 +1448,7 @@ async def check_bearing_faults(
 # Integrated diagnosis (signal_id based)
 # ------------------------------------------------------------------
 
-async def diagnose_vibration_tool(
+async def diagnose_vibration(
     ctx: Context,
     signal_id: str,
     rpm: float,
@@ -1765,7 +1566,6 @@ async def diagnose_vibration_tool(
 def register(mcp: FastMCP) -> None:
     """Register diagnostics, anomaly-detection, and documentation tools on *mcp*."""
     mcp.tool()(assess_severity)
-    mcp.tool()(plot_iso_20816_chart)
     mcp.tool()(train_anomaly_model)
     mcp.tool()(predict_anomalies)
     mcp.tool()(list_machine_manuals)
@@ -1775,4 +1575,4 @@ def register(mcp: FastMCP) -> None:
     mcp.tool()(search_bearing_catalog)
     mcp.tool()(search_documentation)
     mcp.tool()(check_bearing_faults)
-    mcp.tool()(diagnose_vibration_tool)
+    mcp.tool()(diagnose_vibration)

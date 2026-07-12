@@ -54,7 +54,6 @@ def data_dir(tmp_path, monkeypatch):
         json.dump({"sampling_rate": fs, "signal_unit": "g"}, f)
 
     # Patch all relevant modules
-    monkeypatch.setattr("predictive_maintenance_mcp.mcp_tools.analysis_tools.DATA_DIR", signals_dir)
     monkeypatch.setattr("predictive_maintenance_mcp.config.DATA_DIR", signals_dir)
     monkeypatch.setattr("predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR", signals_dir)
     monkeypatch.setattr("predictive_maintenance_mcp.signal_acquisition.repository.DATA_DIR", signals_dir)
