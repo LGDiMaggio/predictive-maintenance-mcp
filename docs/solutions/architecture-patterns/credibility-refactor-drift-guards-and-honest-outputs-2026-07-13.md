@@ -1,5 +1,5 @@
 ---
-title: "Credibility refactor: single-source-of-truth drift guards and honest outputs"
+title: "Hardening an analysis tool: single-source-of-truth drift guards and input-aligned outputs"
 date: 2026-07-13
 category: architecture-patterns
 module: predictive-maintenance-mcp
@@ -15,19 +15,19 @@ applies_when:
 tags: [drift-prevention, single-source-of-truth, ci-guards, unit-discipline, golden-characterization, monolith-removal]
 ---
 
-# Credibility refactor: single-source-of-truth drift guards and honest outputs
+# Hardening an analysis tool: single-source-of-truth drift guards and input-aligned outputs
 
 ## Context
 
-The v0.9.0 refactor (units U2–U11) turned a hobby-grade MCP server into one meant
-to survive scrutiny by domain experts. An audit found ~60 problems clustering into
-a few recurring shapes: the same value encoded in two places that had drifted apart,
-outputs that invented numbers (a hardcoded BPFO reference, confidence scores derived
-from severity), and verdicts issued on quantities the tool had guessed rather than
-been told. This doc captures the five patterns that fixed those shapes so the next
-contributor reaches for them by default. An adversarial multi-agent review of the
-finished refactor confirmed the patterns held — and caught one regression (pattern 5)
-that a naive fix introduced.
+The v0.9.0 refactor (units U2–U11) advanced the MCP server toward industrial-grade
+rigor. A review identified a handful of recurring shapes worth engineering against:
+the same value encoded in two places that had drifted apart; output values that were
+not traceable to a declared input or cited source (a hardcoded BPFO reference, a
+confidence score derived from severity); and verdicts issued on quantities the tool
+had inferred rather than been told. This doc captures the five patterns that address
+those shapes so the next contributor reaches for them by default. An adversarial
+multi-agent review of the finished refactor confirmed the patterns held — and caught
+one regression (pattern 5) that a naive fix introduced.
 
 ## Guidance
 
@@ -56,21 +56,21 @@ The guard is only as good as its coverage: the review found `CITATION.cff`'s ind
 top-level line. A guard that checks *one* copy of a two-copy fact gives false confidence.
 When you write a drift guard, enumerate **every** occurrence it must see.
 
-### 2. Never guess a physical unit or sampling rate — refuse, with a remedy
+### 2. Never infer a physical unit or sampling rate — refuse, with a remedy
 
-An ISO severity verdict on a signal whose unit was guessed from amplitude
-(`RMS > 0.5 → "g"`) is worse than no verdict: it is confidently wrong. The refactor
-made declared units mandatory. When the unit is undeclared, the tool returns a
+An ISO severity verdict on a signal whose unit was inferred from amplitude
+(`RMS > 0.5 → "g"`) is worse than no verdict: it can be confidently incorrect. The
+refactor made declared units mandatory. When the unit is undeclared, the tool returns a
 **structured refusal at the schema level** (`status: "refused"` + `reason` + `remedy`
 naming `load_signal(signal_unit=...)`), not prose in a log line an LLM can drop. The
 same discipline applies to sampling rate: explicit > companion metadata > structured
 error, never a silent default.
 
 This is also a positioning invariant: the tool augments expert judgment, it never
-replaces it (auto memory [claude]). A guessed unit is the tool overreaching — pretending
-to know something only the operator knows.
+replaces it (auto memory [claude]). An inferred unit is the tool overreaching — asserting
+something only the operator can know.
 
-The trap to avoid: a *degraded* tool must still refuse honestly. `diagnose_vibration`
+The trap to avoid: a *degraded* tool must still refuse cleanly. `diagnose_vibration`
 degrades (the ISO block refuses while spectral/bearing/anomaly blocks still run) rather
 than either failing entirely or fabricating a unit to keep going. And a regenerated
 prompt/skill must carry the same discipline — the review caught the `diagnose_bearing`
@@ -122,12 +122,12 @@ before shipping.
 
 ## Why This Matters
 
-Each of these is a way the tool can be *confidently wrong* — the failure mode that destroys
-credibility with expert users fastest. A drifted threshold, an invented reference frequency,
-a guessed unit, a silently-changed merge, a default that rejects real data: none throw an
-error a user would notice, and all produce output that looks authoritative. The guards turn
-these silent failures into loud ones — a red CI test, a structured refusal, a frozen
-snapshot mismatch — which is the only way they stay fixed as the code keeps changing.
+Each of these is a way the tool can be *confidently incorrect* — the failure mode expert
+users notice fastest. A drifted threshold, a hardcoded reference frequency, an inferred
+unit, a silently-changed merge, a default that rejects real data: none throw an error a
+user would notice, and all produce output that looks authoritative. The guards turn these
+silent failures into loud ones — a red CI test, a structured refusal, a frozen snapshot
+mismatch — which is the only way they stay fixed as the code keeps changing.
 
 ## When to Apply
 
