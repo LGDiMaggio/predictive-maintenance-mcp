@@ -5,6 +5,7 @@ signals are loaded once via the repository and referenced by id.
 """
 
 import json
+import os
 import pickle
 import pytest
 import numpy as np
@@ -258,14 +259,16 @@ class TestListReportsFileNameRoute:
         file outside reports/ is read (no existence oracle)."""
         secret = tmp_path / "secret.txt"
         secret.write_text("top secret")
-        for hostile in (
-            "../secret.txt",
-            "..\\secret.txt",
-            "../../etc/passwd",
-            str(secret),
-        ):
+        # Forward-slash traversal and absolute paths escape reports/ on every
+        # platform. A backslash is a path separator only on Windows; on POSIX
+        # "..\\secret.txt" is a single (in-bounds, nonexistent) filename, so it
+        # is only a traversal payload where the OS treats "\\" as a separator.
+        hostile = ["../secret.txt", "../../etc/passwd", str(secret)]
+        if os.sep == "\\" or os.altsep == "\\":
+            hostile.append("..\\secret.txt")
+        for name in hostile:
             with pytest.raises(ValueError, match="Invalid report filename"):
-                tools["list_html_reports"](file_name=hostile)
+                tools["list_html_reports"](file_name=name)
 
     def test_sibling_directory_bypass_rejected(self, tools, reports_dir):
         """The d689886 bypass class: a name resolving into a SIBLING dir
