@@ -11,38 +11,50 @@ description: >
 
 # Prognostic Assessment (ISO 13374 Block 5)
 
-Estimate degradation trends and remaining useful life from vibration signals.
-Orchestrate MCP tools in a precise prognostic sequence.
+Screen degradation trends within a recording and estimate Remaining Useful
+Life from repeated measurements over time. Two distinct scopes — do not
+confuse them:
+
+1. **Within-recording screening** (`analyze_signal_trend`): is this single
+   recording stationary, or does a feature drift inside it? This is a
+   screening result, NOT a prognosis.
+2. **Prognosis** (`estimate_rul`): extrapolation of a degradation trend
+   across MULTIPLE measurements of the same machine taken days/weeks/months
+   apart. RUL from a single recording is physically meaningless and the tool
+   refuses it.
+
+RUL estimates are planning input for the maintenance engineer — never a
+guarantee, never a substitute for engineering judgment.
 
 **Prerequisite**: The `predictive-maintenance-mcp` MCP server must be connected.
 
-## Workflow
+## Workflow A — Within-Recording Screening
 
 ### Step 1 — Signal Discovery
 
-Call `list_stored_signals()` to check cached signals, or `list_signals()` to
-browse the data/ directory. Identify the signal file to analyze.
+Call `list_signals(scope="memory")` for loaded signal_ids, or
+`list_signals(scope="disk")` and `load_signal(filepath="<file>")` to load a
+recording. This works best on long monitoring recordings or run-to-failure
+data where degradation evolves within the file.
 
-The prognostics tools segment a single signal file internally, extracting a
-feature series over time from consecutive segments. This works best on
-run-to-failure recordings or long monitoring sessions where degradation
-evolves within the signal.
+### Step 2 — Trend + Onset Screening (one call)
 
-### Step 2 — Trend Analysis
+Call `analyze_signal_trend(signal_id="<id>", feature_name="rms")`.
 
-Call `analyze_signal_trend(signal_file=..., feature_name="rms")`.
-
-The tool automatically segments the signal, extracts the chosen feature per
-segment, and fits a linear trend.
+The tool segments the recording, extracts the chosen feature per segment,
+tests trend significance (slope p-value, not bare R-squared), and detects the
+first post-baseline segment exceeding baseline mean + N sigma — trend AND
+onset in one result.
 
 Parameters:
-- `feature_name`: degradation indicator — `"rms"` (default), `"kurtosis"`,
-  `"crest_factor"`, `"peak_to_peak"`, etc.
-- `sampling_rate`: auto-detected from metadata if not provided
-- `segment_duration`: segment length in seconds (default: 0.1s)
-- `overlap_ratio`: overlap between segments (default: 0.5)
+- `feature_name`: `"rms"` (default), `"kurtosis"`, `"crest_factor"`,
+  `"peak_to_peak"`, ...
+- `segment_duration` (default 0.1 s) and `overlap_ratio` (default 0.5)
+- `onset_threshold_sigma`: baseline standard deviations that trigger onset
+  detection (default 3.0; lower to 2.0 for more sensitivity, with more false
+  positives)
 
-Good feature candidates:
+Feature guidance:
 
 | Indicator | Use when | Notes |
 |-----------|----------|-------|
@@ -51,87 +63,80 @@ Good feature candidates:
 | crest_factor | Impulsive faults | Sensitive to early damage |
 | peak_to_peak | Looseness, imbalance | Good for mechanical looseness |
 
-Ask the user which indicator to track, or default to **rms** if unsure.
+Interpreting the result:
+- `trend_direction` is decided by the slope p-value (< 0.05), not by eye
+- `analysis_scope` is `"within_recording_screening"` — report it as such
+- Onset fields: `onset_detected`, `onset_segment_index`, `onset_time_s`,
+  `baseline_segments`. Onset inside the baseline window (first half) cannot
+  be detected by construction — say so if the user asks
+- The result includes the (truncated) per-segment `feature_series`: use it to
+  reduce this recording to ONE measurement point for Workflow B
 
-Interpretation:
+**Decision gate**: if the trend is stable or decreasing, report that no
+degradation trend is detected within the recording. Do NOT proceed to RUL on
+this basis alone.
 
-| R-squared | Trend direction | Meaning |
-|-----------|----------------|---------|
-| > 0.7 | Increasing | Strong degradation trend |
-| 0.3 - 0.7 | Increasing | Moderate trend, monitor closely |
-| < 0.3 | Any | No clear trend (or non-linear) |
-| Any | Decreasing | Improving or post-maintenance |
-| Any | Stable | Stationary condition |
+## Workflow B — RUL from Repeated Measurements
 
-**Decision gate**: If trend_direction is "stable" or "decreasing", report that
-no degradation trend is detected. Ask if the user wants to proceed with RUL
-estimation anyway.
+### Step 1 — Assemble a Measurement Series
 
-### Step 3 — Degradation Onset Detection
+RUL needs at least 3 measurements of the same machine over time, as either:
 
-Call `detect_signal_degradation_onset(signal_file=..., feature_name="rms", threshold_sigma=3.0)`.
+- **Externally measured values** (e.g. RMS velocity trended by a data
+  collector): pass them directly as `feature_values`.
+- **One stored recording per measurement session**: load each session's
+  file (batch load works:
+  `load_signal(filepath=["session_day0.csv", "session_day7.csv", "session_day14.csv"], signal_unit="mm/s")`)
+  and pass the ids as `signal_ids` — each recording is reduced to a single
+  feature value.
 
-- Default threshold: 3 sigma (99.7% confidence)
-- Lower to 2.0 for more sensitive detection (may trigger false positives)
+Timestamps are required, one per measurement, strictly increasing, in the
+unit you choose (`time_unit`, default "hours").
 
-If onset is detected, report:
-- At which segment the degradation began (`onset_segment_index`)
-- How many total segments were analyzed
+### Step 2 — Choose the Failure Threshold
 
-### Step 4 — RUL Estimation
+Ask the user — do NOT guess. If the indicator is broadband velocity RMS in
+mm/s, the ISO zone C/D boundary for the machine is the standard choice (the
+same table assess_severity uses): 4.5 (group 2 rigid), 7.1 (group 1 rigid /
+group 2 flexible), or 11.0 mm/s (group 1 flexible). A site maintenance policy
+threshold also works.
 
-Call `estimate_rul(signal_file=..., failure_threshold=..., method="linear")`.
+### Step 3 — Estimate
 
-**Choosing the failure threshold**:
-- If ISO 20816 zone C/D boundary is known, use it (e.g., 4.5 mm/s RMS for
-  Group 2 rigid machines)
-- If the user has a maintenance policy threshold, use that
-- If unknown, ask the user — do NOT guess
+Call `estimate_rul(feature_values=[2.1, 2.4, 2.9, 3.5], timestamps=[0, 168, 336, 504], failure_threshold=4.5, time_unit="hours", method="linear")`
 
-**Choosing sampling_interval**:
-- Defines the time unit of the returned RUL
-- Default 1.0 means RUL is expressed in "segments"
-- Adjust based on what the user needs (e.g., set to actual time between
-  segments for real time units)
+or, from stored recordings:
 
-**Choosing method**:
-- `"linear"` — simpler, works for steady degradation (default)
-- `"exponential"` — for accelerating degradation curves
-- `"weibull"` — Weibull distribution fit (if available)
-- `"kalman"` — Kalman filter estimation (if available)
-- Compare linear and exponential if unsure — the one with higher confidence
-  (R-squared) is typically more appropriate
+Call `estimate_rul(signal_ids=["session_day0", "session_day7", "session_day14"], timestamps=[0, 7, 14], failure_threshold=4.5, feature_name="rms", time_unit="days")`
 
-If RUL is infinity or confidence is 0, the curve doesn't reach the threshold.
-Explain why and suggest:
-- The threshold may be too high for the current trend
-- Try the other method
-- The signal may not show sufficient degradation
+Method choice:
+- `"linear"` — steady degradation (default)
+- `"exponential"` — accelerating degradation curves
+- `"kalman"` — needs approximately uniform measurement spacing; also returns
+  a 95% RUL interval
 
-### Step 5 — Interpretation and Recommendations
+### Step 4 — Interpret the Result Honestly
 
-Combine all findings into a concise prognostic summary:
+Possible statuses:
+- `"estimated"`: RUL in `time_unit`, with `fit_r_squared` (goodness of fit —
+  NOT a confidence) and `observation_horizon`. If RUL extends far beyond the
+  observed horizon, the result says so — relay that caution verbatim
+- `"no_degradation_trend"`: flat/insignificant series — no RUL number is
+  produced. Recommend continuing to collect measurements
+- `"threshold_already_exceeded"`: the last measurement is at/above the
+  threshold — inspection is due now, there is no remaining life to estimate
 
-1. **Trend**: direction, strength (R-squared), slope, feature analyzed
-2. **Onset**: which segment degradation started (if detected)
-3. **RUL**: estimated time to failure with confidence
-4. **Urgency**: based on RUL vs. next planned maintenance window
-
-Recommended actions based on RUL:
-
-| RUL | Urgency | Recommendation |
-|-----|---------|----------------|
-| < 1 interval | Critical | Immediate inspection/replacement |
-| 1-3 intervals | High | Schedule maintenance soon |
-| 3-10 intervals | Moderate | Monitor more frequently |
-| > 10 intervals | Low | Continue routine monitoring |
+Report: trend significance (p-value), fit quality, RUL with its time unit,
+observation horizon, and urgency relative to the next maintenance window.
 
 ## Important Notes
 
 - RUL estimates are **extrapolations** — actual failure time depends on
   operating conditions that may change
-- Always use cautious language: "estimated RUL", "projected failure time"
-- Confidence (R-squared) below 0.5 means the estimate is unreliable
-- This tool augments expert decision-making; it does not replace engineering
-  judgment for maintenance scheduling
+- Always use cautious language: "estimated RUL", "projected time to threshold"
+- `fit_r_squared` measures curve fit, not probability of being right
+- A single recording can NEVER produce an RUL — if the user asks, explain why
+  and offer Workflow A screening plus a measurement-collection plan
+- This skill supports expert maintenance scheduling decisions; it does not
+  replace engineering judgment
 - All processing happens locally — raw signal data never leaves the machine

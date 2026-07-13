@@ -10,7 +10,7 @@
 
 **Give any AI assistant the ability to analyze vibration data, detect machinery faults, and generate professional diagnostic reports — through natural conversation.**
 
-An open-source [MCP](https://modelcontextprotocol.io/) server and **predictive maintenance AI agent** that turns LLMs into condition monitoring assistants. Engineers describe what they need in plain language; the AI calls the right analysis tools and delivers results — bearing fault detection, risk assessment, anomaly detection, and remaining useful life estimation. Also available as a **Claude Code plugin** with 7 diagnostic skills. It's designed to **support and accelerate expert decision-making**.
+An open-source [MCP](https://modelcontextprotocol.io/) server and **predictive maintenance AI agent** that turns LLMs into condition monitoring assistants. Engineers describe what they need in plain language; the AI calls the right analysis tools and delivers results — bearing fault detection, risk assessment, anomaly detection, and remaining useful life estimation. Also available as a **Claude Code plugin** with 8 diagnostic skills. It's designed to **support and accelerate expert decision-making**.
 
 ---
 
@@ -88,92 +88,86 @@ Find the full path to `uvx` (`which uvx` on macOS/Linux, `where uvx` on Windows)
 | *"Extract specs from test_pump_manual.pdf and diagnose the signal"* | Reads the equipment manual, looks up the bearing model, calculates expected fault frequencies, matches them against the signal |
 | *"Train an anomaly detector on my healthy baselines, then flag anomalies"* | Trains a machine learning model on normal data, scores new signals, highlights outliers |
 
-The AI doesn't guess — it calls **52 specialized MCP endpoints** (46 tools, 2 resources, 4 prompts) running locally on your machine. Your data never leaves your infrastructure.
+The AI doesn't guess — it calls **36 specialized MCP endpoints** (33 tools + 3 prompts) running locally on your machine. Every signal is referenced by a single `signal_id` handle from load to report. Your data never leaves your infrastructure.
 
 <details>
-<summary><b>See the full endpoint list (52 MCP endpoints: 43 tools, 1 resource, 4 prompts)</b></summary>
+<summary><b>See the full endpoint list (36 MCP endpoints: 33 tools, 3 prompts)</b></summary>
 
-### Signal Acquisition (7 tools + 2 resources)
+### Signal Lifecycle (5)
 
-| Endpoint | Type | Description |
-|----------|------|-------------|
-| `load_signal` | Tool | Load vibration file (CSV, WAV, MAT, NPY, Parquet) |
-| `list_signals` | Tool | Browse available signal files with metadata |
-| `list_stored_signals` | Tool | List cached signals in memory |
-| `get_signal_info` | Tool | Signal metadata (sampling rate, duration, stats) |
-| `generate_test_signal` | Tool | Create synthetic signals for testing |
-| `clear_signal` / `clear_all_signals` | Tool | Cache management |
-| `signal://list` | Resource | Browse all signal files |
-| `signal://read/{filename}` | Resource | Read signal metadata |
+| Tool | Description |
+|------|-------------|
+| `load_signal` | Load vibration file(s) (CSV, WAV, MAT, NPY, Parquet) with declared sampling rate and unit — returns the `signal_id` handle |
+| `list_signals` | Browse signal files on disk (`scope="disk"`) or loaded signals in memory (`scope="memory"`) |
+| `get_signal_info` | Signal metadata (sampling rate, duration, declared unit, source metadata) |
+| `generate_test_signal` | Create a synthetic signal, auto-registered and immediately analyzable |
+| `clear_signals` | Remove one signal or the whole in-memory cache |
 
-### Spectral & Statistical Analysis (10 tools)
+### Spectral & Statistical Analysis (6)
 
 | Tool | Description |
 |------|-------------|
 | `analyze_fft` | Frequency spectrum with automatic peak detection |
-| `analyze_envelope` | Envelope analysis for bearing fault detection |
+| `analyze_envelope` | Envelope analysis for bearing fault detection (default band 500–5000 Hz) |
 | `analyze_statistics` | Time-domain features (RMS, kurtosis, crest factor) |
+| `extract_features_from_signal` | Segmented statistical feature extraction |
 | `compute_power_spectral_density` | Power spectral density (Welch method) |
 | `compute_spectrogram_stft` | Time-frequency spectrogram |
-| `extract_features_from_signal` | 17+ statistical and spectral features |
-| `compute_envelope_spectrum_tool` | Envelope spectrum computation |
-| `plot_signal` / `plot_spectrum` / `plot_envelope` | Visualization tools (3 tools) |
 
-### Diagnostics & Health Assessment (14 tools)
+### Diagnostics & Health Assessment (7)
 
 | Tool | Description |
 |------|-------------|
-| `calculate_bearing_characteristic_frequencies` | Compute expected fault frequencies from bearing geometry |
-| `check_bearing_fault_peak_tool` | Detect peaks at fault frequencies |
-| `check_bearing_faults_direct` | Multi-fault detection (inner/outer/ball/cage) |
-| `diagnose_vibration_tool` | Integrated evidence-based diagnosis pipeline |
-| `search_bearing_catalog` | Look up bearing specs by model number |
-| `lookup_bearing_and_compute_tool` | Catalog lookup + frequency calculation |
-| `evaluate_iso_20816` | Vibration severity assessment (4 severity zones) |
-| `assess_vibration_severity` | Health classification |
+| `assess_severity` | Unified ISO 20816-3 severity assessment (signal or direct RMS reading, custom thresholds) — requires a declared signal unit, never guesses |
+| `check_bearing_faults` | Unified fault-frequency matching (catalog bearing, explicit frequencies, or explicit geometry) |
+| `diagnose_vibration` | Integrated evidence-based diagnosis pipeline (one call) |
+| `calculate_bearing_characteristic_frequencies` | Expected fault frequencies from bearing geometry |
+| `search_bearing_catalog` | Look up verified, source-traced bearing geometry |
 | `train_anomaly_model` | Train novelty detection on healthy baselines |
-| `predict_anomalies` | Score new signals for anomalies |
+| `predict_anomalies` | Score a signal against a trained model (bounded output) |
+
+### Documentation (4)
+
+| Tool | Description |
+|------|-------------|
 | `search_documentation` | Semantic search over equipment manuals |
-| `read_manual_excerpt` / `extract_manual_specs` | Extract specs from PDFs (2 tools) |
+| `read_manual_excerpt` | Read pages from a manual |
+| `extract_manual_specs` | Extract structured specs from PDFs |
 | `list_machine_manuals` | Browse available documentation |
 
-### Reporting (9 tools)
+### Reporting (8)
 
 | Tool | Description |
 |------|-------------|
+| `plot_signal` | Interactive time-domain plot |
 | `generate_fft_report` | Interactive frequency analysis report |
 | `generate_envelope_report` | Envelope analysis with fault markers |
 | `generate_iso_report` | Severity zone visualization |
 | `generate_diagnostic_report_docx` | Structured Word document report |
-| `generate_pca_visualization_report` | 2D/3D anomaly projection |
+| `generate_pca_visualization_report` | PCA anomaly projection |
 | `generate_feature_comparison_report` | Cross-signal feature comparison |
-| `plot_iso_20816_chart` | ISO 20816 severity zone chart |
-| `list_html_reports` / `get_report_info` | Report management (2 tools) |
+| `list_html_reports` | Report management (list all or inspect one) |
 
-### Prognostics (3 tools)
-
-| Tool | Description |
-|------|-------------|
-| `estimate_rul` | Remaining Useful Life estimation (linear, exponential, Weibull, Kalman) |
-| `analyze_signal_trend` | Trend detection on feature time series (increasing/decreasing/stable) |
-| `detect_signal_degradation_onset` | Baseline deviation detection for early degradation warning |
-
-### Decision Support (3 tools)
+### Prognostics (2)
 
 | Tool | Description |
 |------|-------------|
-| `check_vibration_alert` | ISO 10816 vibration severity alert classification (zones A/B/C/D) |
-| `check_custom_vibration_alert` | Custom threshold-based vibration alerting |
-| `generate_maintenance_recommendations` | Context-aware maintenance recommendations from diagnosis |
+| `analyze_signal_trend` | Within-recording screening: feature trend + degradation onset in one call |
+| `estimate_rul` | Remaining Useful Life from repeated measurements over time (linear, exponential, Kalman) — refuses single-recording extrapolation |
 
-### Guided Workflows (4 prompts + 2 resources)
+### Decision Support (1)
+
+| Tool | Description |
+|------|-------------|
+| `generate_maintenance_recommendations` | Maintenance recommendations from severity zone + canonical fault types |
+
+### Guided Workflows (3 prompts)
 
 | Prompt | Description |
 |--------|-------------|
 | `diagnose_bearing` | Complete bearing fault diagnostic decision tree |
 | `diagnose_gear` | Gear fault detection workflow |
 | `quick_diagnostic_report` | Fast health screening |
-| `generate_iso_diagnostic_report` | ISO-compliant diagnostic report generation |
 
 </details>
 
@@ -194,7 +188,7 @@ The project includes a **plugin for Claude Code** with domain-specific skills th
 
 <p align="center"><em>Claude Code plugin: domain skills activate automatically, slash commands for quick diagnostics</em></p>
 
-### Skills (7) — activate automatically based on context
+### Skills (8) — activate automatically based on context
 
 | Skill | What it does |
 |-------|-------------|
@@ -205,6 +199,7 @@ The project includes a **plugin for Claude Code** with domain-specific skills th
 | **anomaly-detection** | Train and run ML-based anomaly detection models |
 | **signal-management** | Load, inspect, and manage vibration signals |
 | **documentation-search** | Search equipment manuals and bearing catalogs |
+| **prognostics** | Within-recording trend screening and multi-measurement RUL estimation |
 
 ### Agents (2) — run autonomously for complex tasks
 
@@ -291,7 +286,7 @@ The codebase follows a **modular architecture** organized around the ISO 13374 S
 
 ```
 src/predictive_maintenance_mcp/
-├── mcp_tools/                 # MCP endpoint registration (52 MCP endpoints)
+├── mcp_tools/                 # MCP endpoint registration (36 MCP endpoints)
 │   ├── acquisition_tools.py   # Signal loading & management
 │   ├── analysis_tools.py      # Spectral & statistical analysis
 │   ├── diagnostics_tools.py   # Fault detection, ML, document search
@@ -302,7 +297,7 @@ src/predictive_maintenance_mcp/
 ├── signal_processing/         # Spectral analysis & feature extraction
 ├── diagnostics/               # Bearing/gear analysis, ISO standards
 ├── decision_support/          # Evidence-based diagnosis pipeline
-├── prognostics/               # RUL estimation (linear, exponential, Weibull) & trend analysis
+├── prognostics/               # RUL estimation (linear, exponential, Kalman) & trend analysis
 ├── rag.py                     # Document indexing & search (FAISS/TF-IDF)
 ├── models.py                  # Pydantic data models
 ├── server.py                  # FastMCP server entry point
@@ -352,13 +347,13 @@ pytest --cov=src --cov-report=html      # with coverage report
 
 ## Roadmap
 
-- [x] 52 MCP endpoints (43 tools, 1 resource, 4 prompts) with modular architecture
-- [x] Claude Code plugin (7 skills, 2 agents, 3 commands)
+- [x] 36 MCP endpoints (33 tools, 3 prompts) with modular architecture and a single `signal_id` handle
+- [x] Claude Code plugin (8 skills, 2 agents, 3 commands)
 - [x] 86% test coverage, CI/CD on 3 platforms
 - [x] Docker + SSE/HTTP transport for enterprise deployment
 - [x] Semantic document search (FAISS + TF-IDF)
 - [ ] Customizable severity thresholds
-- [x] Remaining useful life (RUL) estimation models (linear, exponential, Weibull degradation)
+- [x] Remaining useful life (RUL) estimation from repeated measurements (linear, exponential, Kalman)
 - [x] Trend analysis and degradation onset detection
 - [ ] Multi-signal trending and historical comparison
 - [ ] Real-time streaming (MQTT/Kafka)
@@ -396,7 +391,7 @@ Contributions welcome from **everyone** — not just programmers. Domain experts
   title   = {Predictive Maintenance MCP Server},
   author  = {Di Maggio, Luigi Gianpio},
   year    = {2025},
-  version = {0.8.0},
+  version = {0.9.0},
   url     = {https://github.com/LGDiMaggio/predictive-maintenance-mcp},
   doi     = {10.5281/zenodo.17611542}
 }

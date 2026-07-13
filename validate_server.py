@@ -1,140 +1,145 @@
 #!/usr/bin/env python3
 """
-Quick syntax and import validation for machinery diagnostics server.
+Quick validation of the Predictive Maintenance MCP server.
 Run before testing with Claude Desktop.
 """
 
 import sys
 from pathlib import Path
 
-print("🔍 Validating machinery diagnostics server...")
+print("Validating Predictive Maintenance MCP server...")
 print()
 
 # 1. Check Python version
-print("1️⃣ Python version:")
+print("1. Python version:")
 print(f"   {sys.version}")
 if sys.version_info < (3, 11):
-    print("   ⚠️  Warning: Python 3.11+ recommended")
+    print("   WARNING: Python 3.11+ recommended")
 else:
-    print("   ✅ OK")
+    print("   OK")
 print()
 
 # 2. Check project structure
-print("2️⃣ Project structure:")
+print("2. Project structure:")
 required_paths = [
-    "src/machinery_diagnostics_server.py",
+    "src/server.py",
+    "src/mcp_tools",
     "data/signals/real_train",
     "data/signals/real_test",
-    "pyproject.toml"
+    "pyproject.toml",
 ]
 
 all_exist = True
 for path in required_paths:
     exists = Path(path).exists()
-    status = "✅" if exists else "❌"
-    print(f"   {status} {path}")
+    status = "OK " if exists else "MISSING"
+    print(f"   [{status}] {path}")
     all_exist = all_exist and exists
 
 if not all_exist:
-    print("\n❌ Missing required files!")
+    print("\nMissing required files!")
     sys.exit(1)
 print()
 
 # 3. Check data files
-print("3️⃣ Data files:")
+print("3. Data files:")
 train_files = list(Path("data/signals/real_train").glob("*.csv"))
 test_files = list(Path("data/signals/real_test").glob("*.csv"))
 print(f"   Training signals: {len(train_files)}")
 print(f"   Test signals: {len(test_files)}")
 if len(train_files) + len(test_files) < 20:
-    print("   ⚠️  Warning: Expected at least 20 signal files")
+    print("   WARNING: Expected at least 20 signal files")
 else:
-    print("   ✅ OK")
-print(f"   Supported formats: CSV, MAT, WAV, NPY, Parquet")
+    print("   OK")
+print("   Supported formats: CSV, MAT, WAV, NPY, Parquet")
 print()
 
-# 4. Syntax check
-print("4️⃣ Syntax validation:")
-import py_compile
-try:
-    py_compile.compile("src/machinery_diagnostics_server.py", doraise=True)
-    print("   ✅ No syntax errors")
-except py_compile.PyCompileError as e:
-    print(f"   ❌ Syntax error: {e}")
-    sys.exit(1)
-print()
-
-# 5. Import check (critical imports only)
-print("5️⃣ Critical imports:")
-critical_imports = [
-    ("numpy", "np"),
-    ("pandas", "pd"),
-    ("scipy.signal", None),
-    ("scipy.stats", None),
-]
+# 4. Import check (critical imports only)
+print("4. Critical imports:")
+critical_imports = ["numpy", "pandas", "scipy.signal", "scipy.stats", "mcp"]
 
 all_imports_ok = True
-for module, alias in critical_imports:
+for module in critical_imports:
     try:
-        if alias:
-            exec(f"import {module} as {alias}")
-        else:
-            exec(f"import {module}")
-        print(f"   ✅ {module}")
+        __import__(module)
+        print(f"   [OK ] {module}")
     except ImportError:
-        print(f"   ❌ {module} - NOT INSTALLED")
+        print(f"   [MISSING] {module}")
         all_imports_ok = False
 
 if not all_imports_ok:
-    print("\n❌ Missing required packages!")
+    print("\nMissing required packages!")
     print("   Run: uv sync")
     sys.exit(1)
 print()
 
-# 6. Server file stats
-print("6️⃣ Server file stats:")
-server_path = Path("src/machinery_diagnostics_server.py")
-content = server_path.read_text(encoding='utf-8')
-lines = content.split('\n')
-print(f"   Total lines: {len(lines):,}")
-print(f"   File size: {server_path.stat().st_size:,} bytes")
+# 5. Server import + registered endpoint inventory
+print("5. MCP server:")
+try:
+    from predictive_maintenance_mcp.server import mcp
+except Exception as e:  # noqa: BLE001 — report any import failure
+    print(f"   [FAIL] Server import error: {e}")
+    sys.exit(1)
 
-# Count tools
-tool_count = content.count("@mcp.tool()")
-prompt_count = content.count("@mcp.prompt()")
-resource_count = content.count("@mcp.resource(")
-print(f"   MCP Tools: {tool_count}")
-print(f"   MCP Prompts: {prompt_count}")
-print(f"   MCP Resources: {resource_count}")
-print("   ✅ OK")
+tools = list(mcp._tool_manager._tools)
+prompts = list(mcp._prompt_manager._prompts)
+resources = list(mcp._resource_manager._resources) + list(
+    mcp._resource_manager._templates
+)
+print("   [OK ] from predictive_maintenance_mcp.server import mcp")
+print(f"   MCP Tools: {len(tools)} (expected 33)")
+print(f"   MCP Prompts: {len(prompts)} (expected 3)")
+print(f"   MCP Resources: {len(resources)} (expected 0)")
+
+counts_ok = (len(tools), len(resources), len(prompts)) == (33, 0, 3)
+if not counts_ok:
+    print("   [FAIL] Registered surface differs from the frozen 33/0/3 target")
 print()
 
-# 7. Check for key MCP tools
-print("7️⃣ Key MCP tools:")
+# 6. Check for key MCP tools
+print("6. Key MCP tools:")
 key_tools = [
+    "load_signal",
+    "list_signals",
+    "clear_signals",
+    "generate_test_signal",
+    "analyze_fft",
+    "analyze_envelope",
+    "assess_severity",
+    "check_bearing_faults",
+    "diagnose_vibration",
+    "train_anomaly_model",
+    "predict_anomalies",
     "generate_fft_report",
     "generate_envelope_report",
     "generate_iso_report",
-    "analyze_fft",
-    "analyze_envelope",
-    "evaluate_iso_20816",
-    "train_anomaly_model",
-    "predict_anomalies",
+    "list_html_reports",
+    "analyze_signal_trend",
+    "estimate_rul",
+    "generate_maintenance_recommendations",
 ]
 
+missing = [t for t in key_tools if t not in tools]
 for tool in key_tools:
-    found = f"def {tool}(" in content or f"async def {tool}(" in content
-    status = "✅" if found else "❌"
-    print(f"   {status} {tool}()")
+    status = "OK " if tool in tools else "MISSING"
+    print(f"   [{status}] {tool}()")
 
 print()
 
 # Summary
 print("=" * 60)
-print("✅ VALIDATION PASSED - Server ready for testing!")
+if missing or not counts_ok:
+    if missing:
+        print("VALIDATION FAILED - missing tools:", ", ".join(missing))
+    if not counts_ok:
+        print(
+            "VALIDATION FAILED - endpoint counts "
+            f"{len(tools)}/{len(resources)}/{len(prompts)} != 33/0/3"
+        )
+    sys.exit(1)
+print("VALIDATION PASSED - Server ready for testing!")
 print()
 print("Next steps:")
 print("1. Restart Claude Desktop")
-print("2. Test with: 'List available signals in machinery diagnostics'")
-print("3. Run HTML artifact test from START_HERE.md")
+print("2. Test with: 'List available signals in predictive maintenance'")
 print("=" * 60)

@@ -44,14 +44,15 @@ class TestDocxReportGeneration:
                 {"frequency": 241.0, "magnitude_db": 3.1, "note": "2x shaft"},
             ],
             "envelope_peaks": [
-                {"frequency": 81.13, "magnitude_db": 2.5, "match": "BPFO"},
-                {"frequency": 162.26, "magnitude_db": 1.8, "match": "2x BPFO"},
+                {"frequency": 107.36, "magnitude_db": 2.5, "match": "BPFO"},
+                {"frequency": 214.72, "magnitude_db": 1.8, "match": "2x BPFO"},
             ],
             "bearing_frequencies": {
-                "BPFO": 81.13,
-                "BPFI": 138.87,
-                "BSF": 58.48,
-                "FTF": 11.29,
+                # 6205 (CWRU geometry) at 1797 RPM
+                "BPFO": 107.36,
+                "BPFI": 162.19,
+                "BSF": 70.58,
+                "FTF": 11.93,
             },
             "iso": {
                 "zone": "B",
@@ -149,12 +150,11 @@ class TestDocxReportGeneration:
 
 # ── Missing python-docx ───────────────────────────────────────────────────
 
-def test_missing_docx_returns_error():
-    """When HAS_DOCX is False, should return error dict."""
+def test_missing_docx_raises():
+    """When HAS_DOCX is False, raise ValueError (never an error dict)."""
     with patch("predictive_maintenance_mcp.report_generator.HAS_DOCX", False):
-        result = save_diagnostic_report_docx(
-            signal_file="test.csv",
-            sections={"statistics": {"RMS": 1.0}},
-        )
-        assert "error" in result
-        assert "python-docx" in result["error"]
+        with pytest.raises(ValueError, match="python-docx"):
+            save_diagnostic_report_docx(
+                signal_file="test.csv",
+                sections={"statistics": {"RMS": 1.0}},
+            )

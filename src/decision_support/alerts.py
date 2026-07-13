@@ -1,18 +1,18 @@
 """
 ISO 13374 Block 6 — Decision Support: Alert Thresholds.
 
-Threshold-based alerting for vibration monitoring per ISO 10816/20816.
+Threshold-based alerting for vibration monitoring per ISO 20816-3.
+Zone boundaries come from the single severity engine
+(``diagnostics.iso20816``, values from ISO 10816-3:2009); this module
+holds NO threshold table of its own.
 """
 
 from __future__ import annotations
 
-# ISO 10816 zone boundaries (mm/s RMS) indexed by (group, support_type).
-# Each tuple is (A_upper, B_upper, C_upper).  Zone D is anything above C.
-_ISO_THRESHOLDS: dict[tuple[int, str], tuple[float, float, float]] = {
-    (1, "rigid"): (2.8, 7.1, 18.0),
-    (2, "rigid"): (2.3, 4.5, 7.1),
-    (2, "flexible"): (3.5, 7.1, 11.0),
-}
+from ..diagnostics.iso20816 import classify_zone
+
+# Zone letter -> alert level for the ISO path.
+_ZONE_TO_ALERT = {"A": "none", "B": "warning", "C": "alarm", "D": "danger"}
 
 
 def check_alert_thresholds(
@@ -20,33 +20,56 @@ def check_alert_thresholds(
     machine_group: int = 2,
     support_type: str = "rigid",
 ) -> dict:
-    """Classify an RMS velocity reading against ISO 10816 thresholds.
+    """Classify an RMS velocity reading against ISO 20816-3 zone thresholds.
+
+    Delegates zone classification to the single severity engine
+    (boundary values from ISO 10816-3:2009) so that the same reading maps
+    to the same zone on every code path.
 
     Args:
         rms_velocity: Velocity RMS in mm/s.
-        machine_group: ISO 10816 machine group (1 or 2).
+        machine_group: ISO 20816-3 machine group — 1 (large, >300 kW) or
+            2 (medium, 15-300 kW).
         support_type: ``"rigid"`` or ``"flexible"``.
 
     Returns:
         Dict with ``alert_level``, ``zone``, ``exceeded_threshold``,
         and ``message``.
+
+    Raises:
+        ValueError: If the machine group/support combination is invalid or
+            the reading is negative — misuse raises (U9 error contract);
+            there is no "unknown zone" soft fallback.
     """
-    key = (machine_group, support_type.lower())
-    thresholds = _ISO_THRESHOLDS.get(key)
+    zone_info = classify_zone(rms_velocity, machine_group, support_type)
 
-    if thresholds is None:
-        return {
-            "alert_level": "warning",
-            "zone": "unknown",
-            "exceeded_threshold": None,
-            "message": (
-                f"No ISO 10816 thresholds for group {machine_group}, "
-                f"support '{support_type}'. Manual review required."
-            ),
-        }
+    zone = zone_info["zone"]
+    bounds = zone_info["boundaries"]
+    exceeded = {
+        "A": None,
+        "B": bounds["AB"],
+        "C": bounds["BC"],
+        "D": bounds["CD"],
+    }[zone]
+    messages = {
+        "A": "Vibration within normal limits (Zone A).",
+        "B": f"Vibration exceeds {bounds['AB']} mm/s — elevated level (Zone B).",
+        "C": (
+            f"Vibration exceeds {bounds['BC']} mm/s — "
+            "unsatisfactory level (Zone C)."
+        ),
+        "D": (
+            f"Vibration exceeds {bounds['CD']} mm/s — "
+            "unacceptable level (Zone D). Immediate action required."
+        ),
+    }
 
-    a_upper, b_upper, c_upper = thresholds
-    return _classify(rms_velocity, a_upper, b_upper, c_upper)
+    return {
+        "alert_level": _ZONE_TO_ALERT[zone],
+        "zone": zone,
+        "exceeded_threshold": exceeded,
+        "message": messages[zone],
+    }
 
 
 def define_custom_thresholds(
@@ -68,7 +91,7 @@ def define_custom_thresholds(
 
 
 def check_custom_alert(rms_velocity: float, thresholds: dict) -> dict:
-    """Classify an RMS velocity reading against custom thresholds.
+    """Classify an RMS velocity reading against custom (non-ISO) thresholds.
 
     Args:
         rms_velocity: Velocity RMS in mm/s.
@@ -77,7 +100,7 @@ def check_custom_alert(rms_velocity: float, thresholds: dict) -> dict:
     Returns:
         Same structure as :func:`check_alert_thresholds`.
     """
-    return _classify(
+    return _classify_custom(
         rms_velocity,
         thresholds["warning"],
         thresholds["alarm"],
@@ -87,13 +110,13 @@ def check_custom_alert(rms_velocity: float, thresholds: dict) -> dict:
 
 # ---- internal helper -------------------------------------------------------
 
-def _classify(
+def _classify_custom(
     rms_velocity: float,
     a_upper: float,
     b_upper: float,
     c_upper: float,
 ) -> dict:
-    """Return alert dict for a value given three zone boundaries."""
+    """Return alert dict for a value given three user-defined boundaries."""
     if rms_velocity <= a_upper:
         return {
             "alert_level": "none",

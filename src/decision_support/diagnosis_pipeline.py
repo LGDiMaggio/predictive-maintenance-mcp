@@ -3,26 +3,46 @@ Integrated vibration diagnosis pipeline.
 
 Combines FFT, PSD, STFT, bearing fault detection, ISO severity,
 and anomaly detection (OneClassSVM) into a single coherent diagnostic
-result with confidence scoring and actionable recommendations.
+result with an evidence-strength rating and actionable recommendations.
+
+The ``evidence_strength`` field is categorical (none/weak/moderate/strong)
+and derived from the number and quality of independent corroborating
+findings — never from severity alone and never presented as a probability.
 """
 
 import json
 import logging
 import pickle
-from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 import numpy as np
 import pandas as pd
 from scipy.fft import fft, fftfreq
 
 from ..config import MODELS_DIR
+from ..path_safety import resolve_model_paths
 from ..signal_processing.spectral import compute_psd, compute_stft_spectrogram
 from ..signal_processing.features import extract_time_domain_features as _extract_time_domain_features
+from ..signal_acquisition.repository import VALID_SIGNAL_UNITS, normalize_signal_unit
 from ..diagnostics.bearing_analyzer import check_all_bearing_faults
-from ..diagnostics.iso10816 import assess_vibration_severity
+from ..diagnostics.iso20816 import assess_severity_with_axis
 
 logger = logging.getLogger(__name__)
+
+
+def _refused_iso_block(signal_id: str, reason: str, remedy: str) -> dict:
+    """Build the schema-level refused ISO severity block.
+
+    Compatible with :class:`~predictive_maintenance_mcp.models.ISOSeverityRefusal`.
+    The refusal lives in the result SCHEMA (status/reason/remedy fields), not
+    in log prose an LLM client can lose.
+    """
+    return {
+        "status": "refused",
+        "signal_id": signal_id,
+        "reason": reason,
+        "remedy": remedy,
+    }
 
 
 def _compute_fft_summary(
@@ -77,23 +97,25 @@ def _run_anomaly_detection(
         Dict with anomaly_ratio, overall_health, anomaly_score, num_segments,
         or None if model not found or prediction fails.
     """
-    model_path = MODELS_DIR / f"{model_name}_model.pkl"
-    scaler_path = MODELS_DIR / f"{model_name}_scaler.pkl"
-    pca_path = MODELS_DIR / f"{model_name}_pca.pkl"
-    metadata_path = MODELS_DIR / f"{model_name}_metadata.json"
-
-    if not model_path.exists():
-        logger.info(f"Anomaly model not found at {model_path}, skipping.")
-        return None
-
     try:
+        # Defense in depth: model_name is currently a constant, but route it
+        # through the same containment helper so a future user-controlled caller
+        # stays safe. Kept inside the try so an invalid name degrades to None
+        # (this function's contract) instead of aborting the whole diagnosis.
+        _model_paths = resolve_model_paths(MODELS_DIR, model_name)
+        model_path = _model_paths.model
+
+        if not model_path.exists():
+            logger.info(f"Anomaly model not found at {model_path}, skipping.")
+            return None
+
         with open(model_path, "rb") as f:
             model = pickle.load(f)
-        with open(scaler_path, "rb") as f:
+        with open(_model_paths.scaler, "rb") as f:
             scaler = pickle.load(f)
-        with open(pca_path, "rb") as f:
+        with open(_model_paths.pca, "rb") as f:
             pca = pickle.load(f)
-        with open(metadata_path, "r") as f:
+        with open(_model_paths.metadata, "r") as f:
             meta = json.load(f)
 
         # Use model's training parameters for segmentation
@@ -155,8 +177,9 @@ def diagnose_vibration(
     rpm: float,
     signal_id: str = "",
     bearing_id: Optional[str] = None,
-    machine_class: str = "II",
-    signal_unit: str = "g",
+    machine_group: Literal[1, 2] = 2,
+    support_type: Literal["rigid", "flexible"] = "rigid",
+    signal_unit: Optional[str] = None,
     anomaly_model_name: str = "bearing_health_model",
 ) -> dict:
     """Integrated vibration diagnosis pipeline.
@@ -166,9 +189,18 @@ def diagnose_vibration(
     2. PSD (Welch method)
     3. STFT spectrogram (time-varying behavior)
     4. Bearing fault detection (if bearing_id provided)
-    5. ISO 10816/20816 severity assessment
+    5. ISO 20816-3 severity assessment (zone boundaries from
+       ISO 10816-3:2009)
     6. Anomaly detection (OneClassSVM, if model available)
     7. Synthesis into overall diagnosis
+
+    The pipeline DEGRADES instead of failing when the ISO verdict cannot be
+    produced honestly: with an undeclared signal unit, or a sampling rate
+    that cannot cover the ISO evaluation band (Nyquist < 1 kHz), the
+    ``iso_severity`` block becomes a structured refusal
+    (``status: "refused"`` + ``reason`` + ``remedy``) while the spectral,
+    bearing, and anomaly blocks still run. Units are never guessed from
+    signal amplitude.
 
     Args:
         signal: 1D vibration signal.
@@ -176,13 +208,36 @@ def diagnose_vibration(
         rpm: Machine operating speed (RPM).
         signal_id: Signal identifier for result labeling.
         bearing_id: Bearing designation for fault detection (optional).
-        machine_class: ISO machine class ('I', 'II', 'III', 'IV').
-        signal_unit: Signal unit ('g', 'm/s²', 'mm/s').
+        machine_group: ISO 20816-3 machine group — 1 (large, >300 kW) or
+            2 (medium, 15-300 kW).
+        support_type: Support type — 'rigid' or 'flexible'.
+        signal_unit: DECLARED signal unit — 'g', 'm/s2', 'mm/s', or 'm/s'
+            (aliases like 'm/s²' are normalized). None means undeclared:
+            the ISO severity block is refused with a remedy naming
+            ``load_signal(signal_unit=...)``.
         anomaly_model_name: Name of trained anomaly model (default: 'bearing_health_model').
 
     Returns:
-        Dict compatible with DiagnosisResult.
+        Dict compatible with DiagnosisResult — ``iso_severity`` is either an
+        assessed block (``status: "assessed"``) or a refusal
+        (``status: "refused"``).
+
+    Raises:
+        ValueError: If signal_unit is provided but is not a recognized unit
+            (caller misuse — distinct from the honest "undeclared" refusal).
     """
+    # Validate a provided unit up front; None stays None (undeclared).
+    declared_unit: Optional[str] = None
+    if signal_unit is not None:
+        declared_unit = normalize_signal_unit(signal_unit)
+        if declared_unit is None:
+            raise ValueError(
+                f"Invalid signal_unit '{signal_unit}' — declare one of "
+                f"{list(VALID_SIGNAL_UNITS)} ('g'/'m/s2' for acceleration, "
+                f"'mm/s'/'m/s' for velocity), or omit it to get a structured "
+                f"ISO refusal instead of a verdict."
+            )
+
     # 1. FFT
     fft_summary = _compute_fft_summary(signal, fs)
 
@@ -218,21 +273,56 @@ def diagnose_vibration(
             logger.warning(f"Bearing analysis skipped: {e}")
             bearing_faults = None
 
-    # 5. ISO severity
-    iso_result = assess_vibration_severity(
-        signal=signal,
-        fs=fs,
-        machine_class=machine_class,
-        signal_unit=signal_unit,
-        operating_speed_rpm=rpm,
-    )
-    iso_result["signal_id"] = signal_id
+    # 5. ISO severity — assessed only on a DECLARED unit and a sufficient
+    # sampling rate; otherwise a schema-level refusal (the other blocks
+    # above/below still run).
+    if declared_unit is None:
+        iso_result = _refused_iso_block(
+            signal_id=signal_id,
+            reason=(
+                "Signal unit not declared — ISO 20816-3 severity requires "
+                "knowing whether the signal is acceleration ('g'/'m/s2') or "
+                "velocity ('mm/s'/'m/s'); units are never guessed from "
+                "amplitude."
+            ),
+            remedy=(
+                "Re-load the signal with load_signal(filepath=..., "
+                "signal_unit='g'|'m/s2'|'mm/s'|'m/s') or add a 'signal_unit' "
+                "field to the companion _metadata.json, then re-run the "
+                "diagnosis."
+            ),
+        )
+    else:
+        try:
+            iso_result = assess_severity_with_axis(
+                signal=signal,
+                fs=fs,
+                machine_group=machine_group,
+                support_type=support_type,
+                signal_unit=declared_unit,
+                operating_speed_rpm=rpm,
+            )
+            iso_result["signal_id"] = signal_id
+            iso_result["status"] = "assessed"
+        except ValueError as e:
+            # E.g. Nyquist below the 1 kHz ISO evaluation band (U2 refusal).
+            iso_result = _refused_iso_block(
+                signal_id=signal_id,
+                reason=str(e),
+                remedy=(
+                    "Resolve the condition in 'reason' — e.g. re-acquire the "
+                    "signal at fs >= 2106 Hz so the full ISO 20816-3 "
+                    "evaluation band (up to 1 kHz) is covered — then re-run "
+                    "the diagnosis. The spectral/bearing/anomaly blocks in "
+                    "this result are unaffected."
+                ),
+            )
 
     # 6. Anomaly detection
     anomaly_result = _run_anomaly_detection(signal, fs, model_name=anomaly_model_name)
 
     # 7. Synthesis
-    diagnosis_text, confidence, recommendations = _synthesize_diagnosis(
+    diagnosis_text, evidence_strength, recommendations = _synthesize_diagnosis(
         fft_summary=fft_summary,
         psd_summary=psd_summary,
         stft_summary=stft_summary,
@@ -246,7 +336,8 @@ def diagnose_vibration(
         "signal_id": signal_id,
         "rpm": rpm,
         "bearing_id": bearing_id,
-        "machine_class": machine_class,
+        "machine_group": machine_group,
+        "support_type": support_type,
         "fft_summary": fft_summary,
         "psd_summary": psd_summary,
         "stft_summary": stft_summary,
@@ -254,7 +345,7 @@ def diagnose_vibration(
         "iso_severity": iso_result,
         "anomaly_detection": anomaly_result,
         "overall_diagnosis": diagnosis_text,
-        "confidence": confidence,
+        "evidence_strength": evidence_strength,
         "recommendations": recommendations,
     }
 
@@ -268,28 +359,55 @@ def _synthesize_diagnosis(
     anomaly: Optional[dict],
     rpm: float,
 ) -> tuple[str, str, list[str]]:
-    """Combine analysis results into diagnosis, confidence, and recommendations."""
+    """Combine analysis results into diagnosis, evidence strength, and recommendations.
+
+    The evidence strength is categorical (none/weak/moderate/strong) and
+    accumulates points from independent corroborating findings:
+
+    - ISO severity: zone C +1.0, zone D +2.0 (elevated broadband vibration
+      is direct physical evidence of a problem, but on its own it is not
+      corroborated). A refused ISO block (undeclared unit, insufficient
+      sampling rate) contributes NO evidence — no verdict, no points.
+    - Shaft signature: dominant peak at 1x or 2x shaft speed +1.0.
+    - Bearing fault frequencies: best detected check contributes
+      high +2.0 / moderate +1.0 / low +0.5.
+    - Anomaly model: Faulty +1.0, Suspicious +0.5.
+
+    Mapping: 0 -> "none", <2 -> "weak", <3 -> "moderate", >=3 -> "strong".
+    A quiet machine with no findings therefore gets "none" — severity alone
+    can never produce "strong".
+    """
     lines = []
     recommendations = []
-    severity_score = 0  # 0=good, 1=watch, 2=action, 3=critical
+    evidence_points = 0.0
 
-    # ISO severity assessment
-    zone = iso_severity["zone"]
-    rms_vel = iso_severity["rms_velocity_mm_s"]
-
-    if zone == "A":
-        lines.append(f"ISO Severity: Zone A (Good) — RMS velocity {rms_vel:.2f} mm/s.")
-    elif zone == "B":
-        lines.append(f"ISO Severity: Zone B (Acceptable) — RMS velocity {rms_vel:.2f} mm/s.")
-        severity_score = max(severity_score, 1)
-    elif zone == "C":
-        lines.append(f"ISO Severity: Zone C (Unsatisfactory) — RMS velocity {rms_vel:.2f} mm/s.")
-        severity_score = max(severity_score, 2)
-        recommendations.append("Schedule maintenance within next planned shutdown.")
+    # ISO severity assessment (may be a schema-level refusal)
+    if iso_severity.get("status") == "refused":
+        lines.append(f"ISO Severity: not assessed — {iso_severity['reason']}")
+        recommendations.append(iso_severity["remedy"])
     else:
-        lines.append(f"ISO Severity: Zone D (Unacceptable) — RMS velocity {rms_vel:.2f} mm/s.")
-        severity_score = max(severity_score, 3)
-        recommendations.append("IMMEDIATE ACTION: Stop machine and inspect.")
+        zone = iso_severity["zone"]
+        rms_vel = iso_severity["rms_velocity_mm_s"]
+        # The severity word (Good/Acceptable/Unsatisfactory/Unacceptable) is
+        # owned by iso20816._ZONE_INFO and arrives on the classification
+        # result as ``severity_level`` — render it instead of re-hardcoding
+        # the four labels here (they silently drift otherwise). The zone-keyed
+        # evidence/recommendation ladder below is unchanged.
+        severity_word = iso_severity.get("severity_level", "")
+        severity_label = f" ({severity_word})" if severity_word else ""
+        lines.append(
+            f"ISO Severity: Zone {zone}{severity_label} — "
+            f"RMS velocity {rms_vel:.2f} mm/s."
+        )
+
+        if zone in ("A", "B"):
+            pass  # Good/Acceptable: no fault evidence, no recommendation.
+        elif zone == "C":
+            evidence_points += 1.0
+            recommendations.append("Schedule maintenance within next planned shutdown.")
+        else:  # Zone D — unacceptable (also the ladder's catch-all).
+            evidence_points += 2.0
+            recommendations.append("IMMEDIATE ACTION: Stop machine and inspect.")
 
     # FFT dominant frequency
     peak_f = fft_summary["peak_frequency_hz"]
@@ -301,11 +419,11 @@ def _synthesize_diagnosis(
         ratio = peak_f / shaft_freq
         if 0.9 < ratio < 1.1:
             lines.append("Dominant peak at 1x shaft speed — possible unbalance.")
-            severity_score = max(severity_score, 1)
+            evidence_points += 1.0
             recommendations.append("Check rotor balance.")
         elif 1.9 < ratio < 2.1:
             lines.append("Dominant peak at 2x shaft speed — possible misalignment.")
-            severity_score = max(severity_score, 1)
+            evidence_points += 1.0
             recommendations.append("Check alignment and coupling condition.")
 
     # Bearing fault analysis
@@ -314,23 +432,24 @@ def _synthesize_diagnosis(
         if most_likely:
             detected = [
                 c for c in bearing_faults["fault_checks"]
-                if c["detected"] and c["confidence"] != "none"
+                if c["detected"] and c["evidence_strength"] != "none"
             ]
             fault_text = ", ".join(
-                f"{c['fault_type']} ({c['confidence']})" for c in detected
+                f"{c['fault_type']} ({c['evidence_strength']} evidence)"
+                for c in detected
             )
             lines.append(f"Bearing faults detected: {fault_text}.")
             lines.append(f"Most likely: {most_likely}.")
 
-            high_conf = any(c["confidence"] == "high" for c in detected)
-            if high_conf:
-                severity_score = max(severity_score, 2)
+            strengths = {c["evidence_strength"] for c in detected}
+            if "high" in strengths:
+                evidence_points += 2.0
                 recommendations.append(
                     f"Bearing {bearing_faults['bearing_id']}: "
                     f"plan replacement at next opportunity."
                 )
             else:
-                severity_score = max(severity_score, 1)
+                evidence_points += 1.0 if "moderate" in strengths else 0.5
                 recommendations.append(
                     f"Bearing {bearing_faults['bearing_id']}: "
                     f"monitor closely, confirm with additional measurements."
@@ -347,23 +466,27 @@ def _synthesize_diagnosis(
             f"({ratio * 100:.1f}% anomalous segments)."
         )
         if health == "Faulty":
-            severity_score = max(severity_score, 2)
+            evidence_points += 1.0
             recommendations.append(
                 "Anomaly model flagged signal as faulty — investigate root cause."
             )
         elif health == "Suspicious":
-            severity_score = max(severity_score, 1)
+            evidence_points += 0.5
             recommendations.append(
                 "Anomaly model detected suspicious patterns — increase monitoring frequency."
             )
 
-    # Overall confidence
-    if severity_score >= 2:
-        confidence = "high"
-    elif severity_score == 1:
-        confidence = "moderate"
+    # Overall evidence strength — from corroborating findings, NOT severity.
+    if evidence_points == 0.0:
+        evidence_strength = "none"
+    elif evidence_points < 2.0:
+        evidence_strength = "weak"
+    elif evidence_points < 3.0:
+        evidence_strength = "moderate"
     else:
-        confidence = "high"
+        evidence_strength = "strong"
+
+    lines.append(f"Fault evidence strength: {evidence_strength}.")
 
     # Default recommendation if none generated
     if not recommendations:
@@ -371,4 +494,4 @@ def _synthesize_diagnosis(
 
     diagnosis_text = " ".join(lines)
 
-    return diagnosis_text, confidence, recommendations
+    return diagnosis_text, evidence_strength, recommendations

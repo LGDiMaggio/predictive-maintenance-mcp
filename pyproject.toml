@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "predictive-maintenance-mcp"
-version = "0.8.0"
+version = "0.9.0"
 description = "AI agent for predictive maintenance & condition monitoring — Open-source MCP server and Claude Code plugin with 52 endpoints for vibration analysis, bearing fault detection, ISO 20816 severity assessment, ML anomaly detection, and remaining useful life estimation via natural language"
 readme = "README.md"
 authors = [
@@ -181,9 +181,8 @@ source = ["src"]
 omit = [
     "*/tests/*",
     "*/__pycache__/*",
-    "src/machinery_diagnostics_server.py",  # Legacy monolith — deprecated, replaced by mcp_tools/ + server.py
-    "src/html_templates.py",                # Legacy HTML templates — superseded by report_tools.py
-    "src/report_generator.py",              # Legacy report generator — superseded by mcp_tools/report_tools.py
+    "src/html_templates.py",   # Active (report HTML backend) — coverage follow-up
+    "src/report_generator.py", # Active (report generation backend) — coverage follow-up
 ]
 
 [tool.coverage.report]

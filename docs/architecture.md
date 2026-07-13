@@ -2,15 +2,15 @@
 
 ## Overview
 
-predictive-maintenance-mcp is structured around the **ISO 13374 six-block architecture** for condition monitoring and diagnostics. Each block maps to a Python sub-package under `predictive_maintenance_mcp`, providing clear separation of concerns while maintaining backward compatibility with the flat module layout.
+predictive-maintenance-mcp is structured around the **ISO 13374 six-block architecture** for condition monitoring and diagnostics. Each block maps to a Python sub-package under `predictive_maintenance_mcp`, providing clear separation of concerns. MCP tools live in `mcp_tools/` (one module per block family) and are registered by the thin `server.py` orchestrator.
 
 ## ISO 13374 Block Mapping
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                     MCP Server (FastMCP)                        │
-│              machinery_diagnostics_server.py                    │
-│                   50+ MCP tools & resources                     │
+│                 server.py  +  mcp_tools/*.py                    │
+│                   MCP tools, resources, prompts                 │
 └──────────┬──────────┬──────────┬──────────┬──────────┬──────────┘
            │          │          │          │          │
      ┌─────▼────┐ ┌──▼───┐ ┌───▼────┐ ┌───▼────┐ ┌──▼──────┐
@@ -59,9 +59,9 @@ State detection and health assessment.
 
 | Module | Purpose |
 |--------|---------|
-| `bearing_analyzer.py` | Fault peak detection, confidence scoring, harmonic analysis |
-| `bearing_catalog.py` | SKF/FAG/Timken/NSK bearing specs, characteristic frequencies |
-| `iso10816.py` | ISO 10816 / ISO 20816-3 vibration severity zones (A/B/C/D) |
+| `bearing_analyzer.py` | Fault peak detection, evidence scoring, harmonic analysis |
+| `bearing_catalog.py` | Verified bearing geometries with sources, characteristic frequencies |
+| `iso20816.py` | ISO 20816-3 vibration severity zones A-D (boundary values from ISO 10816-3:2009) |
 
 ### Block 5: Prognostics (`prognostics/`) — Implemented
 
@@ -69,7 +69,7 @@ Remaining useful life estimation and trend analysis.
 
 | Module | Purpose |
 |--------|---------|
-| `rul_estimator.py` | RUL estimation via linear extrapolation, exponential degradation, and Weibull survival models |
+| `rul_estimator.py` | RUL estimation via linear extrapolation and exponential degradation models (multi-measurement series required) |
 | `trend_analyzer.py` | Linear trend fitting with statistical significance and degradation onset detection |
 
 ### Block 6: Decision Support (`decision_support/`)
@@ -95,7 +95,7 @@ Block 2: compute_psd(), compute_stft(), compute_envelope_spectrum()
 Block 3: check_bearing_fault_peak(), check_all_bearing_faults()
     │
     ▼
-Block 4: assess_vibration_severity() ──▶ ISO 10816 zones
+Block 4: assess_vibration_severity() ──▶ ISO 20816-3 zones
     │
     ▼
 Block 5: estimate_rul(), analyze_trend() ──▶ RUL & degradation forecasts
@@ -113,9 +113,21 @@ MCP Server ──▶ LLM (Claude) ──▶ Human-readable recommendations
 src/
 ├── __init__.py                        # Package entry
 ├── __main__.py                        # CLI entry
-├── machinery_diagnostics_server.py    # MCP server (all tool registrations)
+├── server.py                          # FastMCP orchestrator (registers mcp_tools)
 ├── config.py                          # Path resolution (DATA_DIR, etc.)
 ├── models.py                          # Pydantic v2 response models
+├── path_safety.py                     # Path containment helpers
+│
+├── mcp_tools/                         # MCP tool layer (one module per block family)
+│   ├── __init__.py                    #   register_all(mcp)
+│   ├── acquisition_tools.py           #   Block 1 tools + resources
+│   ├── analysis_tools.py              #   Block 2 tools
+│   ├── diagnostics_tools.py           #   Blocks 3-4 tools
+│   ├── prognostics_tools.py           #   Block 5 tools
+│   ├── report_tools.py                #   Block 6 report tools
+│   ├── decision_support_tools.py      #   Block 6 decision tools
+│   ├── prompts.py                     #   Workflow prompts
+│   └── _utils.py                      #   Shared helpers (safe_resolve, ...)
 │
 ├── signal_acquisition/                # ISO 13374 Block 1
 │   ├── __init__.py                    #   re-exports loaders + repository
@@ -124,30 +136,26 @@ src/
 │
 ├── signal_processing/                 # ISO 13374 Block 2
 │   ├── __init__.py                    #   re-exports spectral functions
-│   └── spectral.py                    #   PSD, STFT, envelope spectrum
+│   ├── spectral.py                    #   PSD, STFT, envelope spectrum
+│   └── features.py                    #   time-domain feature extraction
 │
 ├── diagnostics/                       # ISO 13374 Blocks 3-4
 │   ├── __init__.py                    #   re-exports all diagnostics
 │   ├── bearing_analyzer.py            #   fault peak detection
 │   ├── bearing_catalog.py             #   bearing specs lookup
-│   └── iso10816.py                    #   severity zone classification
+│   └── iso20816.py                    #   severity zone classification
 │
 ├── decision_support/                  # ISO 13374 Block 6
 │   ├── __init__.py                    #   re-exports diagnosis pipeline
-│   └── diagnosis_pipeline.py          #   integrated diagnosis
+│   ├── diagnosis_pipeline.py          #   integrated diagnosis
+│   ├── alerts.py                      #   threshold alerting
+│   └── recommendations.py             #   maintenance recommendations
 │
 ├── prognostics/                       # ISO 13374 Block 5
 │   ├── __init__.py                    #   re-exports RUL + trend functions
-│   ├── rul_estimator.py               #   linear, exponential, Weibull RUL
+│   ├── rul_estimator.py               #   linear, exponential RUL
+│   ├── kalman_rul.py                  #   Kalman-filter RUL
 │   └── trend_analyzer.py              #   trend fitting, degradation onset
-│
-├── signal_loader.py                   # Canonical loaders (+ compat shim)
-├── signal_repository.py               # Canonical repository (+ compat shim)
-├── spectral.py                        # Compat shim → signal_processing/
-├── bearing_analyzer.py                # Compat shim → diagnostics/
-├── bearing_catalog.py                 # Compat shim → diagnostics/
-├── iso10816.py                        # Compat shim → diagnostics/
-├── diagnosis_pipeline.py              # Compat shim → decision_support/
 │
 ├── document_reader.py                 # PDF extraction, bearing spec parsing
 ├── report_generator.py                # HTML/DOCX report generation
@@ -157,18 +165,12 @@ src/
 
 ## Import Paths
 
-Both old (flat) and new (sub-package) import paths work:
+Canonical sub-package paths only (the legacy flat shims were removed in v0.9.0):
 
 ```python
-# New (preferred)
-from predictive_maintenance_mcp.signal_processing import compute_psd
-from predictive_maintenance_mcp.diagnostics import assess_vibration_severity
-from predictive_maintenance_mcp.decision_support import diagnose_vibration
-
-# Old (backward compatible, will work indefinitely)
-from predictive_maintenance_mcp.spectral import compute_psd
-from predictive_maintenance_mcp.iso10816 import assess_vibration_severity
-from predictive_maintenance_mcp.diagnosis_pipeline import diagnose_vibration
+from predictive_maintenance_mcp.signal_processing.spectral import compute_psd
+from predictive_maintenance_mcp.diagnostics.iso20816 import assess_vibration_severity
+from predictive_maintenance_mcp.decision_support.diagnosis_pipeline import diagnose_vibration
 ```
 
 ## Extension Points
@@ -178,7 +180,7 @@ from predictive_maintenance_mcp.diagnosis_pipeline import diagnose_vibration
 1. Create `src/signal_processing/your_processor.py`
 2. Add pure function: `def your_analysis(signal: np.ndarray, fs: float, ...) -> dict`
 3. Re-export in `signal_processing/__init__.py`
-4. Register MCP tool in `machinery_diagnostics_server.py`
+4. Add a module-level MCP tool in `src/mcp_tools/analysis_tools.py` and register it in that module's `register()`
 
 ### Adding a new diagnostic module
 
@@ -214,5 +216,5 @@ Only: Diagnostic reports, LLM queries (no raw waveforms)
 | Standard | Coverage | Modules |
 |----------|----------|---------|
 | ISO 13374 | Blocks 1-6 | All sub-packages |
-| ISO 10816 / 20816-3 | Severity zones A-D | `diagnostics/iso10816.py` |
+| ISO 20816-3 (thresholds from ISO 10816-3:2009) | Severity zones A-D | `diagnostics/iso20816.py` |
 | MIMOSA OSA-CBM | Signature analysis, detection | `diagnostics/`, `signal_processing/` |

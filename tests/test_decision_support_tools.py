@@ -1,4 +1,10 @@
-"""Tests for MCP decision support tools (ISO 13374 Block 6)."""
+"""Tests for MCP decision support tools (ISO 13374 Block 6).
+
+The former alert tools (check_vibration_alert / check_custom_vibration_alert)
+were absorbed into the unified ``assess_severity`` diagnostics tool in U9 —
+their behavior is characterized in tests/test_golden_merges.py. This module
+keeps only generate_maintenance_recommendations.
+"""
 
 import pytest
 from unittest.mock import AsyncMock
@@ -6,7 +12,6 @@ from unittest.mock import AsyncMock
 from mcp.server.fastmcp import FastMCP
 
 from predictive_maintenance_mcp.mcp_tools.decision_support_tools import register
-from predictive_maintenance_mcp.models import AlertResult
 
 
 # ---------------------------------------------------------------------------
@@ -34,128 +39,14 @@ def mock_ctx():
 
 
 # ---------------------------------------------------------------------------
-# check_vibration_alert
+# Surface: the alert tools are gone (merged into assess_severity)
 # ---------------------------------------------------------------------------
 
-class TestCheckVibrationAlert:
-    """Tests for check_vibration_alert tool."""
-
-    @pytest.mark.asyncio
-    async def test_zone_a(self, tools, mock_ctx):
-        result = await tools["check_vibration_alert"](
-            ctx=mock_ctx,
-            rms_velocity=1.0,
-            machine_group=2,
-            support_type="rigid",
-        )
-        assert isinstance(result, AlertResult)
-        assert result.alert_level == "none"
-        assert result.zone == "A"
-        assert result.rms_velocity == 1.0
-
-    @pytest.mark.asyncio
-    async def test_zone_b(self, tools, mock_ctx):
-        result = await tools["check_vibration_alert"](
-            ctx=mock_ctx,
-            rms_velocity=3.0,
-            machine_group=2,
-            support_type="rigid",
-        )
-        assert isinstance(result, AlertResult)
-        assert result.alert_level == "warning"
-        assert result.zone == "B"
-
-    @pytest.mark.asyncio
-    async def test_zone_c(self, tools, mock_ctx):
-        result = await tools["check_vibration_alert"](
-            ctx=mock_ctx,
-            rms_velocity=5.0,
-            machine_group=2,
-            support_type="rigid",
-        )
-        assert isinstance(result, AlertResult)
-        assert result.alert_level == "alarm"
-        assert result.zone == "C"
-
-    @pytest.mark.asyncio
-    async def test_zone_d(self, tools, mock_ctx):
-        result = await tools["check_vibration_alert"](
-            ctx=mock_ctx,
-            rms_velocity=10.0,
-            machine_group=2,
-            support_type="rigid",
-        )
-        assert isinstance(result, AlertResult)
-        assert result.alert_level == "danger"
-        assert result.zone == "D"
-
-    @pytest.mark.asyncio
-    async def test_flexible_support(self, tools, mock_ctx):
-        result = await tools["check_vibration_alert"](
-            ctx=mock_ctx,
-            rms_velocity=4.0,
-            machine_group=2,
-            support_type="flexible",
-        )
-        assert isinstance(result, AlertResult)
-        assert result.zone == "B"
-
-    @pytest.mark.asyncio
-    async def test_unknown_group(self, tools, mock_ctx):
-        result = await tools["check_vibration_alert"](
-            ctx=mock_ctx,
-            rms_velocity=5.0,
-            machine_group=99,
-            support_type="rigid",
-        )
-        assert isinstance(result, AlertResult)
-        assert result.zone == "unknown"
-
-
-# ---------------------------------------------------------------------------
-# check_custom_vibration_alert
-# ---------------------------------------------------------------------------
-
-class TestCheckCustomVibrationAlert:
-    """Tests for check_custom_vibration_alert tool."""
-
-    @pytest.mark.asyncio
-    async def test_normal_zone(self, tools, mock_ctx):
-        result = await tools["check_custom_vibration_alert"](
-            ctx=mock_ctx,
-            rms_velocity=0.5,
-            warning_threshold=1.0,
-            alarm_threshold=3.0,
-            danger_threshold=5.0,
-        )
-        assert isinstance(result, AlertResult)
-        assert result.alert_level == "none"
-        assert result.zone == "A"
-
-    @pytest.mark.asyncio
-    async def test_warning_zone(self, tools, mock_ctx):
-        result = await tools["check_custom_vibration_alert"](
-            ctx=mock_ctx,
-            rms_velocity=2.0,
-            warning_threshold=1.0,
-            alarm_threshold=3.0,
-            danger_threshold=5.0,
-        )
-        assert isinstance(result, AlertResult)
-        assert result.alert_level == "warning"
-
-    @pytest.mark.asyncio
-    async def test_danger_zone(self, tools, mock_ctx):
-        result = await tools["check_custom_vibration_alert"](
-            ctx=mock_ctx,
-            rms_velocity=6.0,
-            warning_threshold=1.0,
-            alarm_threshold=3.0,
-            danger_threshold=5.0,
-        )
-        assert isinstance(result, AlertResult)
-        assert result.alert_level == "danger"
-        assert result.zone == "D"
+class TestAlertToolsMerged:
+    def test_alert_tools_not_registered(self, tools):
+        assert "check_vibration_alert" not in tools
+        assert "check_custom_vibration_alert" not in tools
+        assert set(tools) == {"generate_maintenance_recommendations"}
 
 
 # ---------------------------------------------------------------------------
@@ -188,28 +79,69 @@ class TestGenerateMaintenanceRecommendations:
         result = await tools["generate_maintenance_recommendations"](
             ctx=mock_ctx,
             severity_zone="C",
-            fault_types="outer_race,misalignment",
-            confidence=0.8,
+            fault_types=["outer_race", "misalignment"],
         )
         assert isinstance(result, str)
         assert "outer_race" in result or "bearing" in result.lower()
         assert "misalignment" in result.lower() or "alignment" in result.lower()
+        assert "confidence" not in result.lower()
 
     @pytest.mark.asyncio
-    async def test_empty_fault_types(self, tools, mock_ctx):
+    async def test_confidence_input_rejected(self, tools, mock_ctx):
+        """The tool must reject a caller-supplied confidence number."""
+        with pytest.raises(TypeError):
+            await tools["generate_maintenance_recommendations"](
+                ctx=mock_ctx,
+                severity_zone="C",
+                fault_types=["outer_race"],
+                confidence=0.87,
+            )
+
+    @pytest.mark.asyncio
+    async def test_none_fault_types(self, tools, mock_ctx):
         result = await tools["generate_maintenance_recommendations"](
             ctx=mock_ctx,
             severity_zone="B",
-            fault_types="",
+            fault_types=None,
         )
         assert isinstance(result, str)
         assert len(result) > 0
 
     @pytest.mark.asyncio
-    async def test_unknown_zone(self, tools, mock_ctx):
-        result = await tools["generate_maintenance_recommendations"](
-            ctx=mock_ctx,
-            severity_zone="X",
+    async def test_unknown_fault_type_raises_with_vocabulary(
+        self, tools, mock_ctx
+    ):
+        """U9 loop closure: an acronym like 'BPFO' is NOT silently dropped —
+        the error names the canonical vocabulary and the acronym mapping."""
+        with pytest.raises(ValueError) as exc:
+            await tools["generate_maintenance_recommendations"](
+                ctx=mock_ctx,
+                severity_zone="C",
+                fault_types=["BPFO"],
+            )
+        msg = str(exc.value)
+        assert "BPFO" in msg
+        for allowed in (
+            "outer_race",
+            "inner_race",
+            "ball",
+            "cage",
+            "misalignment",
+            "unbalance",
+            "looseness",
+        ):
+            assert allowed in msg
+
+    def test_fault_type_literal_matches_engine_vocabulary(self, mcp):
+        """The tool's Literal vocabulary and the engine's VALID_FAULT_TYPES
+        are the same closed set (single source of truth, no drift)."""
+        from typing import get_args
+
+        from predictive_maintenance_mcp.decision_support.recommendations import (
+            VALID_FAULT_TYPES,
         )
-        assert isinstance(result, str)
-        assert len(result) > 0
+        from predictive_maintenance_mcp.mcp_tools.decision_support_tools import (
+            FaultType,
+        )
+
+        assert set(get_args(FaultType)) == set(VALID_FAULT_TYPES)

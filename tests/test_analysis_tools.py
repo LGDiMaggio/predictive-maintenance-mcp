@@ -1,15 +1,19 @@
-"""Tests for MCP analysis tools (ISO 13374 Block 2)."""
+"""Tests for MCP analysis tools (ISO 13374 Block 2).
+
+Since U8 every analysis tool takes signal_id as its only signal handle:
+signals are loaded once via the repository and referenced by id.
+"""
 
 import json
 import pytest
 import numpy as np
 import pandas as pd
-from pathlib import Path
 from unittest.mock import AsyncMock
 
 from mcp.server.fastmcp import FastMCP
 
 from predictive_maintenance_mcp.mcp_tools.analysis_tools import register
+from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
 
 
 # ---------------------------------------------------------------------------
@@ -50,19 +54,21 @@ def data_dir(tmp_path, monkeypatch):
         json.dump({"sampling_rate": fs, "signal_unit": "g"}, f)
 
     # Patch all relevant modules
-    monkeypatch.setattr("predictive_maintenance_mcp.mcp_tools.analysis_tools.DATA_DIR", signals_dir)
     monkeypatch.setattr("predictive_maintenance_mcp.config.DATA_DIR", signals_dir)
-    monkeypatch.setattr("predictive_maintenance_mcp.signal_loader.DATA_DIR", signals_dir)
-    monkeypatch.setattr("predictive_maintenance_mcp.signal_repository.DATA_DIR", signals_dir)
+    monkeypatch.setattr("predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR", signals_dir)
+    monkeypatch.setattr("predictive_maintenance_mcp.signal_acquisition.repository.DATA_DIR", signals_dir)
     return signals_dir
 
 
 @pytest.fixture
-def reports_dir(tmp_path, monkeypatch):
-    rd = tmp_path / "reports"
-    rd.mkdir()
-    monkeypatch.setattr("predictive_maintenance_mcp.mcp_tools.analysis_tools.MODELS_DIR", tmp_path / "models")
-    return rd
+def repo(data_dir):
+    """Repository with the synthetic signals loaded; cleaned afterwards."""
+    repo = get_repository()
+    repo.clear_all()
+    repo.load_signal("sine50.csv")  # metadata: fs=10000, unit 'g'
+    repo.load_signal("multi.csv")
+    yield repo
+    repo.clear_all()
 
 
 @pytest.fixture
@@ -78,38 +84,78 @@ def mock_ctx():
 # ---------------------------------------------------------------------------
 
 class TestAnalyzeFFT:
-    """Tests for analyze_fft tool."""
+    """Tests for analyze_fft tool (signal_id handle)."""
 
     @pytest.mark.asyncio
-    async def test_detects_50hz(self, tools, data_dir, mock_ctx):
-        result = await tools["analyze_fft"](
-            ctx=mock_ctx, filename="sine50.csv", sampling_rate=10000.0
-        )
+    async def test_detects_50hz(self, tools, repo, mock_ctx):
+        result = await tools["analyze_fft"](ctx=mock_ctx, signal_id="sine50")
         # FFTResult model — dominant frequency should be ~50 Hz
         assert abs(result.peak_frequency - 50.0) < 2.0
 
     @pytest.mark.asyncio
-    async def test_uses_metadata_sampling_rate(self, tools, data_dir, mock_ctx):
-        result = await tools["analyze_fft"](
-            ctx=mock_ctx, filename="sine50.csv"
-        )
-        # Should work even without explicit sampling_rate (reads metadata)
+    async def test_uses_stored_sampling_rate(self, tools, repo, mock_ctx):
+        """The rate comes from the stored signal (metadata at load time)."""
+        result = await tools["analyze_fft"](ctx=mock_ctx, signal_id="sine50")
+        assert result.sampling_rate == 10000
         assert result.peak_frequency > 0
 
     @pytest.mark.asyncio
-    async def test_returns_peaks(self, tools, data_dir, mock_ctx):
-        result = await tools["analyze_fft"](
-            ctx=mock_ctx, filename="multi.csv", sampling_rate=10000.0
-        )
-        # Should find peaks
+    async def test_returns_peaks(self, tools, repo, mock_ctx):
+        result = await tools["analyze_fft"](ctx=mock_ctx, signal_id="multi")
         assert len(result.top_peaks) > 0
 
     @pytest.mark.asyncio
-    async def test_file_not_found(self, tools, data_dir, mock_ctx):
-        with pytest.raises(Exception):
-            await tools["analyze_fft"](
-                ctx=mock_ctx, filename="nonexistent.csv", sampling_rate=10000.0
-            )
+    async def test_signal_not_loaded_names_remedy(self, tools, repo, mock_ctx):
+        """Unknown signal_id → error listing the loaded ids and naming
+        load_signal/list_signals as the remedy."""
+        with pytest.raises(ValueError) as exc:
+            await tools["analyze_fft"](ctx=mock_ctx, signal_id="nonexistent")
+        msg = str(exc.value)
+        assert "load_signal" in msg
+        assert "list_signals" in msg
+        assert "sine50" in msg  # available ids listed
+
+    @pytest.mark.asyncio
+    async def test_no_rate_anywhere_raises(self, tools, data_dir, repo, mock_ctx):
+        """Signal stored without a rate → structured error, never a silent
+        default."""
+        fs = 10000
+        t = np.linspace(0, 0.5, fs // 2, endpoint=False)
+        sig = np.sin(2 * np.pi * 50 * t)
+        pd.DataFrame(sig).to_csv(data_dir / "no_meta_fft.csv", index=False, header=False)
+        repo.load_signal("no_meta_fft.csv")  # no metadata → no rate
+
+        with pytest.raises(ValueError, match="No sampling rate"):
+            await tools["analyze_fft"](ctx=mock_ctx, signal_id="no_meta_fft")
+
+    @pytest.mark.asyncio
+    async def test_deterministic_repeat_calls(self, tools, repo, mock_ctx):
+        """Two identical calls analyze identical samples (audit 2.15: the
+        random default segment is gone)."""
+        r1 = await tools["analyze_fft"](
+            ctx=mock_ctx, signal_id="multi", segment_duration=0.25
+        )
+        r2 = await tools["analyze_fft"](
+            ctx=mock_ctx, signal_id="multi", segment_duration=0.25
+        )
+        assert r1.peak_frequency == r2.peak_frequency
+        assert r1.peak_magnitude == r2.peak_magnitude
+        assert [p.model_dump() for p in r1.top_peaks] == [
+            p.model_dump() for p in r2.top_peaks
+        ]
+
+    @pytest.mark.asyncio
+    async def test_random_seed_is_explicit_and_reproducible(
+        self, tools, repo, mock_ctx
+    ):
+        """Seeded random segment position is opt-in and reproducible."""
+        r1 = await tools["analyze_fft"](
+            ctx=mock_ctx, signal_id="multi", segment_duration=0.25, random_seed=7
+        )
+        r2 = await tools["analyze_fft"](
+            ctx=mock_ctx, signal_id="multi", segment_duration=0.25, random_seed=7
+        )
+        assert r1.peak_magnitude == r2.peak_magnitude
 
 
 # ---------------------------------------------------------------------------
@@ -117,16 +163,41 @@ class TestAnalyzeFFT:
 # ---------------------------------------------------------------------------
 
 class TestAnalyzeEnvelope:
-    """Tests for analyze_envelope tool."""
+    """Tests for the unified analyze_envelope tool (signal_id handle)."""
 
     @pytest.mark.asyncio
-    async def test_envelope_returns_result(self, tools, data_dir, mock_ctx):
-        result = await tools["analyze_envelope"](
-            ctx=mock_ctx, filename="sine50.csv", sampling_rate=10000.0
-        )
-        # EnvelopeResult model
+    async def test_envelope_returns_result(self, tools, repo, mock_ctx):
+        result = await tools["analyze_envelope"](ctx=mock_ctx, signal_id="sine50")
         assert result is not None
-        assert hasattr(result, "peak_frequencies")
+        assert len(result.top_peaks) > 0
+        assert result.signal_id == "sine50"
+
+    @pytest.mark.asyncio
+    async def test_envelope_default_band_echoed(self, tools, repo, mock_ctx):
+        """Unified default band is 500-5000 Hz, echoed in the output."""
+        result = await tools["analyze_envelope"](ctx=mock_ctx, signal_id="sine50")
+        assert tuple(result.filter_band) == (500.0, 5000.0)
+
+    @pytest.mark.asyncio
+    async def test_envelope_invalid_band_raises(self, tools, repo, mock_ctx):
+        """Band above Nyquist raises — never a silent clamp (U9)."""
+        with pytest.raises(ValueError, match="Nyquist"):
+            await tools["analyze_envelope"](
+                ctx=mock_ctx, signal_id="sine50", filter_high=6000.0
+            )
+
+    @pytest.mark.asyncio
+    async def test_envelope_deterministic_repeat_calls(self, tools, repo, mock_ctx):
+        r1 = await tools["analyze_envelope"](ctx=mock_ctx, signal_id="multi")
+        r2 = await tools["analyze_envelope"](ctx=mock_ctx, signal_id="multi")
+        assert [p.model_dump() for p in r1.top_peaks] == [
+            p.model_dump() for p in r2.top_peaks
+        ]
+
+    @pytest.mark.asyncio
+    async def test_old_spectrum_tool_gone(self, tools):
+        """compute_envelope_spectrum_tool merged into analyze_envelope."""
+        assert "compute_envelope_spectrum_tool" not in tools
 
 
 # ---------------------------------------------------------------------------
@@ -134,31 +205,35 @@ class TestAnalyzeEnvelope:
 # ---------------------------------------------------------------------------
 
 class TestExtractFeatures:
-    """Tests for extract_features_from_signal tool."""
+    """Tests for extract_features_from_signal tool (signal_id handle)."""
 
     @pytest.mark.asyncio
-    async def test_extracts_features(self, tools, data_dir, mock_ctx):
+    async def test_extracts_features(self, tools, repo, mock_ctx):
         result = await tools["extract_features_from_signal"](
-            signal_file="sine50.csv",
-            sampling_rate=10000.0,
+            signal_id="sine50",
             segment_duration=0.5,
             ctx=mock_ctx,
         )
-        # FeatureExtractionResult
         assert result.num_segments > 0
         assert len(result.feature_names) == 17
 
     @pytest.mark.asyncio
-    async def test_segment_count(self, tools, data_dir, mock_ctx):
+    async def test_segment_count(self, tools, repo, mock_ctx):
         # 1s signal, 0.5s segments, 0 overlap → 2 segments
         result = await tools["extract_features_from_signal"](
-            signal_file="sine50.csv",
-            sampling_rate=10000.0,
+            signal_id="sine50",
             segment_duration=0.5,
             overlap_ratio=0.0,
             ctx=mock_ctx,
         )
         assert result.num_segments == 2
+
+    @pytest.mark.asyncio
+    async def test_unknown_signal_id_raises(self, tools, repo, mock_ctx):
+        with pytest.raises(ValueError, match="load_signal"):
+            await tools["extract_features_from_signal"](
+                signal_id="__ghost__", ctx=mock_ctx
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -169,50 +244,23 @@ class TestSpectralDelegation:
     """Tests for PSD/STFT/envelope tools that delegate to spectral.py."""
 
     @pytest.mark.asyncio
-    async def test_compute_psd(self, tools, data_dir, mock_ctx):
-        # Load signal first
-        from predictive_maintenance_mcp.signal_repository import get_repository
-        repo = get_repository()
-        repo.load_signal("sine50.csv", signal_id="psd_test", sampling_rate=10000)
-        try:
-            result = await tools["compute_power_spectral_density"](
-                ctx=mock_ctx, signal_id="psd_test"
-            )
-            assert result is not None
-        finally:
-            repo.clear_all()
+    async def test_compute_psd(self, tools, repo, mock_ctx):
+        result = await tools["compute_power_spectral_density"](
+            ctx=mock_ctx, signal_id="sine50"
+        )
+        assert result is not None
 
     @pytest.mark.asyncio
-    async def test_compute_stft(self, tools, data_dir, mock_ctx):
-        from predictive_maintenance_mcp.signal_repository import get_repository
-        repo = get_repository()
-        repo.load_signal("sine50.csv", signal_id="stft_test", sampling_rate=10000)
+    async def test_compute_stft(self, tools, repo, mock_ctx):
         try:
-            # STFT may have model validation issues with energy_per_band string keys
-            # Verify the tool at least runs without unhandled exceptions
-            try:
-                result = await tools["compute_spectrogram_stft"](
-                    ctx=mock_ctx, signal_id="stft_test"
-                )
-                assert result is not None
-            except Exception:
-                # Known issue: energy_per_band band names are strings not floats
-                pytest.skip("STFT model validation issue with energy_per_band")
-        finally:
-            repo.clear_all()
-
-    @pytest.mark.asyncio
-    async def test_compute_envelope_spectrum(self, tools, data_dir, mock_ctx):
-        from predictive_maintenance_mcp.signal_repository import get_repository
-        repo = get_repository()
-        repo.load_signal("sine50.csv", signal_id="env_test", sampling_rate=10000)
-        try:
-            result = await tools["compute_envelope_spectrum_tool"](
-                ctx=mock_ctx, signal_id="env_test"
+            result = await tools["compute_spectrogram_stft"](
+                ctx=mock_ctx, signal_id="sine50"
             )
             assert result is not None
-        finally:
-            repo.clear_all()
+        except Exception:
+            # Known issue: energy_per_band band names are strings not floats
+            pytest.skip("STFT model validation issue with energy_per_band")
+
 
 
 # ---------------------------------------------------------------------------
@@ -220,11 +268,34 @@ class TestSpectralDelegation:
 # ---------------------------------------------------------------------------
 
 class TestAnalyzeStatistics:
-    """Tests for analyze_statistics tool."""
+    """Tests for analyze_statistics tool (signal_id handle)."""
 
-    def test_returns_stats(self, tools, data_dir):
-        if "analyze_statistics" not in tools:
-            pytest.skip("analyze_statistics not registered")
-        result = tools["analyze_statistics"](filename="sine50.csv")
+    def test_returns_stats(self, tools, repo):
+        result = tools["analyze_statistics"](signal_id="sine50")
         assert result is not None
         assert hasattr(result, "rms")
+
+    def test_unit_reported_only_when_declared(self, tools, repo):
+        """Declared metadata unit is reported as-is (no amplitude heuristic)."""
+        result = tools["analyze_statistics"](signal_id="sine50")
+        assert result.signal_unit == "g"  # from sine50_metadata.json at load
+        assert "declared" in result.unit_note
+
+    def test_undeclared_unit_not_guessed(self, tools, data_dir, repo):
+        """High-RMS signal without declaration: the old heuristic guessed
+        'g'; now the unit stays None and the note names the declaration
+        path."""
+        fs = 10000
+        t = np.linspace(0, 0.5, fs // 2, endpoint=False)
+        sig = 4.0 * np.sqrt(2) * np.sin(2 * np.pi * 50 * t)  # RMS ~4 > 0.5
+        pd.DataFrame(sig).to_csv(data_dir / "loud_no_meta.csv", index=False, header=False)
+        repo.load_signal("loud_no_meta.csv", sampling_rate=fs)
+
+        result = tools["analyze_statistics"](signal_id="loud_no_meta")
+        assert result.signal_unit is None
+        assert "load_signal" in result.unit_note
+        assert "signal_unit=" in result.unit_note
+
+    def test_unknown_signal_id_raises(self, tools, repo):
+        with pytest.raises(ValueError, match="load_signal"):
+            tools["analyze_statistics"](signal_id="__ghost__")

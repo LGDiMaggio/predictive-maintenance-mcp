@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 
-from predictive_maintenance_mcp.signal_loader import (
+from predictive_maintenance_mcp.signal_acquisition.loaders import (
     load_signal_data,
     extract_segment,
     get_metadata_path,
@@ -33,7 +33,7 @@ class TestLoadSignalData:
         csv_file = tmp_path / "test.csv"
         pd.DataFrame(data).to_csv(csv_file, header=False, index=False)
 
-        monkeypatch.setattr("predictive_maintenance_mcp.signal_loader.DATA_DIR", tmp_path)
+        monkeypatch.setattr("predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR", tmp_path)
         signal = load_signal_data("test.csv")
         np.testing.assert_array_almost_equal(signal, data)
 
@@ -42,7 +42,7 @@ class TestLoadSignalData:
         data = np.array([1.1, 2.2, 3.3, 4.4])
         np.save(tmp_path / "test.npy", data)
 
-        monkeypatch.setattr("predictive_maintenance_mcp.signal_loader.DATA_DIR", tmp_path)
+        monkeypatch.setattr("predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR", tmp_path)
         signal = load_signal_data("test.npy")
         np.testing.assert_array_equal(signal, data)
 
@@ -52,7 +52,7 @@ class TestLoadSignalData:
         data = np.array([10.0, 20.0, 30.0])
         savemat(str(tmp_path / "test.mat"), {"signal": data})
 
-        monkeypatch.setattr("predictive_maintenance_mcp.signal_loader.DATA_DIR", tmp_path)
+        monkeypatch.setattr("predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR", tmp_path)
         signal = load_signal_data("test.mat")
         assert signal is not None
         np.testing.assert_array_almost_equal(signal, data)
@@ -64,7 +64,7 @@ class TestLoadSignalData:
         data = (np.sin(np.linspace(0, 2 * np.pi * 440, fs)) * 32767).astype(np.int16)
         wavfile.write(str(tmp_path / "test.wav"), fs, data)
 
-        monkeypatch.setattr("predictive_maintenance_mcp.signal_loader.DATA_DIR", tmp_path)
+        monkeypatch.setattr("predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR", tmp_path)
         signal = load_signal_data("test.wav")
         assert signal is not None
         assert len(signal) == len(data)
@@ -81,18 +81,18 @@ class TestLoadSignalData:
         data = np.array([1.5, 2.5, 3.5, 4.5, 5.5])
         pd.DataFrame({"signal": data}).to_parquet(tmp_path / "test.parquet")
 
-        monkeypatch.setattr("predictive_maintenance_mcp.signal_loader.DATA_DIR", tmp_path)
+        monkeypatch.setattr("predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR", tmp_path)
         signal = load_signal_data("test.parquet")
         assert signal is not None
         np.testing.assert_array_almost_equal(signal, data)
 
     def test_missing_file_returns_none(self, tmp_path, monkeypatch):
-        monkeypatch.setattr("predictive_maintenance_mcp.signal_loader.DATA_DIR", tmp_path)
+        monkeypatch.setattr("predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR", tmp_path)
         assert load_signal_data("nonexistent.csv") is None
 
     def test_unsupported_extension_returns_none(self, tmp_path, monkeypatch):
         (tmp_path / "test.xyz").write_text("data")
-        monkeypatch.setattr("predictive_maintenance_mcp.signal_loader.DATA_DIR", tmp_path)
+        monkeypatch.setattr("predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR", tmp_path)
         assert load_signal_data("test.xyz") is None
 
     def test_wav_stereo_uses_first_channel(self, tmp_path, monkeypatch):
@@ -104,7 +104,7 @@ class TestLoadSignalData:
         stereo = np.column_stack([ch1, ch2])
         wavfile.write(str(tmp_path / "stereo.wav"), fs, stereo)
 
-        monkeypatch.setattr("predictive_maintenance_mcp.signal_loader.DATA_DIR", tmp_path)
+        monkeypatch.setattr("predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR", tmp_path)
         signal = load_signal_data("stereo.wav")
         assert signal is not None
         assert signal.ndim == 1
@@ -201,3 +201,18 @@ class TestGetMetadataPath:
         path = get_metadata_path_from_dir(tmp_path, "test_signal.csv")
         assert path.parent == tmp_path
         assert path.name == "test_signal_metadata.json"
+
+    def test_traversal_input_rejected(self):
+        """F9: get_metadata_path is routed through safe_resolve, so a
+        traversal filename that would escape DATA_DIR now raises instead of
+        silently pointing outside it (defense-in-depth, matches
+        load_signal_data)."""
+        with pytest.raises(ValueError, match="escapes base directory"):
+            get_metadata_path("../../../../etc/passwd.csv")
+
+    def test_valid_input_stays_inside_data_dir(self):
+        """Behavior identical for valid in-DATA_DIR inputs — the resolved
+        metadata path is contained in DATA_DIR."""
+        path = get_metadata_path("real_train/baseline_1.csv")
+        assert path.is_relative_to(DATA_DIR.resolve())
+        assert path.name == "baseline_1_metadata.json"

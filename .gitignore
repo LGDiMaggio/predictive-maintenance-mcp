@@ -77,3 +77,6 @@ rag_result.txt
 # Project-internal docs (local only)
 CLAUDE.md
 PRD_INDUSTRIAL_TRANSFORMATION.md
+
+# Claude Code per-agent worktrees
+.claude/worktrees/

@@ -25,11 +25,15 @@ class TestBearingFrequencies:
     """Tests against known bearing geometry values."""
 
     def test_standard_deep_groove_6205(self):
-        """SKF 6205: Z=9, Bd=7.94mm, Pd=34.55mm, alpha=0, RPM=1797."""
+        """6205 (CWRU-documented geometry): Z=9, Bd=7.94mm, Pd=39.04mm, RPM=1797.
+
+        The CWRU Bearing Data Center publishes BPFO=3.5848x and BPFI=5.4152x
+        shaft speed for this bearing (SKF 6205-2RS JEM, drive end).
+        """
         freqs = calculate_bearing_frequencies(
             num_balls=9,
             ball_diameter_mm=7.94,
-            pitch_diameter_mm=34.55,
+            pitch_diameter_mm=39.04,
             contact_angle_deg=0.0,
             shaft_speed_rpm=1797,
         )
@@ -42,8 +46,9 @@ class TestBearingFrequencies:
         assert "shaft_freq_hz" in freqs
         assert abs(freqs["shaft_freq_hz"] - shaft_freq) < 0.01
 
-        # BPFO ~ (Z/2)*fs*(1 - Bd/Pd) = 4.5 * 29.95 * (1-0.2298) ≈ 103.8
-        assert 80 < freqs["BPFO"] < 110
+        # CWRU published factors: BPFO = 3.5848 x 29.95 Hz = 107.36 Hz
+        assert freqs["BPFO"] == pytest.approx(107.36, rel=0.005)
+        assert freqs["BPFI"] == pytest.approx(162.19, rel=0.005)
         # BPFI > BPFO always (inner race spins faster relative to rolling elements)
         assert freqs["BPFI"] > freqs["BPFO"]
         # FTF < shaft frequency
@@ -98,7 +103,7 @@ class TestBearingFrequencies:
         """Verify input parameters are echoed in result dict."""
         freqs = calculate_bearing_frequencies(
             num_balls=9, ball_diameter_mm=7.94,
-            pitch_diameter_mm=34.55, contact_angle_deg=0.0,
+            pitch_diameter_mm=39.04, contact_angle_deg=0.0,
             shaft_speed_rpm=1797,
         )
         params = freqs.get("input_parameters", {})

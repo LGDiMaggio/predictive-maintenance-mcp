@@ -3,12 +3,12 @@
 import numpy as np
 import pytest
 
-from predictive_maintenance_mcp.bearing_catalog import (
+from predictive_maintenance_mcp.diagnostics.bearing_catalog import (
     lookup_bearing,
     compute_fault_frequencies,
     list_catalog_bearings,
 )
-from predictive_maintenance_mcp.bearing_analyzer import (
+from predictive_maintenance_mcp.diagnostics.bearing_analyzer import (
     check_bearing_fault_peak,
     check_all_bearing_faults,
     lookup_bearing_and_compute,
@@ -45,10 +45,13 @@ class TestBearingCatalog:
         assert compute_fault_frequencies("NONEXISTENT", 1500) is None
 
     def test_list_catalog(self):
+        # The catalog is small by design: verified, source-traceable entries only.
         bearings = list_catalog_bearings()
-        assert len(bearings) >= 20
+        assert len(bearings) >= 3
         designations = {b["designation"] for b in bearings}
         assert "6205" in designations
+        # Every listed entry must carry its source citation
+        assert all(b["source"] for b in bearings)
 
 
 class TestCheckBearingFaultPeak:
@@ -76,7 +79,7 @@ class TestCheckBearingFaultPeak:
             tolerance_pct=5.0,
         )
         assert result["detected"] is True
-        assert result["confidence"] in ("high", "moderate")
+        assert result["evidence_strength"] in ("high", "moderate")
         assert abs(result["detected_frequency_hz"] - bpfo) < bpfo * 0.05
 
     def test_no_detection_wrong_frequency(self, signal_with_bpfo):
@@ -89,9 +92,9 @@ class TestCheckBearingFaultPeak:
             bearing_id="6205",
             tolerance_pct=3.0,
         )
-        # May or may not detect depending on noise, but confidence should be low
+        # May or may not detect depending on noise, but evidence should be low
         if not result["detected"]:
-            assert result["confidence"] in ("none", "low")
+            assert result["evidence_strength"] in ("none", "low")
 
     def test_harmonics_detected(self, signal_with_bpfo):
         signal, fs, bpfo = signal_with_bpfo
@@ -141,6 +144,17 @@ class TestCheckAllBearingFaults:
             signal=signal, fs=fs, bearing_id="6205", rpm=1500
         )
         assert len(result["overall_assessment"]) > 0
+
+    def test_low_fs_signal_no_raise(self):
+        """A bearing check on an 8 kHz signal (Nyquist 4 kHz) must run: the
+        fs-aware envelope default analyzes 500-3999 Hz instead of raising on
+        the old fixed 5000 Hz upper edge (500-5000 exceeded Nyquist)."""
+        fs = 8000  # Nyquist 4000 Hz < old fixed 5000 Hz upper edge
+        signal = np.random.randn(fs)
+        result = check_all_bearing_faults(
+            signal=signal, fs=fs, bearing_id="6205", rpm=1500
+        )
+        assert len(result["fault_checks"]) == 4
 
 
 class TestLookupBearingAndCompute:

@@ -1,6 +1,6 @@
 {
   "name": "predictive-maintenance",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Industrial-grade predictive maintenance skills, agents, and workflows for the predictive-maintenance-mcp server. Provides domain expertise for vibration analysis, bearing/gear fault diagnosis, anomaly detection, ISO 20816-3 compliance, and diagnostic report generation.",
   "author": {
     "name": "Luigi Di Maggio",

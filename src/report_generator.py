@@ -8,6 +8,7 @@ Reports are saved in the reports/ directory as:
     Requires ``python-docx``: ``pip install predictive-maintenance-mcp[docx]``
 """
 
+import itertools
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
@@ -15,7 +16,6 @@ from typing import Dict, Any, Optional, List
 import json
 
 import numpy as np
-import pandas as pd
 from scipy.signal import find_peaks
 
 # Import HTML templates
@@ -26,18 +26,45 @@ from .html_templates import (
 )
 
 from .config import REPORTS_DIR
+from .path_safety import safe_resolve
 
 logger = logging.getLogger(__name__)
 
 # Optional DOCX support
 try:
     from docx import Document as DocxDocument
-    from docx.shared import Inches, Pt, RGBColor
+    from docx.shared import Pt
     from docx.enum.table import WD_TABLE_ALIGNMENT
-    from docx.enum.text import WD_ALIGN_PARAGRAPH
     HAS_DOCX = True
 except ImportError:
     HAS_DOCX = False
+
+
+#: Process-local sequence for report filenames — the Windows clock can
+#: return identical microsecond timestamps for back-to-back calls, so a
+#: monotonic counter guarantees uniqueness within the process.
+_report_sequence = itertools.count()
+
+
+def timestamped_report_name(prefix: str, label: str, ext: str = "html") -> str:
+    """Build a unique, timestamped report filename.
+
+    Two consecutive runs always produce two distinct files (timestamp +
+    monotonic sequence), so a re-run never silently overwrites the
+    previous report.
+
+    Args:
+        prefix: Report family (e.g. 'fft_spectrum').
+        label: Signal/model label; path separators are flattened.
+        ext: File extension without the dot.
+
+    Returns:
+        Filename like 'fft_spectrum_baseline_1_20260712-153205-000042.html'.
+    """
+    safe_label = Path(label).stem.replace("/", "_").replace("\\", "_")
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    seq = next(_report_sequence)
+    return f"{prefix}_{safe_label}_{stamp}-{seq:06d}.{ext}"
 
 
 def save_fft_report(
@@ -134,9 +161,8 @@ def save_fft_report(
         metadata=metadata
     )
     
-    # Save HTML file
-    safe_name = Path(signal_file).stem.replace("/", "_").replace("\\", "_")
-    output_file = REPORTS_DIR / f"fft_spectrum_{safe_name}.html"
+    # Save HTML file (timestamped: consecutive runs never overwrite)
+    output_file = REPORTS_DIR / timestamped_report_name("fft_spectrum", signal_file)
     output_file.write_text(html, encoding='utf-8')
     
     logger.info(f"FFT report saved: {output_file.name}")
@@ -262,9 +288,10 @@ def save_envelope_report(
         metadata=metadata
     )
     
-    # Save HTML file
-    safe_name = Path(signal_file).stem.replace("/", "_").replace("\\", "_")
-    output_file = REPORTS_DIR / f"envelope_analysis_{safe_name}.html"
+    # Save HTML file (timestamped: consecutive runs never overwrite)
+    output_file = REPORTS_DIR / timestamped_report_name(
+        "envelope_analysis", signal_file
+    )
     output_file.write_text(html, encoding='utf-8')
     
     logger.info(f"Envelope report saved: {output_file.name}")
@@ -294,7 +321,7 @@ def save_iso_report(
     
     Args:
         signal_file: Signal filename
-        iso_result: ISO evaluation result from evaluate_iso_20816()
+        iso_result: ISO evaluation dict (mapped from assess_severity output)
     
     Returns:
         Dictionary with file path, metadata, and summary
@@ -317,9 +344,8 @@ def save_iso_report(
         metadata=metadata
     )
     
-    # Save HTML file
-    safe_name = Path(signal_file).stem.replace("/", "_").replace("\\", "_")
-    output_file = REPORTS_DIR / f"iso_20816_{safe_name}.html"
+    # Save HTML file (timestamped: consecutive runs never overwrite)
+    output_file = REPORTS_DIR / timestamped_report_name("iso_20816", signal_file)
     output_file.write_text(html, encoding='utf-8')
     
     logger.info(f"ISO report saved: {output_file.name}")
@@ -340,62 +366,70 @@ def save_iso_report(
 def read_report_metadata(file_name: str) -> Dict[str, Any]:
     """
     Read metadata from HTML report without loading entire file.
-    
+
     Args:
         file_name: Report filename in reports/ directory
-    
+
     Returns:
-        Dictionary with metadata, or error dict if file not found
+        Dictionary with the extracted metadata.
+
+    Raises:
+        ValueError: If the filename escapes the reports directory, the
+            report does not exist, or the report carries no (valid)
+            metadata block.
     """
-    file_path = REPORTS_DIR / file_name
-    
+    # Contain the user-supplied filename before touching the filesystem —
+    # otherwise ``../../secret`` turns this into a file-existence/size oracle
+    # and a conditional-read primitive.
+    try:
+        file_path = safe_resolve(REPORTS_DIR, file_name)
+    except ValueError:
+        logger.warning("Rejected out-of-bounds report filename: %r", file_name)
+        # Deliberately terse: no directory listing here (oracle stays closed).
+        raise ValueError(f"Invalid report filename: {file_name}") from None
+
     if not file_path.exists():
         available = [f.name for f in REPORTS_DIR.glob("*.html")]
-        return {
-            'error': f"Report not found: {file_name}",
-            'available_reports': available
-        }
-    
+        raise ValueError(
+            f"Report not found: {file_name} — available reports: "
+            f"{available if available else 'none'}. "
+            f"Use list_html_reports() to see them."
+        )
+
+    # Read file and extract JSON metadata
+    with open(file_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+
+    # Find metadata JSON block
+    start_marker = '<script type="application/json" id="report-metadata">'
+    end_marker = '</script>'
+
+    start_idx = content.find(start_marker)
+    if start_idx == -1:
+        raise ValueError(
+            f"Metadata not found in report {file_name} — the file has no "
+            f"embedded report-metadata block."
+        )
+
+    start_idx += len(start_marker)
+    end_idx = content.find(end_marker, start_idx)
+
+    if end_idx == -1:
+        raise ValueError(f"Malformed metadata in report {file_name}")
+
+    metadata_json = content[start_idx:end_idx].strip()
     try:
-        # Read file and extract JSON metadata
-        with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
-        
-        # Find metadata JSON block
-        start_marker = '<script type="application/json" id="report-metadata">'
-        end_marker = '</script>'
-        
-        start_idx = content.find(start_marker)
-        if start_idx == -1:
-            return {
-                'error': 'Metadata not found in report',
-                'file_name': file_name,
-                'file_size_kb': file_path.stat().st_size / 1024
-            }
-        
-        start_idx += len(start_marker)
-        end_idx = content.find(end_marker, start_idx)
-        
-        if end_idx == -1:
-            return {'error': 'Malformed metadata in report'}
-        
-        metadata_json = content[start_idx:end_idx].strip()
         metadata = json.loads(metadata_json)
-        
-        return {
-            'file_name': file_name,
-            'file_path': str(file_path.absolute()),
-            'file_size_kb': file_path.stat().st_size / 1024,
-            'metadata': metadata,
-            'message': f"Metadata loaded from {file_name}"
-        }
-    
-    except Exception as e:
-        logger.error(f"Error reading report metadata: {e}")
-        return {
-            'error': f"Failed to read metadata: {str(e)}",
-            'file_name': file_name
-        }
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Malformed metadata in report {file_name}: {e}") from e
+
+    return {
+        'file_name': file_name,
+        'file_path': str(file_path.absolute()),
+        'file_size_kb': file_path.stat().st_size / 1024,
+        'metadata': metadata,
+        'message': f"Metadata loaded from {file_name}"
+    }
 
 
 def list_reports() -> List[Dict[str, Any]]:
@@ -406,20 +440,23 @@ def list_reports() -> List[Dict[str, Any]]:
         List of dicts with report information
     """
     reports = []
-    
+
     for html_file in REPORTS_DIR.glob("*.html"):
-        # Try to read metadata
-        metadata_info = read_report_metadata(html_file.name)
-        
-        if 'error' not in metadata_info:
-            meta = metadata_info.get('metadata', {})
-            reports.append({
-                'file_name': html_file.name,
-                'file_size_kb': html_file.stat().st_size / 1024,
-                'report_type': meta.get('report_type', 'unknown'),
-                'signal_file': meta.get('signal_file', 'unknown'),
-                'created': html_file.stat().st_mtime
-            })
+        # Skip files without a readable metadata block (legitimate for
+        # non-report HTML files sitting in the directory).
+        try:
+            metadata_info = read_report_metadata(html_file.name)
+        except ValueError:
+            continue
+
+        meta = metadata_info.get('metadata', {})
+        reports.append({
+            'file_name': html_file.name,
+            'file_size_kb': html_file.stat().st_size / 1024,
+            'report_type': meta.get('report_type', 'unknown'),
+            'signal_file': meta.get('signal_file', 'unknown'),
+            'created': html_file.stat().st_mtime
+        })
     
     # Sort by creation time (newest first)
     reports.sort(key=lambda x: x['created'], reverse=True)
@@ -446,17 +483,20 @@ def save_diagnostic_report_docx(
     - ``fft_peaks``   –  list of ``{frequency, magnitude_db, note}``
     - ``envelope_peaks`` – list of ``{frequency, magnitude_db, match}``
     - ``bearing_frequencies`` – dict with BPFO, BPFI, BSF, FTF
-    - ``iso``         –  dict from ``evaluate_iso_20816`` output
+    - ``iso``         –  dict mapped from ``assess_severity`` output
     - ``diagnosis``   –  free-text diagnostic summary (str)
 
     Returns:
-        Dictionary with file path and metadata, or an error dict when
-        python-docx is not installed.
+        Dictionary with file path and metadata.
+
+    Raises:
+        ValueError: If the optional python-docx dependency is not installed.
     """
     if not HAS_DOCX:
-        return {
-            "error": "python-docx is not installed. Install with: pip install predictive-maintenance-mcp[docx]",
-        }
+        raise ValueError(
+            "python-docx is not installed. Install with: "
+            "pip install predictive-maintenance-mcp[docx]"
+        )
 
     doc = DocxDocument()
 
@@ -546,9 +586,10 @@ def save_diagnostic_report_docx(
         doc.add_heading("Diagnostic Summary", level=1)
         doc.add_paragraph(str(diagnosis))
 
-    # -- save -------------------------------------------------------------
-    safe_name = Path(signal_file).stem.replace("/", "_").replace("\\", "_")
-    output_file = REPORTS_DIR / f"diagnostic_{safe_name}.docx"
+    # -- save (timestamped: consecutive runs never overwrite) --------------
+    output_file = REPORTS_DIR / timestamped_report_name(
+        "diagnostic", signal_file, ext="docx"
+    )
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     doc.save(str(output_file))
 

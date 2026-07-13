@@ -150,6 +150,6 @@ def test_main_help_exits_cleanly():
 
     with _patch.object(sys, 'argv', ['test', '--help']):
         with pytest.raises(SystemExit) as exc_info:
-            from predictive_maintenance_mcp.machinery_diagnostics_server import main
+            from predictive_maintenance_mcp.server import main
             main()
         assert exc_info.value.code == 0

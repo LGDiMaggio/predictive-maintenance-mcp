@@ -57,11 +57,11 @@ Ollama itself does not natively speak the MCP protocol. You need an **MCP client
    - Go to **Settings → Tools → MCP Servers**
    - Add a new server with command:
      ```
-     /path/to/predictive-maintenance-mcp/.venv/bin/python /path/to/predictive-maintenance-mcp/src/machinery_diagnostics_server.py
+     /path/to/predictive-maintenance-mcp/.venv/bin/python -m predictive_maintenance_mcp
      ```
    - On Windows:
      ```
-     C:\path\to\predictive-maintenance-mcp\.venv\Scripts\python.exe C:\path\to\predictive-maintenance-mcp\src\machinery_diagnostics_server.py
+     C:\path\to\predictive-maintenance-mcp\.venv\Scripts\python.exe -m predictive_maintenance_mcp
      ```
 
 3. Select your Ollama model and start analyzing.
@@ -75,7 +75,7 @@ If you use [Claude Code](https://docs.anthropic.com/en/docs/claude-code) with an
   "mcpServers": {
     "predictive-maintenance": {
       "command": "/path/to/.venv/bin/python",
-      "args": ["/path/to/src/machinery_diagnostics_server.py"]
+      "args": ["-m", "predictive_maintenance_mcp"]
     }
   }
 }
@@ -99,7 +99,7 @@ async def main():
     # Connect to MCP server
     server_params = StdioServerParameters(
         command="python",
-        args=["src/machinery_diagnostics_server.py"]
+        args=["-m", "predictive_maintenance_mcp"]
     )
     
     async with stdio_client(server_params) as (read, write):

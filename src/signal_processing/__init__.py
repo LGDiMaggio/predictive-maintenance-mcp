@@ -9,6 +9,7 @@ from .spectral import (  # noqa: F401
     compute_psd,
     compute_stft_spectrogram,
     compute_envelope_spectrum,
+    validate_bandpass_band,
 )
 
 from .features import (  # noqa: F401

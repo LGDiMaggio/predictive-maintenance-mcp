@@ -23,12 +23,17 @@ The LLM follows this workflow:
 ## Files in This Directory
 
 ### `common_bearings_catalog.json`
-- **Content**: 20 common ISO deep groove ball bearings
-- **Series**: 
-  - 6200 series: 6200, 6201, 6202, 6203, 6204, 6205, 6206, 6207, 6208, 6209, 6210
-  - 6300 series: 6300, 6301, 6302, 6303, 6304, 6305, 6306, 6307, 6308, 6309, 6310
-- **Data**: num_balls, ball_diameter_mm, pitch_diameter_mm, contact_angle_deg, bore_mm, outer_diameter_mm, width_mm
-- **Source**: ISO 15:2017 standard dimensions
+- **Content**: a SMALL set of bearings whose internal geometry is traceable to a
+  public source. Small by design: unverifiable entries were removed, not
+  approximated ("honest and small beats rich and fake").
+- **Current entries**:
+  - `6205` — SKF 6205-2RS JEM, geometry published by the CWRU Bearing Data Center
+  - `6203` — SKF 6203-2RS JEM, geometry published by the CWRU Bearing Data Center
+  - `UER204` — LDK UER204, geometry published with the XJTU-SY run-to-failure dataset
+- **Data**: num_balls, ball_diameter_mm, pitch_diameter_mm, contact_angle_deg, bore_mm, outer_diameter_mm, width_mm, **source (mandatory citation)**
+- **Validation**: `tests/test_bearing_catalog_validation.py` checks every entry for
+  physical validity (bore < pitch < OD, ball fit, kinematic identities) and a
+  non-empty source field. New entries that fail these checks are rejected in CI.
 
 ### Future Additions (User Can Add)
 
@@ -45,22 +50,29 @@ The system will:
 
 ### Option 1: Add to JSON (Recommended for Small Sets)
 
-Edit `common_bearings_catalog.json` and add entries like:
+Entries are accepted ONLY with a verifiable public source (manufacturer
+datasheet, dataset documentation, or peer-reviewed paper) recorded in the
+mandatory `source` field. Edit `common_bearings_catalog.json` and add entries
+like:
 
 ```json
-"6211": {
-  "designation": "6211",
+"6205": {
+  "designation": "6205",
   "type": "Deep Groove Ball Bearing",
   "series": "62xx",
   "num_balls": 9,
-  "ball_diameter_mm": 17.462,
-  "pitch_diameter_mm": 77.5,
+  "ball_diameter_mm": 7.94,
+  "pitch_diameter_mm": 39.04,
   "contact_angle_deg": 0.0,
-  "bore_mm": 55,
-  "outer_diameter_mm": 100,
-  "width_mm": 21
+  "bore_mm": 25,
+  "outer_diameter_mm": 52,
+  "width_mm": 15,
+  "source": "<URL or citation for the geometry data>"
 }
 ```
+
+Run `pytest tests/test_bearing_catalog_validation.py` afterwards: it validates
+every entry for physical consistency and a non-empty source.
 
 ### Option 2: Upload Manufacturer PDF Catalog
 
@@ -79,10 +91,10 @@ Edit `common_bearings_catalog.json` and add entries like:
 
 ```
 "What are the specifications for bearing 6205?"
-→ System searches catalog → Returns geometry
+→ System searches catalog → Returns geometry with its source citation
 
-"Calculate bearing frequencies for SKF 6207 at 1500 RPM"
-→ Looks up 6207 geometry → Calculates BPFO, BPFI, BSF, FTF
+"Calculate bearing frequencies for SKF 6205 at 1500 RPM"
+→ Looks up 6205 geometry → Calculates BPFO, BPFI, BSF, FTF
 ```
 
 ### Via MCP Tool
@@ -95,22 +107,23 @@ specs = await search_bearing_catalog("6205")
   "type": "Deep Groove Ball Bearing",
   "num_balls": 9,
   "ball_diameter_mm": 7.94,
-  "pitch_diameter_mm": 34.55,
+  "pitch_diameter_mm": 39.04,
   "contact_angle_deg": 0.0,
   "bore_mm": 25,
   "outer_diameter_mm": 52,
   "width_mm": 15,
-  "source": "catalog_json"
+  "source": "CWRU Bearing Data Center, drive-end bearing SKF 6205-2RS JEM (...)"
 }
 ```
 
 ## Important Notes
 
 1. **Catalog is Fallback Only**: Always check machine manual first
-2. **Generic ISO Specifications**: Manufacturer-specific bearings may have slight variations
+2. **Source-Traceable Only**: every entry carries a mandatory `source` citation;
+   manufacturer-specific variants may still differ — verify against your bearing
 3. **User Responsibility**: If bearing not in catalog, user must provide specifications
 4. **No Web Search**: System does NOT search online for privacy/reliability reasons
-5. **Extensible**: You can expand the JSON or add PDF catalogs as needed
+5. **Extensible**: You can expand the JSON (with sources) or add PDF catalogs as needed
 
 ## LLM Behavior
 
@@ -145,7 +158,7 @@ The LLM should **NEVER**:
 {
   "catalog_info": {
     "name": "string",
-    "source": "string",
+    "policy": "string",
     "version": "string",
     "date": "YYYY-MM-DD"
   },
@@ -160,7 +173,8 @@ The LLM should **NEVER**:
       "contact_angle_deg": float,
       "bore_mm": float,
       "outer_diameter_mm": float,
-      "width_mm": float
+      "width_mm": float,
+      "source": "string (MANDATORY: URL or citation for the geometry data)"
     }
   }
 }

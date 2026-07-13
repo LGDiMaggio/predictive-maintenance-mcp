@@ -4,7 +4,8 @@
       "type": "stdio",
       "command": "${workspaceFolder}/.venv/Scripts/python.exe",
       "args": [
-        "${workspaceFolder}/src/machinery_diagnostics_server.py"
+        "-m",
+        "predictive_maintenance_mcp"
       ],
       "env": {}
     }

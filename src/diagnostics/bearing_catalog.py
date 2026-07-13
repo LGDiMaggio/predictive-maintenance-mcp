@@ -5,14 +5,12 @@ Thin layer over document_reader.py functions, combining bearing lookup
 with characteristic frequency calculation in a single call.
 """
 
-import json
 import logging
-from pathlib import Path
 from typing import Optional
 
-from ..config import RESOURCES_DIR
 from ..document_reader import (
     calculate_bearing_frequencies,
+    load_bearing_catalog,
     lookup_bearing_in_catalog,
 )
 
@@ -68,27 +66,23 @@ def compute_fault_frequencies(designation: str, rpm: float) -> Optional[dict]:
 def list_catalog_bearings() -> list[dict]:
     """List all bearings in the catalog.
 
-    Returns:
-        List of dicts with designation, type, bore_mm, outer_diameter_mm.
-    """
-    catalog_path = RESOURCES_DIR / "bearing_catalogs" / "common_bearings_catalog.json"
-    if not catalog_path.exists():
-        return []
+    Reads the same JSON file used by lookup_bearing_in_catalog (single
+    source of truth — see document_reader.load_bearing_catalog).
 
-    try:
-        with open(catalog_path, "r", encoding="utf-8") as f:
-            catalog = json.load(f)
-        bearings = catalog.get("bearings", {})
-        return [
-            {
-                "designation": b.get("designation", key),
-                "type": b.get("type", "Unknown"),
-                "bore_mm": b.get("bore_mm"),
-                "outer_diameter_mm": b.get("outer_diameter_mm"),
-                "num_balls": b.get("num_balls"),
-            }
-            for key, b in bearings.items()
-        ]
-    except Exception as e:
-        logger.error(f"Error reading bearing catalog: {e}")
-        return []
+    Returns:
+        List of dicts with designation, type, bore_mm, outer_diameter_mm,
+        num_balls, and the mandatory source citation.
+    """
+    catalog = load_bearing_catalog()
+    bearings = catalog.get("bearings", {})
+    return [
+        {
+            "designation": b.get("designation", key),
+            "type": b.get("type", "Unknown"),
+            "bore_mm": b.get("bore_mm"),
+            "outer_diameter_mm": b.get("outer_diameter_mm"),
+            "num_balls": b.get("num_balls"),
+            "source": b.get("source"),
+        }
+        for key, b in bearings.items()
+    ]

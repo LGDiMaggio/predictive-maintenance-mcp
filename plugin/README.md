@@ -1,6 +1,6 @@
 # Predictive Maintenance Plugin for Claude Code
 
-Industrial-grade predictive maintenance skills, agents, and workflows for Claude Code. Works with the [predictive-maintenance-mcp](https://github.com/LGDiMaggio/predictive-maintenance-mcp) server.
+Industrial-grade predictive maintenance skills, agents, and workflows for Claude Code. Works with the [predictive-maintenance-mcp](https://github.com/LGDiMaggio/predictive-maintenance-mcp) server. Every workflow is designed to support and accelerate expert decision-making — never to replace it.
 
 ## Prerequisites
 
@@ -30,7 +30,7 @@ The `predictive-maintenance-mcp` MCP server must be installed and connected. See
 
 ## Components
 
-### Skills (7)
+### Skills (8)
 
 Skills activate automatically when Claude detects relevant context.
 
@@ -43,6 +43,7 @@ Skills activate automatically when Claude detects relevant context.
 | **anomaly-detection** | "train model", "detect anomalies" | ML-based anomaly detection (SVM, LOF) |
 | **signal-management** | "load signal", "generate test signal" | Signal loading, generation, cache management |
 | **documentation-search** | "search manual", "look up bearing" | RAG search across manuals and catalogs |
+| **prognostics** | "trend analysis", "remaining useful life" | Within-recording screening + multi-measurement RUL |
 
 ### Agents (2)
 
@@ -59,27 +60,27 @@ Quick entry points for common workflows.
 
 | Command | Usage | Description |
 |---|---|---|
-| `/pm-diagnose` | `/pm-diagnose bearing_001` | Start bearing fault diagnosis |
-| `/pm-screen` | `/pm-screen bearing_001` | Quick health screening |
-| `/pm-report` | `/pm-report bearing_001 full` | Generate diagnostic reports |
+| `/pm-diagnose` | `/pm-diagnose real_train_baseline_1` | Start bearing fault diagnosis |
+| `/pm-screen` | `/pm-screen real_train_baseline_1` | Quick health screening |
+| `/pm-report` | `/pm-report real_train_baseline_1 full` | Generate diagnostic reports |
 
 ## MCP Tool Coverage
 
-This plugin provides domain expertise for all 38 tools in the predictive-maintenance-mcp server:
+This plugin provides domain expertise for all 33 tools (plus 3 guided prompts — 36 endpoints total) of the predictive-maintenance-mcp server. Every signal is referenced by the `signal_id` returned by `load_signal`.
 
-- **Signal Acquisition**: load_signal, generate_test_signal, list_signals, list_stored_signals, get_signal_info, clear_signal, clear_all_signals
-- **Spectral Analysis**: analyze_fft, analyze_envelope, compute_power_spectral_density, compute_spectrogram_stft, extract_features_from_signal
-- **Visualization**: plot_signal, plot_spectrum, plot_envelope, plot_iso_20816_chart
-- **Bearing Diagnostics**: calculate_bearing_characteristic_frequencies, check_bearing_fault_peak_tool, check_bearing_faults_direct, diagnose_vibration_tool, search_bearing_catalog, lookup_bearing_and_compute_tool
-- **ISO Standards**: evaluate_iso_20816, assess_vibration_severity
-- **ML / Anomaly Detection**: train_anomaly_model, predict_anomalies
-- **Documentation**: search_documentation, read_manual_excerpt, extract_manual_specs, list_machine_manuals, load_and_validate_metadata
-- **Reports**: generate_fft_report, generate_envelope_report, generate_iso_report, generate_feature_comparison_report, generate_pca_visualization_report, generate_diagnostic_report_docx
+- **Signal Lifecycle**: load_signal, list_signals, get_signal_info, generate_test_signal, clear_signals
+- **Spectral & Statistical Analysis**: analyze_fft, analyze_envelope, analyze_statistics, extract_features_from_signal, compute_power_spectral_density, compute_spectrogram_stft
+- **Diagnostics & Health Assessment**: assess_severity, check_bearing_faults, diagnose_vibration, calculate_bearing_characteristic_frequencies, search_bearing_catalog, train_anomaly_model, predict_anomalies
+- **Documentation**: list_machine_manuals, read_manual_excerpt, extract_manual_specs, search_documentation
+- **Reports**: plot_signal, generate_fft_report, generate_envelope_report, generate_iso_report, generate_diagnostic_report_docx, generate_pca_visualization_report, generate_feature_comparison_report, list_html_reports
+- **Prognostics**: analyze_signal_trend, estimate_rul
+- **Decision Support**: generate_maintenance_recommendations
+- **Guided Prompts**: diagnose_bearing, diagnose_gear, quick_diagnostic_report
 
 ## Standards Compliance
 
 - **ISO 13374** — Six-block diagnostic architecture
-- **ISO 20816-3** — Vibration severity classification
+- **ISO 20816-3** — Vibration severity classification (zone boundary values from ISO 10816-3:2009; provenance noted in tool output)
 - **MIMOSA OSA-CBM** — Condition-based maintenance framework
 
 ## License

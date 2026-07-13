@@ -1,0 +1,1016 @@
+{
+  "_meta": {
+    "captured": "pre-merge U9a, post engine fixes (envelope detrend+window, band validation, alerts raise)",
+    "fixtures": "tests/_golden_signals.py (deterministic, seeded)"
+  },
+  "analyze_envelope": {
+    "spectrum_route_bearing": {
+      "diagnosis": "Envelope Spectrum Analysis:\n  Bandpass filter: 500.0-5000.0 Hz\n  Method: hilbert\n  Top 20 peaks:\n    1.   68.00 Hz  (1.03e+01)\n    2.  108.00 Hz  (1.73e+03)\n    3.  215.00 Hz  (7.41e+02)\n    4.  323.00 Hz  (9.82e+00)\n    5.  431.00 Hz  (9.56e+00)\n    6.  436.00 Hz  (9.52e+00)\n    7.  546.00 Hz  (9.50e+00)\n    8.  735.00 Hz  (1.13e+01)\n    9.  981.00 Hz  (1.14e+01)\n    10. 1000.00 Hz  (9.53e+00)\n\nCompare peaks with bearing fault frequencies for diagnosis.",
+      "frequency_range": [
+        500.0,
+        5000.0
+      ],
+      "method": "hilbert",
+      "num_samples": 10000,
+      "sampling_rate": 10000.0,
+      "signal_id": "golden_bearing",
+      "top_peaks": [
+        {
+          "frequency_hz": 68.0,
+          "magnitude": 10.32659,
+          "magnitude_db": -44.5,
+          "note": ""
+        },
+        {
+          "frequency_hz": 108.0,
+          "magnitude": 1734.210812,
+          "magnitude_db": 0.0,
+          "note": ""
+        },
+        {
+          "frequency_hz": 215.0,
+          "magnitude": 741.12761,
+          "magnitude_db": -7.38,
+          "note": ""
+        },
+        {
+          "frequency_hz": 323.0,
+          "magnitude": 9.82357,
+          "magnitude_db": -44.94,
+          "note": ""
+        },
+        {
+          "frequency_hz": 431.0,
+          "magnitude": 9.555077,
+          "magnitude_db": -45.18,
+          "note": ""
+        },
+        {
+          "frequency_hz": 436.0,
+          "magnitude": 9.522999,
+          "magnitude_db": -45.21,
+          "note": ""
+        },
+        {
+          "frequency_hz": 546.0,
+          "magnitude": 9.499482,
+          "magnitude_db": -45.23,
+          "note": ""
+        },
+        {
+          "frequency_hz": 735.0,
+          "magnitude": 11.268421,
+          "magnitude_db": -43.74,
+          "note": ""
+        },
+        {
+          "frequency_hz": 981.0,
+          "magnitude": 11.448211,
+          "magnitude_db": -43.61,
+          "note": ""
+        },
+        {
+          "frequency_hz": 1000.0,
+          "magnitude": 9.530797,
+          "magnitude_db": -45.2,
+          "note": ""
+        },
+        {
+          "frequency_hz": 1345.0,
+          "magnitude": 9.307509,
+          "magnitude_db": -45.41,
+          "note": ""
+        },
+        {
+          "frequency_hz": 1536.0,
+          "magnitude": 10.366392,
+          "magnitude_db": -44.47,
+          "note": ""
+        },
+        {
+          "frequency_hz": 1620.0,
+          "magnitude": 10.647586,
+          "magnitude_db": -44.24,
+          "note": ""
+        },
+        {
+          "frequency_hz": 1642.0,
+          "magnitude": 9.320818,
+          "magnitude_db": -45.39,
+          "note": ""
+        },
+        {
+          "frequency_hz": 1665.0,
+          "magnitude": 9.931543,
+          "magnitude_db": -44.84,
+          "note": ""
+        },
+        {
+          "frequency_hz": 1764.0,
+          "magnitude": 10.099635,
+          "magnitude_db": -44.7,
+          "note": ""
+        },
+        {
+          "frequency_hz": 1774.0,
+          "magnitude": 10.803022,
+          "magnitude_db": -44.11,
+          "note": ""
+        },
+        {
+          "frequency_hz": 1811.0,
+          "magnitude": 9.290661,
+          "magnitude_db": -45.42,
+          "note": ""
+        },
+        {
+          "frequency_hz": 1920.0,
+          "magnitude": 9.426665,
+          "magnitude_db": -45.29,
+          "note": ""
+        },
+        {
+          "frequency_hz": 1955.0,
+          "magnitude": 9.779485,
+          "magnitude_db": -44.98,
+          "note": ""
+        }
+      ]
+    },
+    "spectrum_route_noise_band": {
+      "diagnosis": "Envelope Spectrum Analysis:\n  Bandpass filter: 1000.0-4000.0 Hz\n  Method: hilbert\n  Top 20 peaks:\n    1.   33.00 Hz  (1.09e+01)\n    2.   59.00 Hz  (1.25e+01)\n    3.  109.00 Hz  (1.08e+01)\n    4.  175.00 Hz  (1.29e+01)\n    5.  192.00 Hz  (1.06e+01)\n    6.  198.00 Hz  (1.02e+01)\n    7.  223.00 Hz  (1.02e+01)\n    8.  274.00 Hz  (1.01e+01)\n    9.  325.00 Hz  (1.18e+01)\n    10.  331.00 Hz  (1.10e+01)\n\nCompare peaks with bearing fault frequencies for diagnosis.",
+      "frequency_range": [
+        1000.0,
+        4000.0
+      ],
+      "method": "hilbert",
+      "num_samples": 10000,
+      "sampling_rate": 10000.0,
+      "signal_id": "golden_noise",
+      "top_peaks": [
+        {
+          "frequency_hz": 33.0,
+          "magnitude": 10.853283,
+          "magnitude_db": -1.49,
+          "note": ""
+        },
+        {
+          "frequency_hz": 59.0,
+          "magnitude": 12.481501,
+          "magnitude_db": -0.28,
+          "note": ""
+        },
+        {
+          "frequency_hz": 109.0,
+          "magnitude": 10.825877,
+          "magnitude_db": -1.52,
+          "note": ""
+        },
+        {
+          "frequency_hz": 175.0,
+          "magnitude": 12.891195,
+          "magnitude_db": 0.0,
+          "note": ""
+        },
+        {
+          "frequency_hz": 192.0,
+          "magnitude": 10.597678,
+          "magnitude_db": -1.7,
+          "note": ""
+        },
+        {
+          "frequency_hz": 198.0,
+          "magnitude": 10.238494,
+          "magnitude_db": -2.0,
+          "note": ""
+        },
+        {
+          "frequency_hz": 223.0,
+          "magnitude": 10.17205,
+          "magnitude_db": -2.06,
+          "note": ""
+        },
+        {
+          "frequency_hz": 274.0,
+          "magnitude": 10.118828,
+          "magnitude_db": -2.1,
+          "note": ""
+        },
+        {
+          "frequency_hz": 325.0,
+          "magnitude": 11.763825,
+          "magnitude_db": -0.79,
+          "note": ""
+        },
+        {
+          "frequency_hz": 331.0,
+          "magnitude": 10.962199,
+          "magnitude_db": -1.41,
+          "note": ""
+        },
+        {
+          "frequency_hz": 349.0,
+          "magnitude": 11.052126,
+          "magnitude_db": -1.34,
+          "note": ""
+        },
+        {
+          "frequency_hz": 387.0,
+          "magnitude": 9.916177,
+          "magnitude_db": -2.28,
+          "note": ""
+        },
+        {
+          "frequency_hz": 418.0,
+          "magnitude": 10.204922,
+          "magnitude_db": -2.03,
+          "note": ""
+        },
+        {
+          "frequency_hz": 475.0,
+          "magnitude": 11.113109,
+          "magnitude_db": -1.29,
+          "note": ""
+        },
+        {
+          "frequency_hz": 508.0,
+          "magnitude": 10.061104,
+          "magnitude_db": -2.15,
+          "note": ""
+        },
+        {
+          "frequency_hz": 626.0,
+          "magnitude": 10.058524,
+          "magnitude_db": -2.16,
+          "note": ""
+        },
+        {
+          "frequency_hz": 789.0,
+          "magnitude": 10.43718,
+          "magnitude_db": -1.83,
+          "note": ""
+        },
+        {
+          "frequency_hz": 1238.0,
+          "magnitude": 11.612671,
+          "magnitude_db": -0.91,
+          "note": ""
+        },
+        {
+          "frequency_hz": 1307.0,
+          "magnitude": 10.345916,
+          "magnitude_db": -1.91,
+          "note": ""
+        },
+        {
+          "frequency_hz": 1343.0,
+          "magnitude": 9.91243,
+          "magnitude_db": -2.28,
+          "note": ""
+        }
+      ]
+    }
+  },
+  "analyze_signal_trend": {
+    "onset_degrading": {
+      "baseline_segments": 19,
+      "feature_name": "rms",
+      "num_segments": 39,
+      "onset_detected": true,
+      "onset_segment_index": 21,
+      "threshold_sigma": 2.0
+    },
+    "onset_stationary": {
+      "baseline_segments": 9,
+      "feature_name": "rms",
+      "num_segments": 19,
+      "onset_detected": false,
+      "onset_segment_index": null,
+      "threshold_sigma": 3.0
+    },
+    "trend_degrading": {
+      "analysis_scope": "within_recording_screening",
+      "feature_name": "rms",
+      "feature_series": [
+        0.06270329197449032,
+        0.07693271177494496,
+        0.08933233816533794,
+        0.10205626901852267,
+        0.1148639512171069,
+        0.12388227573898306,
+        0.13461120809227933,
+        0.14799042665274678,
+        0.16249708022858747,
+        0.17483316837115076,
+        0.19193985416720466,
+        0.20870743530753016,
+        0.21785386526689657,
+        0.22204531644589262,
+        0.23193386436944233,
+        0.24443519318470097,
+        0.26465237074253806,
+        0.28672334268785926,
+        0.29840168524181077,
+        0.3029306088991447,
+        0.3142409209021548,
+        0.3316253063882002,
+        0.33518454941729176,
+        0.33569438322189277,
+        0.3552921880727366,
+        0.3792321056286066,
+        0.39533287865600153,
+        0.4088583577880805,
+        0.412388869362973,
+        0.4177587418645607,
+        0.43427844919949227,
+        0.446877917319418,
+        0.46630501643809674,
+        0.4846117305157049,
+        0.48821582409752945,
+        0.4862043551151075,
+        0.5008754682839331,
+        0.5474787134219488,
+        0.5662202410850184
+      ],
+      "intercept": 0.049801460236395034,
+      "num_segments": 39,
+      "p_value": 2.2464484054689703e-47,
+      "r_squared": 0.9966405764410587,
+      "segment_times_s": [
+        0.05,
+        0.1,
+        0.15,
+        0.2,
+        0.25,
+        0.3,
+        0.35,
+        0.4,
+        0.45,
+        0.5,
+        0.55,
+        0.6,
+        0.65,
+        0.7,
+        0.75,
+        0.8,
+        0.85,
+        0.9,
+        0.95,
+        1.0,
+        1.05,
+        1.1,
+        1.15,
+        1.2,
+        1.25,
+        1.3,
+        1.35,
+        1.4,
+        1.45,
+        1.5,
+        1.55,
+        1.6,
+        1.65,
+        1.7,
+        1.75,
+        1.8,
+        1.85,
+        1.9,
+        1.95
+      ],
+      "series_truncated": false,
+      "slope": 0.2518909057719619,
+      "trend_direction": "increasing"
+    },
+    "trend_stationary": {
+      "analysis_scope": "within_recording_screening",
+      "feature_name": "rms",
+      "feature_series": [
+        0.09989934264239281,
+        0.09968559673231744,
+        0.1021987603717193,
+        0.09975237552201584,
+        0.09662429726706025,
+        0.09699420507554632,
+        0.1004139548425681,
+        0.10186246965182758,
+        0.10167341599283333,
+        0.10095525105353473,
+        0.09995600292814133,
+        0.09991004787675974,
+        0.10137940562821006,
+        0.10249955694661049,
+        0.10000209769495487,
+        0.09983901881048723,
+        0.10064359367306644,
+        0.10044992615257031,
+        0.10029263469650823
+      ],
+      "intercept": 0.09964251576530221,
+      "num_segments": 19,
+      "p_value": 0.33511268523818294,
+      "r_squared": 0.05471768247001666,
+      "segment_times_s": [
+        0.05,
+        0.1,
+        0.15,
+        0.2,
+        0.25,
+        0.3,
+        0.35,
+        0.4,
+        0.45,
+        0.5,
+        0.55,
+        0.6,
+        0.65,
+        0.7,
+        0.75,
+        0.8,
+        0.85,
+        0.9,
+        0.95
+      ],
+      "series_truncated": false,
+      "slope": 0.0012446477914087074,
+      "trend_direction": "stable"
+    }
+  },
+  "assess_severity": {
+    "evaluate_iso_default": {
+      "boundary_ab": 1.4,
+      "boundary_bc": 2.8,
+      "boundary_cd": 4.5,
+      "color_code": "red",
+      "frequency_range": "10-1000 Hz (speed >= 600 RPM)",
+      "machine_group": 2,
+      "operating_speed_rpm": null,
+      "rms_velocity": 11.0624,
+      "severity_level": "Unacceptable",
+      "support_type": "rigid",
+      "threshold_provenance": "Zone boundaries from ISO 10816-3:2009 (four-zone A-D scheme). ISO 20816-3:2022 supersedes that edition and merges zones A and B; the A/B boundary is kept here for practitioner familiarity.",
+      "zone": "D",
+      "zone_description": "SIGNAL CONVERTED: Acceleration (g) -> Velocity (mm/s). Vibration severity may cause damage. Immediate action required!"
+    },
+    "evaluate_iso_rpm400": {
+      "boundary_ab": 1.4,
+      "boundary_bc": 2.8,
+      "boundary_cd": 4.5,
+      "color_code": "red",
+      "frequency_range": "2-1000 Hz (speed < 600 RPM)",
+      "machine_group": 2,
+      "operating_speed_rpm": 400.0,
+      "rms_velocity": 11.3404,
+      "severity_level": "Unacceptable",
+      "support_type": "rigid",
+      "threshold_provenance": "Zone boundaries from ISO 10816-3:2009 (four-zone A-D scheme). ISO 20816-3:2022 supersedes that edition and merges zones A and B; the A/B boundary is kept here for practitioner familiarity.",
+      "zone": "D",
+      "zone_description": "SIGNAL CONVERTED: Acceleration (g) -> Velocity (mm/s). Vibration severity may cause damage. Immediate action required!"
+    },
+    "rms_route_custom": [
+      {
+        "input": {
+          "rms_velocity_mm_s": 0.5,
+          "thresholds": {
+            "alarm": 3.0,
+            "danger": 5.0,
+            "warning": 1.0
+          }
+        },
+        "output": {
+          "alert_level": "none",
+          "exceeded_threshold": null,
+          "message": "Vibration within normal limits (Zone A).",
+          "rms_velocity": 0.5,
+          "zone": "A"
+        }
+      },
+      {
+        "input": {
+          "rms_velocity_mm_s": 2.0,
+          "thresholds": {
+            "alarm": 3.0,
+            "danger": 5.0,
+            "warning": 1.0
+          }
+        },
+        "output": {
+          "alert_level": "warning",
+          "exceeded_threshold": 1.0,
+          "message": "Vibration exceeds 1.0 mm/s \u2014 elevated level (Zone B).",
+          "rms_velocity": 2.0,
+          "zone": "B"
+        }
+      },
+      {
+        "input": {
+          "rms_velocity_mm_s": 4.0,
+          "thresholds": {
+            "alarm": 3.0,
+            "danger": 5.0,
+            "warning": 1.0
+          }
+        },
+        "output": {
+          "alert_level": "alarm",
+          "exceeded_threshold": 3.0,
+          "message": "Vibration exceeds 3.0 mm/s \u2014 unsatisfactory level (Zone C).",
+          "rms_velocity": 4.0,
+          "zone": "C"
+        }
+      },
+      {
+        "input": {
+          "rms_velocity_mm_s": 6.0,
+          "thresholds": {
+            "alarm": 3.0,
+            "danger": 5.0,
+            "warning": 1.0
+          }
+        },
+        "output": {
+          "alert_level": "danger",
+          "exceeded_threshold": 5.0,
+          "message": "Vibration exceeds 5.0 mm/s \u2014 unacceptable level (Zone D). Immediate action required.",
+          "rms_velocity": 6.0,
+          "zone": "D"
+        }
+      }
+    ],
+    "rms_route_iso": [
+      {
+        "input": {
+          "machine_group": 2,
+          "rms_velocity_mm_s": 1.0,
+          "support_type": "rigid"
+        },
+        "output": {
+          "alert_level": "none",
+          "exceeded_threshold": null,
+          "message": "Vibration within normal limits (Zone A).",
+          "rms_velocity": 1.0,
+          "zone": "A"
+        }
+      },
+      {
+        "input": {
+          "machine_group": 2,
+          "rms_velocity_mm_s": 2.0,
+          "support_type": "rigid"
+        },
+        "output": {
+          "alert_level": "warning",
+          "exceeded_threshold": 1.4,
+          "message": "Vibration exceeds 1.4 mm/s \u2014 elevated level (Zone B).",
+          "rms_velocity": 2.0,
+          "zone": "B"
+        }
+      },
+      {
+        "input": {
+          "machine_group": 2,
+          "rms_velocity_mm_s": 3.0,
+          "support_type": "rigid"
+        },
+        "output": {
+          "alert_level": "alarm",
+          "exceeded_threshold": 2.8,
+          "message": "Vibration exceeds 2.8 mm/s \u2014 unsatisfactory level (Zone C).",
+          "rms_velocity": 3.0,
+          "zone": "C"
+        }
+      },
+      {
+        "input": {
+          "machine_group": 2,
+          "rms_velocity_mm_s": 10.0,
+          "support_type": "rigid"
+        },
+        "output": {
+          "alert_level": "danger",
+          "exceeded_threshold": 4.5,
+          "message": "Vibration exceeds 4.5 mm/s \u2014 unacceptable level (Zone D). Immediate action required.",
+          "rms_velocity": 10.0,
+          "zone": "D"
+        }
+      },
+      {
+        "input": {
+          "machine_group": 2,
+          "rms_velocity_mm_s": 4.0,
+          "support_type": "flexible"
+        },
+        "output": {
+          "alert_level": "warning",
+          "exceeded_threshold": 2.3,
+          "message": "Vibration exceeds 2.3 mm/s \u2014 elevated level (Zone B).",
+          "rms_velocity": 4.0,
+          "zone": "B"
+        }
+      },
+      {
+        "input": {
+          "machine_group": 1,
+          "rms_velocity_mm_s": 3.0,
+          "support_type": "rigid"
+        },
+        "output": {
+          "alert_level": "warning",
+          "exceeded_threshold": 2.3,
+          "message": "Vibration exceeds 2.3 mm/s \u2014 elevated level (Zone B).",
+          "rms_velocity": 3.0,
+          "zone": "B"
+        }
+      }
+    ],
+    "signal_route_default": {
+      "axis": "vertical",
+      "boundaries": {
+        "AB": 1.4,
+        "BC": 2.8,
+        "CD": 4.5
+      },
+      "color_code": "red",
+      "frequency_range": "10-1000 Hz (speed >= 600 RPM)",
+      "machine_group": 2,
+      "original_unit": "g",
+      "rms_velocity_mm_s": 11.0624,
+      "severity_level": "Unacceptable",
+      "signal_id": "golden_iso",
+      "status": "assessed",
+      "support_type": "rigid",
+      "threshold_provenance": "Zone boundaries from ISO 10816-3:2009 (four-zone A-D scheme). ISO 20816-3:2022 supersedes that edition and merges zones A and B; the A/B boundary is kept here for practitioner familiarity.",
+      "unit_conversion_performed": true,
+      "zone": "D",
+      "zone_description": "Vibration severity may cause damage. Immediate action required!"
+    },
+    "signal_route_group1_flexible": {
+      "axis": "vertical",
+      "boundaries": {
+        "AB": 3.5,
+        "BC": 7.1,
+        "CD": 11.0
+      },
+      "color_code": "red",
+      "frequency_range": "10-1000 Hz (speed >= 600 RPM)",
+      "machine_group": 1,
+      "original_unit": "g",
+      "rms_velocity_mm_s": 11.0624,
+      "severity_level": "Unacceptable",
+      "signal_id": "golden_iso",
+      "status": "assessed",
+      "support_type": "flexible",
+      "threshold_provenance": "Zone boundaries from ISO 10816-3:2009 (four-zone A-D scheme). ISO 20816-3:2022 supersedes that edition and merges zones A and B; the A/B boundary is kept here for practitioner familiarity.",
+      "unit_conversion_performed": true,
+      "zone": "D",
+      "zone_description": "Vibration severity may cause damage. Immediate action required!"
+    },
+    "signal_route_vel3": {
+      "axis": "vertical",
+      "boundaries": {
+        "AB": 1.4,
+        "BC": 2.8,
+        "CD": 4.5
+      },
+      "color_code": "orange",
+      "frequency_range": "10-1000 Hz (speed >= 600 RPM)",
+      "machine_group": 2,
+      "original_unit": "mm/s",
+      "rms_velocity_mm_s": 3.0108,
+      "severity_level": "Unsatisfactory",
+      "signal_id": "golden_vel3",
+      "status": "assessed",
+      "support_type": "rigid",
+      "threshold_provenance": "Zone boundaries from ISO 10816-3:2009 (four-zone A-D scheme). ISO 20816-3:2022 supersedes that edition and merges zones A and B; the A/B boundary is kept here for practitioner familiarity.",
+      "unit_conversion_performed": false,
+      "zone": "C",
+      "zone_description": "Unsatisfactory for long-term operation. Plan maintenance soon."
+    }
+  },
+  "check_bearing_faults": {
+    "bearing_route_fault_signal": {
+      "bearing_frequencies": {
+        "BPFI": 162.46,
+        "BPFO": 107.54,
+        "BSF": 70.7,
+        "FTF": 11.95,
+        "shaft_freq_hz": 30.0
+      },
+      "bearing_id": "6205",
+      "fault_checks": [
+        {
+          "bearing_id": "6205",
+          "detected": true,
+          "detected_frequency_hz": 108.0,
+          "deviation_pct": 0.43,
+          "evidence_strength": "high",
+          "expected_frequency_hz": 107.54,
+          "fault_type": "BPFO",
+          "harmonics_detected": [
+            {
+              "detected_hz": 215.0,
+              "expected_hz": 215.08,
+              "harmonic": 2.0,
+              "magnitude": 741.12761
+            },
+            {
+              "detected_hz": 323.0,
+              "expected_hz": 322.62,
+              "harmonic": 3.0,
+              "magnitude": 9.82357
+            },
+            {
+              "detected_hz": 431.0,
+              "expected_hz": 430.16,
+              "harmonic": 4.0,
+              "magnitude": 9.555077
+            }
+          ],
+          "magnitude": 1734.210812,
+          "signal_id": "golden_bearing"
+        },
+        {
+          "bearing_id": "6205",
+          "detected": false,
+          "detected_frequency_hz": null,
+          "deviation_pct": null,
+          "evidence_strength": "low",
+          "expected_frequency_hz": 162.46,
+          "fault_type": "BPFI",
+          "harmonics_detected": [
+            {
+              "detected_hz": 323.0,
+              "expected_hz": 324.92,
+              "harmonic": 2.0,
+              "magnitude": 9.82357
+            }
+          ],
+          "magnitude": null,
+          "signal_id": "golden_bearing"
+        },
+        {
+          "bearing_id": "6205",
+          "detected": true,
+          "detected_frequency_hz": 68.0,
+          "deviation_pct": -3.82,
+          "evidence_strength": "moderate",
+          "expected_frequency_hz": 70.7,
+          "fault_type": "BSF",
+          "harmonics_detected": [
+            {
+              "detected_hz": 215.0,
+              "expected_hz": 212.1,
+              "harmonic": 3.0,
+              "magnitude": 741.12761
+            }
+          ],
+          "magnitude": 10.32659,
+          "signal_id": "golden_bearing"
+        },
+        {
+          "bearing_id": "6205",
+          "detected": false,
+          "detected_frequency_hz": null,
+          "deviation_pct": null,
+          "evidence_strength": "none",
+          "expected_frequency_hz": 11.95,
+          "fault_type": "FTF",
+          "harmonics_detected": [],
+          "magnitude": null,
+          "signal_id": "golden_bearing"
+        }
+      ],
+      "most_likely_fault": "BPFO",
+      "overall_assessment": "Bearing fault frequencies detected: BPFO (high evidence), BSF (moderate evidence). Most likely fault: BPFO.",
+      "rpm": 1800.0,
+      "shaft_frequency_hz": 30.0,
+      "signal_id": "golden_bearing"
+    },
+    "bearing_route_noise": {
+      "bearing_frequencies": {
+        "BPFI": 162.46,
+        "BPFO": 107.54,
+        "BSF": 70.7,
+        "FTF": 11.95,
+        "shaft_freq_hz": 30.0
+      },
+      "bearing_id": "6205",
+      "fault_checks": [
+        {
+          "bearing_id": "6205",
+          "detected": true,
+          "detected_frequency_hz": 109.0,
+          "deviation_pct": 1.36,
+          "evidence_strength": "moderate",
+          "expected_frequency_hz": 107.54,
+          "fault_type": "BPFO",
+          "harmonics_detected": [
+            {
+              "detected_hz": 317.0,
+              "expected_hz": 322.62,
+              "harmonic": 3.0,
+              "magnitude": 9.596656
+            }
+          ],
+          "magnitude": 13.27016,
+          "signal_id": "golden_noise"
+        },
+        {
+          "bearing_id": "6205",
+          "detected": true,
+          "detected_frequency_hz": 169.0,
+          "deviation_pct": 4.03,
+          "evidence_strength": "high",
+          "expected_frequency_hz": 162.46,
+          "fault_type": "BPFI",
+          "harmonics_detected": [
+            {
+              "detected_hz": 317.0,
+              "expected_hz": 324.92,
+              "harmonic": 2.0,
+              "magnitude": 9.596656
+            },
+            {
+              "detected_hz": 468.0,
+              "expected_hz": 487.38,
+              "harmonic": 3.0,
+              "magnitude": 10.158706
+            },
+            {
+              "detected_hz": 625.0,
+              "expected_hz": 649.84,
+              "harmonic": 4.0,
+              "magnitude": 9.27109
+            }
+          ],
+          "magnitude": 9.519848,
+          "signal_id": "golden_noise"
+        },
+        {
+          "bearing_id": "6205",
+          "detected": true,
+          "detected_frequency_hz": 74.0,
+          "deviation_pct": 4.67,
+          "evidence_strength": "moderate",
+          "expected_frequency_hz": 70.7,
+          "fault_type": "BSF",
+          "harmonics_detected": [
+            {
+              "detected_hz": 274.0,
+              "expected_hz": 282.8,
+              "harmonic": 4.0,
+              "magnitude": 11.291841
+            }
+          ],
+          "magnitude": 11.203339,
+          "signal_id": "golden_noise"
+        },
+        {
+          "bearing_id": "6205",
+          "detected": false,
+          "detected_frequency_hz": null,
+          "deviation_pct": null,
+          "evidence_strength": "none",
+          "expected_frequency_hz": 11.95,
+          "fault_type": "FTF",
+          "harmonics_detected": [],
+          "magnitude": null,
+          "signal_id": "golden_noise"
+        }
+      ],
+      "most_likely_fault": "BPFI",
+      "overall_assessment": "Bearing fault frequencies detected: BPFI (high evidence), BPFO (moderate evidence), BSF (moderate evidence). Most likely fault: BPFI.",
+      "rpm": 1800.0,
+      "shaft_frequency_hz": 30.0,
+      "signal_id": "golden_noise"
+    },
+    "lookup_route": {
+      "bearing_frequencies": {
+        "BPFI": 162.46,
+        "BPFO": 107.54,
+        "BSF": 70.7,
+        "FTF": 11.95,
+        "shaft_freq_hz": 30.0
+      },
+      "bearing_id": "SKF 6205-2RS",
+      "fault_checks": [
+        {
+          "bearing_id": "SKF 6205-2RS",
+          "detected": true,
+          "detected_frequency_hz": 108.0,
+          "deviation_pct": 0.43,
+          "evidence_strength": "high",
+          "expected_frequency_hz": 107.54,
+          "fault_type": "BPFO",
+          "harmonics_detected": [
+            {
+              "detected_hz": 215.0,
+              "expected_hz": 215.08,
+              "harmonic": 2.0,
+              "magnitude": 741.12761
+            },
+            {
+              "detected_hz": 323.0,
+              "expected_hz": 322.62,
+              "harmonic": 3.0,
+              "magnitude": 9.82357
+            },
+            {
+              "detected_hz": 431.0,
+              "expected_hz": 430.16,
+              "harmonic": 4.0,
+              "magnitude": 9.555077
+            }
+          ],
+          "magnitude": 1734.210812,
+          "signal_id": "golden_bearing"
+        },
+        {
+          "bearing_id": "SKF 6205-2RS",
+          "detected": false,
+          "detected_frequency_hz": null,
+          "deviation_pct": null,
+          "evidence_strength": "low",
+          "expected_frequency_hz": 162.46,
+          "fault_type": "BPFI",
+          "harmonics_detected": [
+            {
+              "detected_hz": 323.0,
+              "expected_hz": 324.92,
+              "harmonic": 2.0,
+              "magnitude": 9.82357
+            }
+          ],
+          "magnitude": null,
+          "signal_id": "golden_bearing"
+        },
+        {
+          "bearing_id": "SKF 6205-2RS",
+          "detected": true,
+          "detected_frequency_hz": 68.0,
+          "deviation_pct": -3.82,
+          "evidence_strength": "moderate",
+          "expected_frequency_hz": 70.7,
+          "fault_type": "BSF",
+          "harmonics_detected": [
+            {
+              "detected_hz": 215.0,
+              "expected_hz": 212.1,
+              "harmonic": 3.0,
+              "magnitude": 741.12761
+            }
+          ],
+          "magnitude": 10.32659,
+          "signal_id": "golden_bearing"
+        },
+        {
+          "bearing_id": "SKF 6205-2RS",
+          "detected": false,
+          "detected_frequency_hz": null,
+          "deviation_pct": null,
+          "evidence_strength": "none",
+          "expected_frequency_hz": 11.95,
+          "fault_type": "FTF",
+          "harmonics_detected": [],
+          "magnitude": null,
+          "signal_id": "golden_bearing"
+        }
+      ],
+      "most_likely_fault": "BPFO",
+      "overall_assessment": "Bearing fault frequencies detected: BPFO (high evidence), BSF (moderate evidence). Most likely fault: BPFO.",
+      "rpm": 1800.0,
+      "shaft_frequency_hz": 30.0,
+      "signal_id": "golden_bearing"
+    },
+    "single_peak_bpfo": {
+      "bearing_id": "6205",
+      "detected": true,
+      "detected_frequency_hz": 108.0,
+      "deviation_pct": 0.43,
+      "evidence_strength": "high",
+      "expected_frequency_hz": 107.54,
+      "fault_type": "BPFO",
+      "harmonics_detected": [
+        {
+          "detected_hz": 215.0,
+          "expected_hz": 215.08,
+          "harmonic": 2.0,
+          "magnitude": 741.12761
+        },
+        {
+          "detected_hz": 323.0,
+          "expected_hz": 322.62,
+          "harmonic": 3.0,
+          "magnitude": 9.82357
+        },
+        {
+          "detected_hz": 431.0,
+          "expected_hz": 430.16,
+          "harmonic": 4.0,
+          "magnitude": 9.555077
+        }
+      ],
+      "magnitude": 1734.210812,
+      "signal_id": "golden_bearing"
+    }
+  }
+}

@@ -144,37 +144,107 @@ def compute_stft_spectrogram(
     }
 
 
+def validate_bandpass_band(
+    filter_low: float, filter_high: float, fs: float
+) -> None:
+    """Validate a bandpass band against the signal's Nyquist limit, or raise.
+
+    Single band-validation path for every envelope/bandpass consumer.
+    An invalid band is ALWAYS a ValueError — it is never silently clamped
+    to a different band than the one requested (audit 2.8: the old clamp
+    could quietly fall back to a quasi-full-band analysis).
+
+    Args:
+        filter_low: Requested lower band edge (Hz).
+        filter_high: Requested upper band edge (Hz).
+        fs: Sampling frequency (Hz).
+
+    Raises:
+        ValueError: If filter_low <= 0, filter_high <= filter_low, or
+            filter_high exceeds the Nyquist frequency fs/2.
+    """
+    nyquist = fs / 2.0
+    if filter_low <= 0:
+        raise ValueError(
+            f"Invalid bandpass band: filter_low={filter_low:g} Hz must be "
+            f"positive — pass a lower edge above 0 Hz (e.g. 500 Hz for "
+            f"bearing envelope analysis)."
+        )
+    if filter_high <= filter_low:
+        raise ValueError(
+            f"Invalid bandpass band: filter_high={filter_high:g} Hz must be "
+            f"greater than filter_low={filter_low:g} Hz — re-specify the "
+            f"band edges in (low, high) order."
+        )
+    if filter_high > nyquist:
+        raise ValueError(
+            f"Invalid bandpass band: filter_high={filter_high:g} Hz exceeds "
+            f"the Nyquist frequency {nyquist:g} Hz of this signal "
+            f"(fs={fs:g} Hz) — choose filter_high <= {nyquist:g} Hz or "
+            f"re-acquire at a higher sampling rate. The band is never "
+            f"clamped silently."
+        )
+
+
 def compute_envelope_spectrum(
     signal: np.ndarray,
     fs: float,
-    frequency_range: tuple[float, float] = (500, 5000),
+    frequency_range: Optional[tuple[float, float]] = None,
     method: str = "hilbert",
     num_peaks: int = 20,
 ) -> dict:
     """Compute envelope spectrum via Hilbert transform.
 
-    Steps: bandpass filter -> Hilbert demodulation -> FFT of envelope -> peaks.
+    Steps: bandpass filter -> Hilbert demodulation -> mean subtraction +
+    Hann window -> FFT of envelope -> peaks.
 
     Args:
         signal: 1D time-domain signal.
         fs: Sampling frequency (Hz).
-        frequency_range: Bandpass filter range (low, high) in Hz.
+        frequency_range: Bandpass filter range (low, high) in Hz. ``None``
+            (the default) resolves to an fs-AWARE band — 500 Hz up to
+            ``min(5000, just-below-Nyquist)`` — so a legitimate low-fs
+            signal (e.g. fs=8 kHz, analyzable over 500-3999 Hz) is analyzed
+            instead of raising. An EXPLICIT band is honored verbatim and
+            validated as given: invalid bands (low <= 0, low >= high,
+            high > Nyquist) raise ValueError — never a silent clamp. At
+            fs=10000 Hz the default resolves to the same 500-4999 Hz edge
+            used historically, so byte-level outputs are unchanged.
         method: Envelope method (currently only 'hilbert').
         num_peaks: Number of top peaks to return.
 
     Returns:
         Dict with top_peaks, diagnosis text.
+
+    Raises:
+        ValueError: If an explicitly requested band is invalid for this
+            sampling rate, or the fs-aware default is unusable (fs so low
+            the 500 Hz lower edge meets the clamped upper edge).
     """
     nyquist = fs / 2.0
-    low = max(frequency_range[0], 1.0) / nyquist
-    high = min(frequency_range[1], nyquist - 1.0) / nyquist
 
-    # Clamp filter range
-    low = max(low, 0.001)
-    high = min(high, 0.999)
-    if low >= high:
-        low = 0.01
-        high = 0.99
+    if frequency_range is None:
+        # fs-AWARE DEFAULT. Cap the upper edge just below Nyquist so the
+        # band never exceeds a low-fs signal's Nyquist. This clamp is a
+        # NO-OP at fs=10000 Hz (5000 -> nyquist-1 = 4999), the exact edge
+        # the historical (500, 5000) default already resolved to.
+        band_low, band_high = 500.0, min(5000.0, nyquist - 1.0)
+    else:
+        # An EXPLICIT band is honored verbatim (fail loud, never clamp).
+        band_low, band_high = float(frequency_range[0]), float(frequency_range[1])
+
+    # Single validation path. The explicit band is checked as requested (an
+    # upper edge above Nyquist is a hard error); the default is pre-capped,
+    # so it only trips when the band is genuinely unusable (low >= high at
+    # a very low fs).
+    validate_bandpass_band(band_low, band_high, fs)
+
+    low = band_low / nyquist
+    # A digital filter corner cannot sit exactly AT Nyquist: an upper edge
+    # equal to Nyquist is realized 1 Hz below it (same realization the
+    # pre-U9 code used). Edges ABOVE Nyquist were already rejected — this
+    # is filter realizability, not a band clamp.
+    high = min(band_high, nyquist - 1.0) / nyquist
 
     # Bandpass filter (Butterworth, 4th order, SOS for numerical stability)
     sos = butter(4, [low, high], btype="band", output="sos")
@@ -184,9 +254,15 @@ def compute_envelope_spectrum(
     analytic = hilbert(filtered)
     envelope = np.abs(analytic)
 
-    # Envelope spectrum
+    # INTENTIONAL CHANGE (U9, audit 2.8): subtract the envelope mean and
+    # apply a Hann window BEFORE the FFT. The envelope is strictly
+    # positive, so its mean is a large DC component whose leakage skirt
+    # (rectangular window) buried exactly the low-frequency FTF zone.
     N = len(envelope)
-    env_fft = fft(envelope)
+    envelope_ac = (envelope - np.mean(envelope)) * np.hanning(N)
+
+    # Envelope spectrum
+    env_fft = fft(envelope_ac)
     env_freqs = fftfreq(N, 1 / fs)
 
     pos_mask = env_freqs > 0
@@ -223,7 +299,7 @@ def compute_envelope_spectrum(
     # Diagnosis text
     lines = [
         "Envelope Spectrum Analysis:",
-        f"  Bandpass filter: {frequency_range[0]}-{frequency_range[1]} Hz",
+        f"  Bandpass filter: {band_low:g}-{band_high:g} Hz",
         f"  Method: {method}",
         f"  Top {len(top_peaks)} peaks:",
     ]

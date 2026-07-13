@@ -190,14 +190,14 @@ We need anonymized vibration data from real machinery:
 You know what matters in the field. Open a discussion or issue describing:
 - What diagnostic procedure do you follow daily?
 - What information do you need that the current tools don't provide?
-- What standards or guidelines should we support (VDI 3832, ISO 10816, etc.)?
+- What standards or guidelines should we support (VDI 3832, ISO 20816, etc.)?
 
 ### Review the Bearing Catalog
 
-The file `resources/bearing_catalogs/common_bearings_catalog.json` contains ~20 bearings. You can:
-- Verify the geometry data is correct
-- Suggest additional common bearing models that should be included
-- Provide corrections for contact angles, ball counts, or pitch diameters
+The file `resources/bearing_catalogs/common_bearings_catalog.json` contains a small set of bearings whose geometry is traceable to a public source — every entry carries a mandatory `source` citation, and `tests/test_bearing_catalog_validation.py` enforces physical validity. You can:
+- Verify the geometry data against the cited sources
+- Suggest additional bearing models **with a verifiable public source** (manufacturer datasheet, dataset documentation, or peer-reviewed paper)
+- Provide corrections for contact angles, ball counts, or pitch diameters (with source)
 
 This is a JSON file — you can edit it directly or provide the data in any format and we'll add it.
 
@@ -243,7 +243,7 @@ Closes #42"
 See the complete template in the [Developer Quickstart](docs/QUICKSTART_DEVELOPER.md#step-4-create-your-first-tool).
 
 Summary:
-1. Add a `@mcp.tool()` decorated function in `machinery_diagnostics_server.py`
+1. Add a module-level tool function in the relevant `src/mcp_tools/*.py` module and register it in that module's `register()`
 2. Write comprehensive docstring (the LLM reads this!)
 3. Add tests in `tests/`
 4. Update `EXAMPLES.md` if the tool adds a new workflow
@@ -268,7 +268,7 @@ For bigger features, **open a discussion first** to align on approach:
 |------|--------|
 | Add a **video walkthrough** of the engineer quickstart | Reduces barrier for non-technical users |
 | Write a **case study** using real (anonymized) data | Shows the tool's value to decision-makers |
-| Improve **inline code comments** in `machinery_diagnostics_server.py` | Helps new developers understand the codebase |
+| Improve **inline code comments** in `src/mcp_tools/` | Helps new developers understand the codebase |
 | **Translate** the engineer quickstart to other languages | Expands reach globally |
 | Create a **glossary** of vibration analysis terms used in the project | Bridges the gap between domains |
 

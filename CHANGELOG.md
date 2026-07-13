@@ -7,15 +7,192 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-07-13
+
+Consolidation release: one credible diagnostic engine behind one unified API.
+The endpoint surface shrinks from 54 endpoints (46 tools + 4 resources + 4
+prompts) to **36 endpoints (33 tools + 0 resources + 3 prompts)**, every
+analysis flows through a single `signal_id` handle, and every number in every
+output is either measured, computed, or absent — never invented. **This is a
+breaking release** (pre-1.0 semver): see the migration table below.
+
 ### Added
-- Prognostics tools exposed as MCP endpoints (RUL estimation, trend analysis, degradation onset detection)
-- Decision support tools exposed as MCP endpoints (vibration alerts, maintenance recommendations)
-- Advanced prognostic models: Weibull degradation and Kalman filter-based RUL estimation
-- Block 5 (Prognostics) of ISO 13374 architecture now fully implemented
+- Prognostics MCP endpoints: `analyze_signal_trend` (within-recording
+  screening with degradation-onset detection and a truncated feature series)
+  and `estimate_rul` (Remaining Useful Life from a *multi-measurement* series —
+  explicit `feature_values`+`timestamps` or multiple `signal_ids`). ISO 13374
+  Block 5.
+- Decision support endpoint `generate_maintenance_recommendations` with a
+  closed, canonical `fault_types` vocabulary (`outer_race`, `inner_race`,
+  `ball`, `cage`, ...) that raises on unknown values instead of silently
+  dropping them. ISO 13374 Block 6.
+- `load_signal` accepts a list of file paths for batch loading (fail-fast
+  atomic: on the first invalid entry nothing is loaded), plus
+  `signal_unit: "g" | "m/s2" | "mm/s" | "m/s"` and `overwrite` parameters.
+- `generate_test_signal` writes companion metadata (`sampling_rate`,
+  `signal_unit`), auto-registers the signal in the repository and returns a
+  `StoredSignalInfo` — immediately analyzable and ISO-assessable.
+- Bearing catalog entries carry a mandatory `source` citation (CWRU / XJTU-SY
+  provenance), echoed in bearing-check outputs; a geometry-validation test
+  suite guards every entry (bore < pitch < OD, ball fit, BPFO/fr + BPFI/fr ≈ Z).
+- CI drift guards: every documented tool call in the plugin and MCP prompts is
+  validated against the introspected server inventory
+  (`tests/test_documented_calls.py`); version strings and endpoint counts are
+  pinned across `pyproject.toml`, `src/__init__.py`, `server.json`,
+  `CITATION.cff` and the READMEs (`tests/test_version_alignment.py`); a
+  surface-parity test maps all 54 v0.8.x endpoints to their destinations.
 
 ### Changed
-- Documentation updated to reflect implemented status of prognostics and RUL estimation
-- Endpoint terminology clarified: "MCP endpoints" used consistently for total count (tools + resources + prompts)
+- **One severity engine.** `assess_severity` replaces `evaluate_iso_20816`,
+  `assess_vibration_severity`, `check_vibration_alert` and
+  `check_custom_vibration_alert`. Input is `signal_id` XOR `rms_velocity_mm_s`
+  (portable-instrument route), with native ISO vocabulary
+  (`machine_group: 1|2`, `support_type: "rigid"|"flexible"`), optional custom
+  `thresholds` and optional `machine_power_kw` (declared power < 15 kW →
+  explicit scope refusal). Zone boundaries come from a single table (values
+  from ISO 10816-3:2009, 4-zone scheme; outputs note that ISO 20816-3:2022
+  merges zones A/B). The invented `machine_class I-IV` mapping is gone.
+- **ISO verdicts require a declared unit.** Severity is computed only when the
+  signal unit is declared via `load_signal(signal_unit=...)` or companion
+  `_metadata.json` — never guessed from amplitude. `diagnose_vibration`
+  degrades honestly: the ISO block becomes a structured refusal
+  (`status: "refused"` + `reason` + `remedy`) while spectral, bearing and
+  anomaly blocks still run. Same discipline for `sampling_rate`: explicit >
+  metadata > structured error (no more silent 1 kHz / 10 kHz defaults).
+- **One envelope tool.** `analyze_envelope` absorbs
+  `compute_envelope_spectrum_tool`: default band 500–5000 Hz, invalid band vs
+  Nyquist raises (never a silent clamp), detrend + window before the envelope
+  FFT (no more DC skirt over the FTF zone), band echoed in the output.
+- **One bearing-fault tool.** `check_bearing_faults` absorbs
+  `check_bearing_fault_peak_tool`, `check_bearing_faults_direct` and
+  `lookup_bearing_and_compute_tool`: input `bearing_id` XOR
+  `frequencies: {label: Hz}` XOR explicit geometry — the frequencies route
+  covers gearbox GMF checks and out-of-catalog bearings. Outputs expose the
+  canonical fault vocabulary (`fault_type_canonical`).
+- **`signal_id` is the universal handle.** Every analysis, diagnostics,
+  prognostics and report tool takes `signal_id`; filename parameters are gone.
+  Default ids derive from the path relative to the data directory
+  (`real_train/baseline_1.csv` → `real_train_baseline_1`), so same-named files
+  in different folders no longer collide; reloading an existing id errors
+  unless `overwrite=True`.
+- Honest field names in prognostics and diagnosis: `fit_r_squared` (was
+  `confidence` on RUL fits), `evidence_strength` (categorical, derived from
+  corroborating evidence — a quiet machine can no longer score "high"
+  confidence from severity alone), `precision_heuristic` (Kalman, explicitly
+  labeled heuristic). No tool accepts a `confidence` input anymore.
+- Analysis segments are deterministic by default; random sampling is opt-in
+  via an explicit `random_seed` parameter.
+- `predict_anomalies` returns bounded summaries (counts, score percentiles,
+  worst segments) instead of per-segment arrays; its not-found error lists the
+  models actually on disk.
+- Report filenames are timestamped (consecutive runs no longer overwrite);
+  `list_html_reports(file_name=...)` returns per-report metadata (absorbs
+  `get_report_info`).
+- Parameter naming unified: `rpm` (note: `generate_fft_report`'s old
+  `rotation_freq` was in **Hz**; the new `rpm` parameter is in RPM),
+  `file_name`, `bearing_id`, `sampling_rate`, `signal_id` — one name per
+  concept across the whole surface.
+- Error contract unified: misuse and failures raise (surfaced as MCP errors)
+  with "problem — actionable remedy" messages; legitimate negative outcomes
+  (bearing not in catalog, no degradation trend) are typed results. No more
+  error-shaped dicts returned as success.
+- All tools are module-level importable functions
+  (`from predictive_maintenance_mcp.mcp_tools.analysis_tools import analyze_fft`).
+- Kinematic bearing formulas now cite Randall & Antoni (2011) instead of the
+  incorrect "ISO 15243" attribution.
+
+### Removed
+- **The legacy monolith `machinery_diagnostics_server.py` and the root import
+  shims** (`bearing_analyzer`, `iso10816`, `spectral`, `diagnosis_pipeline`,
+  `bearing_catalog`). The package ships only the modular server; the entry
+  point (`predictive-maintenance-mcp` / `python -m predictive_maintenance_mcp`)
+  is unchanged, so existing Claude Desktop configs keep working.
+  *Why now instead of the promised v1.0.0*: after the 0.8.1 security patch the
+  monolith remained a second, divergent copy of every analysis path — the same
+  class of risk that let the path-traversal fix miss half the code in the
+  first place. Keeping an unmaintained twin alive for one more minor version
+  was a standing security and drift liability; pre-1.0, the deprecation
+  promise is superseded by the safety argument.
+- The 4 MCP resources (`signal://list`, `signal://read`, `manual://list`,
+  `manual://read`) — duplicates of `list_signals`, `get_signal_info`,
+  `list_machine_manuals`, `read_manual_excerpt`.
+- The Weibull RUL estimator (physically unjustified on vibration features) and
+  single-recording RUL extrapolation: `estimate_rul` now refuses anything less
+  than 3 timestamped measurements and points to `analyze_signal_trend` for
+  within-recording screening.
+- The amplitude-based unit-guessing heuristic (RMS > 0.5 → "g"), the
+  "HYPOTHESIS/PROCEEDING" flow and the "PLEASE CONFIRM" log walls.
+- The hardcoded 81.13 Hz BPFO "example @ 1500 RPM" block that injected
+  fictitious reference frequencies into envelope outputs.
+- 19 bearing-catalog entries with fabricated internal geometry (the old 6205
+  pitch diameter was contaminated from a different bearing); only
+  source-verifiable entries remain (6205, 6203 from CWRU; UER204 from XJTU-SY).
+- The ASCII-art ISO diagnostic prompt.
+
+### Fixed
+- Same reading → same zone: `check_alert_thresholds` and the severity engine
+  shared drifted threshold tables (3.0 mm/s, group 2, rigid gave zone C on one
+  path and B on the other). One table now feeds every path.
+- ISO evaluation refuses when Nyquist < 1 kHz and reports the *real*
+  integration band (e.g. "10-950 Hz" at fs = 2 kHz).
+- Kalman RUL variance includes the previously missing covariance cross-term.
+- Trend direction is gated on the computed p-value (not R² > 0.3); onset
+  detection can no longer fire inside its own baseline window.
+- Absolute paths outside the data directory load *that* file (previously a
+  same-named file inside the data directory could silently win).
+- Repository arrays are read-only views — tools can no longer corrupt the
+  signal cache in place.
+- Envelope band-pass validation (including `generate_envelope_report`, which
+  previously crashed with a raw scipy error when the band hit Nyquist).
+
+### Migration table (v0.8.x → v0.9.0)
+
+| v0.8.x endpoint | v0.9.0 destination |
+|---|---|
+| `evaluate_iso_20816`, `assess_vibration_severity`, `check_vibration_alert`, `check_custom_vibration_alert` | `assess_severity` |
+| `compute_envelope_spectrum_tool` | `analyze_envelope` |
+| `check_bearing_fault_peak_tool`, `check_bearing_faults_direct`, `lookup_bearing_and_compute_tool` | `check_bearing_faults` |
+| `detect_signal_degradation_onset` | `analyze_signal_trend` (onset fields in output) |
+| `diagnose_vibration_tool` | `diagnose_vibration` (renamed) |
+| `list_stored_signals` | `list_signals(scope="memory")` |
+| `clear_signal`, `clear_all_signals` | `clear_signals(signal_id=None)` |
+| `get_report_info` | `list_html_reports(file_name=...)` |
+| `plot_spectrum` | `generate_fft_report` |
+| `plot_envelope` | `generate_envelope_report` |
+| `plot_iso_20816_chart` | `generate_iso_report` |
+| `signal://list`, `signal://read` (resources) | `list_signals(scope="disk")`, `get_signal_info` |
+| `manual://list`, `manual://read` (resources) | `list_machine_manuals`, `read_manual_excerpt` |
+| `generate_iso_diagnostic_report` (prompt) | dropped |
+| params `filename` / `signal_file` / `signal_path` | `signal_id` (via `load_signal`) |
+| params `shaft_speed_rpm` / `operating_speed_rpm` / `rotation_freq` (Hz) | `rpm` |
+| param `manual_filename` | `file_name` |
+| param `bearing_designation` | `bearing_id` |
+| output `confidence` | `fit_r_squared` / `evidence_strength` / `precision_heuristic` |
+
+Scripts that assumed `signal_id == file stem` must switch to the relative-path
+derivation (`folder/file.csv` → `folder_file`) or pass an explicit
+`signal_id=` to `load_signal`.
+
+## [0.8.1] - 2026-07-10
+
+Security-only patch release. No new features or API changes.
+
+### Security
+- **Path traversal fixed across every model and report file path** (all sites, in
+  both the modular server and the legacy monolith). `train_anomaly_model` built its
+  pickle output path from an unvalidated `model_name` — an arbitrary-file-write
+  primitive reachable from any MCP client — and the model-load and
+  `read_report_metadata` read paths were likewise unvalidated. Every user-supplied
+  filesystem path now flows through a single canonical `path_safety` helper that
+  uses `Path.is_relative_to` for containment (closing the sibling-directory bypass
+  a `str.startswith` check would miss) and validates model names before any I/O.
+  Unsafe names are rejected with a clear error and no file is written or read.
+- **Signal read path contained.** `load_signal_data` (the shared read sink behind
+  `analyze_fft`, `predict_anomalies`, and every signal tool) now resolves the
+  user-supplied filename inside the data directory, closing an arbitrary
+  file-content read reachable from any MCP client. Broader signal-path hardening
+  (companion-metadata resolution and per-tool existence checks) is tracked as a
+  follow-up.
 
 ## [0.8.0] - 2026-03-29
 
