@@ -20,76 +20,73 @@ document parsing.
 
 ### List Available Documentation
 
-Call `list_machine_manuals()` to see all available manuals and catalogs in the
-resources/ directory (PDF, TXT formats).
+Call `list_machine_manuals()` to see all manuals and catalogs available in
+the resources/ directory (PDF, TXT formats), with their file names.
 
 ### Search Across All Documents (RAG)
 
-Call `search_documentation(query=..., top_k=5)` to perform semantic search
-across all indexed documents.
+Call `search_documentation(query="bearing replacement procedure", top_k=5)`
+for semantic search across all indexed documents.
 
-- **query**: natural language search query (e.g., "bearing replacement procedure
-  for pump XYZ", "maximum vibration limits")
-- **top_k**: number of results to return (default 5)
-
-The RAG engine uses FAISS vector similarity + TF-IDF keyword matching to find
-the most relevant document passages.
+- **query**: natural-language search (e.g. "maximum vibration limits")
+- **top_k**: number of passages to return (default 5)
+- **force_reindex**: set True only if documents changed since the last search
 
 ### Read Manual Excerpts
 
-Call `read_manual_excerpt(manual_name=..., start_page=..., end_page=...)` to
-read specific pages from a manual.
-
-Useful when you know which manual contains the information but need to read a
-specific section.
+Call `read_manual_excerpt(file_name="test_pump_manual.pdf", max_pages=10)` to
+read the first pages of a manual (up to `max_pages`). Use the `file_name`
+exactly as returned by list_machine_manuals.
 
 ### Extract Machine Specifications
 
-Call `extract_manual_specs(manual_name=...)` to automatically extract structured
-data from a manual:
+Call `extract_manual_specs(file_name="test_pump_manual.pdf")` to pull
+structured data from a manual:
 - Bearing designations and types
-- Power ratings
-- RPM ranges
+- Power ratings and RPM ranges
 - Vibration limits
 - Maintenance intervals
 
-### Look Up Bearing in Catalog
+### Look Up a Bearing in the Catalog
 
-Call `search_bearing_catalog(query=...)` to search the bearing database.
+Call `search_bearing_catalog(bearing_id="6205")`.
 
-- Search by designation: "6205", "SKF 6205", "22210"
-- Search by type: "deep groove ball bearing"
-- Returns: geometry (n_balls, d_ball, d_pitch, contact_angle), dimensions,
-  load ratings
-
-### Combined Lookup + Frequency Calculation
-
-Call `lookup_bearing_and_compute_tool(bearing_query=..., shaft_rpm=...)` to
-search the catalog AND compute characteristic fault frequencies (BPFO, BPFI,
-BSF, FTF) in one step.
+- Accepts designations like "6205" or "SKF 6205-2RS" (prefixes resolved)
+- Returns verified geometry (number of balls, ball diameter, pitch diameter,
+  contact angle) WITH its source citation, plus fault-frequency multipliers
+  (BPFO/BPFI/BSF/FTF per unit of shaft speed)
+- The catalog contains only entries with physically valid, source-traced
+  geometry. A miss returns a structured "not found" result with a
+  suggestion — never invented geometry. In that case ask the user for the
+  geometry and use `calculate_bearing_characteristic_frequencies(num_balls=9, ball_diameter_mm=7.94, pitch_diameter_mm=39.04, contact_angle_deg=0.0, rpm=1797)`.
 
 ## Typical Workflows
 
 ### "What bearing is installed in this machine?"
 
-1. Call `list_machine_manuals()` to find the relevant manual
-2. Call `extract_manual_specs(manual_name=...)` to pull bearing designations
-3. Call `search_bearing_catalog(query=...)` with the found designation
+1. `list_machine_manuals()` to find the relevant manual
+2. `extract_manual_specs(file_name="<manual>.pdf")` to pull bearing designations
+3. `search_bearing_catalog(bearing_id="<designation>")` for verified geometry
 
 ### "Find the vibration limits for this equipment"
 
-1. Call `search_documentation(query="vibration limits {machine_name}")`
-2. If insufficient, call `read_manual_excerpt(...)` on the specific manual
+1. `search_documentation(query="vibration limits <machine name>")`
+2. If insufficient, `read_manual_excerpt(file_name="<manual>.pdf", max_pages=10)`
 
-### "Look up bearing 6205 and compute fault frequencies"
+### "Look up bearing 6205 and check the signal against it"
 
-1. Call `lookup_bearing_and_compute_tool(bearing_query="6205", shaft_rpm=1800)`
-2. Returns bearing geometry + BPFO, BPFI, BSF, FTF frequencies
+1. `search_bearing_catalog(bearing_id="6205")` — geometry + frequency multipliers
+2. `check_bearing_faults(signal_id="<id>", rpm=1797, bearing_id="6205")` —
+   computes BPFO/BPFI/BSF/FTF at the given RPM and matches them against the
+   signal's envelope spectrum in one call
 
 ## Important Notes
 
-- RAG index is built on first search and cached for subsequent queries
+- The RAG index is built on first search and cached for later queries
 - PDF extraction quality depends on document formatting
-- Bearing catalog covers common SKF designations; less common bearings may need
-  manual geometry input
+- The bearing catalog is deliberately small and verified — every entry has a
+  `source` field. Uncommon bearings need user-provided geometry; the tools
+  will say so rather than guess
+- Documentation findings inform the engineer's decision — verify critical
+  specs against the physical nameplate when possible
 - All documents are processed locally — no data leaves the machine

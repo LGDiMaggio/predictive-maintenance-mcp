@@ -268,10 +268,14 @@ def diagnose_bearing(
     Keep output CONCISE (≤300 words total):
     • Use bullet points for all findings
     • Provide brief summary first (2-3 sentences)
-    • Use generate_*_report() tools to create HTML reports (saved to reports/ directory)
+    • Use generate_fft_report / generate_envelope_report / generate_iso_report
+      to create HTML reports (saved to the reports/ directory)
     • Tell user to open the HTML file path in browser for interactive visualizations
     • If user needs more details, offer "Show detailed analysis?" continuation
     • NEVER print large JSON/CSV data directly in text output
+    • Frame every conclusion as decision support for a qualified engineer:
+      this analysis AUGMENTS expert judgment — the maintenance decision
+      rests with the engineer, not with this workflow
     """
 
 
@@ -403,10 +407,14 @@ def diagnose_gear(
     Keep output CONCISE (≤300 words total):
     • Use bullet points for all findings
     • Provide brief summary first (2-3 sentences)
-    • Use generate_fft_report() tool to create HTML reports (saved to reports/ directory)
+    • Use generate_fft_report to create HTML reports (saved to the reports/
+      directory)
     • Tell user to open the HTML file path in browser for interactive visualizations
     • If user needs more details, offer "Show detailed analysis?" continuation
     • NEVER print large JSON/CSV data directly in text output
+    • Frame every conclusion as decision support for a qualified engineer:
+      this analysis AUGMENTS expert judgment — the maintenance decision
+      rests with the engineer, not with this workflow
     """
 
 
@@ -457,6 +465,8 @@ def quick_diagnostic_report(signal_id: str) -> str:
     - Screening summary with measured values (bullet points)
     - No definitive fault labels
     - List recommended targeted analyses and required missing parameters
+    - Frame the result as screening input for a qualified engineer: it
+      AUGMENTS expert judgment, it never replaces it
     """
 
 

@@ -11,22 +11,38 @@ description: >
 # Bearing Fault Diagnosis
 
 Evidence-based bearing fault detection using vibration signals. Orchestrate MCP
-tools in a precise diagnostic sequence with decision gates at each step.
+tools in a precise diagnostic sequence (ISO 13374 blocks 1-4) with decision
+gates at each step. This workflow supports the judgment of a qualified
+vibration engineer — it never replaces it.
 
 **Prerequisite**: The `predictive-maintenance-mcp` MCP server must be connected.
 
+**Never infer a fault from a signal id or filename** — "OuterRaceFault" in an
+id is not evidence. Base every conclusion exclusively on tool outputs.
+
 ## Workflow
 
-### Step 1 — Signal Discovery
+### Step 1 — Signal Discovery (ISO 13374 Block 1)
 
-Call `list_stored_signals()` to check cached signals, or `list_signals()` to
-browse the data/ directory. If no signal is loaded, ask the user for a file path
-and call `load_signal(file_path=..., signal_id=...)`. Ask which signal to
-analyze if multiple are available.
+Call `list_signals(scope="memory")` to check which signal_ids are already
+loaded, or `list_signals(scope="disk")` to browse loadable files under the
+data/signals/ directory. If the target signal is not loaded, load it:
 
-### Step 2 — Statistical Screening
+Call `load_signal(filepath="real_train/OuterRaceFault_1.csv", signal_unit="g")`
 
-Call `extract_features_from_signal(signal_id=...)`.
+- The returned `signal_id` (derived from the relative path, e.g.
+  `real_train_OuterRaceFault_1`) is the single handle for every later call.
+- Declare `signal_unit` ("g", "m/s2", "mm/s", or "m/s") if you know it — the
+  ISO severity verdict in Step 7 is REFUSED without a declared unit. Units are
+  never guessed. Ask the user; do not invent one.
+- Verify with `get_signal_info(signal_id="<id>")`: sampling rate, duration,
+  declared unit, and any companion metadata (rpm, reference frequencies).
+
+If the sampling rate is missing, STOP and ask the user — do not guess.
+
+### Step 2 — Statistical Screening (Block 2)
+
+Call `analyze_statistics(signal_id="<id>")`.
 
 Evaluate screening flags (excess kurtosis, Fisher convention):
 
@@ -34,101 +50,124 @@ Evaluate screening flags (excess kurtosis, Fisher convention):
 |-----------|-----------|---------|
 | Kurtosis > 0 | Mild | Non-Gaussian content (possible impulses) |
 | Kurtosis > 3 | Moderate | Significant impulsive content |
-| Kurtosis > 6 | Severe | Likely bearing damage |
+| Kurtosis > 6 | Severe | Strong impulsiveness, consistent with bearing damage |
 | Crest Factor > 4 | Mild | Impulsiveness present |
 | Crest Factor > 6 | Strong | Strong impulsiveness |
 
-**Decision gate**: If Kurtosis < 0 AND Crest Factor < 3 the signal shows no
-impulsive content. Report "No bearing fault indicators in time-domain screening"
-and ask if the user wants to continue anyway.
+**Decision gate**: If Kurtosis < 0 AND Crest Factor < 3, the signal shows no
+impulsive content. Report "No bearing fault indicators in time-domain
+screening" and ask whether to continue anyway — envelope analysis can still
+reveal early faults.
 
-### Step 3 — Spectral Analysis (FFT)
+### Step 3 — Spectral Analysis (Block 2)
 
-Call `analyze_fft(signal_id=...)`.
+Call `analyze_fft(signal_id="<id>")`.
 
 Identify:
 - Dominant frequencies and their harmonics
 - Shaft frequency (1x RPM) and multiples
 - Broadband energy increase
 
-If operating speed is unknown, ask the user for RPM or shaft frequency.
+If the operating speed is unknown, ask the user for the RPM — it is required
+for Steps 4 and 6.
 
 ### Step 4 — Bearing Characteristic Frequencies
 
-If bearing designation is known, call
-`lookup_bearing_and_compute_tool(bearing_query=..., shaft_rpm=...)` to look up
-the bearing in the catalog AND compute fault frequencies in one step.
+Establish the expected BPFO/BPFI/BSF/FTF frequencies by ONE of these routes:
 
-Otherwise call `calculate_bearing_characteristic_frequencies(...)` with manual
-geometry (n_balls, d_ball, d_pitch, contact_angle, shaft_rpm).
+1. **Catalog**: `search_bearing_catalog(bearing_id="6205")` — returns verified
+   geometry with its source citation, plus per-RPM fault frequency multipliers.
+2. **Explicit geometry** (bearing not in catalog):
+   `calculate_bearing_characteristic_frequencies(num_balls=9, ball_diameter_mm=7.94, pitch_diameter_mm=39.04, contact_angle_deg=0.0, rpm=1797)`
+3. **Machine manual**: `extract_manual_specs(file_name="pump_manual.pdf")` to
+   pull the bearing designation from documentation, then route 1.
 
-If the bearing designation is unknown, ask the user or try
-`extract_manual_specs(manual_name=...)` to pull it from a machine manual.
+If the bearing is not in the catalog and no geometry is available, ask the
+user. Never fabricate geometry or frequencies.
 
 Expected frequencies:
-- **BPFO** — Ball Pass Frequency Outer race
-- **BPFI** — Ball Pass Frequency Inner race
-- **BSF** — Ball Spin Frequency
-- **FTF** — Fundamental Train (cage) Frequency
+- **BPFO** — Ball Pass Frequency, Outer race (canonical fault: `outer_race`)
+- **BPFI** — Ball Pass Frequency, Inner race (canonical fault: `inner_race`)
+- **BSF** — Ball Spin Frequency (canonical fault: `ball`)
+- **FTF** — Fundamental Train Frequency, cage (canonical fault: `cage`)
 
-### Step 5 — Envelope Analysis
+### Step 5 — Envelope Analysis (Block 2, primary evidence)
 
-Call `analyze_envelope(signal_id=..., filter_low=..., filter_high=...)`.
+Call `analyze_envelope(signal_id="<id>", filter_low=500, filter_high=5000)`.
 
-Adjust the filter band based on Step 3:
-- If a resonance was found in FFT, center the band around it
-- Default band: 500–5000 Hz for general bearing analysis
-- High-speed machines: shift band higher
+- Default demodulation band 500-5000 Hz suits general bearing analysis.
+- If Step 3 found a structural resonance, center the band around it.
+- The band must stay below Nyquist — an invalid band is an explicit error,
+  never a silent clamp.
 
-Call `plot_envelope(...)` for a visual report.
+### Step 6 — Evidence Matching (Block 3)
 
-### Step 6 — Evidence Matching
+Compare envelope peaks against the expected frequencies systematically:
 
-Compare envelope peaks against characteristic frequencies using
-`check_bearing_faults_direct(signal_id=..., shaft_rpm=..., ...)`.
+Call `check_bearing_faults(signal_id="<id>", rpm=1797, bearing_id="6205")`
 
-| Peak matches | Harmonics | + High Kurtosis | Diagnosis |
+or, when frequencies came from geometry or the user:
+
+Call `check_bearing_faults(signal_id="<id>", rpm=1797, frequencies={"BPFO": 107.4, "BPFI": 162.2})`
+
+| Peak matches (±5%) | Harmonics | + High Kurtosis | Diagnosis |
 |---|---|---|---|
-| BPFO +/- 2% | 2x, 3x present | Yes | **Possible outer race fault** |
-| BPFI +/- 2% | + sidebands at shaft freq | Yes | **Possible inner race fault** |
-| BSF +/- 2% | 2x present | Yes | **Possible ball defect** |
-| FTF +/- 2% | Irregular spacing | Moderate | **Possible cage fault** |
+| BPFO | 2x, 3x present | Yes | **Possible outer race fault** |
+| BPFI | + sidebands at shaft freq | Yes | **Possible inner race fault** |
+| BSF | 2x present | Yes | **Possible ball defect** |
+| FTF | Irregular spacing | Moderate | **Possible cage fault** |
 | No matches | — | — | **Inconclusive** |
 
-Confidence levels:
-- **Confirmed**: Peak + harmonics + high kurtosis + additional indicator
-- **Possible/consistent with**: Peak present but missing corroboration
-- **Inconclusive**: Insufficient evidence
+Evidence strength language:
+- **Strong evidence**: peak + harmonics + corroborating statistics
+- **Possible / consistent with**: peak present but missing corroboration
+- **Inconclusive**: insufficient evidence — say so plainly
 
-### Step 7 — ISO 20816-3 Severity
+### Step 7 — ISO Severity (Block 4)
 
-Call `evaluate_iso_20816(signal_id=..., machine_group=2, support_type="rigid")`.
+Call `assess_severity(signal_id="<id>", machine_group=2, support_type="rigid")`
 
-Report vibration zone (A/B/C/D) and urgency level. Confirm signal units with the
-user before calling — wrong units invalidate the result.
+- `machine_group`: 1 (large, >300 kW) or 2 (medium, 15-300 kW). Confirm with
+  the user; pass `machine_power_kw` if known (< 15 kW is out of ISO scope and
+  is refused).
+- Report the zone (A/B/C/D) and RMS velocity in mm/s.
+- If the verdict is refused because no unit is declared, re-load with
+  `load_signal(filepath="<file>", signal_unit="g", overwrite=True)` after
+  confirming the unit with the user.
+- Severity is machine-level context, NOT bearing-specific evidence.
 
-### Step 8 — Report Generation
+**One-call alternative**: `diagnose_vibration(signal_id="<id>", rpm=1797, bearing_id="6205", machine_group=2, support_type="rigid")`
+runs FFT + PSD + STFT + bearing checks + ISO severity in one pass and degrades
+to a structured ISO refusal (reason + remedy) when the unit is undeclared.
 
-Call `generate_envelope_report(...)` and `generate_fft_report(...)`.
-Optionally call `generate_diagnostic_report_docx(...)` for a full DOCX report.
-Inform the user of report file locations.
+### Step 8 — Report Generation (Block 6)
+
+Call `generate_envelope_report(signal_id="<id>", bearing_freqs={"BPFO": 107.4, "BPFI": 162.2})`
+and `generate_fft_report(signal_id="<id>", rpm=1797)`.
+Optionally `generate_diagnostic_report_docx(signal_id="<id>", sections={"summary": "..."})`
+for a Word document. Report the returned file paths to the user.
 
 ## Troubleshooting
 
-**No peaks in envelope spectrum** — Wrong filter band or signal too short. Try a
-wider band (200–10000 Hz) or analyze the full signal without segmentation.
+**No peaks in envelope spectrum** — Wrong demodulation band or signal too
+short. Try a different band within Nyquist (e.g. `filter_low=1000,
+filter_high=4000`) guided by the FFT resonances.
 
-**Unknown bearing type** — Ask for bearing designation (e.g., SKF 6205) and call
-`search_bearing_catalog()`. If unavailable, check the machine manual with
-`extract_manual_specs()`.
+**Unknown bearing type** — Ask for the designation (e.g. "6205") and call
+`search_bearing_catalog(bearing_id="6205")`. If it is not in the catalog, the
+result says so with a suggestion — ask the user for geometry; never invent it.
 
 **Kurtosis high but no envelope peaks** — Impulses may come from a non-bearing
-source (gear mesh, electrical). Suggest using the gear-diagnosis skill or check
-for electrical frequencies (line frequency harmonics).
+source (gear mesh, electrical). Suggest the gear-diagnosis skill or check for
+line-frequency harmonics.
+
+**ISO verdict refused** — The signal has no declared unit. Confirm the unit
+with the user and re-load with `load_signal(filepath="<file>", signal_unit="mm/s", overwrite=True)`.
 
 ## Important Notes
 
 - Always use cautious diagnostic language: "consistent with", "possible fault"
 - Never claim a definitive fault without multiple corroborating indicators
-- Confirm signal units before ISO severity assessment
+- This skill augments and accelerates expert judgment; the final maintenance
+  decision rests with a qualified engineer
 - All processing happens locally — raw signal data never leaves the machine

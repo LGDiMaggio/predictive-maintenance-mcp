@@ -11,7 +11,8 @@ description: >
 # Quick Vibration Screening
 
 Fast health status assessment for rotating machinery. Produces a screening
-report in under 30 seconds with clear next-step recommendations.
+card in under 30 seconds with clear next-step recommendations. Screening
+informs the engineer's decision — it is never a diagnosis by itself.
 
 **Prerequisite**: The `predictive-maintenance-mcp` MCP server must be connected.
 
@@ -19,13 +20,16 @@ report in under 30 seconds with clear next-step recommendations.
 
 ### Step 1 — Signal Selection
 
-Call `list_stored_signals()` or `list_signals()` to show available signals. If
-the user has not specified one, ask which signal to analyze. Load with
-`load_signal(...)` if needed.
+Call `list_signals(scope="memory")` to show loaded signal_ids, or
+`list_signals(scope="disk")` for loadable files. If the user has not
+specified one, ask. Load with
+`load_signal(filepath="real_test/baseline_1.csv", signal_unit="g")` if
+needed — declaring `signal_unit` up front makes the ISO step work without a
+re-load.
 
 ### Step 2 — Statistical Features
 
-Call `extract_features_from_signal(signal_id=...)`.
+Call `analyze_statistics(signal_id="<id>")`.
 
 Report as bullet points:
 - **RMS**: energy level
@@ -35,21 +39,30 @@ Report as bullet points:
 
 ### Step 3 — FFT Snapshot
 
-Call `analyze_fft(signal_id=...)`.
+Call `analyze_fft(signal_id="<id>")`.
 
 Report:
 - Peak frequency and magnitude
 - Top 3 spectral peaks (frequency + magnitude)
 - Any obvious harmonic patterns
 
-### Step 4 — ISO 20816-3 Assessment
+### Step 4 — ISO Severity Assessment
 
-Call `evaluate_iso_20816(signal_id=..., machine_group=2, support_type="rigid")`.
+Call `assess_severity(signal_id="<id>", machine_group=2, support_type="rigid")`.
 
 Report:
-- RMS Velocity in mm/s
+- RMS velocity in mm/s
 - Zone: A / B / C / D
 - Severity description
+
+Notes:
+- Confirm machine_group (1 = large >300 kW, 2 = medium 15-300 kW) and
+  support_type with the user when known.
+- The verdict requires a DECLARED signal unit. If it is refused, re-load with
+  `load_signal(filepath="<file>", signal_unit="g", overwrite=True)` after
+  confirming the unit with the user — units are never guessed.
+- If only a portable-instrument reading is available (no signal file), use
+  `assess_severity(rms_velocity_mm_s=3.2, machine_group=2, support_type="rigid")`.
 
 ### Step 5 — Summary Card
 
@@ -58,7 +71,7 @@ Format the output as a concise screening card:
 ```
 VIBRATION HEALTH SCREENING
 ===========================
-Signal: {filename}
+Signal: {signal_id}
 Overall: {Healthy / Monitor / Suspicious / Critical}
 
 Key Indicators:
@@ -84,4 +97,5 @@ Recommendation:
 - Never make definitive fault claims from screening alone
 - Always recommend targeted analysis for Suspicious/Critical results
 - Use cautious language: "indicators suggest", not "confirmed fault"
-- Confirm signal units with the user before ISO evaluation
+- The screening supports the engineer's judgment; it does not replace it
+- All processing happens locally — raw data never leaves the machine
