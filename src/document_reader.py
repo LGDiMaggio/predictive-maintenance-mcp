@@ -22,7 +22,7 @@ import json
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 import logging
 
 # PDF processing
@@ -157,16 +157,17 @@ def calculate_bearing_frequencies(
         Dictionary with BPFO, BPFI, BSF, FTF in Hz
 
     Example:
-        >>> # 6205 geometry as documented by the CWRU Bearing Data Center
+        >>> # Bearing geometry is sourced from the catalog (the authoritative
+        >>> # source), never hardcoded — see lookup_bearing_in_catalog.
+        >>> specs = lookup_bearing_in_catalog("6205")
         >>> freqs = calculate_bearing_frequencies(
-        ...     num_balls=9,
-        ...     ball_diameter_mm=7.94,
-        ...     pitch_diameter_mm=39.04,
-        ...     contact_angle_deg=0.0,
-        ...     shaft_speed_rpm=1797
+        ...     num_balls=specs["num_balls"],
+        ...     ball_diameter_mm=specs["ball_diameter_mm"],
+        ...     pitch_diameter_mm=specs["pitch_diameter_mm"],
+        ...     contact_angle_deg=specs["contact_angle_deg"],
+        ...     shaft_speed_rpm=1797,
         ... )
-        >>> print(f"BPFO: {freqs['BPFO']:.2f} Hz")
-        BPFO: 107.36 Hz
+        >>> freqs["BPFO"]  # ~3.585x shaft speed for a 6205
     """
     # Convert to radians
     alpha = math.radians(contact_angle_deg)
@@ -492,14 +493,22 @@ if __name__ == "__main__":
     print("-" * 80)
     print("Use case: Manual specifies bearing geometry, calculate fault frequencies")
     print()
+    # Source the 6205 geometry from the catalog (single source of truth)
+    # rather than hardcoding it — keeps the demo in sync with the catalog.
+    demo_specs = lookup_bearing_in_catalog("6205")
     freqs = calculate_bearing_frequencies(
-        num_balls=9,
-        ball_diameter_mm=7.94,
-        pitch_diameter_mm=39.04,
-        contact_angle_deg=0.0,
+        num_balls=demo_specs["num_balls"],
+        ball_diameter_mm=demo_specs["ball_diameter_mm"],
+        pitch_diameter_mm=demo_specs["pitch_diameter_mm"],
+        contact_angle_deg=demo_specs["contact_angle_deg"],
         shaft_speed_rpm=1797
     )
-    print(f"Input: 9 balls, Bd=7.94mm, Pd=39.04mm, α=0°, RPM=1797 (CWRU 6205)")
+    print(
+        f"Input (6205 from catalog): {demo_specs['num_balls']} balls, "
+        f"Bd={demo_specs['ball_diameter_mm']}mm, "
+        f"Pd={demo_specs['pitch_diameter_mm']}mm, "
+        f"α={demo_specs['contact_angle_deg']}°, RPM=1797"
+    )
     print(f"Results:")
     for key, value in freqs.items():
         if isinstance(value, dict):

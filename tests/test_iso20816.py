@@ -201,14 +201,32 @@ class TestZoneClassificationEndToEnd:
 
 
 class TestFrequencyBandHonesty:
-    """The reported band is the band actually used, not the ISO nominal one."""
+    """A verdict is only issued when the full 10-1000 Hz ISO band is
+    covered; an fs whose clamped upper edge cannot reach 1000 Hz is
+    refused rather than assessed over a truncated band."""
 
-    def test_fs_2khz_reports_real_band(self):
-        """At fs=2 kHz the upper edge is 950 Hz (0.95 x Nyquist), not 1000 Hz."""
+    def test_fs_2khz_refused_partial_band(self):
+        """At fs=2 kHz the usable upper edge is 950 Hz (0.95 x Nyquist),
+        below the 1000 Hz ISO band top. This previously returned a
+        '10-950 Hz' verdict over a truncated band; it must now refuse."""
         signal = make_velocity_signal(2.0, fs=2000)
-        result = assess_severity_raw(signal, fs=2000, signal_unit="mm/s")
-        assert "10-950 Hz" in result["frequency_range"]
-        assert "10-1000 Hz" not in result["frequency_range"]
+        with pytest.raises(ValueError, match="partially covered"):
+            assess_severity_raw(signal, fs=2000, signal_unit="mm/s")
+
+    def test_fs_at_full_band_floor_accepted(self):
+        """fs=2106 Hz is the lowest rate whose clamped upper edge
+        (0.95 x Nyquist) reaches 1000 Hz — the verdict is issued over the
+        full 10-1000 Hz band."""
+        signal = make_velocity_signal(2.0, fs=2106)
+        result = assess_severity_raw(signal, fs=2106, signal_unit="mm/s")
+        assert "10-1000 Hz" in result["frequency_range"]
+
+    def test_fs_just_below_floor_refused(self):
+        """fs=2104 Hz (just below the 2106 Hz full-band floor) cannot cover
+        the whole ISO band and is refused."""
+        signal = make_velocity_signal(2.0, fs=2104)
+        with pytest.raises(ValueError, match="partially covered"):
+            assess_severity_raw(signal, fs=2104, signal_unit="mm/s")
 
     def test_fs_10khz_reports_full_band(self):
         signal = make_velocity_signal(2.0, fs=10000)

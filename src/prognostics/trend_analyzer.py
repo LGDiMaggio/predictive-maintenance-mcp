@@ -131,9 +131,15 @@ def detect_degradation_onset(
     std = float(np.std(baseline, ddof=0))
 
     if std == 0.0:
-        # Constant baseline — any deviation is significant.
+        # Constant baseline: std gives no scale, so a sigma-based threshold
+        # is undefined. Require a small margin above the mean — relative to
+        # the baseline magnitude with an absolute floor — so float jitter or
+        # a negligible uptick is not reported as degradation onset. A
+        # genuine step change clears this margin easily.
+        eps = max(1e-9, abs(mean) * 1e-6)
+        threshold = mean + eps
         for i in range(half, n):
-            if y[i] > mean:
+            if y[i] > threshold:
                 return i
         return None
 

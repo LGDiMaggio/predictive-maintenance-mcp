@@ -8,6 +8,7 @@ MCP tool calls without re-reading from disk.
 Thread-safe via threading.Lock.
 """
 
+import copy
 import json
 import logging
 import os
@@ -188,22 +189,28 @@ class SignalRepository:
                 + ". Fix these entries and retry (the repository is unchanged)."
             )
 
-        # Phase 2: read every array from disk before storing anything.
+        # Phase 2: read every array from disk before storing anything. Any
+        # read/validation failure here raises BEFORE the insert phase runs,
+        # so a partially-prepared batch never reaches the store.
         entries = [
             self._prepare_entry(raw, sid, sampling_rate, declared_unit)
             for raw, sid in planned
         ]
 
-        # Phase 3: insert all.
-        return [self._insert_entry(e, overwrite=overwrite) for e in entries]
+        # Phase 3: insert every entry in a SINGLE continuous locked section
+        # (re-checks all ids for collisions, then inserts all-or-nothing).
+        return self._insert_batch(entries, overwrite=overwrite)
 
     def get_signal(self, signal_id: str) -> np.ndarray:
         """Get signal array by ID. Updates LRU order.
 
-        The returned array is a READ-ONLY view of the cached data: tools
-        may analyze it freely but cannot corrupt the cache in place
-        (in-place writes raise ``ValueError: assignment destination is
-        read-only``).
+        The returned array is a READ-ONLY view of the cached data: normal
+        in-place writes raise ``ValueError: assignment destination is
+        read-only``, so tools cannot ACCIDENTALLY corrupt the cache while
+        analyzing it. This guards against mistakes, not deliberate tampering
+        — a caller that knowingly re-enables writes on the underlying buffer
+        (``view.base.setflags(write=True)``) can still reach the cached data.
+        If you need to mutate, copy first (``np.array(view)``).
 
         Raises:
             KeyError: If signal_id not found (message names the remedy).
@@ -219,18 +226,28 @@ class SignalRepository:
     def get_signal_info(self, signal_id: str) -> dict:
         """Get metadata for a stored signal without touching LRU order.
 
+        Returns a DEEP copy: the stored ``info`` holds mutable nested state
+        (``shape`` list, ``source_metadata`` dict). A shallow ``.copy()``
+        would share those references, so a caller mutating
+        ``info['source_metadata']['rpm']`` would corrupt the cache.
+
         Raises:
             KeyError: If signal_id not found (message names the remedy).
         """
         with self._lock:
             if signal_id not in self._store:
                 raise KeyError(self._not_found_message(signal_id))
-            return self._store[signal_id]["info"].copy()
+            return copy.deepcopy(self._store[signal_id]["info"])
 
     def list_signals(self) -> list[dict]:
-        """List all cached signals with metadata."""
+        """List all cached signals with metadata.
+
+        Each entry is a DEEP copy (see :meth:`get_signal_info`) so mutating a
+        returned dict's nested ``shape``/``source_metadata`` cannot leak into
+        the cache.
+        """
         with self._lock:
-            return [entry["info"].copy() for entry in self._store.values()]
+            return [copy.deepcopy(entry["info"]) for entry in self._store.values()]
 
     def clear_signal(self, signal_id: str) -> bool:
         """Remove one signal. Returns True if found and removed."""
@@ -311,6 +328,17 @@ class SignalRepository:
         declared_unit: Optional[str],
     ) -> dict:
         """Resolve path/id, read the array and metadata — no store mutation."""
+        # Reject a caller-supplied non-positive rate before doing any I/O:
+        # a stored 0/negative rate breaks downstream fftfreq(N, 1/rate) with
+        # a ZeroDivisionError. (Metadata-derived rates are backstopped by the
+        # StoredSignalInfo schema and resolve_signal.)
+        if sampling_rate is not None and sampling_rate <= 0:
+            raise ValueError(
+                f"sampling rate must be positive, got {sampling_rate} — "
+                f"pass a sampling_rate > 0 (Hz) or omit it to use the "
+                f"companion _metadata.json."
+            )
+
         fp = Path(filepath)
         if not fp.is_absolute():
             fp = DATA_DIR / filepath
@@ -341,11 +369,13 @@ class SignalRepository:
         if declared_unit is not None:
             meta["signal_unit"] = declared_unit
 
-        # Freeze the cached array: tools receive read-only views and can
-        # never corrupt the cache in place. The repository must OWN the
-        # memory (copy once if the loader returned a view into e.g. a
-        # pandas block), otherwise a caller could re-enable writing
-        # through the still-writeable ultimate base.
+        # Freeze the cached array so tools cannot ACCIDENTALLY corrupt the
+        # cache in place (read-only views raise on assignment). The
+        # repository must OWN the memory (copy once if the loader returned a
+        # view into e.g. a pandas block); otherwise the ultimate base would
+        # stay writeable and even accidental writes through it could slip
+        # past the frozen view. This is not a hard boundary against a caller
+        # that deliberately re-enables writes on the base.
         data = np.asarray(data)
         if not data.flags.owndata:
             data = data.copy()
@@ -354,43 +384,75 @@ class SignalRepository:
         return {"signal_id": signal_id, "fp": fp, "data": data, "meta": meta}
 
     def _insert_entry(self, entry: dict, overwrite: bool) -> dict:
-        """Insert a prepared entry into the store (collision-checked)."""
+        """Insert a single prepared entry under the lock (collision-checked)."""
+        with self._lock:
+            return self._insert_locked(entry, overwrite=overwrite)
+
+    def _insert_batch(self, entries: list[dict], overwrite: bool) -> list[dict]:
+        """Insert a prepared batch atomically inside one continuous lock.
+
+        The lock is held across the WHOLE critical section: all ids are
+        re-checked for collisions first (a concurrent insert could have taken
+        one after phase-1 released its lock), and only if every id is clear
+        (or overwrite=True) is anything stored. On a collision without
+        overwrite nothing is inserted, so the store is never half-populated.
+        Memory accounting and LRU eviction stay correct because every insert
+        runs through :meth:`_insert_locked` while the lock is held.
+        """
+        with self._lock:
+            if not overwrite:
+                collisions = [
+                    e["signal_id"]
+                    for e in entries
+                    if e["signal_id"] in self._store
+                ]
+                if collisions:
+                    ids = ", ".join(f"'{c}'" for c in collisions)
+                    raise ValueError(
+                        f"Batch load aborted, nothing was loaded — signal_id(s) "
+                        f"{ids} were loaded concurrently after validation. Pass "
+                        f"overwrite=True to replace them, or retry (the "
+                        f"repository is unchanged)."
+                    )
+            return [self._insert_locked(e, overwrite=overwrite) for e in entries]
+
+    def _insert_locked(self, entry: dict, overwrite: bool) -> dict:
+        """Insert a prepared entry into the store. Caller MUST hold the lock."""
         signal_id = entry["signal_id"]
         data = entry["data"]
         meta = entry["meta"]
         size_bytes = data.nbytes
 
-        with self._lock:
-            if signal_id in self._store:
-                if not overwrite:
-                    existing = self._store[signal_id]["info"]["filepath"]
-                    raise ValueError(
-                        f"signal_id '{signal_id}' is already loaded (from "
-                        f"'{existing}') — pass overwrite=True to replace it, "
-                        f"or choose a different signal_id=..."
-                    )
-                self._remove_entry(signal_id)
+        if signal_id in self._store:
+            if not overwrite:
+                existing = self._store[signal_id]["info"]["filepath"]
+                raise ValueError(
+                    f"signal_id '{signal_id}' is already loaded (from "
+                    f"'{existing}') — pass overwrite=True to replace it, "
+                    f"or choose a different signal_id=..."
+                )
+            self._remove_entry(signal_id)
 
-            self._evict_if_needed(size_bytes)
+        self._evict_if_needed(size_bytes)
 
-            now = datetime.now(timezone.utc).isoformat()
-            sr = meta.get("sampling_rate")
-            duration = float(len(data)) / sr if sr else None
+        now = datetime.now(timezone.utc).isoformat()
+        sr = meta.get("sampling_rate")
+        duration = float(len(data)) / sr if sr else None
 
-            info = {
-                "signal_id": signal_id,
-                "filepath": str(entry["fp"]),
-                "load_timestamp": now,
-                "shape": list(data.shape),
-                "num_samples": len(data),
-                "sampling_rate": sr,
-                "duration_s": round(duration, 4) if duration else None,
-                "size_bytes": size_bytes,
-                "signal_unit": meta.get("signal_unit"),
-                "source_metadata": meta.get("source_metadata", {}),
-            }
-            self._store[signal_id] = {"array": data, "info": info}
-            self._current_memory += size_bytes
+        info = {
+            "signal_id": signal_id,
+            "filepath": str(entry["fp"]),
+            "load_timestamp": now,
+            "shape": list(data.shape),
+            "num_samples": len(data),
+            "sampling_rate": sr,
+            "duration_s": round(duration, 4) if duration else None,
+            "size_bytes": size_bytes,
+            "signal_unit": meta.get("signal_unit"),
+            "source_metadata": meta.get("source_metadata", {}),
+        }
+        self._store[signal_id] = {"array": data, "info": info}
+        self._current_memory += size_bytes
 
         logger.info(
             f"Loaded signal '{signal_id}': {len(data)} samples, "

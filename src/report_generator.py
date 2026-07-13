@@ -16,7 +16,6 @@ from typing import Dict, Any, Optional, List
 import json
 
 import numpy as np
-import pandas as pd
 from scipy.signal import find_peaks
 
 # Import HTML templates
@@ -34,9 +33,8 @@ logger = logging.getLogger(__name__)
 # Optional DOCX support
 try:
     from docx import Document as DocxDocument
-    from docx.shared import Inches, Pt, RGBColor
+    from docx.shared import Pt
     from docx.enum.table import WD_TABLE_ALIGNMENT
-    from docx.enum.text import WD_ALIGN_PARAGRAPH
     HAS_DOCX = True
 except ImportError:
     HAS_DOCX = False

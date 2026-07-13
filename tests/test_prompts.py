@@ -52,6 +52,24 @@ class TestDiagnoseBearingPrompt:
         # Default is machine_group=2
         assert "2" in result or "medium" in result.lower()
 
+    def test_collects_signal_unit_for_iso(self, prompts):
+        """STEP 0 must surface signal_unit as a parameter to declare/collect,
+        so the ISO 20816-3 verdict is not run on an undeclared unit (U2)."""
+        result = prompts["diagnose_bearing"](signal_id="test_signal")
+        assert "signal_unit" in result
+        # The four accepted units are named for the user to choose from.
+        assert "mm/s" in result and "m/s2" in result
+
+    def test_iso_refusal_remedy_does_not_hardcode_g(self, prompts):
+        """The ISO-refusal remedy must confirm the ACTUAL unit with the user,
+        NOT fabricate signal_unit="g" — following a hardcoded 'g' verbatim
+        would integrate a velocity recording as acceleration (wrong ISO zone).
+        """
+        result = prompts["diagnose_bearing"](signal_id="test_signal")
+        assert 'signal_unit="g", overwrite=True' not in result
+        assert 'signal_unit="<confirmed-unit>"' in result
+        assert "confirm" in result.lower()
+
 
 class TestDiagnoseGearPrompt:
     """Tests for diagnose_gear prompt."""

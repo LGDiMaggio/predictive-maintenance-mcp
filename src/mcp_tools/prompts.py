@@ -100,7 +100,11 @@ def diagnose_bearing(
        Call: list_signals(scope="memory")
        If "{signal_id}" is not among the loaded ids, find its file with
        list_signals(scope="disk") and load it:
-       Call: load_signal(filepath="<file>"{fs_kwarg})
+       Call: load_signal(filepath="<file>", signal_unit="<unit>"{fs_kwarg})
+       Declare signal_unit ("g" or "m/s2" for acceleration, "mm/s" or "m/s"
+       for velocity) in the load call if the unit is known — the ISO severity
+       verdict in STEP 1 is REFUSED without a declared unit. Units are never
+       guessed from amplitude; ASK USER, do not invent one.
        If the file is not found or multiple matches exist, ASK USER to clarify.
        Do NOT guess or auto-correct names.
 
@@ -109,6 +113,8 @@ def diagnose_bearing(
        {'✓' if sampling_rate else '✗'} Sampling rate: {fs_info} Hz
        {'✓' if rpm else '✗'} Operating speed: {rpm or 'NOT PROVIDED'} RPM
        {'✓' if freq_refs else '✗'} Bearing characteristic frequencies: {freq_info}
+       ☐ Signal unit (for ISO 20816-3): declare g, m/s2, mm/s, or m/s in the
+         load call — never guessed from amplitude; ASK USER if unknown
 
        CRITICAL RULE: The sampling rate comes from the stored signal metadata
        (get_signal_info(signal_id="{signal_id}") shows it). If it is missing
@@ -145,7 +151,10 @@ def diagnose_bearing(
     Report: RMS velocity and ISO zone (A/B/C/D) in 1-2 sentences.
     Note: This provides overall severity but is NOT bearing-specific. Use for maintenance urgency only.
     Note: The verdict requires a DECLARED signal unit — if it is refused,
-    re-load with load_signal(filepath="<file>", signal_unit="g", overwrite=True).
+    confirm the ACTUAL measurement unit with the user (g, m/s2, mm/s, or m/s),
+    then re-load with load_signal(filepath="<file>", signal_unit="<confirmed-unit>", overwrite=True).
+    Do NOT assume "g": a velocity (mm/s) recording integrated as acceleration
+    yields a materially wrong ISO zone.
 
     Optional visualization:
     Call: generate_iso_report(signal_id="{signal_id}", machine_group={machine_group}, support_type="{support_type}"{rpm_kwarg})
@@ -363,7 +372,7 @@ def diagnose_gear(
     Indicators:
     - Elevated RMS: possible general load / imbalance
     - High Kurtosis (>3): impulsive impacts (may correlate with chipped tooth)
-    - High Crest Factor (>4): impulsiveness
+    - High Crest Factor (>5): impulsiveness
     (Do NOT diagnose from stats alone.)
 
     STEP 3 — SPECTRUM (frequency evidence)

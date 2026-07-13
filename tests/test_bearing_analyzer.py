@@ -145,6 +145,17 @@ class TestCheckAllBearingFaults:
         )
         assert len(result["overall_assessment"]) > 0
 
+    def test_low_fs_signal_no_raise(self):
+        """A bearing check on an 8 kHz signal (Nyquist 4 kHz) must run: the
+        fs-aware envelope default analyzes 500-3999 Hz instead of raising on
+        the old fixed 5000 Hz upper edge (500-5000 exceeded Nyquist)."""
+        fs = 8000  # Nyquist 4000 Hz < old fixed 5000 Hz upper edge
+        signal = np.random.randn(fs)
+        result = check_all_bearing_faults(
+            signal=signal, fs=fs, bearing_id="6205", rpm=1500
+        )
+        assert len(result["fault_checks"]) == 4
+
 
 class TestLookupBearingAndCompute:
     def test_end_to_end(self):

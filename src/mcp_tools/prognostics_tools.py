@@ -180,10 +180,10 @@ async def estimate_rul(
             failure_threshold: Indicator value considered as failure, in the
                 same units as the feature values. No universal default is
                 imposed — but when the indicator is broadband VELOCITY RMS
-                in mm/s, the ISO 10816-3:2009 zone C/D boundary for the
-                machine is the standard choice: 4.5 (group 2 rigid), 7.1
-                (group 1 rigid / group 2 flexible), or 11.0 mm/s (group 1
-                flexible) — the same table assess_severity uses.
+                in mm/s, the standard choice is the ISO 10816-3:2009 zone
+                C/D boundary that assess_severity / get_zone_boundaries()
+                reports for the machine's group and support (single source
+                of truth — no boundaries restated here).
             timestamps: Measurement times in `time_unit`, strictly
                 increasing (e.g. hours since first measurement).
             feature_values: Indicator values, one per measurement

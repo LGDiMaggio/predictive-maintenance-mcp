@@ -13,7 +13,6 @@ findings — never from severity alone and never presented as a probability.
 import json
 import logging
 import pickle
-from pathlib import Path
 from typing import Any, Literal, Optional
 
 import numpy as np
@@ -312,10 +311,10 @@ def diagnose_vibration(
                 reason=str(e),
                 remedy=(
                     "Resolve the condition in 'reason' — e.g. re-acquire the "
-                    "signal at fs >= 2000 Hz so the ISO 20816-3 evaluation "
-                    "band (up to 1 kHz) is covered — then re-run the "
-                    "diagnosis. The spectral/bearing/anomaly blocks in this "
-                    "result are unaffected."
+                    "signal at fs >= 2106 Hz so the full ISO 20816-3 "
+                    "evaluation band (up to 1 kHz) is covered — then re-run "
+                    "the diagnosis. The spectral/bearing/anomaly blocks in "
+                    "this result are unaffected."
                 ),
             )
 
@@ -389,17 +388,24 @@ def _synthesize_diagnosis(
     else:
         zone = iso_severity["zone"]
         rms_vel = iso_severity["rms_velocity_mm_s"]
+        # The severity word (Good/Acceptable/Unsatisfactory/Unacceptable) is
+        # owned by iso20816._ZONE_INFO and arrives on the classification
+        # result as ``severity_level`` — render it instead of re-hardcoding
+        # the four labels here (they silently drift otherwise). The zone-keyed
+        # evidence/recommendation ladder below is unchanged.
+        severity_word = iso_severity.get("severity_level", "")
+        severity_label = f" ({severity_word})" if severity_word else ""
+        lines.append(
+            f"ISO Severity: Zone {zone}{severity_label} — "
+            f"RMS velocity {rms_vel:.2f} mm/s."
+        )
 
-        if zone == "A":
-            lines.append(f"ISO Severity: Zone A (Good) — RMS velocity {rms_vel:.2f} mm/s.")
-        elif zone == "B":
-            lines.append(f"ISO Severity: Zone B (Acceptable) — RMS velocity {rms_vel:.2f} mm/s.")
+        if zone in ("A", "B"):
+            pass  # Good/Acceptable: no fault evidence, no recommendation.
         elif zone == "C":
-            lines.append(f"ISO Severity: Zone C (Unsatisfactory) — RMS velocity {rms_vel:.2f} mm/s.")
             evidence_points += 1.0
             recommendations.append("Schedule maintenance within next planned shutdown.")
-        else:
-            lines.append(f"ISO Severity: Zone D (Unacceptable) — RMS velocity {rms_vel:.2f} mm/s.")
+        else:  # Zone D — unacceptable (also the ladder's catch-all).
             evidence_points += 2.0
             recommendations.append("IMMEDIATE ACTION: Stop machine and inspect.")
 

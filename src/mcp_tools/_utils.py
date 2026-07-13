@@ -36,8 +36,10 @@ def resolve_signal(
     Args:
         signal_id: ID of a signal previously loaded via load_signal.
         require_sampling_rate: If True (default), raise when the stored
-            signal has no sampling rate — analysis never proceeds on a
-            guessed rate.
+            signal has no sampling rate OR a non-positive one — analysis
+            never proceeds on a guessed or invalid rate (a 0/negative rate
+            would break downstream fftfreq(N, 1/rate) with a
+            ZeroDivisionError).
 
     Returns:
         Tuple of (signal array, StoredSignalInfo metadata).
@@ -58,7 +60,9 @@ def resolve_signal(
         raise ValueError(str(exc.args[0])) from None
 
     stored = StoredSignalInfo(**info)
-    if require_sampling_rate and stored.sampling_rate is None:
+    if require_sampling_rate and (
+        stored.sampling_rate is None or stored.sampling_rate <= 0
+    ):
         raise ValueError(
             f"No sampling rate for signal '{signal_id}' — re-load with "
             f"load_signal(filepath=..., sampling_rate=..., overwrite=True) "

@@ -180,6 +180,40 @@ class TestBandValidation:
         with pytest.raises(ValueError):
             validate_bandpass_band(500, 5001, 10000)
 
+    def test_default_band_fs_aware_low_fs_no_raise(self):
+        """The DEFAULT band (frequency_range omitted) must NOT raise on a
+        legitimate low-fs signal: at fs=8 kHz (Nyquist 4 kHz) the old fixed
+        (500, 5000) default raised because 5000 > 4000, even though
+        500-3999 Hz is perfectly analyzable."""
+        fs = 8000
+        t = np.linspace(0, 1.0, fs, endpoint=False)
+        signal = np.sin(2 * np.pi * 1500 * t)  # inside the 500-3999 band
+        result = compute_envelope_spectrum(signal, fs)  # default band
+        assert len(result["top_peaks"]) > 0
+
+    def test_explicit_band_above_nyquist_still_raises_low_fs(self):
+        """An EXPLICIT band above Nyquist is still a hard error (only the
+        default is fs-aware; explicit bands are never silently clamped)."""
+        fs = 8000  # Nyquist 4000 Hz
+        t = np.linspace(0, 1.0, fs, endpoint=False)
+        signal = np.sin(2 * np.pi * 1500 * t)
+        with pytest.raises(ValueError, match="Nyquist"):
+            compute_envelope_spectrum(signal, fs, frequency_range=(500, 5000))
+
+    def test_default_band_matches_explicit_500_5000_at_10khz(self):
+        """No-op guarantee: at fs=10000 Hz the fs-aware default resolves to
+        the exact same band as the historical explicit (500, 5000), so the
+        envelope peaks are byte-identical."""
+        fs = 10000
+        t = np.linspace(0, 1.0, fs, endpoint=False)
+        carrier = np.sin(2 * np.pi * 2000 * t)
+        signal = carrier * (1.0 + 0.5 * np.sin(2 * np.pi * 81 * t))
+        default = compute_envelope_spectrum(signal, fs)
+        explicit = compute_envelope_spectrum(
+            signal, fs, frequency_range=(500, 5000)
+        )
+        assert default["top_peaks"] == explicit["top_peaks"]
+
 
 class TestEnvelopeDetrendWindow:
     """U9 INTENTIONAL CHANGE (audit 2.8): envelope mean subtraction + Hann

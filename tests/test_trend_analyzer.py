@@ -149,3 +149,20 @@ class TestDetectDegradationOnset:
         """Series too short for meaningful analysis."""
         assert detect_degradation_onset([1.0]) is None
         assert detect_degradation_onset([]) is None
+
+    def test_constant_baseline_ignores_float_jitter(self):
+        """A constant baseline followed by a negligible float-scale uptick
+        must NOT be flagged: with std==0 there is no scale, so onset needs
+        a small margin above the mean, not any infinitesimal increase."""
+        baseline = [5.0] * 10
+        jitter = [5.0 + 1e-12] * 10
+        onset = detect_degradation_onset(baseline + jitter, threshold_sigma=3.0)
+        assert onset is None
+
+    def test_constant_baseline_detects_real_increase(self):
+        """A genuine step change on a constant baseline is still detected —
+        the onset margin only suppresses float jitter, not real growth."""
+        baseline = [5.0] * 10
+        degraded = [6.0] * 10
+        onset = detect_degradation_onset(baseline + degraded, threshold_sigma=3.0)
+        assert onset == 10

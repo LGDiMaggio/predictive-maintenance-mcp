@@ -84,14 +84,6 @@ class StatisticalResult(BaseModel):
     unit_note: str = Field(description="Unit declaration status and how to declare the unit for ISO severity assessment")
 
 
-class SignalInfo(BaseModel):
-    """Information about an available signal."""
-    filename: str = Field(description="File name")
-    path: str = Field(description="Full path")
-    size_bytes: int = Field(description="File size in bytes")
-    num_samples: Optional[int] = Field(None, description="Number of samples (if available)")
-
-
 class FeatureExtractionResult(BaseModel):
     """Result of time-domain feature extraction from signal segments."""
     num_segments: int = Field(description="Number of segments extracted")
@@ -170,7 +162,9 @@ class StoredSignalInfo(BaseModel):
     load_timestamp: str = Field(description="ISO 8601 timestamp when signal was loaded")
     shape: list[int] = Field(description="Shape of the signal array")
     num_samples: int = Field(description="Number of samples")
-    sampling_rate: Optional[float] = Field(None, description="Sampling rate in Hz")
+    sampling_rate: Optional[float] = Field(
+        None, gt=0, description="Sampling rate in Hz (must be positive when set)"
+    )
     duration_s: Optional[float] = Field(None, description="Duration in seconds")
     size_bytes: int = Field(description="Approximate memory size in bytes")
     signal_unit: Optional[Literal["g", "m/s2", "mm/s", "m/s"]] = Field(

@@ -201,3 +201,18 @@ class TestGetMetadataPath:
         path = get_metadata_path_from_dir(tmp_path, "test_signal.csv")
         assert path.parent == tmp_path
         assert path.name == "test_signal_metadata.json"
+
+    def test_traversal_input_rejected(self):
+        """F9: get_metadata_path is routed through safe_resolve, so a
+        traversal filename that would escape DATA_DIR now raises instead of
+        silently pointing outside it (defense-in-depth, matches
+        load_signal_data)."""
+        with pytest.raises(ValueError, match="escapes base directory"):
+            get_metadata_path("../../../../etc/passwd.csv")
+
+    def test_valid_input_stays_inside_data_dir(self):
+        """Behavior identical for valid in-DATA_DIR inputs — the resolved
+        metadata path is contained in DATA_DIR."""
+        path = get_metadata_path("real_train/baseline_1.csv")
+        assert path.is_relative_to(DATA_DIR.resolve())
+        assert path.name == "baseline_1_metadata.json"

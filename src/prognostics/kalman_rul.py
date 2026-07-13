@@ -81,7 +81,12 @@ def estimate_rul_kalman(
     P = np.eye(2) * 1.0  # Initial uncertainty.
 
     # --- Kalman filter forward pass ---
-    for k in range(n):
+    # The state is already seeded from y[0] and y[1], so the measurement
+    # loop starts at k=2. Re-consuming y[0] and y[1] as measurements here
+    # (range(n)) would double-use the two points that defined the initial
+    # state — a subtle information leak that biased the filter toward the
+    # first samples.
+    for k in range(2, n):
         z = np.array([y[k]])
 
         # Prediction.

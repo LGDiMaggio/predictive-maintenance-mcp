@@ -57,9 +57,19 @@ def collect_package_versions() -> dict[str, str]:
     versions["server.json (top-level)"] = server_json["version"]
     versions["server.json (packages[0])"] = server_json["packages"][0]["version"]
 
-    m = re.search(r"^version:\s*(\S+)\s*$", _read("CITATION.cff"), re.M)
-    assert m, "CITATION.cff: version field not found"
-    versions["CITATION.cff"] = m.group(1)
+    # CITATION.cff declares the version TWICE: the top-level ``version:`` and
+    # the indented ``preferred-citation.version:``. The old ``^version:``
+    # anchor only caught the top-level one, so the indented copy silently
+    # drifted (it was stuck at 0.8.1 while everything else moved to 0.9.0).
+    # Capture BOTH occurrences (leading whitespace allowed) so the guard
+    # covers the preferred-citation version too.
+    cff_versions = re.findall(r"^\s*version:\s*(\S+)\s*$", _read("CITATION.cff"), re.M)
+    assert len(cff_versions) >= 2, (
+        f"CITATION.cff: expected both the top-level and preferred-citation "
+        f"version fields, found {cff_versions}"
+    )
+    versions["CITATION.cff (top-level)"] = cff_versions[0]
+    versions["CITATION.cff (preferred-citation)"] = cff_versions[1]
 
     m = re.search(r"version\s*=\s*\{([^}]+)\}", _read("README.md"))
     assert m, "README.md: BibTeX version field not found"

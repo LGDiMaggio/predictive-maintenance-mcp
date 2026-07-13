@@ -16,7 +16,8 @@ from predictive_maintenance_mcp.models import (
     FFTResult,
     EnvelopeResult,
     StatisticalResult,
-    SignalInfo,
+    StoredSignalInfo,
+    BearingFaultCheckResult,
     ISOSeverityRefusal,
     VibrationSeverityResult,
     FeatureExtractionResult,
@@ -137,20 +138,64 @@ class TestStatisticalResult:
         assert "detected_unit" not in StatisticalResult.model_fields
 
 
-# ── SignalInfo ─────────────────────────────────────────────────────────────
+# ── StoredSignalInfo ───────────────────────────────────────────────────────
+# (Replaces the removed orphaned SignalInfo model — StoredSignalInfo is the
+#  live signal-metadata contract.)
 
-class TestSignalInfo:
+class TestStoredSignalInfo:
 
-    def test_creation(self):
-        s = SignalInfo(filename="test.csv", path="/data/test.csv", size_bytes=1024)
-        assert s.filename == "test.csv"
+    def _make(self, **kwargs):
+        base = dict(
+            signal_id="sig1", filepath="/data/test.csv",
+            load_timestamp="2026-07-13T00:00:00", shape=[10000],
+            num_samples=10000, size_bytes=80000,
+        )
+        base.update(kwargs)
+        return StoredSignalInfo(**base)
 
-    def test_optional_num_samples(self):
-        s = SignalInfo(filename="test.csv", path="/data/test.csv", size_bytes=512)
-        assert s.num_samples is None
+    def test_positive_sampling_rate_accepted(self):
+        assert self._make(sampling_rate=10000.0).sampling_rate == 10000.0
 
-        s2 = SignalInfo(filename="test.csv", path="/data/test.csv", size_bytes=512, num_samples=10000)
-        assert s2.num_samples == 10000
+    def test_none_sampling_rate_accepted(self):
+        """Undeclared rate stays valid (None) — the gt=0 guard only bites values."""
+        assert self._make(sampling_rate=None).sampling_rate is None
+
+    def test_zero_sampling_rate_rejected(self):
+        """Schema backstop: a non-positive sampling rate is invalid (gt=0)."""
+        with pytest.raises(ValidationError):
+            self._make(sampling_rate=0.0)
+
+    def test_negative_sampling_rate_rejected(self):
+        with pytest.raises(ValidationError):
+            self._make(sampling_rate=-1.0)
+
+
+# ── Canonical fault vocabulary (drift guard) ───────────────────────────────
+
+class TestFaultVocabularySync:
+
+    def test_canonical_literal_matches_source_of_truth(self):
+        """BearingFaultCheckResult.fault_type_canonical hand-duplicates the
+        FAULT_TYPE_CANONICAL source-of-truth dict in bearing_analyzer. Assert
+        they stay in sync (mirrors the decision_support FaultType guard) so a
+        future 5th fault type reddens THIS targeted test instead of surfacing
+        as a confusing pydantic ValidationError at runtime."""
+        from typing import get_args
+
+        from predictive_maintenance_mcp.diagnostics.bearing_analyzer import (
+            FAULT_TYPE_CANONICAL,
+        )
+
+        # Field annotation is Optional[Literal[...]] == Union[Literal[...], None];
+        # collect the inner Literal string args (NoneType contributes nothing).
+        annotation = BearingFaultCheckResult.model_fields[
+            "fault_type_canonical"
+        ].annotation
+        literal_values: set = set()
+        for member in get_args(annotation):
+            literal_values.update(get_args(member))
+
+        assert literal_values == set(FAULT_TYPE_CANONICAL.values())
 
 
 # ── VibrationSeverityResult (unified severity model) ─────────────────────

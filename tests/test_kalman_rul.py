@@ -31,7 +31,9 @@ def _reference_filter_covariance(
     x = np.array([y[0], (y[1] - y[0]) / dt])
     P = np.eye(2)
 
-    for k in range(len(y)):
+    # Match the engine: state seeded from y[0], y[1], measurements from k=2
+    # (no double-use of the two points that defined the initial state).
+    for k in range(2, len(y)):
         z = np.array([y[k]])
         x_pred = F @ x
         P_pred = F @ P @ F.T + Q

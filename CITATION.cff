@@ -52,7 +52,7 @@ preferred-citation:
     - family-names: Di Maggio
       given-names: Luigi Gianpio
   year: 2026
-  version: 0.8.1
+  version: 0.9.0
   repository-code: "https://github.com/LGDiMaggio/predictive-maintenance-mcp"
   license: MIT
   doi: "10.5281/zenodo.17611542"

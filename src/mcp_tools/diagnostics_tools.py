@@ -892,6 +892,16 @@ async def predict_anomalies(
     segment_length_samples = int(segment_duration * sampling_rate_val)
     hop_length = int(segment_length_samples * (1 - overlap_ratio))
 
+    # Guard: a signal shorter than one segment yields an empty feature matrix
+    # and an opaque sklearn "X has 0 features" error at scaler.transform.
+    # Fail early with an actionable message instead.
+    if len(signal_data) < segment_length_samples:
+        raise ValueError(
+            f"Signal '{signal_id}' ({len(signal_data)} samples) is shorter than "
+            f"one {segment_duration}s segment at {sampling_rate_val:g} Hz — "
+            f"provide a longer recording or a smaller segment_duration."
+        )
+
     features_list = []
     for start in range(0, len(signal_data) - segment_length_samples + 1, hop_length):
         segment = signal_data[start:start + segment_length_samples]

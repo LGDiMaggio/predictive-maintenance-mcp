@@ -11,7 +11,6 @@ import logging
 from typing import Optional
 
 import numpy as np
-from scipy.signal import find_peaks
 
 from .bearing_catalog import compute_fault_frequencies, lookup_bearing
 from ..signal_processing.spectral import compute_envelope_spectrum
@@ -37,7 +36,7 @@ def check_bearing_fault_peak(
     signal_id: str = "",
     tolerance_pct: float = 5.0,
     num_harmonics: int = 3,
-    envelope_freq_range: tuple[float, float] = (500, 5000),
+    envelope_freq_range: Optional[tuple[float, float]] = None,
 ) -> dict:
     """Check if envelope spectrum has a peak near an expected fault frequency.
 
@@ -50,7 +49,10 @@ def check_bearing_fault_peak(
         signal_id: Signal identifier (for result labeling).
         tolerance_pct: Frequency tolerance in percent.
         num_harmonics: Number of harmonics to check (2x, 3x, ...).
-        envelope_freq_range: Bandpass filter range for envelope.
+        envelope_freq_range: Bandpass filter range for envelope. ``None``
+            (default) uses the fs-aware default band (500 Hz up to
+            min(5000, just below Nyquist)), so a low-fs signal is analyzed
+            over its available band instead of raising.
 
     Returns:
         Dict compatible with BearingFaultCheckResult.
@@ -126,7 +128,7 @@ def check_all_bearing_faults(
     rpm: float,
     signal_id: str = "",
     tolerance_pct: float = 5.0,
-    envelope_freq_range: tuple[float, float] = (500, 5000),
+    envelope_freq_range: Optional[tuple[float, float]] = None,
 ) -> dict:
     """Run all four fault checks (BPFO, BPFI, BSF, FTF) for a bearing.
 
@@ -137,7 +139,9 @@ def check_all_bearing_faults(
         rpm: Shaft speed in RPM.
         signal_id: Signal identifier.
         tolerance_pct: Frequency tolerance in percent.
-        envelope_freq_range: Bandpass filter range for envelope.
+        envelope_freq_range: Bandpass filter range for envelope. ``None``
+            (default) uses the fs-aware default band (500 Hz up to
+            min(5000, just below Nyquist)).
 
     Returns:
         Dict compatible with BearingFaultsSummary.
@@ -233,7 +237,7 @@ def check_frequency_set(
     rpm: float,
     signal_id: str = "",
     tolerance_pct: float = 5.0,
-    envelope_freq_range: tuple[float, float] = (500, 5000),
+    envelope_freq_range: Optional[tuple[float, float]] = None,
 ) -> dict:
     """Check an arbitrary set of labeled expected frequencies in the envelope.
 
@@ -248,7 +252,9 @@ def check_frequency_set(
         rpm: Shaft speed in RPM (echoed; shaft frequency = rpm/60).
         signal_id: Signal identifier (for result labeling).
         tolerance_pct: Frequency tolerance in percent.
-        envelope_freq_range: Bandpass filter range for envelope.
+        envelope_freq_range: Bandpass filter range for envelope. ``None``
+            (default) uses the fs-aware default band (500 Hz up to
+            min(5000, just below Nyquist)).
 
     Returns:
         Dict compatible with BearingFaultsSummary (bearing_id/source None).

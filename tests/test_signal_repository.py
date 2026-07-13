@@ -9,6 +9,7 @@ from pathlib import Path
 from predictive_maintenance_mcp.signal_acquisition.repository import (
     SignalRepository,
     VALID_SIGNAL_UNITS,
+    get_repository,
     normalize_signal_unit,
 )
 
@@ -63,6 +64,19 @@ class TestLoadSignal:
     def test_override_sampling_rate(self, repo, signal_file):
         info = repo.load_signal(str(signal_file), sampling_rate=48000)
         assert info["sampling_rate"] == 48000
+
+    def test_zero_sampling_rate_rejected(self, repo, signal_file):
+        """F10: an explicit sampling_rate of 0 is rejected before storing —
+        a stored 0 would break downstream fftfreq(N, 1/rate)."""
+        with pytest.raises(ValueError, match="sampling rate must be positive"):
+            repo.load_signal(str(signal_file), sampling_rate=0)
+        assert repo.signal_count == 0
+
+    def test_negative_sampling_rate_rejected(self, repo, signal_file):
+        """F10: a negative explicit sampling_rate is rejected before storing."""
+        with pytest.raises(ValueError, match="sampling rate must be positive"):
+            repo.load_signal(str(signal_file), sampling_rate=-1000)
+        assert repo.signal_count == 0
 
     def test_file_not_found(self, repo):
         with pytest.raises(FileNotFoundError):
@@ -153,6 +167,31 @@ class TestListAndInfo:
     def test_info_missing_raises(self, repo):
         with pytest.raises(KeyError):
             repo.get_signal_info("nonexistent")
+
+
+class TestCacheIsolation:
+    """F6: returned info is a DEEP copy — mutating it never leaks into cache."""
+
+    def test_mutating_returned_info_does_not_corrupt_cache(self, repo, signal_file):
+        """Mutating nested state (shape list, source_metadata dict) on the
+        returned dict must not affect a subsequent read."""
+        repo.load_signal(str(signal_file), signal_id="iso1")
+        info = repo.get_signal_info("iso1")
+        # Mutate the mutable nested members the old shallow .copy() shared.
+        info["shape"][0] = -999
+        info["source_metadata"]["rpm"] = "tampered"
+        fresh = repo.get_signal_info("iso1")
+        assert fresh["shape"][0] == 1000
+        assert "rpm" not in fresh["source_metadata"]
+
+    def test_list_signals_entries_are_deep_copies(self, repo, signal_file):
+        repo.load_signal(str(signal_file), signal_id="iso2")
+        listed = repo.list_signals()[0]
+        listed["shape"].append(42)
+        listed["source_metadata"]["rpm"] = "tampered"
+        fresh = repo.get_signal_info("iso2")
+        assert fresh["shape"] == [1000]
+        assert "rpm" not in fresh["source_metadata"]
 
 
 class TestClear:
@@ -380,6 +419,20 @@ class TestBatchLoad:
             repo.load_signals(batch_files, signal_unit="furlongs")
         assert repo.signal_count == 0
 
+    def test_batch_unreadable_file_after_valid_loads_nothing(
+        self, repo, data_dir, batch_files
+    ):
+        """F7: a file that passes phase-1 existence but fails to READ in
+        phase-2 aborts before the single locked insert runs — the store
+        stays empty, so a batch is never left half-populated."""
+        # Exists (so phase-1 passes) but is an unsupported format that the
+        # loader cannot read (so _prepare_entry raises in phase-2).
+        (data_dir / "corrupt.xyz").write_text("not a signal")
+        files = [batch_files[0], "corrupt.xyz", batch_files[1]]
+        with pytest.raises(ValueError):
+            repo.load_signals(files, sampling_rate=1000)
+        assert repo.signal_count == 0  # nothing from the batch landed
+
 
 class TestLRUEviction:
     def test_eviction_when_full(self, tmp_path):
@@ -422,3 +475,32 @@ class TestLRUEviction:
         ids = {s["signal_id"] for s in repo.list_signals()}
         assert "s0" in ids, "Recently accessed signal should not be evicted"
         assert "s1" not in ids, "Oldest untouched signal should be evicted"
+
+
+class TestResolveSignalSamplingRate:
+    """F10: resolve_signal refuses a stored non-positive sampling rate.
+
+    A metadata-derived rate of 0 bypasses load_signal's explicit-param check
+    (that guard only covers the sampling_rate argument), so it lands in the
+    store and exercises resolve_signal's own guard / the StoredSignalInfo
+    schema backstop. Either rejection surfaces as a ValueError (pydantic's
+    ValidationError also subclasses ValueError).
+    """
+
+    def test_zero_metadata_rate_rejected_by_resolve_signal(self, tmp_path):
+        from predictive_maintenance_mcp.mcp_tools._utils import resolve_signal
+
+        signal = np.random.randn(500)
+        csv_path = tmp_path / "zero_rate.csv"
+        pd.DataFrame(signal).to_csv(csv_path, index=False, header=False)
+        with open(tmp_path / "zero_rate_metadata.json", "w") as f:
+            json.dump({"sampling_rate": 0, "signal_unit": "g"}, f)
+
+        repo = get_repository()
+        repo.clear_all()
+        try:
+            repo.load_signal(str(csv_path), signal_id="zero_rate")
+            with pytest.raises(ValueError):
+                resolve_signal("zero_rate")
+        finally:
+            repo.clear_all()

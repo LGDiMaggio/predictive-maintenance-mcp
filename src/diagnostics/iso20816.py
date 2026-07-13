@@ -20,6 +20,7 @@ Consumers (import, never redefine):
 Pure functions — no MCP context, no file I/O.
 """
 
+import math
 from typing import Literal, Optional
 
 import numpy as np
@@ -65,6 +66,12 @@ _ZONE_INFO = {
 
 # ISO 20816-3 evaluation band upper edge (Hz).
 _ISO_BAND_UPPER_HZ = 1000.0
+# Fraction of Nyquist the bandpass upper edge is capped at (a digital filter
+# corner cannot sit at Nyquist). The usable upper edge is 0.95 x Nyquist.
+_ISO_BAND_CLAMP_FRACTION = 0.95
+# Minimum fs (Hz) at which the CLAMPED upper edge still reaches the 1000 Hz
+# ISO band top: 0.95 x (fs/2) >= 1000  =>  fs >= 2 * 1000 / 0.95 ≈ 2105.3.
+_ISO_MIN_FS_HZ = math.ceil(2.0 * _ISO_BAND_UPPER_HZ / _ISO_BAND_CLAMP_FRACTION)
 # ISO 20816-3 scope floor for rated machine power (kW).
 _ISO_POWER_FLOOR_KW = 15.0
 
@@ -266,8 +273,10 @@ def assess_severity_raw(
 
     Args:
         signal: 1D vibration signal.
-        fs: Sampling frequency (Hz). Must give Nyquist >= 1000 Hz so the
-            ISO evaluation band can be covered.
+        fs: Sampling frequency (Hz). Must give 0.95 x Nyquist >= 1000 Hz
+            (fs >= ~2106 Hz) so the full 10-1000 Hz ISO evaluation band can
+            be covered; lower rates are refused rather than assessed over a
+            truncated band.
         machine_group: 1 (large, >300 kW) or 2 (medium, 15-300 kW).
         support_type: 'rigid' or 'flexible'.
         signal_unit: 'g', 'm/s²', 'mm/s', or 'm/s'.
@@ -284,7 +293,8 @@ def assess_severity_raw(
 
     Raises:
         ValueError: If the machine group/support combination is invalid,
-            if Nyquist < 1000 Hz (ISO band cannot be evaluated), or if the
+            if the sampling rate cannot cover the full 10-1000 Hz ISO band
+            (0.95 x Nyquist < 1000 Hz, i.e. fs < ~2106 Hz), or if the
             declared machine power is below 15 kW (out of ISO scope).
     """
     support_type = str(support_type).lower()
@@ -294,12 +304,22 @@ def assess_severity_raw(
     check_power_scope(machine_power_kw)
 
     nyquist = fs / 2.0
-    if nyquist < _ISO_BAND_UPPER_HZ:
+    # Full ISO-band coverage requires the USABLE upper edge (the bandpass
+    # corner is capped at 0.95 x Nyquist — it cannot sit at Nyquist) to
+    # actually reach 1000 Hz. Below that the 10-1000 Hz band is only
+    # PARTIALLY covered, so a zone verdict would rest on a truncated band —
+    # refuse instead of issuing one. 0.95 x Nyquist >= 1000 Hz needs
+    # fs >= ~2106 Hz (the old fs >= 2000 Hz guard let fs in [2000, 2106) Hz
+    # through with the band silently truncated to < 1000 Hz).
+    if nyquist * _ISO_BAND_CLAMP_FRACTION < _ISO_BAND_UPPER_HZ:
+        usable_upper = nyquist * _ISO_BAND_CLAMP_FRACTION
         raise ValueError(
-            f"ISO assessment not possible: Nyquist frequency {nyquist:g} Hz "
-            f"(fs={fs:g} Hz) is below the {_ISO_BAND_UPPER_HZ:g} Hz upper "
-            f"edge of the ISO 20816-3 evaluation band — re-acquire the "
-            f"signal at fs >= {2 * _ISO_BAND_UPPER_HZ:g} Hz."
+            f"ISO assessment not possible: at fs={fs:g} Hz the usable upper "
+            f"band edge {usable_upper:g} Hz (0.95 x Nyquist {nyquist:g} Hz) "
+            f"does not reach the {_ISO_BAND_UPPER_HZ:g} Hz top of the "
+            f"ISO 20816-3 evaluation band — the 10-1000 Hz band would be "
+            f"only partially covered. Re-acquire the signal at "
+            f"fs >= {_ISO_MIN_FS_HZ:g} Hz."
         )
 
     # Unit conversion
@@ -309,22 +329,18 @@ def assess_severity_raw(
 
     # Evaluation band. Lower edge per ISO 20816-3: 10 Hz for speeds
     # >= 600 RPM (or unknown), 2 Hz for 120-600 RPM. Upper edge is the
-    # nominal 1000 Hz, reduced to 0.95 x Nyquist when fs cannot support
-    # it — the reported band is ALWAYS the band actually used.
+    # nominal 1000 Hz; the min() with 0.95 x Nyquist is defensive only —
+    # the guard above already refuses any fs that could not reach 1000 Hz,
+    # so a verdict is ALWAYS issued over the full 10-1000 Hz band.
     if operating_speed_rpm is not None and operating_speed_rpm < 600:
         low_hz = 2.0
         speed_note = "speed < 600 RPM"
     else:
         low_hz = 10.0
         speed_note = "speed >= 600 RPM"
-    high_hz = min(_ISO_BAND_UPPER_HZ, nyquist * 0.95)
+    high_hz = min(_ISO_BAND_UPPER_HZ, nyquist * _ISO_BAND_CLAMP_FRACTION)
 
     freq_range_desc = f"{low_hz:g}-{high_hz:g} Hz ({speed_note})"
-    if high_hz < _ISO_BAND_UPPER_HZ:
-        freq_range_desc += (
-            f" — upper edge limited by fs={fs:g} Hz; the ISO nominal band "
-            f"extends to {_ISO_BAND_UPPER_HZ:g} Hz"
-        )
 
     # Bandpass filter (zero-phase)
     sos = butter(

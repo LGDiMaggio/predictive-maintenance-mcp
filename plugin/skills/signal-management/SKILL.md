@@ -107,3 +107,5 @@ If no data files are available, generate a test signal:
 - Always confirm sampling_rate and signal_unit for formats that do not embed
   them — ask the user, never guess
 - All signal data stays local — nothing is transmitted externally
+- Signal management prepares data for analysis that supports — and never
+  replaces — the engineer's judgment

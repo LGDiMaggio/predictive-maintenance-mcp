@@ -135,10 +135,18 @@ def get_metadata_path(signal_filename: str) -> Path:
         signal_filename: Nome del file segnale (relativo a DATA_DIR)
 
     Returns:
-        Path al corrispondente file _metadata.json
+        Path al corrispondente file _metadata.json (contenuto dentro DATA_DIR)
+
+    Raises:
+        ValueError: If signal_filename escapes DATA_DIR (path traversal).
     """
+    # Route the derived metadata path through safe_resolve so containment
+    # can't be forgotten here, mirroring load_signal_data. Behavior is
+    # identical for valid in-DATA_DIR inputs; a traversal now raises instead
+    # of silently pointing outside DATA_DIR.
     p = Path(signal_filename)
-    return DATA_DIR / p.parent / f"{p.stem}_metadata.json"
+    rel_meta = p.parent / f"{p.stem}_metadata.json"
+    return safe_resolve(DATA_DIR, str(rel_meta))
 
 
 def get_metadata_path_from_dir(data_dir: Path, signal_filename: str) -> Path:

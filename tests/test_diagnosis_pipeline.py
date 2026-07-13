@@ -367,7 +367,11 @@ class TestSynthesisEdgeCases:
         t = np.linspace(0, 1.0, fs, endpoint=False)
         signal = 0.01 * np.sin(2 * np.pi * 50 * t)
         result = diagnose_vibration(signal, fs, rpm=rpm, signal_unit="g")
-        assert "unbalance" in result["overall_diagnosis"].lower() or True  # frequency match depends on FFT resolution
+        # Assert on the detected 1x peak (deterministic) rather than the
+        # FFT-resolution-flaky diagnosis text, mirroring the 2x test.
+        peak_f = result["fft_summary"]["peak_frequency_hz"]
+        assert abs(peak_f - 50) < 5
+        assert "unbalance" in result["overall_diagnosis"].lower()
 
     def test_2x_misalignment_detection(self):
         """Dominant peak at 2x shaft speed should suggest misalignment."""
@@ -380,3 +384,86 @@ class TestSynthesisEdgeCases:
         # Check that 2x is detected in FFT
         peak_f = result["fft_summary"]["peak_frequency_hz"]
         assert abs(peak_f - 100) < 5
+
+
+class TestEvidenceStrengthUpperBranches:
+    """Exercise the moderate (>=2.0) and strong (>=3.0) evidence branches of
+    _synthesize_diagnosis, which the other tests only touch at the low end.
+
+    Both cases use an undeclared unit so the ISO block is REFUSED (contributes
+    NO points) — proving the upper branches are reached by CORROBORATION from
+    independent spectral analyses, not by severity.
+    """
+
+    #: 6205 BPFO at 1800 RPM (CWRU geometry): 3.5848 x 30 Hz. Matches the
+    #: value used by the golden fixtures (tests/_golden_signals.py).
+    BPFO_6205_1800 = 107.54
+    RPM = 1800  # shaft = 30 Hz
+
+    def _modulated_carrier(self, t):
+        """3 kHz carrier AM-modulated at BPFO + 2nd + 3rd harmonic.
+
+        Modulation stays strictly positive (min 0.2), so the Hilbert envelope
+        recovers BPFO with two harmonics -> "high" bearing evidence (+2.0).
+        """
+        f = self.BPFO_6205_1800
+        modulation = (
+            1.0
+            + 0.40 * np.sin(2 * np.pi * f * t)
+            + 0.25 * np.sin(2 * np.pi * 2 * f * t)
+            + 0.15 * np.sin(2 * np.pi * 3 * f * t)
+        )
+        return np.sin(2 * np.pi * 3000.0 * t) * modulation
+
+    def test_single_corroboration_is_moderate(self):
+        """One independent finding (a high-evidence bearing fault, +2.0) and
+        nothing else -> evidence_strength == 'moderate'.
+
+        The carrier dominates the FFT (no 1x/2x shaft match), the unit is
+        undeclared (ISO refused), and no anomaly model exists -> the ONLY
+        contribution is the bearing check.
+        """
+        fs = 10000
+        t = np.arange(int(fs)) / fs
+        rng = np.random.default_rng(123)
+        signal = self._modulated_carrier(t) + 0.02 * rng.standard_normal(t.size)
+
+        result = diagnose_vibration(
+            signal, fs, rpm=self.RPM, signal_id="moderate_case",
+            bearing_id="6205",
+            anomaly_model_name="nonexistent_model_evidence",
+        )
+
+        assert result["iso_severity"]["status"] == "refused"  # no ISO points
+        strengths = {
+            c["evidence_strength"] for c in result["bearing_faults"]["fault_checks"]
+        }
+        assert "high" in strengths  # bearing check contributes +2.0
+        assert result["evidence_strength"] == "moderate"
+
+    def test_two_corroborations_are_strong(self):
+        """Two independent findings — a high-evidence bearing fault (+2.0) AND
+        a dominant 1x shaft peak / unbalance (+1.0) — reach 'strong' (>=3.0),
+        with the ISO block still refused (contributing nothing)."""
+        fs = 10000
+        t = np.arange(int(fs)) / fs
+        rng = np.random.default_rng(123)
+        # Dominant shaft component at 1x (30 Hz) so the FFT peak lands on the
+        # shaft frequency (+1.0), on top of the modulated bearing carrier.
+        shaft = 1.5 * np.sin(2 * np.pi * 30.0 * t)
+        signal = shaft + self._modulated_carrier(t) + 0.02 * rng.standard_normal(t.size)
+
+        result = diagnose_vibration(
+            signal, fs, rpm=self.RPM, signal_id="strong_case",
+            bearing_id="6205",
+            anomaly_model_name="nonexistent_model_evidence",
+        )
+
+        assert result["iso_severity"]["status"] == "refused"  # no ISO points
+        peak_f = result["fft_summary"]["peak_frequency_hz"]
+        assert abs(peak_f - 30.0) < 5  # dominant 1x shaft peak
+        strengths = {
+            c["evidence_strength"] for c in result["bearing_faults"]["fault_checks"]
+        }
+        assert "high" in strengths  # bearing check contributes +2.0
+        assert result["evidence_strength"] == "strong"
