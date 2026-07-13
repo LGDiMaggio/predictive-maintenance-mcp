@@ -207,7 +207,7 @@ def classify_zone(
 def _convert_to_velocity_mm_s(
     signal: np.ndarray,
     fs: float,
-    signal_unit: str,
+    signal_unit: Optional[str],
 ) -> tuple[np.ndarray, bool, str]:
     """Convert signal to velocity in mm/s if needed.
 
@@ -215,9 +215,19 @@ def _convert_to_velocity_mm_s(
         (velocity_mm_s, conversion_performed, original_unit)
 
     Raises:
-        ValueError: If ``signal_unit`` is not one of the declared vocabulary
-            ('g', 'm/s²'/'m/s2', 'm/s', 'mm/s'). Units are never assumed.
+        ValueError: If ``signal_unit`` is ``None`` (not declared) or not one
+            of the declared vocabulary ('g', 'm/s²'/'m/s2', 'm/s', 'mm/s').
+            Units are never assumed or guessed from amplitude.
     """
+    # Defense in depth: the live MCP boundary already refuses an undeclared
+    # unit, but a direct/future caller must fail cleanly here too — never
+    # crash with an opaque AttributeError, and never silently assume a unit.
+    if signal_unit is None:
+        raise ValueError(
+            "signal unit not declared — ISO severity requires a declared "
+            "unit ('g'|'m/s2'|'mm/s'|'m/s'); units are never guessed from "
+            "amplitude."
+        )
     unit = signal_unit.lower()
 
     if unit in ("g", "m/s²", "m/s2"):

@@ -727,9 +727,16 @@
             "title": "Bearing Freqs"
           },
           "filter_high": {
-            "default": 5000.0,
-            "title": "Filter High",
-            "type": "number"
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Filter High"
           },
           "filter_low": {
             "default": 500.0,

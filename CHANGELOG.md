@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-07-13
+
+Patch release: two robustness fixes of the same class caught while
+diagnosing crash reports from a pre-0.9.0 server.
+
+### Fixed
+- `generate_envelope_report` now resolves its default upper band edge
+  fs-aware (`min(5000, Nyquist-1)`) instead of a fixed 5000 Hz. On any
+  signal sampled below 10 kHz the fixed default exceeded Nyquist and the
+  report failed with an invalid-band error; a default envelope report now
+  succeeds on sub-10 kHz signals. An explicitly requested band above
+  Nyquist is still rejected — never clamped silently.
+- The ISO unit conversion (`_convert_to_velocity_mm_s` /
+  `assess_severity_raw`) now refuses an undeclared (`None`) unit with an
+  actionable message instead of crashing with `'NoneType' object has no
+  attribute 'lower'`. The live `diagnose_vibration` / `assess_severity`
+  paths already guarded this; the fix hardens the pure conversion for any
+  direct caller — refusing, never guessing a unit (consistent with the
+  declared-unit discipline).
+
 ## [0.9.0] - 2026-07-13
 
 Consolidation release: one credible diagnostic engine behind one unified API.

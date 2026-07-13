@@ -367,6 +367,28 @@ class TestGenerateEnvelopeReport:
         assert Path(result["file_path"]).exists()
 
     @pytest.mark.asyncio
+    async def test_default_band_is_fs_aware(self, tools, data_dir, repo, reports_dir):
+        """The default filter_high must adapt to the signal's Nyquist. On a
+        sub-10 kHz signal the former fixed 5000 Hz default exceeded Nyquist
+        and the report raised; the default now resolves fs-aware and the
+        report succeeds without the caller specifying a band."""
+        sid = _load_extra_signal(repo, data_dir, "env_8k.csv", fs=8000)
+        result = await tools["generate_envelope_report"](signal_id=sid)
+        assert "file_path" in result
+        # The echoed band is contained within Nyquist (4000 Hz here).
+        assert result["metadata"]["filter_band"][1] <= 4000.0
+
+    @pytest.mark.asyncio
+    async def test_explicit_band_above_nyquist_still_raises(
+        self, tools, data_dir, repo, reports_dir
+    ):
+        """An explicitly requested band above Nyquist is never silently
+        clamped — only the default is fs-aware."""
+        sid = _load_extra_signal(repo, data_dir, "env_8k2.csv", fs=8000)
+        with pytest.raises(ValueError, match="Nyquist"):
+            await tools["generate_envelope_report"](signal_id=sid, filter_high=5000.0)
+
+    @pytest.mark.asyncio
     async def test_envelope_report_bearing_freqs_from_companion_metadata(
         self, tools, data_dir, repo, reports_dir
     ):
