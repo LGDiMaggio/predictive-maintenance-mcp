@@ -329,6 +329,18 @@ class TestUnitConversion:
         with pytest.raises(ValueError, match="Unknown signal_unit"):
             assess_severity_with_axis(signal, fs=10000, signal_unit="mils")
 
+    def test_none_unit_refused_not_attributeerror(self):
+        """Defense-in-depth: a None unit is refused with an actionable
+        ValueError, never an opaque AttributeError from .lower()
+        (regression: "'NoneType' object has no attribute 'lower'").
+
+        The live MCP boundary already guards None, but the pure conversion
+        must fail cleanly if a future caller forgets — refusing, never
+        guessing a unit."""
+        signal = np.random.randn(10000) * 0.1
+        with pytest.raises(ValueError, match="not declared"):
+            assess_severity_with_axis(signal, fs=10000, signal_unit=None)
+
 
 class TestInvalidParameters:
     def test_invalid_group_support(self):

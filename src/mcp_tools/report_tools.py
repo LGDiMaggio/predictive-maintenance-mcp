@@ -336,7 +336,7 @@ async def generate_fft_report(
 async def generate_envelope_report(
     signal_id: str,
     filter_low: float = 500.0,
-    filter_high: float = 5000.0,
+    filter_high: Optional[float] = None,
     max_freq: float = 500.0,
     num_peaks: int = 15,
     bearing_freqs: Optional[dict[str, float]] = None,
@@ -355,7 +355,9 @@ async def generate_envelope_report(
         Args:
             signal_id: ID of the stored signal (from load_signal).
             filter_low: Bandpass filter low cutoff (Hz). Default 500 Hz
-            filter_high: Bandpass filter high cutoff (Hz). Default 5000 Hz
+            filter_high: Bandpass filter high cutoff (Hz). Default (None)
+                adapts to the signal: min(5000, Nyquist-1). An explicit value
+                above Nyquist is rejected, never clamped.
             max_freq: Max envelope spectrum frequency to display. Default 500 Hz
             num_peaks: Number of peaks to detect. Default 15
             bearing_freqs: Optional dict with BPFO, BPFI, BSF, FTF
@@ -381,6 +383,15 @@ async def generate_envelope_report(
 
     signal_data, info = resolve_signal(signal_id)
     sampling_rate = info.sampling_rate
+
+    # Resolve the default upper edge fs-aware: the fixed 5000 Hz default used
+    # to exceed Nyquist on sub-10 kHz signals and raise. A None (default)
+    # filter_high adapts to the signal; an explicit value is honored as-is and
+    # still validated (an over-Nyquist band the caller asked for is never
+    # clamped silently). min(5000, Nyquist-1) matches the digital-filter
+    # corner realized below and compute_envelope_spectrum's own default.
+    if filter_high is None:
+        filter_high = min(5000.0, sampling_rate / 2 - 1.0)
 
     # U9 band-validation sweep: an invalid band vs Nyquist raises — this
     # used to feed scipy an unnormalizable corner (or silently mis-filter).
