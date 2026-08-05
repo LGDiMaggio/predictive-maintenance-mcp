@@ -1,5 +1,7 @@
 # Predictive Maintenance MCP Server
 
+[![MCP Toplist](https://mcptoplist.com/badge/io.github.LGDiMaggio%2Fpredictive-maintenance-mcp.svg)](https://mcptoplist.com/server/io.github.LGDiMaggio%2Fpredictive-maintenance-mcp)
+
 <!-- mcp-name: io.github.LGDiMaggio/predictive-maintenance-mcp -->
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
