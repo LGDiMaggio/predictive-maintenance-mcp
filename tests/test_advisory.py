@@ -421,6 +421,34 @@ class TestBaselineComparison:
         assert block["deltas"], "an unchanged comparison is still a comparison"
         assert "no measurable change" in block["statement"].lower()
 
+    def test_headline_delta_is_chosen_by_meaning_not_by_magnitude(self):
+        """The three deltas are in dB, mm/s and percentage points.
+
+        Ranking them by absolute value would rank them by unit scale: a
+        1-point move in anomaly ratio would outrank a 0.5 mm/s rise in RMS
+        velocity for no reason other than the axis it sits on.
+        """
+        advisory = build_advisory(
+            _diagnosis(
+                iso=_iso_assessed(zone="C", rms=5.5),
+                bearing_faults=_bearing_faults(),
+                anomaly=_anomaly(ratio=1.0),
+            ),
+            baseline_diagnosis=_diagnosis(
+                iso=_iso_assessed(zone="A", rms=5.0),
+                bearing_faults=_bearing_faults(detected=False),
+                anomaly=_anomaly(health="Healthy", ratio=0.0),
+            ),
+        )
+        block = advisory["baseline_comparison"]
+        anomaly_delta = next(
+            d for d in block["deltas"] if d["indicator"] == "anomaly_ratio"
+        )
+        assert abs(anomaly_delta["delta"]) == 100.0
+        # The anomaly ratio has by far the largest number and is still not
+        # the headline: RMS velocity is the more specific movement here.
+        assert "RMS velocity" in block["statement"]
+
     def test_baseline_deltas_appear_in_the_collected_statements(self):
         advisory = build_advisory(
             _diagnosis(iso=_iso_assessed(zone="C", rms=5.0), anomaly=_anomaly()),

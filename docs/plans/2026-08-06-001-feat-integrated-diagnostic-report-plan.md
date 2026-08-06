@@ -1,7 +1,7 @@
 ---
 title: "feat: Integrated diagnostic report with server-authored advisory"
 type: feat
-status: active
+status: completed
 date: 2026-08-06
 origin: docs/brainstorms/2026-08-06-diagnostic-report-value-and-authorship.md
 ---

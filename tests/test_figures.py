@@ -160,3 +160,34 @@ class TestAxesAndScaling:
         first = build_annotated_envelope_figure(freqs, mags, BEARING_FREQS)
         second = build_annotated_envelope_figure(freqs, mags, BEARING_FREQS)
         assert first == second
+
+
+class TestTraceDecimation:
+    def test_long_spectrum_is_capped(self):
+        freqs, mags = _spectrum(n=200_000)
+        figure = build_annotated_envelope_figure(freqs, mags, BEARING_FREQS)
+        assert len(figure["x"]) <= 2400
+        assert len(figure["x"]) == len(figure["y"])
+
+    def test_decimation_keeps_the_peak_rather_than_dropping_it(self):
+        """Plain decimation drops exactly the narrow peaks the figure exists
+        to show. The dominant peak must survive at its own frequency."""
+        freqs, mags = _spectrum(peak_hz=80.5, n=200_000)
+        figure = build_annotated_envelope_figure(freqs, mags, BEARING_FREQS)
+        peak_index = max(range(len(figure["y"])), key=lambda i: figure["y"][i])
+        assert figure["x"][peak_index] == pytest.approx(80.5, abs=0.5)
+        assert max(figure["y"]) == pytest.approx(0.0, abs=1e-9)
+
+    def test_short_spectrum_is_untouched(self):
+        freqs, mags = _spectrum(n=500)
+        figure = build_annotated_envelope_figure(freqs, mags, BEARING_FREQS)
+        capped = build_annotated_envelope_figure(
+            freqs, mags, BEARING_FREQS, max_points=10_000
+        )
+        assert figure["x"] == capped["x"]
+
+    def test_decimation_is_deterministic(self):
+        freqs, mags = _spectrum(n=200_000)
+        first = build_annotated_envelope_figure(freqs, mags, BEARING_FREQS)
+        second = build_annotated_envelope_figure(freqs, mags, BEARING_FREQS)
+        assert first == second

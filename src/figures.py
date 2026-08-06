@@ -37,6 +37,41 @@ _FLOOR_DB = 1e-12
 #: width diverge from the tolerance it claims to represent.
 _BAND_PRECISION = 6
 
+#: Cap on plotted trace points, so a long high-rate acquisition does not
+#: produce a report too heavy to send.
+_MAX_TRACE_POINTS = 2400
+
+
+def _decimate_preserving_peaks(
+    x: np.ndarray, y: np.ndarray, max_points: int
+) -> tuple[np.ndarray, np.ndarray]:
+    """Reduce the trace to at most ``max_points`` without losing peaks.
+
+    Plain decimation would drop samples, and in a spectrum the samples it
+    drops are exactly the narrow peaks the whole figure exists to show. This
+    keeps the maximum within each bucket instead, so a peak survives at the
+    frequency where it occurred.
+    """
+    if max_points <= 0 or x.size <= max_points:
+        return x, y
+
+    bucket = int(np.ceil(x.size / max_points))
+    usable = (x.size // bucket) * bucket
+    head_y = y[:usable].reshape(-1, bucket)
+    head_x = x[:usable].reshape(-1, bucket)
+    peak_offsets = np.argmax(head_y, axis=1)
+    rows = np.arange(head_y.shape[0])
+
+    kept_x = head_x[rows, peak_offsets]
+    kept_y = head_y[rows, peak_offsets]
+
+    if usable < x.size:
+        tail_index = usable + int(np.argmax(y[usable:]))
+        kept_x = np.append(kept_x, x[tail_index])
+        kept_y = np.append(kept_y, y[tail_index])
+
+    return kept_x, kept_y
+
 
 def build_annotated_envelope_figure(
     env_frequencies: Sequence[float] | np.ndarray,
@@ -45,6 +80,7 @@ def build_annotated_envelope_figure(
     matched: Optional[dict[str, Any]] = None,
     tolerance_pct: float = 5.0,
     max_freq: Optional[float] = None,
+    max_points: int = _MAX_TRACE_POINTS,
 ) -> dict[str, Any]:
     """Build the annotated envelope spectrum as renderer-agnostic data.
 
@@ -64,6 +100,10 @@ def build_annotated_envelope_figure(
             diagnosis did not make.
         max_freq: Upper edge of the frequency axis. ``None`` extends the axis
             to cover every characteristic frequency.
+        max_points: Cap on trace points. A long acquisition at a high
+            sampling rate resolves the plotted band far more finely than any
+            screen or page can show, and every extra point is bytes in a
+            document meant to be emailed.
 
     Returns:
         A JSON-serialisable figure description: axis data, tolerance bands,
@@ -93,8 +133,7 @@ def build_annotated_envelope_figure(
     axis_max = _resolve_axis_max(freqs, defects, max_freq)
 
     mask = freqs <= axis_max
-    x = freqs[mask]
-    y_linear = mags[mask]
+    x, y_linear = _decimate_preserving_peaks(freqs[mask], mags[mask], max_points)
     peak = float(np.max(y_linear))
     if peak <= 0.0:
         y_db = np.zeros_like(y_linear)

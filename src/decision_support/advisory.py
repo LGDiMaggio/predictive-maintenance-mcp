@@ -55,6 +55,13 @@ _REQUIRED_KEYS = ("signal_id", "iso_severity", "fft_summary", "stft_summary")
 
 _ACCEPTABLE_ZONES = ("A", "B")
 
+#: Which baseline delta leads the comparison sentence, most specific first.
+#: Chosen by what the movement MEANS, not by magnitude: the three deltas are
+#: measured in dB, mm/s and percentage points, so "the biggest number" would
+#: rank them by unit scale rather than by diagnostic weight — the anomaly
+#: ratio, living on a 0-100 scale, would win almost every time.
+_HEADLINE_ORDER = ("envelope_magnitude", "rms_velocity", "anomaly_ratio")
+
 
 def _fault_label(canonical: Optional[str]) -> str:
     """Render a canonical fault type as prose ('outer_race' -> 'outer race')."""
@@ -460,12 +467,17 @@ def _build_recommendations(
     ]
 
     if zone is not None:
+        # generate_recommendations emits the zone action(s) first, then one
+        # entry per fault type in the order given. Split on that structure
+        # rather than on the wording of the description: matching a prose
+        # prefix would silently mislabel every recommendation the day that
+        # sentence is reworded.
+        zone_only = generate_recommendations(severity_zone=zone)
         base = generate_recommendations(severity_zone=zone, fault_types=fault_types)
-        for entry in base:
-            if entry["description"].startswith("Detected fault"):
-                acronym = _acronym_for(
-                    entry["description"].removeprefix("Detected fault: ").rstrip(".")
-                )
+        for index, entry in enumerate(base):
+            fault_index = index - len(zone_only)
+            if fault_index >= 0:
+                acronym = _acronym_for(fault_types[fault_index])
                 motivation = (
                     "The characteristic frequency of this bearing element "
                     "matched a peak in the envelope spectrum within tolerance"
@@ -598,7 +610,7 @@ def build_baseline_comparison(
             f"described above is stable, not developing."
         )
     else:
-        headline = max(moved, key=lambda d: abs(d["delta"]))
+        headline = min(moved, key=lambda d: _HEADLINE_ORDER.index(d["indicator"]))
         statement = (
             f"Compared with baseline {baseline.get('signal_id')}: "
             f"{len(moved)} of {len(deltas)} indicators moved. "
