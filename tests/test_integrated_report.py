@@ -28,7 +28,10 @@ from predictive_maintenance_mcp.report_generator import (
 )
 from predictive_maintenance_mcp.diagnostics.iso20816 import THRESHOLD_PROVENANCE
 
-from tests.test_advisory import (
+# Sibling-module import, not `from tests.…`: pytest puts the tests directory
+# on sys.path, but only `python -m pytest` also puts the repo root there. CI
+# invokes the console script, where the packaged form would not resolve.
+from test_advisory import (  # noqa: E402
     _anomaly,
     _bearing_faults,
     _diagnosis,

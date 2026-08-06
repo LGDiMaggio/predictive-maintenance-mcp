@@ -125,7 +125,9 @@ class TestInventoryCharacterization:
         The additions register lives in tests/test_surface_parity.py so
         there is one place to declare a new tool, not two.
         """
-        from tests.test_surface_parity import POST_U9_ADDITIONS
+        # Sibling-module import: CI runs the pytest console script, which
+        # does not put the repo root on sys.path.
+        from test_surface_parity import POST_U9_ADDITIONS
 
         assert len(inventory["tools"]) == 33 + len(POST_U9_ADDITIONS)
         assert len(inventory["resources"]) == 0
