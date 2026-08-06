@@ -132,12 +132,16 @@ def _diagnosis(
         "stft_summary": {
             "max_power_freq_hz": 5200.0,
             "max_power_time_s": 1.2,
-            "energy_per_band": {
-                "0-500 Hz": 12.0,
-                "500-2000 Hz": 38.0,
-                "2000-5000 Hz": 87.5,
-                "5000+ Hz": 446.2,
-            },
+            # Shape mirrors compute_stft_spectrogram exactly: a list of
+            # {"band", "energy"} entries, not a mapping. A fixture that
+            # invents a friendlier shape hides a real integration failure.
+            "energy_per_band": [
+                {"band": "0-100 Hz", "energy": 4.0},
+                {"band": "100-500 Hz", "energy": 8.0},
+                {"band": "500-2000 Hz", "energy": 38.0},
+                {"band": "2000-5000 Hz", "energy": 87.5},
+                {"band": "5000+ Hz", "energy": 446.2},
+            ],
             "num_time_bins": 100,
         },
         "bearing_faults": bearing_faults,

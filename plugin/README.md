@@ -66,7 +66,7 @@ Quick entry points for common workflows.
 
 ## MCP Tool Coverage
 
-This plugin provides domain expertise for all 33 tools (plus 3 guided prompts — 36 endpoints total) of the predictive-maintenance-mcp server. Every signal is referenced by the `signal_id` returned by `load_signal`.
+This plugin provides domain expertise for all 34 tools (plus 3 guided prompts — 37 endpoints total) of the predictive-maintenance-mcp server. Every signal is referenced by the `signal_id` returned by `load_signal`.
 
 - **Signal Lifecycle**: load_signal, list_signals, get_signal_info, generate_test_signal, clear_signals
 - **Spectral & Statistical Analysis**: analyze_fft, analyze_envelope, analyze_statistics, extract_features_from_signal, compute_power_spectral_density, compute_spectrogram_stft

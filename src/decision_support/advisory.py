@@ -235,7 +235,9 @@ def _build_anomaly_block(anomaly: Optional[dict]) -> dict:
 
 def _build_energy_block(stft_summary: dict) -> dict:
     """Author the spectral-energy block from the STFT band breakdown."""
-    bands = stft_summary.get("energy_per_band") or {}
+    # compute_stft_spectrogram emits a list of {"band", "energy"} entries.
+    entries = stft_summary.get("energy_per_band") or []
+    bands = {entry["band"]: entry["energy"] for entry in entries}
     if not bands:
         return {
             "status": ABSENT,

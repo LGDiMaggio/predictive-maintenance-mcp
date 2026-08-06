@@ -208,13 +208,16 @@ class TestEndpointCountClaims:
             )
 
     def test_expected_final_surface(self, surface_counts):
-        """The U9 target surface, restated here so a surface change makes
-        BOTH the inventory test and the doc guards go red together."""
+        """The current surface, restated here so a surface change makes
+        BOTH the inventory test and the doc guards go red together.
+
+        v0.10 added generate_diagnostic_report (33 -> 34 tools). The
+        additions register lives in tests/test_surface_parity.py."""
         assert surface_counts == {
-            "tools": 33,
+            "tools": 34,
             "resources": 0,
             "prompts": 3,
-            "endpoints": 36,
+            "endpoints": 37,
         }
 
 

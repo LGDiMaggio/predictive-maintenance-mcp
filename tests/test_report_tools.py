@@ -761,5 +761,130 @@ class TestToolRegistration:
             "generate_pca_visualization_report",
             "generate_feature_comparison_report",
             "generate_diagnostic_report_docx",
+            "generate_diagnostic_report",
         }
         assert set(tools) == expected
+
+
+# ---------------------------------------------------------------------------
+# generate_diagnostic_report — the integrated, server-authored report
+#
+# The point of this tool is that the caller supplies inputs, not wording.
+# These tests hold that line.
+# ---------------------------------------------------------------------------
+
+
+class TestGenerateDiagnosticReport:
+    @pytest.mark.asyncio
+    async def test_returns_statements_and_one_file_per_format(
+        self, tools, repo, reports_dir, mock_ctx
+    ):
+        result = await tools["generate_diagnostic_report"](
+            signal_id="report_test", rpm=1500.0, ctx=mock_ctx
+        )
+        assert result["statements"], "no authored statements returned"
+        assert [f["format"] for f in result["files"]] == ["html"]
+        assert Path(result["files"][0]["file_path"]).exists()
+
+    @pytest.mark.asyncio
+    async def test_statements_match_what_the_document_renders(
+        self, tools, repo, reports_dir, mock_ctx
+    ):
+        """Covers AE4."""
+        import html as _html
+
+        result = await tools["generate_diagnostic_report"](
+            signal_id="report_test", rpm=1500.0, ctx=mock_ctx
+        )
+        rendered = Path(result["files"][0]["file_path"]).read_text(encoding="utf-8")
+        missing = [s for s in result["statements"] if _html.escape(s) not in rendered]
+        assert missing == [], f"returned but not rendered: {missing}"
+
+    @pytest.mark.asyncio
+    async def test_unknown_signal_raises_rather_than_returning_an_error_dict(
+        self, tools, repo, reports_dir, mock_ctx
+    ):
+        with pytest.raises(ValueError):
+            await tools["generate_diagnostic_report"](
+                signal_id="nope", rpm=1500.0, ctx=mock_ctx
+            )
+
+    @pytest.mark.asyncio
+    async def test_unsupported_format_raises_before_any_analysis(
+        self, tools, repo, reports_dir, mock_ctx
+    ):
+        with pytest.raises(ValueError, match="Unsupported report format"):
+            await tools["generate_diagnostic_report"](
+                signal_id="report_test", rpm=1500.0, formats=["docx"], ctx=mock_ctx
+            )
+
+    @pytest.mark.asyncio
+    async def test_no_confidence_field_reaches_the_caller(
+        self, tools, repo, reports_dir, mock_ctx
+    ):
+        """Covers AE6 at the tool boundary — the surface an LLM actually reads."""
+        result = await tools["generate_diagnostic_report"](
+            signal_id="report_test", rpm=1500.0, ctx=mock_ctx
+        )
+
+        def walk(node, path=""):
+            if isinstance(node, dict):
+                for key, value in node.items():
+                    assert "confidence" not in key.lower(), f"{path}.{key}"
+                    walk(value, f"{path}.{key}")
+            elif isinstance(node, list):
+                for i, value in enumerate(node):
+                    walk(value, f"{path}[{i}]")
+
+        walk(result)
+        assert "not a confidence" in result["evidence_strength_note"].lower()
+
+    @pytest.mark.asyncio
+    async def test_baseline_signal_produces_a_comparison(
+        self, tools, repo, data_dir, reports_dir, mock_ctx
+    ):
+        _load_extra_signal(repo, data_dir, "report_baseline.csv")
+        result = await tools["generate_diagnostic_report"](
+            signal_id="report_test",
+            rpm=1500.0,
+            baseline_signal_id="report_baseline",
+            ctx=mock_ctx,
+        )
+        joined = " ".join(result["statements"]).lower()
+        assert "baseline" in joined
+
+    @pytest.mark.asyncio
+    async def test_absent_baseline_states_the_absence(
+        self, tools, repo, reports_dir, mock_ctx
+    ):
+        result = await tools["generate_diagnostic_report"](
+            signal_id="report_test", rpm=1500.0, ctx=mock_ctx
+        )
+        joined = " ".join(result["statements"]).lower()
+        assert "no healthy baseline was supplied" in joined
+
+    @pytest.mark.asyncio
+    async def test_recommendations_carry_motivation(
+        self, tools, repo, reports_dir, mock_ctx
+    ):
+        result = await tools["generate_diagnostic_report"](
+            signal_id="report_test", rpm=1500.0, ctx=mock_ctx
+        )
+        assert result["recommendations"]
+        for rec in result["recommendations"]:
+            assert rec["motivation"]
+
+    def test_docstring_states_the_caller_authorship_prohibition(self, tools):
+        """The docstring is what a model reads before deciding how to render."""
+        doc = tools["generate_diagnostic_report"].__doc__ or ""
+        lowered = doc.lower()
+        assert "authorship contract" in lowered
+        assert "verbatim" in lowered
+        assert "confidence" in lowered
+
+    def test_server_instructions_carry_the_same_rule(self):
+        from predictive_maintenance_mcp.server import mcp as server
+
+        instructions = (server.instructions or "").lower()
+        assert "report authorship policy" in instructions
+        assert "no confidence score" in instructions
