@@ -340,6 +340,105 @@ class TestAuthoredAbsences:
 
 
 # ---------------------------------------------------------------------------
+# R8 — baseline comparison
+# ---------------------------------------------------------------------------
+
+
+class TestBaselineComparison:
+    def test_faulted_against_healthy_yields_a_directional_rms_delta(self):
+        advisory = build_advisory(
+            _diagnosis(
+                iso=_iso_assessed(zone="C", rms=5.0),
+                bearing_faults=_bearing_faults(),
+                anomaly=_anomaly(ratio=1.0),
+            ),
+            baseline_diagnosis=_diagnosis(
+                iso=_iso_assessed(zone="A", rms=1.0),
+                bearing_faults=_bearing_faults(detected=False),
+                anomaly=_anomaly(health="Healthy", ratio=0.0),
+                evidence_strength="none",
+            ),
+        )
+        block = advisory["baseline_comparison"]
+        assert block["status"] == ASSESSED
+        rms = next(d for d in block["deltas"] if d["indicator"] == "rms_velocity")
+        assert rms["direction"] == "higher"
+        assert rms["delta"] == pytest.approx(4.0)
+        assert "5.00" in rms["statement"] and "1.00" in rms["statement"]
+
+    def test_anomaly_ratio_delta_is_expressed_in_percentage_points(self):
+        advisory = build_advisory(
+            _diagnosis(anomaly=_anomaly(ratio=1.0)),
+            baseline_diagnosis=_diagnosis(
+                anomaly=_anomaly(health="Healthy", ratio=0.0)
+            ),
+        )
+        block = advisory["baseline_comparison"]
+        ratio = next(d for d in block["deltas"] if d["indicator"] == "anomaly_ratio")
+        assert ratio["delta"] == pytest.approx(100.0)
+        assert "percentage point" in ratio["statement"]
+
+    def test_missing_baseline_states_the_unavailable_conclusion(self):
+        """Covers AE2."""
+        advisory = build_advisory(_diagnosis(anomaly=_anomaly()))
+        block = advisory["baseline_comparison"]
+        assert block["status"] == ABSENT
+        assert block["deltas"] == []
+        assert "worsening" in block["statement"].lower()
+        assert block["remedy"]
+
+    def test_mismatched_declared_unit_refuses_rather_than_computing(self):
+        baseline = _diagnosis(anomaly=_anomaly(health="Healthy", ratio=0.0))
+        baseline["iso_severity"]["original_unit"] = "mm/s"
+        advisory = build_advisory(
+            _diagnosis(anomaly=_anomaly()), baseline_diagnosis=baseline
+        )
+        block = advisory["baseline_comparison"]
+        assert block["status"] == REFUSED
+        assert block["deltas"] == []
+        assert "mm/s" in block["statement"] and "g" in block["statement"]
+
+    def test_mismatched_bearing_refuses(self):
+        baseline = _diagnosis(bearing_faults=_bearing_faults(detected=False))
+        baseline["bearing_id"] = "6208"
+        advisory = build_advisory(
+            _diagnosis(bearing_faults=_bearing_faults()),
+            baseline_diagnosis=baseline,
+        )
+        assert advisory["baseline_comparison"]["status"] == REFUSED
+
+    def test_identical_baseline_reports_no_change_rather_than_an_empty_block(self):
+        diagnosis = _diagnosis(
+            bearing_faults=_bearing_faults(), anomaly=_anomaly(ratio=1.0)
+        )
+        advisory = build_advisory(diagnosis, baseline_diagnosis=diagnosis)
+        block = advisory["baseline_comparison"]
+        assert block["status"] == ASSESSED
+        assert block["deltas"], "an unchanged comparison is still a comparison"
+        assert "no measurable change" in block["statement"].lower()
+
+    def test_baseline_deltas_appear_in_the_collected_statements(self):
+        advisory = build_advisory(
+            _diagnosis(iso=_iso_assessed(zone="C", rms=5.0), anomaly=_anomaly()),
+            baseline_diagnosis=_diagnosis(
+                iso=_iso_assessed(zone="A", rms=1.0),
+                anomaly=_anomaly(health="Healthy", ratio=0.0),
+            ),
+        )
+        statements = collect_statements(advisory)
+        for delta in advisory["baseline_comparison"]["deltas"]:
+            assert delta["statement"] in statements
+
+    def test_refused_baseline_never_reports_a_delta_number(self):
+        baseline = _diagnosis(anomaly=_anomaly(health="Healthy", ratio=0.0))
+        baseline["iso_severity"]["original_unit"] = "mm/s"
+        advisory = build_advisory(
+            _diagnosis(anomaly=_anomaly()), baseline_diagnosis=baseline
+        )
+        assert advisory["baseline_comparison"]["deltas"] == []
+
+
+# ---------------------------------------------------------------------------
 # R7 — recommendations carry motivation and evidence
 # ---------------------------------------------------------------------------
 

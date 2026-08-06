@@ -27,6 +27,7 @@ Three rules hold throughout:
 
 from __future__ import annotations
 
+import math
 from typing import Any, Optional
 
 from ..diagnostics.bearing_analyzer import FAULT_TYPE_CANONICAL
@@ -147,6 +148,7 @@ def _build_bearing_block(bearing_faults: Optional[dict]) -> dict:
                 "expected_hz": check["expected_frequency_hz"],
                 "measured_hz": check.get("detected_frequency_hz"),
                 "deviation_pct": check.get("deviation_pct"),
+                "magnitude": check.get("magnitude"),
                 "harmonics": len(check.get("harmonics_detected") or []),
                 "matched": bool(check.get("detected")),
                 "evidence_strength": check.get("evidence_strength", "none"),
@@ -544,13 +546,222 @@ def build_baseline_comparison(
             "deltas": [],
         }
 
+    incompatible = _baseline_incompatibility(diagnosis, baseline)
+    if incompatible:
+        return {
+            "status": REFUSED,
+            "statement": (
+                f"Baseline comparison was refused: {incompatible} A delta "
+                f"between measurements taken under different conditions "
+                f"would look like a change in machine condition."
+            ),
+            "remedy": (
+                "Supply a baseline acquired from the same measurement point "
+                "under the same declared conditions."
+            ),
+            "deltas": [],
+        }
+
+    deltas = [
+        delta
+        for delta in (
+            _rms_delta(diagnosis, baseline),
+            _anomaly_delta(diagnosis, baseline),
+            _envelope_delta(diagnosis, baseline),
+        )
+        if delta is not None
+    ]
+
+    if not deltas:
+        return {
+            "status": ABSENT,
+            "statement": (
+                f"A baseline was supplied ({baseline.get('signal_id')}), but "
+                f"no indicator could be compared: the two diagnoses share no "
+                f"assessed block. Whether this condition is new, stable, or "
+                f"worsening cannot be determined."
+            ),
+            "remedy": (
+                "Ensure both signals declare their unit so the severity and "
+                "anomaly blocks are assessed rather than refused."
+            ),
+            "deltas": [],
+        }
+
+    moved = [d for d in deltas if d["direction"] != "unchanged"]
+    if not moved:
+        statement = (
+            f"Compared with baseline {baseline.get('signal_id')}: no "
+            f"measurable change in any compared indicator. The condition "
+            f"described above is stable, not developing."
+        )
+    else:
+        headline = max(moved, key=lambda d: abs(d["delta"]))
+        statement = (
+            f"Compared with baseline {baseline.get('signal_id')}: "
+            f"{len(moved)} of {len(deltas)} indicators moved. "
+            f"{headline['statement']}"
+        )
+
     return {
-        "status": ABSENT,
-        "statement": (
-            "Baseline comparison is not yet available for this signal pair."
-        ),
+        "status": ASSESSED,
+        "statement": statement,
+        "baseline_signal_id": baseline.get("signal_id"),
         "remedy": "",
-        "deltas": [],
+        "deltas": deltas,
+    }
+
+
+def _baseline_incompatibility(diagnosis: dict, baseline: dict) -> str:
+    """Return a reason the two signals cannot be compared, or an empty string."""
+    signal_iso = diagnosis.get("iso_severity", {})
+    baseline_iso = baseline.get("iso_severity", {})
+    if signal_iso.get("status") == "assessed" and baseline_iso.get("status") == "assessed":
+        signal_unit = signal_iso.get("original_unit")
+        baseline_unit = baseline_iso.get("original_unit")
+        if signal_unit != baseline_unit:
+            return (
+                f"the signal declares its unit as '{signal_unit}' while the "
+                f"baseline declares '{baseline_unit}'."
+            )
+
+    signal_bearing = diagnosis.get("bearing_id")
+    baseline_bearing = baseline.get("bearing_id")
+    if signal_bearing and baseline_bearing and signal_bearing != baseline_bearing:
+        return (
+            f"the signal was analysed against bearing '{signal_bearing}' and "
+            f"the baseline against '{baseline_bearing}'."
+        )
+
+    return ""
+
+
+def _direction(delta: float, tolerance: float) -> str:
+    if abs(delta) < tolerance:
+        return "unchanged"
+    return "higher" if delta > 0 else "lower"
+
+
+def _rms_delta(diagnosis: dict, baseline: dict) -> Optional[dict]:
+    signal_iso = diagnosis.get("iso_severity", {})
+    baseline_iso = baseline.get("iso_severity", {})
+    if signal_iso.get("status") != "assessed" or baseline_iso.get("status") != "assessed":
+        return None
+
+    now = signal_iso["rms_velocity_mm_s"]
+    then = baseline_iso["rms_velocity_mm_s"]
+    delta = now - then
+    direction = _direction(delta, 0.005)
+    if direction == "unchanged":
+        statement = (
+            f"RMS velocity is unchanged against baseline "
+            f"({now:.2f} mm/s, was {then:.2f} mm/s)."
+        )
+    else:
+        statement = (
+            f"RMS velocity is {abs(delta):.2f} mm/s {direction} than baseline "
+            f"({now:.2f} mm/s, was {then:.2f} mm/s)."
+        )
+    return {
+        "indicator": "rms_velocity",
+        "unit": "mm/s",
+        "value": now,
+        "baseline_value": then,
+        "delta": round(delta, 4),
+        "direction": direction,
+        "statement": statement,
+    }
+
+
+def _anomaly_delta(diagnosis: dict, baseline: dict) -> Optional[dict]:
+    signal_anomaly = diagnosis.get("anomaly_detection")
+    baseline_anomaly = baseline.get("anomaly_detection")
+    if not signal_anomaly or not baseline_anomaly:
+        return None
+
+    now = signal_anomaly["anomaly_ratio"] * 100
+    then = baseline_anomaly["anomaly_ratio"] * 100
+    delta = now - then
+    direction = _direction(delta, 0.05)
+    if direction == "unchanged":
+        statement = (
+            f"The share of anomalous segments is unchanged against baseline "
+            f"({now:.0f}%, was {then:.0f}%) — a difference of under one "
+            f"percentage point."
+        )
+    else:
+        statement = (
+            f"The share of anomalous segments is {abs(delta):.0f} percentage "
+            f"points {direction} than baseline ({now:.0f}%, was {then:.0f}%)."
+        )
+    return {
+        "indicator": "anomaly_ratio",
+        "unit": "percentage points",
+        "value": round(now, 2),
+        "baseline_value": round(then, 2),
+        "delta": round(delta, 2),
+        "direction": direction,
+        "statement": statement,
+    }
+
+
+def _envelope_delta(diagnosis: dict, baseline: dict) -> Optional[dict]:
+    """Compare envelope amplitude at the fault frequency that actually matched.
+
+    This is the delta that separates "the machine is noisier" from "this
+    specific defect grew": it looks only at the frequency the verdict rests on.
+    """
+    signal_faults = diagnosis.get("bearing_faults")
+    baseline_faults = baseline.get("bearing_faults")
+    if not signal_faults or not baseline_faults:
+        return None
+
+    matched = next(
+        (
+            c
+            for c in signal_faults.get("fault_checks", [])
+            if c.get("detected") and c.get("magnitude")
+        ),
+        None,
+    )
+    if matched is None:
+        return None
+
+    reference = next(
+        (
+            c
+            for c in baseline_faults.get("fault_checks", [])
+            if c["fault_type"] == matched["fault_type"] and c.get("magnitude")
+        ),
+        None,
+    )
+    if reference is None:
+        return None
+
+    now = matched["magnitude"]
+    then = reference["magnitude"]
+    delta_db = 20 * math.log10(now / then)
+    direction = _direction(delta_db, 0.05)
+    acronym = matched["fault_type"]
+    if direction == "unchanged":
+        statement = (
+            f"Envelope amplitude at the {acronym} frequency is unchanged "
+            f"against baseline."
+        )
+    else:
+        statement = (
+            f"Envelope amplitude at the {acronym} frequency is "
+            f"{abs(delta_db):.1f} dB {direction} than baseline — the defect "
+            f"signature itself, not overall machine noise."
+        )
+    return {
+        "indicator": "envelope_magnitude",
+        "unit": "dB",
+        "value": now,
+        "baseline_value": then,
+        "delta": round(delta_db, 2),
+        "direction": direction,
+        "statement": statement,
     }
 
 
