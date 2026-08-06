@@ -363,6 +363,65 @@ def save_iso_report(
     }
 
 
+def save_integrated_diagnostic_report(
+    advisory: Dict[str, Any],
+    figure: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """
+    Save the integrated diagnostic report as a self-contained HTML document.
+
+    Unlike the per-analysis reports, this one covers the whole case in a
+    single document and takes no caller-supplied content: every evaluative
+    sentence comes from the advisory payload, which the server authored.
+
+    Args:
+        advisory: Payload from ``decision_support.advisory.build_advisory``.
+        figure: Optional figure description from
+            ``figures.build_annotated_envelope_figure``.
+
+    Returns:
+        Dictionary with file path, the authored statements the document
+        renders, and report metadata.
+    """
+    from .decision_support.advisory import collect_statements
+    from .integrated_report import create_integrated_diagnostic_report
+
+    generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    html = create_integrated_diagnostic_report(
+        advisory, figure, generated_at=generated_at
+    )
+
+    # safe_resolve is belt-and-braces: timestamped_report_name already
+    # flattens path separators out of the label, so a traversal-shaped signal
+    # id cannot steer the write. Both guards are cheap.
+    file_name = timestamped_report_name(
+        "diagnostic_report", str(advisory.get("signal_id", "signal"))
+    )
+    output_file = safe_resolve(REPORTS_DIR, file_name)
+    output_file.write_text(html, encoding="utf-8")
+
+    statements = collect_statements(advisory)
+    verdict = advisory["verdict"]
+
+    logger.info(f"Integrated diagnostic report saved: {output_file.name}")
+
+    return {
+        "file_path": str(output_file.absolute()),
+        "file_name": output_file.name,
+        "file_size_kb": output_file.stat().st_size / 1024,
+        "report_type": "integrated_diagnostic",
+        "signal_id": advisory.get("signal_id"),
+        "verdict": verdict["statement"],
+        "fault_canonical": verdict.get("fault_canonical"),
+        "evidence_strength": advisory["evidence"]["strength"],
+        "generated_at": generated_at,
+        "statements": statements,
+        "message": (
+            f"Integrated diagnostic report saved: {output_file.name}"
+        ),
+    }
+
+
 def read_report_metadata(file_name: str) -> Dict[str, Any]:
     """
     Read metadata from HTML report without loading entire file.

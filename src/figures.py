@@ -15,7 +15,6 @@ so the argument survives a static export.
 
 from __future__ import annotations
 
-import math
 from typing import Any, Optional, Sequence
 
 import numpy as np
@@ -147,6 +146,151 @@ def build_annotated_envelope_figure(
         "omitted_labels": omitted,
         "caption": _caption(bands, omitted, tolerance_pct, matched),
     }
+
+
+def figure_to_svg(
+    figure: dict[str, Any], width: int = 900, height: int = 420
+) -> str:
+    """Render a figure description as a standalone inline SVG.
+
+    SVG rather than a charting library because the report must open with no
+    network access and must survive export to a static format. A chart that
+    needs a CDN script is not a self-contained document, and a chart whose
+    labels only appear on hover loses its argument the moment it is printed.
+
+    Args:
+        figure: A description from :func:`build_annotated_envelope_figure`.
+        width: Canvas width in pixels.
+        height: Canvas height in pixels.
+
+    Returns:
+        An ``<svg>`` element with no external references.
+
+    Raises:
+        ValueError: If the figure is not a kind this renderer knows.
+    """
+    if figure.get("kind") != ANNOTATED_ENVELOPE:
+        raise ValueError(
+            f"Unknown figure kind {figure.get('kind')!r} — this renderer "
+            f"draws {ANNOTATED_ENVELOPE} only."
+        )
+
+    left, right, top, bottom = 70, 20, 34, 56
+    plot_w = width - left - right
+    plot_h = height - top - bottom
+
+    xs = figure["x"]
+    ys = figure["y"]
+    x_max = max(xs) if xs else 1.0
+    y_min = min(min(ys), -6.0) if ys else -60.0
+
+    def px(value: float) -> float:
+        return round(left + (value / x_max) * plot_w, 2) if x_max else left
+
+    def py(value: float) -> float:
+        span = -y_min or 1.0
+        return round(top + ((0.0 - value) / span) * plot_h, 2)
+
+    parts: list[str] = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" '
+        f'width="100%" role="img" aria-label="{_esc(figure["caption"])}">',
+        f'<rect x="0" y="0" width="{width}" height="{height}" fill="#ffffff"/>',
+    ]
+
+    # Horizontal gridlines every 10 dB, so amplitude differences are readable
+    # off the page rather than only by hovering.
+    tick = -10.0
+    while tick > y_min:
+        y_pos = py(tick)
+        parts.append(
+            f'<line x1="{left}" y1="{y_pos}" x2="{left + plot_w}" y2="{y_pos}" '
+            f'stroke="#e8e8e8" stroke-width="1"/>'
+        )
+        parts.append(
+            f'<text x="{left - 8}" y="{y_pos + 4}" font-size="11" fill="#7f8c8d" '
+            f'text-anchor="end">{tick:.0f}</text>'
+        )
+        tick -= 10.0
+
+    # Tolerance bands behind the trace: the reader must see the peak sitting
+    # inside one and outside the rest.
+    for band in figure["bands"]:
+        x_low, x_high = px(band["low_hz"]), px(band["high_hz"])
+        band_w = max(x_high - x_low, 1.5)
+        fill = "#e74c3c" if band["matched"] else "#95a5a6"
+        opacity = "0.28" if band["matched"] else "0.14"
+        parts.append(
+            f'<rect x="{x_low}" y="{top}" width="{round(band_w, 2)}" '
+            f'height="{plot_h}" fill="{fill}" fill-opacity="{opacity}"/>'
+        )
+        centre = px(band["center_hz"])
+        parts.append(
+            f'<line x1="{centre}" y1="{top}" x2="{centre}" y2="{top + plot_h}" '
+            f'stroke="{fill}" stroke-width="1" stroke-dasharray="4 3"/>'
+        )
+
+    points = " ".join(f"{px(x)},{py(y)}" for x, y in zip(xs, ys))
+    parts.append(
+        f'<polyline points="{points}" fill="none" stroke="#2c3e50" '
+        f'stroke-width="1.2"/>'
+    )
+
+    # Axes
+    parts.append(
+        f'<line x1="{left}" y1="{top}" x2="{left}" y2="{top + plot_h}" '
+        f'stroke="#2c3e50" stroke-width="1.5"/>'
+    )
+    parts.append(
+        f'<line x1="{left}" y1="{top + plot_h}" x2="{left + plot_w}" '
+        f'y2="{top + plot_h}" stroke="#2c3e50" stroke-width="1.5"/>'
+    )
+    for fraction in (0.0, 0.25, 0.5, 0.75, 1.0):
+        value = x_max * fraction
+        x_pos = px(value)
+        parts.append(
+            f'<line x1="{x_pos}" y1="{top + plot_h}" x2="{x_pos}" '
+            f'y2="{top + plot_h + 5}" stroke="#2c3e50" stroke-width="1"/>'
+        )
+        parts.append(
+            f'<text x="{x_pos}" y="{top + plot_h + 19}" font-size="11" '
+            f'fill="#7f8c8d" text-anchor="middle">{value:.0f}</text>'
+        )
+
+    # Annotations, staggered vertically so adjacent bands do not collide.
+    for index, annotation in enumerate(figure["annotations"]):
+        x_pos = px(annotation["x"])
+        y_pos = max(py(annotation["y"]) - 10, top + 12 + (index % 2) * 14)
+        weight = "700" if annotation["matched"] else "500"
+        colour = "#c0392b" if annotation["matched"] else "#5d6d7e"
+        anchor = "start" if x_pos < left + plot_w * 0.75 else "end"
+        parts.append(
+            f'<text x="{round(x_pos + (4 if anchor == "start" else -4), 2)}" '
+            f'y="{y_pos}" font-size="11" font-weight="{weight}" fill="{colour}" '
+            f'text-anchor="{anchor}">{_esc(annotation["text"])}</text>'
+        )
+
+    parts.append(
+        f'<text x="{left + plot_w / 2}" y="{height - 8}" font-size="12" '
+        f'fill="#2c3e50" text-anchor="middle">{_esc(figure["x_label"])}</text>'
+    )
+    parts.append(
+        f'<text x="14" y="{top + plot_h / 2}" font-size="12" fill="#2c3e50" '
+        f'text-anchor="middle" transform="rotate(-90 14 {top + plot_h / 2})">'
+        f'{_esc(figure["y_label"])}</text>'
+    )
+    parts.append("</svg>")
+    return "".join(parts)
+
+
+def _esc(text: str) -> str:
+    """Escape text for embedding in SVG markup."""
+    return (
+        str(text)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )
 
 
 def _defect_frequencies(

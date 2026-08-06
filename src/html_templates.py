@@ -11,32 +11,52 @@ from typing import Dict, List, Any, Optional
 def get_base_template(
     title: str,
     content: str,
-    metadata: Optional[Dict[str, Any]] = None
+    metadata: Optional[Dict[str, Any]] = None,
+    include_plotly: bool = True
 ) -> str:
     """
     Base HTML template with professional styling.
-    
+
     Args:
         title: Report title
         content: Main HTML content
         metadata: Optional metadata dict (stored as JSON in data attribute)
-    
+        include_plotly: Load Plotly from CDN. The per-analysis reports need it
+            for their interactive charts. Reports that must open with no
+            network access pass ``False`` and draw with inline SVG instead —
+            a document that fetches a script is not self-contained.
+
     Returns:
         Complete HTML document
     """
+    import html as _html
     import json
-    
-    metadata_json = json.dumps(metadata or {}, indent=2)
+
+    # Titles carry signal identifiers, which originate in user input. The
+    # <title> element is not a raw-HTML slot the way `content` is.
+    safe_title = _html.escape(str(title))
+
+    # Inside a <script> block the JSON is parsed by the HTML tokenizer first,
+    # so a literal "</script>" sequence in any value would close the element
+    # early. "<\/" is a valid JSON escape for "</" and is inert in HTML.
+    metadata_json = json.dumps(metadata or {}, indent=2, default=str).replace(
+        "</", "<\\/"
+    )
     metadata_section = f'<script type="application/json" id="report-metadata">\n{metadata_json}\n</script>'
-    
+    plotly_tag = (
+        '<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>'
+        if include_plotly
+        else '<!-- self-contained: no external scripts -->'
+    )
+
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="generator" content="Predictive Maintenance MCP Server">
-    <title>{title}</title>
-    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <title>{safe_title}</title>
+    {plotly_tag}
     <style>
         * {{
             margin: 0;
