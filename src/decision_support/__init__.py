@@ -8,6 +8,10 @@ plus rule-based recommendations and threshold alerting.
 from .diagnosis_pipeline import (  # noqa: F401
     diagnose_vibration,
 )
+from .advisory import (  # noqa: F401
+    build_advisory,
+    collect_statements,
+)
 from .recommendations import generate_recommendations  # noqa: F401
 from .alerts import (  # noqa: F401
     check_alert_thresholds,
