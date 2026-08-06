@@ -22,6 +22,7 @@ from predictive_maintenance_mcp.integrated_report import (
     create_integrated_diagnostic_report,
 )
 from predictive_maintenance_mcp.report_generator import (
+    HAS_PDF,
     REPORTS_DIR,
     save_integrated_diagnostic_report,
 )
@@ -205,3 +206,116 @@ class TestSaving:
         assert result["statements"] == collect_statements(advisory)
         assert result["report_type"] == "integrated_diagnostic"
         Path(result["file_path"]).unlink()
+
+
+# ---------------------------------------------------------------------------
+# PDF rendering and cross-rendering parity
+#
+# The parity guarantee is what makes "two renderings, one authored source"
+# a property rather than an intention. Both files are produced from the same
+# rendered HTML string, so this test would only fail if that stopped being
+# true — which is exactly when someone needs to hear about it.
+# ---------------------------------------------------------------------------
+
+
+def _normalise(text):
+    """Collapse whitespace so line breaks introduced by PDF layout do not
+    make an identical sentence look different."""
+    return " ".join(text.split())
+
+
+def _pdf_text(path):
+    from pypdf import PdfReader
+
+    reader = PdfReader(str(path))
+    return _normalise(" ".join(page.extract_text() or "" for page in reader.pages))
+
+
+@pytest.mark.skipif(not HAS_PDF, reason="PDF extra not installed")
+class TestPdfRendering:
+    def test_pdf_is_written_and_non_empty(self, advisory, figure):
+        result = save_integrated_diagnostic_report(advisory, figure, formats=["pdf"])
+        written = Path(result["files"][0]["file_path"])
+        assert written.exists()
+        assert written.read_bytes()[:5] == b"%PDF-"
+        assert result["files"][0]["file_size_kb"] > 0
+        written.unlink()
+
+    def test_both_renderings_are_produced_from_one_request(self, advisory, figure):
+        result = save_integrated_diagnostic_report(
+            advisory, figure, formats=["html", "pdf"]
+        )
+        assert [f["format"] for f in result["files"]] == ["html", "pdf"]
+        for entry in result["files"]:
+            path = Path(entry["file_path"])
+            assert path.exists()
+            path.unlink()
+
+    def test_every_authored_statement_survives_into_the_pdf(self, advisory, figure):
+        """Covers AE5 across renderings."""
+        result = save_integrated_diagnostic_report(advisory, figure, formats=["pdf"])
+        path = Path(result["files"][0]["file_path"])
+        try:
+            extracted = _pdf_text(path)
+            missing = [
+                s for s in collect_statements(advisory)
+                if _normalise(s) not in extracted
+            ]
+            assert missing == [], f"PDF dropped authored statements: {missing}"
+        finally:
+            path.unlink()
+
+    def test_the_iso_caveat_survives_into_the_pdf(self, advisory, figure):
+        """The caveat is the single sentence most likely to be lost in a
+        rendering that silently truncates."""
+        result = save_integrated_diagnostic_report(advisory, figure, formats=["pdf"])
+        path = Path(result["files"][0]["file_path"])
+        try:
+            assert _normalise(THRESHOLD_PROVENANCE) in _pdf_text(path)
+        finally:
+            path.unlink()
+
+    def test_pdf_and_html_agree_on_every_statement(self, advisory, figure):
+        result = save_integrated_diagnostic_report(
+            advisory, figure, formats=["html", "pdf"]
+        )
+        html_path = Path(result["files"][0]["file_path"])
+        pdf_path = Path(result["files"][1]["file_path"])
+        try:
+            rendered_html = html_path.read_text(encoding="utf-8")
+            extracted_pdf = _pdf_text(pdf_path)
+            for statement in collect_statements(advisory):
+                in_html = html.escape(statement) in rendered_html
+                in_pdf = _normalise(statement) in extracted_pdf
+                assert in_html == in_pdf is True, (
+                    f"statement present in one rendering only: {statement}"
+                )
+        finally:
+            html_path.unlink()
+            pdf_path.unlink()
+
+
+class TestFormatValidation:
+    def test_unknown_format_raises(self, advisory, figure):
+        with pytest.raises(ValueError, match="Unknown report format"):
+            save_integrated_diagnostic_report(advisory, figure, formats=["docx"])
+
+    @pytest.mark.skipif(HAS_PDF, reason="PDF extra installed")
+    def test_missing_pdf_dependency_raises_with_an_install_hint(
+        self, advisory, figure
+    ):
+        with pytest.raises(ValueError, match=r"\[pdf\]"):
+            save_integrated_diagnostic_report(advisory, figure, formats=["pdf"])
+
+    def test_missing_pdf_dependency_message_names_the_extra(self, advisory, figure):
+        """Exercised regardless of whether the extra is installed locally."""
+        import predictive_maintenance_mcp.report_generator as rg
+
+        original = rg.HAS_PDF
+        rg.HAS_PDF = False
+        try:
+            with pytest.raises(ValueError) as excinfo:
+                save_integrated_diagnostic_report(advisory, figure, formats=["pdf"])
+            assert "[pdf]" in str(excinfo.value)
+        finally:
+            rg.HAS_PDF = original

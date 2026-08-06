@@ -1158,32 +1158,8 @@ async def generate_diagnostic_report(
     advisory = build_advisory(diagnosis, baseline_diagnosis)
     figure = _envelope_figure(signal_data, info.sampling_rate, diagnosis)
 
-    files: list[dict[str, Any]] = []
-    html_result = save_integrated_diagnostic_report(advisory, figure)
-    if "html" in requested:
-        files.append(
-            {
-                "format": "html",
-                "file_path": html_result["file_path"],
-                "file_name": html_result["file_name"],
-                "file_size_kb": html_result["file_size_kb"],
-            }
-        )
-    else:
-        Path(html_result["file_path"]).unlink(missing_ok=True)
-
-    if "pdf" in requested:
-        from ..report_generator import save_integrated_diagnostic_report_pdf
-
-        pdf_result = save_integrated_diagnostic_report_pdf(advisory, figure)
-        files.append(
-            {
-                "format": "pdf",
-                "file_path": pdf_result["file_path"],
-                "file_name": pdf_result["file_name"],
-                "file_size_kb": pdf_result["file_size_kb"],
-            }
-        )
+    saved = save_integrated_diagnostic_report(advisory, figure, formats=requested)
+    files = saved["files"]
 
     if ctx:
         for entry in files:
@@ -1195,7 +1171,7 @@ async def generate_diagnostic_report(
         "fault_canonical": advisory["verdict"]["fault_canonical"],
         "evidence_strength": advisory["evidence"]["strength"],
         "evidence_strength_note": advisory["evidence"]["strength_explanation"],
-        "statements": html_result["statements"],
+        "statements": saved["statements"],
         "recommendations": advisory["recommendations"],
         "provenance": advisory["provenance"],
         "files": files,

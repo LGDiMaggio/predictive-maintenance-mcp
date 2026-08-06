@@ -12,7 +12,7 @@ import itertools
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Sequence
 import json
 
 import numpy as np
@@ -38,6 +38,14 @@ try:
     HAS_DOCX = True
 except ImportError:
     HAS_DOCX = False
+
+# Optional PDF support. The PDF rendering converts the SAME HTML document the
+# HTML rendering writes, so the two cannot diverge in what they claim.
+try:
+    from weasyprint import HTML as WeasyHTML
+    HAS_PDF = True
+except ImportError:  # pragma: no cover - exercised by the missing-dep path
+    HAS_PDF = False
 
 
 #: Process-local sequence for report filenames — the Windows clock can
@@ -365,59 +373,97 @@ def save_iso_report(
 
 def save_integrated_diagnostic_report(
     advisory: Dict[str, Any],
-    figure: Optional[Dict[str, Any]] = None
+    figure: Optional[Dict[str, Any]] = None,
+    formats: Sequence[str] = ("html",)
 ) -> Dict[str, Any]:
     """
-    Save the integrated diagnostic report as a self-contained HTML document.
+    Save the integrated diagnostic report in one or more renderings.
 
     Unlike the per-analysis reports, this one covers the whole case in a
     single document and takes no caller-supplied content: every evaluative
     sentence comes from the advisory payload, which the server authored.
 
+    Both renderings come from ONE rendered HTML string. That is why the two
+    files cannot claim different things — the PDF is a rendering of the same
+    document rather than a second layout of the same data, so there is no
+    second code path in which a statement could be dropped or reworded.
+
     Args:
         advisory: Payload from ``decision_support.advisory.build_advisory``.
         figure: Optional figure description from
             ``figures.build_annotated_envelope_figure``.
+        formats: Renderings to write — any of 'html', 'pdf'.
 
     Returns:
-        Dictionary with file path, the authored statements the document
-        renders, and report metadata.
+        Dictionary with ``files`` (one entry per rendering), the authored
+        statements the document renders, and report metadata. ``file_path``
+        and ``file_name`` name the first rendering, for symmetry with the
+        other save_* functions.
+
+    Raises:
+        ValueError: If a format is unknown, or if 'pdf' is requested and the
+            optional PDF dependency is not installed.
     """
     from .decision_support.advisory import collect_statements
     from .integrated_report import create_integrated_diagnostic_report
+
+    requested = [fmt.lower() for fmt in formats]
+    unknown = [fmt for fmt in requested if fmt not in ("html", "pdf")]
+    if unknown:
+        raise ValueError(
+            f"Unknown report format(s) {unknown} — choose from ['html', 'pdf']."
+        )
+    if "pdf" in requested and not HAS_PDF:
+        raise ValueError(
+            "PDF rendering requires the optional dependency: "
+            "pip install predictive-maintenance-mcp[pdf]. The HTML rendering "
+            "needs nothing extra."
+        )
 
     generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     html = create_integrated_diagnostic_report(
         advisory, figure, generated_at=generated_at
     )
+    label = str(advisory.get("signal_id", "signal"))
 
-    # safe_resolve is belt-and-braces: timestamped_report_name already
-    # flattens path separators out of the label, so a traversal-shaped signal
-    # id cannot steer the write. Both guards are cheap.
-    file_name = timestamped_report_name(
-        "diagnostic_report", str(advisory.get("signal_id", "signal"))
-    )
-    output_file = safe_resolve(REPORTS_DIR, file_name)
-    output_file.write_text(html, encoding="utf-8")
+    files: List[Dict[str, Any]] = []
+    for fmt in requested:
+        # safe_resolve is belt-and-braces: timestamped_report_name already
+        # flattens path separators out of the label, so a traversal-shaped
+        # signal id cannot steer the write. Both guards are cheap.
+        output_file = safe_resolve(
+            REPORTS_DIR, timestamped_report_name("diagnostic_report", label, fmt)
+        )
+        if fmt == "html":
+            output_file.write_text(html, encoding="utf-8")
+        else:
+            WeasyHTML(string=html).write_pdf(target=str(output_file))
+        files.append({
+            "format": fmt,
+            "file_path": str(output_file.absolute()),
+            "file_name": output_file.name,
+            "file_size_kb": output_file.stat().st_size / 1024,
+        })
+        logger.info(f"Integrated diagnostic report saved: {output_file.name}")
 
-    statements = collect_statements(advisory)
     verdict = advisory["verdict"]
-
-    logger.info(f"Integrated diagnostic report saved: {output_file.name}")
+    primary = files[0]
 
     return {
-        "file_path": str(output_file.absolute()),
-        "file_name": output_file.name,
-        "file_size_kb": output_file.stat().st_size / 1024,
+        "file_path": primary["file_path"],
+        "file_name": primary["file_name"],
+        "file_size_kb": primary["file_size_kb"],
+        "files": files,
         "report_type": "integrated_diagnostic",
         "signal_id": advisory.get("signal_id"),
         "verdict": verdict["statement"],
         "fault_canonical": verdict.get("fault_canonical"),
         "evidence_strength": advisory["evidence"]["strength"],
         "generated_at": generated_at,
-        "statements": statements,
+        "statements": collect_statements(advisory),
         "message": (
-            f"Integrated diagnostic report saved: {output_file.name}"
+            f"Integrated diagnostic report saved: "
+            f"{', '.join(f['file_name'] for f in files)}"
         ),
     }
 
