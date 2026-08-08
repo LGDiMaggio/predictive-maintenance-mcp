@@ -22,7 +22,7 @@ import json
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 import logging
 
 # PDF processing
@@ -256,7 +256,7 @@ def extract_rpm_values(text: str) -> List[float]:
     return sorted(list(set(rpms)))
 
 
-def extract_power_ratings(text: str) -> List[Dict[str, any]]:
+def extract_power_ratings(text: str) -> List[Dict[str, Any]]:
     """
     Extract power ratings (kW, HP, MW).
     

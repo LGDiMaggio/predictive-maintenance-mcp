@@ -88,10 +88,18 @@ jobs:
         python -m pip install --upgrade pip
         pip install -e .[dev]
 
-    - name: Type check with mypy
+    # Blocking, but only for NEW errors. Pre-existing ones are frozen in
+    # tools/mypy_baseline.txt; the script fails the job when an error appears
+    # beyond that baseline. mypy settings live in [tool.mypy] in pyproject.toml
+    # rather than on this command line, so a bare `mypy src` locally and this
+    # job check exactly the same things.
+    #
+    # This job is not decorative: the suite mocks `ctx` with AsyncMock
+    # everywhere, so regressions in how the server talks to the MCP client
+    # can pass every test while mypy is the only thing that notices.
+    - name: Type check with mypy (new errors are blocking)
       run: |
-        mypy src --ignore-missing-imports --no-strict-optional --allow-untyped-defs
-      continue-on-error: true
+        python tools/check_mypy_baseline.py
 
   format-check:
     name: Check formatting with Black

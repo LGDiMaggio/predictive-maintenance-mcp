@@ -229,7 +229,7 @@ async def estimate_rul(
                 "signal_ids for stored measurement recordings."
         )
 
-    n = len(feature_values if feature_values is not None else signal_ids)  # type: ignore[arg-type]
+    n = len(feature_values if feature_values is not None else signal_ids)
     if n < 3:
         raise ValueError(_MULTI_MEASURE_ERROR.format(n=n))
 

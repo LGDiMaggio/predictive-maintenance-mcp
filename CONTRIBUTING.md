@@ -276,7 +276,7 @@ git checkout -b feature/your-feature-name
 pytest -v
 black src/ --check
 flake8 src/ --max-line-length=120
-mypy src/ --ignore-missing-imports
+python tools/check_mypy_baseline.py
 
 # Commit with clear messages
 git commit -m "feat: Add parquet file reading support
@@ -395,7 +395,7 @@ What actually happens (include full error message)
 # Quick check before committing
 black src/ tests/
 flake8 src/ --max-line-length=120
-mypy src/ --ignore-missing-imports
+python tools/check_mypy_baseline.py
 pytest -v
 ```
 

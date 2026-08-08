@@ -58,10 +58,17 @@ dependencies = [
     #
     # Context.debug/info/warning/error are NOT affected: they remain
     # `async def` in 2.x and must still be awaited. What changed is that they
-    # carry @deprecated (SEP-2577, logging capability); the ~116 await sites
-    # in src/mcp_tools/ still work and still need their await. Do not "fix"
-    # them into sync calls -- an unawaited coroutine silently drops the
-    # message, and the suite mocks ctx everywhere so nothing would fail.
+    # carry @deprecated (SEP-2577, logging capability).
+    #
+    # As of v0.12.0 there are no such call sites left: progress narration moved
+    # to the stdlib logger, so `ctx` survives only as a parameter annotation.
+    # The rule still applies to any that come back -- an unawaited coroutine
+    # silently drops the message, and the suite mocks ctx everywhere, so no
+    # test would fail. Two detectors cover that, and both must stay working:
+    #   - mypy `unused-coroutine`, which is why `mcp` is deliberately excluded
+    #     from the ignore_missing_imports allowlist in [tool.mypy] below
+    #   - the "coroutine was never awaited" filterwarnings rule in
+    #     [tool.pytest.ini_options], which is the AsyncMock-proof one
     "mcp[cli]>=2.0.0,<3.0.0",
     "numpy>=2.3.3",
     "pandas>=2.3.3",
@@ -145,7 +152,12 @@ dev = [
     "pytest-asyncio>=0.23.0",
     "black>=24.0.0",
     "flake8>=7.0.0",
-    "mypy>=1.8.0",
+    # Pinned to a minor range: the baseline freezes an exact per-error tally
+    # produced by one checker version, and the job is blocking now. An upstream
+    # release that adds a check or splits an error code would turn CI red on a
+    # PR that touched nothing related. Bump deliberately and regenerate with
+    # `python tools/check_mypy_baseline.py --update`.
+    "mypy>=2.3,<2.4",
     "types-requests>=2.31.0",
 ]
 
@@ -165,6 +177,10 @@ exclude = '''
 '''
 
 [tool.mypy]
+# Everything the CI job needs lives here, not in its command line. The job used
+# to pass --ignore-missing-imports --no-strict-optional --allow-untyped-defs,
+# which silently overrode this section and made local runs disagree with CI.
+plugins = ["pydantic.mypy"]
 python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
@@ -172,10 +188,73 @@ disallow_untyped_defs = false
 disallow_incomplete_defs = false
 check_untyped_defs = true
 no_implicit_optional = true
+# Matches what the CI command line already passed, so this is not a change for
+# CI. It IS a relaxation for everyone else: before this section existed, a bare
+# `mypy src`, an IDE, or a pre-commit hook used mypy's default (strict) and saw
+# None-safety errors that nobody sees now. Measured cost: 33 errors here, 93
+# with strict_optional = true. Those 60 are switched off by config rather than
+# frozen in a reviewable baseline, which is the wrong shape for debt on a
+# server whose models are full of `X | None`. Left off to keep this PR's
+# scope, but it is debt, not a decision.
+strict_optional = false
 warn_redundant_casts = true
 warn_unused_ignores = true
 warn_no_return = true
 strict_equality = true
+
+[tool.pydantic-mypy]
+# The plugin's defaults are worse than no plugin for this codebase. With
+# init_forbid_extra = false it replaces the synthesized typed __init__ with one
+# taking **kwargs: Any, and none of the 18 BaseModel classes in src/models.py
+# sets model_config, so pydantic's default extra='ignore' silently drops an
+# unknown field. A misspelled field in a diagnostic result would then be caught
+# by neither mypy nor pydantic nor the suite -- it falls back to its default and
+# a wrong number reaches the client. mypy caught that before the plugin was
+# added. This line restores it at zero cost: the baseline is 33 either way.
+init_forbid_extra = true
+# init_typed = true would also restore wrong-type detection, at 33 -> 49
+# baseline entries. 16 of those 49 are `**dict[str, object]` splats whose real
+# cause is `common = dict(...)` in prognostics_tools.py widening the value type
+# -- worth fixing at the source rather than freezing. Left for a follow-up.
+
+# Third-party modules allowed to be missing or unstubbed. This is an allowlist
+# on purpose: a blanket --ignore-missing-imports means that if `mcp` ever fails
+# to resolve, Context degrades to Any and every ctx call site type-checks
+# vacuously -- which is exactly how the stripped-await regression stayed
+# invisible. Verified: with `mcp` off this list, breaking its import produces
+# `import-not-found` instead of "Success: no issues found".
+#
+# DO NOT add `mcp` (or anything else the server's own types depend on) here.
+#
+# Two groups, both legitimately unresolvable:
+#   - no type stubs and unlikely to ever ship them: scipy, pandas, sklearn,
+#     plotly, weasyprint, docx
+#   - every module behind an optional extra, since the CI job installs only
+#     `pip install -e .[dev]`: PIL + pytesseract + pdf2image (ocr), faiss +
+#     sentence_transformers (vector-search), docx (docx), weasyprint (pdf)
+#
+# Keep the second group in sync with [project.optional-dependencies]. A module
+# that is installed in a developer venv but absent in CI type-checks fine
+# locally and fails the job -- which is how PIL was missed on the first run.
+#
+# `predictive_maintenance_mcp.*` is the src/__main__.py self-import, which
+# resolves via the installed package rather than the `src` path mypy is given.
+[[tool.mypy.overrides]]
+module = [
+    "scipy.*",
+    "pandas",
+    "sklearn.*",
+    "plotly.*",
+    "docx.*",
+    "weasyprint",
+    "faiss",
+    "sentence_transformers",
+    "pytesseract",
+    "pdf2image",
+    "PIL.*",
+    "predictive_maintenance_mcp.*",
+]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
