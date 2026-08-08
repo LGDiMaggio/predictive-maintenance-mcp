@@ -10,14 +10,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Moves progress narration off the MCP logging capability, which SEP-2577
 deprecated on 2026-07-28 with no in-protocol replacement.
 
+Breaking, released as a MINOR bump under the pre-1.0 rule (SemVer §4; see
+CLAUDE.md Key Invariants #3). No deprecation cycle is possible — upstream
+removed the capability with no replacement.
+
 ### Changed
 - **The client no longer receives progress notifications.** All 119
-  `ctx.info` / `ctx.warning` call sites now write to the module logger,
-  which `src/server.py` routes to stderr — safe for the stdio transport,
-  whose protocol channel is stdout. This is a user-visible change for MCP
-  clients that displayed those messages, and it is forced: SEP-2577 names
-  stderr and OpenTelemetry as the alternatives, and `ctx.report_progress`
-  (which survives) carries a numeric fraction, not narration.
+  `ctx.info` / `ctx.warning` call sites now write to the module logger.
+  This is a user-visible change for MCP clients that displayed those
+  messages, and it is forced: SEP-2577 names stderr and OpenTelemetry as the
+  alternatives, and `ctx.report_progress` (which survives) carries a numeric
+  fraction, not narration.
+- **Logging is now configured on the package logger, at import, with
+  `propagate = False`** (`server.configure_logging`). The `logging.basicConfig`
+  call this previously relied on was inert: `MCPServer(...)` claims the root
+  logger while `server.py` is still being imported, and `basicConfig` does
+  nothing when root already has handlers. Three consequences, all now fixed:
+  the intended format was silently discarded (records rendered with no logger
+  name, so nothing said which of the six tool modules emitted them); the
+  destination belonged to whichever component configured root first, so a host
+  calling `basicConfig(stream=sys.stdout)` before importing this package put
+  every tool's narration onto the stdio transport's JSON-RPC channel; and
+  because `__init__` exports `mcp` as a runnable object, an embedder calling
+  `mcp.run()` never reached `main()` and so dropped all INFO narration
+  entirely rather than relocating it.
+- **`MCP_LOG_LEVEL`** now sets the package log level (default `INFO`). An
+  unrecognised value falls back to `INFO` and says so, rather than failing an
+  import.
+- Log records are held to one physical line and bounded in length. A newline
+  in a caller-supplied `signal_id` / `file_name` / `bearing_id` was cosmetic
+  when the client re-rendered it; in a line-oriented operator log it forges an
+  entry. An unbounded value was a large JSON payload the client had to drain;
+  it is now an unbounded synchronous write to a pipe the client is not obliged
+  to drain, which can block a coroutine that has no await points.
+- stderr is reconfigured to UTF-8 with `backslashreplace`. A piped stderr on
+  Windows decodes as the ANSI code page, where a non-ASCII identifier would
+  raise inside `emit()` — dropping the line and printing "--- Logging error
+  ---" in its place.
+- WeasyPrint's INFO progress chatter is quieted to WARNING. It propagates to
+  root, which this package does not control.
 - Under mcp 2.x those methods still worked, but `MCPDeprecationWarning`
   subclasses `UserWarning` rather than `DeprecationWarning` precisely so it
   shows without any filter configured — so every one of those call sites
@@ -30,11 +61,35 @@ deprecated on 2026-07-28 with no in-protocol replacement.
   whether tools accept a context.
 
 ### Added
-- `tests/test_no_client_logging.py` — a tripwire. `ctx` is still injected, so
-  `await ctx.info(...)` still type-checks and still appears to work; every
-  other test mocks `ctx`, so nothing in the suite would notice a
-  reintroduction. This asserts no source file calls the deprecated capability,
-  and that context injection itself survived.
+- `tests/test_no_client_logging.py` — tripwires for both properties this
+  release depends on. `ctx` is still injected, so `await ctx.info(...)` still
+  type-checks and still appears to work; every other test mocks `ctx`, so
+  nothing in the suite would notice a reintroduction. The guard walks the AST
+  and keys on the `Context` annotation rather than the literal name `ctx`,
+  which catches a renamed parameter, a local alias, and
+  `ctx.session.log(...)` — the connection-level shape, deprecated by the same
+  SEP. Two subprocess tests assert where the bytes actually land: that a
+  record reaches fd 2 and never fd 1, and that a host owning the root logger
+  cannot redirect them onto stdout. Nothing previously asserted this, which is
+  why the inert `basicConfig` went unnoticed.
+- `package_caplog` fixture (`tests/conftest.py`). With `propagate = False`,
+  caplog's root handler no longer sees this package's records, so a test
+  asserting on plain `caplog.records` is not lenient — it is vacuous.
+
+### Fixed
+- The `ctx:` line in 29 tool docstrings, which had drifted into four different
+  wordings — including seven pointing at a "module note" nobody had written,
+  and four still promising client-facing progress the code no longer sends.
+  Docstrings are the tool descriptions MCP clients read, so these were
+  user-facing. Each module now carries the note the references promised.
+- Three `caplog` assertions in `tests/test_report_tools.py` asserted only that
+  *some* record existed, which any logger in the process satisfies. In
+  `test_envelope_report_with_ctx_bearing_matches` three unconditional records
+  precede the branch under test, so it passed with that branch deleted.
+- `_extract_features_from_ids` and `_extract_and_transform_validation_features`
+  no longer take a dead `ctx` (removed from 8 call sites). They are private
+  helpers, not registered tools, so the `tool_inventory.json` constraint that
+  justifies keeping `ctx` on public tools never applied to them.
 
 ## [0.11.0] - 2026-08-08
 

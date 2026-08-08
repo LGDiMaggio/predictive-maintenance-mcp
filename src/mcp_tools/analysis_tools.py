@@ -1,4 +1,19 @@
-"""MCP tools for signal analysis and spectral processing (ISO 13374 Block 2)."""
+"""MCP tools for signal analysis and spectral processing (ISO 13374 Block 2).
+
+Logging note
+------------
+Every tool here takes a ``ctx`` parameter it never uses. That is deliberate,
+not leftover: ``tests/fixtures/tool_inventory.json`` pins ``context_kwarg``
+per tool, so dropping the parameter would be a protocol-visible change to
+the tool surface.
+
+What changed in 0.12.0 is *how* progress is emitted, not whether tools
+accept a context. SEP-2577 deprecated the MCP logging capability with no
+in-protocol replacement, so narration goes to this module's logger, which
+``server.configure_logging`` binds to stderr — stdout is the stdio
+transport's JSON-RPC channel. Clients no longer receive progress
+notifications; any fact a caller needs is carried by the return value.
+"""
 
 import logging
 from typing import Optional
@@ -75,7 +90,7 @@ async def analyze_fft(
         random_seed to sample a seeded random segment position instead.
 
         Args:
-            ctx: MCP context (accepted for tool-contract stability; progress goes to the module logger, not to the client)
+            ctx: MCP context. Unused — see this module's docstring on logging.
             signal_id: ID of the stored signal (from load_signal).
             max_frequency: Maximum frequency to analyze (default: Nyquist frequency)
             segment_duration: Duration in seconds to analyze (default: leading
@@ -214,7 +229,7 @@ async def analyze_envelope(
         calculate_bearing_characteristic_frequencies).
 
         Args:
-            ctx: MCP context (accepted for tool-contract stability; progress goes to the module logger, not to the client)
+            ctx: MCP context. Unused — see this module's docstring on logging.
             signal_id: ID of the stored signal (from load_signal).
             filter_low: Bandpass low edge in Hz (default: 500).
             filter_high: Bandpass high edge in Hz (default: 5000). Must
@@ -398,7 +413,7 @@ async def extract_features_from_signal(
             signal_id: ID of the stored signal (from load_signal).
             segment_duration: Duration of each segment in seconds (default: 0.1)
             overlap_ratio: Overlap between segments, 0-1 (default: 0.5 = 50%)
-            ctx: MCP context for progress/logging
+            ctx: MCP context. Unused — see this module's docstring on logging.
 
         Returns:
             FeatureExtractionResult with features matrix and metadata

@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 import json
+import logging
 import sys
 
 # Add src to path
@@ -79,3 +80,28 @@ def temp_csv_file(tmp_path, synthetic_sine_signal):
     pd.DataFrame(signal).to_csv(csv_path, index=False, header=False)
     
     return csv_path, fs, freq
+
+
+@pytest.fixture
+def package_caplog(caplog):
+    """``caplog``, wired to the package logger instead of root.
+
+    ``server.configure_logging`` sets ``propagate = False`` on the package
+    logger, deliberately: root's configuration belongs to whoever reached it
+    first, and a host that points root at stdout would otherwise move every
+    tool's narration onto the stdio transport's JSON-RPC channel.
+
+    The cost is that caplog's handler — which pytest installs on root — never
+    sees these records, so it has to be attached directly. A test that skips
+    this fixture and asserts on plain ``caplog.records`` is not lenient, it is
+    vacuous: it will see nothing from this package at all.
+    """
+    from predictive_maintenance_mcp import server
+
+    pkg = logging.getLogger(server.PACKAGE_LOGGER)
+    pkg.addHandler(caplog.handler)
+    caplog.set_level(logging.INFO, logger=server.PACKAGE_LOGGER)
+    try:
+        yield caplog
+    finally:
+        pkg.removeHandler(caplog.handler)

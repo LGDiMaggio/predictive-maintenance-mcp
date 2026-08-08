@@ -11,6 +11,19 @@ Honest-prognosis contract:
 - ``analyze_signal_trend`` (trend + onset, unified in U9) is a
   within-recording SCREENING tool. It looks at seconds of data inside
   one recording and cannot produce a prognosis.
+Logging note
+------------
+Every tool here takes a ``ctx`` parameter it never uses. That is deliberate,
+not leftover: ``tests/fixtures/tool_inventory.json`` pins ``context_kwarg``
+per tool, so dropping the parameter would be a protocol-visible change to
+the tool surface.
+
+What changed in 0.12.0 is *how* progress is emitted, not whether tools
+accept a context. SEP-2577 deprecated the MCP logging capability with no
+in-protocol replacement, so narration goes to this module's logger, which
+``server.configure_logging`` binds to stderr — stdout is the stdio
+transport's JSON-RPC channel. Clients no longer receive progress
+notifications; any fact a caller needs is carried by the return value.
 """
 
 import logging
@@ -176,7 +189,7 @@ async def estimate_rul(
         with no RUL number.
 
         Args:
-            ctx: MCP context (accepted for tool-contract stability; progress goes to the module logger, not to the client).
+            ctx: MCP context. Unused — see this module's docstring on logging.
             failure_threshold: Indicator value considered as failure, in the
                 same units as the feature values. No universal default is
                 imposed — but when the indicator is broadband VELOCITY RMS
@@ -394,7 +407,7 @@ async def analyze_signal_trend(
         series so each recording can be reduced to one measurement point.
 
         Args:
-            ctx: MCP context (accepted for tool-contract stability; progress goes to the module logger, not to the client).
+            ctx: MCP context. Unused — see this module's docstring on logging.
             signal_id: ID of the stored signal (from load_signal).
             feature_name: Time-domain feature to analyze (default: "rms").
             segment_duration: Duration of each segment in seconds.

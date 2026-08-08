@@ -1,4 +1,19 @@
-"""MCP tools for signal acquisition and data management (ISO 13374 Block 1)."""
+"""MCP tools for signal acquisition and data management (ISO 13374 Block 1).
+
+Logging note
+------------
+Every tool here takes a ``ctx`` parameter it never uses. That is deliberate,
+not leftover: ``tests/fixtures/tool_inventory.json`` pins ``context_kwarg``
+per tool, so dropping the parameter would be a protocol-visible change to
+the tool surface.
+
+What changed in 0.12.0 is *how* progress is emitted, not whether tools
+accept a context. SEP-2577 deprecated the MCP logging capability with no
+in-protocol replacement, so narration goes to this module's logger, which
+``server.configure_logging`` binds to stderr — stdout is the stdio
+transport's JSON-RPC channel. Clients no longer receive progress
+notifications; any fact a caller needs is carried by the return value.
+"""
 
 import itertools
 import logging
@@ -39,7 +54,7 @@ async def list_signals(
     declared unit) — use to see which signal_ids are available for analysis.
 
     Args:
-        ctx: MCP context (unused for logging — see module note).
+        ctx: MCP context. Unused — see this module's docstring on logging.
         scope: 'disk' for loadable files, 'memory' for loaded signal_ids.
 
     Returns:
@@ -95,7 +110,7 @@ async def generate_test_signal(
         sampling_rate: Sampling frequency in Hz.
         noise_level: Additive white-noise amplitude.
         random_seed: Seed for reproducible noise (None = non-deterministic).
-        ctx: MCP context (unused for logging — see module note).
+        ctx: MCP context. Unused — see this module's docstring on logging.
 
     Returns:
         StoredSignalInfo of the auto-loaded signal (signal_id, declared
@@ -296,7 +311,7 @@ async def get_signal_info(ctx: Context, signal_id: str) -> StoredSignalInfo:
     fields (sampling_rate, declared signal_unit, shape, timestamps).
 
     Args:
-        ctx: MCP context (unused for logging — see module note).
+        ctx: MCP context. Unused — see this module's docstring on logging.
         signal_id: ID of a signal previously loaded via load_signal.
 
     Returns:
@@ -319,7 +334,7 @@ async def clear_signals(
     """Remove one signal — or all signals — from the in-memory repository.
 
     Args:
-        ctx: MCP context (unused for logging — see module note).
+        ctx: MCP context. Unused — see this module's docstring on logging.
         signal_id: ID to remove; None (default) clears the whole cache.
 
     Returns:

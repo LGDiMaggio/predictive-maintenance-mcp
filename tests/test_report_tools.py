@@ -28,6 +28,21 @@ from predictive_maintenance_mcp.mcp_tools import report_tools
 REPORT_LOGGER = report_tools.logger.name
 
 
+def _logged(caplog, needle: str) -> bool:
+    """Did *this* module's logger emit a record containing ``needle``?
+
+    Both halves matter. ``caplog``'s handler collects records from every
+    logger in the process — weasyprint and plotly both emit here — so a bare
+    ``assert caplog.records`` passes on unrelated noise. And matching the
+    message is what makes the assertion fail when the narration under test is
+    removed, rather than when the process happens to be quiet.
+    """
+    return any(
+        record.name == REPORT_LOGGER and needle in record.getMessage()
+        for record in caplog.records
+    )
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -153,14 +168,15 @@ class TestPlotSignal:
             await tools["plot_signal"](signal_id="nonexistent")
 
     @pytest.mark.asyncio
-    async def test_plot_signal_with_ctx(self, tools, repo, reports_dir, mock_ctx, caplog):
+    async def test_plot_signal_with_ctx(
+        self, tools, repo, reports_dir, mock_ctx, package_caplog
+    ):
         """plot_signal with ctx should log progress to the module logger, not to ctx."""
-        caplog.set_level(logging.INFO, logger=REPORT_LOGGER)
         result = await tools["plot_signal"](
             signal_id="report_test",
             ctx=mock_ctx,
         )
-        assert caplog.records, "expected progress on the module logger"
+        assert _logged(package_caplog, "Generating time-domain plot")
         mock_ctx.info.assert_not_called()  # SEP-2577: not the client's channel
         assert "Interactive plot saved" in result
 
@@ -348,13 +364,14 @@ class TestGenerateFFTReport:
             await tools["generate_fft_report"](signal_id="does_not_exist")
 
     @pytest.mark.asyncio
-    async def test_fft_report_with_ctx(self, tools, repo, reports_dir, mock_ctx, caplog):
-        caplog.set_level(logging.INFO, logger=REPORT_LOGGER)
+    async def test_fft_report_with_ctx(
+        self, tools, repo, reports_dir, mock_ctx, package_caplog
+    ):
         result = await tools["generate_fft_report"](
             signal_id="report_test",
             ctx=mock_ctx,
         )
-        assert caplog.records, "expected progress on the module logger"
+        assert _logged(package_caplog, "Generating FFT report")
         mock_ctx.info.assert_not_called()  # SEP-2577: not the client's channel
         assert "file_path" in result
 
@@ -440,10 +457,9 @@ class TestGenerateEnvelopeReport:
 
     @pytest.mark.asyncio
     async def test_envelope_report_with_ctx_bearing_matches(
-        self, tools, repo, reports_dir, mock_ctx, caplog
+        self, tools, repo, reports_dir, mock_ctx, package_caplog
     ):
         """Bearing matches are reported on the module logger, not to ctx."""
-        caplog.set_level(logging.INFO, logger=REPORT_LOGGER)
         await tools["generate_envelope_report"](
             signal_id="report_test",
             filter_low=100.0,
@@ -451,7 +467,11 @@ class TestGenerateEnvelopeReport:
             bearing_freqs={"BPFO": 50.0, "BPFI": 100.0},
             ctx=mock_ctx,
         )
-        assert caplog.records, "expected progress on the module logger"
+        # The bearing-matches line specifically, not "some record exists":
+        # three unconditional logger.info calls run before this branch is
+        # even reached, so a bare `assert caplog.records` stayed green with
+        # the branch deleted — which is the whole subject of this test.
+        assert _logged(package_caplog, "Bearing frequency matches")
         mock_ctx.info.assert_not_called()  # SEP-2577: not the client's channel
 
 

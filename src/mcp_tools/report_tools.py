@@ -1,4 +1,19 @@
-"""MCP tools for report generation and visualization (ISO 13374 Block 6)."""
+"""MCP tools for report generation and visualization (ISO 13374 Block 6).
+
+Logging note
+------------
+Every tool here takes a ``ctx`` parameter it never uses. That is deliberate,
+not leftover: ``tests/fixtures/tool_inventory.json`` pins ``context_kwarg``
+per tool, so dropping the parameter would be a protocol-visible change to
+the tool surface.
+
+What changed in 0.12.0 is *how* progress is emitted, not whether tools
+accept a context. SEP-2577 deprecated the MCP logging capability with no
+in-protocol replacement, so narration goes to this module's logger, which
+``server.configure_logging`` binds to stderr — stdout is the stdio
+transport's JSON-RPC channel. Clients no longer receive progress
+notifications; any fact a caller needs is carried by the return value.
+"""
 
 import logging
 import json
@@ -88,7 +103,7 @@ async def generate_diagnostic_report_docx(
                 the report title / filename.
             sections: Content sections to include (see above)
             title: Optional custom report title
-            ctx: MCP context
+            ctx: MCP context. Unused — see this module's docstring on logging.
 
         Returns:
             Dictionary with file_path, file_name, and per-section summary.
@@ -130,7 +145,7 @@ async def plot_signal(
             time_range: [start_time, end_time] in seconds to zoom on a portion (optional)
             show_statistics: Show RMS, peak levels as horizontal lines (default: True)
             title: Custom plot title (optional)
-            ctx: MCP context for progress/logging
+            ctx: MCP context. Unused — see this module's docstring on logging.
 
         Returns:
             Path to generated HTML file
@@ -292,7 +307,7 @@ async def generate_fft_report(
             num_peaks: Number of peaks to detect and label. Default 15
             rpm: Optional shaft speed in RPM — peaks at integer multiples
                 of rpm/60 Hz are labeled as 1x/2x/... harmonics.
-            ctx: MCP context
+            ctx: MCP context. Unused — see this module's docstring on logging.
 
         Returns:
             Dictionary with file path, metadata, and summary (NO HTML content)
@@ -365,7 +380,7 @@ async def generate_envelope_report(
             max_freq: Max envelope spectrum frequency to display. Default 500 Hz
             num_peaks: Number of peaks to detect. Default 15
             bearing_freqs: Optional dict with BPFO, BPFI, BSF, FTF
-            ctx: MCP context
+            ctx: MCP context. Unused — see this module's docstring on logging.
 
         Returns:
             Dictionary with file path, metadata, and summary (NO HTML content)
@@ -476,7 +491,7 @@ async def generate_iso_report(
             support_type: 'rigid' or 'flexible'
             rpm: Operating speed in RPM (optional; selects the ISO band's
                 lower edge below 600 RPM)
-            ctx: MCP context
+            ctx: MCP context. Unused — see this module's docstring on logging.
 
         Returns:
             Dictionary with file path, metadata, and summary (NO HTML content)
@@ -585,7 +600,7 @@ async def generate_pca_visualization_report(
                         When provided, legend shows both true and predicted labels for validation.
             segment_duration: Segment duration in seconds (default: 0.1s for ML)
             overlap_ratio: Overlap ratio 0-1 (default: 0.5)
-            ctx: MCP context
+            ctx: MCP context. Unused — see this module's docstring on logging.
 
         Returns:
             Dictionary with file path, metadata, and summary (includes validation metrics if true_labels provided)
@@ -857,7 +872,7 @@ async def generate_feature_comparison_report(
             segment_duration: Segment duration in seconds (default: 0.1s for ML)
             overlap_ratio: Overlap ratio 0-1 (default: 0.5)
             features_to_plot: List of feature names to plot (default: all 17 features)
-            ctx: MCP context
+            ctx: MCP context. Unused — see this module's docstring on logging.
 
         Returns:
             Dictionary with file path, metadata, and summary
@@ -1090,7 +1105,7 @@ async def generate_diagnostic_report(
         formats: Renderings to produce — any of 'html', 'pdf'. Defaults to
             ['html']. 'pdf' requires
             ``pip install predictive-maintenance-mcp[pdf]``.
-        ctx: MCP context (unused for logging — see module note).
+        ctx: MCP context. Unused — see this module's docstring on logging.
 
     Returns:
         Dict with ``statements`` (every authored sentence, in document

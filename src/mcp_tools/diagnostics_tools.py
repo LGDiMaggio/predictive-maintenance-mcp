@@ -1,4 +1,19 @@
-"""MCP tools for diagnostics, anomaly detection, and documentation (ISO 13374 Blocks 3-4)."""
+"""MCP tools for diagnostics, anomaly detection, and documentation (ISO 13374 Blocks 3-4).
+
+Logging note
+------------
+Every tool here takes a ``ctx`` parameter it never uses. That is deliberate,
+not leftover: ``tests/fixtures/tool_inventory.json`` pins ``context_kwarg``
+per tool, so dropping the parameter would be a protocol-visible change to
+the tool surface.
+
+What changed in 0.12.0 is *how* progress is emitted, not whether tools
+accept a context. SEP-2577 deprecated the MCP logging capability with no
+in-protocol replacement, so narration goes to this module's logger, which
+``server.configure_logging`` binds to stderr — stdout is the stdio
+transport's JSON-RPC channel. Clients no longer receive progress
+notifications; any fact a caller needs is carried by the return value.
+"""
 
 import logging
 import json
@@ -61,7 +76,6 @@ async def _extract_features_from_ids(
     signal_ids: list[str],
     segment_duration: float,
     overlap_ratio: float,
-    ctx: Context = None,
 ) -> tuple[list[dict], dict[str, float]]:
     """
     Resolve stored signals, segment them, and extract features.
@@ -75,7 +89,6 @@ async def _extract_features_from_ids(
         signal_ids: Stored signal IDs (from load_signal)
         segment_duration: Segment duration in seconds
         overlap_ratio: Overlap ratio (0-1)
-        ctx: MCP context for logging
 
     Returns:
         Tuple of (all_features_list, {signal_id: sampling_rate})
@@ -103,7 +116,6 @@ async def _extract_and_transform_validation_features(
     overlap_ratio: float,
     scaler,
     pca,
-    ctx: Context = None,
 ) -> Optional[np.ndarray]:
     """
     Extract features from stored validation signals and apply scaler + PCA.
@@ -114,13 +126,12 @@ async def _extract_and_transform_validation_features(
         overlap_ratio: Overlap ratio (0-1)
         scaler: Fitted StandardScaler
         pca: Fitted PCA transformer
-        ctx: MCP context for logging
 
     Returns:
         PCA-transformed feature matrix, or None if no features extracted
     """
     features_list, _ = await _extract_features_from_ids(
-        signal_ids, segment_duration, overlap_ratio, ctx=ctx
+        signal_ids, segment_duration, overlap_ratio
     )
 
     if not features_list:
@@ -192,7 +203,7 @@ async def assess_severity(
       (e.g. from a portable instrument) — no unit declaration needed.
 
     Args:
-        ctx: MCP context (unused for logging — see module note).
+        ctx: MCP context. Unused — see this module's docstring on logging.
         signal_id: ID of the stored signal (mutually exclusive with
             rms_velocity_mm_s).
         rms_velocity_mm_s: Direct broadband RMS velocity in mm/s
@@ -384,7 +395,7 @@ async def train_anomaly_model(
             healthy_validation_ids: Optional stored healthy signal IDs for validation (specificity check).
                                       If not provided, 20% of training data will be used.
             model_name: Name for saved model files (default: 'anomaly_model')
-            ctx: MCP context for progress/logging
+            ctx: MCP context. Unused — see this module's docstring on logging.
 
         Returns:
             AnomalyModelResult with model paths and performance metrics
@@ -401,7 +412,7 @@ async def train_anomaly_model(
 
     # Step 1: Extract features from all healthy signals
     all_features, detected_rates = await _extract_features_from_ids(
-        healthy_signal_ids, segment_duration, overlap_ratio, ctx=ctx
+        healthy_signal_ids, segment_duration, overlap_ratio
     )
 
     features_df = pd.DataFrame(all_features)
@@ -435,7 +446,7 @@ async def train_anomaly_model(
             # Prepare validation features for fault signals
             X_fault = await _extract_and_transform_validation_features(
                 fault_signal_ids, segment_duration, overlap_ratio,
-                scaler, pca, ctx=ctx
+                scaler, pca
             )
 
             # Prepare validation features for healthy signals
@@ -443,7 +454,7 @@ async def train_anomaly_model(
             if healthy_validation_ids:
                 X_healthy_val = await _extract_and_transform_validation_features(
                     healthy_validation_ids, segment_duration, overlap_ratio,
-                    scaler, pca, ctx=ctx
+                    scaler, pca
                 )
 
             # Hyperparameter grid
@@ -530,7 +541,7 @@ async def train_anomaly_model(
             # Prepare validation features for fault signals
             X_fault = await _extract_and_transform_validation_features(
                 fault_signal_ids, segment_duration, overlap_ratio,
-                scaler, pca, ctx=ctx
+                scaler, pca
             )
 
             # Prepare healthy validation features
@@ -538,7 +549,7 @@ async def train_anomaly_model(
             if healthy_validation_ids:
                 X_healthy_val = await _extract_and_transform_validation_features(
                     healthy_validation_ids, segment_duration, overlap_ratio,
-                    scaler, pca, ctx=ctx
+                    scaler, pca
                 )
 
             # Hyperparameter search for LOF
@@ -631,7 +642,7 @@ async def train_anomaly_model(
             # Extract and transform features from validation signals
             X_pca_healthy_val = await _extract_and_transform_validation_features(
                 healthy_validation_ids, segment_duration, overlap_ratio,
-                scaler, pca, ctx=ctx
+                scaler, pca
             )
 
             if X_pca_healthy_val is not None:
@@ -679,7 +690,7 @@ async def train_anomaly_model(
         if fault_signal_ids:
             X_fault_pca = await _extract_and_transform_validation_features(
                 fault_signal_ids, segment_duration, overlap_ratio,
-                scaler, pca, ctx=ctx
+                scaler, pca
             )
 
         if X_fault_pca is not None:
@@ -802,7 +813,7 @@ async def predict_anomalies(
         Args:
             signal_id: ID of the stored signal to analyze (from load_signal)
             model_name: Name of trained model (default: 'anomaly_model')
-            ctx: MCP context for progress/logging
+            ctx: MCP context. Unused — see this module's docstring on logging.
 
         Returns:
             AnomalyPredictionResult with aggregate statistics and health
@@ -1004,7 +1015,7 @@ async def extract_manual_specs(
         Args:
             file_name: Manual filename in resources/machine_manuals/
             use_cache: Use cached extraction if available (default: True)
-            ctx: MCP context
+            ctx: MCP context. Unused — see this module's docstring on logging.
 
         Returns:
             Dictionary with extracted specifications and text excerpt.
@@ -1056,7 +1067,7 @@ async def calculate_bearing_characteristic_frequencies(
             pitch_diameter_mm: Pitch circle diameter (Pd) in mm
             contact_angle_deg: Contact angle (alpha) in degrees
             rpm: Shaft rotation speed in RPM
-            ctx: MCP context
+            ctx: MCP context. Unused — see this module's docstring on logging.
 
         Returns:
             Dictionary with BPFO, BPFI, BSF, FTF in Hz.
@@ -1103,7 +1114,7 @@ async def read_manual_excerpt(
             file_name: Manual filename in resources/machine_manuals/
                 (PDF or TXT)
             max_pages: Maximum pages to extract (ignored for TXT files)
-            ctx: MCP context
+            ctx: MCP context. Unused — see this module's docstring on logging.
 
         Returns:
             Extracted text from the manual.
@@ -1153,7 +1164,7 @@ async def search_bearing_catalog(
 
         Args:
             bearing_id: Bearing designation (e.g. "6205", "SKF 6205-2RS")
-            ctx: MCP context
+            ctx: MCP context. Unused — see this module's docstring on logging.
 
         Returns:
             Dictionary with bearing specifications if found, or a
@@ -1219,7 +1230,7 @@ async def search_documentation(
                    (e.g. "bearing 6205 geometry", "maintenance interval pump")
             top_k: Number of passages to return (default: 5)
             force_reindex: Rebuild the index even if cache is fresh (default: False)
-            ctx: MCP context
+            ctx: MCP context. Unused — see this module's docstring on logging.
 
         Returns:
             Dictionary with ranked results, each containing text passage, source
@@ -1292,7 +1303,7 @@ async def check_bearing_faults(
     ball / cage) alongside the acronym.
 
     Args:
-        ctx: MCP context (unused for logging — see module note).
+        ctx: MCP context. Unused — see this module's docstring on logging.
         signal_id: ID of the stored signal.
         rpm: Shaft speed in RPM.
         bearing_id: Bearing designation (e.g. '6205', 'SKF 6205-2RS').
