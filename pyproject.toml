@@ -201,9 +201,14 @@ strict_equality = true
 # Two groups, both legitimately unresolvable:
 #   - no type stubs and unlikely to ever ship them: scipy, pandas, sklearn,
 #     plotly, weasyprint, docx
-#   - optional extras genuinely not installed in the CI job, which runs
-#     `pip install -e .[dev]`: faiss, sentence_transformers, pytesseract,
-#     pdf2image, docx, weasyprint
+#   - every module behind an optional extra, since the CI job installs only
+#     `pip install -e .[dev]`: PIL + pytesseract + pdf2image (ocr), faiss +
+#     sentence_transformers (vector-search), docx (docx), weasyprint (pdf)
+#
+# Keep the second group in sync with [project.optional-dependencies]. A module
+# that is installed in a developer venv but absent in CI type-checks fine
+# locally and fails the job -- which is how PIL was missed on the first run.
+#
 # `predictive_maintenance_mcp.*` is the src/__main__.py self-import, which
 # resolves via the installed package rather than the `src` path mypy is given.
 [[tool.mypy.overrides]]
@@ -218,6 +223,7 @@ module = [
     "sentence_transformers",
     "pytesseract",
     "pdf2image",
+    "PIL.*",
     "predictive_maintenance_mcp.*",
 ]
 ignore_missing_imports = true
