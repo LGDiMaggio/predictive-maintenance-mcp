@@ -351,7 +351,7 @@ Browse all open issues: [GitHub Issues](https://github.com/LGDiMaggio/predictive
 | Resource | URL |
 |----------|-----|
 | **MCP Specification** | [modelcontextprotocol.io](https://modelcontextprotocol.io/) |
-| **FastMCP Framework** | [github.com/jlowin/fastmcp](https://github.com/jlowin/fastmcp) |
+| **MCP Python SDK** | [github.com/modelcontextprotocol/python-sdk](https://github.com/modelcontextprotocol/python-sdk) |
 | **MCP Inspector** | [github.com/modelcontextprotocol/inspector](https://github.com/modelcontextprotocol/inspector) |
 | **Project Issues** | [GitHub Issues](https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues) |
 | **Contributing Guide** | [CONTRIBUTING.md](../CONTRIBUTING.md) |

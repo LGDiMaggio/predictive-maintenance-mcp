@@ -192,7 +192,10 @@ def main():
         logger.info(f"Listening on {args.host}:{args.port}")
 
     # mcp 2.x dropped Settings.host/port: the bind address is a per-transport
-    # run() kwarg now. stdio accepts neither — passing them would raise.
+    # run() kwarg now. The stdio overload declares neither, so the branch
+    # follows the typed contract. (At runtime run() takes **kwargs and simply
+    # drops them for stdio -- silently, which is exactly why the declared
+    # contract is the thing to honour rather than the current behaviour.)
     if args.transport == "stdio":
         mcp.run(transport="stdio")
     else:
