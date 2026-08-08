@@ -5,27 +5,11 @@ All notable changes to the Predictive Maintenance MCP Server project will be doc
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.10.0] - 2026-08-08
+## [0.11.0] - 2026-08-08
 
-Minor release rather than a patch: the dependency floor change below is
-breaking for installs, and this project's pre-1.0 semver treats that as a
-MINOR bump.
-
-### Changed
-- **BREAKING (install):** migrated the server to the mcp 2.x API and raised
-  the floor to `mcp[cli]>=2.0.0`. mcp 2.0.0 removed `mcp.server.fastmcp`,
-  so `FastMCP` is now `MCPServer` from `mcp.server.mcpserver`. The two APIs
-  cannot be supported from one source tree, so mcp 1.x is no longer
-  installable with this package.
-- Transport wiring no longer goes through `mcp.settings`: mcp 2.x dropped
-  `Settings.host` / `Settings.port`, so `--host` / `--port` are passed to
-  `mcp.run()` as per-transport kwargs. `stdio` is invoked without them
-  (`run_stdio_async` accepts neither).
-
-The registered surface is unchanged — 33 tools, 0 resources, 3 prompts,
-with identical names and input schemas. `tests/fixtures/tool_inventory.json`
-was **not** regenerated: it passes as-is against mcp 2.0.0, which is the
-evidence that the migration is protocol-invisible.
+Adds the integrated diagnostic report. Additive: no existing tool
+signature changes, and the endpoint surface grows from 36 to 37
+(33 -> 34 tools).
 
 ### Added
 - `generate_diagnostic_report` — one integrated diagnostic document covering
@@ -76,12 +60,22 @@ evidence that the migration is protocol-invisible.
   in `POST_U9_ADDITIONS`, preserving the "no orphan tools" property while
   allowing intentional additions.
 
-## [0.9.1] - 2026-07-13
+## [0.10.0] - 2026-08-08
 
-Patch release: two robustness fixes of the same class caught while
-diagnosing crash reports from a pre-0.9.0 server.
+Minor release rather than a patch: the dependency floor change below is
+breaking for installs, and this project's pre-1.0 semver treats that as a
+MINOR bump.
 
 ### Changed
+- **BREAKING (install):** migrated the server to the mcp 2.x API and raised
+  the floor to `mcp[cli]>=2.0.0`. mcp 2.0.0 removed `mcp.server.fastmcp`,
+  so `FastMCP` is now `MCPServer` from `mcp.server.mcpserver`. The two APIs
+  cannot be supported from one source tree, so mcp 1.x is no longer
+  installable with this package.
+- Transport wiring no longer goes through `mcp.settings`: mcp 2.x dropped
+  `Settings.host` / `Settings.port`, so `--host` / `--port` are passed to
+  `mcp.run()` as per-transport kwargs. `stdio` is invoked without them
+  (`run_stdio_async` accepts neither).
 - **Public export shape.** `predictive_maintenance_mcp.mcp` is a declared
   export (`__all__` in `src/__init__.py`) and its runtime type changes from
   `mcp.server.fastmcp.FastMCP` to `mcp.server.mcpserver.MCPServer`. It no
@@ -102,6 +96,16 @@ diagnosing crash reports from a pre-0.9.0 server.
   (still async, still functional, but they now emit a warning that is shown
   by default). This release does not migrate the ~116 call sites; that is
   tracked separately.
+
+The registered surface is unchanged — 33 tools, 0 resources, 3 prompts,
+with identical names and input schemas. `tests/fixtures/tool_inventory.json`
+was **not** regenerated: it passes as-is against mcp 2.0.0, which is the
+evidence that the migration is protocol-invisible.
+
+## [0.9.1] - 2026-07-13
+
+Patch release: two robustness fixes of the same class caught while
+diagnosing crash reports from a pre-0.9.0 server.
 
 ### Fixed
 - `generate_envelope_report` now resolves its default upper band edge
