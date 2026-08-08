@@ -1,9 +1,24 @@
-# Making mypy blocking in CI
+---
+title: "Making a decorative CI check blocking, behind a frozen baseline"
+date: 2026-08-08
+category: tooling-decisions
+module: predictive-maintenance-mcp
+problem_type: tooling_decision
+component: ci
+severity: medium
+applies_when:
+  - "A CI check runs with continue-on-error and has been reporting green regardless"
+  - "Turning a check on would fail immediately on pre-existing debt"
+  - "A guard script decides pass/fail and nothing tests the guard itself"
+  - "Moving CLI flags into a config file, where they apply to local runs too"
+  - "Adding a type-checker plugin whose defaults change what is checked"
+tags: [mypy, ci-guards, ratchet, frozen-baseline, fail-closed, pydantic]
+---
 
-**Date:** 2026-08-08
-**Status:** approved, implemented
+# Making a decorative CI check blocking, behind a frozen baseline
 
 ## Problem
+
 
 `.github/workflows/tests.yml` runs the mypy job with `continue-on-error: true`. The job
 reports green even when mypy fails, so the check is decorative.
