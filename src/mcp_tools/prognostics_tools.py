@@ -176,7 +176,7 @@ async def estimate_rul(
         with no RUL number.
 
         Args:
-            ctx: MCP context for user communication.
+            ctx: MCP context (accepted for tool-contract stability; progress goes to the module logger, not to the client).
             failure_threshold: Indicator value considered as failure, in the
                 same units as the feature values. No universal default is
                 imposed — but when the indicator is broadband VELOCITY RMS
@@ -241,7 +241,7 @@ async def estimate_rul(
     horizon = t[-1] - t[0]
     current_value = values[-1]
 
-    await ctx.info(
+    logger.info(
         f"Estimating RUL ({method}) from {n} measurements spanning "
             f"{horizon:g} {time_unit} ..."
     )
@@ -394,7 +394,7 @@ async def analyze_signal_trend(
         series so each recording can be reduced to one measurement point.
 
         Args:
-            ctx: MCP context for user communication.
+            ctx: MCP context (accepted for tool-contract stability; progress goes to the module logger, not to the client).
             signal_id: ID of the stored signal (from load_signal).
             feature_name: Time-domain feature to analyze (default: "rms").
             segment_duration: Duration of each segment in seconds.
@@ -414,7 +414,7 @@ async def analyze_signal_trend(
         """
     signal_data, info = resolve_signal(signal_id)
     sr = info.sampling_rate
-    await ctx.info(
+    logger.info(
         f"Screening within-recording trend of '{feature_name}' in "
             f"'{signal_id}' ..."
     )
@@ -422,7 +422,7 @@ async def analyze_signal_trend(
     feature_series, segment_times = _extract_feature_series(
         signal_data, feature_name, sr, segment_duration, overlap_ratio,
     )
-    await ctx.info(
+    logger.info(
         f"Extracted {len(feature_series)} segments, fitting trend ..."
     )
 

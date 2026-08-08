@@ -392,7 +392,7 @@ Contributions welcome from **everyone** — not just programmers. Domain experts
   title   = {Predictive Maintenance MCP Server},
   author  = {Di Maggio, Luigi Gianpio},
   year    = {2025},
-  version = {0.11.0},
+  version = {0.12.0},
   url     = {https://github.com/LGDiMaggio/predictive-maintenance-mcp},
   doi     = {10.5281/zenodo.17611542}
 }

@@ -100,15 +100,13 @@ async def generate_diagnostic_report_docx(
     # Validate the handle: reports are only produced for loaded signals.
     resolve_signal(signal_id, require_sampling_rate=False)
 
-    if ctx:
-        await ctx.info(f"Generating DOCX diagnostic report for '{signal_id}'")
+    logger.info(f"Generating DOCX diagnostic report for '{signal_id}'")
 
     # Raises ValueError when the optional python-docx dependency is missing
     # (error contract: failures raise, never error-shaped dicts).
     result = save_diagnostic_report_docx(signal_id, sections, title=title)
 
-    if ctx:
-        await ctx.info(f"DOCX report saved: {result['file_name']}")
+    logger.info(f"DOCX report saved: {result['file_name']}")
 
     return result
 
@@ -148,8 +146,7 @@ async def plot_signal(
                 show_statistics=True
             )
         """
-    if ctx:
-        await ctx.info(f"Generating time-domain plot for '{signal_id}'...")
+    logger.info(f"Generating time-domain plot for '{signal_id}'...")
 
     signal_data, info = resolve_signal(signal_id)
     sampling_rate = info.sampling_rate
@@ -266,11 +263,10 @@ async def plot_signal(
     output_file = REPORTS_DIR / timestamped_report_name("plot_signal", signal_id)
     fig.write_html(str(output_file))
 
-    if ctx:
-        await ctx.info(f"Plot saved to {output_file.name}")
-        await ctx.info(
-            "To view report metadata: list_html_reports(file_name=...)"
-        )
+    logger.info(f"Plot saved to {output_file.name}")
+    logger.info(
+        "To view report metadata: list_html_reports(file_name=...)"
+    )
 
     return f"Interactive plot saved to: {output_file}\nUse list_html_reports() to see all reports, or open file in browser"
 
@@ -305,8 +301,7 @@ async def generate_fft_report(
             ValueError: If the signal_id is not loaded, or the stored signal
                 has no sampling rate.
         """
-    if ctx:
-        await ctx.info(f"Generating FFT report for '{signal_id}'...")
+    logger.info(f"Generating FFT report for '{signal_id}'...")
 
     signal_data, info = resolve_signal(signal_id)
     sampling_rate = info.sampling_rate
@@ -337,9 +332,8 @@ async def generate_fft_report(
         rotation_freq=(rpm / 60.0) if rpm is not None else None
     )
 
-    if ctx:
-        await ctx.info(result['message'])
-        await ctx.info(f"Report location: {result['file_path']}")
+    logger.info(result['message'])
+    logger.info(f"Report location: {result['file_path']}")
 
     return result
 
@@ -388,8 +382,7 @@ async def generate_envelope_report(
             ...     bearing_freqs={"BPFO": 107.36, "BPFI": 162.19, "BSF": 70.58, "FTF": 11.93}
             ... )
         """
-    if ctx:
-        await ctx.info(f"Generating envelope analysis report for '{signal_id}'...")
+    logger.info(f"Generating envelope analysis report for '{signal_id}'...")
 
     signal_data, info = resolve_signal(signal_id)
     sampling_rate = info.sampling_rate
@@ -453,11 +446,10 @@ async def generate_envelope_report(
         num_peaks=num_peaks
     )
 
-    if ctx:
-        await ctx.info(result['message'])
-        await ctx.info(f"Report location: {result['file_path']}")
-        if result.get('bearing_matches'):
-            await ctx.info(f"Bearing frequency matches: {', '.join(result['bearing_matches'])}")
+    logger.info(result['message'])
+    logger.info(f"Report location: {result['file_path']}")
+    if result.get('bearing_matches'):
+        logger.info(f"Bearing frequency matches: {', '.join(result['bearing_matches'])}")
 
     return result
 
@@ -493,8 +485,7 @@ async def generate_iso_report(
             ValueError: If the signal_id is not loaded, or the stored signal
                 has no sampling rate or no declared unit.
         """
-    if ctx:
-        await ctx.info(f"Generating ISO 20816-3 report for '{signal_id}'...")
+    logger.info(f"Generating ISO 20816-3 report for '{signal_id}'...")
 
     # Perform ISO evaluation via the unified severity tool (U9 merge).
     sev = await assess_severity(
@@ -528,9 +519,8 @@ async def generate_iso_report(
         iso_result=iso_dict
     )
 
-    if ctx:
-        await ctx.info(result['message'])
-        await ctx.info(f"Report location: {result['file_path']}")
+    logger.info(result['message'])
+    logger.info(f"Report location: {result['file_path']}")
 
     return result
 
@@ -612,8 +602,7 @@ async def generate_pca_visualization_report(
             ...                  "real_test_InnerRaceFault_vload_6": "faulty"}
             ... )
         """
-    if ctx:
-        await ctx.info(f"Generating PCA visualization for model '{model_name}'...")
+    logger.info(f"Generating PCA visualization for model '{model_name}'...")
 
     # Load model, scaler, PCA — validate the name and contain every derived
     # path before un-pickling (single source of truth in path_safety).
@@ -825,16 +814,14 @@ async def generate_pca_visualization_report(
             'per_file_accuracy': per_file_accuracy
         }
 
-        if ctx:
-            await ctx.info(f"Validation Mode: Overall accuracy = {overall_accuracy*100:.2f}%")
-            for fname, acc_info in per_file_accuracy.items():
-                await ctx.info(f"  - {fname}: {acc_info['accuracy']*100:.1f}% ({acc_info['correct']}/{acc_info['total']})")
+        logger.info(f"Validation Mode: Overall accuracy = {overall_accuracy*100:.2f}%")
+        for fname, acc_info in per_file_accuracy.items():
+            logger.info(f"  - {fname}: {acc_info['accuracy']*100:.1f}% ({acc_info['correct']}/{acc_info['total']})")
 
     message = f"PCA visualization report saved: {output_file.name}"
-    if ctx:
-        await ctx.info(message)
-        await ctx.info(f"PC1+PC2 explain {metadata['total_variance_2d']*100:.1f}% of variance")
-        await ctx.info(f"Analyzed {total_segments} segments, {total_anomalies} anomalies detected")
+    logger.info(message)
+    logger.info(f"PC1+PC2 explain {metadata['total_variance_2d']*100:.1f}% of variance")
+    logger.info(f"Analyzed {total_segments} segments, {total_anomalies} anomalies detected")
 
     return {
         'file_path': str(output_file),
@@ -887,8 +874,7 @@ async def generate_feature_comparison_report(
             ...     }
             ... )
         """
-    if ctx:
-        await ctx.info(f"Generating feature comparison report for {len(signal_groups)} groups...")
+    logger.info(f"Generating feature comparison report for {len(signal_groups)} groups...")
 
     # All possible features
     all_feature_names = [
@@ -997,9 +983,8 @@ async def generate_feature_comparison_report(
     }
 
     message = f"Feature comparison report saved: {output_file.name}"
-    if ctx:
-        await ctx.info(message)
-        await ctx.info(f"Compared {len(signal_groups)} groups across {len(features_to_plot)} features")
+    logger.info(message)
+    logger.info(f"Compared {len(signal_groups)} groups across {len(features_to_plot)} features")
 
     return {
         'file_path': str(output_file),
@@ -1105,7 +1090,7 @@ async def generate_diagnostic_report(
         formats: Renderings to produce — any of 'html', 'pdf'. Defaults to
             ['html']. 'pdf' requires
             ``pip install predictive-maintenance-mcp[pdf]``.
-        ctx: MCP context.
+        ctx: MCP context (unused for logging — see module note).
 
     Returns:
         Dict with ``statements`` (every authored sentence, in document
@@ -1125,8 +1110,7 @@ async def generate_diagnostic_report(
         )
 
     signal_data, info = resolve_signal(signal_id)
-    if ctx:
-        await ctx.info(f"Diagnosing '{signal_id}' at {rpm} RPM")
+    logger.info(f"Diagnosing '{signal_id}' at {rpm} RPM")
 
     diagnosis = _diagnose_vibration(
         signal=signal_data,
@@ -1142,8 +1126,7 @@ async def generate_diagnostic_report(
     baseline_diagnosis = None
     if baseline_signal_id:
         baseline_data, baseline_info = resolve_signal(baseline_signal_id)
-        if ctx:
-            await ctx.info(f"Diagnosing baseline '{baseline_signal_id}'")
+        logger.info(f"Diagnosing baseline '{baseline_signal_id}'")
         baseline_diagnosis = _diagnose_vibration(
             signal=baseline_data,
             fs=baseline_info.sampling_rate,
@@ -1161,9 +1144,8 @@ async def generate_diagnostic_report(
     saved = save_integrated_diagnostic_report(advisory, figure, formats=requested)
     files = saved["files"]
 
-    if ctx:
-        for entry in files:
-            await ctx.info(f"{entry['format'].upper()} report: {entry['file_name']}")
+    for entry in files:
+        logger.info(f"{entry['format'].upper()} report: {entry['file_name']}")
 
     return {
         "signal_id": signal_id,

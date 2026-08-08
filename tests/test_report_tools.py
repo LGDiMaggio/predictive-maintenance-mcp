@@ -5,6 +5,7 @@ signals are loaded once via the repository and referenced by id.
 """
 
 import json
+import logging
 import os
 import pickle
 import pytest
@@ -20,6 +21,11 @@ from sklearn.svm import OneClassSVM
 
 from predictive_maintenance_mcp.mcp_tools.report_tools import register
 from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
+from predictive_maintenance_mcp.mcp_tools import report_tools
+
+#: Derived from the module so it cannot drift from the logger the
+#: tools actually write to.
+REPORT_LOGGER = report_tools.logger.name
 
 
 # ---------------------------------------------------------------------------
@@ -147,13 +153,15 @@ class TestPlotSignal:
             await tools["plot_signal"](signal_id="nonexistent")
 
     @pytest.mark.asyncio
-    async def test_plot_signal_with_ctx(self, tools, repo, reports_dir, mock_ctx):
-        """plot_signal with ctx should call ctx.info."""
+    async def test_plot_signal_with_ctx(self, tools, repo, reports_dir, mock_ctx, caplog):
+        """plot_signal with ctx should log progress to the module logger, not to ctx."""
+        caplog.set_level(logging.INFO, logger=REPORT_LOGGER)
         result = await tools["plot_signal"](
             signal_id="report_test",
             ctx=mock_ctx,
         )
-        mock_ctx.info.assert_awaited()  # awaited, not merely called
+        assert caplog.records, "expected progress on the module logger"
+        mock_ctx.info.assert_not_called()  # SEP-2577: not the client's channel
         assert "Interactive plot saved" in result
 
 
@@ -340,12 +348,14 @@ class TestGenerateFFTReport:
             await tools["generate_fft_report"](signal_id="does_not_exist")
 
     @pytest.mark.asyncio
-    async def test_fft_report_with_ctx(self, tools, repo, reports_dir, mock_ctx):
+    async def test_fft_report_with_ctx(self, tools, repo, reports_dir, mock_ctx, caplog):
+        caplog.set_level(logging.INFO, logger=REPORT_LOGGER)
         result = await tools["generate_fft_report"](
             signal_id="report_test",
             ctx=mock_ctx,
         )
-        mock_ctx.info.assert_awaited()  # awaited, not merely called
+        assert caplog.records, "expected progress on the module logger"
+        mock_ctx.info.assert_not_called()  # SEP-2577: not the client's channel
         assert "file_path" in result
 
 
@@ -429,8 +439,11 @@ class TestGenerateEnvelopeReport:
             await tools["generate_envelope_report"](signal_id="no_meta_env")
 
     @pytest.mark.asyncio
-    async def test_envelope_report_with_ctx_bearing_matches(self, tools, repo, reports_dir, mock_ctx):
-        """When bearing matches are found, ctx.info should report them."""
+    async def test_envelope_report_with_ctx_bearing_matches(
+        self, tools, repo, reports_dir, mock_ctx, caplog
+    ):
+        """Bearing matches are reported on the module logger, not to ctx."""
+        caplog.set_level(logging.INFO, logger=REPORT_LOGGER)
         await tools["generate_envelope_report"](
             signal_id="report_test",
             filter_low=100.0,
@@ -438,7 +451,8 @@ class TestGenerateEnvelopeReport:
             bearing_freqs={"BPFO": 50.0, "BPFI": 100.0},
             ctx=mock_ctx,
         )
-        mock_ctx.info.assert_awaited()  # awaited, not merely called
+        assert caplog.records, "expected progress on the module logger"
+        mock_ctx.info.assert_not_called()  # SEP-2577: not the client's channel
 
 
 # ---------------------------------------------------------------------------

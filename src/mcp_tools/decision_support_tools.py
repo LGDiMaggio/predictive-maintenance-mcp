@@ -47,7 +47,7 @@ async def generate_maintenance_recommendations(
         advisory output without evidential basis.
 
         Args:
-            ctx: MCP context for user communication.
+            ctx: MCP context (accepted for tool-contract stability; progress goes to the module logger, not to the client).
             severity_zone: ISO zone letter — "A", "B", "C", or "D".
             fault_types: Detected fault types from the closed canonical
                 vocabulary — outer_race/inner_race/ball/cage for bearings
@@ -64,7 +64,7 @@ async def generate_maintenance_recommendations(
         """
     fault_list = list(fault_types) if fault_types else None
 
-    await ctx.info(
+    logger.info(
         f"Generating recommendations for zone {severity_zone}"
         + (f" with faults: {fault_list}" if fault_list else "")
         + " ..."

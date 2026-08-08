@@ -75,7 +75,7 @@ async def analyze_fft(
         random_seed to sample a seeded random segment position instead.
 
         Args:
-            ctx: MCP context for user communication
+            ctx: MCP context (accepted for tool-contract stability; progress goes to the module logger, not to the client)
             signal_id: ID of the stored signal (from load_signal).
             max_frequency: Maximum frequency to analyze (default: Nyquist frequency)
             segment_duration: Duration in seconds to analyze (default: leading
@@ -214,7 +214,7 @@ async def analyze_envelope(
         calculate_bearing_characteristic_frequencies).
 
         Args:
-            ctx: MCP context for user communication
+            ctx: MCP context (accepted for tool-contract stability; progress goes to the module logger, not to the client)
             signal_id: ID of the stored signal (from load_signal).
             filter_low: Bandpass low edge in Hz (default: 500).
             filter_high: Bandpass high edge in Hz (default: 5000). Must
@@ -414,13 +414,11 @@ async def extract_features_from_signal(
                 overlap_ratio=0.5
             )
         """
-    if ctx:
-        await ctx.info(f"Extracting features from '{signal_id}'...")
+    logger.info(f"Extracting features from '{signal_id}'...")
 
     signal_data, info = resolve_signal(signal_id)
     sampling_rate = info.sampling_rate
-    if ctx:
-        await ctx.info(f"Using sampling rate: {sampling_rate} Hz")
+    logger.info(f"Using sampling rate: {sampling_rate} Hz")
 
     # Calculate segment parameters
     segment_length_samples = int(segment_duration * sampling_rate)
@@ -435,8 +433,7 @@ async def extract_features_from_signal(
         segment = signal_data[start:end]
         segments.append(segment)
 
-    if ctx:
-        await ctx.info(f"Created {len(segments)} segments from signal")
+    logger.info(f"Created {len(segments)} segments from signal")
 
     # Extract features from each segment
     features_list = []
@@ -448,8 +445,7 @@ async def extract_features_from_signal(
     features_df = pd.DataFrame(features_list)
     feature_names = list(features_df.columns)
 
-    if ctx:
-        await ctx.info(f"Feature matrix shape: {features_df.shape}")
+    logger.info(f"Feature matrix shape: {features_df.shape}")
 
     return FeatureExtractionResult(
         num_segments=len(segments),
@@ -485,8 +481,7 @@ async def compute_power_spectral_density(
     signal_data, info = resolve_signal(signal_id)
     fs = info.sampling_rate
 
-    if ctx:
-        await ctx.info(f"Computing PSD for '{signal_id}' ({info.num_samples} samples, {fs} Hz)")
+    logger.info(f"Computing PSD for '{signal_id}' ({info.num_samples} samples, {fs} Hz)")
 
     result = _compute_psd(signal_data, fs, nperseg=nperseg, noverlap=noverlap, window=window)
 
@@ -524,8 +519,7 @@ async def compute_spectrogram_stft(
     signal_data, info = resolve_signal(signal_id)
     fs = info.sampling_rate
 
-    if ctx:
-        await ctx.info(f"Computing STFT for '{signal_id}'")
+    logger.info(f"Computing STFT for '{signal_id}'")
 
     result = _compute_stft(signal_data, fs, nperseg=nperseg, noverlap=noverlap, window=window)
 

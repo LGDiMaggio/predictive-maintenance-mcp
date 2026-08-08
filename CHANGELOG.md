@@ -5,6 +5,37 @@ All notable changes to the Predictive Maintenance MCP Server project will be doc
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.0] - 2026-08-08
+
+Moves progress narration off the MCP logging capability, which SEP-2577
+deprecated on 2026-07-28 with no in-protocol replacement.
+
+### Changed
+- **The client no longer receives progress notifications.** All 119
+  `ctx.info` / `ctx.warning` call sites now write to the module logger,
+  which `src/server.py` routes to stderr — safe for the stdio transport,
+  whose protocol channel is stdout. This is a user-visible change for MCP
+  clients that displayed those messages, and it is forced: SEP-2577 names
+  stderr and OpenTelemetry as the alternatives, and `ctx.report_progress`
+  (which survives) carries a numeric fraction, not narration.
+- Under mcp 2.x those methods still worked, but `MCPDeprecationWarning`
+  subclasses `UserWarning` rather than `DeprecationWarning` precisely so it
+  shows without any filter configured — so every one of those call sites
+  had begun printing a warning on first execution.
+- The 75 `if ctx:` guards that existed only to protect those calls are gone;
+  the module logger needs no guard. Net -57 lines.
+- `ctx` is still injected into every tool. `tests/fixtures/tool_inventory.json`
+  pins `context_kwarg` per tool, so removing the parameter would have been a
+  protocol-visible change. What changed is how progress is emitted, not
+  whether tools accept a context.
+
+### Added
+- `tests/test_no_client_logging.py` — a tripwire. `ctx` is still injected, so
+  `await ctx.info(...)` still type-checks and still appears to work; every
+  other test mocks `ctx`, so nothing in the suite would notice a
+  reintroduction. This asserts no source file calls the deprecated capability,
+  and that context injection itself survived.
+
 ## [0.11.0] - 2026-08-08
 
 Adds the integrated diagnostic report. Additive: no existing tool
