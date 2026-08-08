@@ -13,7 +13,8 @@ applies_when:
   - "Writing a guard test whose whole job is to fail when someone reintroduces a forbidden pattern"
   - "Rewriting an assertion during a refactor, where the new form is easier to satisfy than the old one"
   - "A dependency's default behaviour, not your own code, is what makes an invariant hold"
-tags: [logging, global-state, verification, guard-tests, load-order, stdio-transport, mutation-testing, adversarial-review]
+tags: [logging, global-state, verification, guard-tests, load-order, stdio-transport, mutation-testing, adversarial-review, fail-closed, ci-guards]
+last_updated: 2026-08-09
 ---
 
 # Process-global configuration you cannot win, and claims only running can verify
@@ -284,6 +285,43 @@ The cost of not catching it was not "logs looked worse". It was:
 3. A total-silence failure mode on the library-embed path, strictly worse than
    what it replaced.
 
+## The pattern recurred four times in one week
+
+This document was written after the first instance. The next two arrived
+within hours, in the pull requests that were *fixing* the first — each shipped
+a new guard, and each guard was unable to fail in the environment it ran in.
+The fourth was already in the repo and had been for months.
+
+| Where | The guard | Why it could not fail |
+|---|---|---|
+| #37 | three `caplog` assertions | `caplog` collects every logger in the process, so `assert caplog.records` passed on unrelated noise. One test named `..._bearing_matches` passed with that branch deleted. |
+| #37 | `logging.basicConfig(handlers=[StreamHandler(sys.stderr)])` | inert — `MCPServer(...)` claimed the root logger at import, and `basicConfig` no-ops when root already has handlers. |
+| #38 | `test_import_provenance.py` | CI installs from a single checkout, so the stock editable finder already resolves correctly. The assertions passed with the pin deleted. |
+| #39 | `tools/check_mypy_baseline.py` | `python -m mypy` exits **1** when mypy is absent — the same code as "found errors", and inside the accepted set. Empty output parsed as zero errors: *"OK: 0 mypy error(s)"*, exit 0. |
+| pre-existing | the Black CI job | `continue-on-error: true`. Reports pass unconditionally, exactly as the mypy job did. |
+
+Two things generalise.
+
+**The environment decides whether an assertion is an assertion.** Every one of
+these is a correct statement about the system. Three of them are also
+*unfalsifiable where they execute*, which is not a weaker version of correct —
+it is a different thing wearing the same green tick. The question to ask of a
+new guard is not "is this true?" but **"what would have to break for this to go
+red, and can that happen here?"** If the answer involves an environment CI
+never enters, the guard belongs somewhere CI does enter, or it needs a
+synthetic version of that environment (see `TestTheGuardItself` in
+`tests/test_import_provenance.py`, which drives a fake competing finder because
+CI cannot supply a real one).
+
+**Guards fail toward green.** Each of these fails *open*: the missing checker,
+the unread config, the noise-satisfied assertion, the flag that suppresses the
+exit code. That direction is not a coincidence — a guard is a negative
+assertion, and the cheapest way for a negative assertion to be satisfied is for
+its input to be empty. So test the empty input specifically: no checker
+installed, no records emitted, no finder registered, unparseable output. Those
+are the cases in `tests/test_mypy_baseline_gate.py::TestRunMypyFailsClosed`,
+and writing them found a real bug in the gate on the first run.
+
 ## When to Apply
 
 Reach for this when any of the following is true:
@@ -306,3 +344,9 @@ Reach for this when any of the following is true:
   repository's earlier finding that facts encoded in two places drift apart. This
   is its runtime sibling: a fact encoded in *code* that the *runtime* contradicts.
   Both are cases where a CI guard, not a careful reader, is the thing that holds.
+- [[blocking-mypy-behind-a-frozen-baseline-2026-08-08]] — turning the decorative
+  mypy job into a real one. Its gate is the fourth instance tabulated above, and
+  its own tests are the worked example of testing a guard's empty-input paths.
+- [[editable-installs-pin-one-checkout-and-worktrees-silently-inherit-it-2026-08-08]]
+  — why a shared venv makes every worktree test the wrong source. The third
+  instance: the pin was right, the test proving it was vacuous where it ran.
