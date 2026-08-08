@@ -166,6 +166,44 @@ pip install -e ".[dev]"
 pytest -v
 ```
 
+### 4. Working in a git worktree
+
+If you use `git worktree` (Claude Code creates one per agent session under
+`.claude/worktrees/`), read this before you trust a test run.
+
+`pip install -e .` writes an import finder that hardcodes **one absolute
+path**: the checkout that ran the install. Reuse that virtualenv from a second
+worktree and `import predictive_maintenance_mcp` still resolves to the *first*
+checkout. Your tests then pass or fail for reasons that have nothing to do with
+the code in front of you — silently. This has cost four separate sessions real
+time; the usual tell is a `__version__` or tool count matching no file you can
+see.
+
+**Running the test suite: nothing to do.** `tests/conftest.py` binds the
+package to the tree it lives in and raises at collection if that ever fails, so
+`pytest` is correct in every worktree.
+
+**Running anything else** — the server, a REPL, `validate_server.py` — needs a
+real environment for this checkout:
+
+```bash
+python scripts/setup-worktree.py
+```
+
+It prefers `uv sync --frozen` when `uv` is on PATH and falls back to
+`python -m venv` + `pip install -e ".[dev]"`, then verifies that the package
+imports from this checkout. Budget ~500 MB and ~18k files per worktree; on a
+OneDrive- or Dropbox-synced tree that sync cost is why it is a deliberate
+command rather than something automatic.
+
+To check by hand at any time:
+
+```bash
+python -c "import predictive_maintenance_mcp as p; print(p.__file__)"
+```
+
+The printed path must sit under the worktree you are standing in.
+
 ---
 
 ## Path 1: Domain Expert (No Coding Required)

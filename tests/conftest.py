@@ -13,15 +13,102 @@ import pytest
 import numpy as np
 import pandas as pd
 from pathlib import Path
+import importlib.util
 import json
 import logging
+import os
 import sys
 
-# Add src to path
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+REPO_ROOT = Path(__file__).resolve().parent.parent
+SRC_DIR = REPO_ROOT / "src"
+
+# --------------------------------------------------------------------------
+# Import provenance: test the tree these tests live in, not some other one.
+#
+# `pip install -e .` writes a MetaPathFinder whose MAPPING hardcodes ONE
+# absolute path -- the checkout that ran the install. Every git worktree
+# sharing that venv therefore imports `predictive_maintenance_mcp` from the
+# primary checkout, and the suite silently exercises source the author never
+# edited. This has cost four separate sessions real time; the tell was
+# nonsense like a tool count or a __version__ that matched no file on disk.
+#
+# It cannot be fixed by putting src/ on sys.path. The package is imported by
+# its installed name, and there is no directory literally named
+# `predictive_maintenance_mcp` in this tree -- pyproject maps the name onto
+# src/ via [tool.setuptools.package-dir]. (A `sys.path.insert(0, src)` line
+# lived here for exactly that reason and did nothing: nothing bare-imports
+# `server`, and every intra-src import is relative.)
+#
+# So bind the name to THIS tree explicitly. setuptools appends its finder to
+# sys.meta_path, i.e. behind PathFinder; inserting at position 0 puts this
+# one ahead of both. Sub-packages resolve through the parent's __path__ and
+# need no special handling.
+#
+# In CI and in the primary checkout the editable install already points here,
+# so this resolves to the same files and changes nothing. It only diverges
+# where today's behaviour is wrong.
+# --------------------------------------------------------------------------
+
+_PKG = "predictive_maintenance_mcp"
+_ALLOW_INSTALLED = os.environ.get("PMM_TEST_ALLOW_INSTALLED") == "1"
+
+
+class _LocalTreeFinder:
+    """Resolve the package from this checkout, ahead of any editable install."""
+
+    @classmethod
+    def find_spec(cls, fullname, path=None, target=None):
+        if fullname != _PKG:
+            return None
+        return importlib.util.spec_from_file_location(
+            fullname,
+            SRC_DIR / "__init__.py",
+            submodule_search_locations=[str(SRC_DIR)],
+        )
+
+
+if not _ALLOW_INSTALLED and _LocalTreeFinder not in sys.meta_path:
+    sys.meta_path.insert(0, _LocalTreeFinder)
+
+
+def _assert_import_provenance() -> None:
+    """Fail loudly at collection if the package resolves outside this tree.
+
+    The pin above should make this unreachable. It stays because the failure
+    it guards is silent: without it, a wrong-tree import produces a green
+    suite that proves nothing.
+    """
+    if _ALLOW_INSTALLED:
+        return
+
+    import predictive_maintenance_mcp as pkg
+
+    resolved = Path(pkg.__file__).resolve()
+    if resolved.is_relative_to(REPO_ROOT):
+        return
+
+    raise RuntimeError(
+        "predictive_maintenance_mcp resolved OUTSIDE this checkout -- these "
+        "tests would exercise source you are not editing.\n"
+        f"  this checkout : {REPO_ROOT}\n"
+        f"  imported from : {resolved}\n"
+        "\n"
+        "Usual cause: a shared venv whose `pip install -e .` was run from a "
+        "different checkout (its finder hardcodes that absolute path), plus "
+        "something importing the package before this conftest loaded.\n"
+        "\n"
+        "Fix: give this worktree its own environment --\n"
+        "  python scripts/setup-worktree.py\n"
+        "\n"
+        "To test an installed distribution on purpose, set "
+        "PMM_TEST_ALLOW_INSTALLED=1."
+    )
+
+
+_assert_import_provenance()
 
 # Test data directory
-TEST_DATA_DIR = Path(__file__).parent.parent / "data" / "signals" / "real_train"
+TEST_DATA_DIR = REPO_ROOT / "data" / "signals" / "real_train"
 
 # Fixtures
 

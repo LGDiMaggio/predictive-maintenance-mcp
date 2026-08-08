@@ -72,6 +72,14 @@ python validate_server.py
 pytest -v
 ```
 
+> **Using a git worktree?** A virtualenv installed with `pip install -e .` stays
+> bound to the checkout that installed it, so a second worktree sharing it
+> imports the *first* checkout's source — silently. `pytest` is protected
+> (`tests/conftest.py` pins the package to its own tree), but running the server
+> or `validate_server.py` from a worktree needs its own environment:
+> `python scripts/setup-worktree.py`. See
+> [CONTRIBUTING.md](../CONTRIBUTING.md#4-working-in-a-git-worktree).
+
 ---
 
 ## Step 2: Explore the Architecture
