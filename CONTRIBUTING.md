@@ -133,6 +133,13 @@ Browse [**Issues**](https://github.com/LGDiMaggio/predictive-maintenance-mcp/iss
 
 **Can't find a matching issue?** [Open a discussion](https://github.com/LGDiMaggio/predictive-maintenance-mcp/discussions) to propose your idea first.
 
+**Before you start:** `docs/solutions/` holds write-ups of problems this project
+has already hit — bugs, security fixes, and durable patterns — organized by
+category with YAML frontmatter (`module`, `tags`, `problem_type`) so you can
+search it. Worth a look when you're implementing or debugging in an area it
+covers; several entries exist because the obvious approach turned out to be
+wrong in a way that isn't visible from the code alone.
+
 ### 2. Claim the Issue
 
 Comment on the issue: *"I'd like to work on this!"* — this prevents duplicate effort.
