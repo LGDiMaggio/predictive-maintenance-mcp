@@ -58,10 +58,17 @@ dependencies = [
     #
     # Context.debug/info/warning/error are NOT affected: they remain
     # `async def` in 2.x and must still be awaited. What changed is that they
-    # carry @deprecated (SEP-2577, logging capability); the ~116 await sites
-    # in src/mcp_tools/ still work and still need their await. Do not "fix"
-    # them into sync calls -- an unawaited coroutine silently drops the
-    # message, and the suite mocks ctx everywhere so nothing would fail.
+    # carry @deprecated (SEP-2577, logging capability).
+    #
+    # As of v0.12.0 there are no such call sites left: progress narration moved
+    # to the stdlib logger, so `ctx` survives only as a parameter annotation.
+    # The rule still applies to any that come back -- an unawaited coroutine
+    # silently drops the message, and the suite mocks ctx everywhere, so no
+    # test would fail. Two detectors cover that, and both must stay working:
+    #   - mypy `unused-coroutine`, which is why `mcp` is deliberately excluded
+    #     from the ignore_missing_imports allowlist in [tool.mypy] below
+    #   - the "coroutine was never awaited" filterwarnings rule in
+    #     [tool.pytest.ini_options], which is the AsyncMock-proof one
     "mcp[cli]>=2.0.0,<3.0.0",
     "numpy>=2.3.3",
     "pandas>=2.3.3",
@@ -165,6 +172,10 @@ exclude = '''
 '''
 
 [tool.mypy]
+# Everything the CI job needs lives here, not in its command line. The job used
+# to pass --ignore-missing-imports --no-strict-optional --allow-untyped-defs,
+# which silently overrode this section and made local runs disagree with CI.
+plugins = ["pydantic.mypy"]
 python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
@@ -172,10 +183,44 @@ disallow_untyped_defs = false
 disallow_incomplete_defs = false
 check_untyped_defs = true
 no_implicit_optional = true
+strict_optional = false
 warn_redundant_casts = true
 warn_unused_ignores = true
 warn_no_return = true
 strict_equality = true
+
+# Third-party modules allowed to be missing or unstubbed. This is an allowlist
+# on purpose: a blanket --ignore-missing-imports means that if `mcp` ever fails
+# to resolve, Context degrades to Any and every ctx call site type-checks
+# vacuously -- which is exactly how the stripped-await regression stayed
+# invisible. Verified: with `mcp` off this list, breaking its import produces
+# `import-not-found` instead of "Success: no issues found".
+#
+# DO NOT add `mcp` (or anything else the server's own types depend on) here.
+#
+# Two groups, both legitimately unresolvable:
+#   - no type stubs and unlikely to ever ship them: scipy, pandas, sklearn,
+#     plotly, weasyprint, docx
+#   - optional extras genuinely not installed in the CI job, which runs
+#     `pip install -e .[dev]`: faiss, sentence_transformers, pytesseract,
+#     pdf2image, docx, weasyprint
+# `predictive_maintenance_mcp.*` is the src/__main__.py self-import, which
+# resolves via the installed package rather than the `src` path mypy is given.
+[[tool.mypy.overrides]]
+module = [
+    "scipy.*",
+    "pandas",
+    "sklearn.*",
+    "plotly.*",
+    "docx.*",
+    "weasyprint",
+    "faiss",
+    "sentence_transformers",
+    "pytesseract",
+    "pdf2image",
+    "predictive_maintenance_mcp.*",
+]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
