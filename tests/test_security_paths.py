@@ -18,7 +18,7 @@ from unittest.mock import AsyncMock
 
 import numpy as np
 import pytest
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 from predictive_maintenance_mcp.path_safety import (
     resolve_model_paths,
@@ -142,7 +142,7 @@ def models_sandbox(tmp_path, monkeypatch):
 def diagnostics_tools(models_sandbox):
     from predictive_maintenance_mcp.mcp_tools.diagnostics_tools import register
 
-    server = FastMCP("test-security")
+    server = MCPServer("test-security")
     register(server)
     return {t.name: t.fn for t in server._tool_manager._tools.values()}
 
@@ -251,7 +251,7 @@ class TestModularPCAReportReadSide:
         )
         from predictive_maintenance_mcp.mcp_tools.report_tools import register
 
-        server = FastMCP("test-security-reports")
+        server = MCPServer("test-security-reports")
         register(server)
         return {t.name: t.fn for t in server._tool_manager._tools.values()}
 

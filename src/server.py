@@ -1,7 +1,7 @@
 """
 Predictive Maintenance MCP Server — Orchestrator.
 
-Thin entry point that creates the FastMCP instance and delegates tool
+Thin entry point that creates the MCPServer instance and delegates tool
 registration to the mcp_tools sub-package (one module per ISO 13374 block).
 """
 
@@ -10,7 +10,7 @@ import logging
 import os
 import sys
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 from .config import DATA_DIR, MODELS_DIR, RESOURCES_DIR, REPORTS_DIR, CACHE_DIR
 from .mcp_tools import register_all
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # MCP server initialization
 # ---------------------------------------------------------------------------
-mcp = FastMCP(
+mcp = MCPServer(
     "Predictive Maintenance",
     instructions="""
     MCP server for predictive maintenance and industrial machinery diagnostics.
@@ -143,6 +143,75 @@ def _setup_environment() -> None:
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 
+#: Transports this server can be asked for. Kept next to the dispatch in
+#: main() so the CLI vocabulary and the run() branch cannot drift apart.
+TRANSPORTS = ("stdio", "sse", "streamable-http")
+
+DEFAULT_HOST = "127.0.0.1"
+DEFAULT_PORT = 8000
+
+
+def _env(name: str, fallback: str) -> str:
+    """Read an env var, treating set-but-empty as unset.
+
+    ``os.environ.get(name, fallback)`` returns ``""`` when the variable exists
+    with an empty value, which is easy to produce from a compose file or a
+    .env. For MCP_HOST that empty string reaches the socket layer as
+    INADDR_ANY — an operator blanking the variable to *undo* a wildcard bind
+    would get the opposite of what they asked for.
+    """
+    return (os.environ.get(name) or "").strip() or fallback
+
+
+def build_parser() -> argparse.ArgumentParser:
+    """Build the CLI parser, validating environment-supplied defaults.
+
+    argparse checks ``choices`` only for values that appear on the command
+    line — never for a default. Since the env vars ARE the configuration
+    channel in every container deployment, an env-supplied transport would
+    otherwise reach run() unchecked and surface as a crash loop.
+
+    Exposed at module level so the tests exercise this parser rather than a
+    copy of it.
+    """
+    transport = _env("MCP_TRANSPORT", "stdio")
+    if transport not in TRANSPORTS:
+        raise SystemExit(
+            f"Invalid MCP_TRANSPORT={transport!r} — choose one of "
+            f"{list(TRANSPORTS)}."
+        )
+
+    port_raw = _env("MCP_PORT", str(DEFAULT_PORT))
+    try:
+        port = int(port_raw)
+    except ValueError:
+        raise SystemExit(
+            f"Invalid MCP_PORT={port_raw!r} — expected an integer."
+        ) from None
+
+    parser = argparse.ArgumentParser(
+        description="Predictive Maintenance MCP Server",
+    )
+    parser.add_argument(
+        "--transport", "-t",
+        choices=list(TRANSPORTS),
+        default=transport,
+        help="Transport protocol (default: stdio, env: MCP_TRANSPORT)",
+    )
+    parser.add_argument(
+        "--host",
+        default=_env("MCP_HOST", DEFAULT_HOST),
+        help="Bind address for SSE/HTTP (default: 127.0.0.1, env: MCP_HOST)",
+    )
+    parser.add_argument(
+        "--port", "-p",
+        type=int,
+        default=port,
+        help="Port for SSE/HTTP transport (default: 8000, env: MCP_PORT)",
+    )
+    return parser
+
+
 def main():
     """Run the MCP server.
 
@@ -161,40 +230,37 @@ def main():
 
         MCP_TRANSPORT=sse  MCP_HOST=0.0.0.0  MCP_PORT=8080
     """
-    parser = argparse.ArgumentParser(
-        description="Predictive Maintenance MCP Server",
-    )
-    parser.add_argument(
-        "--transport", "-t",
-        choices=["stdio", "sse", "streamable-http"],
-        default=os.environ.get("MCP_TRANSPORT", "stdio"),
-        help="Transport protocol (default: stdio, env: MCP_TRANSPORT)",
-    )
-    parser.add_argument(
-        "--host",
-        default=os.environ.get("MCP_HOST", "127.0.0.1"),
-        help="Bind address for SSE/HTTP (default: 127.0.0.1, env: MCP_HOST)",
-    )
-    parser.add_argument(
-        "--port", "-p",
-        type=int,
-        default=int(os.environ.get("MCP_PORT", "8000")),
-        help="Port for SSE/HTTP transport (default: 8000, env: MCP_PORT)",
-    )
-    args = parser.parse_args()
+    args = build_parser().parse_args()
 
     _setup_environment()
-
-    mcp.settings.host = args.host
-    mcp.settings.port = args.port
 
     logger.info("Starting Predictive Maintenance MCP Server...")
     logger.info(f"Transport: {args.transport}")
     logger.info(f"Data directory: {DATA_DIR}")
-    if args.transport != "stdio":
-        logger.info(f"Listening on {args.host}:{args.port}")
+    if args.transport == "stdio":
+        # stdio takes no bind address. Say so rather than discarding the
+        # flags in silence, which reads as "it bound where I asked".
+        if args.host != DEFAULT_HOST or args.port != DEFAULT_PORT:
+            logger.warning(
+                "--host/--port are ignored for stdio transport "
+                "(no socket is opened)."
+            )
+    else:
+        # "Binding to", not "Listening on": run() has not been called yet, so
+        # the bind may still fail. The old wording asserted success before
+        # the attempt, which put a false success line directly above the
+        # traceback of a port conflict.
+        logger.info(f"Binding to {args.host}:{args.port}")
 
-    mcp.run(transport=args.transport)
+    # mcp 2.x dropped Settings.host/port: the bind address is a per-transport
+    # run() kwarg now. The stdio overload declares neither, so the branch
+    # follows the typed contract. (At runtime run() takes **kwargs and simply
+    # drops them for stdio -- silently, which is exactly why the declared
+    # contract is the thing to honour rather than the current behaviour.)
+    if args.transport == "stdio":
+        mcp.run(transport="stdio")
+    else:
+        mcp.run(transport=args.transport, host=args.host, port=args.port)
 
 
 if __name__ == "__main__":

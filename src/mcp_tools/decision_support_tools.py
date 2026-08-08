@@ -9,7 +9,7 @@ custom thresholds.
 import logging
 from typing import Literal, Optional
 
-from mcp.server.fastmcp import FastMCP, Context
+from mcp.server.mcpserver import MCPServer, Context
 
 from ..decision_support import generate_recommendations
 
@@ -82,6 +82,6 @@ async def generate_maintenance_recommendations(
     return "\n\n".join(lines)
 
 
-def register(mcp: FastMCP) -> None:
+def register(mcp: MCPServer) -> None:
     """Register decision-support MCP tools on *mcp*."""
     mcp.tool()(generate_maintenance_recommendations)

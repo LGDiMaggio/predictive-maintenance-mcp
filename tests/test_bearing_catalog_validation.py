@@ -242,11 +242,11 @@ class TestSingleSourceOfTruth:
 
 @pytest.fixture
 def diag_tools():
-    from mcp.server.fastmcp import FastMCP
+    from mcp.server.mcpserver import MCPServer
 
     from predictive_maintenance_mcp.mcp_tools.diagnostics_tools import register
 
-    server = FastMCP("test-catalog-validation")
+    server = MCPServer("test-catalog-validation")
     register(server)
     return {t.name: t.fn for t in server._tool_manager._tools.values()}
 
@@ -288,8 +288,8 @@ class TestBearingNotFound:
 
 @pytest.fixture
 def analysis_tools_env(tmp_path, monkeypatch):
-    """FastMCP with analysis tools registered + a synthetic signal on disk."""
-    from mcp.server.fastmcp import FastMCP
+    """MCPServer with analysis tools registered + a synthetic signal on disk."""
+    from mcp.server.mcpserver import MCPServer
 
     from predictive_maintenance_mcp.mcp_tools.analysis_tools import register
 
@@ -312,7 +312,7 @@ def analysis_tools_env(tmp_path, monkeypatch):
         "predictive_maintenance_mcp.signal_acquisition.repository.DATA_DIR", signals_dir
     )
 
-    server = FastMCP("test-envelope-honesty")
+    server = MCPServer("test-envelope-honesty")
     register(server)
     tools = {t.name: t.fn for t in server._tool_manager._tools.values()}
 

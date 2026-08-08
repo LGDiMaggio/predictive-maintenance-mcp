@@ -11,33 +11,30 @@ Covers:
 - CLI args override env vars
 """
 
-import argparse
 import os
 import pytest
 from unittest.mock import patch, MagicMock
 
 
 def _build_parser(env_transport="stdio", env_host="127.0.0.1", env_port="8000"):
-    """Replicate the argparse setup from main() for isolated testing."""
-    parser = argparse.ArgumentParser(description="Predictive Maintenance MCP Server")
-    parser.add_argument(
-        "--transport", "-t",
-        choices=["stdio", "sse", "streamable-http"],
-        default=env_transport,
-        help="Transport protocol",
-    )
-    parser.add_argument(
-        "--host",
-        default=env_host,
-        help="Bind address for SSE/HTTP",
-    )
-    parser.add_argument(
-        "--port", "-p",
-        type=int,
-        default=int(env_port),
-        help="Port for SSE/HTTP transport",
-    )
-    return parser
+    """Build the REAL parser from src/server.py under the given environment.
+
+    This used to re-implement main()'s argparse setup inline. A copy cannot
+    catch drift: changing the real default to 0.0.0.0 would leave every
+    assertion here green. Delegating means these tests now fail when the
+    shipped parser changes.
+    """
+    from predictive_maintenance_mcp.server import build_parser
+
+    with patch.dict(
+        os.environ,
+        {
+            "MCP_TRANSPORT": env_transport,
+            "MCP_HOST": env_host,
+            "MCP_PORT": str(env_port),
+        },
+    ):
+        return build_parser()
 
 
 # ── Default values ─────────────────────────────────────────────────────────

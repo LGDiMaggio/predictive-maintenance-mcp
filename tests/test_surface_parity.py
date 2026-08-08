@@ -19,7 +19,7 @@ behavior preservation of the merges is pinned by tests/test_golden_merges.py.
 """
 
 import pytest
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 from predictive_maintenance_mcp.mcp_tools import register_all
 
@@ -190,7 +190,7 @@ BANNED_PARAM_NAMES = {
 
 @pytest.fixture(scope="module")
 def registered():
-    mcp = FastMCP("surface-parity")
+    mcp = MCPServer("surface-parity")
     register_all(mcp)
     tools = {t.name: t for t in mcp._tool_manager._tools.values()}
     resources = sorted(

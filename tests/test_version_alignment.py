@@ -11,7 +11,7 @@ surfaces at once — audit 4.2/4.7). This guard pins:
   == the plugin entry in ``.claude-plugin/marketplace.json``;
 - every "N tools / N prompts / N endpoints / N resources" claim in
   ``README.md`` and ``plugin/README.md`` equals the INTROSPECTED registered
-  surface (FastMCP + register_all — the single source of truth);
+  surface (MCPServer + register_all — the single source of truth);
 - every "N skills / N agents / N commands" claim equals the number of
   plugin components actually on disk.
 
@@ -27,7 +27,7 @@ import tomllib
 from pathlib import Path
 
 import pytest
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 from predictive_maintenance_mcp.mcp_tools import register_all
 
@@ -105,7 +105,7 @@ class TestPackageVersionAlignment:
 
 @pytest.fixture(scope="module")
 def surface_counts() -> dict[str, int]:
-    mcp = FastMCP("version-alignment-guard")
+    mcp = MCPServer("version-alignment-guard")
     register_all(mcp)
     n_tools = len(mcp._tool_manager._tools)
     n_resources = len(mcp._resource_manager._resources) + len(
@@ -216,3 +216,52 @@ class TestEndpointCountClaims:
             "prompts": 3,
             "endpoints": 36,
         }
+
+
+# ---------------------------------------------------------------------------
+# Lockfile vs manifest: the drift that shipped the mcp 2.x migration
+# ---------------------------------------------------------------------------
+
+
+class TestLockfileAgreesWithManifest:
+    """uv.lock must not contradict pyproject.toml's declared requirements.
+
+    The mcp 1.x -> 2.x migration raised the floor to >=2.0.0 and left the
+    lockfile resolving 1.16.0. CI and Docker install with pip and never read
+    the lock, so nothing went red; the failure was reserved for whoever ran
+    the documented `uv sync`. This repo already turns each such incident into
+    a permanent guard (see the endpoint-count and package-version checks
+    above) — this is that guard for the lockfile.
+    """
+
+    def test_lock_records_the_declared_dependency_specifiers(self):
+        lock_path = REPO_ROOT / "uv.lock"
+        if not lock_path.exists():
+            pytest.skip("no uv.lock in this checkout")
+
+        pyproject = tomllib.loads(
+            (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        )
+        declared = {}
+        for entry in pyproject["project"]["dependencies"]:
+            name = re.split(r"[\[><=!~;]", entry, maxsplit=1)[0].strip()
+            declared[name.lower()] = entry.strip()
+
+        lock_text = lock_path.read_text(encoding="utf-8")
+        mismatches = []
+        for name, spec in declared.items():
+            # The lock echoes each requirement verbatim in [package.metadata]
+            # requires-dist as `specifier = "<constraint>"`.
+            constraint = spec[len(spec.split(name)[0]) + len(name):].strip()
+            constraint = constraint.lstrip("]").strip()
+            if constraint.startswith("["):
+                constraint = constraint.split("]", 1)[-1].strip()
+            if not constraint:
+                continue
+            if f'specifier = "{constraint}"' not in lock_text:
+                mismatches.append(f"{name}: pyproject wants {constraint!r}")
+
+        assert mismatches == [], (
+            "uv.lock does not record these declared specifiers — run "
+            "`uv lock` and commit the result:\n  " + "\n  ".join(mismatches)
+        )

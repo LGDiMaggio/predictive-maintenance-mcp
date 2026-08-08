@@ -5,12 +5,54 @@ All notable changes to the Predictive Maintenance MCP Server project will be doc
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.10.0] - 2026-08-08
+
+Minor release rather than a patch: the dependency floor change below is
+breaking for installs, and this project's pre-1.0 semver treats that as a
+MINOR bump.
+
+### Changed
+- **BREAKING (install):** migrated the server to the mcp 2.x API and raised
+  the floor to `mcp[cli]>=2.0.0`. mcp 2.0.0 removed `mcp.server.fastmcp`,
+  so `FastMCP` is now `MCPServer` from `mcp.server.mcpserver`. The two APIs
+  cannot be supported from one source tree, so mcp 1.x is no longer
+  installable with this package.
+- Transport wiring no longer goes through `mcp.settings`: mcp 2.x dropped
+  `Settings.host` / `Settings.port`, so `--host` / `--port` are passed to
+  `mcp.run()` as per-transport kwargs. `stdio` is invoked without them
+  (`run_stdio_async` accepts neither).
+
+The registered surface is unchanged — 33 tools, 0 resources, 3 prompts,
+with identical names and input schemas. `tests/fixtures/tool_inventory.json`
+was **not** regenerated: it passes as-is against mcp 2.0.0, which is the
+evidence that the migration is protocol-invisible.
 
 ## [0.9.1] - 2026-07-13
 
 Patch release: two robustness fixes of the same class caught while
 diagnosing crash reports from a pre-0.9.0 server.
+
+### Changed
+- **Public export shape.** `predictive_maintenance_mcp.mcp` is a declared
+  export (`__all__` in `src/__init__.py`) and its runtime type changes from
+  `mcp.server.fastmcp.FastMCP` to `mcp.server.mcpserver.MCPServer`. It no
+  longer carries `.settings.host` / `.settings.port` — those moved to
+  per-transport `run()` keyword arguments upstream. Anyone importing that
+  singleton and reading the bind address off it must read it from the CLI /
+  env instead.
+- Environment-supplied configuration is now validated. `MCP_TRANSPORT` was
+  only checked by argparse when passed as a flag, never as a default, so an
+  unrecognised value from a compose file reached `run()` and crash-looped.
+  A set-but-empty `MCP_HOST` resolved to the empty string, which binds to
+  every interface — the opposite of what blanking it suggests. Both now
+  resolve to the documented defaults or exit with a clear message.
+- The pre-bind log line reads "Binding to" rather than "Listening on": it is
+  emitted before `run()` is called, so on a port conflict the old wording
+  asserted success directly above the traceback.
+- `Context.debug/info/warning/error` are deprecated upstream under SEP-2577
+  (still async, still functional, but they now emit a warning that is shown
+  by default). This release does not migrate the ~116 call sites; that is
+  tracked separately.
 
 ### Fixed
 - `generate_envelope_report` now resolves its default upper band edge

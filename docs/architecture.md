@@ -8,7 +8,7 @@ predictive-maintenance-mcp is structured around the **ISO 13374 six-block archit
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                     MCP Server (FastMCP)                        │
+│                    MCP Server (MCPServer)                       │
 │                 server.py  +  mcp_tools/*.py                    │
 │                   MCP tools, resources, prompts                 │
 └──────────┬──────────┬──────────┬──────────┬──────────┬──────────┘
@@ -113,7 +113,7 @@ MCP Server ──▶ LLM (Claude) ──▶ Human-readable recommendations
 src/
 ├── __init__.py                        # Package entry
 ├── __main__.py                        # CLI entry
-├── server.py                          # FastMCP orchestrator (registers mcp_tools)
+├── server.py                          # MCPServer orchestrator (registers mcp_tools)
 ├── config.py                          # Path resolution (DATA_DIR, etc.)
 ├── models.py                          # Pydantic v2 response models
 ├── path_safety.py                     # Path containment helpers

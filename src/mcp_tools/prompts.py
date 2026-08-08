@@ -8,7 +8,7 @@ by loading the signal if it is not already in the repository.
 
 from typing import Optional
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 
 
@@ -479,7 +479,7 @@ def quick_diagnostic_report(signal_id: str) -> str:
     """
 
 
-def register(mcp: FastMCP) -> None:
+def register(mcp: MCPServer) -> None:
     """Register diagnostic prompts on the MCP server."""
     mcp.prompt()(diagnose_bearing)
     mcp.prompt()(diagnose_gear)

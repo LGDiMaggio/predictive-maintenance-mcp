@@ -300,7 +300,7 @@ src/predictive_maintenance_mcp/
 ├── prognostics/               # RUL estimation (linear, exponential, Kalman) & trend analysis
 ├── rag.py                     # Document indexing & search (FAISS/TF-IDF)
 ├── models.py                  # Pydantic data models
-├── server.py                  # FastMCP server entry point
+├── server.py                  # MCPServer entry point
 └── config.py                  # Configuration management
 ```
 
@@ -391,7 +391,7 @@ Contributions welcome from **everyone** — not just programmers. Domain experts
   title   = {Predictive Maintenance MCP Server},
   author  = {Di Maggio, Luigi Gianpio},
   year    = {2025},
-  version = {0.9.1},
+  version = {0.10.0},
   url     = {https://github.com/LGDiMaggio/predictive-maintenance-mcp},
   doi     = {10.5281/zenodo.17611542}
 }
@@ -403,7 +403,7 @@ MIT — see [LICENSE](LICENSE). Sample data is CC BY-NC-SA 4.0 (non-commercial);
 
 ## Acknowledgments
 
-[FastMCP](https://github.com/jlowin/fastmcp) framework · [Model Context Protocol](https://modelcontextprotocol.io/) by Anthropic · Sample data from [MathWorks](https://github.com/mathworks/RollingElementBearingFaultDiagnosis-Data) · Core development assisted by [Claude](https://claude.ai)
+[MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) (descended from [FastMCP](https://github.com/jlowin/fastmcp)) · [Model Context Protocol](https://modelcontextprotocol.io/) by Anthropic · Sample data from [MathWorks](https://github.com/mathworks/RollingElementBearingFaultDiagnosis-Data) · Core development assisted by [Claude](https://claude.ai)
 
 ---
 

@@ -80,3 +80,4 @@ PRD_INDUSTRIAL_TRANSFORMATION.md
 
 # Claude Code per-agent worktrees
 .claude/worktrees/
+resources/cache/*.pkl

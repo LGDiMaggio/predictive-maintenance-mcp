@@ -7,7 +7,7 @@ import pandas as pd
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 from predictive_maintenance_mcp.mcp_tools.acquisition_tools import register
 
@@ -18,8 +18,8 @@ from predictive_maintenance_mcp.mcp_tools.acquisition_tools import register
 
 @pytest.fixture
 def mcp():
-    """Create a FastMCP test instance with acquisition tools registered."""
-    server = FastMCP("test-acquisition")
+    """Create a MCPServer test instance with acquisition tools registered."""
+    server = MCPServer("test-acquisition")
     register(server)
     return server
 

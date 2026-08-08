@@ -13,7 +13,7 @@ import pandas as pd
 from pathlib import Path
 from unittest.mock import AsyncMock
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 from sklearn.svm import OneClassSVM
@@ -28,7 +28,7 @@ from predictive_maintenance_mcp.signal_acquisition.repository import get_reposit
 
 @pytest.fixture
 def mcp():
-    server = FastMCP("test-reports")
+    server = MCPServer("test-reports")
     register(server)
     return server
 
@@ -153,7 +153,7 @@ class TestPlotSignal:
             signal_id="report_test",
             ctx=mock_ctx,
         )
-        assert mock_ctx.info.call_count >= 1
+        mock_ctx.info.assert_awaited()  # awaited, not merely called
         assert "Interactive plot saved" in result
 
 
@@ -345,7 +345,7 @@ class TestGenerateFFTReport:
             signal_id="report_test",
             ctx=mock_ctx,
         )
-        assert mock_ctx.info.call_count >= 1
+        mock_ctx.info.assert_awaited()  # awaited, not merely called
         assert "file_path" in result
 
 
@@ -438,7 +438,7 @@ class TestGenerateEnvelopeReport:
             bearing_freqs={"BPFO": 50.0, "BPFI": 100.0},
             ctx=mock_ctx,
         )
-        assert mock_ctx.info.call_count >= 1
+        mock_ctx.info.assert_awaited()  # awaited, not merely called
 
 
 # ---------------------------------------------------------------------------
