@@ -30,13 +30,15 @@ USAGE
     python scripts/setup-worktree.py --no-uv    # force stdlib venv + pip
     python scripts/setup-worktree.py --force    # recreate an existing .venv
 
-Non-interactive by design: agents and CI need to run it unattended. It never
-touches any checkout other than the one it lives in.
+Non-interactive by design: agents and CI need to run it unattended. It refuses
+to run outside a linked worktree unless you pass --primary, because in the
+primary checkout ``.venv`` is the environment every worktree shares.
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
@@ -44,7 +46,32 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 VENV_DIR = REPO_ROOT / ".venv"
+SRC_DIR = REPO_ROOT / "src"
 PKG = "predictive_maintenance_mcp"
+
+
+def is_linked_worktree() -> bool | None:
+    """Is this checkout a linked worktree rather than the primary one?
+
+    ``--git-dir`` is per-worktree (``.git/worktrees/<name>``) while
+    ``--git-common-dir`` is shared (``.git``); they differ exactly for a
+    linked worktree. Returns None when git cannot answer, so the caller can
+    tell "definitely primary" from "could not determine".
+    """
+    try:
+        git_dir, common = (
+            subprocess.run(
+                ["git", "rev-parse", flag],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout.strip()
+            for flag in ("--git-dir", "--git-common-dir")
+        )
+    except (subprocess.CalledProcessError, OSError):
+        return None
+    return Path(git_dir).resolve() != Path(common).resolve()
 
 
 def venv_python(venv: Path) -> Path:
@@ -55,8 +82,24 @@ def venv_python(venv: Path) -> Path:
 
 
 def run(cmd: list[str], **kwargs) -> subprocess.CompletedProcess:
-    print(f"   $ {' '.join(cmd)}")
+    # list2cmdline quotes what needs quoting, so the echoed line is
+    # copy-pasteable even though this repo's path contains spaces. flush
+    # because the output is normally piped (agents, CI): stdout is then
+    # block-buffered while the child writes to the fd directly, which
+    # otherwise prints every command *after* the output it was labelling.
+    print(f"   $ {subprocess.list2cmdline(cmd)}", flush=True)
     return subprocess.run(cmd, cwd=REPO_ROOT, **kwargs)
+
+
+def has_pip(python: Path) -> bool:
+    """Does this interpreter have pip? uv-created venvs do not."""
+    return (
+        subprocess.run(
+            [str(python), "-m", "pip", "--version"],
+            capture_output=True,
+        ).returncode
+        == 0
+    )
 
 
 def install_with_uv() -> bool:
@@ -81,7 +124,20 @@ def install_with_uv() -> bool:
 
 
 def install_with_pip() -> bool:
-    """Create .venv with the stdlib and editable-install into it."""
+    """Create .venv with the stdlib and editable-install into it.
+
+    Does not trust an existing .venv to be usable. When this runs as the
+    fallback after ``uv sync`` failed, the directory it finds was created by
+    uv moments earlier -- uv creates the venv before resolving, and does not
+    seed pip. Adopting it means running ``python -m pip`` in an interpreter
+    that has no pip, so the advertised fallback fails in exactly the
+    situation it exists for.
+    """
+    python = venv_python(VENV_DIR)
+    if VENV_DIR.exists() and not (python.exists() and has_pip(python)):
+        print("   existing .venv/ has no usable pip -- recreating it")
+        shutil.rmtree(VENV_DIR, ignore_errors=True)
+
     if not VENV_DIR.exists():
         if run([sys.executable, "-m", "venv", str(VENV_DIR)]).returncode != 0:
             return False
@@ -128,10 +184,15 @@ def verify() -> bool:
     print(f"   package  : {resolved}")
     print(f"   version  : {version}")
 
-    if not resolved.is_relative_to(REPO_ROOT):
+    # Against src/, not REPO_ROOT. Worktrees live at
+    # <primary>/.claude/worktrees/<name> and .venv lives under the root, so
+    # is_relative_to(REPO_ROOT) also accepts a sibling worktree's source and
+    # a non-editable copy inside our own site-packages -- both of which mean
+    # edits to src/ have no effect while this prints success.
+    if not resolved.is_relative_to(SRC_DIR):
         print(
-            f"\n   FAILED: still importing from outside this checkout.\n"
-            f"   this checkout : {REPO_ROOT}\n"
+            f"\n   FAILED: still importing from outside this checkout's src/.\n"
+            f"   this checkout : {SRC_DIR}\n"
             f"   imported from : {resolved}\n"
             f"   Try again with --force to rebuild .venv from scratch."
         )
@@ -154,21 +215,55 @@ def main() -> int:
         action="store_true",
         help="delete an existing .venv first",
     )
+    parser.add_argument(
+        "--primary",
+        action="store_true",
+        help="allow running in the primary checkout (rebuilds the shared .venv)",
+    )
     args = parser.parse_args()
+
+    # Refuse in the primary checkout unless asked twice. There, .venv is not
+    # "this checkout's environment" -- it is the one every worktree shares,
+    # and `uv sync` prunes to base+dev by default. Running here silently
+    # uninstalls the extras (weasyprint, pypdf2, ...), which does not fail
+    # anything: it flips the HAS_PDF skipif gates, so the PDF path stops
+    # being tested in every checkout at once, with no signal.
+    linked = is_linked_worktree()
+    if linked is False and not args.primary:
+        print(
+            f"Refusing to run: {REPO_ROOT} is the primary checkout, not a\n"
+            "linked worktree. Its .venv/ is the environment every worktree\n"
+            "shares, and rebuilding it here would prune the optional extras\n"
+            "(weasyprint, pypdf2, ...) that the suite's skipif gates rely on\n"
+            "-- silently turning PDF coverage off everywhere.\n\n"
+            "If that is genuinely what you want, pass --primary."
+        )
+        return 1
+    if linked is None:
+        print("   (could not ask git whether this is a worktree; continuing)")
 
     print(f"Setting up an environment for: {REPO_ROOT}")
 
     if VENV_DIR.exists():
         if args.force:
             print(f"\n1. Removing existing {VENV_DIR.name}/ ...")
+            # Rename first so the destructive step is atomic. rmtree deletes
+            # depth-first and raises on the first locked file; on a synced or
+            # AV-scanned tree of ~18k files that leaves a partial .venv that
+            # the next run would silently adopt.
+            doomed = VENV_DIR.with_name(f"{VENV_DIR.name}.old-{os.getpid()}")
             try:
-                shutil.rmtree(VENV_DIR)
+                VENV_DIR.rename(doomed)
             except OSError as exc:
                 print(
                     f"   ERROR: {exc}\n"
                     "   Close any shell that has this environment activated."
                 )
                 return 1
+            shutil.rmtree(doomed, ignore_errors=True)
+            if doomed.exists():
+                print(f"   note: could not fully delete {doomed.name}; "
+                      "remove it by hand when nothing holds it open")
         else:
             print(f"\n1. Reusing existing {VENV_DIR.name}/ (--force to recreate)")
     else:
@@ -186,7 +281,10 @@ def main() -> int:
         installed = install_with_pip()
 
     if not installed:
-        print("\nFAILED: dependency installation did not complete.")
+        print(
+            "\nFAILED: dependency installation did not complete.\n"
+            "   Rerun with --force to rebuild .venv/ from scratch."
+        )
         return 1
 
     print("\n3. Verifying import provenance ...")

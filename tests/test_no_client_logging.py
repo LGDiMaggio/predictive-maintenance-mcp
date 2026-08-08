@@ -39,11 +39,24 @@ PROBE = "routing-probe-marker"
 
 
 def _run_probe(preamble: str = "") -> tuple[str, str]:
-    """Emit one package log record in a clean interpreter; return (out, err)."""
+    """Emit one package log record in a clean interpreter; return (out, err).
+
+    The child gets conftest's SUBPROCESS_PIN first. Without it the child
+    loads no conftest, so the editable install's hardcoded MAPPING wins and
+    the probe answers about whichever checkout ran ``pip install -e .`` --
+    which in a git worktree is not this one. These two tests exist precisely
+    because in-process capture could not tell us where the bytes go; a probe
+    aimed at the wrong tree would be the same class of false confidence.
+    """
+    from conftest import SUBPROCESS_PIN
+
     code = (
+        f"{SUBPROCESS_PIN}"
         f"{preamble}"
         "import logging;"
         "import predictive_maintenance_mcp.server as s;"
+        f"assert s.__file__.startswith({str(SRC)!r}), (\n"
+        f"    'probe resolved to ' + s.__file__ + ', not this checkout')\n"
         f"logging.getLogger(s.PACKAGE_LOGGER + '.probe').info({PROBE!r})"
     )
     proc = subprocess.run(

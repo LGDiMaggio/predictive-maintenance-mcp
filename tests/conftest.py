@@ -84,7 +84,12 @@ def _assert_import_provenance() -> None:
     import predictive_maintenance_mcp as pkg
 
     resolved = Path(pkg.__file__).resolve()
-    if resolved.is_relative_to(REPO_ROOT):
+    # Exact identity, not containment under REPO_ROOT. Worktrees live at
+    # <primary>/.claude/worktrees/<name> and .venv lives under the root, so
+    # `is_relative_to(REPO_ROOT)` silently accepts a SIBLING worktree's
+    # source and a non-editable copy inside our own site-packages -- both of
+    # which mean edits to src/ do nothing while this guard reports success.
+    if resolved == (SRC_DIR / "__init__.py").resolve():
         return
 
     raise RuntimeError(
@@ -100,12 +105,36 @@ def _assert_import_provenance() -> None:
         "Fix: give this worktree its own environment --\n"
         "  python scripts/setup-worktree.py\n"
         "\n"
-        "To test an installed distribution on purpose, set "
-        "PMM_TEST_ALLOW_INSTALLED=1."
+        "PMM_TEST_ALLOW_INSTALLED=1 disables this pin for diagnosis. It is "
+        "not a supported way to run the suite: the provenance tests assert "
+        "the pinned invariant directly and will skip, so a green run under "
+        "that flag proves less than a normal one."
     )
 
 
 _assert_import_provenance()
+
+
+#: Bootstrap that reproduces the pin inside a child interpreter.
+#:
+#: The pin lives in this conftest, which a subprocess never loads -- so a test
+#: that shells out to ``sys.executable`` gets the editable install's hardcoded
+#: MAPPING and silently probes the PRIMARY checkout. That is the same defect
+#: this file exists to close, one process boundary away, and it hits exactly
+#: the tests that shell out *because* in-process capture could not answer
+#: their question (see tests/test_no_client_logging.py).
+SUBPROCESS_PIN = f"""\
+import importlib.util as _ilu, sys as _sys
+_SRC = {str(SRC_DIR)!r}
+class _Pin:
+    @classmethod
+    def find_spec(cls, name, path=None, target=None):
+        if name != {_PKG!r}:
+            return None
+        return _ilu.spec_from_file_location(
+            name, _SRC + '/__init__.py', submodule_search_locations=[_SRC])
+_sys.meta_path.insert(0, _Pin)
+"""
 
 # Test data directory
 TEST_DATA_DIR = REPO_ROOT / "data" / "signals" / "real_train"

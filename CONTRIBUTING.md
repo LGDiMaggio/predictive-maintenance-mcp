@@ -183,6 +183,11 @@ see.
 package to the tree it lives in and raises at collection if that ever fails, so
 `pytest` is correct in every worktree.
 
+Two exceptions, both narrow. `pytest --noconftest` disables the binding along
+with everything else in that file. And a test that shells out to a child
+interpreter gets no conftest either — those pass `conftest.SUBPROCESS_PIN` into
+the child explicitly; a new one that shells out must do the same.
+
 **Running anything else** — the server, a REPL, `validate_server.py` — needs a
 real environment for this checkout:
 
@@ -196,13 +201,24 @@ imports from this checkout. Budget ~500 MB and ~18k files per worktree; on a
 OneDrive- or Dropbox-synced tree that sync cost is why it is a deliberate
 command rather than something automatic.
 
+Two things to know before running it. It refuses in the **primary** checkout
+unless you pass `--primary`: there `.venv` is the environment every worktree
+shares, and `uv sync` prunes to base+dev, which would silently uninstall the
+optional extras the suite's `skipif` gates depend on — turning PDF coverage
+off everywhere without failing anything. And the `uv` path installs from
+`uv.lock`, which is not what CI resolves (`pip install -e ".[dev]"`); use
+`--no-uv` when you are reproducing a CI result.
+
 To check by hand at any time:
 
 ```bash
 python -c "import predictive_maintenance_mcp as p; print(p.__file__)"
 ```
 
-The printed path must sit under the worktree you are standing in.
+The printed path must sit under the worktree you are standing in — **once you
+have run `setup-worktree.py` there**. Before that it will print the primary
+checkout's path, which is expected: the script is opt-in, and `pytest` does not
+need it.
 
 ---
 
