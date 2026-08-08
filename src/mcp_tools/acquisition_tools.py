@@ -1,4 +1,19 @@
-"""MCP tools for signal acquisition and data management (ISO 13374 Block 1)."""
+"""MCP tools for signal acquisition and data management (ISO 13374 Block 1).
+
+Logging note
+------------
+Every tool here takes a ``ctx`` parameter it never uses. That is deliberate,
+not leftover: ``tests/fixtures/tool_inventory.json`` pins ``context_kwarg``
+per tool, so dropping the parameter would be a protocol-visible change to
+the tool surface.
+
+What changed in 0.12.0 is *how* progress is emitted, not whether tools
+accept a context. SEP-2577 deprecated the MCP logging capability with no
+in-protocol replacement, so narration goes to this module's logger, which
+``server.configure_logging`` binds to stderr — stdout is the stdio
+transport's JSON-RPC channel. Clients no longer receive progress
+notifications; any fact a caller needs is carried by the return value.
+"""
 
 import itertools
 import logging
@@ -39,7 +54,7 @@ async def list_signals(
     declared unit) — use to see which signal_ids are available for analysis.
 
     Args:
-        ctx: MCP context.
+        ctx: MCP context. Unused — see this module's docstring on logging.
         scope: 'disk' for loadable files, 'memory' for loaded signal_ids.
 
     Returns:
@@ -49,8 +64,7 @@ async def list_signals(
     if scope == "memory":
         repo = get_repository()
         signals = repo.list_signals()
-        if ctx:
-            await ctx.info(f"{len(signals)} signal(s) in repository")
+        logger.info(f"{len(signals)} signal(s) in repository")
         return {
             "scope": "memory",
             "count": len(signals),
@@ -65,8 +79,7 @@ async def list_signals(
                 rel = file_path.relative_to(DATA_DIR)
                 files.append(str(rel).replace("\\", "/"))
     files.sort()
-    if ctx:
-        await ctx.info(f"{len(files)} signal file(s) on disk")
+    logger.info(f"{len(files)} signal file(s) on disk")
     return {"scope": "disk", "count": len(files), "files": files}
 
 async def generate_test_signal(
@@ -97,14 +110,13 @@ async def generate_test_signal(
         sampling_rate: Sampling frequency in Hz.
         noise_level: Additive white-noise amplitude.
         random_seed: Seed for reproducible noise (None = non-deterministic).
-        ctx: MCP context.
+        ctx: MCP context. Unused — see this module's docstring on logging.
 
     Returns:
         StoredSignalInfo of the auto-loaded signal (signal_id, declared
         sampling_rate and unit 'g').
     """
-    if ctx:
-        await ctx.info(f"Generating {signal_type} test signal...")
+    logger.info(f"Generating {signal_type} test signal...")
 
     rng = np.random.default_rng(random_seed)
 
@@ -183,12 +195,11 @@ async def generate_test_signal(
     repo = get_repository()
     info = repo.load_signal(filename)
 
-    if ctx:
-        await ctx.info(
-            f"Test signal saved as {filename} and loaded as signal_id "
-            f"'{info['signal_id']}' ({signal_type}, {duration}s @ "
-            f"{sampling_rate:g} Hz, unit 'g')"
-        )
+    logger.info(
+        f"Test signal saved as {filename} and loaded as signal_id "
+        f"'{info['signal_id']}' ({signal_type}, {duration}s @ "
+        f"{sampling_rate:g} Hz, unit 'g')"
+    )
 
     return StoredSignalInfo(**info)
 
@@ -261,18 +272,17 @@ async def load_signal(
             signal_unit=signal_unit,
             overwrite=overwrite,
         )
-        if ctx:
-            ids = [i["signal_id"] for i in infos]
-            await ctx.info(f"Loaded {len(infos)} signals: {ids}")
-            undeclared = [
-                i["signal_id"] for i in infos if not i.get("signal_unit")
-            ]
-            if undeclared:
-                await ctx.info(
-                    f"Signal unit not declared for {undeclared} — ISO "
-                        f"severity verdicts will be refused for these until "
-                        f"the unit is declared."
-                )
+        ids = [i["signal_id"] for i in infos]
+        logger.info(f"Loaded {len(infos)} signals: {ids}")
+        undeclared = [
+            i["signal_id"] for i in infos if not i.get("signal_unit")
+        ]
+        if undeclared:
+            logger.info(
+                f"Signal unit not declared for {undeclared} — ISO "
+                    f"severity verdicts will be refused for these until "
+                    f"the unit is declared."
+            )
         return [StoredSignalInfo(**i) for i in infos]
 
     info = repo.load_signal(
@@ -282,16 +292,15 @@ async def load_signal(
         signal_unit=signal_unit,
         overwrite=overwrite,
     )
-    if ctx:
-        await ctx.info(f"Loaded signal '{info['signal_id']}': {info['num_samples']} samples, {info['size_bytes'] / 1024:.1f} KB")
-        if info.get("signal_unit"):
-            await ctx.info(f"Signal unit: '{info['signal_unit']}' (declared)")
-        else:
-            await ctx.info(
-                "Signal unit: not declared — ISO severity verdicts will be "
-                    "refused until the unit is declared "
-                    "(load_signal(signal_unit=...) or metadata 'signal_unit')."
-            )
+    logger.info(f"Loaded signal '{info['signal_id']}': {info['num_samples']} samples, {info['size_bytes'] / 1024:.1f} KB")
+    if info.get("signal_unit"):
+        logger.info(f"Signal unit: '{info['signal_unit']}' (declared)")
+    else:
+        logger.info(
+            "Signal unit: not declared — ISO severity verdicts will be "
+                "refused until the unit is declared "
+                "(load_signal(signal_unit=...) or metadata 'signal_unit')."
+        )
     return StoredSignalInfo(**info)
 
 async def get_signal_info(ctx: Context, signal_id: str) -> StoredSignalInfo:
@@ -302,7 +311,7 @@ async def get_signal_info(ctx: Context, signal_id: str) -> StoredSignalInfo:
     fields (sampling_rate, declared signal_unit, shape, timestamps).
 
     Args:
-        ctx: MCP context.
+        ctx: MCP context. Unused — see this module's docstring on logging.
         signal_id: ID of a signal previously loaded via load_signal.
 
     Returns:
@@ -325,7 +334,7 @@ async def clear_signals(
     """Remove one signal — or all signals — from the in-memory repository.
 
     Args:
-        ctx: MCP context.
+        ctx: MCP context. Unused — see this module's docstring on logging.
         signal_id: ID to remove; None (default) clears the whole cache.
 
     Returns:
@@ -335,14 +344,12 @@ async def clear_signals(
     repo = get_repository()
     if signal_id is None:
         count = repo.clear_all()
-        if ctx:
-            await ctx.info(f"Cleared {count} signal(s) from repository")
+        logger.info(f"Cleared {count} signal(s) from repository")
         return {"cleared_count": count}
 
     removed = repo.clear_signal(signal_id)
     status = "removed" if removed else "not_found"
-    if ctx:
-        await ctx.info(f"Signal '{signal_id}': {status}")
+    logger.info(f"Signal '{signal_id}': {status}")
     return {
         "signal_id": signal_id,
         "status": status,

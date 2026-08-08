@@ -1,4 +1,19 @@
-"""MCP tools for diagnostics, anomaly detection, and documentation (ISO 13374 Blocks 3-4)."""
+"""MCP tools for diagnostics, anomaly detection, and documentation (ISO 13374 Blocks 3-4).
+
+Logging note
+------------
+Every tool here takes a ``ctx`` parameter it never uses. That is deliberate,
+not leftover: ``tests/fixtures/tool_inventory.json`` pins ``context_kwarg``
+per tool, so dropping the parameter would be a protocol-visible change to
+the tool surface.
+
+What changed in 0.12.0 is *how* progress is emitted, not whether tools
+accept a context. SEP-2577 deprecated the MCP logging capability with no
+in-protocol replacement, so narration goes to this module's logger, which
+``server.configure_logging`` binds to stderr — stdout is the stdio
+transport's JSON-RPC channel. Clients no longer receive progress
+notifications; any fact a caller needs is carried by the return value.
+"""
 
 import logging
 import json
@@ -61,7 +76,6 @@ async def _extract_features_from_ids(
     signal_ids: list[str],
     segment_duration: float,
     overlap_ratio: float,
-    ctx: Context = None,
 ) -> tuple[list[dict], dict[str, float]]:
     """
     Resolve stored signals, segment them, and extract features.
@@ -75,7 +89,6 @@ async def _extract_features_from_ids(
         signal_ids: Stored signal IDs (from load_signal)
         segment_duration: Segment duration in seconds
         overlap_ratio: Overlap ratio (0-1)
-        ctx: MCP context for logging
 
     Returns:
         Tuple of (all_features_list, {signal_id: sampling_rate})
@@ -87,8 +100,7 @@ async def _extract_features_from_ids(
         signal_data, info = resolve_signal(sid)
         file_rate = info.sampling_rate
 
-        if ctx:
-            await ctx.info(f"  '{sid}': {file_rate} Hz")
+        logger.info(f"  '{sid}': {file_rate} Hz")
 
         detected_rates[sid] = file_rate
 
@@ -104,7 +116,6 @@ async def _extract_and_transform_validation_features(
     overlap_ratio: float,
     scaler,
     pca,
-    ctx: Context = None,
 ) -> Optional[np.ndarray]:
     """
     Extract features from stored validation signals and apply scaler + PCA.
@@ -115,13 +126,12 @@ async def _extract_and_transform_validation_features(
         overlap_ratio: Overlap ratio (0-1)
         scaler: Fitted StandardScaler
         pca: Fitted PCA transformer
-        ctx: MCP context for logging
 
     Returns:
         PCA-transformed feature matrix, or None if no features extracted
     """
     features_list, _ = await _extract_features_from_ids(
-        signal_ids, segment_duration, overlap_ratio, ctx=ctx
+        signal_ids, segment_duration, overlap_ratio
     )
 
     if not features_list:
@@ -193,7 +203,7 @@ async def assess_severity(
       (e.g. from a portable instrument) — no unit declaration needed.
 
     Args:
-        ctx: MCP context.
+        ctx: MCP context. Unused — see this module's docstring on logging.
         signal_id: ID of the stored signal (mutually exclusive with
             rms_velocity_mm_s).
         rms_velocity_mm_s: Direct broadband RMS velocity in mm/s
@@ -254,11 +264,10 @@ async def assess_severity(
                 f"add a 'signal_unit' field to the companion "
                 f"_metadata.json."
             )
-        if ctx:
-            await ctx.info(
-                f"Assessing severity for '{signal_id}' (group "
-                f"{machine_group}, {support_type}, unit: {unit})"
-            )
+        logger.info(
+            f"Assessing severity for '{signal_id}' (group "
+            f"{machine_group}, {support_type}, unit: {unit})"
+        )
 
         raw = assess_severity_raw(
             signal=signal_data,
@@ -287,10 +296,9 @@ async def assess_severity(
         frequency_range = "not applicable — direct RMS velocity reading"
         unit_conversion = False
         original_unit = "mm/s"
-        if ctx:
-            await ctx.info(
-                f"Assessing severity for a direct reading of {rms:.2f} mm/s"
-            )
+        logger.info(
+            f"Assessing severity for a direct reading of {rms:.2f} mm/s"
+        )
         zone_info = classify_zone(rms, machine_group, support_type)
         zone_block = {
             "zone": zone_info["zone"],
@@ -316,11 +324,10 @@ async def assess_severity(
             "threshold_provenance": _CUSTOM_THRESHOLD_PROVENANCE,
         }
 
-    if ctx:
-        await ctx.info(
-            f"Zone {zone_block['zone']} ({zone_block['severity_level']}): "
-            f"{rms:.2f} mm/s"
-        )
+    logger.info(
+        f"Zone {zone_block['zone']} ({zone_block['severity_level']}): "
+        f"{rms:.2f} mm/s"
+    )
 
     return VibrationSeverityResult(
         signal_id=signal_id,
@@ -388,7 +395,7 @@ async def train_anomaly_model(
             healthy_validation_ids: Optional stored healthy signal IDs for validation (specificity check).
                                       If not provided, 20% of training data will be used.
             model_name: Name for saved model files (default: 'anomaly_model')
-            ctx: MCP context for progress/logging
+            ctx: MCP context. Unused — see this module's docstring on logging.
 
         Returns:
             AnomalyModelResult with model paths and performance metrics
@@ -401,20 +408,18 @@ async def train_anomaly_model(
     # touching the filesystem (the write happens in step 6).
     validate_name_component(model_name, kind="model_name")
 
-    if ctx:
-        await ctx.info(f"Training {model_type} model on {len(healthy_signal_ids)} healthy signals...")
+    logger.info(f"Training {model_type} model on {len(healthy_signal_ids)} healthy signals...")
 
     # Step 1: Extract features from all healthy signals
     all_features, detected_rates = await _extract_features_from_ids(
-        healthy_signal_ids, segment_duration, overlap_ratio, ctx=ctx
+        healthy_signal_ids, segment_duration, overlap_ratio
     )
 
     features_df = pd.DataFrame(all_features)
     X_train = features_df.values
 
-    if ctx:
-        await ctx.info(f"Extracted {X_train.shape[0]} feature vectors from healthy data")
-        await ctx.info(f"Original feature dimension: {X_train.shape[1]}")
+    logger.info(f"Extracted {X_train.shape[0]} feature vectors from healthy data")
+    logger.info(f"Original feature dimension: {X_train.shape[1]}")
 
     # Step 2: Standardize features
     scaler = StandardScaler()
@@ -424,9 +429,8 @@ async def train_anomaly_model(
     pca = PCA(n_components=pca_variance)
     X_pca = pca.fit_transform(X_scaled)
 
-    if ctx:
-        await ctx.info(f"PCA components: {pca.n_components_}")
-        await ctx.info(f"Variance explained: {pca.explained_variance_ratio_.sum():.3f}")
+    logger.info(f"PCA components: {pca.n_components_}")
+    logger.info(f"Variance explained: {pca.explained_variance_ratio_.sum():.3f}")
 
     # Step 4: Train anomaly detection model
     # Strategy: Train on healthy data only (unsupervised), then use validation for hyperparameter tuning
@@ -434,16 +438,15 @@ async def train_anomaly_model(
     if model_type == "OneClassSVM":
         if fault_signal_ids:
             # SEMI-SUPERVISED MODE: Train on healthy, tune hyperparameters with validation (healthy + fault)
-            if ctx:
-                await ctx.info("Training in SEMI-SUPERVISED mode")
-                await ctx.info("- Training: Healthy data only (unsupervised)")
-                await ctx.info("- Hyperparameter tuning: Using validation set (healthy + fault)")
-                await ctx.info("Evaluating hyperparameter grid...")
+            logger.info("Training in SEMI-SUPERVISED mode")
+            logger.info("- Training: Healthy data only (unsupervised)")
+            logger.info("- Hyperparameter tuning: Using validation set (healthy + fault)")
+            logger.info("Evaluating hyperparameter grid...")
 
             # Prepare validation features for fault signals
             X_fault = await _extract_and_transform_validation_features(
                 fault_signal_ids, segment_duration, overlap_ratio,
-                scaler, pca, ctx=ctx
+                scaler, pca
             )
 
             # Prepare validation features for healthy signals
@@ -451,7 +454,7 @@ async def train_anomaly_model(
             if healthy_validation_ids:
                 X_healthy_val = await _extract_and_transform_validation_features(
                     healthy_validation_ids, segment_duration, overlap_ratio,
-                    scaler, pca, ctx=ctx
+                    scaler, pca
                 )
 
             # Hyperparameter grid
@@ -501,15 +504,13 @@ async def train_anomaly_model(
 
             model = best_model
 
-            if ctx:
-                await ctx.info(f"Best hyperparameters: nu={best_params['nu']}, gamma={best_params['gamma']}")
-                await ctx.info(f"Validation balanced accuracy: {best_score:.3f}")
+            logger.info(f"Best hyperparameters: nu={best_params['nu']}, gamma={best_params['gamma']}")
+            logger.info(f"Validation balanced accuracy: {best_score:.3f}")
 
         else:
             # UNSUPERVISED MODE: No fault data -> Use automatic parameters
-            if ctx:
-                await ctx.info("Training in UNSUPERVISED mode (novelty detection)")
-                await ctx.info("Using automatic parameters: nu='auto', gamma='scale'")
+            logger.info("Training in UNSUPERVISED mode (novelty detection)")
+            logger.info("Using automatic parameters: nu='auto', gamma='scale'")
 
             # Auto-calculate nu based on expected outlier fraction (rule of thumb: 5%)
             nu_auto = min(0.1, max(0.01, 1.0 / np.sqrt(len(X_pca))))
@@ -528,21 +529,19 @@ async def train_anomaly_model(
                 'mode': 'unsupervised_auto'
             }
 
-            if ctx:
-                await ctx.info(f"Auto-calculated nu={nu_auto:.4f} based on sample size")
+            logger.info(f"Auto-calculated nu={nu_auto:.4f} based on sample size")
 
     elif model_type == "LocalOutlierFactor":
         if fault_signal_ids:
             # SEMI-SUPERVISED MODE with LOF
-            if ctx:
-                await ctx.info("Training LOF in SEMI-SUPERVISED mode")
-                await ctx.info("- Training: Healthy data only (unsupervised)")
-                await ctx.info("- Hyperparameter tuning: Using validation set")
+            logger.info("Training LOF in SEMI-SUPERVISED mode")
+            logger.info("- Training: Healthy data only (unsupervised)")
+            logger.info("- Hyperparameter tuning: Using validation set")
 
             # Prepare validation features for fault signals
             X_fault = await _extract_and_transform_validation_features(
                 fault_signal_ids, segment_duration, overlap_ratio,
-                scaler, pca, ctx=ctx
+                scaler, pca
             )
 
             # Prepare healthy validation features
@@ -550,7 +549,7 @@ async def train_anomaly_model(
             if healthy_validation_ids:
                 X_healthy_val = await _extract_and_transform_validation_features(
                     healthy_validation_ids, segment_duration, overlap_ratio,
-                    scaler, pca, ctx=ctx
+                    scaler, pca
                 )
 
             # Hyperparameter search for LOF
@@ -596,14 +595,12 @@ async def train_anomaly_model(
 
             model = best_model
 
-            if ctx:
-                await ctx.info(f"Best parameters: n_neighbors={best_params['n_neighbors']}, contamination={best_params['contamination']}")
+            logger.info(f"Best parameters: n_neighbors={best_params['n_neighbors']}, contamination={best_params['contamination']}")
 
         else:
             # UNSUPERVISED MODE: Auto parameters
-            if ctx:
-                await ctx.info("Training LOF in UNSUPERVISED mode")
-                await ctx.info("Using automatic parameters based on sample size")
+            logger.info("Training LOF in UNSUPERVISED mode")
+            logger.info("Using automatic parameters based on sample size")
 
             # Auto-calculate n_neighbors (rule of thumb: sqrt(n) or ~5% of samples)
             n_auto = max(10, min(50, int(np.sqrt(len(X_pca)))))
@@ -622,8 +619,7 @@ async def train_anomaly_model(
                 'mode': 'unsupervised_auto'
             }
 
-            if ctx:
-                await ctx.info(f"Auto-calculated n_neighbors={n_auto}")
+            logger.info(f"Auto-calculated n_neighbors={n_auto}")
 
     else:
         raise ValueError(f"Unknown model_type: {model_type}. Use 'OneClassSVM' or 'LocalOutlierFactor'")
@@ -641,13 +637,12 @@ async def train_anomaly_model(
 
         if healthy_validation_ids:
             # Option 1: User provided explicit healthy validation files
-            if ctx:
-                await ctx.info(f"Using {len(healthy_validation_ids)} explicitly provided healthy validation files")
+            logger.info(f"Using {len(healthy_validation_ids)} explicitly provided healthy validation files")
 
             # Extract and transform features from validation signals
             X_pca_healthy_val = await _extract_and_transform_validation_features(
                 healthy_validation_ids, segment_duration, overlap_ratio,
-                scaler, pca, ctx=ctx
+                scaler, pca
             )
 
             if X_pca_healthy_val is not None:
@@ -656,8 +651,7 @@ async def train_anomaly_model(
                 healthy_total = len(healthy_predictions)
                 healthy_accuracy = healthy_correct / healthy_total
 
-                if ctx:
-                    await ctx.info(f"Healthy validation: {healthy_correct}/{healthy_total} correctly classified ({healthy_accuracy*100:.1f}%)")
+                logger.info(f"Healthy validation: {healthy_correct}/{healthy_total} correctly classified ({healthy_accuracy*100:.1f}%)")
             else:
                 healthy_correct = 0
                 healthy_total = 0
@@ -665,8 +659,7 @@ async def train_anomaly_model(
 
         else:
             # Option 2: Auto-split training data 80/20
-            if ctx:
-                await ctx.info("No healthy validation files provided - using 80/20 split of training data")
+            logger.info("No healthy validation files provided - using 80/20 split of training data")
 
             split_idx = int(0.8 * len(X_pca))
             X_pca_train = X_pca[:split_idx]
@@ -682,8 +675,7 @@ async def train_anomaly_model(
                 model_retrained.fit(X_pca_train)
                 model = model_retrained  # Use retrained model
 
-                if ctx:
-                    await ctx.info("Model retrained on 80% of data for validation")
+                logger.info("Model retrained on 80% of data for validation")
 
             # Validate on 20% split
             healthy_predictions = model.predict(X_pca_healthy_val)
@@ -691,15 +683,14 @@ async def train_anomaly_model(
             healthy_total = len(healthy_predictions)
             healthy_accuracy = healthy_correct / healthy_total
 
-            if ctx:
-                await ctx.info(f"Healthy validation: {healthy_correct}/{healthy_total} correctly classified ({healthy_accuracy*100:.1f}%)")
+            logger.info(f"Healthy validation: {healthy_correct}/{healthy_total} correctly classified ({healthy_accuracy*100:.1f}%)")
 
         # Part B: Validate on FAULT data (only if fault files were provided)
         X_fault_pca = None
         if fault_signal_ids:
             X_fault_pca = await _extract_and_transform_validation_features(
                 fault_signal_ids, segment_duration, overlap_ratio,
-                scaler, pca, ctx=ctx
+                scaler, pca
             )
 
         if X_fault_pca is not None:
@@ -732,9 +723,8 @@ async def train_anomaly_model(
                 'overall_accuracy': float(validation_accuracy)
             }
 
-            if ctx:
-                await ctx.info(f"Fault validation: {anomaly_detected}/{fault_total} detected as anomalies ({fault_accuracy*100:.1f}%)")
-                await ctx.info(f"Overall validation accuracy: {validation_accuracy*100:.1f}%")
+            logger.info(f"Fault validation: {anomaly_detected}/{fault_total} detected as anomalies ({fault_accuracy*100:.1f}%)")
+            logger.info(f"Overall validation accuracy: {validation_accuracy*100:.1f}%")
 
     # Step 6: Save model, scaler, and PCA
     # Validate model_name and contain every derived path before writing —
@@ -779,10 +769,9 @@ async def train_anomaly_model(
     with open(metadata_path, 'w') as f:
         json.dump(metadata, f, indent=2)
 
-    if ctx:
-        await ctx.info(f"Model saved to {model_path}")
-        await ctx.info(f"Scaler saved to {scaler_path}")
-        await ctx.info(f"PCA saved to {pca_path}")
+    logger.info(f"Model saved to {model_path}")
+    logger.info(f"Scaler saved to {scaler_path}")
+    logger.info(f"PCA saved to {pca_path}")
 
     return AnomalyModelResult(
         model_name=model_name,
@@ -824,7 +813,7 @@ async def predict_anomalies(
         Args:
             signal_id: ID of the stored signal to analyze (from load_signal)
             model_name: Name of trained model (default: 'anomaly_model')
-            ctx: MCP context for progress/logging
+            ctx: MCP context. Unused — see this module's docstring on logging.
 
         Returns:
             AnomalyPredictionResult with aggregate statistics and health
@@ -836,8 +825,7 @@ async def predict_anomalies(
             ValueError: If the signal_id is not loaded, or no sampling rate
                 is available for segmentation.
         """
-    if ctx:
-        await ctx.info(f"Predicting anomalies in '{signal_id}'...")
+    logger.info(f"Predicting anomalies in '{signal_id}'...")
 
     # Validate model_name and contain every derived path (single source of
     # truth shared with the training/PCA/pipeline model-load sites).
@@ -963,10 +951,9 @@ async def predict_anomalies(
     else:
         overall_health = "Faulty"
 
-    if ctx:
-        await ctx.info(f"Analyzed {len(predictions)} segments")
-        await ctx.info(f"Anomalies detected: {anomaly_count} ({anomaly_ratio*100:.1f}%)")
-        await ctx.info(f"Health status: {overall_health}")
+    logger.info(f"Analyzed {len(predictions)} segments")
+    logger.info(f"Anomalies detected: {anomaly_count} ({anomaly_ratio*100:.1f}%)")
+    logger.info(f"Health status: {overall_health}")
 
     return AnomalyPredictionResult(
         model_name=model_name,
@@ -1006,8 +993,7 @@ async def list_machine_manuals(ctx: Context | None = None) -> list[dict[str, Any
             "path": str(manual_file.relative_to(RESOURCES_DIR))
         })
 
-    if ctx:
-        await ctx.info(f"Found {len(manuals)} machine manuals in resources/machine_manuals/")
+    logger.info(f"Found {len(manuals)} machine manuals in resources/machine_manuals/")
 
 
     return sorted(manuals, key=lambda x: x['filename'])
@@ -1029,7 +1015,7 @@ async def extract_manual_specs(
         Args:
             file_name: Manual filename in resources/machine_manuals/
             use_cache: Use cached extraction if available (default: True)
-            ctx: MCP context
+            ctx: MCP context. Unused — see this module's docstring on logging.
 
         Returns:
             Dictionary with extracted specifications and text excerpt.
@@ -1038,8 +1024,7 @@ async def extract_manual_specs(
             FileNotFoundError: If the manual does not exist (the message
                 lists the available manuals).
         """
-    if ctx:
-        await ctx.info(f"Extracting specifications from: {file_name}")
+    logger.info(f"Extracting specifications from: {file_name}")
 
     manual_path = safe_resolve(RESOURCES_DIR / "machine_manuals", file_name)
 
@@ -1052,11 +1037,10 @@ async def extract_manual_specs(
     # Extract specs (with caching)
     specs = extract_machine_specs(manual_path, use_cache=use_cache)
 
-    if ctx:
-        await ctx.info(f"Found {len(specs['bearings'])} bearing designations")
-        await ctx.info(f"Found {len(specs['rpm_values'])} RPM values")
-        if specs['bearings']:
-            await ctx.info(f"Bearings: {', '.join(specs['bearings'][:5])}")
+    logger.info(f"Found {len(specs['bearings'])} bearing designations")
+    logger.info(f"Found {len(specs['rpm_values'])} RPM values")
+    if specs['bearings']:
+        logger.info(f"Bearings: {', '.join(specs['bearings'][:5])}")
 
     return specs
 
@@ -1083,7 +1067,7 @@ async def calculate_bearing_characteristic_frequencies(
             pitch_diameter_mm: Pitch circle diameter (Pd) in mm
             contact_angle_deg: Contact angle (alpha) in degrees
             rpm: Shaft rotation speed in RPM
-            ctx: MCP context
+            ctx: MCP context. Unused — see this module's docstring on logging.
 
         Returns:
             Dictionary with BPFO, BPFI, BSF, FTF in Hz.
@@ -1097,8 +1081,7 @@ async def calculate_bearing_characteristic_frequencies(
             >>> round(freqs['BPFO'], 2)
             107.36
         """
-    if ctx:
-        await ctx.info(f"Calculating bearing frequencies for {num_balls} balls at {rpm} RPM")
+    logger.info(f"Calculating bearing frequencies for {num_balls} balls at {rpm} RPM")
 
     freqs = calculate_bearing_frequencies(
         num_balls=num_balls,
@@ -1108,11 +1091,10 @@ async def calculate_bearing_characteristic_frequencies(
         shaft_speed_rpm=rpm
     )
 
-    if ctx:
-        await ctx.info(f"BPFO (outer race): {freqs['BPFO']:.2f} Hz")
-        await ctx.info(f"BPFI (inner race): {freqs['BPFI']:.2f} Hz")
-        await ctx.info(f"BSF (ball spin): {freqs['BSF']:.2f} Hz")
-        await ctx.info(f"FTF (cage): {freqs['FTF']:.2f} Hz")
+    logger.info(f"BPFO (outer race): {freqs['BPFO']:.2f} Hz")
+    logger.info(f"BPFI (inner race): {freqs['BPFI']:.2f} Hz")
+    logger.info(f"BSF (ball spin): {freqs['BSF']:.2f} Hz")
+    logger.info(f"FTF (cage): {freqs['FTF']:.2f} Hz")
 
     return freqs
 
@@ -1132,7 +1114,7 @@ async def read_manual_excerpt(
             file_name: Manual filename in resources/machine_manuals/
                 (PDF or TXT)
             max_pages: Maximum pages to extract (ignored for TXT files)
-            ctx: MCP context
+            ctx: MCP context. Unused — see this module's docstring on logging.
 
         Returns:
             Extracted text from the manual.
@@ -1140,8 +1122,7 @@ async def read_manual_excerpt(
         Raises:
             FileNotFoundError: If the manual does not exist.
         """
-    if ctx:
-        await ctx.info(f"Reading from: {file_name}")
+    logger.info(f"Reading from: {file_name}")
 
     manual_path = safe_resolve(RESOURCES_DIR / "machine_manuals", file_name)
 
@@ -1161,12 +1142,10 @@ async def read_manual_excerpt(
     if manual_path.suffix.lower() == '.txt':
         with open(manual_path, 'r', encoding='utf-8') as f:
             text = f.read()
-        if ctx:
-            await ctx.info(f"Extracted {len(text)} characters from text file")
+        logger.info(f"Extracted {len(text)} characters from text file")
     else:
         text = extract_text_from_pdf(manual_path, max_pages=max_pages)
-        if ctx:
-            await ctx.info(f"Extracted {len(text)} characters from {max_pages} pages")
+        logger.info(f"Extracted {len(text)} characters from {max_pages} pages")
 
     return text
 
@@ -1185,7 +1164,7 @@ async def search_bearing_catalog(
 
         Args:
             bearing_id: Bearing designation (e.g. "6205", "SKF 6205-2RS")
-            ctx: MCP context
+            ctx: MCP context. Unused — see this module's docstring on logging.
 
         Returns:
             Dictionary with bearing specifications if found, or a
@@ -1196,24 +1175,21 @@ async def search_bearing_catalog(
             Exception: If the catalog itself cannot be read (missing or
                 malformed common_bearings_catalog.json).
         """
-    if ctx:
-        await ctx.info(f"Searching catalog for bearing: {bearing_id}")
+    logger.info(f"Searching catalog for bearing: {bearing_id}")
 
     bearing_specs = lookup_bearing_in_catalog(bearing_id)
 
     if bearing_specs:
-        if ctx:
-            await ctx.info(f"Found {bearing_specs['designation']} in catalog (source: {bearing_specs.get('source', 'unknown')})")
-            await ctx.info(f"  Type: {bearing_specs.get('type', 'N/A')}")
-            await ctx.info(f"  Balls: {bearing_specs['num_balls']}, Ball diameter: {bearing_specs['ball_diameter_mm']} mm")
-            await ctx.info(f"  Pitch diameter: {bearing_specs['pitch_diameter_mm']} mm")
+        logger.info(f"Found {bearing_specs['designation']} in catalog (source: {bearing_specs.get('source', 'unknown')})")
+        logger.info(f"  Type: {bearing_specs.get('type', 'N/A')}")
+        logger.info(f"  Balls: {bearing_specs['num_balls']}, Ball diameter: {bearing_specs['ball_diameter_mm']} mm")
+        logger.info(f"  Pitch diameter: {bearing_specs['pitch_diameter_mm']} mm")
         return bearing_specs
 
     # Not in catalog: a legitimate negative outcome — typed result, never an
     # ad-hoc {"error": ...} dict returned as success. No geometry is invented.
-    if ctx:
-        await ctx.warning(f"Bearing {bearing_id} not found in catalog")
-        await ctx.warning("  LLM should ask user for bearing geometry or suggest uploading manufacturer catalog")
+    logger.warning(f"Bearing {bearing_id} not found in catalog")
+    logger.warning("  LLM should ask user for bearing geometry or suggest uploading manufacturer catalog")
 
     available = sorted(b["designation"] for b in _list_catalog())
     return BearingCatalogMiss(
@@ -1254,7 +1230,7 @@ async def search_documentation(
                    (e.g. "bearing 6205 geometry", "maintenance interval pump")
             top_k: Number of passages to return (default: 5)
             force_reindex: Rebuild the index even if cache is fresh (default: False)
-            ctx: MCP context
+            ctx: MCP context. Unused — see this module's docstring on logging.
 
         Returns:
             Dictionary with ranked results, each containing text passage, source
@@ -1266,8 +1242,7 @@ async def search_documentation(
     # everyone, including users who never search documentation.
     from ..rag import get_or_build_index, backend_name
 
-    if ctx:
-        await ctx.info(f"Searching documentation for: {query!r} (backend: {backend_name()})")
+    logger.info(f"Searching documentation for: {query!r} (backend: {backend_name()})")
 
     idx = get_or_build_index(force_rebuild=force_reindex)
 
@@ -1280,8 +1255,7 @@ async def search_documentation(
 
     results = idx.query(query, top_k=top_k)
 
-    if ctx:
-        await ctx.info(f"Found {len(results)} relevant passages from {len(set(r['source'] for r in results))} documents")
+    logger.info(f"Found {len(results)} relevant passages from {len(set(r['source'] for r in results))} documents")
 
     return {
         "query": query,
@@ -1329,7 +1303,7 @@ async def check_bearing_faults(
     ball / cage) alongside the acronym.
 
     Args:
-        ctx: MCP context.
+        ctx: MCP context. Unused — see this module's docstring on logging.
         signal_id: ID of the stored signal.
         rpm: Shaft speed in RPM.
         bearing_id: Bearing designation (e.g. '6205', 'SKF 6205-2RS').
@@ -1385,10 +1359,9 @@ async def check_bearing_faults(
     if bearing_id is not None:
         # --- Catalog route (former check_bearing_faults_direct /
         # lookup_bearing_and_compute_tool) -----------------------------
-        if ctx:
-            await ctx.info(
-                f"Checking catalog bearing {bearing_id} at {rpm} RPM"
-            )
+        logger.info(
+            f"Checking catalog bearing {bearing_id} at {rpm} RPM"
+        )
         result = _check_all_faults(
             signal=signal_data,
             fs=fs,
@@ -1399,11 +1372,10 @@ async def check_bearing_faults(
         )
     elif frequencies is not None:
         # --- Explicit-frequencies route (gearbox / out-of-catalog) -----
-        if ctx:
-            await ctx.info(
-                f"Checking {len(frequencies)} explicit frequencies at "
-                f"{rpm} RPM: {sorted(frequencies)}"
-            )
+        logger.info(
+            f"Checking {len(frequencies)} explicit frequencies at "
+            f"{rpm} RPM: {sorted(frequencies)}"
+        )
         result = _check_frequency_set(
             signal=signal_data,
             fs=fs,
@@ -1415,12 +1387,11 @@ async def check_bearing_faults(
         result["source"] = "user-provided frequencies"
     else:
         # --- Explicit-geometry route (bearing not in catalog) ----------
-        if ctx:
-            await ctx.info(
-                f"Checking user geometry (Z={num_balls}, Bd="
-                f"{ball_diameter_mm} mm, Pd={pitch_diameter_mm} mm) at "
-                f"{rpm} RPM"
-            )
+        logger.info(
+            f"Checking user geometry (Z={num_balls}, Bd="
+            f"{ball_diameter_mm} mm, Pd={pitch_diameter_mm} mm) at "
+            f"{rpm} RPM"
+        )
         freqs = calculate_bearing_frequencies(
             num_balls=num_balls,
             ball_diameter_mm=ball_diameter_mm,
@@ -1438,8 +1409,7 @@ async def check_bearing_faults(
         )
         result["source"] = "user-provided geometry"
 
-    if ctx:
-        await ctx.info(result["overall_assessment"])
+    logger.info(result["overall_assessment"])
 
     return BearingFaultsSummary(
         signal_id=result["signal_id"],
@@ -1498,10 +1468,9 @@ async def diagnose_vibration(
     # None = undeclared: pipeline degrades to a refused ISO block while
     # the other diagnosis blocks still run (no unit guessing).
     signal_unit = info.signal_unit
-    if ctx:
-        await ctx.info(f"Running full diagnosis for '{signal_id}' at {rpm} RPM")
-        if bearing_id:
-            await ctx.info(f"Bearing analysis: {bearing_id}")
+    logger.info(f"Running full diagnosis for '{signal_id}' at {rpm} RPM")
+    if bearing_id:
+        logger.info(f"Bearing analysis: {bearing_id}")
 
     result = _diagnose_vibration(
         signal=signal_data,
@@ -1544,16 +1513,15 @@ async def diagnose_vibration(
     else:
         iso_model = VibrationSeverityResult(**iso_block)
 
-    if ctx:
-        await ctx.info(
-            f"Diagnosis complete: {result['evidence_strength']} fault evidence"
-        )
-        if iso_block.get("status") == "refused":
-            await ctx.info(f"ISO severity: refused — {iso_block['reason']}")
-        else:
-            await ctx.info(f"ISO Zone: {iso_block['zone']}")
-        for rec in result["recommendations"]:
-            await ctx.info(f"  -> {rec}")
+    logger.info(
+        f"Diagnosis complete: {result['evidence_strength']} fault evidence"
+    )
+    if iso_block.get("status") == "refused":
+        logger.info(f"ISO severity: refused — {iso_block['reason']}")
+    else:
+        logger.info(f"ISO Zone: {iso_block['zone']}")
+    for rec in result["recommendations"]:
+        logger.info(f"  -> {rec}")
 
     return DiagnosisResult(
         signal_id=result["signal_id"],

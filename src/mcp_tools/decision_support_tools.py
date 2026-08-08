@@ -4,6 +4,19 @@ Exposes maintenance recommendation generation as an MCP tool. Alert
 classification lives in the unified ``assess_severity`` diagnostics tool
 (U9), which accepts a direct rms_velocity_mm_s reading and optional
 custom thresholds.
+Logging note
+------------
+Every tool here takes a ``ctx`` parameter it never uses. That is deliberate,
+not leftover: ``tests/fixtures/tool_inventory.json`` pins ``context_kwarg``
+per tool, so dropping the parameter would be a protocol-visible change to
+the tool surface.
+
+What changed in 0.12.0 is *how* progress is emitted, not whether tools
+accept a context. SEP-2577 deprecated the MCP logging capability with no
+in-protocol replacement, so narration goes to this module's logger, which
+``server.configure_logging`` binds to stderr — stdout is the stdio
+transport's JSON-RPC channel. Clients no longer receive progress
+notifications; any fact a caller needs is carried by the return value.
 """
 
 import logging
@@ -47,7 +60,7 @@ async def generate_maintenance_recommendations(
         advisory output without evidential basis.
 
         Args:
-            ctx: MCP context for user communication.
+            ctx: MCP context. Unused — see this module's docstring on logging.
             severity_zone: ISO zone letter — "A", "B", "C", or "D".
             fault_types: Detected fault types from the closed canonical
                 vocabulary — outer_race/inner_race/ball/cage for bearings
@@ -64,7 +77,7 @@ async def generate_maintenance_recommendations(
         """
     fault_list = list(fault_types) if fault_types else None
 
-    await ctx.info(
+    logger.info(
         f"Generating recommendations for zone {severity_zone}"
         + (f" with faults: {fault_list}" if fault_list else "")
         + " ..."

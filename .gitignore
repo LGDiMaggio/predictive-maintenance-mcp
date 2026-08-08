@@ -81,3 +81,7 @@ PRD_INDUSTRIAL_TRANSFORMATION.md
 # Claude Code per-agent worktrees
 .claude/worktrees/
 resources/cache/*.pkl
+
+# Per-developer Claude Code settings. Was tracked by accident; it carries
+# bypassPermissions and absolute paths containing the developer OS account.
+.claude/settings.local.json

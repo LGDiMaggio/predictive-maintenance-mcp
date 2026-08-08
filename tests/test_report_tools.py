@@ -5,6 +5,7 @@ signals are loaded once via the repository and referenced by id.
 """
 
 import json
+import logging
 import os
 import pickle
 import pytest
@@ -20,6 +21,26 @@ from sklearn.svm import OneClassSVM
 
 from predictive_maintenance_mcp.mcp_tools.report_tools import register
 from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
+from predictive_maintenance_mcp.mcp_tools import report_tools
+
+#: Derived from the module so it cannot drift from the logger the
+#: tools actually write to.
+REPORT_LOGGER = report_tools.logger.name
+
+
+def _logged(caplog, needle: str) -> bool:
+    """Did *this* module's logger emit a record containing ``needle``?
+
+    Both halves matter. ``caplog``'s handler collects records from every
+    logger in the process — weasyprint and plotly both emit here — so a bare
+    ``assert caplog.records`` passes on unrelated noise. And matching the
+    message is what makes the assertion fail when the narration under test is
+    removed, rather than when the process happens to be quiet.
+    """
+    return any(
+        record.name == REPORT_LOGGER and needle in record.getMessage()
+        for record in caplog.records
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -147,13 +168,16 @@ class TestPlotSignal:
             await tools["plot_signal"](signal_id="nonexistent")
 
     @pytest.mark.asyncio
-    async def test_plot_signal_with_ctx(self, tools, repo, reports_dir, mock_ctx):
-        """plot_signal with ctx should call ctx.info."""
+    async def test_plot_signal_with_ctx(
+        self, tools, repo, reports_dir, mock_ctx, package_caplog
+    ):
+        """plot_signal with ctx should log progress to the module logger, not to ctx."""
         result = await tools["plot_signal"](
             signal_id="report_test",
             ctx=mock_ctx,
         )
-        mock_ctx.info.assert_awaited()  # awaited, not merely called
+        assert _logged(package_caplog, "Generating time-domain plot")
+        mock_ctx.info.assert_not_called()  # SEP-2577: not the client's channel
         assert "Interactive plot saved" in result
 
 
@@ -340,12 +364,15 @@ class TestGenerateFFTReport:
             await tools["generate_fft_report"](signal_id="does_not_exist")
 
     @pytest.mark.asyncio
-    async def test_fft_report_with_ctx(self, tools, repo, reports_dir, mock_ctx):
+    async def test_fft_report_with_ctx(
+        self, tools, repo, reports_dir, mock_ctx, package_caplog
+    ):
         result = await tools["generate_fft_report"](
             signal_id="report_test",
             ctx=mock_ctx,
         )
-        mock_ctx.info.assert_awaited()  # awaited, not merely called
+        assert _logged(package_caplog, "Generating FFT report")
+        mock_ctx.info.assert_not_called()  # SEP-2577: not the client's channel
         assert "file_path" in result
 
 
@@ -429,8 +456,10 @@ class TestGenerateEnvelopeReport:
             await tools["generate_envelope_report"](signal_id="no_meta_env")
 
     @pytest.mark.asyncio
-    async def test_envelope_report_with_ctx_bearing_matches(self, tools, repo, reports_dir, mock_ctx):
-        """When bearing matches are found, ctx.info should report them."""
+    async def test_envelope_report_with_ctx_bearing_matches(
+        self, tools, repo, reports_dir, mock_ctx, package_caplog
+    ):
+        """Bearing matches are reported on the module logger, not to ctx."""
         await tools["generate_envelope_report"](
             signal_id="report_test",
             filter_low=100.0,
@@ -438,7 +467,12 @@ class TestGenerateEnvelopeReport:
             bearing_freqs={"BPFO": 50.0, "BPFI": 100.0},
             ctx=mock_ctx,
         )
-        mock_ctx.info.assert_awaited()  # awaited, not merely called
+        # The bearing-matches line specifically, not "some record exists":
+        # three unconditional logger.info calls run before this branch is
+        # even reached, so a bare `assert caplog.records` stayed green with
+        # the branch deleted — which is the whole subject of this test.
+        assert _logged(package_caplog, "Bearing frequency matches")
+        mock_ctx.info.assert_not_called()  # SEP-2577: not the client's channel
 
 
 # ---------------------------------------------------------------------------

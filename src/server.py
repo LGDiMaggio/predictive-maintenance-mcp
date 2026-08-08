@@ -17,6 +17,160 @@ from .mcp_tools import register_all
 
 logger = logging.getLogger(__name__)
 
+
+def _env(name: str, fallback: str) -> str:
+    """Read an env var, treating set-but-empty as unset.
+
+    ``os.environ.get(name, fallback)`` returns ``""`` when the variable exists
+    with an empty value, which is easy to produce from a compose file or a
+    .env. For MCP_HOST that empty string reaches the socket layer as
+    INADDR_ANY — an operator blanking the variable to *undo* a wildcard bind
+    would get the opposite of what they asked for.
+    """
+    return (os.environ.get(name) or "").strip() or fallback
+
+
+# ---------------------------------------------------------------------------
+# Logging
+#
+# Since 0.12.0 the stdlib logger is the ONLY progress channel — SEP-2577
+# removed the client-facing one — so where these records go is not a
+# convenience, it is the whole contract.
+# ---------------------------------------------------------------------------
+
+#: Package-root logger. Derived rather than spelled, so renaming the package
+#: cannot silently detach every module logger from its handler.
+PACKAGE_LOGGER = __package__ or "predictive_maintenance_mcp"
+
+LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+DEFAULT_LOG_LEVEL = "INFO"
+
+#: Upper bound on a rendered record. Not a formatting preference: see
+#: _OneBoundedLine.
+_MAX_RECORD_CHARS = 2000
+
+
+class _OneBoundedLine(logging.Filter):
+    """Keep each record on one physical line, bounded in length.
+
+    Both halves exist because of the 0.12.0 destination change, not for
+    tidiness. These records used to be MCP notifications: framed by the
+    protocol, and readable only by the caller that triggered them. They are
+    now lines in the operator's log.
+
+    * A newline inside a caller-supplied ``signal_id`` / ``file_name`` /
+      ``bearing_id`` was a cosmetic wart when the client re-rendered it. In
+      a line-oriented log it is a forged entry — an attacker-influenced
+      value can emit what looks like an independent ERROR record, or push a
+      real one out of view.
+    * An unbounded value was a large JSON payload the client had to drain.
+      It is now an unbounded synchronous write to a pipe the client is
+      *not* obliged to drain; once the buffer fills, ``write()`` blocks
+      inside a coroutine that has no await points, wedging the event loop
+      with no error and no traceback.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        text = record.getMessage()
+        if len(text) > _MAX_RECORD_CHARS:
+            text = (
+                f"{text[:_MAX_RECORD_CHARS]}… "
+                f"[truncated, {len(text)} chars total]"
+            )
+        # Interpolate once, here, so args cannot reintroduce a newline.
+        record.msg = text.replace("\r", "\\r").replace("\n", "\\n")
+        record.args = ()
+        return True
+
+
+def configure_logging(level: str | None = None, force: bool = False) -> None:
+    """Bind this package's narration to stderr, on every entry path.
+
+    The obvious ``logging.basicConfig`` is the wrong tool here, for three
+    reasons that only became load-bearing in 0.12.0:
+
+    * ``MCPServer(...)`` installs a handler on the ROOT logger while this
+      module is still being imported. ``basicConfig`` is documented to do
+      nothing when root already has handlers, so a ``basicConfig`` call
+      placed below the server construction never takes effect — the format
+      it names is silently discarded and records render bare, with no
+      logger name to say which of the six tool modules emitted them.
+    * Root's configuration belongs to whoever reached it first, and this
+      package can never win that race. A host that calls
+      ``basicConfig(stream=sys.stdout)`` before importing us puts every
+      tool's narration on fd 1, which under the stdio transport is the
+      JSON-RPC channel — non-JSON lines between frames end the session.
+    * ``main()`` is not the only entry point. ``__init__`` exports ``mcp``
+      as a runnable object, so an embedder calling ``mcp.run()`` reaches
+      every tool without ``main()`` ever running. Left to root's default
+      WARNING level, all INFO narration would be dropped entirely — not
+      relocated to stderr, simply gone.
+
+    Configuring *our* logger with ``propagate = False`` answers all three at
+    once: the destination stops depending on root, on import order, and on
+    which entry point ran.
+
+    Args:
+        level: Level name. Defaults to ``MCP_LOG_LEVEL``, then ``INFO``.
+        force: Replace an existing handler instead of leaving it alone.
+    """
+    pkg = logging.getLogger(PACKAGE_LOGGER)
+
+    requested = (level or _env("MCP_LOG_LEVEL", DEFAULT_LOG_LEVEL)).upper()
+    resolved = logging.getLevelName(requested)
+    fell_back = not isinstance(resolved, int)
+    pkg.setLevel(logging.getLevelName(DEFAULT_LOG_LEVEL) if fell_back else resolved)
+
+    if force:
+        for handler in list(pkg.handlers):
+            pkg.removeHandler(handler)
+    elif pkg.handlers:
+        return
+
+    # A redirected stderr on Windows decodes as the ANSI code page, not
+    # UTF-8 — and a piped stderr is the normal shape for a stdio MCP
+    # subprocess. Left alone, a non-ASCII signal_id raises inside emit(),
+    # which drops the line and prints "--- Logging error ---" in its place.
+    #
+    # utf-8 rather than just an errors= policy: an operator greps this log
+    # for the signal_id they were given, and "se\xf1al_1" does not match
+    # "señal_1". backslashreplace stays as the backstop for a stream that
+    # cannot carry it.
+    reconfigure = getattr(sys.stderr, "reconfigure", None)
+    if reconfigure is not None:
+        try:
+            reconfigure(encoding="utf-8", errors="backslashreplace")
+        except (ValueError, OSError):  # detached or non-reconfigurable stream
+            pass
+
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setFormatter(logging.Formatter(LOG_FORMAT))
+    handler.addFilter(_OneBoundedLine())
+    pkg.addHandler(handler)
+    # stderr, never stdout: stdout is the stdio transport's protocol channel.
+    pkg.propagate = False
+
+    # WeasyPrint narrates every CSS fetch at INFO on its own logger, which
+    # propagates to root — three lines per PDF, on a channel we do not
+    # control. Harmless where root goes to stderr, protocol corruption where
+    # a host has pointed root at stdout. We invoke WeasyPrint, so quieting
+    # its progress chatter is ours to decide; its warnings still come through.
+    logging.getLogger("weasyprint").setLevel(logging.WARNING)
+
+    if fell_back:
+        # Emitted after the handler exists, so the operator actually sees it.
+        logger.warning(
+            "Invalid MCP_LOG_LEVEL=%r — using %s. Choose one of "
+            "DEBUG, INFO, WARNING, ERROR, CRITICAL.",
+            requested,
+            DEFAULT_LOG_LEVEL,
+        )
+
+
+# Run at import, not from main(): the exported `mcp` object is a supported
+# entry point and never reaches main().
+configure_logging()
+
 # ---------------------------------------------------------------------------
 # MCP server initialization
 # ---------------------------------------------------------------------------
@@ -144,12 +298,14 @@ register_all(mcp)
 # Server lifecycle
 # ---------------------------------------------------------------------------
 def _setup_environment() -> None:
-    """Configure logging and create required directories."""
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[logging.StreamHandler(sys.stderr)]
-    )
+    """Create required directories.
+
+    Logging is deliberately NOT configured here. It is configured at import
+    (see configure_logging) because ``main()`` is only one of the ways this
+    package is started, and because the ``logging.basicConfig`` call that
+    used to live here was inert — MCPServer had already claimed the root
+    logger by the time it ran.
+    """
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -166,18 +322,6 @@ TRANSPORTS = ("stdio", "sse", "streamable-http")
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8000
-
-
-def _env(name: str, fallback: str) -> str:
-    """Read an env var, treating set-but-empty as unset.
-
-    ``os.environ.get(name, fallback)`` returns ``""`` when the variable exists
-    with an empty value, which is easy to produce from a compose file or a
-    .env. For MCP_HOST that empty string reaches the socket layer as
-    INADDR_ANY — an operator blanking the variable to *undo* a wildcard bind
-    would get the opposite of what they asked for.
-    """
-    return (os.environ.get(name) or "").strip() or fallback
 
 
 def build_parser() -> argparse.ArgumentParser:
