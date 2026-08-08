@@ -88,10 +88,10 @@ Find the full path to `uvx` (`which uvx` on macOS/Linux, `where uvx` on Windows)
 | *"Extract specs from test_pump_manual.pdf and diagnose the signal"* | Reads the equipment manual, looks up the bearing model, calculates expected fault frequencies, matches them against the signal |
 | *"Train an anomaly detector on my healthy baselines, then flag anomalies"* | Trains a machine learning model on normal data, scores new signals, highlights outliers |
 
-The AI doesn't guess — it calls **36 specialized MCP endpoints** (33 tools + 3 prompts) running locally on your machine. Every signal is referenced by a single `signal_id` handle from load to report. Your data never leaves your infrastructure.
+The AI doesn't guess — it calls **37 specialized MCP endpoints** (34 tools + 3 prompts) running locally on your machine. Every signal is referenced by a single `signal_id` handle from load to report. Your data never leaves your infrastructure.
 
 <details>
-<summary><b>See the full endpoint list (36 MCP endpoints: 33 tools, 3 prompts)</b></summary>
+<summary><b>See the full endpoint list (37 MCP endpoints: 34 tools, 3 prompts)</b></summary>
 
 ### Signal Lifecycle (5)
 
@@ -135,7 +135,7 @@ The AI doesn't guess — it calls **36 specialized MCP endpoints** (33 tools + 3
 | `extract_manual_specs` | Extract structured specs from PDFs |
 | `list_machine_manuals` | Browse available documentation |
 
-### Reporting (8)
+### Reporting (9)
 
 | Tool | Description |
 |------|-------------|
@@ -143,6 +143,7 @@ The AI doesn't guess — it calls **36 specialized MCP endpoints** (33 tools + 3
 | `generate_fft_report` | Interactive frequency analysis report |
 | `generate_envelope_report` | Envelope analysis with fault markers |
 | `generate_iso_report` | Severity zone visualization |
+| `generate_diagnostic_report` | Integrated diagnostic report, HTML and PDF, wording authored by the server |
 | `generate_diagnostic_report_docx` | Structured Word document report |
 | `generate_pca_visualization_report` | PCA anomaly projection |
 | `generate_feature_comparison_report` | Cross-signal feature comparison |
@@ -286,7 +287,7 @@ The codebase follows a **modular architecture** organized around the ISO 13374 S
 
 ```
 src/predictive_maintenance_mcp/
-├── mcp_tools/                 # MCP endpoint registration (36 MCP endpoints)
+├── mcp_tools/                 # MCP endpoint registration (37 MCP endpoints)
 │   ├── acquisition_tools.py   # Signal loading & management
 │   ├── analysis_tools.py      # Spectral & statistical analysis
 │   ├── diagnostics_tools.py   # Fault detection, ML, document search
@@ -347,7 +348,7 @@ pytest --cov=src --cov-report=html      # with coverage report
 
 ## Roadmap
 
-- [x] 36 MCP endpoints (33 tools, 3 prompts) with modular architecture and a single `signal_id` handle
+- [x] 37 MCP endpoints (34 tools, 3 prompts) with modular architecture and a single `signal_id` handle
 - [x] Claude Code plugin (8 skills, 2 agents, 3 commands)
 - [x] 86% test coverage, CI/CD on 3 platforms
 - [x] Docker + SSE/HTTP transport for enterprise deployment
@@ -391,7 +392,7 @@ Contributions welcome from **everyone** — not just programmers. Domain experts
   title   = {Predictive Maintenance MCP Server},
   author  = {Di Maggio, Luigi Gianpio},
   year    = {2025},
-  version = {0.10.0},
+  version = {0.11.0},
   url     = {https://github.com/LGDiMaggio/predictive-maintenance-mcp},
   doi     = {10.5281/zenodo.17611542}
 }

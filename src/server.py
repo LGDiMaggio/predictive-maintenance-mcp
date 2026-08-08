@@ -65,6 +65,23 @@ mcp = MCPServer(
     5) Always cite which analyses and thresholds support each conclusion. If data or parameters are missing, ask for them instead of guessing.
     6) NEVER suggest parameters, thresholds, or recommendations not explicitly provided in tool outputs or prompt workflows. Do NOT invent frequency ranges, filter settings, or maintenance actions. Only use guidance from STEP 6 of diagnostic prompts.
 
+    Report authorship policy (who is allowed to assert):
+    - generate_diagnostic_report returns a 'statements' list containing every
+      evaluative sentence the server wrote. Reuse those sentences verbatim
+      when presenting the result. You may lay them out, reorder them for
+      reading, and add visual emphasis; you may not rewrite what they claim.
+    - Do NOT coin standard names, editions, machine classes, or severity
+      zones. The severity verdict carries its own standard citation and a
+      mandatory provenance caveat; reproduce both, and never paraphrase or
+      drop the caveat.
+    - This server publishes NO confidence score and NO probability of
+      correctness. 'evidence_strength' is a count of independent
+      corroborating findings, not a confidence — render it as such, and never
+      convert it into a percentage, a probability, or a "confidence: high"
+      style label.
+    - If a question is not answered by the returned statements, say the
+      analysis does not answer it. Do not fill the gap.
+
     Signal unit policy (CRITICAL - declared units only, never guessed):
     - ISO 20816-3 severity verdicts on stored signals require a DECLARED unit:
       1. Explicit parameter: load_signal(signal_unit='g'|'m/s2'|'mm/s'|'m/s')

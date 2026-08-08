@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "predictive-maintenance-mcp"
-version = "0.10.0"
+version = "0.11.0"
 description = "AI agent for predictive maintenance & condition monitoring — Open-source MCP server and Claude Code plugin with 52 endpoints for vibration analysis, bearing fault detection, ISO 20816 severity assessment, ML anomaly detection, and remaining useful life estimation via natural language"
 readme = "README.md"
 authors = [
@@ -128,11 +128,16 @@ ocr = [
 docx = [
     "python-docx>=1.0",
 ]
+pdf = [
+    # Renders the integrated diagnostic report's own HTML to PDF, so both
+    # renderings come from one document rather than two layouts.
+    "weasyprint>=60.0",
+]
 sse = [
     "uvicorn>=0.30",
 ]
 full = [
-    "predictive-maintenance-mcp[docs,ml,viz,vector-search,ocr,docx,sse]",
+    "predictive-maintenance-mcp[docs,ml,viz,vector-search,ocr,docx,pdf,sse]",
 ]
 dev = [
     "pytest>=8.0.0",

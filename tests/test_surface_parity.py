@@ -9,7 +9,8 @@ was consolidated to the target surface of 33 tools + 0 resources +
 - its destination is a registered endpoint of the NEW surface (kept name,
   renamed name, or the absorbing tool), or ``None`` with a motivation
   string for outright drops;
-- the new surface counts exactly 33/0/3;
+- the new surface counts exactly 33 migrated tools plus the declared
+  post-consolidation additions in POST_U9_ADDITIONS, 0 resources, 3 prompts;
 - naming hygiene: no ``_tool`` suffixes, and the retired duplicate-concept
   parameter names (shaft_speed_rpm, rotation_freq, ...) are absent from
   every tool signature and prompt argument list.
@@ -30,6 +31,24 @@ from predictive_maintenance_mcp.mcp_tools import register_all
 # destination is the NEW endpoint the functionality lives in, or None for
 # an outright drop (note then carries the motivation).
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Tools added deliberately AFTER the v0.9.0 consolidation. The migration table
+# below describes where the old surface went; it cannot describe a capability
+# that did not exist then. Adding a tool is permitted in a minor version (see
+# the backward-compatibility invariant in CLAUDE.md) — declaring it here is
+# what keeps "no orphan tools" meaningful, since anything registered but
+# neither migrated nor declared appeared by accident.
+# ---------------------------------------------------------------------------
+
+POST_U9_ADDITIONS: dict[str, str] = {
+    "generate_diagnostic_report": (
+        "v0.10 — integrated, server-authored diagnostic report. New concept: "
+        "generate_diagnostic_report_docx takes its content sections from the "
+        "caller, this one authors them."
+    ),
+}
+
 
 OLD_TO_NEW: dict[str, tuple[str | None, str]] = {
     # ----- lifecycle -------------------------------------------------------
@@ -255,15 +274,35 @@ class TestDestinationsExist:
                 f"{old} -> {destination}: destination prompt not registered"
             )
 
-    def test_every_current_tool_descends_from_the_old_surface(self, registered):
-        """No orphan tools: the new surface is exactly the set of destinations."""
+    def test_every_current_tool_is_migrated_or_declared(self, registered):
+        """No orphan tools.
+
+        Every registered tool either descends from the v0.8.x surface via
+        OLD_TO_NEW, or is a deliberate post-consolidation addition declared
+        in POST_U9_ADDITIONS. A tool that is neither appeared by accident.
+        """
         tools, _, _ = registered
         destinations = {
             dest
             for old, (dest, _) in OLD_TO_NEW.items()
             if dest is not None and old not in OLD_PROMPTS
         }
-        assert destinations == set(tools)
+        assert destinations | set(POST_U9_ADDITIONS) == set(tools)
+
+    def test_declared_additions_are_actually_registered(self, registered):
+        """A stale entry in the additions register is as bad as a silent one."""
+        tools, _, _ = registered
+        missing = [name for name in POST_U9_ADDITIONS if name not in tools]
+        assert missing == [], f"declared but not registered: {missing}"
+
+    def test_additions_do_not_shadow_a_migrated_tool(self, registered):
+        """An addition must be a new concept, not a second name for an old one."""
+        destinations = {
+            dest
+            for old, (dest, _) in OLD_TO_NEW.items()
+            if dest is not None and old not in OLD_PROMPTS
+        }
+        assert set(POST_U9_ADDITIONS).isdisjoint(destinations)
 
 
 # ---------------------------------------------------------------------------
@@ -272,9 +311,11 @@ class TestDestinationsExist:
 
 
 class TestFinalSurface:
-    def test_counts_exactly_33_0_3(self, registered):
+    def test_counts_are_the_migrated_surface_plus_declared_additions(
+        self, registered
+    ):
         tools, resources, prompts = registered
-        assert len(tools) == 33
+        assert len(tools) == 33 + len(POST_U9_ADDITIONS)
         assert resources == []
         assert len(prompts) == 3
 

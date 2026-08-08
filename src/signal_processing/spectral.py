@@ -186,6 +186,100 @@ def validate_bandpass_band(
         )
 
 
+def resolve_envelope_band(
+    fs: float, frequency_range: Optional[tuple[float, float]] = None
+) -> tuple[float, float]:
+    """Resolve and validate the envelope bandpass band.
+
+    Args:
+        fs: Sampling frequency (Hz).
+        frequency_range: Explicit band, or ``None`` for the fs-aware default.
+
+    Returns:
+        The (low, high) band edges in Hz.
+
+    Raises:
+        ValueError: If the band is invalid for this sampling rate.
+    """
+    nyquist = fs / 2.0
+    if frequency_range is None:
+        # fs-AWARE DEFAULT. Cap the upper edge just below Nyquist so the
+        # band never exceeds a low-fs signal's Nyquist. This clamp is a
+        # NO-OP at fs=10000 Hz (5000 -> nyquist-1 = 4999), the exact edge
+        # the historical (500, 5000) default already resolved to.
+        band_low, band_high = 500.0, min(5000.0, nyquist - 1.0)
+    else:
+        # An EXPLICIT band is honored verbatim (fail loud, never clamp).
+        band_low, band_high = float(frequency_range[0]), float(frequency_range[1])
+
+    # Single validation path. The explicit band is checked as requested (an
+    # upper edge above Nyquist is a hard error); the default is pre-capped,
+    # so it only trips when the band is genuinely unusable (low >= high at
+    # a very low fs).
+    validate_bandpass_band(band_low, band_high, fs)
+    return band_low, band_high
+
+
+def envelope_spectrum_arrays(
+    signal: np.ndarray,
+    fs: float,
+    frequency_range: Optional[tuple[float, float]] = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Compute the envelope spectrum and return its full arrays.
+
+    Extracted so that anything drawing the envelope spectrum draws the SAME
+    one the bearing fault matching consumed. A figure computed by a second,
+    subtly different route can show a peak the verdict never saw — and a
+    figure that disagrees with the verdict it illustrates is worse than no
+    figure at all.
+
+    Args:
+        signal: 1D time-domain signal.
+        fs: Sampling frequency (Hz).
+        frequency_range: Bandpass band (low, high) in Hz. ``None`` resolves
+            to the fs-aware default described in
+            :func:`compute_envelope_spectrum`.
+
+    Returns:
+        Tuple of (positive frequencies, magnitudes) — full arrays, not a
+        summary. Callers returning data to an LLM must summarise first.
+
+    Raises:
+        ValueError: If the requested or resolved band is invalid for this
+            sampling rate.
+    """
+    nyquist = fs / 2.0
+    band_low, band_high = resolve_envelope_band(fs, frequency_range)
+
+    low = band_low / nyquist
+    # A digital filter corner cannot sit exactly AT Nyquist: an upper edge
+    # equal to Nyquist is realized 1 Hz below it (same realization the
+    # pre-U9 code used). Edges ABOVE Nyquist were already rejected — this
+    # is filter realizability, not a band clamp.
+    high = min(band_high, nyquist - 1.0) / nyquist
+
+    # Bandpass filter (Butterworth, 4th order, SOS for numerical stability)
+    sos = butter(4, [low, high], btype="band", output="sos")
+    filtered = sosfiltfilt(sos, signal)
+
+    # Hilbert transform -> envelope
+    analytic = hilbert(filtered)
+    envelope = np.abs(analytic)
+
+    # INTENTIONAL CHANGE (U9, audit 2.8): subtract the envelope mean and
+    # apply a Hann window BEFORE the FFT. The envelope is strictly
+    # positive, so its mean is a large DC component whose leakage skirt
+    # (rectangular window) buried exactly the low-frequency FTF zone.
+    N = len(envelope)
+    envelope_ac = (envelope - np.mean(envelope)) * np.hanning(N)
+
+    env_fft = fft(envelope_ac)
+    env_freqs = fftfreq(N, 1 / fs)
+
+    pos_mask = env_freqs > 0
+    return env_freqs[pos_mask], np.abs(env_fft[pos_mask])
+
+
 def compute_envelope_spectrum(
     signal: np.ndarray,
     fs: float,
@@ -221,53 +315,9 @@ def compute_envelope_spectrum(
             sampling rate, or the fs-aware default is unusable (fs so low
             the 500 Hz lower edge meets the clamped upper edge).
     """
-    nyquist = fs / 2.0
-
-    if frequency_range is None:
-        # fs-AWARE DEFAULT. Cap the upper edge just below Nyquist so the
-        # band never exceeds a low-fs signal's Nyquist. This clamp is a
-        # NO-OP at fs=10000 Hz (5000 -> nyquist-1 = 4999), the exact edge
-        # the historical (500, 5000) default already resolved to.
-        band_low, band_high = 500.0, min(5000.0, nyquist - 1.0)
-    else:
-        # An EXPLICIT band is honored verbatim (fail loud, never clamp).
-        band_low, band_high = float(frequency_range[0]), float(frequency_range[1])
-
-    # Single validation path. The explicit band is checked as requested (an
-    # upper edge above Nyquist is a hard error); the default is pre-capped,
-    # so it only trips when the band is genuinely unusable (low >= high at
-    # a very low fs).
-    validate_bandpass_band(band_low, band_high, fs)
-
-    low = band_low / nyquist
-    # A digital filter corner cannot sit exactly AT Nyquist: an upper edge
-    # equal to Nyquist is realized 1 Hz below it (same realization the
-    # pre-U9 code used). Edges ABOVE Nyquist were already rejected — this
-    # is filter realizability, not a band clamp.
-    high = min(band_high, nyquist - 1.0) / nyquist
-
-    # Bandpass filter (Butterworth, 4th order, SOS for numerical stability)
-    sos = butter(4, [low, high], btype="band", output="sos")
-    filtered = sosfiltfilt(sos, signal)
-
-    # Hilbert transform -> envelope
-    analytic = hilbert(filtered)
-    envelope = np.abs(analytic)
-
-    # INTENTIONAL CHANGE (U9, audit 2.8): subtract the envelope mean and
-    # apply a Hann window BEFORE the FFT. The envelope is strictly
-    # positive, so its mean is a large DC component whose leakage skirt
-    # (rectangular window) buried exactly the low-frequency FTF zone.
-    N = len(envelope)
-    envelope_ac = (envelope - np.mean(envelope)) * np.hanning(N)
-
-    # Envelope spectrum
-    env_fft = fft(envelope_ac)
-    env_freqs = fftfreq(N, 1 / fs)
-
-    pos_mask = env_freqs > 0
-    env_freqs = env_freqs[pos_mask]
-    env_mags = np.abs(env_fft[pos_mask])
+    band_low, band_high = resolve_envelope_band(fs, frequency_range)
+    env_freqs, env_mags = envelope_spectrum_arrays(signal, fs, (band_low, band_high))
+    N = len(signal)
 
     # Peak detection
     max_mag = float(np.max(env_mags)) if len(env_mags) > 0 else 1e-12

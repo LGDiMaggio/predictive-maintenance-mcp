@@ -5,6 +5,61 @@ All notable changes to the Predictive Maintenance MCP Server project will be doc
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0] - 2026-08-08
+
+Adds the integrated diagnostic report. Additive: no existing tool
+signature changes, and the endpoint surface grows from 36 to 37
+(33 -> 34 tools).
+
+### Added
+- `generate_diagnostic_report` — one integrated diagnostic document covering
+  signal overview, ISO severity, anomaly state, characteristic-frequency
+  matching, spectral energy, an annotated envelope spectrum, and recommended
+  actions. Additive: the surface grows from 36 to 37 endpoints (33 → 34
+  tools), no existing tool signature changes.
+- Server-authored advisory layer (`decision_support.advisory`). Every
+  evaluative sentence a report shows is written by the server that computed
+  the numbers and returned to the caller in a `statements` list. The previous
+  arrangement let the caller author report content — see
+  `generate_diagnostic_report_docx`'s `sections` argument — which is how a
+  rendering ends up carrying faithful numbers under a standard name, machine
+  class, or confidence grade this codebase does not produce.
+- Indicator-disagreement reconciliation: when the ISO zone reads acceptable
+  while the fault pattern does not, the report says so explicitly and names
+  which indicator governs the recommended action.
+- Baseline comparison: supplying a healthy reference signal turns absolute
+  readings into deltas, including envelope amplitude at the characteristic
+  frequency the verdict rests on — the figure that separates "the machine got
+  noisier" from "this defect grew".
+- Annotated envelope spectrum (`figures`), drawn as inline SVG with the
+  characteristic-frequency bands at the tolerance the diagnosis actually
+  used, so the match is visible rather than asserted. No CDN script and no
+  hover-only labels: the report opens with no network access and the
+  annotation survives a static export.
+- Optional `[pdf]` extra. The PDF is a rendering of the same HTML document
+  rather than a second layout, so both renderings carry identical statements
+  by construction; a test asserts it.
+- Report authorship policy in the server instructions: standard names,
+  machine classes, zones, and confidence levels are not the caller's to coin,
+  and `evidence_strength` is a count of corroborating findings that must
+  never be rendered as a probability.
+
+### Fixed
+- The shared HTML report base template interpolated the report title — which
+  carries a user-supplied signal identifier — without escaping, and embedded
+  its metadata JSON in a way a `</script>` sequence in any value could close
+  early. Both affected every report family.
+- The envelope spectrum drawn in the integrated report is now computed by the
+  same path the bearing matching consumes (`envelope_spectrum_arrays`), so a
+  figure cannot show a peak the verdict never saw.
+
+### Changed
+- `tests/test_surface_parity.py` previously required every registered tool to
+  be a migration destination of the v0.8.x surface, which forbade adding any
+  new capability. It now requires every tool to be migrated **or** declared
+  in `POST_U9_ADDITIONS`, preserving the "no orphan tools" property while
+  allowing intentional additions.
+
 ## [0.10.0] - 2026-08-08
 
 Minor release rather than a patch: the dependency floor change below is
@@ -21,18 +76,6 @@ MINOR bump.
   `Settings.host` / `Settings.port`, so `--host` / `--port` are passed to
   `mcp.run()` as per-transport kwargs. `stdio` is invoked without them
   (`run_stdio_async` accepts neither).
-
-The registered surface is unchanged — 33 tools, 0 resources, 3 prompts,
-with identical names and input schemas. `tests/fixtures/tool_inventory.json`
-was **not** regenerated: it passes as-is against mcp 2.0.0, which is the
-evidence that the migration is protocol-invisible.
-
-## [0.9.1] - 2026-07-13
-
-Patch release: two robustness fixes of the same class caught while
-diagnosing crash reports from a pre-0.9.0 server.
-
-### Changed
 - **Public export shape.** `predictive_maintenance_mcp.mcp` is a declared
   export (`__all__` in `src/__init__.py`) and its runtime type changes from
   `mcp.server.fastmcp.FastMCP` to `mcp.server.mcpserver.MCPServer`. It no
@@ -53,6 +96,16 @@ diagnosing crash reports from a pre-0.9.0 server.
   (still async, still functional, but they now emit a warning that is shown
   by default). This release does not migrate the ~116 call sites; that is
   tracked separately.
+
+The registered surface is unchanged — 33 tools, 0 resources, 3 prompts,
+with identical names and input schemas. `tests/fixtures/tool_inventory.json`
+was **not** regenerated: it passes as-is against mcp 2.0.0, which is the
+evidence that the migration is protocol-invisible.
+
+## [0.9.1] - 2026-07-13
+
+Patch release: two robustness fixes of the same class caught while
+diagnosing crash reports from a pre-0.9.0 server.
 
 ### Fixed
 - `generate_envelope_report` now resolves its default upper band edge

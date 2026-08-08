@@ -671,6 +671,85 @@
         "type": "object"
       }
     },
+    "generate_diagnostic_report": {
+      "context_kwarg": "ctx",
+      "is_async": true,
+      "parameters": {
+        "properties": {
+          "baseline_signal_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Baseline Signal Id"
+          },
+          "bearing_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Bearing Id"
+          },
+          "formats": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Formats"
+          },
+          "machine_group": {
+            "default": 2,
+            "enum": [
+              1,
+              2
+            ],
+            "title": "Machine Group",
+            "type": "integer"
+          },
+          "rpm": {
+            "title": "Rpm",
+            "type": "number"
+          },
+          "signal_id": {
+            "title": "Signal Id",
+            "type": "string"
+          },
+          "support_type": {
+            "default": "rigid",
+            "enum": [
+              "rigid",
+              "flexible"
+            ],
+            "title": "Support Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "signal_id",
+          "rpm"
+        ],
+        "title": "generate_diagnostic_reportArguments",
+        "type": "object"
+      }
+    },
     "generate_diagnostic_report_docx": {
       "context_kwarg": "ctx",
       "is_async": true,

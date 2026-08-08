@@ -15,10 +15,16 @@ from scipy.signal import hilbert, butter, sosfiltfilt
 from mcp.server.mcpserver import MCPServer, Context
 
 from ..config import MODELS_DIR, REPORTS_DIR
+from ..decision_support.advisory import build_advisory
+from ..decision_support.diagnosis_pipeline import (
+    diagnose_vibration as _diagnose_vibration,
+)
+from ..figures import build_annotated_envelope_figure
 from ..models import StoredSignalInfo
 from ..report_generator import (
     save_fft_report,
     save_envelope_report,
+    save_integrated_diagnostic_report,
     save_iso_report,
     read_report_metadata,
     list_reports,
@@ -31,7 +37,11 @@ from ._utils import resolve_model_paths, resolve_signal
 # Canonical modular twin of the ISO evaluation tool (module-level function
 # since U6) — replaces the former runtime import from the deprecated monolith.
 from .diagnostics_tools import assess_severity
-from ..signal_processing.spectral import validate_bandpass_band
+from ..signal_processing.spectral import (
+    envelope_spectrum_arrays,
+    resolve_envelope_band,
+    validate_bandpass_band,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -999,8 +1009,183 @@ async def generate_feature_comparison_report(
     }
 
 
+#: Frequency tolerance used by the bearing matching engine. The figure draws
+#: this exact value, so a reader sees the tolerance the verdict applied.
+_MATCH_TOLERANCE_PCT = 5.0
+
+#: Renderings this tool can emit. HTML is self-contained and needs nothing
+#: extra; PDF needs the optional ``[pdf]`` extra.
+_SUPPORTED_FORMATS = ("html", "pdf")
+
+
+def _matched_check(diagnosis: dict[str, Any]) -> Optional[dict[str, Any]]:
+    """The strongest matching fault check, for figure emphasis."""
+    faults = diagnosis.get("bearing_faults")
+    if not faults:
+        return None
+    order = {"high": 3, "moderate": 2, "low": 1}
+    detected = [
+        check
+        for check in faults.get("fault_checks", [])
+        if check.get("detected") and check.get("detected_frequency_hz")
+    ]
+    if not detected:
+        return None
+    best = max(detected, key=lambda c: order.get(c.get("evidence_strength"), 0))
+    return {
+        "fault_type": best["fault_type"],
+        "measured_hz": best["detected_frequency_hz"],
+        "deviation_pct": best.get("deviation_pct"),
+    }
+
+
+def _envelope_figure(
+    signal: np.ndarray, fs: float, diagnosis: dict[str, Any]
+) -> dict[str, Any]:
+    """Build the annotated envelope spectrum for this diagnosis.
+
+    Uses the same spectrum computation the bearing matching consumed, so the
+    figure cannot show a peak the verdict never saw.
+    """
+    band = resolve_envelope_band(fs, None)
+    env_frequencies, env_magnitudes = envelope_spectrum_arrays(signal, fs, band)
+    faults = diagnosis.get("bearing_faults") or {}
+    return build_annotated_envelope_figure(
+        env_frequencies,
+        env_magnitudes,
+        faults.get("bearing_frequencies"),
+        matched=_matched_check(diagnosis),
+        tolerance_pct=_MATCH_TOLERANCE_PCT,
+    )
+
+
+async def generate_diagnostic_report(
+    signal_id: str,
+    rpm: float,
+    bearing_id: Optional[str] = None,
+    machine_group: Literal[1, 2] = 2,
+    support_type: Literal["rigid", "flexible"] = "rigid",
+    baseline_signal_id: Optional[str] = None,
+    formats: Optional[list[str]] = None,
+    ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Generate the integrated diagnostic report — one document, whole case.
+
+    Runs the full diagnosis, then renders signal overview, ISO severity,
+    anomaly state, characteristic-frequency matching, spectral energy, an
+    annotated envelope spectrum, and recommended actions into a single
+    self-contained document.
+
+    AUTHORSHIP CONTRACT — this matters more than it may appear. Every
+    evaluative sentence in the returned ``statements`` list was written by
+    this server. Reuse them verbatim when presenting the result. Do NOT coin
+    standard names, machine classes, severity zones, or confidence levels of
+    your own: this server deliberately publishes no confidence figure, and
+    the standards caveat that travels with every severity verdict must not be
+    dropped or paraphrased. If a question is not answered by these
+    statements, say so rather than filling the gap.
+
+    Unlike ``generate_diagnostic_report_docx``, this tool takes no content
+    sections from the caller. Supply the analysis inputs; the wording is the
+    server's.
+
+    Args:
+        signal_id: ID of the stored signal (from load_signal).
+        rpm: Machine operating speed in RPM.
+        bearing_id: Bearing designation for characteristic-frequency
+            matching. Omitted means the matching section states why it was
+            not attempted rather than disappearing.
+        machine_group: ISO 20816-3 group — 1 (large, >300 kW) or 2 (medium,
+            15-300 kW). Default 2.
+        support_type: 'rigid' or 'flexible'. Default 'rigid'.
+        baseline_signal_id: Optional stored signal from the same machine in a
+            known-good state. Supplying it turns absolute readings into
+            deltas, which is what tells a reader whether a condition is new
+            or stable.
+        formats: Renderings to produce — any of 'html', 'pdf'. Defaults to
+            ['html']. 'pdf' requires
+            ``pip install predictive-maintenance-mcp[pdf]``.
+        ctx: MCP context.
+
+    Returns:
+        Dict with ``statements`` (every authored sentence, in document
+        order), ``files`` (one entry per rendering), ``verdict``,
+        ``evidence_strength``, and ``provenance``.
+
+    Raises:
+        ValueError: If a signal id is not loaded, has no sampling rate, or an
+            unsupported format is requested.
+    """
+    requested = [fmt.lower() for fmt in (formats or ["html"])]
+    unsupported = [fmt for fmt in requested if fmt not in _SUPPORTED_FORMATS]
+    if unsupported:
+        raise ValueError(
+            f"Unsupported report format(s) {unsupported} — choose from "
+            f"{list(_SUPPORTED_FORMATS)}."
+        )
+
+    signal_data, info = resolve_signal(signal_id)
+    if ctx:
+        await ctx.info(f"Diagnosing '{signal_id}' at {rpm} RPM")
+
+    diagnosis = _diagnose_vibration(
+        signal=signal_data,
+        fs=info.sampling_rate,
+        rpm=rpm,
+        signal_id=signal_id,
+        bearing_id=bearing_id,
+        machine_group=machine_group,
+        support_type=support_type,
+        signal_unit=info.signal_unit,
+    )
+
+    baseline_diagnosis = None
+    if baseline_signal_id:
+        baseline_data, baseline_info = resolve_signal(baseline_signal_id)
+        if ctx:
+            await ctx.info(f"Diagnosing baseline '{baseline_signal_id}'")
+        baseline_diagnosis = _diagnose_vibration(
+            signal=baseline_data,
+            fs=baseline_info.sampling_rate,
+            rpm=rpm,
+            signal_id=baseline_signal_id,
+            bearing_id=bearing_id,
+            machine_group=machine_group,
+            support_type=support_type,
+            signal_unit=baseline_info.signal_unit,
+        )
+
+    advisory = build_advisory(diagnosis, baseline_diagnosis)
+    figure = _envelope_figure(signal_data, info.sampling_rate, diagnosis)
+
+    saved = save_integrated_diagnostic_report(advisory, figure, formats=requested)
+    files = saved["files"]
+
+    if ctx:
+        for entry in files:
+            await ctx.info(f"{entry['format'].upper()} report: {entry['file_name']}")
+
+    return {
+        "signal_id": signal_id,
+        "verdict": advisory["verdict"]["statement"],
+        "fault_canonical": advisory["verdict"]["fault_canonical"],
+        "evidence_strength": advisory["evidence"]["strength"],
+        "evidence_strength_note": advisory["evidence"]["strength_explanation"],
+        "statements": saved["statements"],
+        "recommendations": advisory["recommendations"],
+        "provenance": advisory["provenance"],
+        "files": files,
+        "authorship_note": (
+            "These statements were authored by the server. Reuse them "
+            "verbatim; do not introduce standard names, machine classes, "
+            "zones, or confidence levels that do not appear here."
+        ),
+    }
+
+
 def register(mcp: MCPServer) -> None:
     """Register report generation and visualization tools with the MCP server."""
+    mcp.tool()(generate_diagnostic_report)
     mcp.tool()(generate_diagnostic_report_docx)
     mcp.tool()(plot_signal)
     mcp.tool()(generate_fft_report)

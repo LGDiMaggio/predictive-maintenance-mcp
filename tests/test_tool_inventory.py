@@ -38,6 +38,12 @@ Fixture history:
   concept sweep (rpm, file_name, bearing_id); typed vocabularies
   (fault_types, severity_zone, scope). Full old->new mapping asserted in
   tests/test_surface_parity.py.
+- v0.10: regenerated intentionally — ADDITIVE. generate_diagnostic_report
+  joins the surface (33 -> 34 tools; resources/prompts unchanged at 0/3).
+  It is the first tool that is not a migration destination, so it is
+  declared in tests/test_surface_parity.py POST_U9_ADDITIONS; the parity
+  test's "no orphan tools" property now reads "migrated or declared".
+  No existing tool signature changed.
 
 Snapshot recipe (run from the repo root):
     python -c "from tests.test_tool_inventory import build_inventory, \\
@@ -114,8 +120,16 @@ class TestInventoryCharacterization:
         assert inventory["prompts"] == reference["prompts"]
 
     def test_expected_counts(self, inventory):
-        """FINAL U9 target surface: 33 tools + 0 resources + 3 prompts."""
-        assert len(inventory["tools"]) == 33
+        """U9 target surface (33/0/3) plus declared post-U9 additions.
+
+        The additions register lives in tests/test_surface_parity.py so
+        there is one place to declare a new tool, not two.
+        """
+        # Sibling-module import: CI runs the pytest console script, which
+        # does not put the repo root on sys.path.
+        from test_surface_parity import POST_U9_ADDITIONS
+
+        assert len(inventory["tools"]) == 33 + len(POST_U9_ADDITIONS)
         assert len(inventory["resources"]) == 0
         assert len(inventory["prompts"]) == 3
 
