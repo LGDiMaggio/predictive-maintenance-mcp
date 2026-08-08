@@ -272,7 +272,7 @@ python validate_server.py
 ## Dependencies
 
 ### Core Dependencies
-- `mcp[cli]>=1.16.0` - Model Context Protocol framework
+- `mcp[cli]>=2.0.0` - Model Context Protocol framework
 - `numpy>=2.3.3` - Numerical computing
 - `pandas>=2.3.3` - Data manipulation
 - `scipy>=1.16.2` - Scientific computing (FFT, filters)

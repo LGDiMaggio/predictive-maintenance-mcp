@@ -300,7 +300,7 @@ src/predictive_maintenance_mcp/
 ├── prognostics/               # RUL estimation (linear, exponential, Kalman) & trend analysis
 ├── rag.py                     # Document indexing & search (FAISS/TF-IDF)
 ├── models.py                  # Pydantic data models
-├── server.py                  # FastMCP server entry point
+├── server.py                  # MCPServer entry point
 └── config.py                  # Configuration management
 ```
 

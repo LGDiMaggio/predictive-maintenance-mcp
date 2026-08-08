@@ -1,7 +1,7 @@
 """U6 contract tests: module-level importability + single error semantic.
 
 Two rails, one contract:
-- failures / misuse  -> raised exceptions (FastMCP converts them into MCP
+- failures / misuse  -> raised exceptions (MCPServer converts them into MCP
   ``isError`` responses) with "problem — actionable suggestion" messages;
 - legitimate negative outcomes (bearing not in catalog, no trend detected)
   -> TYPED results with a ``suggestion``/``status`` field.
@@ -20,7 +20,7 @@ from unittest.mock import AsyncMock
 import numpy as np
 import pandas as pd
 import pytest
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 from pydantic import BaseModel
 
 from predictive_maintenance_mcp.mcp_tools import register_all
@@ -31,7 +31,7 @@ SRC_MCP_TOOLS = Path(__file__).parent.parent / "src" / "mcp_tools"
 
 @pytest.fixture(scope="module")
 def mcp():
-    server = FastMCP("test-error-contract")
+    server = MCPServer("test-error-contract")
     register_all(server)
     return server
 
@@ -102,7 +102,7 @@ class TestModuleLevelTools:
 
     def test_prompts_are_module_level(self, mcp):
         for p in mcp._prompt_manager._prompts.values():
-            # FastMCP wraps prompt fns (validate_call) — unwrap to compare.
+            # MCPServer wraps prompt fns (validate_call) — unwrap to compare.
             fn = inspect.unwrap(p.fn)
             assert "<locals>" not in fn.__qualname__
             module = importlib.import_module(fn.__module__)
@@ -112,7 +112,7 @@ class TestModuleLevelTools:
     async def test_direct_import_happy_path(
         self, sandbox_dirs, mock_ctx
     ):
-        """load_signal + analyze_fft work via direct import, no FastMCP."""
+        """load_signal + analyze_fft work via direct import, no MCPServer."""
         from predictive_maintenance_mcp.mcp_tools.analysis_tools import (
             analyze_fft,
         )

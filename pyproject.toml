@@ -51,7 +51,11 @@ classifiers = [
 ]
 requires-python = ">=3.11"
 dependencies = [
-    "mcp[cli]>=1.16.0",
+    # 2.x floor is load-bearing, not caution: mcp 2.0.0 removed
+    # `mcp.server.fastmcp` (-> `mcp.server.mcpserver`, FastMCP -> MCPServer)
+    # and made Context.info/warning/error/debug/log synchronous. The two
+    # APIs cannot be supported from one source tree, so 1.x is out.
+    "mcp[cli]>=2.0.0",
     "numpy>=2.3.3",
     "pandas>=2.3.3",
     "plotly>=5.24.0",

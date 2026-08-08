@@ -23,7 +23,7 @@ from unittest.mock import AsyncMock
 import numpy as np
 import pandas as pd
 import pytest
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 from predictive_maintenance_mcp.mcp_tools import register_all
 from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
@@ -36,7 +36,7 @@ from predictive_maintenance_mcp.signal_acquisition.repository import get_reposit
 
 @pytest.fixture(scope="module")
 def tools():
-    mcp = FastMCP("workflow-walkability")
+    mcp = MCPServer("workflow-walkability")
     register_all(mcp)
     return {t.name: t.fn for t in mcp._tool_manager._tools.values()}
 

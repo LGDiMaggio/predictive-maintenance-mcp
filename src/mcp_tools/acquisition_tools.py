@@ -8,7 +8,7 @@ from typing import Any, Literal, Optional
 
 import numpy as np
 import pandas as pd
-from mcp.server.fastmcp import FastMCP, Context
+from mcp.server.mcpserver import MCPServer, Context
 
 from ..config import DATA_DIR
 from ..signal_acquisition.loaders import SUPPORTED_EXTENSIONS
@@ -350,8 +350,8 @@ async def clear_signals(
     }
 
 
-def register(mcp: FastMCP) -> None:
-    """Register acquisition tools on the given FastMCP instance."""
+def register(mcp: MCPServer) -> None:
+    """Register acquisition tools on the given MCPServer instance."""
     mcp.tool()(list_signals)
     mcp.tool()(generate_test_signal)
     mcp.tool()(load_signal)

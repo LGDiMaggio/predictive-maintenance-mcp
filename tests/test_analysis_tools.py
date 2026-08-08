@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 from unittest.mock import AsyncMock
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 from predictive_maintenance_mcp.mcp_tools.analysis_tools import register
 from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
@@ -22,7 +22,7 @@ from predictive_maintenance_mcp.signal_acquisition.repository import get_reposit
 
 @pytest.fixture
 def mcp():
-    server = FastMCP("test-analysis")
+    server = MCPServer("test-analysis")
     register(server)
     return server
 

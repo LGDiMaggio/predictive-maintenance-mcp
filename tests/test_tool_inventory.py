@@ -49,7 +49,7 @@ import json
 from pathlib import Path
 
 import pytest
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 from predictive_maintenance_mcp.mcp_tools import register_all
 
@@ -58,7 +58,7 @@ FIXTURE = Path(__file__).parent / "fixtures" / "tool_inventory.json"
 
 def build_inventory() -> dict:
     """Introspect a freshly registered server into a comparable dict."""
-    mcp = FastMCP("inventory-characterization")
+    mcp = MCPServer("inventory-characterization")
     register_all(mcp)
     return {
         "tools": {

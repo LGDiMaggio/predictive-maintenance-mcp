@@ -11,7 +11,7 @@ surfaces at once — audit 4.2/4.7). This guard pins:
   == the plugin entry in ``.claude-plugin/marketplace.json``;
 - every "N tools / N prompts / N endpoints / N resources" claim in
   ``README.md`` and ``plugin/README.md`` equals the INTROSPECTED registered
-  surface (FastMCP + register_all — the single source of truth);
+  surface (MCPServer + register_all — the single source of truth);
 - every "N skills / N agents / N commands" claim equals the number of
   plugin components actually on disk.
 
@@ -27,7 +27,7 @@ import tomllib
 from pathlib import Path
 
 import pytest
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 from predictive_maintenance_mcp.mcp_tools import register_all
 
@@ -105,7 +105,7 @@ class TestPackageVersionAlignment:
 
 @pytest.fixture(scope="module")
 def surface_counts() -> dict[str, int]:
-    mcp = FastMCP("version-alignment-guard")
+    mcp = MCPServer("version-alignment-guard")
     register_all(mcp)
     n_tools = len(mcp._tool_manager._tools)
     n_resources = len(mcp._resource_manager._resources) + len(

@@ -13,7 +13,7 @@ import pandas as pd
 from pathlib import Path
 from unittest.mock import AsyncMock
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 from sklearn.svm import OneClassSVM
@@ -28,7 +28,7 @@ from predictive_maintenance_mcp.signal_acquisition.repository import get_reposit
 
 @pytest.fixture
 def mcp():
-    server = FastMCP("test-reports")
+    server = MCPServer("test-reports")
     register(server)
     return server
 

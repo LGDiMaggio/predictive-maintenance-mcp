@@ -1,14 +1,14 @@
 """Tests for MCP diagnostic prompts."""
 
 import pytest
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 from predictive_maintenance_mcp.mcp_tools.prompts import register
 
 
 @pytest.fixture
 def mcp():
-    server = FastMCP("test-prompts")
+    server = MCPServer("test-prompts")
     register(server)
     return server
 

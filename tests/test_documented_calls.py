@@ -4,7 +4,7 @@ Doc/code drift is this repo's #1 recurring bug class (audit 3.1/3.2: the
 plugin shipped calls against parameters that never existed; prompts cited a
 resource as a tool). This guard makes silent drift impossible:
 
-- It introspects the REAL registered surface (``FastMCP`` + ``register_all``):
+- It introspects the REAL registered surface (``MCPServer`` + ``register_all``):
   tool names + input-schema parameter names, prompt names + argument names.
 - It extracts every call-shaped snippet ``some_tool(kw=..., ...)`` from
   ``plugin/**/*.md`` AND from the RENDERED MCP prompt templates
@@ -26,7 +26,7 @@ import re
 from pathlib import Path
 
 import pytest
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 from predictive_maintenance_mcp.mcp_tools import prompts as prompt_templates
 from predictive_maintenance_mcp.mcp_tools import register_all
@@ -85,7 +85,7 @@ RETIRED_NAMES = {
 
 def build_endpoints() -> dict[str, set[str]]:
     """Registered surface as {endpoint name: set of parameter names}."""
-    mcp = FastMCP("documented-calls-guard")
+    mcp = MCPServer("documented-calls-guard")
     register_all(mcp)
     endpoints = {
         t.name: set(t.parameters.get("properties", {}))

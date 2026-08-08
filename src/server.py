@@ -1,7 +1,7 @@
 """
 Predictive Maintenance MCP Server — Orchestrator.
 
-Thin entry point that creates the FastMCP instance and delegates tool
+Thin entry point that creates the MCPServer instance and delegates tool
 registration to the mcp_tools sub-package (one module per ISO 13374 block).
 """
 
@@ -10,7 +10,7 @@ import logging
 import os
 import sys
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 from .config import DATA_DIR, MODELS_DIR, RESOURCES_DIR, REPORTS_DIR, CACHE_DIR
 from .mcp_tools import register_all
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # MCP server initialization
 # ---------------------------------------------------------------------------
-mcp = FastMCP(
+mcp = MCPServer(
     "Predictive Maintenance",
     instructions="""
     MCP server for predictive maintenance and industrial machinery diagnostics.
@@ -185,16 +185,18 @@ def main():
 
     _setup_environment()
 
-    mcp.settings.host = args.host
-    mcp.settings.port = args.port
-
     logger.info("Starting Predictive Maintenance MCP Server...")
     logger.info(f"Transport: {args.transport}")
     logger.info(f"Data directory: {DATA_DIR}")
     if args.transport != "stdio":
         logger.info(f"Listening on {args.host}:{args.port}")
 
-    mcp.run(transport=args.transport)
+    # mcp 2.x dropped Settings.host/port: the bind address is a per-transport
+    # run() kwarg now. stdio accepts neither — passing them would raise.
+    if args.transport == "stdio":
+        mcp.run(transport="stdio")
+    else:
+        mcp.run(transport=args.transport, host=args.host, port=args.port)
 
 
 if __name__ == "__main__":

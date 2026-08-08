@@ -81,7 +81,7 @@ pytest -v
 ```
 predictive-maintenance-mcp/
 ├── src/
-│   ├── server.py                        ← THE SERVER (FastMCP orchestrator)
+│   ├── server.py                        ← THE SERVER (MCPServer orchestrator)
 │   ├── mcp_tools/                       ← All MCP tools (one module per ISO 13374 block)
 │   ├── document_reader.py               ← PDF/manual processing module (pypdf)
 │   ├── report_generator.py              ← HTML report generation (Plotly)
@@ -105,7 +105,7 @@ predictive-maintenance-mcp/
 
 ### The Core: `server.py` + `mcp_tools/`
 
-`src/server.py` creates the FastMCP instance and delegates registration to
+`src/server.py` creates the MCPServer instance and delegates registration to
 `src/mcp_tools/` (one module per ISO 13374 block). Each tool is a plain
 module-level function, registered by reference:
 
@@ -306,7 +306,7 @@ Claude will automatically discover and call your new tool.
 
 ### Design Principles
 
-1. **One thin orchestrator, one module per block** — `server.py` only creates the FastMCP instance; every tool lives as an importable module-level function in `src/mcp_tools/`. This makes tools easy to understand, test, and deploy.
+1. **One thin orchestrator, one module per block** — `server.py` only creates the MCPServer instance; every tool lives as an importable module-level function in `src/mcp_tools/`. This makes tools easy to understand, test, and deploy.
 
 2. **Tools are pure functions** — Each tool takes parameters, does computation, returns structured data. No side effects except file I/O (reports, models).
 

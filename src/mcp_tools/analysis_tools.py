@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 from scipy.fft import fft, fftfreq
 from scipy.stats import kurtosis, skew
-from mcp.server.fastmcp import FastMCP, Context
+from mcp.server.mcpserver import MCPServer, Context
 
 from ..signal_acquisition.loaders import extract_segment
 from ..models import (
@@ -545,7 +545,7 @@ async def compute_spectrogram_stft(
         energy_per_band=result["energy_per_band"],
     )
 
-def register(mcp: FastMCP) -> None:
+def register(mcp: MCPServer) -> None:
     """Register signal-analysis MCP tools on *mcp*."""
     mcp.tool()(analyze_fft)
     mcp.tool()(analyze_envelope)

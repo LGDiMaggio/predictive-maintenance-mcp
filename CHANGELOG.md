@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **BREAKING (install):** migrated the server to the mcp 2.x API and raised
+  the floor to `mcp[cli]>=2.0.0`. mcp 2.0.0 removed `mcp.server.fastmcp`,
+  so `FastMCP` is now `MCPServer` from `mcp.server.mcpserver`. The two APIs
+  cannot be supported from one source tree, so mcp 1.x is no longer
+  installable with this package.
+- Transport wiring no longer goes through `mcp.settings`: mcp 2.x dropped
+  `Settings.host` / `Settings.port`, so `--host` / `--port` are passed to
+  `mcp.run()` as per-transport kwargs. `stdio` is invoked without them
+  (`run_stdio_async` accepts neither).
+
+The registered surface is unchanged — 33 tools, 0 resources, 3 prompts,
+with identical names and input schemas. `tests/fixtures/tool_inventory.json`
+was **not** regenerated: it passes as-is against mcp 2.0.0, which is the
+evidence that the migration is protocol-invisible.
+
 ## [0.9.1] - 2026-07-13
 
 Patch release: two robustness fixes of the same class caught while

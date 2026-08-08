@@ -17,7 +17,7 @@ import logging
 from typing import Literal, Optional
 
 import numpy as np
-from mcp.server.fastmcp import FastMCP, Context
+from mcp.server.mcpserver import MCPServer, Context
 
 from ..signal_processing.features import extract_time_domain_features
 from ..signal_acquisition.repository import get_repository
@@ -460,7 +460,7 @@ async def analyze_signal_trend(
     )
 
 
-def register(mcp: FastMCP) -> None:
+def register(mcp: MCPServer) -> None:
     """Register prognostics MCP tools on *mcp*."""
     mcp.tool()(estimate_rul)
     mcp.tool()(analyze_signal_trend)

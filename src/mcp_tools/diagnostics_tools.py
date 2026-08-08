@@ -11,7 +11,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 from sklearn.svm import OneClassSVM
 from sklearn.neighbors import LocalOutlierFactor
-from mcp.server.fastmcp import FastMCP, Context
+from mcp.server.mcpserver import MCPServer, Context
 
 from ..config import MODELS_DIR, RESOURCES_DIR
 from ..models import (
@@ -1573,7 +1573,7 @@ async def diagnose_vibration(
     )
 
 
-def register(mcp: FastMCP) -> None:
+def register(mcp: MCPServer) -> None:
     """Register diagnostics, anomaly-detection, and documentation tools on *mcp*."""
     mcp.tool()(assess_severity)
     mcp.tool()(train_anomaly_model)

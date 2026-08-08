@@ -12,7 +12,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from scipy.fft import fft, fftfreq
 from scipy.signal import hilbert, butter, sosfiltfilt
-from mcp.server.fastmcp import FastMCP, Context
+from mcp.server.mcpserver import MCPServer, Context
 
 from ..config import MODELS_DIR, REPORTS_DIR
 from ..models import StoredSignalInfo
@@ -999,7 +999,7 @@ async def generate_feature_comparison_report(
     }
 
 
-def register(mcp: FastMCP) -> None:
+def register(mcp: MCPServer) -> None:
     """Register report generation and visualization tools with the MCP server."""
     mcp.tool()(generate_diagnostic_report_docx)
     mcp.tool()(plot_signal)

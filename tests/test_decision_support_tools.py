@@ -9,7 +9,7 @@ keeps only generate_maintenance_recommendations.
 import pytest
 from unittest.mock import AsyncMock
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 from predictive_maintenance_mcp.mcp_tools.decision_support_tools import register
 
@@ -20,7 +20,7 @@ from predictive_maintenance_mcp.mcp_tools.decision_support_tools import register
 
 @pytest.fixture
 def mcp():
-    server = FastMCP("test-decision-support")
+    server = MCPServer("test-decision-support")
     register(server)
     return server
 
