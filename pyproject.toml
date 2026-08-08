@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "predictive-maintenance-mcp"
-version = "0.9.1"
+version = "0.10.0"
 description = "AI agent for predictive maintenance & condition monitoring — Open-source MCP server and Claude Code plugin with 52 endpoints for vibration analysis, bearing fault detection, ISO 20816 severity assessment, ML anomaly detection, and remaining useful life estimation via natural language"
 readme = "README.md"
 authors = [
@@ -62,7 +62,7 @@ dependencies = [
     # in src/mcp_tools/ still work and still need their await. Do not "fix"
     # them into sync calls -- an unawaited coroutine silently drops the
     # message, and the suite mocks ctx everywhere so nothing would fail.
-    "mcp[cli]>=2.0.0",
+    "mcp[cli]>=2.0.0,<3.0.0",
     "numpy>=2.3.3",
     "pandas>=2.3.3",
     "plotly>=5.24.0",
@@ -178,6 +178,13 @@ python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
 addopts = "-v --strict-markers --tb=short --cov=src --cov-report=term-missing --cov-report=html"
+filterwarnings = [
+    # The suite mocks ctx everywhere, so an unawaited Context call is
+    # invisible: AsyncMock records the call either way. This turns the
+    # interpreter's own "never awaited" warning into a failure. Matched by
+    # message, not category — scipy/numpy raise unrelated RuntimeWarnings.
+    "error:coroutine.*was never awaited:RuntimeWarning",
+]
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "integration: marks tests as integration tests",

@@ -153,7 +153,7 @@ class TestPlotSignal:
             signal_id="report_test",
             ctx=mock_ctx,
         )
-        assert mock_ctx.info.call_count >= 1
+        mock_ctx.info.assert_awaited()  # awaited, not merely called
         assert "Interactive plot saved" in result
 
 
@@ -345,7 +345,7 @@ class TestGenerateFFTReport:
             signal_id="report_test",
             ctx=mock_ctx,
         )
-        assert mock_ctx.info.call_count >= 1
+        mock_ctx.info.assert_awaited()  # awaited, not merely called
         assert "file_path" in result
 
 
@@ -438,7 +438,7 @@ class TestGenerateEnvelopeReport:
             bearing_freqs={"BPFO": 50.0, "BPFI": 100.0},
             ctx=mock_ctx,
         )
-        assert mock_ctx.info.call_count >= 1
+        mock_ctx.info.assert_awaited()  # awaited, not merely called
 
 
 # ---------------------------------------------------------------------------

@@ -132,6 +132,74 @@ class TestMainArgParser:
 
         mock_run.assert_called_once_with(transport="stdio")
 
+    def test_sse_defaults_bind_to_loopback(self, monkeypatch):
+        """The assertion that would catch a default widening to 0.0.0.0.
+
+        The other transport tests all pass --host/--port explicitly, so none
+        of them exercises the argparse defaults on the branch that actually
+        opens a socket. This is the one that pins the local-processing
+        invariant at the bind boundary.
+        """
+        import predictive_maintenance_mcp.server as srv
+
+        mock_run = MagicMock()
+        monkeypatch.setattr(srv.mcp, "run", mock_run)
+        monkeypatch.setattr(srv, "_setup_environment", lambda: None)
+        monkeypatch.delenv("MCP_TRANSPORT", raising=False)
+        monkeypatch.delenv("MCP_HOST", raising=False)
+        monkeypatch.delenv("MCP_PORT", raising=False)
+        monkeypatch.setattr(sys, "argv", ["server", "--transport", "sse"])
+
+        srv.main()
+
+        mock_run.assert_called_once_with(
+            transport="sse", host="127.0.0.1", port=8000
+        )
+
+    def test_blank_env_host_does_not_become_a_wildcard_bind(self, monkeypatch):
+        """MCP_HOST set-but-empty must not resolve to INADDR_ANY.
+
+        os.environ.get(name, fallback) returns "" for a variable that exists
+        with an empty value — trivially produced by blanking it in a compose
+        file — and "" binds to every interface. An operator doing that to
+        *undo* a wildcard bind would get the opposite.
+        """
+        import predictive_maintenance_mcp.server as srv
+
+        mock_run = MagicMock()
+        monkeypatch.setattr(srv.mcp, "run", mock_run)
+        monkeypatch.setattr(srv, "_setup_environment", lambda: None)
+        monkeypatch.setenv("MCP_HOST", "")
+        monkeypatch.delenv("MCP_PORT", raising=False)
+        monkeypatch.setattr(sys, "argv", ["server", "--transport", "sse"])
+
+        srv.main()
+
+        mock_run.assert_called_once_with(
+            transport="sse", host="127.0.0.1", port=8000
+        )
+
+    def test_invalid_env_transport_exits_instead_of_reaching_run(
+        self, monkeypatch
+    ):
+        """argparse validates `choices` only for command-line values.
+
+        The env var is the configuration channel in every container, so an
+        unvalidated default reaches run() and crash-loops behind a log line
+        claiming the server is listening.
+        """
+        import predictive_maintenance_mcp.server as srv
+
+        mock_run = MagicMock()
+        monkeypatch.setattr(srv.mcp, "run", mock_run)
+        monkeypatch.setattr(srv, "_setup_environment", lambda: None)
+        monkeypatch.setenv("MCP_TRANSPORT", "http")
+        monkeypatch.setattr(sys, "argv", ["server"])
+
+        with pytest.raises(SystemExit):
+            srv.main()
+        mock_run.assert_not_called()
+
     def test_sse_transport_args(self, monkeypatch):
         """Passing --transport sse --host 0.0.0.0 --port 9090."""
         import predictive_maintenance_mcp.server as srv

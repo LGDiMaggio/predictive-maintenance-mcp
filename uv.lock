@@ -1535,7 +1535,7 @@ wheels = [
 
 [[package]]
 name = "predictive-maintenance-mcp"
-version = "0.9.1"
+version = "0.10.0"
 source = { editable = "." }
 dependencies = [
     { name = "mcp", extra = ["cli"] },
@@ -1610,7 +1610,7 @@ requires-dist = [
     { name = "black", marker = "extra == 'dev'", specifier = ">=24.0.0" },
     { name = "faiss-cpu", marker = "extra == 'vector-search'", specifier = ">=1.7" },
     { name = "flake8", marker = "extra == 'dev'", specifier = ">=7.0.0" },
-    { name = "mcp", extras = ["cli"], specifier = ">=2.0.0" },
+    { name = "mcp", extras = ["cli"], specifier = ">=2.0.0,<3.0.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.8.0" },
     { name = "numpy", specifier = ">=2.3.3" },
     { name = "pandas", specifier = ">=2.3.3" },
