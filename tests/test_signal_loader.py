@@ -3,23 +3,31 @@ Tests for the Signal Loader module.
 
 Covers:
 - Multi-format signal loading: CSV, NPY, MAT, WAV, Parquet
+- Raw binary decoding (.bin/.raw/.dat) via load_raw_binary
 - Segment extraction with seed reproducibility
 - Segment boundary conditions
 - Metadata path derivation for all formats
 - Error handling for missing / invalid files
+- PMM_MAX_SIGNAL_SIZE call-time getter
 """
+
+import struct
 
 import pytest
 import numpy as np
 import pandas as pd
 from pathlib import Path
 
+from predictive_maintenance_mcp.config import get_max_signal_size
 from predictive_maintenance_mcp.signal_acquisition.loaders import (
     load_signal_data,
+    load_raw_binary,
     extract_segment,
     get_metadata_path,
     get_metadata_path_from_dir,
     DATA_DIR,
+    RAW_EXTENSIONS,
+    SUPPORTED_EXTENSIONS,
 )
 
 # ── load_signal_data ───────────────────────────────────────────────────────
@@ -240,3 +248,311 @@ class TestGetMetadataPath:
         path = get_metadata_path("real_train/baseline_1.csv")
         assert path.is_relative_to(DATA_DIR.resolve())
         assert path.name == "baseline_1_metadata.json"
+
+
+# ── raw extensions ─────────────────────────────────────────────────────────
+
+
+class TestRawExtensions:
+
+    def test_bin_raw_dat_in_supported_extensions(self):
+        assert ".bin" in SUPPORTED_EXTENSIONS
+        assert ".raw" in SUPPORTED_EXTENSIONS
+        assert ".dat" in SUPPORTED_EXTENSIONS
+
+    def test_raw_extensions_constant(self):
+        assert RAW_EXTENSIONS == {".bin", ".raw", ".dat"}
+
+    def test_existing_formats_still_supported(self):
+        for ext in (".csv", ".txt", ".npy", ".mat", ".wav", ".parquet"):
+            assert ext in SUPPORTED_EXTENSIONS
+
+
+# ── get_max_signal_size ────────────────────────────────────────────────────
+
+
+class TestGetMaxSignalSize:
+
+    def test_default_is_500_mb(self, monkeypatch):
+        monkeypatch.delenv("PMM_MAX_SIGNAL_SIZE", raising=False)
+        assert get_max_signal_size() == 500_000_000
+
+    def test_env_override_read_at_each_call(self, monkeypatch):
+        """The env var is read at call time, not frozen at import time."""
+        monkeypatch.setenv("PMM_MAX_SIGNAL_SIZE", "123")
+        assert get_max_signal_size() == 123
+        monkeypatch.setenv("PMM_MAX_SIGNAL_SIZE", "456")
+        assert get_max_signal_size() == 456
+
+
+# ── load_raw_binary ────────────────────────────────────────────────────────
+
+
+def _write_raw(path: Path, values, dtype: str) -> None:
+    """Write values to path as a raw binary dump in the given dtype code."""
+    np.asarray(values, dtype=dtype).tofile(path)
+
+
+class TestLoadRawBinaryHappyPath:
+    """Round-trips: known values written raw come back exactly, as float64."""
+
+    def test_roundtrip_float32_le(self, tmp_path):
+        values = [1.5, -2.25, 0.0, 3.75, -0.5]
+        f = tmp_path / "sig.bin"
+        _write_raw(f, values, "<f4")
+        out = load_raw_binary(f, sample_format="float32")
+        assert out.dtype == np.float64
+        assert out.shape == (5,)
+        np.testing.assert_array_equal(out, np.array(values, dtype=np.float64))
+
+    def test_roundtrip_float64_le(self, tmp_path):
+        values = [1.1, -2.2, 3.3, 0.0]
+        f = tmp_path / "sig.raw"
+        _write_raw(f, values, "<f8")
+        out = load_raw_binary(f, sample_format="float64")
+        assert out.dtype == np.float64
+        np.testing.assert_array_equal(out, np.array(values, dtype=np.float64))
+
+    def test_roundtrip_int16_le(self, tmp_path):
+        values = [100, -200, 32767, -32768, 7]
+        f = tmp_path / "sig.bin"
+        _write_raw(f, values, "<i2")
+        out = load_raw_binary(f, sample_format="int16")
+        assert out.dtype == np.float64
+        np.testing.assert_array_equal(out, np.array(values, dtype=np.float64))
+
+    def test_roundtrip_int32_le(self, tmp_path):
+        values = [100_000, -2_000_000, 2_147_483_647, -2_147_483_648]
+        f = tmp_path / "sig.dat"
+        _write_raw(f, values, "<i4")
+        out = load_raw_binary(f, sample_format="int32")
+        assert out.dtype == np.float64
+        np.testing.assert_array_equal(out, np.array(values, dtype=np.float64))
+
+    def test_roundtrip_float32_big_endian(self, tmp_path):
+        values = [1.5, -2.25, 42.0]
+        f = tmp_path / "sig.bin"
+        _write_raw(f, values, ">f4")
+        out = load_raw_binary(f, sample_format="float32", byte_order="big")
+        np.testing.assert_array_equal(out, np.array(values, dtype=np.float64))
+
+    def test_mvk_shape_exact_sample_count(self, tmp_path):
+        """AE2 shape: a 5,398,528-byte file is exactly 1,349,632 float32."""
+        f = tmp_path / "mvk_shaped.bin"
+        np.zeros(1_349_632, dtype="<f4").tofile(f)
+        assert f.stat().st_size == 5_398_528
+        out = load_raw_binary(f, sample_format="float32")
+        assert out.shape == (1_349_632,)
+
+    def test_header_offset_skips_header_and_recovers_sine(self, tmp_path):
+        fs, freq, n = 1000, 50.0, 1000
+        t = np.arange(n) / fs
+        sine = np.sin(2 * np.pi * freq * t).astype("<f4")
+        header = b"FAKEHDR!" * 2  # 16 bytes of non-sample junk
+        f = tmp_path / "with_header.raw"
+        f.write_bytes(header + sine.tobytes())
+        out = load_raw_binary(f, sample_format="float32", header_offset=16)
+        assert out.shape == (n,)
+        np.testing.assert_array_equal(out, sine.astype(np.float64))
+
+    def test_two_channel_interleaved_recovers_each_frequency(self, tmp_path):
+        fs, n = 1000, 2000  # 0.5 Hz bins: 50 and 200 Hz fall on exact bins
+        t = np.arange(n) / fs
+        ch0 = np.sin(2 * np.pi * 50.0 * t)
+        ch1 = np.sin(2 * np.pi * 200.0 * t)
+        interleaved = np.empty(2 * n, dtype="<f4")
+        interleaved[0::2] = ch0
+        interleaved[1::2] = ch1
+        f = tmp_path / "stereo.bin"
+        interleaved.tofile(f)
+
+        def dominant_freq(x: np.ndarray) -> float:
+            spectrum = np.abs(np.fft.rfft(x))
+            spectrum[0] = 0.0  # ignore DC
+            return float(np.fft.rfftfreq(len(x), 1 / fs)[int(np.argmax(spectrum))])
+
+        out0 = load_raw_binary(
+            f, sample_format="float32", n_channels=2, channel_index=0
+        )
+        out1 = load_raw_binary(
+            f, sample_format="float32", n_channels=2, channel_index=1
+        )
+        assert out0.shape == (n,)
+        assert out1.shape == (n,)
+        assert abs(dominant_freq(out0) - 50.0) < 1.0
+        assert abs(dominant_freq(out1) - 200.0) < 1.0
+
+    def test_scale_factor_int16_multiplies_exactly(self, tmp_path):
+        f = tmp_path / "counts.bin"
+        _write_raw(f, [100, -200, 300], "<i2")
+        out = load_raw_binary(f, sample_format="int16", scale_factor=0.5)
+        np.testing.assert_array_equal(out, np.array([50.0, -100.0, 150.0]))
+
+    def test_int16_without_scale_keeps_raw_counts(self, tmp_path):
+        """No WAV-style implicit normalization: raw counts stay raw."""
+        f = tmp_path / "counts.bin"
+        _write_raw(f, [100, -32768, 32767], "<i2")
+        out = load_raw_binary(f, sample_format="int16")
+        assert out.dtype == np.float64
+        np.testing.assert_array_equal(out, np.array([100.0, -32768.0, 32767.0]))
+
+
+class TestLoadRawBinaryRefusals:
+    """Typed refusals: ValueError with 'problem — remedy' messages."""
+
+    def test_invalid_sample_format_lists_vocabulary(self, tmp_path):
+        f = tmp_path / "sig.bin"
+        _write_raw(f, [1.0], "<f4")
+        with pytest.raises(ValueError) as exc:
+            load_raw_binary(f, sample_format="Float32")
+        msg = str(exc.value)
+        for fmt in ("float32", "float64", "int16", "int32"):
+            assert fmt in msg
+
+    def test_invalid_byte_order_lists_vocabulary(self, tmp_path):
+        f = tmp_path / "sig.bin"
+        _write_raw(f, [1.0], "<f4")
+        with pytest.raises(ValueError) as exc:
+            load_raw_binary(f, sample_format="float32", byte_order="middle")
+        msg = str(exc.value)
+        assert "little" in msg
+        assert "big" in msg
+
+    def test_n_channels_zero_refused_never_zerodivision(self, tmp_path):
+        f = tmp_path / "sig.bin"
+        _write_raw(f, [1.0, 2.0], "<f4")
+        with pytest.raises(ValueError, match="n_channels"):
+            load_raw_binary(f, sample_format="float32", n_channels=0)
+
+    def test_n_channels_negative_refused(self, tmp_path):
+        f = tmp_path / "sig.bin"
+        _write_raw(f, [1.0, 2.0], "<f4")
+        with pytest.raises(ValueError, match="n_channels"):
+            load_raw_binary(f, sample_format="float32", n_channels=-3)
+
+    def test_channel_index_negative_refused(self, tmp_path):
+        f = tmp_path / "sig.bin"
+        _write_raw(f, [1.0, 2.0], "<f4")
+        with pytest.raises(ValueError, match="channel_index"):
+            load_raw_binary(f, sample_format="float32", channel_index=-1)
+
+    def test_channel_index_out_of_range_names_valid_range(self, tmp_path):
+        f = tmp_path / "sig.bin"
+        _write_raw(f, [1.0, 2.0, 3.0, 4.0], "<f4")
+        with pytest.raises(ValueError) as exc:
+            load_raw_binary(f, sample_format="float32", n_channels=2, channel_index=2)
+        assert "0..1" in str(exc.value)
+
+    def test_param_validation_precedes_file_access(self, tmp_path):
+        """Parameter checks come before existence/stat — a bad declaration
+        on a missing file still reports the declaration problem."""
+        missing = tmp_path / "missing.bin"
+        with pytest.raises(ValueError, match="n_channels"):
+            load_raw_binary(missing, sample_format="float32", n_channels=0)
+
+    def test_negative_header_offset_refused(self, tmp_path):
+        f = tmp_path / "sig.bin"
+        _write_raw(f, [1.0, 2.0], "<f4")
+        with pytest.raises(ValueError, match="header_offset"):
+            load_raw_binary(f, sample_format="float32", header_offset=-1)
+
+    def test_header_offset_equal_to_file_size_refused(self, tmp_path):
+        f = tmp_path / "sig.bin"
+        f.write_bytes(b"\x00" * 64)
+        with pytest.raises(ValueError) as exc:
+            load_raw_binary(f, sample_format="float32", header_offset=64)
+        msg = str(exc.value)
+        assert "64" in msg
+
+    def test_header_offset_beyond_file_size_refused(self, tmp_path):
+        f = tmp_path / "sig.bin"
+        f.write_bytes(b"\x00" * 64)
+        with pytest.raises(ValueError):
+            load_raw_binary(f, sample_format="float32", header_offset=100)
+
+    def test_empty_file_refused(self, tmp_path):
+        f = tmp_path / "empty.bin"
+        f.write_bytes(b"")
+        with pytest.raises(ValueError) as exc:
+            load_raw_binary(f, sample_format="float32")
+        assert "0" in str(exc.value)
+
+    def test_missing_file_raises_file_not_found(self, tmp_path):
+        with pytest.raises(FileNotFoundError, match="not found"):
+            load_raw_binary(tmp_path / "nope.bin", sample_format="float32")
+
+    def test_size_off_by_one_larger_refused_with_arithmetic(self, tmp_path):
+        f = tmp_path / "sig.bin"
+        f.write_bytes(b"\x00" * 401)  # (100 x 4) + 1
+        with pytest.raises(ValueError) as exc:
+            load_raw_binary(f, sample_format="float32")
+        msg = str(exc.value)
+        assert "401" in msg  # payload / file size
+        assert "header_offset 0" in msg
+        assert "4 bytes" in msg  # dtype size
+        assert "1 channel" in msg
+        assert "remainder 1" in msg
+
+    def test_size_off_by_one_smaller_refused_with_arithmetic(self, tmp_path):
+        f = tmp_path / "sig.bin"
+        f.write_bytes(b"\x00" * 399)  # (100 x 4) - 1
+        with pytest.raises(ValueError) as exc:
+            load_raw_binary(f, sample_format="float32")
+        msg = str(exc.value)
+        assert "399" in msg
+        assert "remainder 3" in msg
+
+    def test_divisible_by_dtype_not_by_frame_refused(self, tmp_path):
+        # 12 bytes = 3 float32 samples, but not a whole number of
+        # 2-channel frames (8 bytes each): remainder 4.
+        f = tmp_path / "sig.bin"
+        f.write_bytes(b"\x00" * 12)
+        with pytest.raises(ValueError) as exc:
+            load_raw_binary(f, sample_format="float32", n_channels=2)
+        msg = str(exc.value)
+        assert "12" in msg
+        assert "2 channel" in msg
+        assert "4 bytes" in msg
+        assert "remainder 4" in msg
+
+    def test_nonfinite_float_payload_refused_with_count(self, tmp_path):
+        """Bytes written with the wrong endianness/dtype decode to NaN/Inf
+        under the declared little-endian float32 — refusal carries the
+        non-finite count and points at the declaration."""
+        good = struct.pack("<f", 1.0)
+        nan_le = b"\x00\x00\xc0\x7f"  # float32 NaN (little-endian)
+        inf_le = b"\x00\x00\x80\x7f"  # float32 +Inf (little-endian)
+        f = tmp_path / "swapped.bin"
+        f.write_bytes(good * 3 + nan_le * 2 + inf_le + good * 2)
+        with pytest.raises(ValueError) as exc:
+            load_raw_binary(f, sample_format="float32")
+        msg = str(exc.value)
+        assert "3 non-finite" in msg
+        assert "byte_order" in msg or "endian" in msg.lower()
+        assert "sample_format" in msg
+
+    def test_nonfinite_check_applies_to_selected_channel_only(self, tmp_path):
+        """A NaN confined to channel 1 must not block loading channel 0."""
+        good = struct.pack("<f", 2.0)
+        nan_le = b"\x00\x00\xc0\x7f"
+        # Interleaved frames: (ch0, ch1) = (good, nan), (good, good)
+        f = tmp_path / "stereo_nan.bin"
+        f.write_bytes(good + nan_le + good + good)
+        out = load_raw_binary(f, sample_format="float32", n_channels=2, channel_index=0)
+        np.testing.assert_array_equal(out, np.array([2.0, 2.0]))
+        with pytest.raises(ValueError, match="non-finite"):
+            load_raw_binary(f, sample_format="float32", n_channels=2, channel_index=1)
+
+    def test_file_over_size_cap_refused_naming_env_var(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("PMM_MAX_SIGNAL_SIZE", "16")
+        f = tmp_path / "big.bin"
+        _write_raw(f, [1.0, 2.0, 3.0, 4.0, 5.0], "<f4")  # 20 bytes > 16
+        with pytest.raises(ValueError, match="PMM_MAX_SIGNAL_SIZE"):
+            load_raw_binary(f, sample_format="float32")
+
+    def test_file_at_exact_size_cap_loads(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("PMM_MAX_SIGNAL_SIZE", "16")
+        f = tmp_path / "ok.bin"
+        _write_raw(f, [1.0, 2.0, 3.0, 4.0], "<f4")  # exactly 16 bytes
+        out = load_raw_binary(f, sample_format="float32")
+        assert out.shape == (4,)

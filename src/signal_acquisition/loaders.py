@@ -3,10 +3,17 @@ Signal loading and segmentation utilities.
 
 Funzioni pure senza dipendenze da MCP o dal filesystem globale:
 - load_signal_data: carica un file segnale in qualsiasi formato supportato
+- load_raw_binary: decodifica file binari raw headerless (.bin/.raw/.dat)
 - extract_segment: estrae un segmento casuale/deterministico da un segnale
 - get_metadata_path / get_metadata_path_from_dir: derivano il path del file metadata
 
 Queste funzioni sono testabili in isolamento senza avviare il server MCP.
+
+Error contract: the historical functions in this module return ``Optional``
+(``None`` on failure). ``load_raw_binary`` deliberately deviates and RAISES
+typed errors ("problem — remedy" ``ValueError``/``FileNotFoundError``): the
+caller must be able to relay exactly which declared parameter contradicts the
+file, which a bare ``None`` cannot express. See its docstring.
 """
 
 import logging
@@ -16,12 +23,37 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
-from ..config import DATA_DIR
+from ..config import DATA_DIR, get_max_signal_size
 from ..path_safety import safe_resolve
 
 logger = logging.getLogger(__name__)
 
-SUPPORTED_EXTENSIONS = [".csv", ".txt", ".npy", ".dat", ".mat", ".wav", ".parquet"]
+SUPPORTED_EXTENSIONS = [
+    ".csv",
+    ".txt",
+    ".npy",
+    ".dat",
+    ".mat",
+    ".wav",
+    ".parquet",
+    ".bin",
+    ".raw",
+]
+
+# Extensions eligible for raw-binary decoding (headerless files that need an
+# explicit declaration of sample_format/byte_order/... to be loadable).
+# Exported for later wiring (repository dispatch, tool surface).
+RAW_EXTENSIONS = frozenset({".bin", ".raw", ".dat"})
+
+# Closed vocabularies for the raw decoder declaration. Keys are the accepted
+# parameter values; values are the numpy dtype building blocks.
+_RAW_DTYPE_CODES = {
+    "float32": "f4",
+    "float64": "f8",
+    "int16": "i2",
+    "int32": "i4",
+}
+_RAW_BYTE_ORDER_PREFIXES = {"little": "<", "big": ">"}
 
 
 def load_signal_data(filename: str) -> Optional[np.ndarray]:
@@ -95,6 +127,154 @@ def load_signal_data(filename: str) -> Optional[np.ndarray]:
     except Exception as e:
         logger.error(f"Error loading signal {filename}: {e}")
         return None
+
+
+def load_raw_binary(
+    path: Path,
+    *,
+    sample_format: str,
+    byte_order: str = "little",
+    n_channels: int = 1,
+    channel_index: int = 0,
+    header_offset: int = 0,
+    scale_factor: Optional[float] = None,
+) -> np.ndarray:
+    """Decode a headerless raw binary signal file into a float64 array.
+
+    Pure decoder for raw waveform files (see ``RAW_EXTENSIONS``): validates
+    the caller's declaration against the file's actual size, reads the whole
+    payload eagerly with ``np.fromfile``, de-interleaves the selected channel
+    and returns float64 samples. Integer sample formats are returned as raw
+    counts — there is deliberately NO WAV-style implicit normalization;
+    declare a ``scale_factor`` to convert ADC counts to physical units (the
+    multiply is performed in float64).
+
+    Deviation from the module convention: unlike the ``Optional``-returning
+    loaders in this module, this function RAISES typed errors with
+    actionable "problem — remedy" messages, because the caller must relay
+    exactly which declared parameter contradicts the file.
+
+    ``path`` must already be resolved and contained by the caller
+    (``safe_resolve`` at the existing call sites); no containment is applied
+    here.
+
+    Args:
+        path: Already-resolved filesystem path of the raw binary file.
+        sample_format: Declared sample dtype: 'float32', 'float64', 'int16'
+            or 'int32'.
+        byte_order: Declared endianness: 'little' (default) or 'big'.
+        n_channels: Number of interleaved channels in the file (>= 1).
+        channel_index: 0-based channel to extract (< n_channels).
+        header_offset: Bytes to skip before the first sample (>= 0).
+        scale_factor: Optional multiplier applied after decoding (e.g. ADC
+            counts -> physical unit). Default: no scaling.
+
+    Returns:
+        1-D float64 numpy array with the selected channel's samples.
+
+    Raises:
+        ValueError: If a declared parameter is outside its vocabulary or
+            range, the file exceeds the PMM_MAX_SIGNAL_SIZE cap, the payload
+            size contradicts the declaration (the message shows the
+            arithmetic), or a float payload decodes to NaN/Inf samples.
+        FileNotFoundError: If ``path`` does not exist.
+    """
+    if sample_format not in _RAW_DTYPE_CODES:
+        raise ValueError(
+            f"Invalid sample_format '{sample_format}' — declare one of "
+            f"{sorted(_RAW_DTYPE_CODES)}."
+        )
+    if byte_order not in _RAW_BYTE_ORDER_PREFIXES:
+        raise ValueError(
+            f"Invalid byte_order '{byte_order}' — declare one of "
+            f"{sorted(_RAW_BYTE_ORDER_PREFIXES)} ('little' is the default)."
+        )
+    # Bounds checks come BEFORE n_channels is used as a divisor below, so a
+    # bad declaration can never surface as a raw ZeroDivisionError.
+    if n_channels < 1:
+        raise ValueError(
+            f"n_channels must be >= 1, got {n_channels} — declare how many "
+            f"interleaved channels the file contains (1 for a single-channel "
+            f"recording)."
+        )
+    if channel_index < 0:
+        raise ValueError(
+            f"channel_index must be >= 0, got {channel_index} — channels "
+            f"are 0-indexed."
+        )
+    if channel_index >= n_channels:
+        raise ValueError(
+            f"channel_index {channel_index} is out of range for "
+            f"n_channels={n_channels} — valid values are "
+            f"0..{n_channels - 1}."
+        )
+    if header_offset < 0:
+        raise ValueError(
+            f"header_offset must be >= 0, got {header_offset} — declare the "
+            f"header size in bytes (0 for a headerless file)."
+        )
+
+    if not path.exists():
+        raise FileNotFoundError(
+            f"Signal file not found: {path} — use list_signals(scope='disk') "
+            f"to see the files available on disk."
+        )
+
+    # Pre-read size guard: stat() only, so an oversized file is refused
+    # before a single payload byte is read into memory.
+    file_size = path.stat().st_size
+    max_size = get_max_signal_size()
+    if file_size > max_size:
+        raise ValueError(
+            f"File {path} is {file_size} bytes, over the {max_size}-byte "
+            f"cap — raise the cap via the PMM_MAX_SIGNAL_SIZE environment "
+            f"variable (bytes) if this size is intentional."
+        )
+
+    dtype = np.dtype(
+        _RAW_BYTE_ORDER_PREFIXES[byte_order] + _RAW_DTYPE_CODES[sample_format]
+    )
+    dtype_size = dtype.itemsize
+    frame_size = dtype_size * n_channels
+    payload = file_size - header_offset
+
+    if payload <= 0:
+        raise ValueError(
+            f"No payload to decode: file size {file_size} bytes minus "
+            f"header_offset {header_offset} leaves {payload} bytes — check "
+            f"header_offset against the actual file size (an empty or "
+            f"truncated file has nothing to decode)."
+        )
+    if payload % frame_size != 0:
+        raise ValueError(
+            f"Payload of {payload} bytes (file size {file_size} - "
+            f"header_offset {header_offset}) is not a whole number of "
+            f"{frame_size}-byte frames ({sample_format} = {dtype_size} bytes "
+            f"x {n_channels} channel(s)): remainder {payload % frame_size} "
+            f"byte(s) — the declared sample_format/n_channels/header_offset "
+            f"do not fit this file; re-check the declaration."
+        )
+
+    # Eager full read with the declared dtype (explicit endianness code).
+    data = np.fromfile(path, dtype=dtype, offset=header_offset)
+    if n_channels > 1:
+        data = data[channel_index::n_channels]
+
+    if dtype.kind == "f":
+        nonfinite = int(np.count_nonzero(~np.isfinite(data)))
+        if nonfinite:
+            raise ValueError(
+                f"Decoded payload contains {nonfinite} non-finite sample(s) "
+                f"(NaN/Inf) out of {data.size} — the declared sample_format "
+                f"'{sample_format}' or byte_order '{byte_order}' probably "
+                f"does not match how the file was written; re-check the "
+                f"declaration."
+            )
+
+    result = data.astype(np.float64)
+    if scale_factor is not None:
+        result = result * scale_factor
+    return result
 
 
 def extract_segment(
