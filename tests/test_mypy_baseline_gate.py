@@ -11,6 +11,10 @@ So the failing paths are tested, not the passing one. Everything here drives
 the pure functions against in-memory fixtures; nothing invokes mypy, so the
 suite stays fast and these tests cannot be broken by the tree's actual type
 debt.
+
+The other half -- that the CI job wiring still lets mypy fail the build --
+moved to ``tests/test_ci_gates.py``, which now makes that assertion for
+every job in the workflow rather than this one.
 """
 
 import importlib.util
@@ -227,25 +231,3 @@ class TestTheComparison:
         )
         assert code == 0
         assert "OK" in out
-
-
-def test_the_ci_job_still_blocks():
-    """No `continue-on-error` may come back to the type-check job.
-
-    This is the literal defect the gate replaced, and re-adding one line to a
-    workflow would undo it with every other check still green.
-    """
-    workflow = (REPO_ROOT / ".github" / "workflows" / "tests.yml").read_text(
-        encoding="utf-8"
-    )
-    # From the job's name to the start of the next top-level job key, so the
-    # window cannot miss the `run:` line however long the comments grow.
-    start = workflow.index("Type check with mypy")
-    rest = workflow[start:]
-    end = rest.find("\n  format-check:")
-    job = rest if end == -1 else rest[:end]
-    assert "continue-on-error" not in job, (
-        "the mypy job is non-blocking again — see tools/check_mypy_baseline.py "
-        "for why it was made blocking"
-    )
-    assert "tools/check_mypy_baseline.py" in job

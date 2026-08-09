@@ -159,6 +159,13 @@ dev = [
     # `python tools/check_mypy_baseline.py --update`.
     "mypy>=2.3,<2.4",
     "types-requests>=2.31.0",
+    # tests/test_ci_gates.py parses .github/workflows/tests.yml to assert that
+    # no check is decorative. It reads the workflow with a real YAML parser
+    # rather than string matching precisely because it is a guard: a hand-rolled
+    # scan that stopped matching would report "every job blocks" on a workflow
+    # full of `continue-on-error`. Not importable via pytest.importorskip for
+    # the same reason -- a skip is a green tick that checked nothing.
+    "pyyaml>=6.0",
 ]
 
 [tool.black]
