@@ -91,6 +91,36 @@ removed the capability with no replacement.
   helpers, not registered tools, so the `tool_inventory.json` constraint that
   justifies keeping `ctx` on public tools never applied to them.
 
+### Development
+
+No runtime behaviour changes in this section. It is recorded because the
+shipped source is affected: the whole tree was reformatted, and the checks
+that decide whether a release is publishable are no longer decorative.
+
+- **Every CI check now blocks.** The mypy and Black jobs both ran with
+  `continue-on-error: true`, so they reported green whatever they found. mypy
+  is blocking against a frozen baseline of 33 pre-existing errors
+  (`tools/check_mypy_baseline.py`); Black is blocking outright, which required
+  reformatting 70 files. `tests/test_ci_gates.py` asserts no job can go
+  non-blocking again, with one documented exception (the Codecov upload, whose
+  failure is not a claim about this tree).
+- **The type checker sees model construction again.** Adding the `pydantic.mypy`
+  plugin with its default `init_forbid_extra = false` had replaced the typed
+  `__init__` with `**kwargs: Any`; combined with pydantic's default
+  `extra='ignore'`, a misspelled field on any of the 18 result models was
+  caught by nothing and silently fell back to its default. Now set to `true`.
+- **Tests exercise the checkout they live in.** A shared virtualenv's editable
+  install pins the package to one absolute path, so every git worktree ran the
+  suite against the primary checkout's source. `tests/conftest.py` binds
+  resolution to its own tree and fails loudly if that ever breaks;
+  `scripts/setup-worktree.py` builds a per-worktree environment and refuses to
+  run in the primary checkout, where it would prune the shared venv's optional
+  extras and silently disable the PDF tests everywhere.
+- mypy pinned to `>=2.3,<2.4`, since the baseline freezes an exact per-error
+  tally and the job now blocks.
+- Source formatting normalised repo-wide by Black. Verified semantics-preserving
+  by AST comparison of every changed file.
+
 ## [0.11.0] - 2026-08-08
 
 Adds the integrated diagnostic report. Additive: no existing tool
