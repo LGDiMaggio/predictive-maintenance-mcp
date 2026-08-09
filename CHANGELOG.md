@@ -5,6 +5,60 @@ All notable changes to the Predictive Maintenance MCP Server project will be doc
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Lets the existing `load_signal` tool open headerless raw binary waveforms
+(`.bin`, `.raw`, `.dat`) when — and only when — the caller declares how to
+decode them. Vendor-neutral by design: no format parsers ship in the core and
+nothing is inferred from file content or names; translating a vendor's
+metadata into the declaration is the user's (or an external adapter's) job.
+
+### Added
+- **Raw binary ingestion via declaration parameters on `load_signal`.**
+  Additive keyword parameters describe the layout: `sample_format`
+  (`float32`/`float64`/`int16`/`int32`), `byte_order` (documented default
+  `little`), `n_channels`/`channel_index` (interleaved extraction; a
+  multi-channel derived id gains a `_ch<k>` suffix so channels never
+  collide), `header_offset`, and an optional `scale_factor`. Required for a
+  raw file: `sample_format` AND `sampling_rate` — explicit or from the
+  companion `<stem>_metadata.json` (explicit wins) — because a headerless
+  file has zero self-description; a load missing either is refused with ONE
+  message naming everything missing and both remedies. The declaration is
+  validated, never trusted blindly: payload-divisibility failures show the
+  arithmetic (the best detector of a wrong dtype/channel count), and a float
+  payload decoding to NaN/Inf is refused as a likely endianness/dtype
+  mismatch. Declaring raw parameters on a self-describing format (CSV, WAV,
+  ...) is refused as a contradiction — no-inference cuts both ways. Integer
+  formats decode to raw ADC counts; `scale_factor` is the user's declared
+  calibration multiplier into the physical unit — without it, declaring a
+  unit on raw counts would have produced dangerously wrong ISO verdicts.
+- **`raw_format` provenance on stored signals.** The six EFFECTIVE decode
+  parameters (after the explicit > companion > default merge) are recorded
+  on `StoredSignalInfo`, so `get_signal_info` can answer "how was this file
+  decoded" after the fact instead of leaving the decode contract implicit.
+- **`PMM_MAX_SIGNAL_SIZE` pre-read size cap** (bytes, default 500 MB) for
+  raw loads, checked with `stat()` before a single byte is read — an
+  explicit refusal with the env-var remedy instead of an OOM. Read from the
+  environment at each call (the `PMM_SIGNAL_CACHE_GB` pattern), so it is
+  overridable at runtime and testable. The 100 MB figure CLAUDE.md promised
+  was never implemented and is too low for legitimate captures (1 h at
+  25.6 kHz float32 ≈ 368 MB). Extending the cap to the other formats is
+  follow-up work.
+
+### Fixed
+- **`.dat` was listed but unloadable.** The extension sat in
+  `SUPPORTED_EXTENSIONS` — so `list_signals(scope="disk")` showed such
+  files — but no loader branch existed, so every load failed. `.dat` is now
+  raw-eligible on the same terms as `.bin`/`.raw`: it loads with a declared
+  decode contract and is refused with the full remedy message without one.
+
+### Security
+- Path-containment tests extended to raw reads: relative traversal,
+  Windows backslash traversal, and sibling-directory escapes with `.bin`
+  paths are asserted rejected on the same closed-oracle terms as the
+  existing formats (refusals reveal neither external file content nor
+  directory listings).
+
 ## [0.12.0] - 2026-08-08
 
 Moves progress narration off the MCP logging capability, which SEP-2577

@@ -12,8 +12,10 @@ description: >
 
 Load, generate, inspect, and manage vibration signals in the
 predictive-maintenance-mcp in-memory repository. Supports CSV, TXT, NPY, WAV,
-MAT (MATLAB), and Parquet formats. The `signal_id` returned by loading is the
-single handle every analysis, diagnosis, report, and prognostics tool accepts.
+MAT (MATLAB), and Parquet formats, plus headerless raw binary (`.bin`, `.raw`,
+`.dat`) with a declared decode contract. The `signal_id` returned by loading is
+the single handle every analysis, diagnosis, report, and prognostics tool
+accepts.
 
 **Prerequisite**: The `predictive-maintenance-mcp` MCP server must be connected.
 
@@ -47,6 +49,28 @@ Call `load_signal(filepath="real_train/baseline_1.csv", signal_unit="g")`.
 atomic and fail-fast (one error names the bad entries, nothing is loaded):
 
 Call `load_signal(filepath=["real_train/baseline_1.csv", "real_train/baseline_2.csv"], signal_unit="g")`
+
+### Load a Raw Binary Signal (.bin / .raw / .dat)
+
+A headerless raw file carries no self-description, so the decode contract
+must be declared. **Required**: `sample_format` (`"float32"`, `"float64"`,
+`"int16"`, or `"int32"`) AND `sampling_rate` — either as explicit parameters
+or declared in a companion `<stem>_metadata.json` next to the file (explicit
+parameters take precedence). Optional: `byte_order` (default `"little"`),
+`n_channels` (default 1), `channel_index`, `header_offset` (bytes),
+`scale_factor`.
+
+Call `load_signal(filepath="motor.bin", sample_format="float32", sampling_rate=25600, signal_unit="mm/s")`.
+
+- All declared values must come from the user's actual acquisition setup
+  (DAQ configuration, sensor datasheet) — ask the user for THEIR real
+  values; the server never guesses them from the file content or name
+- Integer formats (`int16`/`int32`) decode to raw ADC counts — declare
+  `scale_factor` (the sensor chain's calibration factor) to convert counts
+  into the declared physical unit; without it the values stay raw counts
+- A load missing a required declaration is refused with one message naming
+  everything missing and both remedies (re-call with parameters, or create
+  the companion metadata file)
 
 ### Inspect Signal Metadata
 
@@ -104,6 +128,10 @@ If no data files are available, generate a test signal:
 - Signals are cached in memory; they persist for the session but not across
   server restarts (re-load after a restart)
 - CSV files: the first numeric column is used
+- Raw binary files decode exactly as declared (`get_signal_info` reports the
+  effective decode parameters under `raw_format`); a wrong declaration is
+  usually caught by the divisibility or non-finite-payload checks, but the
+  fix is always the user's real acquisition values, never a guess
 - Always confirm sampling_rate and signal_unit for formats that do not embed
   them — ask the user, never guess
 - All signal data stays local — nothing is transmitted externally
