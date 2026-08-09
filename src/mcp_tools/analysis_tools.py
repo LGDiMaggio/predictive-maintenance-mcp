@@ -26,8 +26,13 @@ from mcp.server.mcpserver import MCPServer, Context
 
 from ..signal_acquisition.loaders import extract_segment
 from ..models import (
-    FFTResult, SpectralPeak, EnvelopeResult, StatisticalResult,
-    FeatureExtractionResult, PSDResult, STFTResult,
+    FFTResult,
+    SpectralPeak,
+    EnvelopeResult,
+    StatisticalResult,
+    FeatureExtractionResult,
+    PSDResult,
+    STFTResult,
 )
 from ..signal_processing.spectral import (
     compute_psd as _compute_psd,
@@ -69,42 +74,43 @@ def _select_segment(
 # TOOLS - FFT ANALYSIS
 # ================================================================
 
+
 async def analyze_fft(
     ctx: Context,
     signal_id: str,
     max_frequency: Optional[float] = None,
     segment_duration: Optional[float] = 1.0,
-    random_seed: Optional[int] = None
+    random_seed: Optional[int] = None,
 ) -> FFTResult:
     """
-        Perform FFT (Fast Fourier Transform) analysis on a stored signal.
+    Perform FFT (Fast Fourier Transform) analysis on a stored signal.
 
-        FFT analysis converts the signal from time domain to frequency domain,
-        allowing identification of harmonic components and faults that manifest
-        at specific frequencies. Requires the signal loaded via load_signal()
-        first; the sampling rate comes from the stored signal metadata.
+    FFT analysis converts the signal from time domain to frequency domain,
+    allowing identification of harmonic components and faults that manifest
+    at specific frequencies. Requires the signal loaded via load_signal()
+    first; the sampling rate comes from the stored signal metadata.
 
-        By default analyzes the LEADING 1.0-second segment (deterministic:
-        two identical calls return identical results). Set
-        segment_duration=None to analyze the entire signal, or pass
-        random_seed to sample a seeded random segment position instead.
+    By default analyzes the LEADING 1.0-second segment (deterministic:
+    two identical calls return identical results). Set
+    segment_duration=None to analyze the entire signal, or pass
+    random_seed to sample a seeded random segment position instead.
 
-        Args:
-            ctx: MCP context. Unused — see this module's docstring on logging.
-            signal_id: ID of the stored signal (from load_signal).
-            max_frequency: Maximum frequency to analyze (default: Nyquist frequency)
-            segment_duration: Duration in seconds to analyze (default: leading
-                1.0 s). Set to None to analyze the full signal.
-            random_seed: Seed for random segment position (default: None =
-                deterministic leading segment).
+    Args:
+        ctx: MCP context. Unused — see this module's docstring on logging.
+        signal_id: ID of the stored signal (from load_signal).
+        max_frequency: Maximum frequency to analyze (default: Nyquist frequency)
+        segment_duration: Duration in seconds to analyze (default: leading
+            1.0 s). Set to None to analyze the full signal.
+        random_seed: Seed for random segment position (default: None =
+            deterministic leading segment).
 
-        Returns:
-            FFTResult with top peaks, dominant peak, and spectrum stats.
+    Returns:
+        FFTResult with top peaks, dominant peak, and spectrum stats.
 
-        Raises:
-            ValueError: If the signal_id is not loaded, or the stored signal
-                has no sampling rate.
-        """
+    Raises:
+        ValueError: If the signal_id is not loaded, or the stored signal
+            has no sampling rate.
+    """
     signal_data, info = resolve_signal(signal_id)
     sampling_rate = info.sampling_rate
 
@@ -134,7 +140,7 @@ async def analyze_fft(
 
     # Calculate FFT
     fft_values = fft(signal_windowed)
-    frequencies = fftfreq(N, 1/sampling_rate)
+    frequencies = fftfreq(N, 1 / sampling_rate)
 
     # Take only positive frequencies (excluding DC component at index 0)
     positive_freq_idx = frequencies > 0
@@ -171,11 +177,13 @@ async def analyze_fft(
     for i in top_idx:
         mag_val = float(magnitudes[i])
         mag_db = float(20 * np.log10(max(mag_val, 1e-12) / max(max_mag, 1e-12)))
-        top_peaks.append(SpectralPeak(
-            frequency_hz=round(float(frequencies[i]), 3),
-            magnitude=round(mag_val, 6),
-            magnitude_db=round(mag_db, 2)
-        ))
+        top_peaks.append(
+            SpectralPeak(
+                frequency_hz=round(float(frequencies[i]), 3),
+                magnitude=round(mag_val, 6),
+                magnitude_db=round(mag_db, 2),
+            )
+        )
 
     rms_spectral = float(np.sqrt(np.mean(magnitudes**2)))
 
@@ -185,15 +193,21 @@ async def analyze_fft(
         peak_magnitude=peak_magnitude,
         rms_spectral=round(rms_spectral, 6),
         total_bins=len(frequencies),
-        freq_range_hz=[round(float(frequencies[0]), 3), round(float(frequencies[-1]), 3)] if len(frequencies) > 0 else [0, 0],
+        freq_range_hz=(
+            [round(float(frequencies[0]), 3), round(float(frequencies[-1]), 3)]
+            if len(frequencies) > 0
+            else [0, 0]
+        ),
         sampling_rate=sampling_rate,
         num_samples=N,
-        frequency_resolution=frequency_resolution
+        frequency_resolution=frequency_resolution,
     )
+
 
 # ================================================================
 # TOOLS - ENVELOPE ANALYSIS
 # ================================================================
+
 
 async def analyze_envelope(
     ctx: Context,
@@ -202,52 +216,52 @@ async def analyze_envelope(
     filter_high: float = 5000.0,
     num_peaks: int = 5,
     segment_duration: Optional[float] = 1.0,
-    random_seed: Optional[int] = None
+    random_seed: Optional[int] = None,
 ) -> EnvelopeResult:
     """
-        Envelope-spectrum analysis of a stored signal (bearing fault screening).
+    Envelope-spectrum analysis of a stored signal (bearing fault screening).
 
-        THE unified envelope tool: bandpass filter -> Hilbert
-        envelope -> mean subtraction + Hann window -> FFT -> top peaks.
-        The mean subtraction/window step is an intentional U9 fix: the
-        envelope's DC leakage used to bury the low-frequency FTF zone.
-        Requires the signal loaded via load_signal() first; the sampling
-        rate comes from the stored signal metadata.
+    THE unified envelope tool: bandpass filter -> Hilbert
+    envelope -> mean subtraction + Hann window -> FFT -> top peaks.
+    The mean subtraction/window step is an intentional U9 fix: the
+    envelope's DC leakage used to bury the low-frequency FTF zone.
+    Requires the signal loaded via load_signal() first; the sampling
+    rate comes from the stored signal metadata.
 
-        The requested band must fit the signal: an invalid band (low <= 0,
-        low >= high, high > Nyquist) raises a ValueError — it is NEVER
-        silently clamped. The band used is echoed in the result.
+    The requested band must fit the signal: an invalid band (low <= 0,
+    low >= high, high > Nyquist) raises a ValueError — it is NEVER
+    silently clamped. The band used is echoed in the result.
 
-        By default analyzes the LEADING 1.0-second segment (deterministic:
-        two identical calls return identical results). Set
-        segment_duration=None to analyze the entire signal, or pass
-        random_seed to sample a seeded random segment position instead.
+    By default analyzes the LEADING 1.0-second segment (deterministic:
+    two identical calls return identical results). Set
+    segment_duration=None to analyze the entire signal, or pass
+    random_seed to sample a seeded random segment position instead.
 
-        No reference bearing frequencies are assumed: compare the returned
-        peaks against frequencies computed for the actual bearing and
-        shaft speed (check_bearing_faults or
-        calculate_bearing_characteristic_frequencies).
+    No reference bearing frequencies are assumed: compare the returned
+    peaks against frequencies computed for the actual bearing and
+    shaft speed (check_bearing_faults or
+    calculate_bearing_characteristic_frequencies).
 
-        Args:
-            ctx: MCP context. Unused — see this module's docstring on logging.
-            signal_id: ID of the stored signal (from load_signal).
-            filter_low: Bandpass low edge in Hz (default: 500).
-            filter_high: Bandpass high edge in Hz (default: 5000). Must
-                not exceed the signal's Nyquist frequency.
-            num_peaks: Number of top peaks to return (default: 5).
-            segment_duration: Duration in seconds to analyze (default:
-                leading 1.0 s). None analyzes the full signal.
-            random_seed: Seed for random segment position (default: None =
-                deterministic leading segment).
+    Args:
+        ctx: MCP context. Unused — see this module's docstring on logging.
+        signal_id: ID of the stored signal (from load_signal).
+        filter_low: Bandpass low edge in Hz (default: 500).
+        filter_high: Bandpass high edge in Hz (default: 5000). Must
+            not exceed the signal's Nyquist frequency.
+        num_peaks: Number of top peaks to return (default: 5).
+        segment_duration: Duration in seconds to analyze (default:
+            leading 1.0 s). None analyzes the full signal.
+        random_seed: Seed for random segment position (default: None =
+            deterministic leading segment).
 
-        Returns:
-            EnvelopeResult with the band actually used, top peaks, and
-            comparison guidance.
+    Returns:
+        EnvelopeResult with the band actually used, top peaks, and
+        comparison guidance.
 
-        Raises:
-            ValueError: If the signal_id is not loaded, the stored signal
-                has no sampling rate, or the band is invalid vs Nyquist.
-        """
+    Raises:
+        ValueError: If the signal_id is not loaded, the stored signal
+            has no sampling rate, or the band is invalid vs Nyquist.
+    """
     signal_data, info = resolve_signal(signal_id)
     sampling_rate = info.sampling_rate
 
@@ -289,16 +303,18 @@ async def analyze_envelope(
         diagnosis_lines.append(
             f"  {i}. {p.frequency_hz:7.2f} Hz  (magnitude: {p.magnitude:.2e})"
         )
-    diagnosis_lines.extend([
-        "",
-        "No reference bearing frequencies are assumed for this machine.",
-        "Compare the peaks above against BPFO/BPFI/BSF/FTF computed for the",
-        "actual bearing and shaft speed: use check_bearing_faults(...) with a",
-        "catalog bearing_id, explicit frequencies, or the bearing geometry",
-        "from the machine manual.",
-        "Use generate_envelope_report(...) for visual analysis and harmonic "
-        "identification.",
-    ])
+    diagnosis_lines.extend(
+        [
+            "",
+            "No reference bearing frequencies are assumed for this machine.",
+            "Compare the peaks above against BPFO/BPFI/BSF/FTF computed for the",
+            "actual bearing and shaft speed: use check_bearing_faults(...) with a",
+            "catalog bearing_id, explicit frequencies, or the bearing geometry",
+            "from the machine manual.",
+            "Use generate_envelope_report(...) for visual analysis and harmonic "
+            "identification.",
+        ]
+    )
 
     return EnvelopeResult(
         signal_id=signal_id,
@@ -309,39 +325,41 @@ async def analyze_envelope(
         diagnosis="\n".join(diagnosis_lines),
     )
 
+
 # ================================================================
 # TOOLS - STATISTICAL ANALYSIS
 # ================================================================
 
+
 def analyze_statistics(signal_id: str) -> StatisticalResult:
     """
-        Calculate statistical parameters of a stored signal for diagnostics.
+    Calculate statistical parameters of a stored signal for diagnostics.
 
-        Statistical parameters are key indicators for diagnostics:
-        - RMS: Effective value, correlated to signal energy
-        - Crest Factor: Indicates presence of impulses (high = possible faults)
-        - Kurtosis: Measures impulsiveness (excess kurtosis; >0 = non-Gaussian, >3 = strong impulses)
-        - Peak-to-Peak: Signal range
+    Statistical parameters are key indicators for diagnostics:
+    - RMS: Effective value, correlated to signal energy
+    - Crest Factor: Indicates presence of impulses (high = possible faults)
+    - Kurtosis: Measures impulsiveness (excess kurtosis; >0 = non-Gaussian, >3 = strong impulses)
+    - Peak-to-Peak: Signal range
 
-        Requires the signal loaded via load_signal() first. Statistical
-        parameters are screening indicators, not definitive diagnostics —
-        combine with frequency-domain evidence.
+    Requires the signal loaded via load_signal() first. Statistical
+    parameters are screening indicators, not definitive diagnostics —
+    combine with frequency-domain evidence.
 
-        **Signal units:** all values are in the signal's native unit. The unit
-        is reported only when DECLARED — load_signal(signal_unit=...) or the
-        companion _metadata.json — and never guessed from signal amplitude.
-        ISO 20816-3 severity tools refuse to produce a verdict until the unit
-        is declared.
+    **Signal units:** all values are in the signal's native unit. The unit
+    is reported only when DECLARED — load_signal(signal_unit=...) or the
+    companion _metadata.json — and never guessed from signal amplitude.
+    ISO 20816-3 severity tools refuse to produce a verdict until the unit
+    is declared.
 
-        Args:
-            signal_id: ID of the stored signal (from load_signal).
+    Args:
+        signal_id: ID of the stored signal (from load_signal).
 
-        Returns:
-            StatisticalResult with all statistical parameters
+    Returns:
+        StatisticalResult with all statistical parameters
 
-        Raises:
-            ValueError: If the signal_id is not loaded.
-        """
+    Raises:
+        ValueError: If the signal_id is not loaded.
+    """
     signal_data, info = resolve_signal(signal_id, require_sampling_rate=False)
 
     # Calculate statistical parameters
@@ -355,7 +373,9 @@ def analyze_statistics(signal_id: str) -> StatisticalResult:
     crest_factor = peak / rms if rms > 0 else 0.0
 
     # Kurtosis (using scipy)
-    kurtosis_val = float(kurtosis(signal_data, fisher=True))  # Fisher=True for excess kurtosis
+    kurtosis_val = float(
+        kurtosis(signal_data, fisher=True)
+    )  # Fisher=True for excess kurtosis
     skewness_val = float(skew(signal_data))
 
     # Signal unit: DECLARED only (load_signal parameter or companion
@@ -366,15 +386,15 @@ def analyze_statistics(signal_id: str) -> StatisticalResult:
     if declared_unit is not None:
         unit_note = (
             f"Signal unit declared as '{declared_unit}' for "
-                f"'{signal_id}'. All values above are in this unit."
+            f"'{signal_id}'. All values above are in this unit."
         )
     else:
         unit_note = (
             "Signal unit NOT declared — values are in the signal's native "
-                "(unknown) unit; the unit is never guessed from amplitude. For "
-                "ISO 20816-3 severity assessment, declare it via "
-                "load_signal(filepath=..., signal_unit='g'|'m/s2'|'mm/s'|'m/s') "
-                "or add a 'signal_unit' field to the companion _metadata.json."
+            "(unknown) unit; the unit is never guessed from amplitude. For "
+            "ISO 20816-3 severity assessment, declare it via "
+            "load_signal(filepath=..., signal_unit='g'|'m/s2'|'mm/s'|'m/s') "
+            "or add a 'signal_unit' field to the companion _metadata.json."
         )
 
     return StatisticalResult(
@@ -387,48 +407,50 @@ def analyze_statistics(signal_id: str) -> StatisticalResult:
         mean=mean_val,
         std_dev=std_dev,
         signal_unit=declared_unit,
-        unit_note=unit_note
+        unit_note=unit_note,
     )
+
 
 # ================================================================
 # TOOLS - FEATURE EXTRACTION
 # ================================================================
 
+
 async def extract_features_from_signal(
     signal_id: str,
     segment_duration: float = 0.1,
     overlap_ratio: float = 0.5,
-    ctx: Context = None
+    ctx: Context = None,
 ) -> FeatureExtractionResult:
     """
-        Extract time-domain features from a stored signal using sliding windows.
+    Extract time-domain features from a stored signal using sliding windows.
 
-        Segments the signal into overlapping windows and extracts 17 statistical features
-        from each segment. Features include: mean, std, RMS, kurtosis, crest factor, entropy, etc.
-        Requires the signal loaded via load_signal() first; the sampling rate
-        comes from the stored signal metadata. Returns an in-memory summary
-        only — no CSV is written to data/signals/.
+    Segments the signal into overlapping windows and extracts 17 statistical features
+    from each segment. Features include: mean, std, RMS, kurtosis, crest factor, entropy, etc.
+    Requires the signal loaded via load_signal() first; the sampling rate
+    comes from the stored signal metadata. Returns an in-memory summary
+    only — no CSV is written to data/signals/.
 
-        Args:
-            signal_id: ID of the stored signal (from load_signal).
-            segment_duration: Duration of each segment in seconds (default: 0.1)
-            overlap_ratio: Overlap between segments, 0-1 (default: 0.5 = 50%)
-            ctx: MCP context. Unused — see this module's docstring on logging.
+    Args:
+        signal_id: ID of the stored signal (from load_signal).
+        segment_duration: Duration of each segment in seconds (default: 0.1)
+        overlap_ratio: Overlap between segments, 0-1 (default: 0.5 = 50%)
+        ctx: MCP context. Unused — see this module's docstring on logging.
 
-        Returns:
-            FeatureExtractionResult with features matrix and metadata
+    Returns:
+        FeatureExtractionResult with features matrix and metadata
 
-        Raises:
-            ValueError: If the signal_id is not loaded, or the stored signal
-                has no sampling rate.
+    Raises:
+        ValueError: If the signal_id is not loaded, or the stored signal
+            has no sampling rate.
 
-        Example:
-            extract_features_from_signal(
-                "healthy_motor",
-                segment_duration=0.2,
-                overlap_ratio=0.5
-            )
-        """
+    Example:
+        extract_features_from_signal(
+            "healthy_motor",
+            segment_duration=0.2,
+            overlap_ratio=0.5
+        )
+    """
     logger.info(f"Extracting features from '{signal_id}'...")
 
     signal_data, info = resolve_signal(signal_id)
@@ -469,12 +491,14 @@ async def extract_features_from_signal(
         overlap_ratio=overlap_ratio,
         features_shape=list(features_df.shape),
         feature_names=feature_names,
-        features_preview=[features_list[i] for i in range(min(5, len(features_list)))]
+        features_preview=[features_list[i] for i in range(min(5, len(features_list)))],
     )
+
 
 # ================================================================
 # TOOLS - SPECTRAL ANALYSIS (Phase 1 — signal_id based)
 # ================================================================
+
 
 async def compute_power_spectral_density(
     ctx: Context,
@@ -485,20 +509,24 @@ async def compute_power_spectral_density(
 ) -> PSDResult:
     """Compute Power Spectral Density (Welch method) for a stored signal.
 
-        Requires signal loaded via load_signal() first.
+    Requires signal loaded via load_signal() first.
 
-        Args:
-            signal_id: ID of the stored signal.
-            nperseg: Samples per FFT segment (default 256).
-            noverlap: Overlap between segments (default 128).
-            window: Window function (default 'hann').
-        """
+    Args:
+        signal_id: ID of the stored signal.
+        nperseg: Samples per FFT segment (default 256).
+        noverlap: Overlap between segments (default 128).
+        window: Window function (default 'hann').
+    """
     signal_data, info = resolve_signal(signal_id)
     fs = info.sampling_rate
 
-    logger.info(f"Computing PSD for '{signal_id}' ({info.num_samples} samples, {fs} Hz)")
+    logger.info(
+        f"Computing PSD for '{signal_id}' ({info.num_samples} samples, {fs} Hz)"
+    )
 
-    result = _compute_psd(signal_data, fs, nperseg=nperseg, noverlap=noverlap, window=window)
+    result = _compute_psd(
+        signal_data, fs, nperseg=nperseg, noverlap=noverlap, window=window
+    )
 
     return PSDResult(
         signal_id=signal_id,
@@ -513,6 +541,7 @@ async def compute_power_spectral_density(
         frequency_resolution=result["frequency_resolution"],
     )
 
+
 async def compute_spectrogram_stft(
     ctx: Context,
     signal_id: str,
@@ -522,21 +551,23 @@ async def compute_spectrogram_stft(
 ) -> STFTResult:
     """Compute STFT spectrogram for a stored signal.
 
-        Returns time-frequency summary (no full 2D array). Use for detecting
-        time-varying frequency content (transient faults, speed changes).
+    Returns time-frequency summary (no full 2D array). Use for detecting
+    time-varying frequency content (transient faults, speed changes).
 
-        Args:
-            signal_id: ID of the stored signal.
-            nperseg: Samples per STFT segment (default 256).
-            noverlap: Overlap between segments (default 128).
-            window: Window function (default 'hann').
-        """
+    Args:
+        signal_id: ID of the stored signal.
+        nperseg: Samples per STFT segment (default 256).
+        noverlap: Overlap between segments (default 128).
+        window: Window function (default 'hann').
+    """
     signal_data, info = resolve_signal(signal_id)
     fs = info.sampling_rate
 
     logger.info(f"Computing STFT for '{signal_id}'")
 
-    result = _compute_stft(signal_data, fs, nperseg=nperseg, noverlap=noverlap, window=window)
+    result = _compute_stft(
+        signal_data, fs, nperseg=nperseg, noverlap=noverlap, window=window
+    )
 
     return STFTResult(
         signal_id=signal_id,
@@ -553,6 +584,7 @@ async def compute_spectrogram_stft(
         max_power_time_s=result["max_power_time_s"],
         energy_per_band=result["energy_per_band"],
     )
+
 
 def register(mcp: MCPServer) -> None:
     """Register signal-analysis MCP tools on *mcp*."""

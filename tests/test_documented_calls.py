@@ -296,9 +296,7 @@ class TestValidatorMeta:
 
 
 class TestPluginDocumentedCalls:
-    @pytest.mark.parametrize(
-        "md_file", PLUGIN_FILES, ids=PLUGIN_IDS
-    )
+    @pytest.mark.parametrize("md_file", PLUGIN_FILES, ids=PLUGIN_IDS)
     def test_all_calls_executable(self, md_file, endpoints):
         text = md_file.read_text(encoding="utf-8")
         source = str(md_file.relative_to(REPO_ROOT)).replace("\\", "/")
@@ -349,9 +347,7 @@ class TestPromptTemplateCalls:
 
 def _golden_path_texts() -> dict[str, str]:
     texts = {
-        str(p.relative_to(REPO_ROOT)).replace("\\", "/"): p.read_text(
-            encoding="utf-8"
-        )
+        str(p.relative_to(REPO_ROOT)).replace("\\", "/"): p.read_text(encoding="utf-8")
         for p in PLUGIN_FILES
     }
     texts["README.md"] = README.read_text(encoding="utf-8")
@@ -364,9 +360,7 @@ class TestRetiredNamesAbsent:
     def test_no_retired_endpoint_names(self, source):
         text = _golden_path_texts()[source]
         found = sorted(
-            name
-            for name in RETIRED_NAMES
-            if re.search(rf"\b{re.escape(name)}\b", text)
+            name for name in RETIRED_NAMES if re.search(rf"\b{re.escape(name)}\b", text)
         )
         assert found == [], f"{source} still references retired names: {found}"
 

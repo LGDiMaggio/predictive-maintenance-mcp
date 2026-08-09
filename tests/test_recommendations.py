@@ -16,7 +16,10 @@ class TestGenerateRecommendations:
 
         assert len(recs) == 1
         assert recs[0]["urgency"] == "low"
-        assert "normal" in recs[0]["action"].lower() or "monitoring" in recs[0]["action"].lower()
+        assert (
+            "normal" in recs[0]["action"].lower()
+            or "monitoring" in recs[0]["action"].lower()
+        )
 
     def test_zone_d_recommendations(self):
         """Zone D should produce a critical-urgency recommendation."""

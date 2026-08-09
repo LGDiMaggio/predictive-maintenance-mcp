@@ -92,7 +92,10 @@ class TestMatchAnnotation:
     def test_only_the_matched_band_is_flagged_as_matched(self):
         freqs, mags = _spectrum()
         figure = build_annotated_envelope_figure(
-            freqs, mags, BEARING_FREQS, matched={"fault_type": "BPFO", "measured_hz": 80.5}
+            freqs,
+            mags,
+            BEARING_FREQS,
+            matched={"fault_type": "BPFO", "measured_hz": 80.5},
         )
         matched = [b for b in figure["bands"] if b["matched"]]
         assert [b["label"] for b in matched] == ["BPFO"]
@@ -127,9 +130,7 @@ class TestDegradation:
 
     def test_mismatched_array_lengths_raise(self):
         with pytest.raises(ValueError):
-            build_annotated_envelope_figure(
-                np.linspace(0, 100, 50), np.zeros(20), None
-            )
+            build_annotated_envelope_figure(np.linspace(0, 100, 50), np.zeros(20), None)
 
 
 class TestAxesAndScaling:
@@ -151,7 +152,10 @@ class TestAxesAndScaling:
 
         freqs, mags = _spectrum()
         figure = build_annotated_envelope_figure(
-            freqs, mags, BEARING_FREQS, matched={"fault_type": "BPFO", "measured_hz": 80.5}
+            freqs,
+            mags,
+            BEARING_FREQS,
+            matched={"fault_type": "BPFO", "measured_hz": 80.5},
         )
         json.dumps(figure)
 

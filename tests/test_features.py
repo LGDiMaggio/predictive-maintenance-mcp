@@ -266,7 +266,9 @@ class TestResolveSamplingRate:
     def test_provided_rate_used(self):
         """When sampling_rate is given, return it directly."""
         resolver = lambda f: None  # should never be called
-        result = resolve_sampling_rate("any_file.csv", 48000.0, metadata_resolver=resolver)
+        result = resolve_sampling_rate(
+            "any_file.csv", 48000.0, metadata_resolver=resolver
+        )
         assert result == 48000.0
 
     def test_metadata_fallback(self, tmp_path):
@@ -285,14 +287,18 @@ class TestResolveSamplingRate:
 
         resolver = lambda _f: empty_meta
         with pytest.raises(ValueError, match="No sampling rate found"):
-            resolve_sampling_rate("signal.csv", None, strict=True, metadata_resolver=resolver)
+            resolve_sampling_rate(
+                "signal.csv", None, strict=True, metadata_resolver=resolver
+            )
 
     def test_strict_missing_file_raises_valueerror(self, tmp_path):
         """strict=True with nonexistent metadata file should raise ValueError."""
         nonexistent = tmp_path / "nonexistent.json"
         resolver = lambda _f: nonexistent
         with pytest.raises(ValueError, match="No sampling rate found"):
-            resolve_sampling_rate("signal.csv", None, strict=True, metadata_resolver=resolver)
+            resolve_sampling_rate(
+                "signal.csv", None, strict=True, metadata_resolver=resolver
+            )
 
     def test_lenient_missing_returns_none(self, tmp_path):
         """strict=False with no rate available should return None."""
@@ -309,7 +315,9 @@ class TestResolveSamplingRate:
         meta_file.write_text(json.dumps({"sampling_rate": 12000}))
 
         resolver = lambda _f: meta_file
-        result = resolve_sampling_rate("signal.csv", 44100.0, metadata_resolver=resolver)
+        result = resolve_sampling_rate(
+            "signal.csv", 44100.0, metadata_resolver=resolver
+        )
         assert result == 44100.0
 
     def test_custom_metadata_resolver(self, tmp_path):
@@ -318,5 +326,7 @@ class TestResolveSamplingRate:
         custom_meta.write_text(json.dumps({"sampling_rate": 96000}))
 
         resolver = lambda _f: custom_meta
-        result = resolve_sampling_rate("irrelevant.csv", None, metadata_resolver=resolver)
+        result = resolve_sampling_rate(
+            "irrelevant.csv", None, metadata_resolver=resolver
+        )
         assert result == 96000

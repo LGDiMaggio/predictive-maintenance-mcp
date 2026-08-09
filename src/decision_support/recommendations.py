@@ -23,9 +23,9 @@ _FAULT_RECOMMENDATIONS: dict[str, str] = {
 
 # The bearing part of the vocabulary MUST mirror the canonical fault types
 # produced by check_bearing_faults / diagnose_vibration.
-assert set(FAULT_TYPE_CANONICAL.values()) <= set(_FAULT_RECOMMENDATIONS), (
-    "recommendation vocabulary out of sync with FAULT_TYPE_CANONICAL"
-)
+assert set(FAULT_TYPE_CANONICAL.values()) <= set(
+    _FAULT_RECOMMENDATIONS
+), "recommendation vocabulary out of sync with FAULT_TYPE_CANONICAL"
 
 #: Closed fault-type vocabulary accepted by generate_recommendations.
 VALID_FAULT_TYPES: tuple[str, ...] = tuple(sorted(_FAULT_RECOMMENDATIONS))
@@ -58,9 +58,7 @@ def generate_recommendations(
             (e.g. 'BPFO' instead of 'outer_race').
     """
     if fault_types:
-        unknown = [
-            f for f in fault_types if f.lower() not in _FAULT_RECOMMENDATIONS
-        ]
+        unknown = [f for f in fault_types if f.lower() not in _FAULT_RECOMMENDATIONS]
         if unknown:
             raise ValueError(
                 f"Unknown fault type(s) {unknown} — allowed values: "

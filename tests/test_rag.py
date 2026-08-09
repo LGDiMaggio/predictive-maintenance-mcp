@@ -21,8 +21,8 @@ from predictive_maintenance_mcp.rag import (
     backend_name,
 )
 
-
 # ── chunk_text ──────────────────────────────────────────────────────────────
+
 
 class TestChunkText:
 
@@ -80,6 +80,7 @@ class TestChunkText:
 
 # ── chunk_text_by_paragraphs ───────────────────────────────────────────────
 
+
 class TestChunkByParagraphs:
 
     def test_basic_paragraphs(self):
@@ -100,7 +101,9 @@ class TestChunkByParagraphs:
         assert chunk_text_by_paragraphs("") == []
 
     def test_single_paragraph(self):
-        chunks = chunk_text_by_paragraphs("Single paragraph only.", max_chunk_chars=1024)
+        chunks = chunk_text_by_paragraphs(
+            "Single paragraph only.", max_chunk_chars=1024
+        )
         assert len(chunks) == 1
         assert chunks[0]["text"] == "Single paragraph only."
 
@@ -119,6 +122,7 @@ class TestChunkByParagraphs:
 
 # ── DocumentIndex (TF-IDF backend) ─────────────────────────────────────────
 
+
 @pytest.fixture(autouse=True)
 def _force_tfidf(monkeypatch):
     """Force TF-IDF backend even if FAISS is installed."""
@@ -131,9 +135,15 @@ class TestDocumentIndexTFIDF:
         idx = DocumentIndex()
         if docs is None:
             docs = [
-                {"text": "bearing fault diagnosis vibration analysis", "source": "doc1.pdf"},
+                {
+                    "text": "bearing fault diagnosis vibration analysis",
+                    "source": "doc1.pdf",
+                },
                 {"text": "gearbox oil temperature monitoring", "source": "doc2.pdf"},
-                {"text": "motor current signature analysis electrical fault", "source": "doc3.pdf"},
+                {
+                    "text": "motor current signature analysis electrical fault",
+                    "source": "doc3.pdf",
+                },
             ]
         idx.build(docs)
         return idx
@@ -196,7 +206,7 @@ class TestDocumentIndexTFIDF:
 
         # Patch cache path to use tmp_path
         cache_file = tmp_path / "test_index.pkl"
-        with patch.object(DocumentIndex, '_cache_path', return_value=cache_file):
+        with patch.object(DocumentIndex, "_cache_path", return_value=cache_file):
             idx.save()
             assert cache_file.exists()
 
@@ -211,7 +221,7 @@ class TestDocumentIndexTFIDF:
 
     def test_load_nonexistent_cache(self, tmp_path):
         cache_file = tmp_path / "nonexistent.pkl"
-        with patch.object(DocumentIndex, '_cache_path', return_value=cache_file):
+        with patch.object(DocumentIndex, "_cache_path", return_value=cache_file):
             assert DocumentIndex.load() is None
 
     def test_num_chunks_property(self):
@@ -221,6 +231,7 @@ class TestDocumentIndexTFIDF:
 
 
 # ── backend_name ───────────────────────────────────────────────────────────
+
 
 def test_backend_name_returns_string():
     name = backend_name()

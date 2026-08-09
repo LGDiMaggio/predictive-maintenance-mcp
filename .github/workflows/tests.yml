@@ -119,7 +119,12 @@ jobs:
         python -m pip install --upgrade pip
         pip install black
 
+    # Blocking. It was `continue-on-error: true` from the start, so it sat
+    # green over a tree where 70 of 91 files would have been reformatted --
+    # the same decorative-check defect removed from the mypy job above.
+    #
+    # line-length comes from [tool.black] in pyproject.toml rather than this
+    # command line, so a bare `black src tests` locally and this job agree.
     - name: Check code formatting
       run: |
-        black --check --line-length=88 src tests
-      continue-on-error: true
+        black --check src tests

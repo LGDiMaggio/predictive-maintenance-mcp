@@ -11,7 +11,6 @@ from typing import Optional
 from mcp.server.mcpserver import MCPServer
 
 
-
 def diagnose_bearing(
     signal_id: str,
     sampling_rate: Optional[float] = None,
@@ -21,54 +20,61 @@ def diagnose_bearing(
     bpfo: Optional[float] = None,
     bpfi: Optional[float] = None,
     bsf: Optional[float] = None,
-    ftf: Optional[float] = None
+    ftf: Optional[float] = None,
 ) -> str:
     """
-        Guided workflow for bearing diagnostics with ISO 20816-3 compliance.
+    Guided workflow for bearing diagnostics with ISO 20816-3 compliance.
 
-        Evidence-based policy:
-        - Envelope peaks at characteristic frequencies are PRIMARY indicators (strong evidence)
-        - Statistical indicators (CF>6, Kurtosis>6) are SECONDARY/confirmatory
-        - If envelope shows clear peaks at BPFO/BPFI/BSF/FTF (±5% tolerance) → bearing fault is STRONGLY indicated
-        - Additional high CF or Kurtosis reinforces the diagnosis but is not strictly required if envelope evidence is clear
+    Evidence-based policy:
+    - Envelope peaks at characteristic frequencies are PRIMARY indicators (strong evidence)
+    - Statistical indicators (CF>6, Kurtosis>6) are SECONDARY/confirmatory
+    - If envelope shows clear peaks at BPFO/BPFI/BSF/FTF (±5% tolerance) → bearing fault is STRONGLY indicated
+    - Additional high CF or Kurtosis reinforces the diagnosis but is not strictly required if envelope evidence is clear
 
-        **ISO 20816-3 Defaults** (use if user doesn't specify):
-        - machine_group = 2 (medium-sized machines, 15-300 kW, most common)
-        - support_type = "rigid" (horizontal machines on foundations)
+    **ISO 20816-3 Defaults** (use if user doesn't specify):
+    - machine_group = 2 (medium-sized machines, 15-300 kW, most common)
+    - support_type = "rigid" (horizontal machines on foundations)
 
-        Args:
-            signal_id: ID of the stored signal (or the file to load in STEP 0)
-            sampling_rate: Sampling frequency in Hz (if None, will check metadata or ask user)
-            machine_group: ISO machine group (1=large >300kW, 2=medium 15-300kW) (default: 2)
-            support_type: 'rigid' or 'flexible' (default: 'rigid' for horizontal machines)
-            rpm: Operating speed in RPM (required for interpreting results)
-            bpfo: Ball Pass Frequency Outer race (Hz) - if known
-            bpfi: Ball Pass Frequency Inner race (Hz) - if known
-            bsf: Ball Spin Frequency (Hz) - if known
-            ftf: Fundamental Train Frequency (Hz) - if known
-        """
+    Args:
+        signal_id: ID of the stored signal (or the file to load in STEP 0)
+        sampling_rate: Sampling frequency in Hz (if None, will check metadata or ask user)
+        machine_group: ISO machine group (1=large >300kW, 2=medium 15-300kW) (default: 2)
+        support_type: 'rigid' or 'flexible' (default: 'rigid' for horizontal machines)
+        rpm: Operating speed in RPM (required for interpreting results)
+        bpfo: Ball Pass Frequency Outer race (Hz) - if known
+        bpfi: Ball Pass Frequency Inner race (Hz) - if known
+        bsf: Ball Spin Frequency (Hz) - if known
+        ftf: Fundamental Train Frequency (Hz) - if known
+    """
     # Build frequency reference string
     freq_refs = []
-    if bpfo: freq_refs.append(f"BPFO={bpfo:.2f} Hz")
-    if bpfi: freq_refs.append(f"BPFI={bpfi:.2f} Hz")
-    if bsf: freq_refs.append(f"BSF={bsf:.2f} Hz")
-    if ftf: freq_refs.append(f"FTF={ftf:.2f} Hz")
-    freq_info = ", ".join(freq_refs) if freq_refs else "NOT PROVIDED - must request from user"
+    if bpfo:
+        freq_refs.append(f"BPFO={bpfo:.2f} Hz")
+    if bpfi:
+        freq_refs.append(f"BPFI={bpfi:.2f} Hz")
+    if bsf:
+        freq_refs.append(f"BSF={bsf:.2f} Hz")
+    if ftf:
+        freq_refs.append(f"FTF={ftf:.2f} Hz")
+    freq_info = (
+        ", ".join(freq_refs) if freq_refs else "NOT PROVIDED - must request from user"
+    )
 
     bearing_freqs_dict = (
         "{"
         + ", ".join(
             f'"{name}": {val}'
             for name, val in (
-                ("BPFO", bpfo), ("BPFI", bpfi), ("BSF", bsf), ("FTF", ftf)
+                ("BPFO", bpfo),
+                ("BPFI", bpfi),
+                ("BSF", bsf),
+                ("FTF", ftf),
             )
             if val
         )
         + "}"
     )
-    freqs_placeholder = (
-        '{"BPFO": <hz>, "BPFI": <hz>, "BSF": <hz>, "FTF": <hz>}'
-    )
+    freqs_placeholder = '{"BPFO": <hz>, "BPFI": <hz>, "BSF": <hz>, "FTF": <hz>}'
 
     rpm_kwarg = f", rpm={rpm}" if rpm else ""
     fs_info = f"{sampling_rate}" if sampling_rate else "UNKNOWN"
@@ -292,24 +298,22 @@ def diagnose_gear(
     signal_id: str,
     sampling_rate: Optional[float] = None,
     num_teeth: Optional[int] = None,
-    rpm: Optional[float] = None
+    rpm: Optional[float] = None,
 ) -> str:
     """
-        Evidence-based guided workflow for gear diagnostics with strict anti-speculation rules.
+    Evidence-based guided workflow for gear diagnostics with strict anti-speculation rules.
 
-        Args:
-            signal_id: ID of the stored signal (or the file to load in STEP 0)
-            sampling_rate: Sampling frequency in Hz (if None, will check metadata or ask user)
-            num_teeth: Number of gear teeth (REQUIRED for GMF calculation)
-            rpm: Shaft rotation speed in RPM (REQUIRED for GMF and sideband identification)
-        """
+    Args:
+        signal_id: ID of the stored signal (or the file to load in STEP 0)
+        sampling_rate: Sampling frequency in Hz (if None, will check metadata or ask user)
+        num_teeth: Number of gear teeth (REQUIRED for GMF calculation)
+        rpm: Shaft rotation speed in RPM (REQUIRED for GMF and sideband identification)
+    """
     fs_info = f"{sampling_rate}" if sampling_rate else "UNKNOWN"
     fs_kwarg = f", sampling_rate={sampling_rate}" if sampling_rate else ""
     teeth_info = f"{num_teeth}" if num_teeth else "NOT PROVIDED"
     rpm_info = f"{rpm}" if rpm else "NOT PROVIDED"
-    gmf_value = (
-        f"{rpm/60 * num_teeth:.2f}" if (rpm and num_teeth) else "<gmf_hz>"
-    )
+    gmf_value = f"{rpm/60 * num_teeth:.2f}" if (rpm and num_teeth) else "<gmf_hz>"
 
     return f"""Perform an evidence-based gear diagnostic on signal_id "{signal_id}":
 
@@ -429,11 +433,11 @@ def diagnose_gear(
 
 def quick_diagnostic_report(signal_id: str) -> str:
     """
-        Quick, evidence-aware screening report (non-definitive).
+    Quick, evidence-aware screening report (non-definitive).
 
-        Args:
-            signal_id: ID of the stored signal (or the file to load in STEP 0)
-        """
+    Args:
+        signal_id: ID of the stored signal (or the file to load in STEP 0)
+    """
     return f"""Generate a concise screening report for signal_id "{signal_id}" using only observable evidence:
 
     STEP 0 — SIGNAL RESOLUTION

@@ -15,10 +15,10 @@ from mcp.server.mcpserver import MCPServer
 from predictive_maintenance_mcp.mcp_tools.analysis_tools import register
 from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def mcp():
@@ -55,8 +55,12 @@ def data_dir(tmp_path, monkeypatch):
 
     # Patch all relevant modules
     monkeypatch.setattr("predictive_maintenance_mcp.config.DATA_DIR", signals_dir)
-    monkeypatch.setattr("predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR", signals_dir)
-    monkeypatch.setattr("predictive_maintenance_mcp.signal_acquisition.repository.DATA_DIR", signals_dir)
+    monkeypatch.setattr(
+        "predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR", signals_dir
+    )
+    monkeypatch.setattr(
+        "predictive_maintenance_mcp.signal_acquisition.repository.DATA_DIR", signals_dir
+    )
     return signals_dir
 
 
@@ -82,6 +86,7 @@ def mock_ctx():
 # ---------------------------------------------------------------------------
 # analyze_fft
 # ---------------------------------------------------------------------------
+
 
 class TestAnalyzeFFT:
     """Tests for analyze_fft tool (signal_id handle)."""
@@ -122,7 +127,9 @@ class TestAnalyzeFFT:
         fs = 10000
         t = np.linspace(0, 0.5, fs // 2, endpoint=False)
         sig = np.sin(2 * np.pi * 50 * t)
-        pd.DataFrame(sig).to_csv(data_dir / "no_meta_fft.csv", index=False, header=False)
+        pd.DataFrame(sig).to_csv(
+            data_dir / "no_meta_fft.csv", index=False, header=False
+        )
         repo.load_signal("no_meta_fft.csv")  # no metadata → no rate
 
         with pytest.raises(ValueError, match="No sampling rate"):
@@ -161,6 +168,7 @@ class TestAnalyzeFFT:
 # ---------------------------------------------------------------------------
 # analyze_envelope
 # ---------------------------------------------------------------------------
+
 
 class TestAnalyzeEnvelope:
     """Tests for the unified analyze_envelope tool (signal_id handle)."""
@@ -204,6 +212,7 @@ class TestAnalyzeEnvelope:
 # extract_features_from_signal
 # ---------------------------------------------------------------------------
 
+
 class TestExtractFeatures:
     """Tests for extract_features_from_signal tool (signal_id handle)."""
 
@@ -240,6 +249,7 @@ class TestExtractFeatures:
 # PSD, STFT, Envelope Spectrum (delegation tools)
 # ---------------------------------------------------------------------------
 
+
 class TestSpectralDelegation:
     """Tests for PSD/STFT/envelope tools that delegate to spectral.py."""
 
@@ -262,10 +272,10 @@ class TestSpectralDelegation:
             pytest.skip("STFT model validation issue with energy_per_band")
 
 
-
 # ---------------------------------------------------------------------------
 # analyze_statistics
 # ---------------------------------------------------------------------------
+
 
 class TestAnalyzeStatistics:
     """Tests for analyze_statistics tool (signal_id handle)."""
@@ -288,7 +298,9 @@ class TestAnalyzeStatistics:
         fs = 10000
         t = np.linspace(0, 0.5, fs // 2, endpoint=False)
         sig = 4.0 * np.sqrt(2) * np.sin(2 * np.pi * 50 * t)  # RMS ~4 > 0.5
-        pd.DataFrame(sig).to_csv(data_dir / "loud_no_meta.csv", index=False, header=False)
+        pd.DataFrame(sig).to_csv(
+            data_dir / "loud_no_meta.csv", index=False, header=False
+        )
         repo.load_signal("loud_no_meta.csv", sampling_rate=fs)
 
         result = tools["analyze_statistics"](signal_id="loud_no_meta")

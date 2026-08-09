@@ -66,9 +66,9 @@ def test_submodules_resolve_inside_this_checkout():
 
     for module in (server, mcp_tools):
         resolved = Path(module.__file__).resolve()
-        assert resolved.is_relative_to(SRC_DIR), (
-            f"{module.__name__} imported from {resolved}, outside {SRC_DIR}"
-        )
+        assert resolved.is_relative_to(
+            SRC_DIR
+        ), f"{module.__name__} imported from {resolved}, outside {SRC_DIR}"
 
 
 @needs_pin
@@ -98,9 +98,9 @@ def test_a_child_process_also_resolves_into_this_checkout():
     )
     assert proc.returncode == 0, proc.stderr
     resolved = Path(proc.stdout.strip()).resolve()
-    assert resolved == (SRC_DIR / "__init__.py").resolve(), (
-        f"child process imported {resolved}, not this checkout"
-    )
+    assert (
+        resolved == (SRC_DIR / "__init__.py").resolve()
+    ), f"child process imported {resolved}, not this checkout"
 
 
 class TestTheGuardItself:
@@ -126,9 +126,9 @@ class TestTheGuardItself:
             (i for i, n in enumerate(names) if "editable" in n.lower()), None
         )
         if editable is not None:
-            assert pin < editable, (
-                f"pin at {pin} sits behind the editable finder at {editable}"
-            )
+            assert (
+                pin < editable
+            ), f"pin at {pin} sits behind the editable finder at {editable}"
 
     def test_the_tripwire_fires_when_the_package_resolves_elsewhere(
         self, tmp_path, monkeypatch
@@ -173,9 +173,9 @@ class TestTheGuardItself:
         from conftest import _LocalTreeFinder
 
         for name in ("numpy", f"{PKG}_extra", f"{PKG}.mcp_tools", "json"):
-            assert _LocalTreeFinder.find_spec(name) is None, (
-                f"the pin claimed {name!r}; it must only claim {PKG!r}"
-            )
+            assert (
+                _LocalTreeFinder.find_spec(name) is None
+            ), f"the pin claimed {name!r}; it must only claim {PKG!r}"
         assert _LocalTreeFinder.find_spec(PKG) is not None
 
 
@@ -218,9 +218,9 @@ def test_pyproject_version_matches_source_version():
         for line in source.splitlines()
         if line.startswith("__version__")
     )
-    assert in_source == declared, (
-        f"src/__init__.py says {in_source}, pyproject.toml says {declared}"
-    )
+    assert (
+        in_source == declared
+    ), f"src/__init__.py says {in_source}, pyproject.toml says {declared}"
 
 
 def test_installed_distribution_is_not_stale():

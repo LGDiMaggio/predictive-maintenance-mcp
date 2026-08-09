@@ -39,6 +39,7 @@ def _build_parser(env_transport="stdio", env_host="127.0.0.1", env_port="8000"):
 
 # ── Default values ─────────────────────────────────────────────────────────
 
+
 class TestCLIDefaults:
 
     def test_default_transport_stdio(self):
@@ -55,6 +56,7 @@ class TestCLIDefaults:
 
 
 # ── Explicit flags ─────────────────────────────────────────────────────────
+
 
 class TestCLIExplicitFlags:
 
@@ -83,15 +85,16 @@ class TestCLIExplicitFlags:
         assert args.port == 7777
 
     def test_all_flags_combined(self):
-        args = _build_parser().parse_args([
-            "-t", "sse", "--host", "10.0.0.1", "-p", "3000"
-        ])
+        args = _build_parser().parse_args(
+            ["-t", "sse", "--host", "10.0.0.1", "-p", "3000"]
+        )
         assert args.transport == "sse"
         assert args.host == "10.0.0.1"
         assert args.port == 3000
 
 
 # ── Invalid arguments ──────────────────────────────────────────────────────
+
 
 class TestCLIInvalidArgs:
 
@@ -105,6 +108,7 @@ class TestCLIInvalidArgs:
 
 
 # ── Environment variable fallbacks ─────────────────────────────────────────
+
 
 class TestCLIEnvVars:
 
@@ -140,13 +144,15 @@ class TestCLIEnvVars:
 
 # ── main() integration (smoke test) ───────────────────────────────────────
 
+
 def test_main_help_exits_cleanly():
     """Verify --help works without crashing (exercises the real main parser)."""
     import sys
     from unittest.mock import patch as _patch
 
-    with _patch.object(sys, 'argv', ['test', '--help']):
+    with _patch.object(sys, "argv", ["test", "--help"]):
         with pytest.raises(SystemExit) as exc_info:
             from predictive_maintenance_mcp.server import main
+
             main()
         assert exc_info.value.code == 0

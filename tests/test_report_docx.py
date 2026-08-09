@@ -16,6 +16,7 @@ from unittest.mock import patch
 # Check availability before importing
 try:
     from docx import Document as DocxDocument
+
     HAS_DOCX = True
 except ImportError:
     HAS_DOCX = False
@@ -25,8 +26,8 @@ from predictive_maintenance_mcp.report_generator import (
     REPORTS_DIR,
 )
 
-
 # ── DOCX generation ───────────────────────────────────────────────────────
+
 
 @pytest.mark.skipif(not HAS_DOCX, reason="python-docx not installed")
 class TestDocxReportGeneration:
@@ -66,7 +67,8 @@ class TestDocxReportGeneration:
     def test_full_report(self, tmp_path):
         """Generate report with all sections."""
         with patch.object(
-            type(REPORTS_DIR), '__fspath__',
+            type(REPORTS_DIR),
+            "__fspath__",
             return_value=str(tmp_path),
             create=True,
         ):
@@ -149,6 +151,7 @@ class TestDocxReportGeneration:
 
 
 # ── Missing python-docx ───────────────────────────────────────────────────
+
 
 def test_missing_docx_raises():
     """When HAS_DOCX is False, raise ValueError (never an error dict)."""

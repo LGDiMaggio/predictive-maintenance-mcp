@@ -24,7 +24,6 @@ from mcp.server.mcpserver import MCPServer
 
 from predictive_maintenance_mcp.mcp_tools import register_all
 
-
 # ---------------------------------------------------------------------------
 # The migration table. Keys: every endpoint name that existed in v0.8.x
 # (46 tools, 4 resources, 4 prompts). Values: (destination, note) where
@@ -76,7 +75,10 @@ OLD_TO_NEW: dict[str, tuple[str | None, str]] = {
     # ----- diagnostics -----------------------------------------------------
     "evaluate_iso_20816": ("assess_severity", "merged (U9a) — signal route"),
     "assess_vibration_severity": ("assess_severity", "merged (U9a) — signal route"),
-    "check_vibration_alert": ("assess_severity", "merged (U9a) — rms_velocity_mm_s route"),
+    "check_vibration_alert": (
+        "assess_severity",
+        "merged (U9a) — rms_velocity_mm_s route",
+    ),
     "check_custom_vibration_alert": (
         "assess_severity",
         "merged (U9a) — thresholds={'warning','alarm','danger'} parameter",
@@ -85,7 +87,10 @@ OLD_TO_NEW: dict[str, tuple[str | None, str]] = {
         "check_bearing_faults",
         "merged (U9a) — frequencies={label: hz} route with one entry",
     ),
-    "check_bearing_faults_direct": ("check_bearing_faults", "merged (U9a) — bearing_id route"),
+    "check_bearing_faults_direct": (
+        "check_bearing_faults",
+        "merged (U9a) — bearing_id route",
+    ),
     "lookup_bearing_and_compute_tool": (
         "check_bearing_faults",
         "merged (U9a) — bearing_id route resolves prefixed designations",
@@ -129,20 +134,35 @@ OLD_TO_NEW: dict[str, tuple[str | None, str]] = {
         "generate_iso_report",
         "merged — the ISO report embeds the color-coded A-D zone bar chart",
     ),
-    "generate_fft_report": ("generate_fft_report", "kept — rotation_freq (Hz) renamed to rpm"),
+    "generate_fft_report": (
+        "generate_fft_report",
+        "kept — rotation_freq (Hz) renamed to rpm",
+    ),
     "generate_envelope_report": ("generate_envelope_report", "kept"),
-    "generate_iso_report": ("generate_iso_report", "kept — delegates to assess_severity"),
+    "generate_iso_report": (
+        "generate_iso_report",
+        "kept — delegates to assess_severity",
+    ),
     "generate_diagnostic_report_docx": ("generate_diagnostic_report_docx", "kept"),
     "generate_pca_visualization_report": ("generate_pca_visualization_report", "kept"),
-    "generate_feature_comparison_report": ("generate_feature_comparison_report", "kept"),
+    "generate_feature_comparison_report": (
+        "generate_feature_comparison_report",
+        "kept",
+    ),
     "list_html_reports": ("list_html_reports", "kept — absorbs get_report_info"),
     "get_report_info": (
         "list_html_reports",
         "merged — list_html_reports(file_name=...) via safe_resolve read path",
     ),
     # ----- prognostics -----------------------------------------------------
-    "analyze_signal_trend": ("analyze_signal_trend", "kept — THE unified screening tool"),
-    "detect_signal_degradation_onset": ("analyze_signal_trend", "merged (U9a) — onset block"),
+    "analyze_signal_trend": (
+        "analyze_signal_trend",
+        "kept — THE unified screening tool",
+    ),
+    "detect_signal_degradation_onset": (
+        "analyze_signal_trend",
+        "merged (U9a) — onset block",
+    ),
     "estimate_rul": ("estimate_rul", "kept — multi-measurement contract (U4)"),
     # ----- decision --------------------------------------------------------
     "generate_maintenance_recommendations": (
@@ -155,13 +175,19 @@ OLD_TO_NEW: dict[str, tuple[str | None, str]] = {
         "get_signal_info",
         "resource dropped — get_signal_info exposes metadata incl. source_metadata",
     ),
-    "manual://list": ("list_machine_manuals", "resource dropped — duplicate of the tool"),
+    "manual://list": (
+        "list_machine_manuals",
+        "resource dropped — duplicate of the tool",
+    ),
     "manual://read/{filename}": (
         "read_manual_excerpt",
         "resource dropped — duplicate of the tool",
     ),
     # ----- prompts ---------------------------------------------------------
-    "diagnose_bearing": ("diagnose_bearing", "kept — call templates fixed to valid kwargs"),
+    "diagnose_bearing": (
+        "diagnose_bearing",
+        "kept — call templates fixed to valid kwargs",
+    ),
     "diagnose_gear": ("diagnose_gear", "kept — call templates fixed to valid kwargs"),
     "quick_diagnostic_report": ("quick_diagnostic_report", "kept"),
     "generate_iso_diagnostic_report": (
@@ -242,9 +268,9 @@ class TestMappingCompleteness:
             destination, note = entry
             assert note and isinstance(note, str), f"{old}: motivation missing"
             if destination is None:
-                assert "dropped" in note.lower(), (
-                    f"{old}: a None destination requires a drop motivation"
-                )
+                assert (
+                    "dropped" in note.lower()
+                ), f"{old}: a None destination requires a drop motivation"
 
 
 # ---------------------------------------------------------------------------
@@ -257,12 +283,12 @@ class TestDestinationsExist:
         tools, _, _ = registered
         for old in sorted(OLD_TOOLS | OLD_RESOURCES):
             destination, _ = OLD_TO_NEW[old]
-            assert destination is not None, (
-                f"{old}: tools/resources must map into the tool surface"
-            )
-            assert destination in tools, (
-                f"{old} -> {destination}: destination not registered"
-            )
+            assert (
+                destination is not None
+            ), f"{old}: tools/resources must map into the tool surface"
+            assert (
+                destination in tools
+            ), f"{old} -> {destination}: destination not registered"
 
     def test_prompt_destinations_are_registered_prompts(self, registered):
         _, _, prompts = registered
@@ -270,9 +296,9 @@ class TestDestinationsExist:
             destination, _ = OLD_TO_NEW[old]
             if destination is None:
                 continue  # motivated drop
-            assert destination in prompts, (
-                f"{old} -> {destination}: destination prompt not registered"
-            )
+            assert (
+                destination in prompts
+            ), f"{old} -> {destination}: destination prompt not registered"
 
     def test_every_current_tool_is_migrated_or_declared(self, registered):
         """No orphan tools.
@@ -311,9 +337,7 @@ class TestDestinationsExist:
 
 
 class TestFinalSurface:
-    def test_counts_are_the_migrated_surface_plus_declared_additions(
-        self, registered
-    ):
+    def test_counts_are_the_migrated_surface_plus_declared_additions(self, registered):
         tools, resources, prompts = registered
         assert len(tools) == 33 + len(POST_U9_ADDITIONS)
         assert resources == []

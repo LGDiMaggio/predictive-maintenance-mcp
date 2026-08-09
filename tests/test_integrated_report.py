@@ -261,7 +261,8 @@ class TestPdfRendering:
         try:
             extracted = _pdf_text(path)
             missing = [
-                s for s in collect_statements(advisory)
+                s
+                for s in collect_statements(advisory)
                 if _normalise(s) not in extracted
             ]
             assert missing == [], f"PDF dropped authored statements: {missing}"
@@ -290,9 +291,9 @@ class TestPdfRendering:
             for statement in collect_statements(advisory):
                 in_html = html.escape(statement) in rendered_html
                 in_pdf = _normalise(statement) in extracted_pdf
-                assert in_html == in_pdf is True, (
-                    f"statement present in one rendering only: {statement}"
-                )
+                assert (
+                    in_html == in_pdf is True
+                ), f"statement present in one rendering only: {statement}"
         finally:
             html_path.unlink()
             pdf_path.unlink()
@@ -304,9 +305,7 @@ class TestFormatValidation:
             save_integrated_diagnostic_report(advisory, figure, formats=["docx"])
 
     @pytest.mark.skipif(HAS_PDF, reason="PDF extra installed")
-    def test_missing_pdf_dependency_raises_with_an_install_hint(
-        self, advisory, figure
-    ):
+    def test_missing_pdf_dependency_raises_with_an_install_hint(self, advisory, figure):
         with pytest.raises(ValueError, match=r"\[pdf\]"):
             save_integrated_diagnostic_report(advisory, figure, formats=["pdf"])
 

@@ -215,6 +215,7 @@ class TestEdgeCases:
     def test_load_mat_direct(self, repo, tmp_path):
         """Test loading a .mat file via direct fallback loader."""
         from scipy.io import savemat
+
         data = np.random.randn(500)
         mat_path = tmp_path / "test_mat.mat"
         savemat(str(mat_path), {"vibration": data})
@@ -398,9 +399,7 @@ class TestBatchLoad:
         # Only the pre-existing signal remains — none of the batch landed.
         assert repo.signal_count == 1
 
-    def test_batch_collision_with_overwrite_succeeds(
-        self, repo, data_dir, batch_files
-    ):
+    def test_batch_collision_with_overwrite_succeeds(self, repo, data_dir, batch_files):
         repo.load_signal(batch_files[0])
         infos = repo.load_signals(batch_files, overwrite=True)
         assert len(infos) == 3

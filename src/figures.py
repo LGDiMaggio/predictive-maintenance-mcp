@@ -168,7 +168,9 @@ def build_annotated_envelope_figure(
                 "label": label,
                 "x": round(center, _BAND_PRECISION),
                 "y": _local_peak_db(x, y_db, center - half, center + half),
-                "text": _annotation_text(label, center, matched if is_matched else None),
+                "text": _annotation_text(
+                    label, center, matched if is_matched else None
+                ),
                 "matched": is_matched,
             }
         )
@@ -187,9 +189,7 @@ def build_annotated_envelope_figure(
     }
 
 
-def figure_to_svg(
-    figure: dict[str, Any], width: int = 900, height: int = 420
-) -> str:
+def figure_to_svg(figure: dict[str, Any], width: int = 900, height: int = 420) -> str:
     """Render a figure description as a standalone inline SVG.
 
     SVG rather than a charting library because the report must open with no
@@ -364,9 +364,7 @@ def _resolve_axis_max(
     return min(wanted, spectrum_max)
 
 
-def _local_peak_db(
-    x: np.ndarray, y_db: np.ndarray, low: float, high: float
-) -> float:
+def _local_peak_db(x: np.ndarray, y_db: np.ndarray, low: float, high: float) -> float:
     """Height at which to anchor a band's annotation."""
     window = (x >= low) & (x <= high)
     if not window.any():
@@ -417,7 +415,6 @@ def _caption(
         )
     if omitted:
         caption += (
-            f" {', '.join(omitted)} lies beyond the plotted range and is not "
-            f"shown."
+            f" {', '.join(omitted)} lies beyond the plotted range and is not " f"shown."
         )
     return caption

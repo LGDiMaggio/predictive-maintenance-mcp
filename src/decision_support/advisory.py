@@ -86,9 +86,7 @@ def _build_iso_block(iso: dict) -> dict:
     if iso.get("status") == "refused":
         return {
             "status": REFUSED,
-            "statement": (
-                f"ISO severity was not assessed. {iso['reason']}"
-            ),
+            "statement": (f"ISO severity was not assessed. {iso['reason']}"),
             "reason": iso["reason"],
             "remedy": iso["remedy"],
             "standard_note": None,
@@ -279,9 +277,7 @@ def _build_energy_block(stft_summary: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def _build_verdict(
-    bearing_block: dict, iso_block: dict, anomaly_block: dict
-) -> dict:
+def _build_verdict(bearing_block: dict, iso_block: dict, anomaly_block: dict) -> dict:
     """Author the headline verdict from the blocks that reached one."""
     matched = [r for r in bearing_block.get("rows", []) if r["matched"]]
     if matched:
@@ -364,9 +360,7 @@ def _build_evidence(
 
     peak = diagnosis.get("fft_summary", {}).get("peak_frequency_hz")
     if peak is not None:
-        statements.append(
-            f"Dominant frequency in the raw spectrum: {peak:.1f} Hz."
-        )
+        statements.append(f"Dominant frequency in the raw spectrum: {peak:.1f} Hz.")
 
     return {
         "strength": diagnosis.get("evidence_strength", "none"),
@@ -449,8 +443,7 @@ def _build_recommendations(
                 "action": iso_block["remedy"],
                 "urgency": "medium",
                 "description": (
-                    "The severity verdict is unavailable until this is "
-                    "resolved."
+                    "The severity verdict is unavailable until this is " "resolved."
                 ),
                 "motivation": iso_block["reason"],
                 "evidence": [iso_block["statement"]],
@@ -500,9 +493,7 @@ def _build_recommendations(
         recommendations.insert(
             0,
             {
-                "action": (
-                    "Treat this as actionable despite the acceptable ISO zone"
-                ),
+                "action": ("Treat this as actionable despite the acceptable ISO zone"),
                 "urgency": "medium",
                 "description": (
                     "Fault-pattern evidence and the severity zone describe "
@@ -630,7 +621,10 @@ def _baseline_incompatibility(diagnosis: dict, baseline: dict) -> str:
     """Return a reason the two signals cannot be compared, or an empty string."""
     signal_iso = diagnosis.get("iso_severity", {})
     baseline_iso = baseline.get("iso_severity", {})
-    if signal_iso.get("status") == "assessed" and baseline_iso.get("status") == "assessed":
+    if (
+        signal_iso.get("status") == "assessed"
+        and baseline_iso.get("status") == "assessed"
+    ):
         signal_unit = signal_iso.get("original_unit")
         baseline_unit = baseline_iso.get("original_unit")
         if signal_unit != baseline_unit:
@@ -659,7 +653,10 @@ def _direction(delta: float, tolerance: float) -> str:
 def _rms_delta(diagnosis: dict, baseline: dict) -> Optional[dict]:
     signal_iso = diagnosis.get("iso_severity", {})
     baseline_iso = baseline.get("iso_severity", {})
-    if signal_iso.get("status") != "assessed" or baseline_iso.get("status") != "assessed":
+    if (
+        signal_iso.get("status") != "assessed"
+        or baseline_iso.get("status") != "assessed"
+    ):
         return None
 
     now = signal_iso["rms_velocity_mm_s"]

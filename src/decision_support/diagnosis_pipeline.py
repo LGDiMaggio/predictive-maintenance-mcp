@@ -22,7 +22,9 @@ from scipy.fft import fft, fftfreq
 from ..config import MODELS_DIR
 from ..path_safety import resolve_model_paths
 from ..signal_processing.spectral import compute_psd, compute_stft_spectrogram
-from ..signal_processing.features import extract_time_domain_features as _extract_time_domain_features
+from ..signal_processing.features import (
+    extract_time_domain_features as _extract_time_domain_features,
+)
 from ..signal_acquisition.repository import VALID_SIGNAL_UNITS, normalize_signal_unit
 from ..diagnostics.bearing_analyzer import check_all_bearing_faults
 from ..diagnostics.iso20816 import assess_severity_with_axis
@@ -68,7 +70,10 @@ def _compute_fft_summary(
     # Top peaks
     order = np.argsort(mags)[::-1][:num_peaks]
     top_peaks = [
-        {"frequency_hz": round(float(freqs[i]), 2), "magnitude": round(float(mags[i]), 6)}
+        {
+            "frequency_hz": round(float(freqs[i]), 2),
+            "magnitude": round(float(mags[i]), 6),
+        }
         for i in np.sort(order)
     ]
 
@@ -163,7 +168,9 @@ def _run_anomaly_detection(
             "anomaly_count": anomaly_count,
             "num_segments": len(predictions),
             "overall_health": health,
-            "anomaly_score": round(anomaly_score, 4) if anomaly_score is not None else None,
+            "anomaly_score": (
+                round(anomaly_score, 4) if anomaly_score is not None else None
+            ),
         }
 
     except Exception as e:
@@ -431,7 +438,8 @@ def _synthesize_diagnosis(
         most_likely = bearing_faults.get("most_likely_fault")
         if most_likely:
             detected = [
-                c for c in bearing_faults["fault_checks"]
+                c
+                for c in bearing_faults["fault_checks"]
                 if c["detected"] and c["evidence_strength"] != "none"
             ]
             fault_text = ", ".join(
@@ -455,15 +463,16 @@ def _synthesize_diagnosis(
                     f"monitor closely, confirm with additional measurements."
                 )
         else:
-            lines.append("No bearing fault frequencies detected — bearing appears healthy.")
+            lines.append(
+                "No bearing fault frequencies detected — bearing appears healthy."
+            )
 
     # Anomaly detection
     if anomaly:
         health = anomaly["overall_health"]
         ratio = anomaly["anomaly_ratio"]
         lines.append(
-            f"Anomaly detection: {health} "
-            f"({ratio * 100:.1f}% anomalous segments)."
+            f"Anomaly detection: {health} " f"({ratio * 100:.1f}% anomalous segments)."
         )
         if health == "Faulty":
             evidence_points += 1.0

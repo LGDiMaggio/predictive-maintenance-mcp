@@ -28,7 +28,6 @@ from mcp.server.mcpserver import MCPServer
 from predictive_maintenance_mcp.mcp_tools import register_all
 from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -289,9 +288,7 @@ async def test_w5_reports_walkable(tools, sandbox, mock_ctx):
 async def test_w6_trend_to_rul_walkable(tools, sandbox, mock_ctx):
     fs = 5000
     t = np.linspace(0, 2.0, 2 * fs, endpoint=False)
-    growing = (0.5 + 0.5 * t / t[-1]) * np.random.default_rng(1).standard_normal(
-        len(t)
-    )
+    growing = (0.5 + 0.5 * t / t[-1]) * np.random.default_rng(1).standard_normal(len(t))
     _write_signal(sandbox["signals"], "w6.csv", growing, fs)
     info = await tools["load_signal"](ctx=mock_ctx, filepath="w6.csv")
 
@@ -329,9 +326,7 @@ async def test_w7_documentation_walkable(tools, sandbox, mock_ctx):
     listing = await tools["list_machine_manuals"](ctx=mock_ctx)
     assert [m["filename"] for m in listing] == ["pump_manual.txt"]
 
-    text = await tools["read_manual_excerpt"](
-        ctx=mock_ctx, file_name="pump_manual.txt"
-    )
+    text = await tools["read_manual_excerpt"](ctx=mock_ctx, file_name="pump_manual.txt")
     assert "SKF 6205-2RS" in text
 
     catalog_hit = await tools["search_bearing_catalog"](
@@ -355,19 +350,13 @@ async def test_w8_signal_management_walkable(tools, sandbox, mock_ctx):
     assert disk["count"] >= 1
 
     memory = await tools["list_signals"](ctx=mock_ctx, scope="memory")
-    assert any(
-        s["signal_id"] == generated.signal_id for s in memory["signals"]
-    )
+    assert any(s["signal_id"] == generated.signal_id for s in memory["signals"])
 
-    info = await tools["get_signal_info"](
-        ctx=mock_ctx, signal_id=generated.signal_id
-    )
+    info = await tools["get_signal_info"](ctx=mock_ctx, signal_id=generated.signal_id)
     assert info.source_metadata["signal_type"] == "normal"
     assert info.signal_unit == "g"
 
-    one = await tools["clear_signals"](
-        ctx=mock_ctx, signal_id=generated.signal_id
-    )
+    one = await tools["clear_signals"](ctx=mock_ctx, signal_id=generated.signal_id)
     assert one["status"] == "removed"
 
     remaining = await tools["clear_signals"](ctx=mock_ctx)

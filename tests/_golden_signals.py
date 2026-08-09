@@ -41,10 +41,9 @@ def golden_signals() -> dict[str, np.ndarray]:
         + 0.8 * np.sin(2 * np.pi * BPFO_6205_1800 * t1)
         + 0.3 * np.sin(2 * np.pi * 2 * BPFO_6205_1800 * t1)
     )
-    signals["golden_bearing"] = (
-        np.sin(2 * np.pi * 3000.0 * t1) * modulation
-        + 0.05 * rng.standard_normal(t1.size)
-    )
+    signals["golden_bearing"] = np.sin(
+        2 * np.pi * 3000.0 * t1
+    ) * modulation + 0.05 * rng.standard_normal(t1.size)
 
     # Pure seeded noise (no fault), 1 s.
     rng2 = np.random.default_rng(456)

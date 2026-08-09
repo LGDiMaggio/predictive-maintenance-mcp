@@ -91,9 +91,7 @@ class _ClientLogCalls(ast.NodeVisitor):
         names = set(self._ctx_names[-1])
         args = node.args
         for arg in [*args.posonlyargs, *args.args, *args.kwonlyargs]:
-            if arg.annotation is not None and "Context" in ast.unparse(
-                arg.annotation
-            ):
+            if arg.annotation is not None and "Context" in ast.unparse(arg.annotation):
                 names.add(arg.arg)
         self._ctx_names.append(names)
         self.generic_visit(node)
@@ -179,9 +177,12 @@ async def clean(ctx: Context):
     finder = _ClientLogCalls()
     finder.visit(ast.parse(source))
     caught = {line for line, _ in finder.offenders}
-    assert caught == {3, 6, 9, 12}, (
-        f"guard missed a reintroduction shape; caught lines {sorted(caught)}"
-    )
+    assert caught == {
+        3,
+        6,
+        9,
+        12,
+    }, f"guard missed a reintroduction shape; caught lines {sorted(caught)}"
 
 
 def test_every_tool_that_had_ctx_injected_still_does():
@@ -199,17 +200,13 @@ def test_every_tool_that_had_ctx_injected_still_does():
 
     reference = json.loads(INVENTORY.read_text(encoding="utf-8"))
     expected = {
-        name
-        for name, spec in reference["tools"].items()
-        if spec.get("context_kwarg")
+        name for name, spec in reference["tools"].items() if spec.get("context_kwarg")
     }
 
     mcp = MCPServer("ctx-injection-guard")
     register_all(mcp)
     actual = {
-        tool.name
-        for tool in mcp._tool_manager._tools.values()
-        if tool.context_kwarg
+        tool.name for tool in mcp._tool_manager._tools.values() if tool.context_kwarg
     }
 
     assert actual == expected, (

@@ -402,9 +402,7 @@ class SignalRepository:
         with self._lock:
             if not overwrite:
                 collisions = [
-                    e["signal_id"]
-                    for e in entries
-                    if e["signal_id"] in self._store
+                    e["signal_id"] for e in entries if e["signal_id"] in self._store
                 ]
                 if collisions:
                     ids = ", ".join(f"'{c}'" for c in collisions)
@@ -482,10 +480,7 @@ class SignalRepository:
 
     def _evict_if_needed(self, new_size: int) -> None:
         """Evict LRU entries until new_size fits. Caller must hold lock."""
-        while (
-            self._store
-            and self._current_memory + new_size > self._max_memory
-        ):
+        while self._store and self._current_memory + new_size > self._max_memory:
             oldest_id, oldest_entry = next(iter(self._store.items()))
             logger.info(
                 f"Evicting signal '{oldest_id}' "
@@ -531,10 +526,12 @@ class SignalRepository:
                 return np.load(filepath)
             elif filepath.suffix in (".csv", ".txt"):
                 import pandas as pd
+
                 df = pd.read_csv(filepath, header=None)
                 return df.iloc[:, 0].values
             elif filepath.suffix == ".mat":
                 from scipy.io import loadmat
+
                 mat = loadmat(str(filepath))
                 for k, v in mat.items():
                     if not k.startswith("__") and isinstance(v, np.ndarray):
@@ -562,7 +559,5 @@ def get_repository() -> SignalRepository:
             # Double-checked locking
             if _repository is None:
                 max_gb = float(os.environ.get("PMM_SIGNAL_CACHE_GB", "10"))
-                _repository = SignalRepository(
-                    max_memory_bytes=int(max_gb * 1024**3)
-                )
+                _repository = SignalRepository(max_memory_bytes=int(max_gb * 1024**3))
     return _repository

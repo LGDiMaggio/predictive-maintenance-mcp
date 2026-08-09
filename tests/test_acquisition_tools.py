@@ -11,10 +11,10 @@ from mcp.server.mcpserver import MCPServer
 
 from predictive_maintenance_mcp.mcp_tools.acquisition_tools import register
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def mcp():
@@ -46,10 +46,16 @@ def data_dir(tmp_path, monkeypatch):
     sub.mkdir()
     pd.DataFrame(sig[:5000]).to_csv(sub / "baseline_1.csv", index=False, header=False)
 
-    monkeypatch.setattr("predictive_maintenance_mcp.mcp_tools.acquisition_tools.DATA_DIR", signals_dir)
+    monkeypatch.setattr(
+        "predictive_maintenance_mcp.mcp_tools.acquisition_tools.DATA_DIR", signals_dir
+    )
     monkeypatch.setattr("predictive_maintenance_mcp.config.DATA_DIR", signals_dir)
-    monkeypatch.setattr("predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR", signals_dir)
-    monkeypatch.setattr("predictive_maintenance_mcp.signal_acquisition.repository.DATA_DIR", signals_dir)
+    monkeypatch.setattr(
+        "predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR", signals_dir
+    )
+    monkeypatch.setattr(
+        "predictive_maintenance_mcp.signal_acquisition.repository.DATA_DIR", signals_dir
+    )
     return signals_dir
 
 
@@ -65,6 +71,7 @@ def mock_ctx():
 # ---------------------------------------------------------------------------
 # Registered tools – tested via MCP server internals
 # ---------------------------------------------------------------------------
+
 
 class TestListSignals:
     """Tests for the merged list_signals tool (scope='disk'|'memory')."""
@@ -102,7 +109,9 @@ class TestListSignals:
     async def test_empty_directory(self, mcp, tmp_path, monkeypatch):
         empty_dir = tmp_path / "empty"
         empty_dir.mkdir()
-        monkeypatch.setattr("predictive_maintenance_mcp.mcp_tools.acquisition_tools.DATA_DIR", empty_dir)
+        monkeypatch.setattr(
+            "predictive_maintenance_mcp.mcp_tools.acquisition_tools.DATA_DIR", empty_dir
+        )
         tools = {t.name: t.fn for t in mcp._tool_manager._tools.values()}
         result = await tools["list_signals"](scope="disk")
         assert result["count"] == 0
@@ -213,7 +222,9 @@ class TestSignalRepository:
     @pytest.mark.asyncio
     async def test_clear_all(self, mcp, data_dir, mock_ctx):
         tools = {t.name: t.fn for t in mcp._tool_manager._tools.values()}
-        await tools["load_signal"](ctx=mock_ctx, filepath="test_sine.csv", signal_id="s1")
+        await tools["load_signal"](
+            ctx=mock_ctx, filepath="test_sine.csv", signal_id="s1"
+        )
         result = await tools["clear_signals"](ctx=mock_ctx)
         assert result["cleared_count"] >= 1
 
@@ -246,9 +257,7 @@ class TestSignalRepository:
             await tools["load_signal"](
                 ctx=mock_ctx, filepath="test_sine.csv", signal_id="meta_rich"
             )
-            info = await tools["get_signal_info"](
-                ctx=mock_ctx, signal_id="meta_rich"
-            )
+            info = await tools["get_signal_info"](ctx=mock_ctx, signal_id="meta_rich")
             assert info.source_metadata["shaft_speed"] == 1797
             assert info.source_metadata["rpm"] == 1797
             assert info.source_metadata["BPFO"] == 107.36
@@ -361,7 +370,9 @@ class TestLoadSignalUnit:
         tools = {t.name: t.fn for t in mcp._tool_manager._tools.values()}
         try:
             result = await tools["load_signal"](
-                ctx=mock_ctx, filepath="test_sine.csv", signal_id="param_unit",
+                ctx=mock_ctx,
+                filepath="test_sine.csv",
+                signal_id="param_unit",
                 signal_unit="mm/s",
             )
             assert result.signal_unit == "mm/s"  # declared > metadata ('g')
@@ -374,7 +385,8 @@ class TestLoadSignalUnit:
         tools = {t.name: t.fn for t in mcp._tool_manager._tools.values()}
         try:
             result = await tools["load_signal"](
-                ctx=mock_ctx, filepath="real_train/baseline_1.csv",
+                ctx=mock_ctx,
+                filepath="real_train/baseline_1.csv",
                 signal_id="no_unit",
             )
             assert result.signal_unit is None
@@ -386,6 +398,8 @@ class TestLoadSignalUnit:
         tools = {t.name: t.fn for t in mcp._tool_manager._tools.values()}
         with pytest.raises(ValueError, match="signal_unit"):
             await tools["load_signal"](
-                ctx=mock_ctx, filepath="test_sine.csv", signal_id="bad_unit",
+                ctx=mock_ctx,
+                filepath="test_sine.csv",
+                signal_id="bad_unit",
                 signal_unit="furlongs",
             )

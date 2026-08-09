@@ -67,12 +67,14 @@ def compute_psd(
     for i in top_idx:
         mag = float(pxx[i])
         mag_db = float(10 * np.log10(max(mag, 1e-12) / max_pxx))
-        top_peaks.append({
-            "frequency_hz": round(float(freqs[i]), 3),
-            "magnitude": round(mag, 8),
-            "magnitude_db": round(mag_db, 2),
-            "note": "",
-        })
+        top_peaks.append(
+            {
+                "frequency_hz": round(float(freqs[i]), 3),
+                "magnitude": round(mag, 8),
+                "magnitude_db": round(mag_db, 2),
+                "note": "",
+            }
+        )
 
     return {
         "top_peaks": top_peaks,
@@ -144,9 +146,7 @@ def compute_stft_spectrogram(
     }
 
 
-def validate_bandpass_band(
-    filter_low: float, filter_high: float, fs: float
-) -> None:
+def validate_bandpass_band(filter_low: float, filter_high: float, fs: float) -> None:
     """Validate a bandpass band against the signal's Nyquist limit, or raise.
 
     Single band-validation path for every envelope/bandpass consumer.
@@ -339,12 +339,14 @@ def compute_envelope_spectrum(
     for i in top_idx:
         mag = float(env_mags[i])
         mag_db = float(20 * np.log10(max(mag, 1e-12) / max_mag))
-        top_peaks.append({
-            "frequency_hz": round(float(env_freqs[i]), 3),
-            "magnitude": round(mag, 6),
-            "magnitude_db": round(mag_db, 2),
-            "note": "",
-        })
+        top_peaks.append(
+            {
+                "frequency_hz": round(float(env_freqs[i]), 3),
+                "magnitude": round(mag, 6),
+                "magnitude_db": round(mag_db, 2),
+                "note": "",
+            }
+        )
 
     # Diagnosis text
     lines = [

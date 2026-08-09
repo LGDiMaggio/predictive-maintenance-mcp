@@ -51,9 +51,11 @@ def backend_name() -> str:
     """Return the active retrieval backend name."""
     return "faiss" if _HAS_FAISS else "tfidf"
 
+
 # ---------------------------------------------------------------------------
 # Chunking
 # ---------------------------------------------------------------------------
+
 
 def chunk_text(
     text: str,
@@ -78,13 +80,15 @@ def chunk_text(
         end = start + chunk_size
         chunk_text_str = text[start:end]
         if chunk_text_str.strip():
-            chunks.append({
-                "text": chunk_text_str,
-                "source": source,
-                "index": idx,
-                "start": start,
-                "end": min(end, len(text)),
-            })
+            chunks.append(
+                {
+                    "text": chunk_text_str,
+                    "source": source,
+                    "index": idx,
+                    "start": start,
+                    "end": min(end, len(text)),
+                }
+            )
             idx += 1
         start += chunk_size - chunk_overlap
     return chunks
@@ -109,32 +113,37 @@ def chunk_text_by_paragraphs(
         if not para:
             continue
         if len(buf) + len(para) + 2 > max_chunk_chars and buf:
-            chunks.append({
-                "text": buf,
-                "source": source,
-                "index": idx,
-                "start": offset,
-                "end": offset + len(buf),
-            })
+            chunks.append(
+                {
+                    "text": buf,
+                    "source": source,
+                    "index": idx,
+                    "start": offset,
+                    "end": offset + len(buf),
+                }
+            )
             idx += 1
             offset += len(buf)
             buf = para
         else:
             buf = f"{buf}\n\n{para}" if buf else para
     if buf.strip():
-        chunks.append({
-            "text": buf,
-            "source": source,
-            "index": idx,
-            "start": offset,
-            "end": offset + len(buf),
-        })
+        chunks.append(
+            {
+                "text": buf,
+                "source": source,
+                "index": idx,
+                "start": offset,
+                "end": offset + len(buf),
+            }
+        )
     return chunks
 
 
 # ---------------------------------------------------------------------------
 # Index — abstract interface + two concrete backends
 # ---------------------------------------------------------------------------
+
 
 class DocumentIndex:
     """Unified document index with FAISS or TF-IDF backend."""
@@ -151,8 +160,8 @@ class DocumentIndex:
         )
         self._tfidf_matrix = None  # sparse TF-IDF matrix
         # FAISS backend (only when deps available)
-        self._faiss_index = None   # faiss.IndexFlatIP
-        self._embedder = None      # SentenceTransformer instance
+        self._faiss_index = None  # faiss.IndexFlatIP
+        self._embedder = None  # SentenceTransformer instance
         self._backend: str = "tfidf"
 
     # -- persistence --
@@ -177,7 +186,9 @@ class DocumentIndex:
             data["matrix"] = self._tfidf_matrix
         with open(self._cache_path(), "wb") as f:
             pickle.dump(data, f)
-        logger.info("RAG index saved (%s backend, %d chunks)", self._backend, len(self._chunks))
+        logger.info(
+            "RAG index saved (%s backend, %d chunks)", self._backend, len(self._chunks)
+        )
 
     @classmethod
     def load(cls) -> Optional["DocumentIndex"]:
@@ -200,7 +211,11 @@ class DocumentIndex:
                 idx._backend = "tfidf"
             else:
                 return None
-            logger.info("RAG index loaded (%s backend, %d chunks)", idx._backend, len(idx._chunks))
+            logger.info(
+                "RAG index loaded (%s backend, %d chunks)",
+                idx._backend,
+                len(idx._chunks),
+            )
             return idx
         except Exception as exc:
             logger.warning("Failed to load RAG index cache: %s", exc)
@@ -237,9 +252,13 @@ class DocumentIndex:
             self._backend = "faiss"
             logger.info("Building FAISS index with sentence-transformers …")
             self._embedder = SentenceTransformer("all-MiniLM-L6-v2")
-            embeddings = self._embedder.encode(texts, show_progress_bar=False, normalize_embeddings=True)
+            embeddings = self._embedder.encode(
+                texts, show_progress_bar=False, normalize_embeddings=True
+            )
             dim = embeddings.shape[1]
-            self._faiss_index = faiss.IndexFlatIP(dim)  # inner-product on L2-normalised = cosine
+            self._faiss_index = faiss.IndexFlatIP(
+                dim
+            )  # inner-product on L2-normalised = cosine
             self._faiss_index.add(embeddings.astype(np.float32))
             # Also build TF-IDF as hybrid fallback
             self._tfidf_matrix = self._tfidf_vectorizer.fit_transform(texts)
@@ -247,35 +266,53 @@ class DocumentIndex:
         else:
             self._backend = "tfidf"
             self._tfidf_matrix = self._tfidf_vectorizer.fit_transform(texts)
-            logger.info("TF-IDF index built: %d chunks, %d features", len(self._chunks), self._tfidf_matrix.shape[1])
+            logger.info(
+                "TF-IDF index built: %d chunks, %d features",
+                len(self._chunks),
+                self._tfidf_matrix.shape[1],
+            )
 
     # -- query --
 
-    def query(self, question: str, top_k: int = 5, min_score: float = 0.05) -> list[dict[str, Any]]:
+    def query(
+        self, question: str, top_k: int = 5, min_score: float = 0.05
+    ) -> list[dict[str, Any]]:
         """Return the *top_k* most relevant chunks for *question*."""
         if not self._chunks:
             return []
 
-        if self._backend == "faiss" and self._faiss_index is not None and self._embedder is not None:
+        if (
+            self._backend == "faiss"
+            and self._faiss_index is not None
+            and self._embedder is not None
+        ):
             return self._query_faiss(question, top_k, min_score)
         return self._query_tfidf(question, top_k, min_score)
 
-    def _query_faiss(self, question: str, top_k: int, min_score: float) -> list[dict[str, Any]]:
-        q_emb = self._embedder.encode([question], normalize_embeddings=True).astype(np.float32)
+    def _query_faiss(
+        self, question: str, top_k: int, min_score: float
+    ) -> list[dict[str, Any]]:
+        q_emb = self._embedder.encode([question], normalize_embeddings=True).astype(
+            np.float32
+        )
         scores, indices = self._faiss_index.search(q_emb, top_k)
         results = []
         for score, idx in zip(scores[0], indices[0]):
             if idx < 0 or score < min_score:
                 continue
-            results.append({
-                "text": self._chunks[idx]["text"],
-                "source": self._chunks[idx]["source"],
-                "chunk_index": self._chunks[idx]["index"],
-                "score": round(float(score), 4),
-            })
+            results.append(
+                {
+                    "text": self._chunks[idx]["text"],
+                    "source": self._chunks[idx]["source"],
+                    "chunk_index": self._chunks[idx]["index"],
+                    "score": round(float(score), 4),
+                }
+            )
         return results
 
-    def _query_tfidf(self, question: str, top_k: int, min_score: float) -> list[dict[str, Any]]:
+    def _query_tfidf(
+        self, question: str, top_k: int, min_score: float
+    ) -> list[dict[str, Any]]:
         if self._tfidf_matrix is None:
             return []
         q_vec = self._tfidf_vectorizer.transform([question])
@@ -285,12 +322,14 @@ class DocumentIndex:
         for i in top_idx:
             if scores[i] < min_score:
                 continue
-            results.append({
-                "text": self._chunks[i]["text"],
-                "source": self._chunks[i]["source"],
-                "chunk_index": self._chunks[i]["index"],
-                "score": round(float(scores[i]), 4),
-            })
+            results.append(
+                {
+                    "text": self._chunks[i]["text"],
+                    "source": self._chunks[i]["source"],
+                    "chunk_index": self._chunks[i]["index"],
+                    "score": round(float(scores[i]), 4),
+                }
+            )
         return results
 
     @property
@@ -320,6 +359,7 @@ def _collect_documents() -> tuple[list[dict[str, Any]], list[Path]]:
             if fpath.suffix.lower() == ".pdf":
                 try:
                     from .document_reader import extract_text_from_pdf
+
                     text = extract_text_from_pdf(fpath, max_pages=50)
                     docs.append({"text": text, "source": fpath.name})
                     paths.append(fpath)

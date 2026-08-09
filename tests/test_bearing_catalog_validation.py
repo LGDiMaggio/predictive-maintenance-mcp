@@ -59,9 +59,7 @@ class TestCatalogGeometryValidity:
     def test_bore_pitch_od_ordering(self, designation, entry):
         """bore < pitch diameter < outer diameter (strict)."""
         assert (
-            entry["bore_mm"]
-            < entry["pitch_diameter_mm"]
-            < entry["outer_diameter_mm"]
+            entry["bore_mm"] < entry["pitch_diameter_mm"] < entry["outer_diameter_mm"]
         ), f"{designation}: pitch diameter must lie between bore and OD"
 
     @pytest.mark.parametrize("designation,entry", ENTRIES, ids=ENTRY_IDS)
@@ -84,12 +82,12 @@ class TestCatalogGeometryValidity:
         """Balls must fit between bore and OD around the pitch circle."""
         pitch = entry["pitch_diameter_mm"]
         bd = entry["ball_diameter_mm"]
-        assert pitch - bd > entry["bore_mm"], (
-            f"{designation}: balls would intersect the bore"
-        )
-        assert pitch + bd < entry["outer_diameter_mm"], (
-            f"{designation}: balls would intersect the outer diameter"
-        )
+        assert (
+            pitch - bd > entry["bore_mm"]
+        ), f"{designation}: balls would intersect the bore"
+        assert (
+            pitch + bd < entry["outer_diameter_mm"]
+        ), f"{designation}: balls would intersect the outer diameter"
 
     @pytest.mark.parametrize("designation,entry", ENTRIES, ids=ENTRY_IDS)
     def test_rolling_elements_fit_circumferentially(self, designation, entry):

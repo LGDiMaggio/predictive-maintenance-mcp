@@ -42,6 +42,7 @@ _test_signal_sequence = itertools.count()
 # TOOLS
 # ------------------------------------------------------------------
 
+
 async def list_signals(
     ctx: Context = None,
     scope: Literal["disk", "memory"] = "disk",
@@ -81,6 +82,7 @@ async def list_signals(
     files.sort()
     logger.info(f"{len(files)} signal file(s) on disk")
     return {"scope": "disk", "count": len(files), "files": files}
+
 
 async def generate_test_signal(
     signal_type: Literal[
@@ -138,7 +140,7 @@ async def generate_test_signal(
 
         # Convolution with impulse response
         impulse_response = np.exp(-50 * np.abs(t - t[len(t) // 2]))
-        signal_clean = np.convolve(impulses, impulse_response, mode='same')
+        signal_clean = np.convolve(impulses, impulse_response, mode="same")
 
         # Modulation with carrier
         signal_clean = signal_clean * np.sin(2 * np.pi * carrier_freq * t)
@@ -203,6 +205,7 @@ async def generate_test_signal(
 
     return StoredSignalInfo(**info)
 
+
 async def load_signal(
     ctx: Context,
     filepath: str | list[str],
@@ -213,50 +216,50 @@ async def load_signal(
 ) -> StoredSignalInfo | list[StoredSignalInfo]:
     """Load one signal — or a batch — into the in-memory repository.
 
-        Once loaded, reference the signal by its signal_id in every analysis,
-        diagnosis, report, and prognostics tool (the load -> analyze ->
-        diagnose -> report flow uses signal_id as the single handle).
+    Once loaded, reference the signal by its signal_id in every analysis,
+    diagnosis, report, and prognostics tool (the load -> analyze ->
+    diagnose -> report flow uses signal_id as the single handle).
 
-        Batch form: pass a LIST of file paths (e.g. for training sets). The
-        batch is fail-fast and atomic — all paths and derived ids are
-        validated up front, and on the first problem ONE error names the
-        offending entries and nothing is loaded. One declared sampling_rate/
-        signal_unit applies to all files; per-file metadata wins only when
-        the parameter is omitted. Custom signal_id is not allowed for a
-        batch (ids derive from each file's relative path).
+    Batch form: pass a LIST of file paths (e.g. for training sets). The
+    batch is fail-fast and atomic — all paths and derived ids are
+    validated up front, and on the first problem ONE error names the
+    offending entries and nothing is loaded. One declared sampling_rate/
+    signal_unit applies to all files; per-file metadata wins only when
+    the parameter is omitted. Custom signal_id is not allowed for a
+    batch (ids derive from each file's relative path).
 
-        signal_id default: the path relative to data/signals/ with separators
-        replaced by underscores — 'real_train/baseline_1.csv' loads as
-        'real_train_baseline_1', so same-named files in different folders
-        never collide silently. Re-loading a path whose id already exists is
-        an explicit error unless overwrite=True.
+    signal_id default: the path relative to data/signals/ with separators
+    replaced by underscores — 'real_train/baseline_1.csv' loads as
+    'real_train_baseline_1', so same-named files in different folders
+    never collide silently. Re-loading a path whose id already exists is
+    an explicit error unless overwrite=True.
 
-        Signal unit discipline: ISO 20816-3 severity verdicts require a
-        DECLARED unit — either via this parameter or a 'signal_unit' field in
-        the companion _metadata.json (explicit parameter wins). Units are
-        never guessed from signal amplitude; without a declared unit the ISO
-        severity block is refused with a structured reason and remedy.
+    Signal unit discipline: ISO 20816-3 severity verdicts require a
+    DECLARED unit — either via this parameter or a 'signal_unit' field in
+    the companion _metadata.json (explicit parameter wins). Units are
+    never guessed from signal amplitude; without a declared unit the ISO
+    severity block is refused with a structured reason and remedy.
 
-        Args:
-            filepath: Filename relative to data/signals/ or absolute path —
-                or a list of such paths for an atomic batch load.
-            signal_id: Custom ID (single-file loads only; default derives
-                from the relative path).
-            sampling_rate: Sampling rate in Hz (overrides metadata file).
-            signal_unit: Declared signal unit — 'g' or 'm/s2' (acceleration),
-                'mm/s' or 'm/s' (velocity). Overrides the metadata file.
-            overwrite: Replace existing entries on signal_id collision
-                instead of raising.
+    Args:
+        filepath: Filename relative to data/signals/ or absolute path —
+            or a list of such paths for an atomic batch load.
+        signal_id: Custom ID (single-file loads only; default derives
+            from the relative path).
+        sampling_rate: Sampling rate in Hz (overrides metadata file).
+        signal_unit: Declared signal unit — 'g' or 'm/s2' (acceleration),
+            'mm/s' or 'm/s' (velocity). Overrides the metadata file.
+        overwrite: Replace existing entries on signal_id collision
+            instead of raising.
 
-        Returns:
-            StoredSignalInfo for a single load; a list of StoredSignalInfo
-            (input order) for a batch.
+    Returns:
+        StoredSignalInfo for a single load; a list of StoredSignalInfo
+        (input order) for a batch.
 
-        Raises:
-            ValueError: If signal_unit is invalid, the signal data cannot be
-                loaded, a signal_id collides without overwrite=True, or a
-                batch contains any invalid entry (nothing is loaded).
-        """
+    Raises:
+        ValueError: If signal_unit is invalid, the signal data cannot be
+            loaded, a signal_id collides without overwrite=True, or a
+            batch contains any invalid entry (nothing is loaded).
+    """
     repo = get_repository()
 
     if isinstance(filepath, list):
@@ -274,14 +277,12 @@ async def load_signal(
         )
         ids = [i["signal_id"] for i in infos]
         logger.info(f"Loaded {len(infos)} signals: {ids}")
-        undeclared = [
-            i["signal_id"] for i in infos if not i.get("signal_unit")
-        ]
+        undeclared = [i["signal_id"] for i in infos if not i.get("signal_unit")]
         if undeclared:
             logger.info(
                 f"Signal unit not declared for {undeclared} — ISO "
-                    f"severity verdicts will be refused for these until "
-                    f"the unit is declared."
+                f"severity verdicts will be refused for these until "
+                f"the unit is declared."
             )
         return [StoredSignalInfo(**i) for i in infos]
 
@@ -292,16 +293,19 @@ async def load_signal(
         signal_unit=signal_unit,
         overwrite=overwrite,
     )
-    logger.info(f"Loaded signal '{info['signal_id']}': {info['num_samples']} samples, {info['size_bytes'] / 1024:.1f} KB")
+    logger.info(
+        f"Loaded signal '{info['signal_id']}': {info['num_samples']} samples, {info['size_bytes'] / 1024:.1f} KB"
+    )
     if info.get("signal_unit"):
         logger.info(f"Signal unit: '{info['signal_unit']}' (declared)")
     else:
         logger.info(
             "Signal unit: not declared — ISO severity verdicts will be "
-                "refused until the unit is declared "
-                "(load_signal(signal_unit=...) or metadata 'signal_unit')."
+            "refused until the unit is declared "
+            "(load_signal(signal_unit=...) or metadata 'signal_unit')."
         )
     return StoredSignalInfo(**info)
+
 
 async def get_signal_info(ctx: Context, signal_id: str) -> StoredSignalInfo:
     """Get metadata for a stored signal without loading the full array.
@@ -327,6 +331,7 @@ async def get_signal_info(ctx: Context, signal_id: str) -> StoredSignalInfo:
     except KeyError as exc:
         raise ValueError(str(exc.args[0])) from None
     return StoredSignalInfo(**info)
+
 
 async def clear_signals(
     ctx: Context, signal_id: Optional[str] = None

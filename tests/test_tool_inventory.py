@@ -77,10 +77,7 @@ def build_inventory() -> dict:
         },
         "resources": sorted(
             [str(uri) for uri in mcp._resource_manager._resources.keys()]
-            + [
-                str(t.uri_template)
-                for t in mcp._resource_manager._templates.values()
-            ]
+            + [str(t.uri_template) for t in mcp._resource_manager._templates.values()]
         ),
         "prompts": {
             p.name: sorted(a.name for a in (p.arguments or []))

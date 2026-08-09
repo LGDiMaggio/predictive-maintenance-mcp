@@ -13,10 +13,10 @@ from mcp.server.mcpserver import MCPServer
 
 from predictive_maintenance_mcp.mcp_tools.decision_support_tools import register
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def mcp():
@@ -42,6 +42,7 @@ def mock_ctx():
 # Surface: the alert tools are gone (merged into assess_severity)
 # ---------------------------------------------------------------------------
 
+
 class TestAlertToolsMerged:
     def test_alert_tools_not_registered(self, tools):
         assert "check_vibration_alert" not in tools
@@ -52,6 +53,7 @@ class TestAlertToolsMerged:
 # ---------------------------------------------------------------------------
 # generate_maintenance_recommendations
 # ---------------------------------------------------------------------------
+
 
 class TestGenerateMaintenanceRecommendations:
     """Tests for generate_maintenance_recommendations tool."""
@@ -108,9 +110,7 @@ class TestGenerateMaintenanceRecommendations:
         assert len(result) > 0
 
     @pytest.mark.asyncio
-    async def test_unknown_fault_type_raises_with_vocabulary(
-        self, tools, mock_ctx
-    ):
+    async def test_unknown_fault_type_raises_with_vocabulary(self, tools, mock_ctx):
         """U9 loop closure: an acronym like 'BPFO' is NOT silently dropped —
         the error names the canonical vocabulary and the acronym mapping."""
         with pytest.raises(ValueError) as exc:

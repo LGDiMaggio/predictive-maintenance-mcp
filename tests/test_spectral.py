@@ -138,9 +138,7 @@ class TestComputeEnvelopeSpectrum:
 
     def test_envelope_handles_narrow_band(self, bearing_fault_signal):
         signal, fs = bearing_fault_signal
-        result = compute_envelope_spectrum(
-            signal, fs, frequency_range=(1500, 2500)
-        )
+        result = compute_envelope_spectrum(signal, fs, frequency_range=(1500, 2500))
         assert len(result["top_peaks"]) > 0
 
     def test_envelope_num_samples(self, sine_signal):
@@ -209,9 +207,7 @@ class TestBandValidation:
         carrier = np.sin(2 * np.pi * 2000 * t)
         signal = carrier * (1.0 + 0.5 * np.sin(2 * np.pi * 81 * t))
         default = compute_envelope_spectrum(signal, fs)
-        explicit = compute_envelope_spectrum(
-            signal, fs, frequency_range=(500, 5000)
-        )
+        explicit = compute_envelope_spectrum(signal, fs, frequency_range=(500, 5000))
         assert default["top_peaks"] == explicit["top_peaks"]
 
 
@@ -240,8 +236,7 @@ class TestEnvelopeDetrendWindow:
         )
         freqs = [p["frequency_hz"] for p in result["top_peaks"]]
         assert any(abs(f - 11.0) < 2.0 for f in freqs), (
-            f"Expected the 11 Hz FTF-zone modulation in the top peaks, "
-            f"got {freqs}"
+            f"Expected the 11 Hz FTF-zone modulation in the top peaks, " f"got {freqs}"
         )
 
     def test_unmodulated_carrier_no_low_freq_peaks(self):

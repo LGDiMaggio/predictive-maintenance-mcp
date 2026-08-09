@@ -152,9 +152,7 @@ class TestMainArgParser:
 
         srv.main()
 
-        mock_run.assert_called_once_with(
-            transport="sse", host="127.0.0.1", port=8000
-        )
+        mock_run.assert_called_once_with(transport="sse", host="127.0.0.1", port=8000)
 
     def test_blank_env_host_does_not_become_a_wildcard_bind(self, monkeypatch):
         """MCP_HOST set-but-empty must not resolve to INADDR_ANY.
@@ -175,13 +173,9 @@ class TestMainArgParser:
 
         srv.main()
 
-        mock_run.assert_called_once_with(
-            transport="sse", host="127.0.0.1", port=8000
-        )
+        mock_run.assert_called_once_with(transport="sse", host="127.0.0.1", port=8000)
 
-    def test_invalid_env_transport_exits_instead_of_reaching_run(
-        self, monkeypatch
-    ):
+    def test_invalid_env_transport_exits_instead_of_reaching_run(self, monkeypatch):
         """argparse validates `choices` only for command-line values.
 
         The env var is the configuration channel in every container, so an
@@ -212,15 +206,14 @@ class TestMainArgParser:
         monkeypatch.delenv("MCP_PORT", raising=False)
 
         monkeypatch.setattr(
-            sys, "argv",
+            sys,
+            "argv",
             ["server", "--transport", "sse", "--host", "0.0.0.0", "--port", "9090"],
         )
 
         srv.main()
 
-        mock_run.assert_called_once_with(
-            transport="sse", host="0.0.0.0", port=9090
-        )
+        mock_run.assert_called_once_with(transport="sse", host="0.0.0.0", port=9090)
 
     def test_env_var_overrides(self, monkeypatch):
         """Environment variables MCP_TRANSPORT / MCP_HOST / MCP_PORT override defaults."""
