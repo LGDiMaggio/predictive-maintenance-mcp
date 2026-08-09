@@ -213,6 +213,12 @@ async def load_signal(
     sampling_rate: Optional[float] = None,
     signal_unit: Optional[Literal["g", "m/s2", "mm/s", "m/s"]] = None,
     overwrite: bool = False,
+    sample_format: Optional[Literal["float32", "float64", "int16", "int32"]] = None,
+    byte_order: Optional[Literal["little", "big"]] = None,
+    n_channels: Optional[int] = None,
+    channel_index: Optional[int] = None,
+    header_offset: Optional[int] = None,
+    scale_factor: Optional[float] = None,
 ) -> StoredSignalInfo | list[StoredSignalInfo]:
     """Load one signal — or a batch — into the in-memory repository.
 
@@ -240,25 +246,61 @@ async def load_signal(
     never guessed from signal amplitude; without a declared unit the ISO
     severity block is refused with a structured reason and remedy.
 
+    Raw binary files (.bin/.raw/.dat): a headerless raw waveform loads
+    only with a declared decode contract — sample_format AND
+    sampling_rate are REQUIRED, either as explicit parameters here or as
+    fields of the companion <stem>_metadata.json next to the file
+    (explicit parameter wins). The other raw parameters carry documented
+    defaults, applied by the repository after that merge: byte_order
+    'little', n_channels 1, channel_index 0, header_offset 0, no
+    scale_factor. Integer sample formats (int16/int32) decode to raw ADC
+    counts — declare scale_factor to convert counts into the declared
+    physical unit (there is no implicit normalization). In a batch the
+    raw parameters broadcast to ALL files, exactly like sampling_rate.
+    Declaring raw parameters for a self-describing format (.csv, .npy,
+    ...) is refused as a contradiction. With n_channels > 1 each load
+    extracts ONE channel and the DERIVED id gains a _ch<channel_index>
+    suffix; an explicit signal_id is used verbatim — no suffix applies.
+
     Args:
+        ctx: MCP context. Unused — see this module's docstring on logging.
         filepath: Filename relative to data/signals/ or absolute path —
             or a list of such paths for an atomic batch load.
         signal_id: Custom ID (single-file loads only; default derives
             from the relative path).
         sampling_rate: Sampling rate in Hz (overrides metadata file).
+            Required for raw binary files (here or in the companion).
         signal_unit: Declared signal unit — 'g' or 'm/s2' (acceleration),
             'mm/s' or 'm/s' (velocity). Overrides the metadata file.
         overwrite: Replace existing entries on signal_id collision
             instead of raising.
+        sample_format: Raw files only — declared sample dtype ('float32',
+            'float64', 'int16', 'int32'). REQUIRED for .bin/.raw/.dat
+            (here or in the companion metadata).
+        byte_order: Raw files only — declared endianness ('little' or
+            'big'); documented default 'little'.
+        n_channels: Raw files only — interleaved channel count in the
+            file; documented default 1.
+        channel_index: Raw files only — 0-based channel to extract;
+            documented default 0.
+        header_offset: Raw files only — bytes to skip before the first
+            sample; documented default 0.
+        scale_factor: Raw files only — optional multiplier applied after
+            decoding (e.g. ADC counts -> physical unit); default: no
+            scaling.
 
     Returns:
         StoredSignalInfo for a single load; a list of StoredSignalInfo
-        (input order) for a batch.
+        (input order) for a batch. Raw loads record the effective decode
+        parameters under raw_format.
 
     Raises:
         ValueError: If signal_unit is invalid, the signal data cannot be
-            loaded, a signal_id collides without overwrite=True, or a
-            batch contains any invalid entry (nothing is loaded).
+            loaded, a signal_id collides without overwrite=True, a batch
+            contains any invalid entry (nothing is loaded), a raw binary
+            file is missing a required declaration (ONE message names
+            everything missing plus both remedies), or raw parameters
+            are declared for a self-describing format.
     """
     repo = get_repository()
 
@@ -274,6 +316,12 @@ async def load_signal(
             sampling_rate=sampling_rate,
             signal_unit=signal_unit,
             overwrite=overwrite,
+            sample_format=sample_format,
+            byte_order=byte_order,
+            n_channels=n_channels,
+            channel_index=channel_index,
+            header_offset=header_offset,
+            scale_factor=scale_factor,
         )
         ids = [i["signal_id"] for i in infos]
         logger.info(f"Loaded {len(infos)} signals: {ids}")
@@ -292,6 +340,12 @@ async def load_signal(
         sampling_rate=sampling_rate,
         signal_unit=signal_unit,
         overwrite=overwrite,
+        sample_format=sample_format,
+        byte_order=byte_order,
+        n_channels=n_channels,
+        channel_index=channel_index,
+        header_offset=header_offset,
+        scale_factor=scale_factor,
     )
     logger.info(
         f"Loaded signal '{info['signal_id']}': {info['num_samples']} samples, {info['size_bytes'] / 1024:.1f} KB"

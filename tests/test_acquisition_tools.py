@@ -403,3 +403,104 @@ class TestLoadSignalUnit:
                 signal_id="bad_unit",
                 signal_unit="furlongs",
             )
+
+
+class TestLoadSignalRaw:
+    """U3: raw binary (.bin/.raw/.dat) declaration via the load_signal tool."""
+
+    @staticmethod
+    def _write_bin(path: Path, samples, dtype: str = "<f4") -> np.ndarray:
+        arr = np.asarray(samples, dtype=dtype)
+        path.write_bytes(arr.tobytes())
+        return arr
+
+    @pytest.mark.asyncio
+    async def test_bin_with_full_explicit_params(self, mcp, data_dir, mock_ctx):
+        """Full explicit declaration → StoredSignalInfo with raw_format."""
+        tools = {t.name: t.fn for t in mcp._tool_manager._tools.values()}
+        fs = 10000.0
+        t = np.arange(0, 0.1, 1 / fs)
+        arr = self._write_bin(data_dir / "raw_full.bin", np.sin(2 * np.pi * 50 * t))
+        try:
+            result = await tools["load_signal"](
+                ctx=mock_ctx,
+                filepath="raw_full.bin",
+                sampling_rate=fs,
+                sample_format="float32",
+                byte_order="little",
+                n_channels=1,
+                channel_index=0,
+                header_offset=0,
+            )
+            assert result.signal_id == "raw_full"
+            assert result.num_samples == len(arr)
+            assert result.sampling_rate == fs
+            assert result.raw_format is not None
+            assert result.raw_format["sample_format"] == "float32"
+            assert result.raw_format["byte_order"] == "little"
+            assert result.raw_format["n_channels"] == 1
+            assert result.raw_format["channel_index"] == 0
+            assert result.raw_format["header_offset"] == 0
+        finally:
+            await tools["clear_signals"](ctx=mock_ctx)
+
+    @pytest.mark.asyncio
+    async def test_batch_bin_with_shared_params(self, mcp, data_dir, mock_ctx):
+        """One raw parameter set broadcasts to every .bin in the batch."""
+        from predictive_maintenance_mcp.signal_acquisition.repository import (
+            get_repository,
+        )
+
+        tools = {t.name: t.fn for t in mcp._tool_manager._tools.values()}
+        self._write_bin(data_dir / "raw_b1.bin", [100, -100, 50, -50], dtype="<i2")
+        self._write_bin(data_dir / "raw_b2.bin", [10, -10, 20, -20], dtype="<i2")
+        try:
+            results = await tools["load_signal"](
+                ctx=mock_ctx,
+                filepath=["raw_b1.bin", "raw_b2.bin"],
+                sampling_rate=5000.0,
+                sample_format="int16",
+                scale_factor=0.5,
+            )
+            assert [r.signal_id for r in results] == ["raw_b1", "raw_b2"]
+            for r in results:
+                assert r.raw_format is not None
+                assert r.raw_format["sample_format"] == "int16"
+                assert r.raw_format["scale_factor"] == 0.5
+            # scale_factor flowed through the tool layer to the decoder.
+            np.testing.assert_allclose(
+                get_repository().get_signal("raw_b1"), [50.0, -50.0, 25.0, -25.0]
+            )
+        finally:
+            await tools["clear_signals"](ctx=mock_ctx)
+
+    @pytest.mark.asyncio
+    async def test_sample_format_on_csv_is_contradiction(self, mcp, data_dir, mock_ctx):
+        """Declaring a raw dtype for a self-describing format is refused."""
+        tools = {t.name: t.fn for t in mcp._tool_manager._tools.values()}
+        with pytest.raises(ValueError, match="self-describing"):
+            await tools["load_signal"](
+                ctx=mock_ctx, filepath="test_sine.csv", sample_format="float32"
+            )
+
+    @pytest.mark.asyncio
+    async def test_invalid_sample_format_rejected_by_validation(
+        self, mcp, data_dir, mock_ctx
+    ):
+        """A value outside the Literal vocabulary never reaches the decoder.
+
+        Invoked through the MCP validation layer (tool.run); the exact
+        exception type is the server library's business — the contract
+        asserted here is only that the call errors instead of loading.
+        """
+        self._write_bin(data_dir / "raw_enum.bin", [1.0, 2.0])
+        tool = mcp._tool_manager._tools["load_signal"]
+        with pytest.raises(Exception):
+            await tool.run(
+                {
+                    "filepath": "raw_enum.bin",
+                    "sampling_rate": 1000.0,
+                    "sample_format": "float99",
+                },
+                context=mock_ctx,
+            )

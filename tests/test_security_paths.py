@@ -323,6 +323,78 @@ class TestSignalReadContainment:
 
 
 # ---------------------------------------------------------------------------
+# Raw binary read path — the repository's .bin route runs safe_resolve on
+# DATA_DIR-relative names before the decoder ever reads a byte. A traversal
+# name must be rejected with a CLOSED oracle (no outside-file contents, no
+# directory listing), mirroring TestReportMetadataReadSide.
+# ---------------------------------------------------------------------------
+
+
+class TestRawBinaryReadContainment:
+    #: Full raw declaration, so the containment rejection is what fires —
+    #: not the missing-declaration refusal (which would mask the traversal).
+    RAW_DECL = {"sampling_rate": 10000.0, "sample_format": "float32"}
+
+    @pytest.fixture
+    def raw_sandbox(self, tmp_path, monkeypatch):
+        """DATA_DIR sandbox with planted outside/sibling .bin attack targets."""
+        data_dir = tmp_path / "data" / "signals"
+        data_dir.mkdir(parents=True)
+        # Decoy INSIDE the data dir: its name must never leak into a
+        # rejection message (that would be a directory-listing oracle).
+        (data_dir / "inside_decoy.bin").write_bytes(np.zeros(8, dtype="<f4").tobytes())
+        # Real files OUTSIDE the data dir that a traversal would hit — the
+        # marker must never appear in any error message.
+        (tmp_path / "data" / "evil.bin").write_bytes(b"TOPSECRET_OUTSIDE")
+        sibling = tmp_path / "data" / "signals_evil"
+        sibling.mkdir()
+        (sibling / "x.bin").write_bytes(b"TOPSECRET_SIBLING")
+        for target in (
+            "predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR",
+            "predictive_maintenance_mcp.signal_acquisition.repository.DATA_DIR",
+        ):
+            monkeypatch.setattr(target, data_dir)
+        from predictive_maintenance_mcp.signal_acquisition.repository import (
+            SignalRepository,
+        )
+
+        return SignalRepository()
+
+    def _assert_closed_oracle(self, exc_info, name: str) -> None:
+        """The rejection reveals nothing beyond the offending input itself.
+
+        NOTE: exists-outside vs nonexistent messages are NOT compared here —
+        the exists() -> containment ordering in _prepare_entry is a
+        pre-existing differential oracle on all formats, owned by the
+        loader-unification follow-up.
+        """
+        msg = str(exc_info.value)
+        assert "TOPSECRET" not in msg  # outside file contents never leak
+        assert "available" not in msg  # no directory listing
+        assert "inside_decoy" not in msg.replace(name, "")  # no DATA_DIR listing
+
+    # Forward-slash traversal and the sibling directory escape work on every
+    # platform; the sibling case is the d689886 class (signals_evil must not
+    # pass a naive signals prefix check).
+    @pytest.mark.parametrize("name", ["../evil.bin", "../signals_evil/x.bin"])
+    def test_raw_load_rejects_traversal(self, raw_sandbox, name):
+        with pytest.raises(ValueError) as exc_info:
+            raw_sandbox.load_signal(name, **self.RAW_DECL)
+        self._assert_closed_oracle(exc_info, name)
+        assert raw_sandbox.signal_count == 0  # nothing was stored
+
+    @pytest.mark.skipif(
+        os.name != "nt", reason="backslash is a separator only on Windows"
+    )
+    def test_raw_load_rejects_windows_backslash(self, raw_sandbox):
+        name = "..\\evil.bin"
+        with pytest.raises(ValueError) as exc_info:
+            raw_sandbox.load_signal(name, **self.RAW_DECL)
+        self._assert_closed_oracle(exc_info, name)
+        assert raw_sandbox.signal_count == 0
+
+
+# ---------------------------------------------------------------------------
 # Single source of truth: the _utils re-exports must be the same objects as
 # path_safety, so a future edit cannot silently reintroduce a divergent copy.
 # ---------------------------------------------------------------------------

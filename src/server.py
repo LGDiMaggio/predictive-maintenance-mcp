@@ -249,6 +249,9 @@ mcp = MCPServer(
       plus reason and remedy (the other diagnosis blocks still run)
     - If the unit is unknown, ask the user for it — do not guess
     - Wrong unit declaration (g vs mm/s) completely invalidates ISO 20816-3 results!
+    - Raw binary files (.bin/.raw/.dat) load only with an explicitly declared
+      sample_format AND sampling_rate — via explicit load_signal parameters or
+      the companion metadata file — never inferred from file content or filename
 
     Output formatting rules:
     - Keep responses brief (<=300 words, bullet points)

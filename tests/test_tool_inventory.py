@@ -44,6 +44,11 @@ Fixture history:
   declared in tests/test_surface_parity.py POST_U9_ADDITIONS; the parity
   test's "no orphan tools" property now reads "migrated or declared".
   No existing tool signature changed.
+- Raw ingestion U3 (2026-08-09): regenerated intentionally — ADDITIVE.
+  load_signal gained six OPTIONAL raw-binary decode parameters
+  (sample_format, byte_order, n_channels, channel_index, header_offset,
+  scale_factor), all defaulting to null. No other tool's schema changed;
+  counts unchanged (34/0/3).
 
 Snapshot recipe (run from the repo root):
     python -c "from tests.test_tool_inventory import build_inventory, \\
