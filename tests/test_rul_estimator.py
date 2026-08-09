@@ -94,7 +94,9 @@ class TestExponentialRUL:
         series = [math.exp(0.1 * t) for t in range(30)]
         threshold = math.exp(0.1 * 50)  # threshold at t=50
 
-        result = estimate_rul_exponential(series, timestamps, failure_threshold=threshold)
+        result = estimate_rul_exponential(
+            series, timestamps, failure_threshold=threshold
+        )
 
         assert result is not None
         assert result["method"] == "exponential"
@@ -120,7 +122,9 @@ class TestExponentialRUL:
     def test_non_positive_threshold_returns_none(self):
         timestamps = [0.0, 1.0, 2.0]
         series = [1.0, 2.0, 4.0]
-        assert estimate_rul_exponential(series, timestamps, failure_threshold=0.0) is None
+        assert (
+            estimate_rul_exponential(series, timestamps, failure_threshold=0.0) is None
+        )
 
 
 class TestWeibullRemoved:

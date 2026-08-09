@@ -74,8 +74,7 @@ class _OneBoundedLine(logging.Filter):
         text = record.getMessage()
         if len(text) > _MAX_RECORD_CHARS:
             text = (
-                f"{text[:_MAX_RECORD_CHARS]}… "
-                f"[truncated, {len(text)} chars total]"
+                f"{text[:_MAX_RECORD_CHARS]}… " f"[truncated, {len(text)} chars total]"
             )
         # Interpolate once, here, so args cannot reintroduce a newline.
         record.msg = text.replace("\r", "\\r").replace("\n", "\\n")
@@ -285,7 +284,7 @@ mcp = MCPServer(
     - diagnose_bearing() - Complete bearing diagnostic workflow with evidence-based decision tree
     - diagnose_gear() - Gear fault detection workflow
     - quick_diagnostic_report() - Fast screening analysis (non-definitive)
-    """
+    """,
 )
 
 # ---------------------------------------------------------------------------
@@ -354,7 +353,8 @@ def build_parser() -> argparse.ArgumentParser:
         description="Predictive Maintenance MCP Server",
     )
     parser.add_argument(
-        "--transport", "-t",
+        "--transport",
+        "-t",
         choices=list(TRANSPORTS),
         default=transport,
         help="Transport protocol (default: stdio, env: MCP_TRANSPORT)",
@@ -365,7 +365,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Bind address for SSE/HTTP (default: 127.0.0.1, env: MCP_HOST)",
     )
     parser.add_argument(
-        "--port", "-p",
+        "--port",
+        "-p",
         type=int,
         default=port,
         help="Port for SSE/HTTP transport (default: 8000, env: MCP_PORT)",

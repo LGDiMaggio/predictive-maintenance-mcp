@@ -18,8 +18,8 @@ from predictive_maintenance_mcp.document_reader import (
     HAS_OCR,
 )
 
-
 # ── Bearing frequency calculations ─────────────────────────────────────────
+
 
 class TestBearingFrequencies:
     """Tests against known bearing geometry values."""
@@ -67,13 +67,17 @@ class TestBearingFrequencies:
     def test_angular_contact_bearing(self):
         """Non-zero contact angle (angular contact bearing)."""
         freqs_zero = calculate_bearing_frequencies(
-            num_balls=16, ball_diameter_mm=12.7,
-            pitch_diameter_mm=71.5, contact_angle_deg=0.0,
+            num_balls=16,
+            ball_diameter_mm=12.7,
+            pitch_diameter_mm=71.5,
+            contact_angle_deg=0.0,
             shaft_speed_rpm=2000,
         )
         freqs_15 = calculate_bearing_frequencies(
-            num_balls=16, ball_diameter_mm=12.7,
-            pitch_diameter_mm=71.5, contact_angle_deg=15.0,
+            num_balls=16,
+            ball_diameter_mm=12.7,
+            pitch_diameter_mm=71.5,
+            contact_angle_deg=15.0,
             shaft_speed_rpm=2000,
         )
         # cos(15°) < cos(0°), so d_ratio*cos(alpha) is smaller
@@ -85,8 +89,10 @@ class TestBearingFrequencies:
     def test_high_contact_angle(self):
         """45° contact angle (thrust bearing)."""
         freqs = calculate_bearing_frequencies(
-            num_balls=12, ball_diameter_mm=10.0,
-            pitch_diameter_mm=60.0, contact_angle_deg=45.0,
+            num_balls=12,
+            ball_diameter_mm=10.0,
+            pitch_diameter_mm=60.0,
+            contact_angle_deg=45.0,
             shaft_speed_rpm=1500,
         )
         assert all(freqs[k] > 0 for k in ("BPFO", "BPFI", "BSF", "FTF"))
@@ -94,16 +100,20 @@ class TestBearingFrequencies:
     def test_frequency_ratios(self):
         """BPFI/BPFO ratio should be > 1 for typical bearings."""
         freqs = calculate_bearing_frequencies(
-            num_balls=8, ball_diameter_mm=10.0,
-            pitch_diameter_mm=50.0, shaft_speed_rpm=1500,
+            num_balls=8,
+            ball_diameter_mm=10.0,
+            pitch_diameter_mm=50.0,
+            shaft_speed_rpm=1500,
         )
         assert freqs["BPFI"] / freqs["BPFO"] > 1.0
 
     def test_input_parameters_returned(self):
         """Verify input parameters are echoed in result dict."""
         freqs = calculate_bearing_frequencies(
-            num_balls=9, ball_diameter_mm=7.94,
-            pitch_diameter_mm=39.04, contact_angle_deg=0.0,
+            num_balls=9,
+            ball_diameter_mm=7.94,
+            pitch_diameter_mm=39.04,
+            contact_angle_deg=0.0,
             shaft_speed_rpm=1797,
         )
         params = freqs.get("input_parameters", {})
@@ -113,12 +123,16 @@ class TestBearingFrequencies:
     def test_different_speeds(self):
         """Frequencies should scale linearly with RPM."""
         freqs_1000 = calculate_bearing_frequencies(
-            num_balls=8, ball_diameter_mm=10.0,
-            pitch_diameter_mm=50.0, shaft_speed_rpm=1000,
+            num_balls=8,
+            ball_diameter_mm=10.0,
+            pitch_diameter_mm=50.0,
+            shaft_speed_rpm=1000,
         )
         freqs_2000 = calculate_bearing_frequencies(
-            num_balls=8, ball_diameter_mm=10.0,
-            pitch_diameter_mm=50.0, shaft_speed_rpm=2000,
+            num_balls=8,
+            ball_diameter_mm=10.0,
+            pitch_diameter_mm=50.0,
+            shaft_speed_rpm=2000,
         )
         # Double RPM → double all frequencies
         assert abs(freqs_2000["BPFO"] / freqs_1000["BPFO"] - 2.0) < 0.01
@@ -127,6 +141,7 @@ class TestBearingFrequencies:
 
 
 # ── PDF text extraction ────────────────────────────────────────────────────
+
 
 class TestExtractTextFromPdf:
 

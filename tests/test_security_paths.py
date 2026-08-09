@@ -149,12 +149,16 @@ def diagnostics_tools(models_sandbox):
 
 def _no_files_written(tmp_path: Path) -> bool:
     """No pickle/json artifact escaped into any directory under the sandbox."""
-    return not list(tmp_path.rglob("*.pkl")) and not list(tmp_path.rglob("*_metadata.json"))
+    return not list(tmp_path.rglob("*.pkl")) and not list(
+        tmp_path.rglob("*_metadata.json")
+    )
 
 
 class TestModularTrainWriteSide:
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("name", ["../../evil", "../models_evil/x", "/tmp/evil", ".."])
+    @pytest.mark.parametrize(
+        "name", ["../../evil", "../models_evil/x", "/tmp/evil", ".."]
+    )
     async def test_train_rejects_unsafe_model_name(
         self, diagnostics_tools, models_sandbox, mock_ctx, name
     ):
@@ -205,7 +209,9 @@ class TestReportMetadataReadSide:
         assert "secret" not in str(exc_info.value).replace(name, "")
         assert "available" not in str(exc_info.value)
 
-    @pytest.mark.skipif(os.name != "nt", reason="backslash is a separator only on Windows")
+    @pytest.mark.skipif(
+        os.name != "nt", reason="backslash is a separator only on Windows"
+    )
     def test_read_report_metadata_rejects_windows_backslash(self, reports_sandbox):
         from predictive_maintenance_mcp.report_generator import read_report_metadata
 
@@ -286,12 +292,16 @@ class TestSignalReadContainment:
         monkeypatch.setattr(
             "predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR", data_dir
         )
-        from predictive_maintenance_mcp.signal_acquisition.loaders import load_signal_data
+        from predictive_maintenance_mcp.signal_acquisition.loaders import (
+            load_signal_data,
+        )
 
         # Traversal is contained: the outside file's contents are never returned.
         assert load_signal_data(name) is None
 
-    def test_load_signal_data_allows_contained_relative_path(self, tmp_path, monkeypatch):
+    def test_load_signal_data_allows_contained_relative_path(
+        self, tmp_path, monkeypatch
+    ):
         import pandas as pd
 
         data_dir = tmp_path / "data" / "signals"
@@ -302,7 +312,9 @@ class TestSignalReadContainment:
         monkeypatch.setattr(
             "predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR", data_dir
         )
-        from predictive_maintenance_mcp.signal_acquisition.loaders import load_signal_data
+        from predictive_maintenance_mcp.signal_acquisition.loaders import (
+            load_signal_data,
+        )
 
         # A legitimate relative path inside DATA_DIR still loads (no over-rejection).
         result = load_signal_data("sub/good.csv")

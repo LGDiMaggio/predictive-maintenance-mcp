@@ -141,13 +141,14 @@ TEST_DATA_DIR = REPO_ROOT / "data" / "signals" / "real_train"
 
 # Fixtures
 
+
 @pytest.fixture
 def sample_healthy_signal():
     """Load baseline healthy signal."""
     signal_path = TEST_DATA_DIR / "baseline_1.csv"
     if not signal_path.exists():
         pytest.skip(f"Sample data not found: {signal_path}")
-    
+
     df = pd.read_csv(signal_path, header=None)
     return df.iloc[:, 0].values
 
@@ -158,7 +159,7 @@ def sample_faulty_signal():
     signal_path = TEST_DATA_DIR / "OuterRaceFault_1.csv"
     if not signal_path.exists():
         pytest.skip(f"Sample data not found: {signal_path}")
-    
+
     df = pd.read_csv(signal_path, header=None)
     return df.iloc[:, 0].values
 
@@ -169,8 +170,8 @@ def sample_metadata():
     metadata_path = TEST_DATA_DIR / "baseline_1_metadata.json"
     if not metadata_path.exists():
         pytest.skip(f"Metadata not found: {metadata_path}")
-    
-    with open(metadata_path, 'r') as f:
+
+    with open(metadata_path, "r") as f:
         return json.load(f)
 
 
@@ -180,10 +181,10 @@ def synthetic_sine_signal():
     fs = 10000  # 10 kHz
     duration = 2.0  # 2 seconds
     freq = 50.0  # 50 Hz
-    
+
     t = np.linspace(0, duration, int(fs * duration), endpoint=False)
     signal = np.sin(2 * np.pi * freq * t)
-    
+
     return signal, fs, freq
 
 
@@ -191,10 +192,10 @@ def synthetic_sine_signal():
 def temp_csv_file(tmp_path, synthetic_sine_signal):
     """Create temporary CSV file with synthetic signal."""
     signal, fs, freq = synthetic_sine_signal
-    
+
     csv_path = tmp_path / "test_signal.csv"
     pd.DataFrame(signal).to_csv(csv_path, index=False, header=False)
-    
+
     return csv_path, fs, freq
 
 

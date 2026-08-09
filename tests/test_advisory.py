@@ -21,7 +21,6 @@ from predictive_maintenance_mcp.decision_support.advisory import (
 )
 from predictive_maintenance_mcp.diagnostics.iso20816 import THRESHOLD_PROVENANCE
 
-
 # ---------------------------------------------------------------------------
 # Fixtures — diagnose_vibration-shaped results, built explicitly so each test
 # states the condition it exercises rather than hiding it in a factory.
@@ -212,12 +211,12 @@ class TestNoConfidenceLabel:
         def walk(node, path=""):
             if isinstance(node, dict):
                 for key, value in node.items():
-                    assert "confidence" not in key.lower(), (
-                        f"confidence-shaped key at {path}.{key}"
-                    )
-                    assert "probability" not in key.lower(), (
-                        f"probability-shaped key at {path}.{key}"
-                    )
+                    assert (
+                        "confidence" not in key.lower()
+                    ), f"confidence-shaped key at {path}.{key}"
+                    assert (
+                        "probability" not in key.lower()
+                    ), f"probability-shaped key at {path}.{key}"
                     walk(value, f"{path}.{key}")
             elif isinstance(node, list):
                 for i, value in enumerate(node):

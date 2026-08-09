@@ -183,8 +183,7 @@ class TestEndpointCountClaims:
         text = _read(readme)
         expected = component_counts[kind]
         wrong = [
-            f"{readme}: claims '{snippet}' but plugin/ contains "
-            f"{expected} {kind}"
+            f"{readme}: claims '{snippet}' but plugin/ contains " f"{expected} {kind}"
             for value, snippet in _claims(text, kind)
             if value != expected
         ]
@@ -203,9 +202,9 @@ class TestEndpointCountClaims:
     def test_plugin_readme_states_component_counts(self):
         text = _read("plugin/README.md")
         for kind in ("skills", "agents", "commands"):
-            assert _claims(text, kind), (
-                f"plugin/README.md: no recognizable '{kind}' count claim"
-            )
+            assert _claims(
+                text, kind
+            ), f"plugin/README.md: no recognizable '{kind}' count claim"
 
     def test_expected_final_surface(self, surface_counts):
         """The current surface, restated here so a surface change makes
@@ -255,7 +254,7 @@ class TestLockfileAgreesWithManifest:
         for name, spec in declared.items():
             # The lock echoes each requirement verbatim in [package.metadata]
             # requires-dist as `specifier = "<constraint>"`.
-            constraint = spec[len(spec.split(name)[0]) + len(name):].strip()
+            constraint = spec[len(spec.split(name)[0]) + len(name) :].strip()
             constraint = constraint.lstrip("]").strip()
             if constraint.startswith("["):
                 constraint = constraint.split("]", 1)[-1].strip()

@@ -86,12 +86,14 @@ def check_bearing_fault_peak(
         harmonic_tol = harmonic_freq * tolerance_pct / 100.0
         for p in peaks:
             if abs(p["frequency_hz"] - harmonic_freq) <= harmonic_tol:
-                harmonics.append({
-                    "harmonic": h,
-                    "expected_hz": round(harmonic_freq, 2),
-                    "detected_hz": round(p["frequency_hz"], 2),
-                    "magnitude": round(p["magnitude"], 6),
-                })
+                harmonics.append(
+                    {
+                        "harmonic": h,
+                        "expected_hz": round(harmonic_freq, 2),
+                        "detected_hz": round(p["frequency_hz"], 2),
+                        "magnitude": round(p["magnitude"], 6),
+                    }
+                )
                 break
 
     # Evidence-strength rating from detected fundamental + harmonics.

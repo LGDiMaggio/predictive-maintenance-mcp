@@ -47,6 +47,7 @@ def _logged(caplog, needle: str) -> bool:
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def mcp():
     server = MCPServer("test-reports")
@@ -72,8 +73,12 @@ def data_dir(tmp_path, monkeypatch):
         json.dump({"sampling_rate": fs, "signal_unit": "g"}, f)
 
     monkeypatch.setattr("predictive_maintenance_mcp.config.DATA_DIR", signals_dir)
-    monkeypatch.setattr("predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR", signals_dir)
-    monkeypatch.setattr("predictive_maintenance_mcp.signal_acquisition.repository.DATA_DIR", signals_dir)
+    monkeypatch.setattr(
+        "predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR", signals_dir
+    )
+    monkeypatch.setattr(
+        "predictive_maintenance_mcp.signal_acquisition.repository.DATA_DIR", signals_dir
+    )
     return signals_dir
 
 
@@ -91,11 +96,15 @@ def repo(data_dir):
 def reports_dir(tmp_path, monkeypatch):
     rd = tmp_path / "reports"
     rd.mkdir()
-    monkeypatch.setattr("predictive_maintenance_mcp.mcp_tools.report_tools.REPORTS_DIR", rd)
+    monkeypatch.setattr(
+        "predictive_maintenance_mcp.mcp_tools.report_tools.REPORTS_DIR", rd
+    )
     monkeypatch.setattr("predictive_maintenance_mcp.report_generator.REPORTS_DIR", rd)
     # Also patch the REPORTS_DIR_PATH alias used in diagnostics import
     try:
-        monkeypatch.setattr("predictive_maintenance_mcp.mcp_tools.report_tools.REPORTS_DIR_PATH", rd)
+        monkeypatch.setattr(
+            "predictive_maintenance_mcp.mcp_tools.report_tools.REPORTS_DIR_PATH", rd
+        )
     except AttributeError:
         pass
     return rd
@@ -109,8 +118,16 @@ def mock_ctx():
     return ctx
 
 
-def _load_extra_signal(repo, signals_dir, name, fs=10000, duration=1.0,
-                       freq=50.0, noise=0.0, with_meta=True):
+def _load_extra_signal(
+    repo,
+    signals_dir,
+    name,
+    fs=10000,
+    duration=1.0,
+    freq=50.0,
+    noise=0.0,
+    with_meta=True,
+):
     """Helper: create a CSV signal file and load it into the repository."""
     t = np.linspace(0, duration, int(fs * duration), endpoint=False)
     sig = np.sin(2 * np.pi * freq * t) + noise * np.random.randn(len(t))
@@ -125,6 +142,7 @@ def _load_extra_signal(repo, signals_dir, name, fs=10000, duration=1.0,
 # ---------------------------------------------------------------------------
 # Plot signal
 # ---------------------------------------------------------------------------
+
 
 class TestPlotSignal:
     """Tests for plot_signal tool (signal_id handle)."""
@@ -185,6 +203,7 @@ class TestPlotSignal:
 # Merged plot tools are gone (absorbed by the generate_* reports)
 # ---------------------------------------------------------------------------
 
+
 class TestPlotToolsMerged:
     """U9b clean cut: plot_spectrum/plot_envelope/plot_iso_20816_chart and
     get_report_info are no longer registered — their capability lives in
@@ -204,6 +223,7 @@ class TestPlotToolsMerged:
 # ---------------------------------------------------------------------------
 # List reports
 # ---------------------------------------------------------------------------
+
 
 class TestListReports:
     """Tests for list_html_reports tool."""
@@ -225,10 +245,10 @@ class TestListReports:
         # Create a fake HTML report with embedded metadata
         metadata = {"report_type": "fft_spectrum", "signal_file": "test.csv"}
         html_content = (
-            '<html><head>'
+            "<html><head>"
             '<script type="application/json" id="report-metadata">'
-            f'{json.dumps(metadata)}'
-            '</script></head><body>report</body></html>'
+            f"{json.dumps(metadata)}"
+            "</script></head><body>report</body></html>"
         )
         (reports_dir / "fft_test_report.html").write_text(html_content)
         result = tools["list_html_reports"]()
@@ -248,6 +268,7 @@ class TestListReports:
 # Single-report metadata route (merged get_report_info)
 # ---------------------------------------------------------------------------
 
+
 class TestListReportsFileNameRoute:
     """list_html_reports(file_name=...) — the absorbed get_report_info."""
 
@@ -258,12 +279,16 @@ class TestListReportsFileNameRoute:
             tools["list_html_reports"](file_name="nonexistent.html")
 
     def test_report_found_with_metadata(self, tools, reports_dir):
-        metadata = {"report_type": "envelope", "signal_file": "sig.csv", "num_peaks": 10}
+        metadata = {
+            "report_type": "envelope",
+            "signal_file": "sig.csv",
+            "num_peaks": 10,
+        }
         html = (
-            '<html><head>'
+            "<html><head>"
             '<script type="application/json" id="report-metadata">'
-            f'{json.dumps(metadata)}'
-            '</script></head><body></body></html>'
+            f"{json.dumps(metadata)}"
+            "</script></head><body></body></html>"
         )
         (reports_dir / "env_report.html").write_text(html)
         result = tools["list_html_reports"](file_name="env_report.html")
@@ -301,14 +326,13 @@ class TestListReportsFileNameRoute:
         evil.mkdir()
         (evil / "x.html").write_text("<html></html>")
         with pytest.raises(ValueError, match="Invalid report filename"):
-            tools["list_html_reports"](
-                file_name=f"../{reports_dir.name}_evil/x.html"
-            )
+            tools["list_html_reports"](file_name=f"../{reports_dir.name}_evil/x.html")
 
 
 # ---------------------------------------------------------------------------
 # Generate FFT report
 # ---------------------------------------------------------------------------
+
 
 class TestGenerateFFTReport:
     """Tests for generate_fft_report tool (signal_id handle)."""
@@ -350,7 +374,9 @@ class TestGenerateFFTReport:
         assert {r1["file_name"], r2["file_name"]} <= listed
 
     @pytest.mark.asyncio
-    async def test_fft_report_signal_without_rate(self, tools, data_dir, repo, reports_dir):
+    async def test_fft_report_signal_without_rate(
+        self, tools, data_dir, repo, reports_dir
+    ):
         """A stored signal without a sampling rate → structured error."""
         sig = np.sin(2 * np.pi * 50 * np.linspace(0, 1, 1000, endpoint=False))
         pd.DataFrame(sig).to_csv(data_dir / "no_meta.csv", index=False, header=False)
@@ -379,6 +405,7 @@ class TestGenerateFFTReport:
 # ---------------------------------------------------------------------------
 # Generate envelope report
 # ---------------------------------------------------------------------------
+
 
 class TestGenerateEnvelopeReport:
     """Tests for generate_envelope_report tool (signal_id handle)."""
@@ -450,7 +477,9 @@ class TestGenerateEnvelopeReport:
     ):
         """Stored signal without a rate → structured error."""
         sig = np.random.randn(5000)
-        pd.DataFrame(sig).to_csv(data_dir / "no_meta_env.csv", index=False, header=False)
+        pd.DataFrame(sig).to_csv(
+            data_dir / "no_meta_env.csv", index=False, header=False
+        )
         repo.load_signal("no_meta_env.csv")
         with pytest.raises(ValueError, match="No sampling rate"):
             await tools["generate_envelope_report"](signal_id="no_meta_env")
@@ -479,6 +508,7 @@ class TestGenerateEnvelopeReport:
 # Generate ISO report
 # ---------------------------------------------------------------------------
 
+
 class TestGenerateISOReport:
     """Tests for generate_iso_report tool (signal_id handle)."""
 
@@ -498,7 +528,9 @@ class TestGenerateISOReport:
         self, tools, data_dir, repo, reports_dir
     ):
         sig = np.random.randn(5000)
-        pd.DataFrame(sig).to_csv(data_dir / "no_meta_iso.csv", index=False, header=False)
+        pd.DataFrame(sig).to_csv(
+            data_dir / "no_meta_iso.csv", index=False, header=False
+        )
         repo.load_signal("no_meta_iso.csv")
         with pytest.raises(ValueError, match="No sampling rate"):
             await tools["generate_iso_report"](signal_id="no_meta_iso")
@@ -509,7 +541,9 @@ class TestGenerateISOReport:
     ):
         """Rate known but unit undeclared → structured error naming the fix."""
         sig = np.random.randn(20000)
-        pd.DataFrame(sig).to_csv(data_dir / "no_unit_iso.csv", index=False, header=False)
+        pd.DataFrame(sig).to_csv(
+            data_dir / "no_unit_iso.csv", index=False, header=False
+        )
         repo.load_signal("no_unit_iso.csv", sampling_rate=10000)
         with pytest.raises(ValueError, match="unit not declared"):
             await tools["generate_iso_report"](signal_id="no_unit_iso")
@@ -518,6 +552,7 @@ class TestGenerateISOReport:
 # ---------------------------------------------------------------------------
 # Load → analyze → report round-trip (R7 golden path)
 # ---------------------------------------------------------------------------
+
 
 class TestSignalIdRoundTrip:
     """R7: load → analyze → report is walkable with ONE idiom (signal_id)."""
@@ -553,6 +588,7 @@ class TestSignalIdRoundTrip:
 # Generate PCA visualization report
 # ---------------------------------------------------------------------------
 
+
 class TestGeneratePCAReport:
     """Tests for generate_pca_visualization_report tool (signal_id handles)."""
 
@@ -561,7 +597,9 @@ class TestGeneratePCAReport:
         """Create a fake trained model with scaler, PCA, and metadata."""
         md = tmp_path / "models"
         md.mkdir()
-        monkeypatch.setattr("predictive_maintenance_mcp.mcp_tools.report_tools.MODELS_DIR", md)
+        monkeypatch.setattr(
+            "predictive_maintenance_mcp.mcp_tools.report_tools.MODELS_DIR", md
+        )
 
         # Build a small model from synthetic features
         rng = np.random.RandomState(42)
@@ -587,7 +625,9 @@ class TestGeneratePCAReport:
         return md
 
     @pytest.mark.asyncio
-    async def test_pca_report_no_test_signals(self, tools, repo, reports_dir, models_dir, mock_ctx):
+    async def test_pca_report_no_test_signals(
+        self, tools, repo, reports_dir, models_dir, mock_ctx
+    ):
         """PCA report with no test signals should still produce a report."""
         result = await tools["generate_pca_visualization_report"](
             model_name="test_pca_model",
@@ -598,7 +638,9 @@ class TestGeneratePCAReport:
         assert result["summary"]["total_segments"] == 0
 
     @pytest.mark.asyncio
-    async def test_pca_report_with_test_signals(self, tools, repo, reports_dir, models_dir, mock_ctx):
+    async def test_pca_report_with_test_signals(
+        self, tools, repo, reports_dir, models_dir, mock_ctx
+    ):
         """PCA report with test signal_ids should segment, predict, and report."""
         result = await tools["generate_pca_visualization_report"](
             model_name="test_pca_model",
@@ -611,7 +653,9 @@ class TestGeneratePCAReport:
         assert result["summary"]["total_segments"] > 0
 
     @pytest.mark.asyncio
-    async def test_pca_report_with_true_labels(self, tools, repo, reports_dir, models_dir, mock_ctx):
+    async def test_pca_report_with_true_labels(
+        self, tools, repo, reports_dir, models_dir, mock_ctx
+    ):
         """PCA report with true_labels (keyed by signal_id) computes metrics."""
         result = await tools["generate_pca_visualization_report"](
             model_name="test_pca_model",
@@ -625,14 +669,18 @@ class TestGeneratePCAReport:
         assert "overall_accuracy" in result["summary"]["validation_metrics"]
 
     @pytest.mark.asyncio
-    async def test_pca_report_model_not_found(self, tools, repo, reports_dir, models_dir):
+    async def test_pca_report_model_not_found(
+        self, tools, repo, reports_dir, models_dir
+    ):
         with pytest.raises(FileNotFoundError):
             await tools["generate_pca_visualization_report"](
                 model_name="nonexistent_model",
             )
 
     @pytest.mark.asyncio
-    async def test_pca_report_signal_not_loaded(self, tools, repo, reports_dir, models_dir):
+    async def test_pca_report_signal_not_loaded(
+        self, tools, repo, reports_dir, models_dir
+    ):
         """Unknown test signal_id → fail fast, no silent skipping."""
         with pytest.raises(ValueError, match="load_signal"):
             await tools["generate_pca_visualization_report"](
@@ -645,6 +693,7 @@ class TestGeneratePCAReport:
 # Generate feature comparison report
 # ---------------------------------------------------------------------------
 
+
 class TestGenerateFeatureComparisonReport:
     """Tests for generate_feature_comparison_report tool (signal_id handles)."""
 
@@ -652,14 +701,22 @@ class TestGenerateFeatureComparisonReport:
     def multi_signal_ids(self, repo, data_dir):
         """Load two signal groups for comparison."""
         ids = {
-            "healthy_1": _load_extra_signal(repo, data_dir, "healthy_1.csv", freq=50.0, noise=0.01),
-            "healthy_2": _load_extra_signal(repo, data_dir, "healthy_2.csv", freq=50.0, noise=0.02),
-            "faulty_1": _load_extra_signal(repo, data_dir, "faulty_1.csv", freq=50.0, noise=1.0),
+            "healthy_1": _load_extra_signal(
+                repo, data_dir, "healthy_1.csv", freq=50.0, noise=0.01
+            ),
+            "healthy_2": _load_extra_signal(
+                repo, data_dir, "healthy_2.csv", freq=50.0, noise=0.02
+            ),
+            "faulty_1": _load_extra_signal(
+                repo, data_dir, "faulty_1.csv", freq=50.0, noise=1.0
+            ),
         }
         return ids
 
     @pytest.mark.asyncio
-    async def test_feature_comparison_basic(self, tools, multi_signal_ids, reports_dir, mock_ctx):
+    async def test_feature_comparison_basic(
+        self, tools, multi_signal_ids, reports_dir, mock_ctx
+    ):
         result = await tools["generate_feature_comparison_report"](
             signal_groups={
                 "Healthy": ["healthy_1", "healthy_2"],
@@ -674,7 +731,9 @@ class TestGenerateFeatureComparisonReport:
         assert "Healthy" in result["metadata"]["groups"]
 
     @pytest.mark.asyncio
-    async def test_feature_comparison_subset_features(self, tools, multi_signal_ids, reports_dir):
+    async def test_feature_comparison_subset_features(
+        self, tools, multi_signal_ids, reports_dir
+    ):
         """Only plot a subset of features."""
         result = await tools["generate_feature_comparison_report"](
             signal_groups={"A": ["healthy_1"], "B": ["faulty_1"]},
@@ -683,7 +742,9 @@ class TestGenerateFeatureComparisonReport:
         assert len(result["metadata"]["features_plotted"]) == 3
 
     @pytest.mark.asyncio
-    async def test_feature_comparison_unknown_id_raises(self, tools, multi_signal_ids, reports_dir):
+    async def test_feature_comparison_unknown_id_raises(
+        self, tools, multi_signal_ids, reports_dir
+    ):
         """Unknown signal_ids fail fast — no silent skipping (U8 contract)."""
         with pytest.raises(ValueError, match="load_signal"):
             await tools["generate_feature_comparison_report"](
@@ -697,9 +758,11 @@ class TestGenerateFeatureComparisonReport:
 # DOCX report generation
 # ---------------------------------------------------------------------------
 
+
 def _docx_installed() -> bool:
     try:
         import docx  # noqa: F401
+
         return True
     except ImportError:
         return False
@@ -781,6 +844,7 @@ class TestDocxReport:
 # ---------------------------------------------------------------------------
 # Tool registration completeness
 # ---------------------------------------------------------------------------
+
 
 class TestToolRegistration:
     """Verify all expected tools are registered."""

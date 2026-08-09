@@ -15,7 +15,7 @@ from predictive_maintenance_mcp.report_generator import (
     save_envelope_report,
     save_iso_report,
     list_reports,
-    REPORTS_DIR
+    REPORTS_DIR,
 )
 import numpy as np
 
@@ -53,7 +53,7 @@ async def run_report_tests():
             magnitudes=magnitudes,
             signal_data=signal,
             max_freq=5000,
-            num_peaks=15
+            num_peaks=15,
         )
 
         print(f"✓ {report_result['message']}")
@@ -85,7 +85,7 @@ async def run_report_tests():
         nyq = sampling_rate / 2.0
         low = filter_low / nyq
         high = filter_high / nyq
-        b, a = butter(4, [low, high], btype='band')
+        b, a = butter(4, [low, high], btype="band")
         filtered_signal = filtfilt(b, a, signal)
 
         # Hilbert envelope
@@ -95,7 +95,7 @@ async def run_report_tests():
         # FFT of envelope
         N = len(envelope)
         env_fft = fft(envelope)
-        env_freqs = fftfreq(N, 1/sampling_rate)
+        env_freqs = fftfreq(N, 1 / sampling_rate)
 
         # Keep only positive frequencies
         pos_mask = env_freqs > 0
@@ -103,12 +103,7 @@ async def run_report_tests():
         env_magnitudes = np.abs(env_fft[pos_mask]) / N * 2
 
         # 6205 (CWRU geometry) at 1797 RPM
-        bearing_freqs = {
-            'BPFO': 107.36,
-            'BPFI': 162.19,
-            'BSF': 70.58,
-            'FTF': 11.93
-        }
+        bearing_freqs = {"BPFO": 107.36, "BPFI": 162.19, "BSF": 70.58, "FTF": 11.93}
 
         report_result = save_envelope_report(
             signal_file=signal_file,
@@ -120,7 +115,7 @@ async def run_report_tests():
             env_magnitudes=env_magnitudes,
             bearing_freqs=bearing_freqs,
             max_freq=500,
-            num_peaks=15
+            num_peaks=15,
         )
 
         print(f"✓ {report_result['message']}")
@@ -151,10 +146,7 @@ async def run_report_tests():
     )
 
     sev = await assess_severity(
-        ctx=None,
-        signal_id=info["signal_id"],
-        machine_group=2,
-        support_type="rigid"
+        ctx=None, signal_id=info["signal_id"], machine_group=2, support_type="rigid"
     )
     repo.clear_signal(info["signal_id"])
 
@@ -173,10 +165,7 @@ async def run_report_tests():
         "frequency_range": sev.frequency_range,
     }
 
-    report_result = save_iso_report(
-        signal_file=signal_file,
-        iso_result=iso_dict
-    )
+    report_result = save_iso_report(signal_file=signal_file, iso_result=iso_dict)
 
     print(f"✓ {report_result['message']}")
     print(f"  Path: {report_result['file_path']}")
@@ -192,7 +181,9 @@ async def run_report_tests():
     reports = list_reports()
     print(f"✓ Found {len(reports)} reports in {REPORTS_DIR}")
     for report in reports:
-        print(f"  - {report['file_name']} ({report['file_size_kb']:.1f} KB) - {report['report_type']}")
+        print(
+            f"  - {report['file_name']} ({report['file_size_kb']:.1f} KB) - {report['report_type']}"
+        )
     print()
 
     print("=" * 70)
@@ -201,6 +192,7 @@ async def run_report_tests():
     print()
     print(f"Reports saved to: {REPORTS_DIR}")
     print("Open the HTML files in your browser to view interactive charts!")
+
 
 if __name__ == "__main__":
     asyncio.run(run_report_tests())

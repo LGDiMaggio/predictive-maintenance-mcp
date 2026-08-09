@@ -24,10 +24,10 @@ from predictive_maintenance_mcp.models import (
     TrendAnalysisResult,
 )
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def mcp():
@@ -54,7 +54,9 @@ def data_dir(tmp_path, monkeypatch):
     rng = np.random.default_rng(42)
     stationary = 0.1 * rng.standard_normal(n_samples)
     pd.DataFrame(stationary).to_csv(
-        signals_dir / "stationary.csv", index=False, header=False,
+        signals_dir / "stationary.csv",
+        index=False,
+        header=False,
     )
     with open(signals_dir / "stationary_metadata.json", "w") as f:
         json.dump({"sampling_rate": fs}, f)
@@ -64,15 +66,21 @@ def data_dir(tmp_path, monkeypatch):
     envelope = 0.05 + 0.5 * (t / n_samples)
     degrading = envelope * rng.standard_normal(n_samples)
     pd.DataFrame(degrading).to_csv(
-        signals_dir / "degrading.csv", index=False, header=False,
+        signals_dir / "degrading.csv",
+        index=False,
+        header=False,
     )
     with open(signals_dir / "degrading_metadata.json", "w") as f:
         json.dump({"sampling_rate": fs}, f)
 
     # Patch DATA_DIR
     monkeypatch.setattr("predictive_maintenance_mcp.config.DATA_DIR", signals_dir)
-    monkeypatch.setattr("predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR", signals_dir)
-    monkeypatch.setattr("predictive_maintenance_mcp.signal_acquisition.repository.DATA_DIR", signals_dir)
+    monkeypatch.setattr(
+        "predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR", signals_dir
+    )
+    monkeypatch.setattr(
+        "predictive_maintenance_mcp.signal_acquisition.repository.DATA_DIR", signals_dir
+    )
 
     return signals_dir
 
@@ -122,6 +130,7 @@ def mock_ctx():
 # ---------------------------------------------------------------------------
 # estimate_rul — refusal paths
 # ---------------------------------------------------------------------------
+
 
 class TestEstimateRULRefusals:
     """estimate_rul must refuse anything that is not a multi-measure series."""
@@ -242,6 +251,7 @@ class TestEstimateRULRefusals:
 # ---------------------------------------------------------------------------
 # estimate_rul — outcomes
 # ---------------------------------------------------------------------------
+
 
 class TestEstimateRULOutcomes:
     """estimate_rul outcomes on valid multi-measure series."""
@@ -374,6 +384,7 @@ class TestEstimateRULOutcomes:
     @pytest.mark.asyncio
     async def test_exponential_method(self, tools, mock_ctx):
         import math
+
         timestamps = [float(t) for t in range(10)]
         values = [0.5 * math.exp(0.2 * t) for t in timestamps]
         result = await tools["estimate_rul"](
@@ -411,6 +422,7 @@ class TestEstimateRULOutcomes:
 # ---------------------------------------------------------------------------
 # analyze_signal_trend (within-recording screening)
 # ---------------------------------------------------------------------------
+
 
 class TestAnalyzeSignalTrend:
     """Tests for the analyze_signal_trend screening tool (signal_id handle)."""
@@ -490,6 +502,7 @@ class TestAnalyzeSignalTrend:
 # ---------------------------------------------------------------------------
 # Degradation onset (merged into analyze_signal_trend in U9)
 # ---------------------------------------------------------------------------
+
 
 class TestDegradationOnsetMerged:
     """Onset detection now lives inside analyze_signal_trend (U9 merge)."""

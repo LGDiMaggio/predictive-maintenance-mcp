@@ -78,7 +78,6 @@ def _companion_metadata(info: StoredSignalInfo) -> dict:
     return {}
 
 
-
 async def generate_diagnostic_report_docx(
     signal_id: str,
     sections: dict[str, Any],
@@ -86,32 +85,32 @@ async def generate_diagnostic_report_docx(
     ctx: Context | None = None,
 ) -> dict[str, Any]:
     """
-        Generate a structured Word (.docx) diagnostic report for a stored signal.
+    Generate a structured Word (.docx) diagnostic report for a stored signal.
 
-        Requires: ``pip install predictive-maintenance-mcp[docx]``
+    Requires: ``pip install predictive-maintenance-mcp[docx]``
 
-        ``sections`` is a dict whose keys define what to include (all optional):
-          - statistics:           dict  (RMS, Kurtosis, Crest Factor …)
-          - fft_peaks:            list  [{frequency, magnitude_db, note}, …]
-          - envelope_peaks:       list  [{frequency, magnitude_db, match}, …]
-          - bearing_frequencies:  dict  {BPFO, BPFI, BSF, FTF}
-          - iso:                  dict  (mapped from assess_severity output)
-          - diagnosis:            str   (free-text diagnostic summary)
+    ``sections`` is a dict whose keys define what to include (all optional):
+      - statistics:           dict  (RMS, Kurtosis, Crest Factor …)
+      - fft_peaks:            list  [{frequency, magnitude_db, note}, …]
+      - envelope_peaks:       list  [{frequency, magnitude_db, match}, …]
+      - bearing_frequencies:  dict  {BPFO, BPFI, BSF, FTF}
+      - iso:                  dict  (mapped from assess_severity output)
+      - diagnosis:            str   (free-text diagnostic summary)
 
-        Args:
-            signal_id: ID of the stored signal (from load_signal); used for
-                the report title / filename.
-            sections: Content sections to include (see above)
-            title: Optional custom report title
-            ctx: MCP context. Unused — see this module's docstring on logging.
+    Args:
+        signal_id: ID of the stored signal (from load_signal); used for
+            the report title / filename.
+        sections: Content sections to include (see above)
+        title: Optional custom report title
+        ctx: MCP context. Unused — see this module's docstring on logging.
 
-        Returns:
-            Dictionary with file_path, file_name, and per-section summary.
+    Returns:
+        Dictionary with file_path, file_name, and per-section summary.
 
-        Raises:
-            ValueError: If the signal_id is not loaded, or python-docx is
-                not installed.
-        """
+    Raises:
+        ValueError: If the signal_id is not loaded, or python-docx is
+            not installed.
+    """
     # Validate the handle: reports are only produced for loaded signals.
     resolve_signal(signal_id, require_sampling_rate=False)
 
@@ -125,42 +124,43 @@ async def generate_diagnostic_report_docx(
 
     return result
 
+
 async def plot_signal(
     signal_id: str,
     time_range: Optional[list[float]] = None,
     show_statistics: bool = True,
     title: Optional[str] = None,
-    ctx: Context | None = None
+    ctx: Context | None = None,
 ) -> str:
     """
-        Generate interactive time-domain plot for a stored signal.
+    Generate interactive time-domain plot for a stored signal.
 
-        Creates an interactive HTML plot showing the signal in the time domain.
-        Useful for inspecting signal quality, identifying anomalies, and
-        visualizing transients. Requires the signal loaded via load_signal()
-        first; the sampling rate comes from the stored signal metadata.
+    Creates an interactive HTML plot showing the signal in the time domain.
+    Useful for inspecting signal quality, identifying anomalies, and
+    visualizing transients. Requires the signal loaded via load_signal()
+    first; the sampling rate comes from the stored signal metadata.
 
-        Args:
-            signal_id: ID of the stored signal (from load_signal).
-            time_range: [start_time, end_time] in seconds to zoom on a portion (optional)
-            show_statistics: Show RMS, peak levels as horizontal lines (default: True)
-            title: Custom plot title (optional)
-            ctx: MCP context. Unused — see this module's docstring on logging.
+    Args:
+        signal_id: ID of the stored signal (from load_signal).
+        time_range: [start_time, end_time] in seconds to zoom on a portion (optional)
+        show_statistics: Show RMS, peak levels as horizontal lines (default: True)
+        title: Custom plot title (optional)
+        ctx: MCP context. Unused — see this module's docstring on logging.
 
-        Returns:
-            Path to generated HTML file
+    Returns:
+        Path to generated HTML file
 
-        Raises:
-            ValueError: If the signal_id is not loaded, or the stored signal
-                has no sampling rate.
+    Raises:
+        ValueError: If the signal_id is not loaded, or the stored signal
+            has no sampling rate.
 
-        Example:
-            plot_signal(
-                "bearing_signal",
-                time_range=[0.1, 0.3],  # Zoom on 100-300 ms
-                show_statistics=True
-            )
-        """
+    Example:
+        plot_signal(
+            "bearing_signal",
+            time_range=[0.1, 0.3],  # Zoom on 100-300 ms
+            show_statistics=True
+        )
+    """
     logger.info(f"Generating time-domain plot for '{signal_id}'...")
 
     signal_data, info = resolve_signal(signal_id)
@@ -189,66 +189,78 @@ async def plot_signal(
     fig = go.Figure()
 
     # Main signal
-    fig.add_trace(go.Scatter(
-        x=time_plot,
-        y=signal_plot,
-        mode='lines',
-        name='Signal',
-        line=dict(color='blue', width=1),
-        hovertemplate='Time: %{x:.4f} s<br>Amplitude: %{y:.4f}<extra></extra>'
-    ))
+    fig.add_trace(
+        go.Scatter(
+            x=time_plot,
+            y=signal_plot,
+            mode="lines",
+            name="Signal",
+            line=dict(color="blue", width=1),
+            hovertemplate="Time: %{x:.4f} s<br>Amplitude: %{y:.4f}<extra></extra>",
+        )
+    )
 
     # Add statistical reference lines if requested
     if show_statistics:
         # RMS lines
-        fig.add_trace(go.Scatter(
-            x=[time_plot[0], time_plot[-1]],
-            y=[rms, rms],
-            mode='lines',
-            name=f'RMS (+{rms:.4f})',
-            line=dict(color='green', width=2, dash='dash'),
-            hovertemplate=f'RMS: {rms:.4f}<extra></extra>'
-        ))
+        fig.add_trace(
+            go.Scatter(
+                x=[time_plot[0], time_plot[-1]],
+                y=[rms, rms],
+                mode="lines",
+                name=f"RMS (+{rms:.4f})",
+                line=dict(color="green", width=2, dash="dash"),
+                hovertemplate=f"RMS: {rms:.4f}<extra></extra>",
+            )
+        )
 
-        fig.add_trace(go.Scatter(
-            x=[time_plot[0], time_plot[-1]],
-            y=[-rms, -rms],
-            mode='lines',
-            name=f'RMS (−{rms:.4f})',
-            line=dict(color='green', width=2, dash='dash'),
-            showlegend=False,
-            hovertemplate=f'RMS: -{rms:.4f}<extra></extra>'
-        ))
+        fig.add_trace(
+            go.Scatter(
+                x=[time_plot[0], time_plot[-1]],
+                y=[-rms, -rms],
+                mode="lines",
+                name=f"RMS (−{rms:.4f})",
+                line=dict(color="green", width=2, dash="dash"),
+                showlegend=False,
+                hovertemplate=f"RMS: -{rms:.4f}<extra></extra>",
+            )
+        )
 
         # Peak lines
-        fig.add_trace(go.Scatter(
-            x=[time_plot[0], time_plot[-1]],
-            y=[peak_pos, peak_pos],
-            mode='lines',
-            name=f'Peak (+{peak_pos:.4f})',
-            line=dict(color='red', width=1, dash='dot'),
-            hovertemplate=f'Peak: {peak_pos:.4f}<extra></extra>'
-        ))
+        fig.add_trace(
+            go.Scatter(
+                x=[time_plot[0], time_plot[-1]],
+                y=[peak_pos, peak_pos],
+                mode="lines",
+                name=f"Peak (+{peak_pos:.4f})",
+                line=dict(color="red", width=1, dash="dot"),
+                hovertemplate=f"Peak: {peak_pos:.4f}<extra></extra>",
+            )
+        )
 
-        fig.add_trace(go.Scatter(
-            x=[time_plot[0], time_plot[-1]],
-            y=[peak_neg, peak_neg],
-            mode='lines',
-            name=f'Peak (−{abs(peak_neg):.4f})',
-            line=dict(color='red', width=1, dash='dot'),
-            hovertemplate=f'Peak: {peak_neg:.4f}<extra></extra>'
-        ))
+        fig.add_trace(
+            go.Scatter(
+                x=[time_plot[0], time_plot[-1]],
+                y=[peak_neg, peak_neg],
+                mode="lines",
+                name=f"Peak (−{abs(peak_neg):.4f})",
+                line=dict(color="red", width=1, dash="dot"),
+                hovertemplate=f"Peak: {peak_neg:.4f}<extra></extra>",
+            )
+        )
 
         # Mean line
         if abs(mean_val) > 1e-6:  # Only show if mean is significant
-            fig.add_trace(go.Scatter(
-                x=[time_plot[0], time_plot[-1]],
-                y=[mean_val, mean_val],
-                mode='lines',
-                name=f'Mean ({mean_val:.4f})',
-                line=dict(color='orange', width=1, dash='dashdot'),
-                hovertemplate=f'Mean: {mean_val:.4f}<extra></extra>'
-            ))
+            fig.add_trace(
+                go.Scatter(
+                    x=[time_plot[0], time_plot[-1]],
+                    y=[mean_val, mean_val],
+                    mode="lines",
+                    name=f"Mean ({mean_val:.4f})",
+                    line=dict(color="orange", width=1, dash="dashdot"),
+                    hovertemplate=f"Mean: {mean_val:.4f}<extra></extra>",
+                )
+            )
 
     # Layout
     plot_title = title or f"Time-Domain Signal - {signal_id}"
@@ -258,20 +270,22 @@ async def plot_signal(
         title=plot_title,
         xaxis_title="Time (s)",
         yaxis_title="Amplitude",
-        hovermode='x unified',
-        template='plotly_white',
+        hovermode="x unified",
+        template="plotly_white",
         width=1200,
         height=600,
         showlegend=True,
         annotations=[
             dict(
                 text=f"Duration: {duration:.3f} s | Samples: {len(signal_plot)} | Fs: {sampling_rate} Hz",
-                xref="paper", yref="paper",
-                x=0.5, y=-0.15,
+                xref="paper",
+                yref="paper",
+                x=0.5,
+                y=-0.15,
                 showarrow=False,
-                font=dict(size=10, color="gray")
+                font=dict(size=10, color="gray"),
             )
-        ]
+        ],
     )
 
     # Save HTML to reports directory (timestamped: runs never overwrite)
@@ -279,43 +293,42 @@ async def plot_signal(
     fig.write_html(str(output_file))
 
     logger.info(f"Plot saved to {output_file.name}")
-    logger.info(
-        "To view report metadata: list_html_reports(file_name=...)"
-    )
+    logger.info("To view report metadata: list_html_reports(file_name=...)")
 
     return f"Interactive plot saved to: {output_file}\nUse list_html_reports() to see all reports, or open file in browser"
+
 
 async def generate_fft_report(
     signal_id: str,
     max_freq: float = 5000.0,
     num_peaks: int = 15,
     rpm: Optional[float] = None,
-    ctx: Context | None = None
+    ctx: Context | None = None,
 ) -> dict[str, Any]:
     """
-        Generate an interactive FFT spectrum report (HTML) for a stored signal.
+    Generate an interactive FFT spectrum report (HTML) for a stored signal.
 
-        Saves a self-contained Plotly HTML report (spectrum in dB, automatic
-        peak detection, harmonic labels) to the reports/ directory with a
-        timestamped filename — consecutive runs produce distinct files.
-        Requires the signal loaded via load_signal() first; the sampling
-        rate comes from the stored signal metadata.
+    Saves a self-contained Plotly HTML report (spectrum in dB, automatic
+    peak detection, harmonic labels) to the reports/ directory with a
+    timestamped filename — consecutive runs produce distinct files.
+    Requires the signal loaded via load_signal() first; the sampling
+    rate comes from the stored signal metadata.
 
-        Args:
-            signal_id: ID of the stored signal (from load_signal).
-            max_freq: Maximum frequency to display (Hz). Default 5000 Hz
-            num_peaks: Number of peaks to detect and label. Default 15
-            rpm: Optional shaft speed in RPM — peaks at integer multiples
-                of rpm/60 Hz are labeled as 1x/2x/... harmonics.
-            ctx: MCP context. Unused — see this module's docstring on logging.
+    Args:
+        signal_id: ID of the stored signal (from load_signal).
+        max_freq: Maximum frequency to display (Hz). Default 5000 Hz
+        num_peaks: Number of peaks to detect and label. Default 15
+        rpm: Optional shaft speed in RPM — peaks at integer multiples
+            of rpm/60 Hz are labeled as 1x/2x/... harmonics.
+        ctx: MCP context. Unused — see this module's docstring on logging.
 
-        Returns:
-            Dictionary with file path, metadata, and summary (NO HTML content)
+    Returns:
+        Dictionary with file path, metadata, and summary (NO HTML content)
 
-        Raises:
-            ValueError: If the signal_id is not loaded, or the stored signal
-                has no sampling rate.
-        """
+    Raises:
+        ValueError: If the signal_id is not loaded, or the stored signal
+            has no sampling rate.
+    """
     logger.info(f"Generating FFT report for '{signal_id}'...")
 
     signal_data, info = resolve_signal(signal_id)
@@ -327,7 +340,7 @@ async def generate_fft_report(
     signal_windowed = signal_data * window
 
     fft_values = fft(signal_windowed)
-    frequencies = fftfreq(N, 1/sampling_rate)
+    frequencies = fftfreq(N, 1 / sampling_rate)
 
     # Positive frequencies only
     positive_idx = frequencies > 0
@@ -344,13 +357,14 @@ async def generate_fft_report(
         signal_data=signal_data,
         max_freq=max_freq,
         num_peaks=num_peaks,
-        rotation_freq=(rpm / 60.0) if rpm is not None else None
+        rotation_freq=(rpm / 60.0) if rpm is not None else None,
     )
 
-    logger.info(result['message'])
+    logger.info(result["message"])
     logger.info(f"Report location: {result['file_path']}")
 
     return result
+
 
 async def generate_envelope_report(
     signal_id: str,
@@ -359,44 +373,44 @@ async def generate_envelope_report(
     max_freq: float = 500.0,
     num_peaks: int = 15,
     bearing_freqs: Optional[dict[str, float]] = None,
-    ctx: Context | None = None
+    ctx: Context | None = None,
 ) -> dict[str, Any]:
     """
-        Generate professional envelope analysis report (HTML) for a stored signal.
+    Generate professional envelope analysis report (HTML) for a stored signal.
 
-        Generates a professional HTML report file instead of inline content.
-        Saves to reports/ directory. Requires the signal loaded via
-        load_signal() first; the sampling rate comes from the stored signal
-        metadata. Reference bearing frequencies (BPFO/BPFI/BSF/FTF) can be
-        passed explicitly or, if omitted, are read from the source file's
-        companion _metadata.json when present.
+    Generates a professional HTML report file instead of inline content.
+    Saves to reports/ directory. Requires the signal loaded via
+    load_signal() first; the sampling rate comes from the stored signal
+    metadata. Reference bearing frequencies (BPFO/BPFI/BSF/FTF) can be
+    passed explicitly or, if omitted, are read from the source file's
+    companion _metadata.json when present.
 
-        Args:
-            signal_id: ID of the stored signal (from load_signal).
-            filter_low: Bandpass filter low cutoff (Hz). Default 500 Hz
-            filter_high: Bandpass filter high cutoff (Hz). Default (None)
-                adapts to the signal: min(5000, Nyquist-1). An explicit value
-                above Nyquist is rejected, never clamped.
-            max_freq: Max envelope spectrum frequency to display. Default 500 Hz
-            num_peaks: Number of peaks to detect. Default 15
-            bearing_freqs: Optional dict with BPFO, BPFI, BSF, FTF
-            ctx: MCP context. Unused — see this module's docstring on logging.
+    Args:
+        signal_id: ID of the stored signal (from load_signal).
+        filter_low: Bandpass filter low cutoff (Hz). Default 500 Hz
+        filter_high: Bandpass filter high cutoff (Hz). Default (None)
+            adapts to the signal: min(5000, Nyquist-1). An explicit value
+            above Nyquist is rejected, never clamped.
+        max_freq: Max envelope spectrum frequency to display. Default 500 Hz
+        num_peaks: Number of peaks to detect. Default 15
+        bearing_freqs: Optional dict with BPFO, BPFI, BSF, FTF
+        ctx: MCP context. Unused — see this module's docstring on logging.
 
-        Returns:
-            Dictionary with file path, metadata, and summary (NO HTML content)
+    Returns:
+        Dictionary with file path, metadata, and summary (NO HTML content)
 
-        Raises:
-            ValueError: If the signal_id is not loaded, or the stored signal
-                has no sampling rate.
+    Raises:
+        ValueError: If the signal_id is not loaded, or the stored signal
+            has no sampling rate.
 
-        Example:
-            >>> # Bearing frequencies computed for YOUR bearing/rpm (here: 6205
-            >>> # per CWRU geometry at 1797 RPM)
-            >>> result = generate_envelope_report(
-            ...     "real_train_OuterRaceFault_1",
-            ...     bearing_freqs={"BPFO": 107.36, "BPFI": 162.19, "BSF": 70.58, "FTF": 11.93}
-            ... )
-        """
+    Example:
+        >>> # Bearing frequencies computed for YOUR bearing/rpm (here: 6205
+        >>> # per CWRU geometry at 1797 RPM)
+        >>> result = generate_envelope_report(
+        ...     "real_train_OuterRaceFault_1",
+        ...     bearing_freqs={"BPFO": 107.36, "BPFI": 162.19, "BSF": 70.58, "FTF": 11.93}
+        ... )
+    """
     logger.info(f"Generating envelope analysis report for '{signal_id}'...")
 
     signal_data, info = resolve_signal(signal_id)
@@ -424,14 +438,14 @@ async def generate_envelope_report(
                 "BPFO": metadata.get("BPFO"),
                 "BPFI": metadata.get("BPFI"),
                 "BSF": metadata.get("BSF"),
-                "FTF": metadata.get("FTF")
+                "FTF": metadata.get("FTF"),
             }
 
     # Bandpass filter (a corner exactly AT Nyquist is realized 1 Hz below
     # it — a digital filter corner cannot sit at Nyquist)
     nyquist = sampling_rate / 2
     high_norm = min(filter_high, nyquist - 1.0) / nyquist
-    sos = butter(4, [filter_low / nyquist, high_norm], btype='band', output='sos')
+    sos = butter(4, [filter_low / nyquist, high_norm], btype="band", output="sos")
     filtered_signal = sosfiltfilt(sos, signal_data)
 
     # Envelope via Hilbert
@@ -441,7 +455,7 @@ async def generate_envelope_report(
     # Envelope spectrum
     N = len(envelope)
     env_fft = fft(envelope)
-    env_frequencies = fftfreq(N, 1/sampling_rate)
+    env_frequencies = fftfreq(N, 1 / sampling_rate)
 
     positive_idx = env_frequencies > 0
     env_frequencies = env_frequencies[positive_idx]
@@ -458,48 +472,51 @@ async def generate_envelope_report(
         env_magnitudes=env_magnitudes,
         bearing_freqs=bearing_freqs,
         max_freq=max_freq,
-        num_peaks=num_peaks
+        num_peaks=num_peaks,
     )
 
-    logger.info(result['message'])
+    logger.info(result["message"])
     logger.info(f"Report location: {result['file_path']}")
-    if result.get('bearing_matches'):
-        logger.info(f"Bearing frequency matches: {', '.join(result['bearing_matches'])}")
+    if result.get("bearing_matches"):
+        logger.info(
+            f"Bearing frequency matches: {', '.join(result['bearing_matches'])}"
+        )
 
     return result
+
 
 async def generate_iso_report(
     signal_id: str,
     machine_group: Literal[1, 2] = 2,
     support_type: Literal["rigid", "flexible"] = "rigid",
     rpm: Optional[float] = None,
-    ctx: Context | None = None
+    ctx: Context | None = None,
 ) -> dict[str, Any]:
     """
-        Generate an ISO 20816-3 evaluation report (HTML) for a stored signal.
+    Generate an ISO 20816-3 evaluation report (HTML) for a stored signal.
 
-        Saves a self-contained Plotly HTML report (color-coded A-D zone
-        chart with the measured RMS marker, boundaries, severity text) to
-        the reports/ directory with a timestamped filename. The evaluation
-        itself is delegated to assess_severity — requires the signal loaded
-        via load_signal() first with sampling rate AND a declared unit
-        (units are never guessed).
+    Saves a self-contained Plotly HTML report (color-coded A-D zone
+    chart with the measured RMS marker, boundaries, severity text) to
+    the reports/ directory with a timestamped filename. The evaluation
+    itself is delegated to assess_severity — requires the signal loaded
+    via load_signal() first with sampling rate AND a declared unit
+    (units are never guessed).
 
-        Args:
-            signal_id: ID of the stored signal (from load_signal).
-            machine_group: 1 (large, >300 kW) or 2 (medium, 15-300 kW)
-            support_type: 'rigid' or 'flexible'
-            rpm: Operating speed in RPM (optional; selects the ISO band's
-                lower edge below 600 RPM)
-            ctx: MCP context. Unused — see this module's docstring on logging.
+    Args:
+        signal_id: ID of the stored signal (from load_signal).
+        machine_group: 1 (large, >300 kW) or 2 (medium, 15-300 kW)
+        support_type: 'rigid' or 'flexible'
+        rpm: Operating speed in RPM (optional; selects the ISO band's
+            lower edge below 600 RPM)
+        ctx: MCP context. Unused — see this module's docstring on logging.
 
-        Returns:
-            Dictionary with file path, metadata, and summary (NO HTML content)
+    Returns:
+        Dictionary with file path, metadata, and summary (NO HTML content)
 
-        Raises:
-            ValueError: If the signal_id is not loaded, or the stored signal
-                has no sampling rate or no declared unit.
-        """
+    Raises:
+        ValueError: If the signal_id is not loaded, or the stored signal
+            has no sampling rate or no declared unit.
+    """
     logger.info(f"Generating ISO 20816-3 report for '{signal_id}'...")
 
     # Perform ISO evaluation via the unified severity tool (U9 merge).
@@ -508,7 +525,7 @@ async def generate_iso_report(
         signal_id=signal_id,
         machine_group=machine_group,
         support_type=support_type,
-        rpm=rpm
+        rpm=rpm,
     )
 
     # Map the unified model onto the report template's expected keys.
@@ -529,39 +546,37 @@ async def generate_iso_report(
     }
 
     # Generate and save report (signal_id is the report's signal label)
-    result = save_iso_report(
-        signal_file=signal_id,
-        iso_result=iso_dict
-    )
+    result = save_iso_report(signal_file=signal_id, iso_result=iso_dict)
 
-    logger.info(result['message'])
+    logger.info(result["message"])
     logger.info(f"Report location: {result['file_path']}")
 
     return result
+
 
 def list_html_reports(
     file_name: Optional[str] = None,
 ) -> list[dict[str, Any]] | dict[str, Any]:
     """
-        List HTML reports, or get one report's embedded metadata.
+    List HTML reports, or get one report's embedded metadata.
 
-        Without file_name: lists every report in reports/ with file name,
-        type, signal, and size. With file_name: returns that report's
-        embedded metadata block (absorbed get_report_info). Never returns
-        HTML content — metadata only, to avoid token consumption.
+    Without file_name: lists every report in reports/ with file name,
+    type, signal, and size. With file_name: returns that report's
+    embedded metadata block (absorbed get_report_info). Never returns
+    HTML content — metadata only, to avoid token consumption.
 
-        Args:
-            file_name: Optional report filename inside reports/ — returns
-                its metadata instead of the listing.
+    Args:
+        file_name: Optional report filename inside reports/ — returns
+            its metadata instead of the listing.
 
-        Returns:
-            List of report summaries (no file_name), or a dict with the
-            single report's metadata (file_name given).
+    Returns:
+        List of report summaries (no file_name), or a dict with the
+        single report's metadata (file_name given).
 
-        Raises:
-            ValueError: If file_name escapes the reports directory, does
-                not exist, or carries no metadata block.
-        """
+    Raises:
+        ValueError: If file_name escapes the reports directory, does
+            not exist, or carries no metadata block.
+    """
     if file_name is not None:
         # Single-report route (former get_report_info). The read path stays
         # on read_report_metadata, which contains the user-supplied name via
@@ -569,54 +584,55 @@ def list_html_reports(
         return read_report_metadata(file_name)
     return list_reports()
 
+
 async def generate_pca_visualization_report(
     model_name: str,
     test_signal_ids: Optional[list[str]] = None,
     true_labels: Optional[dict[str, str]] = None,
     segment_duration: float = 0.1,
     overlap_ratio: float = 0.5,
-    ctx: Context | None = None
+    ctx: Context | None = None,
 ) -> dict[str, Any]:
     """
-        Generate PCA visualization HTML report showing test data in 2D PCA space.
+    Generate PCA visualization HTML report showing test data in 2D PCA space.
 
-        Creates interactive scatter plot with:
-        - Test/prediction data (green = predicted healthy, red = predicted anomaly)
-        - PC1 vs PC2 axes with variance explained
-        - Hover information showing segment details and prediction status
+    Creates interactive scatter plot with:
+    - Test/prediction data (green = predicted healthy, red = predicted anomaly)
+    - PC1 vs PC2 axes with variance explained
+    - Hover information showing segment details and prediction status
 
-        **IMPORTANT**: Labels show MODEL PREDICTIONS, not ground truth. Use `true_labels`
-        parameter to provide actual labels for validation visualization.
+    **IMPORTANT**: Labels show MODEL PREDICTIONS, not ground truth. Use `true_labels`
+    parameter to provide actual labels for validation visualization.
 
-        Requires the test signals loaded via load_signal() first; each
-        signal's sampling rate comes from its stored metadata.
+    Requires the test signals loaded via load_signal() first; each
+    signal's sampling rate comes from its stored metadata.
 
-        Args:
-            model_name: Name of trained model (e.g., 'bearing_health_model')
-            test_signal_ids: Optional list of stored signal IDs to predict and visualize
-            true_labels: Optional dict mapping signal_ids to true labels.
-                        Format: {"real_test_baseline_3": "healthy",
-                                 "real_test_InnerRaceFault_vload_6": "faulty"}
-                        When provided, legend shows both true and predicted labels for validation.
-            segment_duration: Segment duration in seconds (default: 0.1s for ML)
-            overlap_ratio: Overlap ratio 0-1 (default: 0.5)
-            ctx: MCP context. Unused — see this module's docstring on logging.
+    Args:
+        model_name: Name of trained model (e.g., 'bearing_health_model')
+        test_signal_ids: Optional list of stored signal IDs to predict and visualize
+        true_labels: Optional dict mapping signal_ids to true labels.
+                    Format: {"real_test_baseline_3": "healthy",
+                             "real_test_InnerRaceFault_vload_6": "faulty"}
+                    When provided, legend shows both true and predicted labels for validation.
+        segment_duration: Segment duration in seconds (default: 0.1s for ML)
+        overlap_ratio: Overlap ratio 0-1 (default: 0.5)
+        ctx: MCP context. Unused — see this module's docstring on logging.
 
-        Returns:
-            Dictionary with file path, metadata, and summary (includes validation metrics if true_labels provided)
+    Returns:
+        Dictionary with file path, metadata, and summary (includes validation metrics if true_labels provided)
 
-        Raises:
-            FileNotFoundError: If the model does not exist.
-            ValueError: If a signal_id is not loaded or has no sampling rate.
+    Raises:
+        FileNotFoundError: If the model does not exist.
+        ValueError: If a signal_id is not loaded or has no sampling rate.
 
-        Example (with validation):
-            >>> generate_pca_visualization_report(
-            ...     model_name="bearing_health_model",
-            ...     test_signal_ids=["real_test_baseline_3", "real_test_InnerRaceFault_vload_6"],
-            ...     true_labels={"real_test_baseline_3": "healthy",
-            ...                  "real_test_InnerRaceFault_vload_6": "faulty"}
-            ... )
-        """
+    Example (with validation):
+        >>> generate_pca_visualization_report(
+        ...     model_name="bearing_health_model",
+        ...     test_signal_ids=["real_test_baseline_3", "real_test_InnerRaceFault_vload_6"],
+        ...     true_labels={"real_test_baseline_3": "healthy",
+        ...                  "real_test_InnerRaceFault_vload_6": "faulty"}
+        ... )
+    """
     logger.info(f"Generating PCA visualization for model '{model_name}'...")
 
     # Load model, scaler, PCA — validate the name and contain every derived
@@ -630,13 +646,13 @@ async def generate_pca_visualization_report(
     if not model_path.exists():
         raise FileNotFoundError(f"Model not found: {model_path}")
 
-    with open(model_path, 'rb') as f:
+    with open(model_path, "rb") as f:
         model = pickle.load(f)
-    with open(scaler_path, 'rb') as f:
+    with open(scaler_path, "rb") as f:
         scaler = pickle.load(f)
-    with open(pca_path, 'rb') as f:
+    with open(pca_path, "rb") as f:
         pca = pickle.load(f)
-    with open(metadata_path, 'r') as f:
+    with open(metadata_path, "r") as f:
         model_metadata = json.load(f)
 
     # Collect training data (reconstruct from model metadata if available)
@@ -670,8 +686,10 @@ async def generate_pca_visualization_report(
                 )
 
             features_list = []
-            for start in range(0, len(signal_data) - segment_length_samples + 1, hop_length):
-                segment = signal_data[start:start + segment_length_samples]
+            for start in range(
+                0, len(signal_data) - segment_length_samples + 1, hop_length
+            ):
+                segment = signal_data[start : start + segment_length_samples]
                 features = extract_time_domain_features(segment)
                 features_list.append(features)
 
@@ -684,20 +702,18 @@ async def generate_pca_visualization_report(
             # Predict
             predictions = model.predict(X_pca)
 
-            test_data_list.append({
-                'signal_id': sid,
-                'pca_data': X_pca,
-                'predictions': predictions
-            })
+            test_data_list.append(
+                {"signal_id": sid, "pca_data": X_pca, "predictions": predictions}
+            )
 
     # Create Plotly figure
     fig = go.Figure()
 
     # Plot test data
     for test_data in test_data_list:
-        X_pca = test_data['pca_data']
-        predictions = test_data['predictions']
-        sid = test_data['signal_id']
+        X_pca = test_data["pca_data"]
+        predictions = test_data["predictions"]
+        sid = test_data["signal_id"]
 
         # Determine true label if provided (keyed by signal_id)
         true_label = None
@@ -711,40 +727,44 @@ async def generate_pca_visualization_report(
         # Create legend labels
         if true_label:
             # Show both true and predicted labels for validation
-            healthy_legend = f'{sid} (True: {true_label}, Predicted: Healthy)'
-            anomaly_legend = f'{sid} (True: {true_label}, Predicted: Anomaly)'
+            healthy_legend = f"{sid} (True: {true_label}, Predicted: Healthy)"
+            anomaly_legend = f"{sid} (True: {true_label}, Predicted: Anomaly)"
 
             # Update hover template to show both
-            healthy_hover = f'<b>{sid}</b><br>PC1: %{{x:.3f}}<br>PC2: %{{y:.3f}}<br>True Label: {true_label}<br>Predicted: Healthy<extra></extra>'
-            anomaly_hover = f'<b>{sid}</b><br>PC1: %{{x:.3f}}<br>PC2: %{{y:.3f}}<br>True Label: {true_label}<br>Predicted: ANOMALY<extra></extra>'
+            healthy_hover = f"<b>{sid}</b><br>PC1: %{{x:.3f}}<br>PC2: %{{y:.3f}}<br>True Label: {true_label}<br>Predicted: Healthy<extra></extra>"
+            anomaly_hover = f"<b>{sid}</b><br>PC1: %{{x:.3f}}<br>PC2: %{{y:.3f}}<br>True Label: {true_label}<br>Predicted: ANOMALY<extra></extra>"
         else:
             # Show only predictions (no ground truth assumed)
-            healthy_legend = f'{sid} (Predicted: Healthy)'
-            anomaly_legend = f'{sid} (Predicted: Anomaly)'
+            healthy_legend = f"{sid} (Predicted: Healthy)"
+            anomaly_legend = f"{sid} (Predicted: Anomaly)"
 
             # Hover template clarifies these are predictions
-            healthy_hover = f'<b>{sid}</b><br>PC1: %{{x:.3f}}<br>PC2: %{{y:.3f}}<br>Predicted: Healthy<extra></extra>'
-            anomaly_hover = f'<b>{sid}</b><br>PC1: %{{x:.3f}}<br>PC2: %{{y:.3f}}<br>Predicted: ANOMALY<extra></extra>'
+            healthy_hover = f"<b>{sid}</b><br>PC1: %{{x:.3f}}<br>PC2: %{{y:.3f}}<br>Predicted: Healthy<extra></extra>"
+            anomaly_hover = f"<b>{sid}</b><br>PC1: %{{x:.3f}}<br>PC2: %{{y:.3f}}<br>Predicted: ANOMALY<extra></extra>"
 
         if np.any(healthy_idx):
-            fig.add_trace(go.Scatter(
-                x=X_pca[healthy_idx, 0],
-                y=X_pca[healthy_idx, 1],
-                mode='markers',
-                name=healthy_legend,
-                marker=dict(color='green', size=8, opacity=0.6),
-                hovertemplate=healthy_hover
-            ))
+            fig.add_trace(
+                go.Scatter(
+                    x=X_pca[healthy_idx, 0],
+                    y=X_pca[healthy_idx, 1],
+                    mode="markers",
+                    name=healthy_legend,
+                    marker=dict(color="green", size=8, opacity=0.6),
+                    hovertemplate=healthy_hover,
+                )
+            )
 
         if np.any(anomaly_idx):
-            fig.add_trace(go.Scatter(
-                x=X_pca[anomaly_idx, 0],
-                y=X_pca[anomaly_idx, 1],
-                mode='markers',
-                name=anomaly_legend,
-                marker=dict(color='red', size=8, opacity=0.6, symbol='x'),
-                hovertemplate=anomaly_hover
-            ))
+            fig.add_trace(
+                go.Scatter(
+                    x=X_pca[anomaly_idx, 0],
+                    y=X_pca[anomaly_idx, 1],
+                    mode="markers",
+                    name=anomaly_legend,
+                    marker=dict(color="red", size=8, opacity=0.6, symbol="x"),
+                    hovertemplate=anomaly_hover,
+                )
+            )
 
     # Layout
     variance_explained = pca.explained_variance_ratio_
@@ -752,43 +772,43 @@ async def generate_pca_visualization_report(
         title=f"PCA Visualization - {model_name}",
         xaxis_title=f"PC1 ({variance_explained[0]*100:.1f}% variance)",
         yaxis_title=f"PC2 ({variance_explained[1]*100:.1f}% variance)",
-        hovermode='closest',
-        template='plotly_white',
+        hovermode="closest",
+        template="plotly_white",
         width=1000,
         height=700,
-        showlegend=True
+        showlegend=True,
     )
 
     # Save HTML report (timestamped: consecutive runs never overwrite)
-    output_file = REPORTS_DIR / timestamped_report_name(
-        "pca_visualization", model_name
-    )
+    output_file = REPORTS_DIR / timestamped_report_name("pca_visualization", model_name)
     fig.write_html(str(output_file))
 
     # Prepare metadata - convert all numpy types to Python natives
     metadata = {
-        'report_type': 'pca_visualization',
-        'model_name': model_name,
-        'test_signals': test_signal_ids or [],
-        'pca_components': int(pca.n_components_),
-        'variance_explained_pc1': float(variance_explained[0]),
-        'variance_explained_pc2': float(variance_explained[1]),
-        'total_variance_2d': float(variance_explained[0] + variance_explained[1]),
-        'segment_duration': float(segment_duration),
-        'sampling_rate': (
+        "report_type": "pca_visualization",
+        "model_name": model_name,
+        "test_signals": test_signal_ids or [],
+        "pca_components": int(pca.n_components_),
+        "variance_explained_pc1": float(variance_explained[0]),
+        "variance_explained_pc2": float(variance_explained[1]),
+        "total_variance_2d": float(variance_explained[0] + variance_explained[1]),
+        "segment_duration": float(segment_duration),
+        "sampling_rate": (
             float(last_sampling_rate) if last_sampling_rate is not None else None
         ),
-        'validation_mode': true_labels is not None
+        "validation_mode": true_labels is not None,
     }
 
     # Calculate summary statistics - convert numpy int to Python int
-    total_segments = int(sum(len(td['predictions']) for td in test_data_list))
-    total_anomalies = int(sum(np.sum(td['predictions'] == -1) for td in test_data_list))
+    total_segments = int(sum(len(td["predictions"]) for td in test_data_list))
+    total_anomalies = int(sum(np.sum(td["predictions"] == -1) for td in test_data_list))
 
     summary = {
-        'total_segments': int(total_segments),
-        'total_anomalies': int(total_anomalies),
-        'anomaly_ratio': float(total_anomalies / total_segments) if total_segments > 0 else 0.0
+        "total_segments": int(total_segments),
+        "total_anomalies": int(total_anomalies),
+        "anomaly_ratio": (
+            float(total_anomalies / total_segments) if total_segments > 0 else 0.0
+        ),
     }
 
     # Calculate validation metrics if true labels provided
@@ -798,14 +818,16 @@ async def generate_pca_visualization_report(
         per_file_accuracy = {}
 
         for test_data in test_data_list:
-            sid = test_data['signal_id']
+            sid = test_data["signal_id"]
 
             if sid in true_labels:
-                predictions = test_data['predictions']
+                predictions = test_data["predictions"]
                 true_label = true_labels[sid].lower()
 
                 # Determine expected predictions (1 = healthy, -1 = anomaly)
-                expected_prediction = 1 if true_label in ['healthy', 'normal', 'baseline'] else -1
+                expected_prediction = (
+                    1 if true_label in ["healthy", "normal", "baseline"] else -1
+                )
 
                 # Count correct predictions
                 file_correct = int(np.sum(predictions == expected_prediction))
@@ -814,88 +836,115 @@ async def generate_pca_visualization_report(
                 total_with_labels += file_total
 
                 per_file_accuracy[sid] = {
-                    'correct': file_correct,
-                    'total': file_total,
-                    'accuracy': float(file_correct / file_total) if file_total > 0 else 0.0,
-                    'true_label': true_label
+                    "correct": file_correct,
+                    "total": file_total,
+                    "accuracy": (
+                        float(file_correct / file_total) if file_total > 0 else 0.0
+                    ),
+                    "true_label": true_label,
                 }
 
-        overall_accuracy = float(correct_predictions / total_with_labels) if total_with_labels > 0 else 0.0
+        overall_accuracy = (
+            float(correct_predictions / total_with_labels)
+            if total_with_labels > 0
+            else 0.0
+        )
 
-        summary['validation_metrics'] = {
-            'overall_accuracy': overall_accuracy,
-            'total_labeled_segments': total_with_labels,
-            'correct_predictions': correct_predictions,
-            'per_file_accuracy': per_file_accuracy
+        summary["validation_metrics"] = {
+            "overall_accuracy": overall_accuracy,
+            "total_labeled_segments": total_with_labels,
+            "correct_predictions": correct_predictions,
+            "per_file_accuracy": per_file_accuracy,
         }
 
         logger.info(f"Validation Mode: Overall accuracy = {overall_accuracy*100:.2f}%")
         for fname, acc_info in per_file_accuracy.items():
-            logger.info(f"  - {fname}: {acc_info['accuracy']*100:.1f}% ({acc_info['correct']}/{acc_info['total']})")
+            logger.info(
+                f"  - {fname}: {acc_info['accuracy']*100:.1f}% ({acc_info['correct']}/{acc_info['total']})"
+            )
 
     message = f"PCA visualization report saved: {output_file.name}"
     logger.info(message)
     logger.info(f"PC1+PC2 explain {metadata['total_variance_2d']*100:.1f}% of variance")
-    logger.info(f"Analyzed {total_segments} segments, {total_anomalies} anomalies detected")
+    logger.info(
+        f"Analyzed {total_segments} segments, {total_anomalies} anomalies detected"
+    )
 
     return {
-        'file_path': str(output_file),
-        'file_name': output_file.name,
-        'message': message,
-        'metadata': metadata,
-        'summary': summary
+        "file_path": str(output_file),
+        "file_name": output_file.name,
+        "message": message,
+        "metadata": metadata,
+        "summary": summary,
     }
+
 
 async def generate_feature_comparison_report(
     signal_groups: dict[str, list[str]],
     segment_duration: float = 0.1,
     overlap_ratio: float = 0.5,
     features_to_plot: Optional[list[str]] = None,
-    ctx: Context | None = None
+    ctx: Context | None = None,
 ) -> dict[str, Any]:
     """
-        Generate feature comparison report with violin plots comparing time-domain features.
+    Generate feature comparison report with violin plots comparing time-domain features.
 
-        Creates interactive HTML report with violin plots showing distribution of 17
-        time-domain features across different signal groups (e.g., Healthy vs Faulty).
-        Requires every signal loaded via load_signal() first; each signal's
-        sampling rate comes from its stored metadata.
+    Creates interactive HTML report with violin plots showing distribution of 17
+    time-domain features across different signal groups (e.g., Healthy vs Faulty).
+    Requires every signal loaded via load_signal() first; each signal's
+    sampling rate comes from its stored metadata.
 
-        **Strategy**: Same HTML report approach as other reports. Useful for understanding
-        which features are most discriminative for fault detection.
+    **Strategy**: Same HTML report approach as other reports. Useful for understanding
+    which features are most discriminative for fault detection.
 
-        Args:
-            signal_groups: Dictionary mapping group names to lists of stored
-                          signal IDs.
-                          Example: {"Healthy": ["real_train_baseline_1"],
-                                   "Faulty": ["real_train_OuterRaceFault_1"]}
-            segment_duration: Segment duration in seconds (default: 0.1s for ML)
-            overlap_ratio: Overlap ratio 0-1 (default: 0.5)
-            features_to_plot: List of feature names to plot (default: all 17 features)
-            ctx: MCP context. Unused — see this module's docstring on logging.
+    Args:
+        signal_groups: Dictionary mapping group names to lists of stored
+                      signal IDs.
+                      Example: {"Healthy": ["real_train_baseline_1"],
+                               "Faulty": ["real_train_OuterRaceFault_1"]}
+        segment_duration: Segment duration in seconds (default: 0.1s for ML)
+        overlap_ratio: Overlap ratio 0-1 (default: 0.5)
+        features_to_plot: List of feature names to plot (default: all 17 features)
+        ctx: MCP context. Unused — see this module's docstring on logging.
 
-        Returns:
-            Dictionary with file path, metadata, and summary
+    Returns:
+        Dictionary with file path, metadata, and summary
 
-        Raises:
-            ValueError: If a signal_id is not loaded or has no sampling rate.
+    Raises:
+        ValueError: If a signal_id is not loaded or has no sampling rate.
 
-        Example:
-            >>> generate_feature_comparison_report(
-            ...     signal_groups={
-            ...         "Healthy": ["real_train_baseline_1", "real_train_baseline_2"],
-            ...         "Inner Fault": ["real_train_InnerRaceFault_vload_1"],
-            ...         "Outer Fault": ["real_train_OuterRaceFault_1"]
-            ...     }
-            ... )
-        """
-    logger.info(f"Generating feature comparison report for {len(signal_groups)} groups...")
+    Example:
+        >>> generate_feature_comparison_report(
+        ...     signal_groups={
+        ...         "Healthy": ["real_train_baseline_1", "real_train_baseline_2"],
+        ...         "Inner Fault": ["real_train_InnerRaceFault_vload_1"],
+        ...         "Outer Fault": ["real_train_OuterRaceFault_1"]
+        ...     }
+        ... )
+    """
+    logger.info(
+        f"Generating feature comparison report for {len(signal_groups)} groups..."
+    )
 
     # All possible features
     all_feature_names = [
-        'mean', 'std', 'var', 'mean_abs', 'rms', 'max', 'min', 'range',
-        'crest_factor', 'kurtosis', 'skewness', 'shape_factor', 'impulse_factor',
-        'clearance_factor', 'power', 'entropy', 'zero_crossing_rate'
+        "mean",
+        "std",
+        "var",
+        "mean_abs",
+        "rms",
+        "max",
+        "min",
+        "range",
+        "crest_factor",
+        "kurtosis",
+        "skewness",
+        "shape_factor",
+        "impulse_factor",
+        "clearance_factor",
+        "power",
+        "entropy",
+        "zero_crossing_rate",
     ]
 
     if features_to_plot is None:
@@ -917,8 +966,10 @@ async def generate_feature_comparison_report(
             segment_length_samples = int(segment_duration * fs)
             hop_length = int(segment_length_samples * (1 - overlap_ratio))
 
-            for start in range(0, len(signal_data) - segment_length_samples + 1, hop_length):
-                segment = signal_data[start:start + segment_length_samples]
+            for start in range(
+                0, len(signal_data) - segment_length_samples + 1, hop_length
+            ):
+                segment = signal_data[start : start + segment_length_samples]
                 features = extract_time_domain_features(segment)
                 all_features_for_group.append(features)
 
@@ -934,10 +985,10 @@ async def generate_feature_comparison_report(
         cols=cols,
         subplot_titles=features_to_plot,
         vertical_spacing=0.12,
-        horizontal_spacing=0.10
+        horizontal_spacing=0.10,
     )
 
-    colors = ['blue', 'red', 'green', 'orange', 'purple', 'brown', 'pink']
+    colors = ["blue", "red", "green", "orange", "purple", "brown", "pink"]
 
     for idx, feature in enumerate(features_to_plot):
         row = idx // 3 + 1
@@ -956,10 +1007,10 @@ async def generate_feature_comparison_report(
                     fillcolor=colors[group_idx % len(colors)],
                     opacity=0.6,
                     showlegend=(idx == 0),  # Show legend only once
-                    hovertemplate=f'<b>{group_name}</b><br>{feature}: %{{y:.4f}}<extra></extra>'
+                    hovertemplate=f"<b>{group_name}</b><br>{feature}: %{{y:.4f}}<extra></extra>",
                 ),
                 row=row,
-                col=col
+                col=col,
             )
 
     # Update layout
@@ -967,15 +1018,9 @@ async def generate_feature_comparison_report(
         title="Time-Domain Feature Comparison (Violin Plots)",
         height=400 * rows,
         width=1400,
-        template='plotly_white',
+        template="plotly_white",
         showlegend=True,
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="center",
-            x=0.5
-        )
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5),
     )
 
     # Save HTML report (timestamped: consecutive runs never overwrite)
@@ -989,23 +1034,25 @@ async def generate_feature_comparison_report(
 
     # Prepare metadata
     metadata = {
-        'report_type': 'feature_comparison',
-        'groups': {name: len(ids) for name, ids in signal_groups.items()},
-        'features_plotted': features_to_plot,
-        'segment_duration': segment_duration,
-        'sampling_rate': last_sampling_rate,
-        'segments_per_group': {name: len(df) for name, df in group_features.items()}
+        "report_type": "feature_comparison",
+        "groups": {name: len(ids) for name, ids in signal_groups.items()},
+        "features_plotted": features_to_plot,
+        "segment_duration": segment_duration,
+        "sampling_rate": last_sampling_rate,
+        "segments_per_group": {name: len(df) for name, df in group_features.items()},
     }
 
     message = f"Feature comparison report saved: {output_file.name}"
     logger.info(message)
-    logger.info(f"Compared {len(signal_groups)} groups across {len(features_to_plot)} features")
+    logger.info(
+        f"Compared {len(signal_groups)} groups across {len(features_to_plot)} features"
+    )
 
     return {
-        'file_path': str(output_file),
-        'file_name': output_file.name,
-        'message': message,
-        'metadata': metadata
+        "file_path": str(output_file),
+        "file_name": output_file.name,
+        "message": message,
+        "metadata": metadata,
     }
 
 

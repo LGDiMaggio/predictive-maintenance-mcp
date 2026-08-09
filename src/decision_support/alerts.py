@@ -55,8 +55,7 @@ def check_alert_thresholds(
         "A": "Vibration within normal limits (Zone A).",
         "B": f"Vibration exceeds {bounds['AB']} mm/s — elevated level (Zone B).",
         "C": (
-            f"Vibration exceeds {bounds['BC']} mm/s — "
-            "unsatisfactory level (Zone C)."
+            f"Vibration exceeds {bounds['BC']} mm/s — " "unsatisfactory level (Zone C)."
         ),
         "D": (
             f"Vibration exceeds {bounds['CD']} mm/s — "
@@ -110,6 +109,7 @@ def check_custom_alert(rms_velocity: float, thresholds: dict) -> dict:
 
 # ---- internal helper -------------------------------------------------------
 
+
 def _classify_custom(
     rms_velocity: float,
     a_upper: float,
@@ -130,8 +130,7 @@ def _classify_custom(
             "zone": "B",
             "exceeded_threshold": a_upper,
             "message": (
-                f"Vibration exceeds {a_upper} mm/s — "
-                "elevated level (Zone B)."
+                f"Vibration exceeds {a_upper} mm/s — " "elevated level (Zone B)."
             ),
         }
     if rms_velocity <= c_upper:
@@ -140,8 +139,7 @@ def _classify_custom(
             "zone": "C",
             "exceeded_threshold": b_upper,
             "message": (
-                f"Vibration exceeds {b_upper} mm/s — "
-                "unsatisfactory level (Zone C)."
+                f"Vibration exceeds {b_upper} mm/s — " "unsatisfactory level (Zone C)."
             ),
         }
     return {

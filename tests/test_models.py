@@ -25,13 +25,15 @@ from predictive_maintenance_mcp.models import (
     AnomalyPredictionResult,
 )
 
-
 # ── SpectralPeak ───────────────────────────────────────────────────────────
+
 
 class TestSpectralPeak:
 
     def test_creation(self):
-        p = SpectralPeak(frequency_hz=120.5, magnitude=0.015, magnitude_db=5.2, note="1x")
+        p = SpectralPeak(
+            frequency_hz=120.5, magnitude=0.015, magnitude_db=5.2, note="1x"
+        )
         assert p.frequency_hz == 120.5
         assert p.note == "1x"
 
@@ -47,6 +49,7 @@ class TestSpectralPeak:
 
 
 # ── FFTResult ──────────────────────────────────────────────────────────────
+
 
 class TestFFTResult:
 
@@ -88,6 +91,7 @@ class TestFFTResult:
 
 # ── EnvelopeResult ─────────────────────────────────────────────────────────
 
+
 class TestEnvelopeResult:
 
     def test_creation(self):
@@ -114,14 +118,21 @@ class TestEnvelopeResult:
 
 # ── StatisticalResult ──────────────────────────────────────────────────────
 
+
 class TestStatisticalResult:
 
     def test_creation_with_declared_unit(self):
         r = StatisticalResult(
-            rms=5.234, peak_to_peak=18.5, peak=9.25,
-            crest_factor=1.77, kurtosis=3.0, skewness=0.01,
-            mean=0.001, std_dev=5.234,
-            signal_unit="g", unit_note="Signal unit declared as 'g' in metadata.",
+            rms=5.234,
+            peak_to_peak=18.5,
+            peak=9.25,
+            crest_factor=1.77,
+            kurtosis=3.0,
+            skewness=0.01,
+            mean=0.001,
+            std_dev=5.234,
+            signal_unit="g",
+            unit_note="Signal unit declared as 'g' in metadata.",
         )
         assert r.rms == 5.234
         assert r.signal_unit == "g"
@@ -129,9 +140,14 @@ class TestStatisticalResult:
     def test_undeclared_unit_is_none(self):
         """The unit is None when not declared — never guessed from amplitude."""
         r = StatisticalResult(
-            rms=5.234, peak_to_peak=18.5, peak=9.25,
-            crest_factor=1.77, kurtosis=3.0, skewness=0.01,
-            mean=0.001, std_dev=5.234,
+            rms=5.234,
+            peak_to_peak=18.5,
+            peak=9.25,
+            crest_factor=1.77,
+            kurtosis=3.0,
+            skewness=0.01,
+            mean=0.001,
+            std_dev=5.234,
             unit_note="Signal unit NOT declared.",
         )
         assert r.signal_unit is None
@@ -142,13 +158,17 @@ class TestStatisticalResult:
 # (Replaces the removed orphaned SignalInfo model — StoredSignalInfo is the
 #  live signal-metadata contract.)
 
+
 class TestStoredSignalInfo:
 
     def _make(self, **kwargs):
         base = dict(
-            signal_id="sig1", filepath="/data/test.csv",
-            load_timestamp="2026-07-13T00:00:00", shape=[10000],
-            num_samples=10000, size_bytes=80000,
+            signal_id="sig1",
+            filepath="/data/test.csv",
+            load_timestamp="2026-07-13T00:00:00",
+            shape=[10000],
+            num_samples=10000,
+            size_bytes=80000,
         )
         base.update(kwargs)
         return StoredSignalInfo(**base)
@@ -171,6 +191,7 @@ class TestStoredSignalInfo:
 
 
 # ── Canonical fault vocabulary (drift guard) ───────────────────────────────
+
 
 class TestFaultVocabularySync:
 
@@ -200,14 +221,19 @@ class TestFaultVocabularySync:
 
 # ── VibrationSeverityResult (unified severity model) ─────────────────────
 
+
 class TestVibrationSeverityResult:
 
     def _make(self, zone="B", **kwargs):
         base = dict(
-            signal_id="s", rms_velocity_mm_s=2.0, machine_group=2,
+            signal_id="s",
+            rms_velocity_mm_s=2.0,
+            machine_group=2,
             support_type="rigid",
-            zone=zone, zone_description="desc",
-            severity_level="Acceptable", color_code="yellow",
+            zone=zone,
+            zone_description="desc",
+            severity_level="Acceptable",
+            color_code="yellow",
             boundaries={"AB": 1.4, "BC": 2.8, "CD": 4.5},
             frequency_range="10-1000 Hz",
             unit_conversion_performed=False,
@@ -236,6 +262,7 @@ class TestVibrationSeverityResult:
     def test_old_iso20816result_model_removed(self):
         """U9 clean cut: the duplicate ISO result model is gone."""
         import predictive_maintenance_mcp.models as models
+
         assert not hasattr(models, "ISO20816Result")
         assert not hasattr(models, "AlertResult")
         assert not hasattr(models, "EnvelopeSpectrumResult")
@@ -243,6 +270,7 @@ class TestVibrationSeverityResult:
 
 
 # ── ISOSeverityRefusal ────────────────────────────────────────────────────
+
 
 class TestISOSeverityRefusal:
 
@@ -263,7 +291,9 @@ class TestISOSeverityRefusal:
 
     def test_json_roundtrip(self):
         r = ISOSeverityRefusal(
-            signal_id="s", reason="why", remedy="how",
+            signal_id="s",
+            reason="why",
+            remedy="how",
         )
         restored = ISOSeverityRefusal.model_validate_json(r.model_dump_json())
         assert restored.status == "refused"
@@ -272,10 +302,15 @@ class TestISOSeverityRefusal:
     def test_assessed_result_discriminates(self):
         """VibrationSeverityResult carries status='assessed'."""
         r = VibrationSeverityResult(
-            signal_id="s", rms_velocity_mm_s=2.0, machine_group=2,
-            support_type="rigid", axis="vertical",
-            zone="B", zone_description="Acceptable",
-            severity_level="Acceptable", color_code="yellow",
+            signal_id="s",
+            rms_velocity_mm_s=2.0,
+            machine_group=2,
+            support_type="rigid",
+            axis="vertical",
+            zone="B",
+            zone_description="Acceptable",
+            severity_level="Acceptable",
+            color_code="yellow",
             boundaries={"AB": 1.4, "BC": 2.8, "CD": 4.5},
             frequency_range="10-1000 Hz",
             unit_conversion_performed=False,
@@ -286,15 +321,26 @@ class TestISOSeverityRefusal:
 
 # ── FeatureExtractionResult ────────────────────────────────────────────────
 
+
 class TestFeatureExtractionResult:
 
     def test_creation(self):
         r = FeatureExtractionResult(
-            num_segments=50, segment_length_samples=1024,
-            segment_duration_s=0.1024, overlap_ratio=0.5,
+            num_segments=50,
+            segment_length_samples=1024,
+            segment_duration_s=0.1024,
+            overlap_ratio=0.5,
             features_shape=[50, 8],
-            feature_names=["rms", "peak", "crest_factor", "kurtosis",
-                           "skewness", "std", "p2p", "shape_factor"],
+            feature_names=[
+                "rms",
+                "peak",
+                "crest_factor",
+                "kurtosis",
+                "skewness",
+                "std",
+                "p2p",
+                "shape_factor",
+            ],
             features_preview=[{"rms": 5.0, "peak": 10.0}],
         )
         assert r.num_segments == 50
@@ -302,6 +348,7 @@ class TestFeatureExtractionResult:
 
 
 # ── AnomalyModelResult ────────────────────────────────────────────────────
+
 
 class TestAnomalyModelResult:
 
@@ -327,10 +374,13 @@ class TestAnomalyModelResult:
             model_name="lof",
             model_type="LocalOutlierFactor",
             num_training_samples=100,
-            num_features_original=8, num_features_pca=4,
+            num_features_original=8,
+            num_features_pca=4,
             variance_explained=0.90,
             model_params={"n_neighbors": 20},
-            model_path="m.pkl", scaler_path="s.pkl", pca_path="p.pkl",
+            model_path="m.pkl",
+            scaler_path="s.pkl",
+            pca_path="p.pkl",
         )
         assert r.validation_accuracy is None
         assert r.validation_details is None
@@ -339,12 +389,16 @@ class TestAnomalyModelResult:
 
 # ── AnomalyPredictionResult ───────────────────────────────────────────────
 
+
 class TestAnomalyPredictionResult:
 
     def test_healthy(self):
         r = AnomalyPredictionResult(
-            model_name="m", num_segments=100, anomaly_count=2,
-            anomaly_ratio=0.02, segment_duration_s=0.1,
+            model_name="m",
+            num_segments=100,
+            anomaly_count=2,
+            anomaly_ratio=0.02,
+            segment_duration_s=0.1,
             overall_health="Healthy",
         )
         assert r.overall_health == "Healthy"
@@ -352,8 +406,11 @@ class TestAnomalyPredictionResult:
 
     def test_faulty(self):
         r = AnomalyPredictionResult(
-            model_name="m", num_segments=100, anomaly_count=90,
-            anomaly_ratio=0.90, segment_duration_s=0.1,
+            model_name="m",
+            num_segments=100,
+            anomaly_count=90,
+            anomaly_ratio=0.90,
+            segment_duration_s=0.1,
             overall_health="Faulty",
         )
         assert r.overall_health == "Faulty"
@@ -361,8 +418,11 @@ class TestAnomalyPredictionResult:
     def test_confidence_field_removed(self):
         """The invented High/Medium 'confidence' label no longer exists."""
         r = AnomalyPredictionResult(
-            model_name="m", num_segments=10, anomaly_count=0,
-            anomaly_ratio=0.0, segment_duration_s=0.1,
+            model_name="m",
+            num_segments=10,
+            anomaly_count=0,
+            anomaly_ratio=0.0,
+            segment_duration_s=0.1,
             overall_health="Healthy",
         )
         assert "confidence" not in AnomalyPredictionResult.model_fields
@@ -377,8 +437,11 @@ class TestAnomalyPredictionResult:
 
     def test_optional_scores(self):
         r = AnomalyPredictionResult(
-            model_name="m", num_segments=10, anomaly_count=0,
-            anomaly_ratio=0.0, segment_duration_s=0.1,
+            model_name="m",
+            num_segments=10,
+            anomaly_count=0,
+            anomaly_ratio=0.0,
+            segment_duration_s=0.1,
             overall_health="Healthy",
         )
         assert r.score_percentiles is None
@@ -386,13 +449,20 @@ class TestAnomalyPredictionResult:
 
     def test_json_roundtrip(self):
         r = AnomalyPredictionResult(
-            model_name="m", num_segments=50, anomaly_count=5,
-            anomaly_ratio=0.1, segment_duration_s=0.1,
+            model_name="m",
+            num_segments=50,
+            anomaly_count=5,
+            anomaly_ratio=0.1,
+            segment_duration_s=0.1,
             overall_health="Suspicious",
-            score_percentiles={"p5": -0.5, "p25": -0.1, "p50": 0.1,
-                               "p75": 0.3, "p95": 0.6},
-            worst_segments=[{"segment_index": 3, "start_time_s": 0.15,
-                             "score": -0.5}],
+            score_percentiles={
+                "p5": -0.5,
+                "p25": -0.1,
+                "p50": 0.1,
+                "p75": 0.3,
+                "p95": 0.6,
+            },
+            worst_segments=[{"segment_index": 3, "start_time_s": 0.15, "score": -0.5}],
         )
         restored = AnomalyPredictionResult.model_validate_json(r.model_dump_json())
         assert restored.anomaly_count == 5

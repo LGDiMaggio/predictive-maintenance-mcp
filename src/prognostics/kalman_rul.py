@@ -66,10 +66,12 @@ def estimate_rul_kalman(
     H = np.array([[1.0, 0.0]])
 
     # Process noise covariance.
-    Q = process_noise * np.array([
-        [dt ** 3 / 3.0, dt ** 2 / 2.0],
-        [dt ** 2 / 2.0, dt],
-    ])
+    Q = process_noise * np.array(
+        [
+            [dt**3 / 3.0, dt**2 / 2.0],
+            [dt**2 / 2.0, dt],
+        ]
+    )
 
     # Measurement noise covariance (scalar).
     R = np.array([[measurement_noise]])

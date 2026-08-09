@@ -16,10 +16,10 @@ from mcp.server.mcpserver import MCPServer
 from predictive_maintenance_mcp.mcp_tools.diagnostics_tools import register
 from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def mcp():
@@ -61,17 +61,26 @@ def data_dir(tmp_path, monkeypatch):
     # RESOURCES_DIR — DATA_DIR/REPORTS_DIR/CACHE_DIR imports were dead and
     # removed in the U9b naming/import sweep).
     monkeypatch.setattr("predictive_maintenance_mcp.config.DATA_DIR", signals_dir)
-    monkeypatch.setattr("predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR", signals_dir)
-    monkeypatch.setattr("predictive_maintenance_mcp.signal_acquisition.repository.DATA_DIR", signals_dir)
+    monkeypatch.setattr(
+        "predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR", signals_dir
+    )
+    monkeypatch.setattr(
+        "predictive_maintenance_mcp.signal_acquisition.repository.DATA_DIR", signals_dir
+    )
 
     models_dir = tmp_path / "models"
     models_dir.mkdir()
-    monkeypatch.setattr("predictive_maintenance_mcp.mcp_tools.diagnostics_tools.MODELS_DIR", models_dir)
+    monkeypatch.setattr(
+        "predictive_maintenance_mcp.mcp_tools.diagnostics_tools.MODELS_DIR", models_dir
+    )
 
     resources_dir = tmp_path / "resources"
     resources_dir.mkdir()
     (resources_dir / "machine_manuals").mkdir()
-    monkeypatch.setattr("predictive_maintenance_mcp.mcp_tools.diagnostics_tools.RESOURCES_DIR", resources_dir)
+    monkeypatch.setattr(
+        "predictive_maintenance_mcp.mcp_tools.diagnostics_tools.RESOURCES_DIR",
+        resources_dir,
+    )
 
     return signals_dir
 
@@ -89,7 +98,7 @@ def repo(data_dir):
     """Repository with the diagnostics signals loaded; cleaned afterwards."""
     repo = get_repository()
     repo.clear_all()
-    repo.load_signal("normal.csv")    # metadata: fs=10000, unit 'g'
+    repo.load_signal("normal.csv")  # metadata: fs=10000, unit 'g'
     repo.load_signal("iso_test.csv")  # metadata: fs=10000, unit 'g'
     yield repo
     repo.clear_all()
@@ -98,6 +107,7 @@ def repo(data_dir):
 # ---------------------------------------------------------------------------
 # ISO 20816 evaluation
 # ---------------------------------------------------------------------------
+
 
 class TestAssessSeverity:
     """Tests for the unified assess_severity tool (U9 merge)."""
@@ -141,6 +151,7 @@ class TestAssessSeverity:
 # Bearing diagnostics
 # ---------------------------------------------------------------------------
 
+
 class TestBearingTools:
     """Tests for bearing fault detection tools."""
 
@@ -162,7 +173,10 @@ class TestBearingTools:
 
     @pytest.mark.asyncio
     async def test_check_bearing_faults_catalog_route(self, tools, data_dir, mock_ctx):
-        from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
+        from predictive_maintenance_mcp.signal_acquisition.repository import (
+            get_repository,
+        )
+
         repo = get_repository()
         repo.load_signal("normal.csv", signal_id="bearing_test", sampling_rate=10000)
         try:
@@ -182,6 +196,7 @@ class TestBearingTools:
 # Anomaly detection (train + predict)
 # ---------------------------------------------------------------------------
 
+
 class TestAnomalyDetection:
     """Tests for train_anomaly_model and predict_anomalies tools."""
 
@@ -193,7 +208,9 @@ class TestAnomalyDetection:
         for i in range(5):
             t = np.linspace(0, 1.0, fs, endpoint=False)
             sig = 0.05 * np.random.randn(len(t))
-            pd.DataFrame(sig).to_csv(data_dir / f"train_{i}.csv", index=False, header=False)
+            pd.DataFrame(sig).to_csv(
+                data_dir / f"train_{i}.csv", index=False, header=False
+            )
             with open(data_dir / f"train_{i}_metadata.json", "w") as f:
                 json.dump({"sampling_rate": fs}, f)
             files.append(f"train_{i}.csv")
@@ -232,6 +249,7 @@ class TestAnomalyDetection:
 # Integrated diagnosis
 # ---------------------------------------------------------------------------
 
+
 class TestDiagnoseVibration:
     """Tests for diagnose_vibration tool."""
 
@@ -240,7 +258,10 @@ class TestDiagnoseVibration:
         if "diagnose_vibration" not in tools:
             pytest.skip("diagnose_vibration not registered")
 
-        from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
+        from predictive_maintenance_mcp.signal_acquisition.repository import (
+            get_repository,
+        )
+
         repo = get_repository()
         repo.load_signal("normal.csv", signal_id="diag_test", sampling_rate=10000)
         try:
@@ -257,6 +278,7 @@ class TestDiagnoseVibration:
 # ---------------------------------------------------------------------------
 # Extended ISO 20816 tests
 # ---------------------------------------------------------------------------
+
 
 class TestAssessSeverityExtended:
     """Additional coverage for assess_severity (signal route)."""
@@ -334,7 +356,9 @@ class TestAssessSeverityExtended:
         fs = 10000
         t = np.linspace(0, 2.0, 2 * fs, endpoint=False)
         vel_signal = 3.0 * np.sin(2 * np.pi * 50 * t)  # ~2.12 mm/s RMS
-        pd.DataFrame(vel_signal).to_csv(data_dir / "vel_signal.csv", index=False, header=False)
+        pd.DataFrame(vel_signal).to_csv(
+            data_dir / "vel_signal.csv", index=False, header=False
+        )
         with open(data_dir / "vel_signal_metadata.json", "w") as f:
             json.dump({"sampling_rate": fs, "signal_unit": "mm/s"}, f)
         repo.load_signal("vel_signal.csv")
@@ -374,7 +398,9 @@ class TestAssessSeverityExtended:
         assert "2-1000" in result.frequency_range
 
     @pytest.mark.asyncio
-    async def test_stored_signal_without_rate_raises(self, tools, data_dir, repo, mock_ctx):
+    async def test_stored_signal_without_rate_raises(
+        self, tools, data_dir, repo, mock_ctx
+    ):
         """Signal stored without a rate → structured error, no silent 10 kHz."""
         fs = 10000
         t = np.linspace(0, 1.0, fs, endpoint=False)
@@ -408,7 +434,9 @@ class TestAssessSeverityExtended:
             )
 
     @pytest.mark.asyncio
-    async def test_velocity_declared_unit_no_integration(self, tools, data_dir, repo, mock_ctx):
+    async def test_velocity_declared_unit_no_integration(
+        self, tools, data_dir, repo, mock_ctx
+    ):
         """mm/s declared → severity without acc→vel integration, correct zone."""
         fs = 10000
         t = np.linspace(0, 2.0, 2 * fs, endpoint=False)
@@ -434,6 +462,7 @@ class TestAssessSeverityExtended:
 # Extended bearing diagnostics tests
 # ---------------------------------------------------------------------------
 
+
 class TestBearingToolsExtended:
     """Extended tests for the unified check_bearing_faults tool."""
 
@@ -443,7 +472,10 @@ class TestBearingToolsExtended:
     ):
         """The former single-fault check is the frequencies route with one
         labeled entry."""
-        from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
+        from predictive_maintenance_mcp.signal_acquisition.repository import (
+            get_repository,
+        )
+
         repo = get_repository()
         repo.load_signal("normal.csv", signal_id="peak_test", sampling_rate=10000)
         try:
@@ -463,7 +495,10 @@ class TestBearingToolsExtended:
     @pytest.mark.asyncio
     async def test_catalog_route_returns_summary(self, tools, data_dir, mock_ctx):
         """Catalog route returns a BearingFaultsSummary with all 4 checks."""
-        from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
+        from predictive_maintenance_mcp.signal_acquisition.repository import (
+            get_repository,
+        )
+
         repo = get_repository()
         repo.load_signal("normal.csv", signal_id="faults_all", sampling_rate=10000)
         try:
@@ -489,7 +524,10 @@ class TestBearingToolsExtended:
     async def test_designation_with_prefix(self, tools, data_dir, mock_ctx):
         """Manufacturer-prefixed designations resolve via the catalog
         (former lookup_bearing_and_compute_tool path)."""
-        from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
+        from predictive_maintenance_mcp.signal_acquisition.repository import (
+            get_repository,
+        )
+
         repo = get_repository()
         repo.load_signal("normal.csv", signal_id="lookup_test", sampling_rate=10000)
         try:
@@ -507,7 +545,10 @@ class TestBearingToolsExtended:
     @pytest.mark.asyncio
     async def test_unknown_bearing_raises(self, tools, data_dir, mock_ctx):
         """Unknown bearing ID should raise ValueError."""
-        from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
+        from predictive_maintenance_mcp.signal_acquisition.repository import (
+            get_repository,
+        )
+
         repo = get_repository()
         repo.load_signal("normal.csv", signal_id="unknown_brg", sampling_rate=10000)
         try:
@@ -531,10 +572,10 @@ class TestBearingToolsExtended:
             assert old not in tools
 
 
-
 # ---------------------------------------------------------------------------
 # Extended anomaly detection tests
 # ---------------------------------------------------------------------------
+
 
 class TestAnomalyDetectionExtended:
     """Additional coverage for anomaly detection tools."""
@@ -547,7 +588,9 @@ class TestAnomalyDetectionExtended:
         for i in range(5):
             t = np.linspace(0, 1.0, fs, endpoint=False)
             sig = 0.05 * np.random.randn(len(t))
-            pd.DataFrame(sig).to_csv(data_dir / f"train_{i}.csv", index=False, header=False)
+            pd.DataFrame(sig).to_csv(
+                data_dir / f"train_{i}.csv", index=False, header=False
+            )
             with open(data_dir / f"train_{i}_metadata.json", "w") as f:
                 json.dump({"sampling_rate": fs}, f)
             files.append(f"train_{i}.csv")
@@ -563,7 +606,9 @@ class TestAnomalyDetectionExtended:
             t = np.linspace(0, 1.0, fs, endpoint=False)
             # Much higher amplitude + periodic component to simulate fault
             sig = 2.0 * np.random.randn(len(t)) + 5.0 * np.sin(2 * np.pi * 100 * t)
-            pd.DataFrame(sig).to_csv(data_dir / f"fault_{i}.csv", index=False, header=False)
+            pd.DataFrame(sig).to_csv(
+                data_dir / f"fault_{i}.csv", index=False, header=False
+            )
             with open(data_dir / f"fault_{i}_metadata.json", "w") as f:
                 json.dump({"sampling_rate": fs}, f)
             files.append(f"fault_{i}.csv")
@@ -587,7 +632,9 @@ class TestAnomalyDetectionExtended:
         assert result.model_type == "LocalOutlierFactor"
 
     @pytest.mark.asyncio
-    async def test_train_invalid_model_type(self, tools, data_dir, mock_ctx, training_signals):
+    async def test_train_invalid_model_type(
+        self, tools, data_dir, mock_ctx, training_signals
+    ):
         """Invalid model type should raise ValueError."""
         if "train_anomaly_model" not in tools:
             pytest.skip("train_anomaly_model not registered")
@@ -629,7 +676,9 @@ class TestAnomalyDetectionExtended:
             )
 
     @pytest.mark.asyncio
-    async def test_predict_missing_signal(self, tools, data_dir, mock_ctx, training_signals):
+    async def test_predict_missing_signal(
+        self, tools, data_dir, mock_ctx, training_signals
+    ):
         """Predicting on an unloaded signal_id should raise the standard error."""
         if "train_anomaly_model" not in tools or "predict_anomalies" not in tools:
             pytest.skip("tools not registered")
@@ -650,7 +699,9 @@ class TestAnomalyDetectionExtended:
             )
 
     @pytest.mark.asyncio
-    async def test_train_semi_supervised_svm(self, tools, data_dir, mock_ctx, training_signals, fault_signals):
+    async def test_train_semi_supervised_svm(
+        self, tools, data_dir, mock_ctx, training_signals, fault_signals
+    ):
         """Semi-supervised SVM training with fault signals for hyperparameter tuning."""
         if "train_anomaly_model" not in tools:
             pytest.skip("train_anomaly_model not registered")
@@ -667,7 +718,9 @@ class TestAnomalyDetectionExtended:
         assert result.validation_accuracy is not None
 
     @pytest.mark.asyncio
-    async def test_train_semi_supervised_lof(self, tools, data_dir, mock_ctx, training_signals, fault_signals):
+    async def test_train_semi_supervised_lof(
+        self, tools, data_dir, mock_ctx, training_signals, fault_signals
+    ):
         """Semi-supervised LOF training with fault signals."""
         if "train_anomaly_model" not in tools:
             pytest.skip("train_anomaly_model not registered")
@@ -684,7 +737,9 @@ class TestAnomalyDetectionExtended:
         assert result.model_type == "LocalOutlierFactor"
 
     @pytest.mark.asyncio
-    async def test_predict_health_assessment(self, tools, data_dir, mock_ctx, training_signals):
+    async def test_predict_health_assessment(
+        self, tools, data_dir, mock_ctx, training_signals
+    ):
         """Predict on healthy signal should give 'Healthy' or 'Suspicious' health."""
         if "train_anomaly_model" not in tools or "predict_anomalies" not in tools:
             pytest.skip("tools not registered")
@@ -719,6 +774,7 @@ class TestAnomalyDetectionExtended:
 # Documentation / manual tools
 # ---------------------------------------------------------------------------
 
+
 class TestDocumentationTools:
     """Tests for list_machine_manuals, read_manual_excerpt, extract_manual_specs."""
 
@@ -732,7 +788,9 @@ class TestDocumentationTools:
         assert result == []
 
     @pytest.mark.asyncio
-    async def test_list_machine_manuals_with_txt(self, tools, data_dir, mock_ctx, tmp_path):
+    async def test_list_machine_manuals_with_txt(
+        self, tools, data_dir, mock_ctx, tmp_path
+    ):
         """Text file manuals should appear in the listing."""
         if "list_machine_manuals" not in tools:
             pytest.skip("list_machine_manuals not registered")
@@ -740,7 +798,9 @@ class TestDocumentationTools:
         # Write a .txt manual to the resources/machine_manuals dir
         manuals_dir = tmp_path / "resources" / "machine_manuals"
         manuals_dir.mkdir(parents=True, exist_ok=True)
-        (manuals_dir / "test_manual.txt").write_text("Bearing 6205 installed on drive end.", encoding="utf-8")
+        (manuals_dir / "test_manual.txt").write_text(
+            "Bearing 6205 installed on drive end.", encoding="utf-8"
+        )
 
         result = await tools["list_machine_manuals"](ctx=mock_ctx)
         filenames = [m["filename"] for m in result]
@@ -754,7 +814,9 @@ class TestDocumentationTools:
 
         manuals_dir = tmp_path / "resources" / "machine_manuals"
         manuals_dir.mkdir(parents=True, exist_ok=True)
-        manual_content = "Bearing: SKF 6205-2RS\nOperating speed: 1800 RPM\nPower: 15 kW"
+        manual_content = (
+            "Bearing: SKF 6205-2RS\nOperating speed: 1800 RPM\nPower: 15 kW"
+        )
         (manuals_dir / "pump_manual.txt").write_text(manual_content, encoding="utf-8")
 
         result = await tools["read_manual_excerpt"](
@@ -792,6 +854,7 @@ class TestDocumentationTools:
 # ---------------------------------------------------------------------------
 # Bearing catalog tools
 # ---------------------------------------------------------------------------
+
 
 class TestBearingCatalogTools:
     """Tests for search_bearing_catalog and calculate_bearing_characteristic_frequencies."""
@@ -869,6 +932,7 @@ class TestBearingCatalogTools:
 # Diagnose vibration with bearing
 # ---------------------------------------------------------------------------
 
+
 class TestDiagnoseVibrationExtended:
     """Extended tests for diagnose_vibration tool."""
 
@@ -878,7 +942,10 @@ class TestDiagnoseVibrationExtended:
         if "diagnose_vibration" not in tools:
             pytest.skip("diagnose_vibration not registered")
 
-        from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
+        from predictive_maintenance_mcp.signal_acquisition.repository import (
+            get_repository,
+        )
+
         repo = get_repository()
         repo.load_signal("normal.csv", signal_id="diag_brg", sampling_rate=10000)
         try:
@@ -914,13 +981,17 @@ class TestDiagnoseVibrationExtended:
 # Assess vibration severity extended
 # ---------------------------------------------------------------------------
 
+
 class TestAssessSeverityUnitsExtended:
     """Unit/rate discipline tests for assess_severity (signal route)."""
 
     @pytest.mark.asyncio
     async def test_group1_boundaries(self, tools, data_dir, mock_ctx):
         """machine_group=1 uses the large-machine boundaries (A/B at 2.3 mm/s)."""
-        from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
+        from predictive_maintenance_mcp.signal_acquisition.repository import (
+            get_repository,
+        )
+
         repo = get_repository()
         repo.load_signal("iso_test.csv", signal_id="class_test", sampling_rate=10000)
         try:
@@ -942,7 +1013,10 @@ class TestAssessSeverityUnitsExtended:
     @pytest.mark.asyncio
     async def test_machine_class_parameter_removed(self, tools, data_dir, mock_ctx):
         """The invented machine_class vocabulary is gone from the tool."""
-        from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
+        from predictive_maintenance_mcp.signal_acquisition.repository import (
+            get_repository,
+        )
+
         repo = get_repository()
         repo.load_signal("iso_test.csv", signal_id="class_test", sampling_rate=10000)
         try:
@@ -956,9 +1030,13 @@ class TestAssessSeverityUnitsExtended:
             repo.clear_all()
 
     @pytest.mark.asyncio
-    async def test_signal_without_metadata_sampling_rate(self, tools, data_dir, mock_ctx):
+    async def test_signal_without_metadata_sampling_rate(
+        self, tools, data_dir, mock_ctx
+    ):
         """Signal with no metadata and no explicit sampling_rate should raise."""
-        from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
+        from predictive_maintenance_mcp.signal_acquisition.repository import (
+            get_repository,
+        )
 
         # Create a signal file with NO companion metadata
         fs = 10000
@@ -979,20 +1057,28 @@ class TestAssessSeverityUnitsExtended:
             repo.clear_all()
 
     @pytest.mark.asyncio
-    async def test_undeclared_unit_refused_names_load_signal(self, tools, data_dir, mock_ctx):
+    async def test_undeclared_unit_refused_names_load_signal(
+        self, tools, data_dir, mock_ctx
+    ):
         """Severity on a stored signal without a declared unit → structured
         error naming load_signal(signal_unit=...) — never a silent 'g'."""
-        from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
+        from predictive_maintenance_mcp.signal_acquisition.repository import (
+            get_repository,
+        )
 
         fs = 10000
         t = np.linspace(0, 1.0, fs, endpoint=False)
         sig = 4.0 * np.sqrt(2) * np.sin(2 * np.pi * 50 * t)  # RMS ~4
-        pd.DataFrame(sig).to_csv(data_dir / "no_unit_sev.csv", index=False, header=False)
+        pd.DataFrame(sig).to_csv(
+            data_dir / "no_unit_sev.csv", index=False, header=False
+        )
         # No metadata → unit undeclared
 
         repo = get_repository()
         try:
-            repo.load_signal("no_unit_sev.csv", signal_id="no_unit_sev", sampling_rate=fs)
+            repo.load_signal(
+                "no_unit_sev.csv", signal_id="no_unit_sev", sampling_rate=fs
+            )
             with pytest.raises(ValueError, match=r"load_signal.*signal_unit="):
                 await tools["assess_severity"](
                     ctx=mock_ctx,
@@ -1002,10 +1088,14 @@ class TestAssessSeverityUnitsExtended:
             repo.clear_all()
 
     @pytest.mark.asyncio
-    async def test_metadata_unit_g_assessed_without_confirmation(self, tools, data_dir, mock_ctx):
+    async def test_metadata_unit_g_assessed_without_confirmation(
+        self, tools, data_dir, mock_ctx
+    ):
         """Unit 'g' from _metadata.json → acc→vel integration and a verdict,
         no fake confirmation step."""
-        from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
+        from predictive_maintenance_mcp.signal_acquisition.repository import (
+            get_repository,
+        )
 
         repo = get_repository()
         try:
@@ -1027,17 +1117,23 @@ class TestDiagnoseVibrationRefusedISO:
     @pytest.mark.asyncio
     async def test_diagnosis_without_unit_iso_refused(self, tools, data_dir, mock_ctx):
         from predictive_maintenance_mcp.models import ISOSeverityRefusal
-        from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
+        from predictive_maintenance_mcp.signal_acquisition.repository import (
+            get_repository,
+        )
 
         fs = 10000
         t = np.linspace(0, 1.0, fs, endpoint=False)
         sig = 0.5 * np.sin(2 * np.pi * 50 * t)
-        pd.DataFrame(sig).to_csv(data_dir / "diag_no_unit.csv", index=False, header=False)
+        pd.DataFrame(sig).to_csv(
+            data_dir / "diag_no_unit.csv", index=False, header=False
+        )
         # No metadata → unit undeclared
 
         repo = get_repository()
         try:
-            repo.load_signal("diag_no_unit.csv", signal_id="diag_no_unit", sampling_rate=fs)
+            repo.load_signal(
+                "diag_no_unit.csv", signal_id="diag_no_unit", sampling_rate=fs
+            )
             result = await tools["diagnose_vibration"](
                 ctx=mock_ctx,
                 signal_id="diag_no_unit",
@@ -1057,16 +1153,22 @@ class TestDiagnoseVibrationRefusedISO:
             repo.clear_all()
 
     @pytest.mark.asyncio
-    async def test_diagnosis_nyquist_too_low_iso_refused(self, tools, data_dir, mock_ctx):
+    async def test_diagnosis_nyquist_too_low_iso_refused(
+        self, tools, data_dir, mock_ctx
+    ):
         """fs < 2 kHz (Nyquist below the ISO band, U2 refusal) → ISO block
         refused with reason, while the diagnosis itself succeeds."""
         from predictive_maintenance_mcp.models import ISOSeverityRefusal
-        from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
+        from predictive_maintenance_mcp.signal_acquisition.repository import (
+            get_repository,
+        )
 
         fs = 1600
         t = np.linspace(0, 1.0, fs, endpoint=False)
         sig = 0.5 * np.sin(2 * np.pi * 50 * t)
-        pd.DataFrame(sig).to_csv(data_dir / "diag_low_fs.csv", index=False, header=False)
+        pd.DataFrame(sig).to_csv(
+            data_dir / "diag_low_fs.csv", index=False, header=False
+        )
         with open(data_dir / "diag_low_fs_metadata.json", "w") as f:
             json.dump({"sampling_rate": fs, "signal_unit": "g"}, f)
 
@@ -1085,10 +1187,14 @@ class TestDiagnoseVibrationRefusedISO:
             repo.clear_all()
 
     @pytest.mark.asyncio
-    async def test_diagnosis_with_declared_unit_assessed(self, tools, data_dir, mock_ctx):
+    async def test_diagnosis_with_declared_unit_assessed(
+        self, tools, data_dir, mock_ctx
+    ):
         """Declared unit → assessed ISO block (status discriminator present)."""
         from predictive_maintenance_mcp.models import VibrationSeverityResult
-        from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
+        from predictive_maintenance_mcp.signal_acquisition.repository import (
+            get_repository,
+        )
 
         repo = get_repository()
         try:
@@ -1108,6 +1214,7 @@ class TestDiagnoseVibrationRefusedISO:
 # ---------------------------------------------------------------------------
 # RAG / documentation search
 # ---------------------------------------------------------------------------
+
 
 class TestSearchDocumentation:
     """Tests for search_documentation tool."""

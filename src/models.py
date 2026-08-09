@@ -11,23 +11,31 @@ from pydantic import BaseModel, Field, model_validator
 
 class SpectralPeak(BaseModel):
     """A single peak in the frequency spectrum."""
+
     frequency_hz: float = Field(description="Peak frequency in Hz")
     magnitude: float = Field(description="Peak magnitude (linear)")
     magnitude_db: float = Field(description="Peak magnitude in dB (relative to max)")
-    note: str = Field(default="", description="Optional annotation (e.g. harmonic label)")
+    note: str = Field(
+        default="", description="Optional annotation (e.g. harmonic label)"
+    )
 
 
 class FFTResult(BaseModel):
     """FFT analysis result — compact summary (top peaks + stats, no full arrays).
-    
+
     Full-length arrays are never returned to the LLM to avoid context overflow.
     Use generate_fft_report() for visual inspection."""
-    top_peaks: list[SpectralPeak] = Field(description="Top spectral peaks sorted by magnitude")
+
+    top_peaks: list[SpectralPeak] = Field(
+        description="Top spectral peaks sorted by magnitude"
+    )
     peak_frequency: float = Field(description="Dominant peak frequency (Hz)")
     peak_magnitude: float = Field(description="Dominant peak magnitude")
     rms_spectral: float = Field(description="RMS of the magnitude spectrum")
     total_bins: int = Field(description="Total number of FFT bins computed")
-    freq_range_hz: list[float] = Field(description="[min_freq, max_freq] of the spectrum")
+    freq_range_hz: list[float] = Field(
+        description="[min_freq, max_freq] of the spectrum"
+    )
     sampling_rate: float = Field(description="Sampling frequency (Hz)")
     num_samples: int = Field(description="Number of analyzed samples")
     frequency_resolution: float = Field(description="Frequency resolution (Hz)")
@@ -41,6 +49,7 @@ class EnvelopeResult(BaseModel):
     (audit 2.8 fix), so low-frequency (FTF-zone) peaks are not buried by
     DC leakage.
     """
+
     signal_id: str = Field(description="Signal identifier used")
     num_samples: int = Field(description="Number of samples analyzed (envelope length)")
     sampling_rate: float = Field(description="Sampling rate (Hz)")
@@ -66,6 +75,7 @@ class StatisticalResult(BaseModel):
     DECLARED (companion ``_metadata.json`` or ``load_signal(signal_unit=...)``)
     — it is never guessed from signal amplitude.
     """
+
     rms: float = Field(description="Root Mean Square (effective value)")
     peak_to_peak: float = Field(description="Peak-to-peak value")
     peak: float = Field(description="Peak value")
@@ -81,40 +91,63 @@ class StatisticalResult(BaseModel):
             "metadata — never guessed from amplitude. None when not declared."
         ),
     )
-    unit_note: str = Field(description="Unit declaration status and how to declare the unit for ISO severity assessment")
+    unit_note: str = Field(
+        description="Unit declaration status and how to declare the unit for ISO severity assessment"
+    )
 
 
 class FeatureExtractionResult(BaseModel):
     """Result of time-domain feature extraction from signal segments."""
+
     num_segments: int = Field(description="Number of segments extracted")
     segment_length_samples: int = Field(description="Samples per segment")
     segment_duration_s: float = Field(description="Duration of each segment in seconds")
     overlap_ratio: float = Field(description="Overlap ratio between segments")
-    features_shape: list[int] = Field(description="Shape of feature matrix [num_segments, num_features]")
+    features_shape: list[int] = Field(
+        description="Shape of feature matrix [num_segments, num_features]"
+    )
     feature_names: list[str] = Field(description="Names of extracted features")
-    features_preview: list[dict[str, float]] = Field(description="First 5 segments features (preview)")
+    features_preview: list[dict[str, float]] = Field(
+        description="First 5 segments features (preview)"
+    )
 
 
 class AnomalyModelResult(BaseModel):
     """Result of anomaly detection model training."""
+
     model_name: str = Field(
         description=(
             "Name under which the model was saved — pass this to "
             "predict_anomalies(model_name=...)"
         )
     )
-    model_type: str = Field(description="Type of model: 'OneClassSVM' or 'LocalOutlierFactor'")
-    num_training_samples: int = Field(description="Number of healthy samples used for training")
+    model_type: str = Field(
+        description="Type of model: 'OneClassSVM' or 'LocalOutlierFactor'"
+    )
+    num_training_samples: int = Field(
+        description="Number of healthy samples used for training"
+    )
     num_features_original: int = Field(description="Number of original features")
-    num_features_pca: int = Field(description="Number of PCA components (features after dimensionality reduction)")
-    variance_explained: float = Field(description="Cumulative variance explained by PCA components")
+    num_features_pca: int = Field(
+        description="Number of PCA components (features after dimensionality reduction)"
+    )
+    variance_explained: float = Field(
+        description="Cumulative variance explained by PCA components"
+    )
     model_params: dict[str, Any] = Field(description="Best model hyperparameters")
     model_path: str = Field(description="Path to saved model file (.pkl)")
     scaler_path: str = Field(description="Path to saved scaler file (.pkl)")
     pca_path: str = Field(description="Path to saved PCA file (.pkl)")
-    validation_accuracy: Optional[float] = Field(None, description="Overall balanced accuracy on healthy + fault validation data")
-    validation_details: Optional[str] = Field(None, description="Validation details with healthy and fault metrics")
-    validation_metrics: Optional[dict[str, Any]] = Field(None, description="Detailed validation metrics (healthy/fault accuracy breakdown)")
+    validation_accuracy: Optional[float] = Field(
+        None, description="Overall balanced accuracy on healthy + fault validation data"
+    )
+    validation_details: Optional[str] = Field(
+        None, description="Validation details with healthy and fault metrics"
+    )
+    validation_metrics: Optional[dict[str, Any]] = Field(
+        None,
+        description="Detailed validation metrics (healthy/fault accuracy breakdown)",
+    )
 
 
 class AnomalyPredictionResult(BaseModel):
@@ -124,6 +157,7 @@ class AnomalyPredictionResult(BaseModel):
     segments only — never per-segment arrays (a 6M-sample signal would
     dump tens of thousands of entries into the chat context).
     """
+
     model_name: str = Field(description="Name of the trained model used")
     num_segments: int = Field(description="Number of segments analyzed")
     anomaly_count: int = Field(description="Number of anomalies detected")
@@ -147,7 +181,9 @@ class AnomalyPredictionResult(BaseModel):
             "worst regions without dumping per-segment arrays."
         ),
     )
-    overall_health: str = Field(description="Overall health status: 'Healthy', 'Suspicious', 'Faulty' (thresholded on anomaly_ratio: <0.1, <0.3, >=0.3)")
+    overall_health: str = Field(
+        description="Overall health status: 'Healthy', 'Suspicious', 'Faulty' (thresholded on anomaly_ratio: <0.1, <0.3, >=0.3)"
+    )
 
 
 # ============================================================================
@@ -157,6 +193,7 @@ class AnomalyPredictionResult(BaseModel):
 
 class StoredSignalInfo(BaseModel):
     """Metadata for a signal stored in the SignalRepository."""
+
     signal_id: str = Field(description="Unique identifier for the stored signal")
     filepath: str = Field(description="Original file path")
     load_timestamp: str = Field(description="ISO 8601 timestamp when signal was loaded")
@@ -188,6 +225,7 @@ class StoredSignalInfo(BaseModel):
 
 class PSDResult(BaseModel):
     """Power Spectral Density (Welch method) result."""
+
     signal_id: str = Field(description="Signal identifier used")
     num_samples: int = Field(description="Number of samples analyzed")
     sampling_rate: float = Field(description="Sampling rate (Hz)")
@@ -202,6 +240,7 @@ class PSDResult(BaseModel):
 
 class STFTResult(BaseModel):
     """STFT Spectrogram result — summary only, no full 2D arrays."""
+
     signal_id: str = Field(description="Signal identifier used")
     num_samples: int = Field(description="Number of samples analyzed")
     sampling_rate: float = Field(description="Sampling rate (Hz)")
@@ -214,11 +253,14 @@ class STFTResult(BaseModel):
     time_range_s: list[float] = Field(description="[start_time, end_time]")
     max_power_freq_hz: float = Field(description="Frequency with maximum power")
     max_power_time_s: float = Field(description="Time of maximum power")
-    energy_per_band: list[dict[str, float]] = Field(description="Energy in predefined frequency bands")
+    energy_per_band: list[dict[str, float]] = Field(
+        description="Energy in predefined frequency bands"
+    )
 
 
 class BearingFaultCheckResult(BaseModel):
     """Result of checking for a specific expected fault frequency."""
+
     signal_id: str = Field(description="Signal identifier used")
     bearing_id: Optional[str] = Field(
         None, description="Bearing designation (None for arbitrary-frequency checks)"
@@ -229,9 +271,9 @@ class BearingFaultCheckResult(BaseModel):
             "user-provided label (e.g. 'GMF')"
         )
     )
-    fault_type_canonical: Optional[Literal[
-        "outer_race", "inner_race", "ball", "cage"
-    ]] = Field(
+    fault_type_canonical: Optional[
+        Literal["outer_race", "inner_race", "ball", "cage"]
+    ] = Field(
         None,
         description=(
             "Canonical fault vocabulary for the standard acronyms "
@@ -241,10 +283,18 @@ class BearingFaultCheckResult(BaseModel):
     )
     expected_frequency_hz: float = Field(description="Expected fault frequency")
     detected: bool = Field(description="Whether a peak was detected within tolerance")
-    detected_frequency_hz: Optional[float] = Field(None, description="Actual peak frequency")
-    magnitude: Optional[float] = Field(None, description="Magnitude at detected frequency")
-    deviation_pct: Optional[float] = Field(None, description="Deviation from expected (%)")
-    harmonics_detected: list[dict[str, float]] = Field(default=[], description="Harmonics found")
+    detected_frequency_hz: Optional[float] = Field(
+        None, description="Actual peak frequency"
+    )
+    magnitude: Optional[float] = Field(
+        None, description="Magnitude at detected frequency"
+    )
+    deviation_pct: Optional[float] = Field(
+        None, description="Deviation from expected (%)"
+    )
+    harmonics_detected: list[dict[str, float]] = Field(
+        default=[], description="Harmonics found"
+    )
     evidence_strength: str = Field(
         description=(
             "Strength of the spectral evidence for this fault: 'high' "
@@ -257,6 +307,7 @@ class BearingFaultCheckResult(BaseModel):
 
 class BearingFaultsSummary(BaseModel):
     """Summary of all expected-frequency checks for one bearing/machine."""
+
     signal_id: str = Field(description="Signal identifier used")
     bearing_id: Optional[str] = Field(
         None,
@@ -270,12 +321,16 @@ class BearingFaultsSummary(BaseModel):
     bearing_frequencies: dict[str, float] = Field(
         description="Expected frequencies checked (Hz), plus shaft_freq_hz"
     )
-    fault_checks: list[BearingFaultCheckResult] = Field(description="Results for each checked frequency")
+    fault_checks: list[BearingFaultCheckResult] = Field(
+        description="Results for each checked frequency"
+    )
     overall_assessment: str = Field(description="Summary assessment text")
-    most_likely_fault: Optional[str] = Field(None, description="Most likely fault label if any")
-    most_likely_fault_canonical: Optional[Literal[
-        "outer_race", "inner_race", "ball", "cage"
-    ]] = Field(
+    most_likely_fault: Optional[str] = Field(
+        None, description="Most likely fault label if any"
+    )
+    most_likely_fault_canonical: Optional[
+        Literal["outer_race", "inner_race", "ball", "cage"]
+    ] = Field(
         None,
         description="Canonical form of most_likely_fault (None for arbitrary labels)",
     )
@@ -297,13 +352,12 @@ class BearingCatalogMiss(BaseModel):
     so the miss is expressed in the SCHEMA (status + suggestion) instead of
     an ad-hoc dict with an 'error' key. No geometry is ever invented.
     """
+
     status: Literal["not_found"] = Field(
         "not_found",
         description="Always 'not_found' — discriminates from a catalog hit",
     )
-    bearing_id: str = Field(
-        description="The bearing designation that was searched for"
-    )
+    bearing_id: str = Field(description="The bearing designation that was searched for")
     suggestion: str = Field(
         description="Concrete next step to obtain the bearing geometry"
     )
@@ -320,8 +374,10 @@ class ISOSeverityRefusal(BaseModel):
     ISO evaluation band, machine out of scope). The refusal is part of the
     SCHEMA — not prose in a log message — so LLM clients cannot lose it.
     """
+
     status: Literal["refused"] = Field(
-        "refused", description="Always 'refused' — discriminates from an assessed result"
+        "refused",
+        description="Always 'refused' — discriminates from an assessed result",
     )
     signal_id: str = Field(default="", description="Signal identifier used")
     reason: str = Field(description="Why the ISO severity verdict was refused")
@@ -342,29 +398,42 @@ class VibrationSeverityResult(BaseModel):
     RMS velocity reading (``signal_id`` None). Alert fields
     (``alert_level``, ``exceeded_threshold``) are derived from the zone.
     """
+
     status: Literal["assessed"] = Field(
-        "assessed", description="Always 'assessed' — discriminates from a refused result"
+        "assessed",
+        description="Always 'assessed' — discriminates from a refused result",
     )
     signal_id: Optional[str] = Field(
         None,
         description="Signal identifier used (None for a direct rms_velocity_mm_s reading)",
     )
     rms_velocity_mm_s: float = Field(description="RMS velocity in mm/s")
-    machine_group: int = Field(description="ISO 20816-3 machine group: 1 (large, >300 kW) or 2 (medium, 15-300 kW)")
+    machine_group: int = Field(
+        description="ISO 20816-3 machine group: 1 (large, >300 kW) or 2 (medium, 15-300 kW)"
+    )
     support_type: str = Field(description="Support type: 'rigid' or 'flexible'")
     axis: str = Field("vertical", description="Measurement axis (informational)")
     zone: str = Field(description="ISO zone: A, B, C, or D")
     zone_description: str = Field(description="Zone description")
-    severity_level: str = Field(description="Good, Acceptable, Unsatisfactory, or Unacceptable")
+    severity_level: str = Field(
+        description="Good, Acceptable, Unsatisfactory, or Unacceptable"
+    )
     color_code: str = Field(description="green, yellow, orange, or red")
     boundaries: dict[str, float] = Field(
         description="Zone boundaries {AB, BC, CD} in mm/s (ISO or custom)"
     )
-    frequency_range: str = Field(description="Actual evaluation band used (may be narrower than the ISO nominal 10-1000 Hz when fs limits it); 'not applicable' for direct RMS readings")
-    unit_conversion_performed: bool = Field(description="Whether acceleration-to-velocity conversion was done")
-    original_unit: Optional[str] = Field(None, description="Original signal unit before conversion")
+    frequency_range: str = Field(
+        description="Actual evaluation band used (may be narrower than the ISO nominal 10-1000 Hz when fs limits it); 'not applicable' for direct RMS readings"
+    )
+    unit_conversion_performed: bool = Field(
+        description="Whether acceleration-to-velocity conversion was done"
+    )
+    original_unit: Optional[str] = Field(
+        None, description="Original signal unit before conversion"
+    )
     operating_speed_rpm: Optional[float] = Field(
-        None, description="Operating speed in RPM, when provided (selects the band's lower edge)"
+        None,
+        description="Operating speed in RPM, when provided (selects the band's lower edge)",
     )
     machine_power_kw: Optional[float] = Field(
         None,
@@ -387,7 +456,9 @@ class VibrationSeverityResult(BaseModel):
             "filled automatically from zone + boundaries)"
         ),
     )
-    threshold_provenance: str = Field(description="Provenance of the zone boundary values (ISO edition note, or custom-threshold note)")
+    threshold_provenance: str = Field(
+        description="Provenance of the zone boundary values (ISO edition note, or custom-threshold note)"
+    )
 
     @model_validator(mode="after")
     def _derive_alert_fields(self):
@@ -410,15 +481,22 @@ class VibrationSeverityResult(BaseModel):
 
 class DiagnosisResult(BaseModel):
     """Full integrated diagnosis pipeline result."""
+
     signal_id: str = Field(description="Signal identifier used")
     rpm: float = Field(description="Machine speed (RPM)")
     bearing_id: Optional[str] = Field(None, description="Bearing used (if any)")
-    machine_group: int = Field(description="ISO 20816-3 machine group used for severity: 1 (large) or 2 (medium)")
-    support_type: str = Field(description="Support type used for severity: 'rigid' or 'flexible'")
+    machine_group: int = Field(
+        description="ISO 20816-3 machine group used for severity: 1 (large) or 2 (medium)"
+    )
+    support_type: str = Field(
+        description="Support type used for severity: 'rigid' or 'flexible'"
+    )
     fft_summary: dict[str, Any] = Field(description="FFT key findings")
     psd_summary: dict[str, Any] = Field(description="PSD key findings")
     stft_summary: dict[str, Any] = Field(description="STFT key findings")
-    bearing_faults: Optional[BearingFaultsSummary] = Field(None, description="Bearing fault results")
+    bearing_faults: Optional[BearingFaultsSummary] = Field(
+        None, description="Bearing fault results"
+    )
     iso_severity: VibrationSeverityResult | ISOSeverityRefusal = Field(
         description=(
             "ISO severity assessment, or a structured refusal "
@@ -428,7 +506,9 @@ class DiagnosisResult(BaseModel):
             "(spectral, bearing, anomaly) still run."
         )
     )
-    anomaly_detection: Optional[dict[str, Any]] = Field(None, description="Anomaly detection results (health, ratio, score)")
+    anomaly_detection: Optional[dict[str, Any]] = Field(
+        None, description="Anomaly detection results (health, ratio, score)"
+    )
     overall_diagnosis: str = Field(description="Combined diagnostic text")
     evidence_strength: str = Field(
         description=(
@@ -457,7 +537,10 @@ class RULEstimationResult(BaseModel):
     observed series; it is NOT a probability that the estimate is correct.
     Extrapolation beyond the observation horizon is inherently uncertain.
     """
-    status: Literal["estimated", "no_degradation_trend", "threshold_already_exceeded"] = Field(
+
+    status: Literal[
+        "estimated", "no_degradation_trend", "threshold_already_exceeded"
+    ] = Field(
         description=(
             "'estimated' (RUL computed), 'no_degradation_trend' (no "
             "statistically significant trend toward the threshold — healthy "
@@ -465,7 +548,9 @@ class RULEstimationResult(BaseModel):
             "measurement is at/above the failure threshold)."
         )
     )
-    method: str = Field(description="Estimation method used: linear, exponential, or kalman")
+    method: str = Field(
+        description="Estimation method used: linear, exponential, or kalman"
+    )
     feature_name: str = Field(description="Degradation indicator tracked (e.g. 'rms')")
     num_measurements: int = Field(description="Number of measurements in the series")
     observation_horizon: float = Field(
@@ -475,8 +560,12 @@ class RULEstimationResult(BaseModel):
             "are extrapolations with low reliability."
         )
     )
-    time_unit: str = Field(description="Unit of timestamps, observation_horizon, and rul")
-    failure_threshold: float = Field(description="Indicator value considered as failure")
+    time_unit: str = Field(
+        description="Unit of timestamps, observation_horizon, and rul"
+    )
+    failure_threshold: float = Field(
+        description="Indicator value considered as failure"
+    )
     current_value: float = Field(description="Most recent measured indicator value")
     trend_p_value: Optional[float] = Field(
         None,
@@ -517,7 +606,9 @@ class RULEstimationResult(BaseModel):
             "present it as a probability of correctness."
         ),
     )
-    message: str = Field(description="Human-readable explanation of the outcome and its caveats")
+    message: str = Field(
+        description="Human-readable explanation of the outcome and its caveats"
+    )
 
 
 class TrendAnalysisResult(BaseModel):
@@ -528,10 +619,15 @@ class TrendAnalysisResult(BaseModel):
     stationary. It cannot estimate Remaining Useful Life: for RUL, collect
     repeated measurements over days/weeks and pass them to estimate_rul.
     """
+
     feature_name: str = Field(description="Feature analyzed")
-    slope: float = Field(description="Trend slope in feature units per second (within the recording)")
+    slope: float = Field(
+        description="Trend slope in feature units per second (within the recording)"
+    )
     intercept: float = Field(description="Trend intercept")
-    r_squared: float = Field(description="R-squared goodness of fit of the linear trend")
+    r_squared: float = Field(
+        description="R-squared goodness of fit of the linear trend"
+    )
     trend_direction: str = Field(
         description=(
             "increasing, decreasing, or stable — based on the slope "

@@ -60,11 +60,16 @@ def load_signal_data(filename: str) -> Optional[np.ndarray]:
 
         elif file_path.suffix == ".mat":
             from scipy.io import loadmat
+
             mat_data = loadmat(str(file_path))
             for key, value in mat_data.items():
-                if key.startswith('__'):
+                if key.startswith("__"):
                     continue
-                if isinstance(value, np.ndarray) and value.dtype.kind in ('f', 'i', 'u'):
+                if isinstance(value, np.ndarray) and value.dtype.kind in (
+                    "f",
+                    "i",
+                    "u",
+                ):
                     data = value.flatten()
                     if len(data) > 0:
                         return data.astype(np.float64)
@@ -73,10 +78,11 @@ def load_signal_data(filename: str) -> Optional[np.ndarray]:
 
         elif file_path.suffix == ".wav":
             from scipy.io import wavfile
+
             sample_rate, data = wavfile.read(str(file_path))
             if data.ndim > 1:
                 data = data[:, 0]
-            if data.dtype.kind == 'i':
+            if data.dtype.kind == "i":
                 data = data.astype(np.float64) / np.iinfo(data.dtype).max
             return data.astype(np.float64)
 
@@ -122,7 +128,7 @@ def extract_segment(
     rng = np.random.default_rng(seed)
     start_idx = int(rng.integers(0, max_start + 1))
 
-    return signal[start_idx:start_idx + segment_samples]
+    return signal[start_idx : start_idx + segment_samples]
 
 
 def get_metadata_path(signal_filename: str) -> Path:

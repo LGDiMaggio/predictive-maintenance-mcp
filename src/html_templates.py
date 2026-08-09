@@ -12,7 +12,7 @@ def get_base_template(
     title: str,
     content: str,
     metadata: Optional[Dict[str, Any]] = None,
-    include_plotly: bool = True
+    include_plotly: bool = True,
 ) -> str:
     """
     Base HTML template with professional styling.
@@ -46,7 +46,7 @@ def get_base_template(
     plotly_tag = (
         '<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>'
         if include_plotly
-        else '<!-- self-contained: no external scripts -->'
+        else "<!-- self-contained: no external scripts -->"
     )
 
     return f"""<!DOCTYPE html>
@@ -254,11 +254,11 @@ def create_fft_report(
     frequencies: List[float],
     magnitudes_db: List[float],
     peaks: List[Dict[str, float]],
-    metadata: Dict[str, Any]
+    metadata: Dict[str, Any],
 ) -> str:
     """
     Create professional FFT spectrum report.
-    
+
     Args:
         signal_file: Signal filename
         sampling_rate: Sampling rate in Hz
@@ -266,7 +266,7 @@ def create_fft_report(
         magnitudes_db: Magnitude array in dB
         peaks: List of detected peaks with 'frequency' and 'magnitude_db'
         metadata: Additional metadata
-    
+
     Returns:
         Complete HTML report
     """
@@ -291,33 +291,37 @@ def create_fft_report(
         </div>
     </div>
     """
-    
+
     # Peaks table
     peaks_html = "<div class='card'><h3 class='card-title'>🎯 Detected Peaks</h3><table style='width:100%; border-collapse: collapse;'>"
     peaks_html += "<tr style='background: #f5f7fa; font-weight: 600;'><th style='padding: 0.75rem; text-align: left;'>Rank</th><th style='padding: 0.75rem; text-align: left;'>Frequency (Hz)</th><th style='padding: 0.75rem; text-align: left;'>Magnitude (dB)</th><th style='padding: 0.75rem; text-align: left;'>Note</th></tr>"
-    
+
     for i, peak in enumerate(peaks[:10], 1):
-        freq = peak['frequency']
-        mag_db = peak['magnitude_db']
-        note = peak.get('note', '')
-        
+        freq = peak["frequency"]
+        mag_db = peak["magnitude_db"]
+        note = peak.get("note", "")
+
         peaks_html += f"<tr style='border-bottom: 1px solid #e0e0e0;'>"
         peaks_html += f"<td style='padding: 0.75rem;'><strong>#{i}</strong></td>"
-        peaks_html += f"<td style='padding: 0.75rem; font-family: monospace;'>{freq:.2f}</td>"
-        peaks_html += f"<td style='padding: 0.75rem; font-family: monospace;'>{mag_db:.1f}</td>"
+        peaks_html += (
+            f"<td style='padding: 0.75rem; font-family: monospace;'>{freq:.2f}</td>"
+        )
+        peaks_html += (
+            f"<td style='padding: 0.75rem; font-family: monospace;'>{mag_db:.1f}</td>"
+        )
         peaks_html += f"<td style='padding: 0.75rem; color: #e74c3c;'>{note}</td>"
         peaks_html += "</tr>"
-    
+
     peaks_html += "</table></div>"
-    
+
     # Plotly chart
     chart_div = "<div class='chart-container'><div id='fft-chart'></div></div>"
-    
+
     # Plotly script
-    peak_freqs = [p['frequency'] for p in peaks[:10]]
-    peak_mags = [p['magnitude_db'] for p in peaks[:10]]
+    peak_freqs = [p["frequency"] for p in peaks[:10]]
+    peak_mags = [p["magnitude_db"] for p in peaks[:10]]
     peak_labels = [f"{p['frequency']:.1f}" for p in peaks[:10]]
-    
+
     plotly_script = f"""
     <script>
         var spectrum = {{
@@ -397,7 +401,7 @@ def create_fft_report(
         Plotly.newPlot('fft-chart', [spectrum, peaks], layout, config);
     </script>
     """
-    
+
     content = f"""
     <div class="header">
         <div class="header-content">
@@ -412,11 +416,9 @@ def create_fft_report(
     </div>
     {plotly_script}
     """
-    
+
     return get_base_template(
-        title=f"FFT Analysis - {signal_file}",
-        content=content,
-        metadata=metadata
+        title=f"FFT Analysis - {signal_file}", content=content, metadata=metadata
     )
 
 
@@ -431,11 +433,11 @@ def create_envelope_report(
     env_mag_db: List[float],
     peaks: List[Dict[str, float]],
     bearing_freqs: Optional[Dict[str, float]],
-    metadata: Dict[str, Any]
+    metadata: Dict[str, Any],
 ) -> str:
     """
     Create professional envelope analysis report.
-    
+
     Args:
         signal_file: Signal filename
         sampling_rate: Sampling rate
@@ -448,7 +450,7 @@ def create_envelope_report(
         peaks: Detected peaks
         bearing_freqs: Optional dict with BPFO, BPFI, BSF, FTF
         metadata: Additional metadata
-    
+
     Returns:
         Complete HTML report
     """
@@ -473,12 +475,17 @@ def create_envelope_report(
         </div>
     </div>
     """
-    
+
     # Bearing frequencies reference (if provided)
     bearing_ref = ""
     if bearing_freqs:
         bearing_ref = "<div class='card'><h3 class='card-title'>📌 Bearing Characteristic Frequencies</h3><div class='info-grid'>"
-        colors = {"BPFO": "#e74c3c", "BPFI": "#f39c12", "BSF": "#3498db", "FTF": "#2ecc71"}
+        colors = {
+            "BPFO": "#e74c3c",
+            "BPFI": "#f39c12",
+            "BSF": "#3498db",
+            "FTF": "#2ecc71",
+        }
         for name, freq in bearing_freqs.items():
             if freq:
                 color = colors.get(name, "#95a5a6")
@@ -489,38 +496,47 @@ def create_envelope_report(
                 </div>
                 """
         bearing_ref += "</div></div>"
-    
+
     # Peaks table
     peaks_html = "<div class='card'><h3 class='card-title'>🎯 Envelope Spectrum Peaks</h3><table style='width:100%; border-collapse: collapse;'>"
     peaks_html += "<tr style='background: #f5f7fa; font-weight: 600;'><th style='padding: 0.75rem; text-align: left;'>Rank</th><th style='padding: 0.75rem; text-align: left;'>Frequency (Hz)</th><th style='padding: 0.75rem; text-align: left;'>Magnitude (dB)</th><th style='padding: 0.75rem; text-align: left;'>Match</th></tr>"
-    
+
     for i, peak in enumerate(peaks[:10], 1):
-        freq = peak['frequency']
-        mag_db = peak['magnitude_db']
-        match = peak.get('match', '')
-        
+        freq = peak["frequency"]
+        mag_db = peak["magnitude_db"]
+        match = peak.get("match", "")
+
         peaks_html += f"<tr style='border-bottom: 1px solid #e0e0e0;'>"
         peaks_html += f"<td style='padding: 0.75rem;'><strong>#{i}</strong></td>"
-        peaks_html += f"<td style='padding: 0.75rem; font-family: monospace;'>{freq:.2f}</td>"
-        peaks_html += f"<td style='padding: 0.75rem; font-family: monospace;'>{mag_db:.1f}</td>"
+        peaks_html += (
+            f"<td style='padding: 0.75rem; font-family: monospace;'>{freq:.2f}</td>"
+        )
+        peaks_html += (
+            f"<td style='padding: 0.75rem; font-family: monospace;'>{mag_db:.1f}</td>"
+        )
         peaks_html += f"<td style='padding: 0.75rem; color: #e74c3c; font-weight: 600;'>{match}</td>"
         peaks_html += "</tr>"
-    
+
     peaks_html += "</table></div>"
-    
+
     # Charts
     charts_div = "<div class='chart-container'><div id='envelope-charts'></div></div>"
-    
+
     # Plotly script with subplots
-    peak_freqs = [p['frequency'] for p in peaks[:10]]
-    peak_mags = [p['magnitude_db'] for p in peaks[:10]]
-    
+    peak_freqs = [p["frequency"] for p in peaks[:10]]
+    peak_mags = [p["magnitude_db"] for p in peaks[:10]]
+
     # Bearing frequency markers
     bearing_markers_script = ""
     if bearing_freqs:
         for name, freq in bearing_freqs.items():
             if freq and freq <= max(env_freq):
-                colors = {"BPFO": "#e74c3c", "BPFI": "#f39c12", "BSF": "#3498db", "FTF": "#2ecc71"}
+                colors = {
+                    "BPFO": "#e74c3c",
+                    "BPFI": "#f39c12",
+                    "BSF": "#3498db",
+                    "FTF": "#2ecc71",
+                }
                 color = colors.get(name, "#95a5a6")
                 bearing_markers_script += f"""
         data.push({{
@@ -536,7 +552,7 @@ def create_envelope_report(
             hovertemplate: '{name}: {freq:.2f} Hz<extra></extra>'
         }});
         """
-    
+
     plotly_script = f"""
     <script>
         var filtered = {{
@@ -646,7 +662,7 @@ def create_envelope_report(
         Plotly.newPlot('envelope-charts', data, layout, config);
     </script>
     """
-    
+
     content = f"""
     <div class="header">
         <div class="header-content">
@@ -662,43 +678,39 @@ def create_envelope_report(
     </div>
     {plotly_script}
     """
-    
+
     return get_base_template(
-        title=f"Envelope Analysis - {signal_file}",
-        content=content,
-        metadata=metadata
+        title=f"Envelope Analysis - {signal_file}", content=content, metadata=metadata
     )
 
 
 def create_iso_report(
-    signal_file: str,
-    iso_result: Dict[str, Any],
-    metadata: Dict[str, Any]
+    signal_file: str, iso_result: Dict[str, Any], metadata: Dict[str, Any]
 ) -> str:
     """
     Create professional ISO 20816-3 evaluation report.
-    
+
     Args:
         signal_file: Signal filename
         iso_result: ISO evaluation result dict
         metadata: Additional metadata
-    
+
     Returns:
         Complete HTML report
     """
-    zone = iso_result['zone']
-    severity = iso_result['severity_level']
-    rms_velocity = iso_result['rms_velocity']
-    
+    zone = iso_result["zone"]
+    severity = iso_result["severity_level"]
+    rms_velocity = iso_result["rms_velocity"]
+
     # Zone color and icon
     zone_colors = {
         "A": ("#27ae60", "✓"),
         "B": ("#f39c12", "⚠"),
         "C": ("#e67e22", "⚠"),
-        "D": ("#c0392b", "🚨")
+        "D": ("#c0392b", "🚨"),
     }
     color, icon = zone_colors.get(zone, ("#95a5a6", "?"))
-    
+
     # Status badge
     status_badge = f"""
     <div style="text-align: center; margin: 2rem 0;">
@@ -707,7 +719,7 @@ def create_iso_report(
         </div>
     </div>
     """
-    
+
     # Info cards
     info_cards = f"""
     <div class="info-grid">
@@ -729,7 +741,7 @@ def create_iso_report(
         </div>
     </div>
     """
-    
+
     # Zone boundaries
     boundaries_card = f"""
     <div class="card">
@@ -750,7 +762,7 @@ def create_iso_report(
         </div>
     </div>
     """
-    
+
     # Interpretation
     interpretation_card = f"""
     <div class="card">
@@ -760,12 +772,18 @@ def create_iso_report(
         </p>
     </div>
     """
-    
+
     # Chart
     chart_div = "<div class='chart-container'><div id='iso-chart'></div></div>"
-    
-    boundaries = [0, iso_result['boundary_ab'], iso_result['boundary_bc'], iso_result['boundary_cd'], iso_result['boundary_cd'] * 1.3]
-    
+
+    boundaries = [
+        0,
+        iso_result["boundary_ab"],
+        iso_result["boundary_bc"],
+        iso_result["boundary_cd"],
+        iso_result["boundary_cd"] * 1.3,
+    ]
+
     plotly_script = f"""
     <script>
         var boundaries = {{
@@ -889,7 +907,7 @@ def create_iso_report(
         Plotly.newPlot('iso-chart', data, layout, config);
     </script>
     """
-    
+
     content = f"""
     <div class="header">
         <div class="header-content">
@@ -906,9 +924,7 @@ def create_iso_report(
     </div>
     {plotly_script}
     """
-    
+
     return get_base_template(
-        title=f"ISO 20816-3 - {signal_file}",
-        content=content,
-        metadata=metadata
+        title=f"ISO 20816-3 - {signal_file}", content=content, metadata=metadata
     )

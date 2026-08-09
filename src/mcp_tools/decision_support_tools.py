@@ -54,27 +54,27 @@ async def generate_maintenance_recommendations(
 ) -> str:
     """Generate maintenance recommendations based on severity and detected faults.
 
-        Combines ISO zone-based urgency with fault-specific maintenance
-        actions. This tool intentionally does NOT accept a confidence
-        value: any number supplied by the caller would be echoed into
-        advisory output without evidential basis.
+    Combines ISO zone-based urgency with fault-specific maintenance
+    actions. This tool intentionally does NOT accept a confidence
+    value: any number supplied by the caller would be echoed into
+    advisory output without evidential basis.
 
-        Args:
-            ctx: MCP context. Unused — see this module's docstring on logging.
-            severity_zone: ISO zone letter — "A", "B", "C", or "D".
-            fault_types: Detected fault types from the closed canonical
-                vocabulary — outer_race/inner_race/ball/cage for bearings
-                (NOT the BPFO/BPFI/BSF/FTF acronyms) plus misalignment/
-                unbalance/looseness. None for zone-only advice.
+    Args:
+        ctx: MCP context. Unused — see this module's docstring on logging.
+        severity_zone: ISO zone letter — "A", "B", "C", or "D".
+        fault_types: Detected fault types from the closed canonical
+            vocabulary — outer_race/inner_race/ball/cage for bearings
+            (NOT the BPFO/BPFI/BSF/FTF acronyms) plus misalignment/
+            unbalance/looseness. None for zone-only advice.
 
-        Returns:
-            Formatted string listing all maintenance recommendations.
+    Returns:
+        Formatted string listing all maintenance recommendations.
 
-        Raises:
-            ValueError: If any fault type is outside the canonical
-                vocabulary (the message lists the allowed values —
-                unknown values are never dropped silently).
-        """
+    Raises:
+        ValueError: If any fault type is outside the canonical
+            vocabulary (the message lists the allowed values —
+            unknown values are never dropped silently).
+    """
     fault_list = list(fault_types) if fault_types else None
 
     logger.info(
@@ -89,7 +89,7 @@ async def generate_maintenance_recommendations(
     for i, rec in enumerate(recs, 1):
         lines.append(
             f"{i}. [{rec['urgency'].upper()}] {rec['action']}\n"
-                f"   {rec['description']}"
+            f"   {rec['description']}"
         )
 
     return "\n\n".join(lines)

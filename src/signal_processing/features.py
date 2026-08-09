@@ -62,9 +62,13 @@ def extract_time_domain_features(segment: np.ndarray) -> dict[str, float]:
     # Dimensionless indicators
     shape_factor_val = rms_val / mean_abs_val if mean_abs_val > 0 else 0.0
     crest_factor_val = float(np.max(np.abs(segment))) / rms_val if rms_val > 0 else 0.0
-    impulse_factor_val = float(np.max(np.abs(segment))) / mean_abs_val if mean_abs_val > 0 else 0.0
+    impulse_factor_val = (
+        float(np.max(np.abs(segment))) / mean_abs_val if mean_abs_val > 0 else 0.0
+    )
     sqrt_mean = float(np.mean(np.sqrt(np.abs(segment))))
-    clearance_factor_val = float(np.max(np.abs(segment))) / (sqrt_mean**2) if sqrt_mean > 0 else 0.0
+    clearance_factor_val = (
+        float(np.max(np.abs(segment))) / (sqrt_mean**2) if sqrt_mean > 0 else 0.0
+    )
 
     # Energy and entropy
     power_val = float(np.mean(segment**2))
@@ -161,6 +165,7 @@ def resolve_sampling_rate(
 
     if metadata_resolver is None:
         from ..signal_acquisition.loaders import get_metadata_path
+
         metadata_resolver = get_metadata_path
 
     metadata_path = metadata_resolver(signal_file)

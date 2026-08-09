@@ -30,9 +30,14 @@ from mcp.server.mcpserver import MCPServer, Context
 
 from ..config import MODELS_DIR, RESOURCES_DIR
 from ..models import (
-    AnomalyModelResult, AnomalyPredictionResult,
-    BearingCatalogMiss, BearingFaultCheckResult, BearingFaultsSummary,
-    VibrationSeverityResult, ISOSeverityRefusal, DiagnosisResult,
+    AnomalyModelResult,
+    AnomalyPredictionResult,
+    BearingCatalogMiss,
+    BearingFaultCheckResult,
+    BearingFaultsSummary,
+    VibrationSeverityResult,
+    ISOSeverityRefusal,
+    DiagnosisResult,
 )
 from ..document_reader import (
     calculate_bearing_frequencies,
@@ -104,7 +109,9 @@ async def _extract_features_from_ids(
 
         detected_rates[sid] = file_rate
 
-        features = _segment_and_extract_features(signal_data, file_rate, segment_duration, overlap_ratio)
+        features = _segment_and_extract_features(
+            signal_data, file_rate, segment_duration, overlap_ratio
+        )
         all_features.extend(features)
 
     return all_features, detected_rates
@@ -244,9 +251,7 @@ async def assess_severity(
     # the signal route).
     check_power_scope(machine_power_kw)
 
-    custom = (
-        _validate_custom_thresholds(thresholds) if thresholds is not None else None
-    )
+    custom = _validate_custom_thresholds(thresholds) if thresholds is not None else None
 
     if signal_id is not None:
         # --- Stored-signal route (former evaluate_iso_20816 /
@@ -296,9 +301,7 @@ async def assess_severity(
         frequency_range = "not applicable — direct RMS velocity reading"
         unit_conversion = False
         original_unit = "mm/s"
-        logger.info(
-            f"Assessing severity for a direct reading of {rms:.2f} mm/s"
-        )
+        logger.info(f"Assessing severity for a direct reading of {rms:.2f} mm/s")
         zone_info = classify_zone(rms, machine_group, support_type)
         zone_block = {
             "zone": zone_info["zone"],
@@ -342,9 +345,11 @@ async def assess_severity(
         **zone_block,
     )
 
+
 # ------------------------------------------------------------------
 # ML anomaly detection – training
 # ------------------------------------------------------------------
+
 
 async def train_anomaly_model(
     healthy_signal_ids: list[str],
@@ -355,60 +360,62 @@ async def train_anomaly_model(
     fault_signal_ids: Optional[list[str]] = None,
     healthy_validation_ids: Optional[list[str]] = None,
     model_name: str = "anomaly_model",
-    ctx: Context = None
+    ctx: Context = None,
 ) -> AnomalyModelResult:
     """
-        Train ML-based anomaly detection model on healthy data (UNSUPERVISED/SEMI-SUPERVISED).
+    Train ML-based anomaly detection model on healthy data (UNSUPERVISED/SEMI-SUPERVISED).
 
-        All signals are referenced by signal_id: load them first with
-        load_signal — its batch form accepts a list of file paths, e.g.
-        load_signal(filepath=["real_train/baseline_1.csv", ...]). Each
-        signal's sampling rate comes from its stored metadata.
+    All signals are referenced by signal_id: load them first with
+    load_signal — its batch form accepts a list of file paths, e.g.
+    load_signal(filepath=["real_train/baseline_1.csv", ...]). Each
+    signal's sampling rate comes from its stored metadata.
 
-        Complete pipeline:
-        1. Extract features from healthy signals (segmentation + time-domain features)
-        2. Standardize features (StandardScaler - fitted on training data only)
-        3. Dimensionality reduction (PCA with specified variance explained)
-        4. Train novelty detection model (OneClassSVM or LocalOutlierFactor) on HEALTHY DATA ONLY
-        5. Optional hyperparameter tuning using validation data (semi-supervised)
-        6. Save model, scaler, and PCA transformer
+    Complete pipeline:
+    1. Extract features from healthy signals (segmentation + time-domain features)
+    2. Standardize features (StandardScaler - fitted on training data only)
+    3. Dimensionality reduction (PCA with specified variance explained)
+    4. Train novelty detection model (OneClassSVM or LocalOutlierFactor) on HEALTHY DATA ONLY
+    5. Optional hyperparameter tuning using validation data (semi-supervised)
+    6. Save model, scaler, and PCA transformer
 
-        **Training Mode:**
-        - UNSUPERVISED: Train only on healthy data with automatic hyperparameters
-        - SEMI-SUPERVISED: Train on healthy data, tune hyperparameters using validation set (healthy + fault)
+    **Training Mode:**
+    - UNSUPERVISED: Train only on healthy data with automatic hyperparameters
+    - SEMI-SUPERVISED: Train on healthy data, tune hyperparameters using validation set (healthy + fault)
 
-        **Note:** This is NOT supervised learning. OneClassSVM/LOF are trained ONLY on healthy data.
-        Fault data (if provided) is used ONLY for hyperparameter tuning after training.
+    **Note:** This is NOT supervised learning. OneClassSVM/LOF are trained ONLY on healthy data.
+    Fault data (if provided) is used ONLY for hyperparameter tuning after training.
 
-        **Validation Strategy:**
-        - If healthy_validation_ids provided: Use those explicitly (no split)
-        - If healthy_validation_ids NOT provided: Automatic 80/20 split of training data
-        - If fault_signal_ids provided: Enable semi-supervised mode (hyperparameter tuning)
+    **Validation Strategy:**
+    - If healthy_validation_ids provided: Use those explicitly (no split)
+    - If healthy_validation_ids NOT provided: Automatic 80/20 split of training data
+    - If fault_signal_ids provided: Enable semi-supervised mode (hyperparameter tuning)
 
-        Args:
-            healthy_signal_ids: Stored signal IDs with healthy machine data (for training)
-            segment_duration: Segment duration in seconds (default: 0.1)
-            overlap_ratio: Overlap ratio 0-1 (default: 0.5)
-            model_type: 'OneClassSVM' or 'LocalOutlierFactor' (default: 'OneClassSVM')
-            pca_variance: Cumulative variance to explain with PCA (default: 0.95)
-            fault_signal_ids: Optional stored signal IDs for HYPERPARAMETER TUNING (semi-supervised)
-            healthy_validation_ids: Optional stored healthy signal IDs for validation (specificity check).
-                                      If not provided, 20% of training data will be used.
-            model_name: Name for saved model files (default: 'anomaly_model')
-            ctx: MCP context. Unused — see this module's docstring on logging.
+    Args:
+        healthy_signal_ids: Stored signal IDs with healthy machine data (for training)
+        segment_duration: Segment duration in seconds (default: 0.1)
+        overlap_ratio: Overlap ratio 0-1 (default: 0.5)
+        model_type: 'OneClassSVM' or 'LocalOutlierFactor' (default: 'OneClassSVM')
+        pca_variance: Cumulative variance to explain with PCA (default: 0.95)
+        fault_signal_ids: Optional stored signal IDs for HYPERPARAMETER TUNING (semi-supervised)
+        healthy_validation_ids: Optional stored healthy signal IDs for validation (specificity check).
+                                  If not provided, 20% of training data will be used.
+        model_name: Name for saved model files (default: 'anomaly_model')
+        ctx: MCP context. Unused — see this module's docstring on logging.
 
-        Returns:
-            AnomalyModelResult with model paths and performance metrics
+    Returns:
+        AnomalyModelResult with model paths and performance metrics
 
-        Raises:
-            ValueError: If a signal_id is not loaded or has no sampling rate,
-                or model_name/model_type is invalid.
-        """
+    Raises:
+        ValueError: If a signal_id is not loaded or has no sampling rate,
+            or model_name/model_type is invalid.
+    """
     # Fail fast on an unsafe model_name before doing any expensive work or
     # touching the filesystem (the write happens in step 6).
     validate_name_component(model_name, kind="model_name")
 
-    logger.info(f"Training {model_type} model on {len(healthy_signal_ids)} healthy signals...")
+    logger.info(
+        f"Training {model_type} model on {len(healthy_signal_ids)} healthy signals..."
+    )
 
     # Step 1: Extract features from all healthy signals
     all_features, detected_rates = await _extract_features_from_ids(
@@ -440,28 +447,28 @@ async def train_anomaly_model(
             # SEMI-SUPERVISED MODE: Train on healthy, tune hyperparameters with validation (healthy + fault)
             logger.info("Training in SEMI-SUPERVISED mode")
             logger.info("- Training: Healthy data only (unsupervised)")
-            logger.info("- Hyperparameter tuning: Using validation set (healthy + fault)")
+            logger.info(
+                "- Hyperparameter tuning: Using validation set (healthy + fault)"
+            )
             logger.info("Evaluating hyperparameter grid...")
 
             # Prepare validation features for fault signals
             X_fault = await _extract_and_transform_validation_features(
-                fault_signal_ids, segment_duration, overlap_ratio,
-                scaler, pca
+                fault_signal_ids, segment_duration, overlap_ratio, scaler, pca
             )
 
             # Prepare validation features for healthy signals
             X_healthy_val = None
             if healthy_validation_ids:
                 X_healthy_val = await _extract_and_transform_validation_features(
-                    healthy_validation_ids, segment_duration, overlap_ratio,
-                    scaler, pca
+                    healthy_validation_ids, segment_duration, overlap_ratio, scaler, pca
                 )
 
             # Hyperparameter grid
             param_grid = {
-                'nu': [0.01, 0.05, 0.1, 0.2],
-                'gamma': ['scale', 'auto', 0.001, 0.01, 0.1],
-                'kernel': ['rbf']
+                "nu": [0.01, 0.05, 0.1, 0.2],
+                "gamma": ["scale", "auto", 0.001, 0.01, 0.1],
+                "kernel": ["rbf"],
             }
 
             # Manual hyperparameter search with validation scoring
@@ -469,10 +476,10 @@ async def train_anomaly_model(
             best_params = None
             best_model = None
 
-            for nu in param_grid['nu']:
-                for gamma in param_grid['gamma']:
+            for nu in param_grid["nu"]:
+                for gamma in param_grid["gamma"]:
                     # Train on HEALTHY DATA ONLY
-                    model_candidate = OneClassSVM(kernel='rbf', nu=nu, gamma=gamma)
+                    model_candidate = OneClassSVM(kernel="rbf", nu=nu, gamma=gamma)
                     model_candidate.fit(X_pca)  # Only healthy training data
 
                     # Evaluate on validation set (healthy + fault)
@@ -499,12 +506,14 @@ async def train_anomaly_model(
 
                     if validation_score > best_score:
                         best_score = validation_score
-                        best_params = {'kernel': 'rbf', 'nu': nu, 'gamma': gamma}
+                        best_params = {"kernel": "rbf", "nu": nu, "gamma": gamma}
                         best_model = model_candidate
 
             model = best_model
 
-            logger.info(f"Best hyperparameters: nu={best_params['nu']}, gamma={best_params['gamma']}")
+            logger.info(
+                f"Best hyperparameters: nu={best_params['nu']}, gamma={best_params['gamma']}"
+            )
             logger.info(f"Validation balanced accuracy: {best_score:.3f}")
 
         else:
@@ -516,17 +525,17 @@ async def train_anomaly_model(
             nu_auto = min(0.1, max(0.01, 1.0 / np.sqrt(len(X_pca))))
 
             model = OneClassSVM(
-                kernel='rbf',
+                kernel="rbf",
                 nu=nu_auto,  # Adaptive based on sample size
-                gamma='scale'  # Automatic scaling based on features
+                gamma="scale",  # Automatic scaling based on features
             )
             model.fit(X_pca)
 
             best_params = {
-                'kernel': 'rbf',
-                'nu': float(nu_auto),
-                'gamma': 'scale',
-                'mode': 'unsupervised_auto'
+                "kernel": "rbf",
+                "nu": float(nu_auto),
+                "gamma": "scale",
+                "mode": "unsupervised_auto",
             }
 
             logger.info(f"Auto-calculated nu={nu_auto:.4f} based on sample size")
@@ -540,16 +549,14 @@ async def train_anomaly_model(
 
             # Prepare validation features for fault signals
             X_fault = await _extract_and_transform_validation_features(
-                fault_signal_ids, segment_duration, overlap_ratio,
-                scaler, pca
+                fault_signal_ids, segment_duration, overlap_ratio, scaler, pca
             )
 
             # Prepare healthy validation features
             X_healthy_val = None
             if healthy_validation_ids:
                 X_healthy_val = await _extract_and_transform_validation_features(
-                    healthy_validation_ids, segment_duration, overlap_ratio,
-                    scaler, pca
+                    healthy_validation_ids, segment_duration, overlap_ratio, scaler, pca
                 )
 
             # Hyperparameter search for LOF
@@ -562,7 +569,7 @@ async def train_anomaly_model(
                     model_candidate = LocalOutlierFactor(
                         n_neighbors=n_neighbors,
                         contamination=contamination,
-                        novelty=True
+                        novelty=True,
                     )
                     model_candidate.fit(X_pca)  # Only healthy training data
 
@@ -590,12 +597,17 @@ async def train_anomaly_model(
 
                     if validation_score > best_score:
                         best_score = validation_score
-                        best_params = {'n_neighbors': n_neighbors, 'contamination': contamination}
+                        best_params = {
+                            "n_neighbors": n_neighbors,
+                            "contamination": contamination,
+                        }
                         best_model = model_candidate
 
             model = best_model
 
-            logger.info(f"Best parameters: n_neighbors={best_params['n_neighbors']}, contamination={best_params['contamination']}")
+            logger.info(
+                f"Best parameters: n_neighbors={best_params['n_neighbors']}, contamination={best_params['contamination']}"
+            )
 
         else:
             # UNSUPERVISED MODE: Auto parameters
@@ -607,22 +619,22 @@ async def train_anomaly_model(
             contamination_auto = 0.1  # Conservative 10% outlier assumption
 
             model = LocalOutlierFactor(
-                n_neighbors=n_auto,
-                contamination=contamination_auto,
-                novelty=True
+                n_neighbors=n_auto, contamination=contamination_auto, novelty=True
             )
             model.fit(X_pca)
 
             best_params = {
-                'n_neighbors': int(n_auto),
-                'contamination': contamination_auto,
-                'mode': 'unsupervised_auto'
+                "n_neighbors": int(n_auto),
+                "contamination": contamination_auto,
+                "mode": "unsupervised_auto",
             }
 
             logger.info(f"Auto-calculated n_neighbors={n_auto}")
 
     else:
-        raise ValueError(f"Unknown model_type: {model_type}. Use 'OneClassSVM' or 'LocalOutlierFactor'")
+        raise ValueError(
+            f"Unknown model_type: {model_type}. Use 'OneClassSVM' or 'LocalOutlierFactor'"
+        )
 
     # Step 5: Optional validation on healthy + fault data
     validation_accuracy = None
@@ -637,12 +649,13 @@ async def train_anomaly_model(
 
         if healthy_validation_ids:
             # Option 1: User provided explicit healthy validation files
-            logger.info(f"Using {len(healthy_validation_ids)} explicitly provided healthy validation files")
+            logger.info(
+                f"Using {len(healthy_validation_ids)} explicitly provided healthy validation files"
+            )
 
             # Extract and transform features from validation signals
             X_pca_healthy_val = await _extract_and_transform_validation_features(
-                healthy_validation_ids, segment_duration, overlap_ratio,
-                scaler, pca
+                healthy_validation_ids, segment_duration, overlap_ratio, scaler, pca
             )
 
             if X_pca_healthy_val is not None:
@@ -651,7 +664,9 @@ async def train_anomaly_model(
                 healthy_total = len(healthy_predictions)
                 healthy_accuracy = healthy_correct / healthy_total
 
-                logger.info(f"Healthy validation: {healthy_correct}/{healthy_total} correctly classified ({healthy_accuracy*100:.1f}%)")
+                logger.info(
+                    f"Healthy validation: {healthy_correct}/{healthy_total} correctly classified ({healthy_accuracy*100:.1f}%)"
+                )
             else:
                 healthy_correct = 0
                 healthy_total = 0
@@ -659,7 +674,9 @@ async def train_anomaly_model(
 
         else:
             # Option 2: Auto-split training data 80/20
-            logger.info("No healthy validation files provided - using 80/20 split of training data")
+            logger.info(
+                "No healthy validation files provided - using 80/20 split of training data"
+            )
 
             split_idx = int(0.8 * len(X_pca))
             X_pca_train = X_pca[:split_idx]
@@ -668,9 +685,9 @@ async def train_anomaly_model(
             # Retrain model on 80% split for proper validation
             if model_type == "OneClassSVM":
                 model_retrained = OneClassSVM(
-                    kernel=best_params.get('kernel', 'rbf'),
-                    nu=best_params['nu'],
-                    gamma=best_params['gamma']
+                    kernel=best_params.get("kernel", "rbf"),
+                    nu=best_params["nu"],
+                    gamma=best_params["gamma"],
                 )
                 model_retrained.fit(X_pca_train)
                 model = model_retrained  # Use retrained model
@@ -683,14 +700,15 @@ async def train_anomaly_model(
             healthy_total = len(healthy_predictions)
             healthy_accuracy = healthy_correct / healthy_total
 
-            logger.info(f"Healthy validation: {healthy_correct}/{healthy_total} correctly classified ({healthy_accuracy*100:.1f}%)")
+            logger.info(
+                f"Healthy validation: {healthy_correct}/{healthy_total} correctly classified ({healthy_accuracy*100:.1f}%)"
+            )
 
         # Part B: Validate on FAULT data (only if fault files were provided)
         X_fault_pca = None
         if fault_signal_ids:
             X_fault_pca = await _extract_and_transform_validation_features(
-                fault_signal_ids, segment_duration, overlap_ratio,
-                scaler, pca
+                fault_signal_ids, segment_duration, overlap_ratio, scaler, pca
             )
 
         if X_fault_pca is not None:
@@ -706,24 +724,28 @@ async def train_anomaly_model(
             # Overall accuracy = (healthy_correct + fault_correct) / (healthy_total + fault_total)
             total_correct = healthy_correct + anomaly_detected
             total_samples = healthy_total + fault_total
-            validation_accuracy = float(total_correct / total_samples) if total_samples > 0 else 0.0
+            validation_accuracy = (
+                float(total_correct / total_samples) if total_samples > 0 else 0.0
+            )
 
             validation_details = (
                 f"Healthy: {healthy_correct}/{healthy_total} correct ({healthy_accuracy*100:.1f}%), "
-                    f"Fault: {anomaly_detected}/{fault_total} detected ({fault_accuracy*100:.1f}%)"
+                f"Fault: {anomaly_detected}/{fault_total} detected ({fault_accuracy*100:.1f}%)"
             )
 
             validation_metrics = {
-                'healthy_correct': int(healthy_correct),
-                'healthy_total': int(healthy_total),
-                'healthy_accuracy': float(healthy_accuracy),
-                'fault_detected': int(anomaly_detected),
-                'fault_total': int(fault_total),
-                'fault_accuracy': float(fault_accuracy),
-                'overall_accuracy': float(validation_accuracy)
+                "healthy_correct": int(healthy_correct),
+                "healthy_total": int(healthy_total),
+                "healthy_accuracy": float(healthy_accuracy),
+                "fault_detected": int(anomaly_detected),
+                "fault_total": int(fault_total),
+                "fault_accuracy": float(fault_accuracy),
+                "overall_accuracy": float(validation_accuracy),
             }
 
-            logger.info(f"Fault validation: {anomaly_detected}/{fault_total} detected as anomalies ({fault_accuracy*100:.1f}%)")
+            logger.info(
+                f"Fault validation: {anomaly_detected}/{fault_total} detected as anomalies ({fault_accuracy*100:.1f}%)"
+            )
             logger.info(f"Overall validation accuracy: {validation_accuracy*100:.1f}%")
 
     # Step 6: Save model, scaler, and PCA
@@ -737,11 +759,11 @@ async def train_anomaly_model(
     scaler_path = _model_paths.scaler
     pca_path = _model_paths.pca
 
-    with open(model_path, 'wb') as f:
+    with open(model_path, "wb") as f:
         pickle.dump(model, f)
-    with open(scaler_path, 'wb') as f:
+    with open(scaler_path, "wb") as f:
         pickle.dump(scaler, f)
-    with open(pca_path, 'wb') as f:
+    with open(pca_path, "wb") as f:
         pickle.dump(pca, f)
 
     # Save metadata. Each training signal carries its own stored sampling
@@ -749,24 +771,24 @@ async def train_anomaly_model(
     # 'per_file' (prediction then uses the test signal's own stored rate).
     unique_rates = sorted(set(detected_rates.values()))
     metadata = {
-        'model_type': model_type,
-        'training_mode': 'supervised' if fault_signal_ids else 'unsupervised',
-        'feature_names': list(features_df.columns),
-        'num_features_original': X_train.shape[1],
-        'num_features_pca': X_pca.shape[1],
-        'pca_variance': float(pca.explained_variance_ratio_.sum()),
-        'best_params': best_params,
-        'sampling_rate': unique_rates[0] if len(unique_rates) == 1 else 'per_file',
-        'sampling_rates_detected': detected_rates,
-        'segment_duration': segment_duration,
-        'overlap_ratio': overlap_ratio,
-        'multi_rate_training': len(unique_rates) > 1,
-        'validation_with_faults': fault_signal_ids is not None,
-        'num_validation_files': len(fault_signal_ids) if fault_signal_ids else 0
+        "model_type": model_type,
+        "training_mode": "supervised" if fault_signal_ids else "unsupervised",
+        "feature_names": list(features_df.columns),
+        "num_features_original": X_train.shape[1],
+        "num_features_pca": X_pca.shape[1],
+        "pca_variance": float(pca.explained_variance_ratio_.sum()),
+        "best_params": best_params,
+        "sampling_rate": unique_rates[0] if len(unique_rates) == 1 else "per_file",
+        "sampling_rates_detected": detected_rates,
+        "segment_duration": segment_duration,
+        "overlap_ratio": overlap_ratio,
+        "multi_rate_training": len(unique_rates) > 1,
+        "validation_with_faults": fault_signal_ids is not None,
+        "num_validation_files": len(fault_signal_ids) if fault_signal_ids else 0,
     }
 
     metadata_path = _model_paths.metadata
-    with open(metadata_path, 'w') as f:
+    with open(metadata_path, "w") as f:
         json.dump(metadata, f, indent=2)
 
     logger.info(f"Model saved to {model_path}")
@@ -786,45 +808,45 @@ async def train_anomaly_model(
         pca_path=str(pca_path),
         validation_accuracy=validation_accuracy,
         validation_details=validation_details,
-        validation_metrics=validation_metrics
+        validation_metrics=validation_metrics,
     )
+
 
 # ------------------------------------------------------------------
 # ML anomaly detection – prediction
 # ------------------------------------------------------------------
 
+
 async def predict_anomalies(
-    signal_id: str,
-    model_name: str = "anomaly_model",
-    ctx: Context = None
+    signal_id: str, model_name: str = "anomaly_model", ctx: Context = None
 ) -> AnomalyPredictionResult:
     """
-        Predict anomalies in a stored signal using a trained model.
+    Predict anomalies in a stored signal using a trained model.
 
-        Requires the signal loaded via load_signal() first and a model
-        trained via train_anomaly_model (its result echoes the model_name
-        to pass here). Pipeline: segment -> features -> scaler -> PCA ->
-        predict -> aggregate.
+    Requires the signal loaded via load_signal() first and a model
+    trained via train_anomaly_model (its result echoes the model_name
+    to pass here). Pipeline: segment -> features -> scaler -> PCA ->
+    predict -> aggregate.
 
-        Output is BOUNDED: counts, anomaly ratio, score percentiles, and
-        up to 10 worst segments — never per-segment arrays, regardless of
-        signal length.
+    Output is BOUNDED: counts, anomaly ratio, score percentiles, and
+    up to 10 worst segments — never per-segment arrays, regardless of
+    signal length.
 
-        Args:
-            signal_id: ID of the stored signal to analyze (from load_signal)
-            model_name: Name of trained model (default: 'anomaly_model')
-            ctx: MCP context. Unused — see this module's docstring on logging.
+    Args:
+        signal_id: ID of the stored signal to analyze (from load_signal)
+        model_name: Name of trained model (default: 'anomaly_model')
+        ctx: MCP context. Unused — see this module's docstring on logging.
 
-        Returns:
-            AnomalyPredictionResult with aggregate statistics and health
-            assessment.
+    Returns:
+        AnomalyPredictionResult with aggregate statistics and health
+        assessment.
 
-        Raises:
-            FileNotFoundError: If the model does not exist (the message
-                lists the models actually on disk).
-            ValueError: If the signal_id is not loaded, or no sampling rate
-                is available for segmentation.
-        """
+    Raises:
+        FileNotFoundError: If the model does not exist (the message
+            lists the models actually on disk).
+        ValueError: If the signal_id is not loaded, or no sampling rate
+            is available for segmentation.
+    """
     logger.info(f"Predicting anomalies in '{signal_id}'...")
 
     # Validate model_name and contain every derived path (single source of
@@ -836,23 +858,24 @@ async def predict_anomalies(
     metadata_path = _model_paths.metadata
 
     if not model_path.exists():
-        available = sorted(
-            p.name[: -len("_model.pkl")]
-            for p in MODELS_DIR.glob("*_model.pkl")
-        ) if MODELS_DIR.exists() else []
+        available = (
+            sorted(p.name[: -len("_model.pkl")] for p in MODELS_DIR.glob("*_model.pkl"))
+            if MODELS_DIR.exists()
+            else []
+        )
         raise FileNotFoundError(
             f"Model '{model_name}' not found — models on disk: "
             f"{available if available else 'none'}. Train one with "
             f"train_anomaly_model(model_name=...) first."
         )
 
-    with open(model_path, 'rb') as f:
+    with open(model_path, "rb") as f:
         model = pickle.load(f)
-    with open(scaler_path, 'rb') as f:
+    with open(scaler_path, "rb") as f:
         scaler = pickle.load(f)
-    with open(pca_path, 'rb') as f:
+    with open(pca_path, "rb") as f:
         pca = pickle.load(f)
-    with open(metadata_path, 'r') as f:
+    with open(metadata_path, "r") as f:
         metadata = json.load(f)
 
     # Resolve the stored signal (fail fast with the standard message).
@@ -861,21 +884,21 @@ async def predict_anomalies(
     signal_data, info = resolve_signal(signal_id, require_sampling_rate=False)
 
     # Extract features
-    sampling_rate_val = metadata['sampling_rate']
+    sampling_rate_val = metadata["sampling_rate"]
     if isinstance(sampling_rate_val, str):
         # Model was trained with per-file rates: use the stored signal's rate.
         if info.sampling_rate is None:
             raise ValueError(
                 f"Model '{model_name}' was trained with per-file sampling "
-                    f"rates, but signal '{signal_id}' has no stored rate — "
-                    f"re-load it with load_signal(filepath=..., "
-                    f"sampling_rate=..., overwrite=True) or add a "
-                    f"'sampling_rate' field to the companion _metadata.json."
+                f"rates, but signal '{signal_id}' has no stored rate — "
+                f"re-load it with load_signal(filepath=..., "
+                f"sampling_rate=..., overwrite=True) or add a "
+                f"'sampling_rate' field to the companion _metadata.json."
             )
         sampling_rate_val = info.sampling_rate
     sampling_rate_val = float(sampling_rate_val)
-    segment_duration = metadata['segment_duration']
-    overlap_ratio = metadata['overlap_ratio']
+    segment_duration = metadata["segment_duration"]
+    overlap_ratio = metadata["overlap_ratio"]
 
     segment_length_samples = int(segment_duration * sampling_rate_val)
     hop_length = int(segment_length_samples * (1 - overlap_ratio))
@@ -892,7 +915,7 @@ async def predict_anomalies(
 
     features_list = []
     for start in range(0, len(signal_data) - segment_length_samples + 1, hop_length):
-        segment = signal_data[start:start + segment_length_samples]
+        segment = signal_data[start : start + segment_length_samples]
         features = extract_time_domain_features(segment)
         features_list.append(features)
 
@@ -907,7 +930,7 @@ async def predict_anomalies(
 
     # Decision scores when the model exposes them (negative = anomalous).
     scores = None
-    if hasattr(model, 'decision_function'):
+    if hasattr(model, "decision_function"):
         scores = np.asarray(model.decision_function(X_pca), dtype=float)
 
     # Aggregate statistics — the per-segment arrays never leave this
@@ -933,11 +956,7 @@ async def predict_anomalies(
         {
             "segment_index": int(i),
             "start_time_s": round(float(i * hop_s), 4),
-            **(
-                {"score": round(float(scores[i]), 6)}
-                if scores is not None
-                else {}
-            ),
+            **({"score": round(float(scores[i]), 6)} if scores is not None else {}),
         }
         for i in worst_idx
     ]
@@ -966,64 +985,68 @@ async def predict_anomalies(
         overall_health=overall_health,
     )
 
+
 # ------------------------------------------------------------------
 # Machine documentation tools
 # ------------------------------------------------------------------
 
+
 async def list_machine_manuals(ctx: Context | None = None) -> list[dict[str, Any]]:
     """
-        List all machine manuals in resources/machine_manuals/ (PDF/TXT).
+    List all machine manuals in resources/machine_manuals/ (PDF/TXT).
 
-        Use before read_manual_excerpt / extract_manual_specs, and pass the
-        returned filenames exactly as-is.
+    Use before read_manual_excerpt / extract_manual_specs, and pass the
+    returned filenames exactly as-is.
 
-        Returns:
-            List of dicts with filename, size_mb, modified, and path.
-        """
+    Returns:
+        List of dicts with filename, size_mb, modified, and path.
+    """
     manuals_dir = RESOURCES_DIR / "machine_manuals"
     manuals = []
 
     # Support both PDF and TXT files
-    for manual_file in list(manuals_dir.glob("*.pdf")) + list(manuals_dir.glob("*.txt")):
+    for manual_file in list(manuals_dir.glob("*.pdf")) + list(
+        manuals_dir.glob("*.txt")
+    ):
         stat = manual_file.stat()
-        manuals.append({
-            "filename": manual_file.name,
-            "size_mb": stat.st_size / (1024 * 1024),
-            "modified": stat.st_mtime,
-            "path": str(manual_file.relative_to(RESOURCES_DIR))
-        })
+        manuals.append(
+            {
+                "filename": manual_file.name,
+                "size_mb": stat.st_size / (1024 * 1024),
+                "modified": stat.st_mtime,
+                "path": str(manual_file.relative_to(RESOURCES_DIR)),
+            }
+        )
 
     logger.info(f"Found {len(manuals)} machine manuals in resources/machine_manuals/")
 
+    return sorted(manuals, key=lambda x: x["filename"])
 
-    return sorted(manuals, key=lambda x: x['filename'])
 
 async def extract_manual_specs(
-    file_name: str,
-    use_cache: bool = True,
-    ctx: Context | None = None
+    file_name: str, use_cache: bool = True, ctx: Context | None = None
 ) -> dict[str, Any]:
     """
-        Extract machine specifications from an equipment manual (PDF).
+    Extract machine specifications from an equipment manual (PDF).
 
-        Extracts bearing designations (e.g. SKF 6205), operating speeds
-        (RPM), power ratings (kW/HP/MW), and a text excerpt. Results are
-        cached. If a bearing's geometry is not in the manual, follow up
-        with search_bearing_catalog(bearing_id=...); if it is not in the
-        catalog either, ask the user for the geometry — never invent it.
+    Extracts bearing designations (e.g. SKF 6205), operating speeds
+    (RPM), power ratings (kW/HP/MW), and a text excerpt. Results are
+    cached. If a bearing's geometry is not in the manual, follow up
+    with search_bearing_catalog(bearing_id=...); if it is not in the
+    catalog either, ask the user for the geometry — never invent it.
 
-        Args:
-            file_name: Manual filename in resources/machine_manuals/
-            use_cache: Use cached extraction if available (default: True)
-            ctx: MCP context. Unused — see this module's docstring on logging.
+    Args:
+        file_name: Manual filename in resources/machine_manuals/
+        use_cache: Use cached extraction if available (default: True)
+        ctx: MCP context. Unused — see this module's docstring on logging.
 
-        Returns:
-            Dictionary with extracted specifications and text excerpt.
+    Returns:
+        Dictionary with extracted specifications and text excerpt.
 
-        Raises:
-            FileNotFoundError: If the manual does not exist (the message
-                lists the available manuals).
-        """
+    Raises:
+        FileNotFoundError: If the manual does not exist (the message
+            lists the available manuals).
+    """
     logger.info(f"Extracting specifications from: {file_name}")
 
     manual_path = safe_resolve(RESOURCES_DIR / "machine_manuals", file_name)
@@ -1031,7 +1054,7 @@ async def extract_manual_specs(
     if not manual_path.exists():
         raise FileNotFoundError(
             f"Manual not found: {file_name}\n"
-                f"Available manuals: {[f.name for f in (RESOURCES_DIR / 'machine_manuals').glob('*.pdf')]}"
+            f"Available manuals: {[f.name for f in (RESOURCES_DIR / 'machine_manuals').glob('*.pdf')]}"
         )
 
     # Extract specs (with caching)
@@ -1039,10 +1062,11 @@ async def extract_manual_specs(
 
     logger.info(f"Found {len(specs['bearings'])} bearing designations")
     logger.info(f"Found {len(specs['rpm_values'])} RPM values")
-    if specs['bearings']:
+    if specs["bearings"]:
         logger.info(f"Bearings: {', '.join(specs['bearings'][:5])}")
 
     return specs
+
 
 async def calculate_bearing_characteristic_frequencies(
     num_balls: int,
@@ -1050,37 +1074,37 @@ async def calculate_bearing_characteristic_frequencies(
     pitch_diameter_mm: float,
     contact_angle_deg: float = 0.0,
     rpm: float = 1500.0,
-    ctx: Context | None = None
+    ctx: Context | None = None,
 ) -> dict[str, float]:
     """
-        Calculate bearing characteristic frequencies from geometry.
+    Calculate bearing characteristic frequencies from geometry.
 
-        Standard rolling-element kinematic formulas (Randall & Antoni 2011,
-        "Rolling element bearing diagnostics — A tutorial", MSSP 25(2)).
-        Requires the EXACT geometry — from the manual, the catalog
-        (search_bearing_catalog), or the user; never guessed. Deep-groove
-        ball bearings have contact_angle_deg = 0.
+    Standard rolling-element kinematic formulas (Randall & Antoni 2011,
+    "Rolling element bearing diagnostics — A tutorial", MSSP 25(2)).
+    Requires the EXACT geometry — from the manual, the catalog
+    (search_bearing_catalog), or the user; never guessed. Deep-groove
+    ball bearings have contact_angle_deg = 0.
 
-        Args:
-            num_balls: Number of rolling elements (Z)
-            ball_diameter_mm: Ball/roller diameter (Bd) in mm
-            pitch_diameter_mm: Pitch circle diameter (Pd) in mm
-            contact_angle_deg: Contact angle (alpha) in degrees
-            rpm: Shaft rotation speed in RPM
-            ctx: MCP context. Unused — see this module's docstring on logging.
+    Args:
+        num_balls: Number of rolling elements (Z)
+        ball_diameter_mm: Ball/roller diameter (Bd) in mm
+        pitch_diameter_mm: Pitch circle diameter (Pd) in mm
+        contact_angle_deg: Contact angle (alpha) in degrees
+        rpm: Shaft rotation speed in RPM
+        ctx: MCP context. Unused — see this module's docstring on logging.
 
-        Returns:
-            Dictionary with BPFO, BPFI, BSF, FTF in Hz.
+    Returns:
+        Dictionary with BPFO, BPFI, BSF, FTF in Hz.
 
-        Example:
-            >>> # 6205 geometry (CWRU Bearing Data Center) at 1797 RPM
-            >>> freqs = calculate_bearing_characteristic_frequencies(
-            ...     num_balls=9, ball_diameter_mm=7.94,
-            ...     pitch_diameter_mm=39.04, rpm=1797
-            ... )
-            >>> round(freqs['BPFO'], 2)
-            107.36
-        """
+    Example:
+        >>> # 6205 geometry (CWRU Bearing Data Center) at 1797 RPM
+        >>> freqs = calculate_bearing_characteristic_frequencies(
+        ...     num_balls=9, ball_diameter_mm=7.94,
+        ...     pitch_diameter_mm=39.04, rpm=1797
+        ... )
+        >>> round(freqs['BPFO'], 2)
+        107.36
+    """
     logger.info(f"Calculating bearing frequencies for {num_balls} balls at {rpm} RPM")
 
     freqs = calculate_bearing_frequencies(
@@ -1088,7 +1112,7 @@ async def calculate_bearing_characteristic_frequencies(
         ball_diameter_mm=ball_diameter_mm,
         pitch_diameter_mm=pitch_diameter_mm,
         contact_angle_deg=contact_angle_deg,
-        shaft_speed_rpm=rpm
+        shaft_speed_rpm=rpm,
     )
 
     logger.info(f"BPFO (outer race): {freqs['BPFO']:.2f} Hz")
@@ -1098,30 +1122,29 @@ async def calculate_bearing_characteristic_frequencies(
 
     return freqs
 
+
 async def read_manual_excerpt(
-    file_name: str,
-    max_pages: int = 10,
-    ctx: Context | None = None
+    file_name: str, max_pages: int = 10, ctx: Context | None = None
 ) -> str:
     """
-        Read a text excerpt from a machine manual (PDF or TXT).
+    Read a text excerpt from a machine manual (PDF or TXT).
 
-        Use for consecutive-page reading; for targeted questions prefer
-        search_documentation. Start with max_pages=10 and increase only if
-        needed (pages consume tokens).
+    Use for consecutive-page reading; for targeted questions prefer
+    search_documentation. Start with max_pages=10 and increase only if
+    needed (pages consume tokens).
 
-        Args:
-            file_name: Manual filename in resources/machine_manuals/
-                (PDF or TXT)
-            max_pages: Maximum pages to extract (ignored for TXT files)
-            ctx: MCP context. Unused — see this module's docstring on logging.
+    Args:
+        file_name: Manual filename in resources/machine_manuals/
+            (PDF or TXT)
+        max_pages: Maximum pages to extract (ignored for TXT files)
+        ctx: MCP context. Unused — see this module's docstring on logging.
 
-        Returns:
-            Extracted text from the manual.
+    Returns:
+        Extracted text from the manual.
 
-        Raises:
-            FileNotFoundError: If the manual does not exist.
-        """
+    Raises:
+        FileNotFoundError: If the manual does not exist.
+    """
     logger.info(f"Reading from: {file_name}")
 
     manual_path = safe_resolve(RESOURCES_DIR / "machine_manuals", file_name)
@@ -1139,8 +1162,8 @@ async def read_manual_excerpt(
         )
 
     # Read based on file type
-    if manual_path.suffix.lower() == '.txt':
-        with open(manual_path, 'r', encoding='utf-8') as f:
+    if manual_path.suffix.lower() == ".txt":
+        with open(manual_path, "r", encoding="utf-8") as f:
             text = f.read()
         logger.info(f"Extracted {len(text)} characters from text file")
     else:
@@ -1149,47 +1172,53 @@ async def read_manual_excerpt(
 
     return text
 
+
 async def search_bearing_catalog(
-    bearing_id: str,
-    ctx: Context | None = None
+    bearing_id: str, ctx: Context | None = None
 ) -> dict[str, Any] | BearingCatalogMiss:
     """
-        Search for bearing specifications in the local verified catalog.
+    Search for bearing specifications in the local verified catalog.
 
-        Fallback for when the machine manual names a bearing but not its
-        geometry. The catalog is small BY DESIGN: only entries whose
-        geometry is traceable to a public source (mandatory `source`
-        citation). A miss is a legitimate negative outcome — ask the user
-        for the geometry; never guess it.
+    Fallback for when the machine manual names a bearing but not its
+    geometry. The catalog is small BY DESIGN: only entries whose
+    geometry is traceable to a public source (mandatory `source`
+    citation). A miss is a legitimate negative outcome — ask the user
+    for the geometry; never guess it.
 
-        Args:
-            bearing_id: Bearing designation (e.g. "6205", "SKF 6205-2RS")
-            ctx: MCP context. Unused — see this module's docstring on logging.
+    Args:
+        bearing_id: Bearing designation (e.g. "6205", "SKF 6205-2RS")
+        ctx: MCP context. Unused — see this module's docstring on logging.
 
-        Returns:
-            Dictionary with bearing specifications if found, or a
-            BearingCatalogMiss (status='not_found', suggestion,
-            catalog_contains) when the bearing is not in the catalog.
+    Returns:
+        Dictionary with bearing specifications if found, or a
+        BearingCatalogMiss (status='not_found', suggestion,
+        catalog_contains) when the bearing is not in the catalog.
 
-        Raises:
-            Exception: If the catalog itself cannot be read (missing or
-                malformed common_bearings_catalog.json).
-        """
+    Raises:
+        Exception: If the catalog itself cannot be read (missing or
+            malformed common_bearings_catalog.json).
+    """
     logger.info(f"Searching catalog for bearing: {bearing_id}")
 
     bearing_specs = lookup_bearing_in_catalog(bearing_id)
 
     if bearing_specs:
-        logger.info(f"Found {bearing_specs['designation']} in catalog (source: {bearing_specs.get('source', 'unknown')})")
+        logger.info(
+            f"Found {bearing_specs['designation']} in catalog (source: {bearing_specs.get('source', 'unknown')})"
+        )
         logger.info(f"  Type: {bearing_specs.get('type', 'N/A')}")
-        logger.info(f"  Balls: {bearing_specs['num_balls']}, Ball diameter: {bearing_specs['ball_diameter_mm']} mm")
+        logger.info(
+            f"  Balls: {bearing_specs['num_balls']}, Ball diameter: {bearing_specs['ball_diameter_mm']} mm"
+        )
         logger.info(f"  Pitch diameter: {bearing_specs['pitch_diameter_mm']} mm")
         return bearing_specs
 
     # Not in catalog: a legitimate negative outcome — typed result, never an
     # ad-hoc {"error": ...} dict returned as success. No geometry is invented.
     logger.warning(f"Bearing {bearing_id} not found in catalog")
-    logger.warning("  LLM should ask user for bearing geometry or suggest uploading manufacturer catalog")
+    logger.warning(
+        "  LLM should ask user for bearing geometry or suggest uploading manufacturer catalog"
+    )
 
     available = sorted(b["designation"] for b in _list_catalog())
     return BearingCatalogMiss(
@@ -1202,40 +1231,39 @@ async def search_bearing_catalog(
         catalog_contains=available,
     )
 
+
 # ------------------------------------------------------------------
 # Document search (RAG)
 # ------------------------------------------------------------------
 
+
 async def search_documentation(
-    query: str,
-    top_k: int = 5,
-    force_reindex: bool = False,
-    ctx: Context | None = None
+    query: str, top_k: int = 5, force_reindex: bool = False, ctx: Context | None = None
 ) -> dict[str, Any]:
     """
-        Semantic search across all machine manuals and bearing catalogs.
+    Semantic search across all machine manuals and bearing catalogs.
 
-        Uses vector retrieval (RAG) to find the most relevant passages from
-        PDFs, text files, and JSON catalogs in resources/.
+    Uses vector retrieval (RAG) to find the most relevant passages from
+    PDFs, text files, and JSON catalogs in resources/.
 
-        Backends (chosen automatically):
-          - FAISS + sentence-transformers  (pip install predictive-maintenance-mcp[vector-search])
-          - TF-IDF keyword search          (default, zero extra deps)
+    Backends (chosen automatically):
+      - FAISS + sentence-transformers  (pip install predictive-maintenance-mcp[vector-search])
+      - TF-IDF keyword search          (default, zero extra deps)
 
-        The index is built lazily on first call and cached on disk.  It is
-        automatically rebuilt when source files change.
+    The index is built lazily on first call and cached on disk.  It is
+    automatically rebuilt when source files change.
 
-        Args:
-            query: Natural-language question or keywords
-                   (e.g. "bearing 6205 geometry", "maintenance interval pump")
-            top_k: Number of passages to return (default: 5)
-            force_reindex: Rebuild the index even if cache is fresh (default: False)
-            ctx: MCP context. Unused — see this module's docstring on logging.
+    Args:
+        query: Natural-language question or keywords
+               (e.g. "bearing 6205 geometry", "maintenance interval pump")
+        top_k: Number of passages to return (default: 5)
+        force_reindex: Rebuild the index even if cache is fresh (default: False)
+        ctx: MCP context. Unused — see this module's docstring on logging.
 
-        Returns:
-            Dictionary with ranked results, each containing text passage, source
-            file, relevance score, and chunk index.
-        """
+    Returns:
+        Dictionary with ranked results, each containing text passage, source
+        file, relevance score, and chunk index.
+    """
     # Deliberately lazy: the RAG backend may pull in FAISS /
     # sentence-transformers, which are heavy optional dependencies —
     # importing them at module load would slow server startup for
@@ -1250,12 +1278,14 @@ async def search_documentation(
         return {
             "results": [],
             "backend": backend_name(),
-            "note": "No documents indexed. Add PDFs or TXT files to resources/machine_manuals/ or resources/bearing_catalogs/."
+            "note": "No documents indexed. Add PDFs or TXT files to resources/machine_manuals/ or resources/bearing_catalogs/.",
         }
 
     results = idx.query(query, top_k=top_k)
 
-    logger.info(f"Found {len(results)} relevant passages from {len(set(r['source'] for r in results))} documents")
+    logger.info(
+        f"Found {len(results)} relevant passages from {len(set(r['source'] for r in results))} documents"
+    )
 
     return {
         "query": query,
@@ -1265,9 +1295,11 @@ async def search_documentation(
         "results": results,
     }
 
+
 # ------------------------------------------------------------------
 # Unified bearing fault check (U9 merge)
 # ------------------------------------------------------------------
+
 
 async def check_bearing_faults(
     ctx: Context,
@@ -1328,9 +1360,7 @@ async def check_bearing_faults(
     geometry_given = [
         p is not None for p in (num_balls, ball_diameter_mm, pitch_diameter_mm)
     ]
-    routes = sum(
-        [bearing_id is not None, frequencies is not None, any(geometry_given)]
-    )
+    routes = sum([bearing_id is not None, frequencies is not None, any(geometry_given)])
     if routes != 1:
         raise ValueError(
             "Provide exactly ONE expected-frequency route — bearing_id "
@@ -1359,9 +1389,7 @@ async def check_bearing_faults(
     if bearing_id is not None:
         # --- Catalog route (former check_bearing_faults_direct /
         # lookup_bearing_and_compute_tool) -----------------------------
-        logger.info(
-            f"Checking catalog bearing {bearing_id} at {rpm} RPM"
-        )
+        logger.info(f"Checking catalog bearing {bearing_id} at {rpm} RPM")
         result = _check_all_faults(
             signal=signal_data,
             fs=fs,
@@ -1424,9 +1452,11 @@ async def check_bearing_faults(
         source=result["source"],
     )
 
+
 # ------------------------------------------------------------------
 # Integrated diagnosis (signal_id based)
 # ------------------------------------------------------------------
+
 
 async def diagnose_vibration(
     ctx: Context,
@@ -1438,30 +1468,30 @@ async def diagnose_vibration(
 ) -> DiagnosisResult:
     """Full integrated diagnosis: FFT + PSD + STFT + bearing faults + ISO severity.
 
-        Comprehensive vibration diagnostic pipeline. Loads signal from repository,
-        runs all analyses, and synthesizes results into an actionable report.
-        The ISO severity block uses ISO 20816-3 machine group/support type
-        (zone boundaries from ISO 10816-3:2009, provenance noted in output).
+    Comprehensive vibration diagnostic pipeline. Loads signal from repository,
+    runs all analyses, and synthesizes results into an actionable report.
+    The ISO severity block uses ISO 20816-3 machine group/support type
+    (zone boundaries from ISO 10816-3:2009, provenance noted in output).
 
-        The diagnosis DEGRADES instead of failing when the ISO verdict cannot
-        be produced honestly: if the stored signal has no declared unit (or
-        the sampling rate cannot cover the ISO evaluation band), the
-        iso_severity block is a structured refusal (status='refused' with
-        reason and remedy) while the spectral, bearing, and anomaly blocks
-        still run. Units are never guessed from amplitude — declare them via
-        load_signal(signal_unit=...) or the companion _metadata.json.
+    The diagnosis DEGRADES instead of failing when the ISO verdict cannot
+    be produced honestly: if the stored signal has no declared unit (or
+    the sampling rate cannot cover the ISO evaluation band), the
+    iso_severity block is a structured refusal (status='refused' with
+    reason and remedy) while the spectral, bearing, and anomaly blocks
+    still run. Units are never guessed from amplitude — declare them via
+    load_signal(signal_unit=...) or the companion _metadata.json.
 
-        Args:
-            signal_id: ID of the stored signal.
-            rpm: Machine operating speed in RPM.
-            bearing_id: Bearing designation for fault detection (optional).
-            machine_group: 1 (large, >300 kW) or 2 (medium, 15-300 kW).
-                Default 2.
-            support_type: 'rigid' or 'flexible'. Default 'rigid'.
+    Args:
+        signal_id: ID of the stored signal.
+        rpm: Machine operating speed in RPM.
+        bearing_id: Bearing designation for fault detection (optional).
+        machine_group: 1 (large, >300 kW) or 2 (medium, 15-300 kW).
+            Default 2.
+        support_type: 'rigid' or 'flexible'. Default 'rigid'.
 
-        Raises:
-            ValueError: If the stored signal has no sampling rate.
-        """
+    Raises:
+        ValueError: If the stored signal has no sampling rate.
+    """
     signal_data, info = resolve_signal(signal_id)
     fs = info.sampling_rate
 
@@ -1503,19 +1533,15 @@ async def diagnose_vibration(
     # ISO block: assessed result or schema-level refusal (reason + remedy)
     iso_block = result["iso_severity"]
     if iso_block.get("status") == "refused":
-        iso_model: VibrationSeverityResult | ISOSeverityRefusal = (
-            ISOSeverityRefusal(
-                signal_id=iso_block.get("signal_id", signal_id),
-                reason=iso_block["reason"],
-                remedy=iso_block["remedy"],
-            )
+        iso_model: VibrationSeverityResult | ISOSeverityRefusal = ISOSeverityRefusal(
+            signal_id=iso_block.get("signal_id", signal_id),
+            reason=iso_block["reason"],
+            remedy=iso_block["remedy"],
         )
     else:
         iso_model = VibrationSeverityResult(**iso_block)
 
-    logger.info(
-        f"Diagnosis complete: {result['evidence_strength']} fault evidence"
-    )
+    logger.info(f"Diagnosis complete: {result['evidence_strength']} fault evidence")
     if iso_block.get("status") == "refused":
         logger.info(f"ISO severity: refused — {iso_block['reason']}")
     else:

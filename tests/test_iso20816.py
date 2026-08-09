@@ -55,9 +55,9 @@ class TestThresholdTable:
         ids=lambda v: str(v),
     )
     def test_boundaries_match_iso_10816_3_2009(self, group, support):
-        assert get_zone_boundaries(group, support) == EXPECTED_BOUNDARIES[
-            (group, support)
-        ]
+        assert (
+            get_zone_boundaries(group, support) == EXPECTED_BOUNDARIES[(group, support)]
+        )
 
     @pytest.mark.parametrize(
         "group,support",
@@ -373,7 +373,10 @@ class TestResultStructure:
     def test_boundaries_dict(self):
         signal = make_velocity_signal(1.0)
         result = assess_severity_with_axis(
-            signal, fs=10000, machine_group=2, support_type="rigid",
+            signal,
+            fs=10000,
+            machine_group=2,
+            support_type="rigid",
             signal_unit="mm/s",
         )
         assert "AB" in result["boundaries"]

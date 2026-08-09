@@ -113,9 +113,7 @@ def describe_zone(zone: Literal["A", "B", "C", "D"]) -> dict:
         ValueError: If zone is not one of 'A', 'B', 'C', 'D'.
     """
     if zone not in _ZONE_INFO:
-        raise ValueError(
-            f"Unknown zone '{zone}' — valid zones are A, B, C, D."
-        )
+        raise ValueError(f"Unknown zone '{zone}' — valid zones are A, B, C, D.")
     desc, severity, color = _ZONE_INFO[zone]
     return {
         "zone_description": desc,
@@ -353,9 +351,7 @@ def assess_severity_raw(
     freq_range_desc = f"{low_hz:g}-{high_hz:g} Hz ({speed_note})"
 
     # Bandpass filter (zero-phase)
-    sos = butter(
-        4, [low_hz / nyquist, high_hz / nyquist], btype="band", output="sos"
-    )
+    sos = butter(4, [low_hz / nyquist, high_hz / nyquist], btype="band", output="sos")
     velocity_filtered = sosfiltfilt(sos, velocity_mm_s)
 
     # RMS velocity

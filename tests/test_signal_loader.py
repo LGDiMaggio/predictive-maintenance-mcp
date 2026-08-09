@@ -22,8 +22,8 @@ from predictive_maintenance_mcp.signal_acquisition.loaders import (
     DATA_DIR,
 )
 
-
 # ── load_signal_data ───────────────────────────────────────────────────────
+
 
 class TestLoadSignalData:
 
@@ -33,7 +33,9 @@ class TestLoadSignalData:
         csv_file = tmp_path / "test.csv"
         pd.DataFrame(data).to_csv(csv_file, header=False, index=False)
 
-        monkeypatch.setattr("predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR", tmp_path)
+        monkeypatch.setattr(
+            "predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR", tmp_path
+        )
         signal = load_signal_data("test.csv")
         np.testing.assert_array_almost_equal(signal, data)
 
@@ -42,17 +44,22 @@ class TestLoadSignalData:
         data = np.array([1.1, 2.2, 3.3, 4.4])
         np.save(tmp_path / "test.npy", data)
 
-        monkeypatch.setattr("predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR", tmp_path)
+        monkeypatch.setattr(
+            "predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR", tmp_path
+        )
         signal = load_signal_data("test.npy")
         np.testing.assert_array_equal(signal, data)
 
     def test_load_mat(self, tmp_path, monkeypatch):
         """Load a MATLAB .mat file."""
         from scipy.io import savemat
+
         data = np.array([10.0, 20.0, 30.0])
         savemat(str(tmp_path / "test.mat"), {"signal": data})
 
-        monkeypatch.setattr("predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR", tmp_path)
+        monkeypatch.setattr(
+            "predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR", tmp_path
+        )
         signal = load_signal_data("test.mat")
         assert signal is not None
         np.testing.assert_array_almost_equal(signal, data)
@@ -60,11 +67,14 @@ class TestLoadSignalData:
     def test_load_wav(self, tmp_path, monkeypatch):
         """Load a WAV audio file."""
         from scipy.io import wavfile
+
         fs = 16000
         data = (np.sin(np.linspace(0, 2 * np.pi * 440, fs)) * 32767).astype(np.int16)
         wavfile.write(str(tmp_path / "test.wav"), fs, data)
 
-        monkeypatch.setattr("predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR", tmp_path)
+        monkeypatch.setattr(
+            "predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR", tmp_path
+        )
         signal = load_signal_data("test.wav")
         assert signal is not None
         assert len(signal) == len(data)
@@ -73,7 +83,10 @@ class TestLoadSignalData:
         assert np.max(np.abs(signal)) <= 1.0 + 1e-6
 
     @pytest.mark.skipif(
-        not any(__import__("importlib").util.find_spec(e) for e in ("pyarrow", "fastparquet")),
+        not any(
+            __import__("importlib").util.find_spec(e)
+            for e in ("pyarrow", "fastparquet")
+        ),
         reason="pyarrow/fastparquet not installed",
     )
     def test_load_parquet(self, tmp_path, monkeypatch):
@@ -81,30 +94,39 @@ class TestLoadSignalData:
         data = np.array([1.5, 2.5, 3.5, 4.5, 5.5])
         pd.DataFrame({"signal": data}).to_parquet(tmp_path / "test.parquet")
 
-        monkeypatch.setattr("predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR", tmp_path)
+        monkeypatch.setattr(
+            "predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR", tmp_path
+        )
         signal = load_signal_data("test.parquet")
         assert signal is not None
         np.testing.assert_array_almost_equal(signal, data)
 
     def test_missing_file_returns_none(self, tmp_path, monkeypatch):
-        monkeypatch.setattr("predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR", tmp_path)
+        monkeypatch.setattr(
+            "predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR", tmp_path
+        )
         assert load_signal_data("nonexistent.csv") is None
 
     def test_unsupported_extension_returns_none(self, tmp_path, monkeypatch):
         (tmp_path / "test.xyz").write_text("data")
-        monkeypatch.setattr("predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR", tmp_path)
+        monkeypatch.setattr(
+            "predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR", tmp_path
+        )
         assert load_signal_data("test.xyz") is None
 
     def test_wav_stereo_uses_first_channel(self, tmp_path, monkeypatch):
         """Stereo WAV should use first channel only."""
         from scipy.io import wavfile
+
         fs = 8000
         ch1 = (np.sin(np.linspace(0, 2 * np.pi * 300, fs)) * 32767).astype(np.int16)
         ch2 = (np.sin(np.linspace(0, 2 * np.pi * 600, fs)) * 32767).astype(np.int16)
         stereo = np.column_stack([ch1, ch2])
         wavfile.write(str(tmp_path / "stereo.wav"), fs, stereo)
 
-        monkeypatch.setattr("predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR", tmp_path)
+        monkeypatch.setattr(
+            "predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR", tmp_path
+        )
         signal = load_signal_data("stereo.wav")
         assert signal is not None
         assert signal.ndim == 1
@@ -121,6 +143,7 @@ class TestLoadSignalData:
 
 
 # ── extract_segment ────────────────────────────────────────────────────────
+
 
 class TestExtractSegment:
 
@@ -169,6 +192,7 @@ class TestExtractSegment:
 
 
 # ── get_metadata_path ──────────────────────────────────────────────────────
+
 
 class TestGetMetadataPath:
 

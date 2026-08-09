@@ -23,9 +23,7 @@ def _reference_filter_covariance(
     dt = sampling_interval
     F = np.array([[1.0, dt], [0.0, 1.0]])
     H = np.array([[1.0, 0.0]])
-    Q = process_noise * np.array(
-        [[dt**3 / 3.0, dt**2 / 2.0], [dt**2 / 2.0, dt]]
-    )
+    Q = process_noise * np.array([[dt**3 / 3.0, dt**2 / 2.0], [dt**2 / 2.0, dt]])
     R = np.array([[measurement_noise]])
 
     x = np.array([y[0], (y[1] - y[0]) / dt])
@@ -131,8 +129,12 @@ class TestKalmanRUL:
     def test_sampling_interval_scaling(self):
         """RUL should scale with the sampling interval."""
         series = [float(i) for i in range(50)]
-        result_1 = estimate_rul_kalman(series, failure_threshold=200.0, sampling_interval=1.0)
-        result_2 = estimate_rul_kalman(series, failure_threshold=200.0, sampling_interval=2.0)
+        result_1 = estimate_rul_kalman(
+            series, failure_threshold=200.0, sampling_interval=1.0
+        )
+        result_2 = estimate_rul_kalman(
+            series, failure_threshold=200.0, sampling_interval=2.0
+        )
 
         assert result_1 is not None and result_2 is not None
         # With 2x sampling interval, RUL (in time units) should roughly double.
@@ -170,9 +172,7 @@ class TestKalmanRUL:
         gap = threshold - level
 
         full_var = (
-            var_l / rate**2
-            + gap**2 * var_r / rate**4
-            + 2.0 * gap * cov_lr / rate**3
+            var_l / rate**2 + gap**2 * var_r / rate**4 + 2.0 * gap * cov_lr / rate**3
         )
         without_cov = var_l / rate**2 + gap**2 * var_r / rate**4
 
@@ -182,6 +182,4 @@ class TestKalmanRUL:
         # The cross-covariance is non-zero for this filter, so omitting it
         # must give a measurably different standard deviation.
         assert abs(cov_lr) > 0
-        assert result["rul_std"] != pytest.approx(
-            math.sqrt(without_cov), rel=1e-3
-        )
+        assert result["rul_std"] != pytest.approx(math.sqrt(without_cov), rel=1e-3)

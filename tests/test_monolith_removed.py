@@ -80,9 +80,9 @@ def _iter_scan_targets():
 
 class TestMonolithRemoved:
     def test_monolith_file_does_not_exist(self):
-        assert not (SRC / (MONOLITH + ".py")).exists(), (
-            f"src/{MONOLITH}.py must stay removed (deleted in v0.9.0)"
-        )
+        assert not (
+            SRC / (MONOLITH + ".py")
+        ).exists(), f"src/{MONOLITH}.py must stay removed (deleted in v0.9.0)"
 
     def test_root_shims_do_not_exist(self):
         present = [f for f in REMOVED_SRC_FILES if (SRC / f).exists()]
@@ -150,9 +150,7 @@ class TestIsoCitationPrecision:
             stripped = self._ALLOWED.sub("", text)
             for m in self._ANY.finditer(stripped):
                 snippet = stripped[max(0, m.start() - 30) : m.end() + 30]
-                offenders.append(
-                    f"{p.relative_to(ROOT)}: ...{snippet!r}..."
-                )
+                offenders.append(f"{p.relative_to(ROOT)}: ...{snippet!r}...")
         assert offenders == [], (
             "Imprecise 'ISO 10816' citations found (only the provenance "
             "form 'ISO 10816-3:2009' is allowed):\n" + "\n".join(offenders)

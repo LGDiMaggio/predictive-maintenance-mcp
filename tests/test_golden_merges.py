@@ -91,17 +91,15 @@ def assert_matches(new, old, path="", rel=1e-3, abs_tol=1e-6):
             assert_matches(new[key], old_val, path=f"{path}.{key}")
     elif isinstance(old, list):
         assert isinstance(new, (list, tuple)), f"{path}: expected list"
-        assert len(new) == len(old), (
-            f"{path}: length {len(new)} != golden {len(old)}"
-        )
+        assert len(new) == len(old), f"{path}: length {len(new)} != golden {len(old)}"
         for i, (n, o) in enumerate(zip(new, old)):
             assert_matches(n, o, path=f"{path}[{i}]")
     elif isinstance(old, bool) or old is None or isinstance(old, str):
         assert new == old, f"{path}: {new!r} != golden {old!r}"
     elif isinstance(old, (int, float)):
-        assert new == pytest.approx(old, rel=rel, abs=abs_tol), (
-            f"{path}: {new} != golden {old}"
-        )
+        assert new == pytest.approx(
+            old, rel=rel, abs=abs_tol
+        ), f"{path}: {new} != golden {old}"
     else:  # pragma: no cover - snapshot only holds JSON types
         assert new == old, f"{path}: {new!r} != golden {old!r}"
 
@@ -130,9 +128,7 @@ class TestGoldenAssessSeverity:
         assert_matches(new.model_dump(mode="json"), old, path="signal_route")
 
     @pytest.mark.asyncio
-    async def test_signal_route_group1_flexible(
-        self, golden, golden_repo, mock_ctx
-    ):
+    async def test_signal_route_group1_flexible(self, golden, golden_repo, mock_ctx):
         old = golden["assess_severity"]["signal_route_group1_flexible"]
         new = await assess_severity(
             ctx=mock_ctx,
@@ -143,9 +139,7 @@ class TestGoldenAssessSeverity:
         assert_matches(new.model_dump(mode="json"), old, path="g1_flex")
 
     @pytest.mark.asyncio
-    async def test_signal_route_velocity_signal(
-        self, golden, golden_repo, mock_ctx
-    ):
+    async def test_signal_route_velocity_signal(self, golden, golden_repo, mock_ctx):
         old = golden["assess_severity"]["signal_route_vel3"]
         new = await assess_severity(ctx=mock_ctx, signal_id="golden_vel3")
         assert_matches(new.model_dump(mode="json"), old, path="vel3")
@@ -199,9 +193,7 @@ class TestGoldenAssessSeverity:
         )
         assert new.frequency_range == old["frequency_range"]
         assert "2-1000" in new.frequency_range
-        assert new.rms_velocity_mm_s == pytest.approx(
-            old["rms_velocity"], rel=1e-3
-        )
+        assert new.rms_velocity_mm_s == pytest.approx(old["rms_velocity"], rel=1e-3)
 
     @pytest.mark.asyncio
     async def test_rms_route_matches_check_vibration_alert(
@@ -264,9 +256,7 @@ class TestGoldenAnalyzeEnvelope:
         assert tuple(dump["filter_band"]) == tuple(old["frequency_range"])
 
     @pytest.mark.asyncio
-    async def test_matches_old_tool_on_narrow_band(
-        self, golden, golden_repo, mock_ctx
-    ):
+    async def test_matches_old_tool_on_narrow_band(self, golden, golden_repo, mock_ctx):
         old = golden["analyze_envelope"]["spectrum_route_noise_band"]
         new = await analyze_envelope(
             ctx=mock_ctx,
@@ -310,9 +300,7 @@ class TestGoldenCheckBearingFaults:
         }
 
     @pytest.mark.asyncio
-    async def test_bearing_route_noise_signal(
-        self, golden, golden_repo, mock_ctx
-    ):
+    async def test_bearing_route_noise_signal(self, golden, golden_repo, mock_ctx):
         old = golden["check_bearing_faults"]["bearing_route_noise"]
         new = await check_bearing_faults(
             ctx=mock_ctx,
@@ -351,7 +339,8 @@ class TestGoldenCheckBearingFaults:
             rpm=1800.0,
         )
         bpfo = next(
-            c for c in new.model_dump(mode="json")["fault_checks"]
+            c
+            for c in new.model_dump(mode="json")["fault_checks"]
             if c["fault_type"] == "BPFO"
         )
         assert_matches(bpfo, old, path="single_bpfo")
@@ -376,9 +365,7 @@ class TestGoldenAnalyzeSignalTrend:
         assert_matches(new.model_dump(mode="json"), old, path="trend")
 
     @pytest.mark.asyncio
-    async def test_trend_stationary_preserved(
-        self, golden, golden_repo, mock_ctx
-    ):
+    async def test_trend_stationary_preserved(self, golden, golden_repo, mock_ctx):
         old = golden["analyze_signal_trend"]["trend_stationary"]
         new = await analyze_signal_trend(
             ctx=mock_ctx,
@@ -450,9 +437,7 @@ class TestAssessSeverityScenarios:
         assert stored.rms_velocity_mm_s == pytest.approx(3.0, rel=0.02)
 
     @pytest.mark.asyncio
-    async def test_declared_power_below_scope_refused(
-        self, golden_repo, mock_ctx
-    ):
+    async def test_declared_power_below_scope_refused(self, golden_repo, mock_ctx):
         with pytest.raises(ValueError, match="15 kW"):
             await assess_severity(
                 ctx=mock_ctx, rms_velocity_mm_s=3.0, machine_power_kw=5.0
@@ -479,9 +464,7 @@ class TestAssessSeverityScenarios:
         assert r.machine_power_kw == 90.0
 
     @pytest.mark.asyncio
-    async def test_both_inputs_is_mutual_exclusion_error(
-        self, golden_repo, mock_ctx
-    ):
+    async def test_both_inputs_is_mutual_exclusion_error(self, golden_repo, mock_ctx):
         with pytest.raises(ValueError, match="exactly one"):
             await assess_severity(
                 ctx=mock_ctx, signal_id="golden_vel3", rms_velocity_mm_s=3.0
@@ -498,9 +481,7 @@ class TestAssessSeverityScenarios:
             await assess_severity(ctx=mock_ctx, rms_velocity_mm_s=-1.0)
 
     @pytest.mark.asyncio
-    async def test_invalid_custom_thresholds_rejected(
-        self, golden_repo, mock_ctx
-    ):
+    async def test_invalid_custom_thresholds_rejected(self, golden_repo, mock_ctx):
         # Not strictly increasing
         with pytest.raises(ValueError, match="warning < alarm < danger"):
             await assess_severity(
@@ -517,9 +498,7 @@ class TestAssessSeverityScenarios:
             )
 
     @pytest.mark.asyncio
-    async def test_custom_thresholds_on_signal_route(
-        self, golden_repo, mock_ctx
-    ):
+    async def test_custom_thresholds_on_signal_route(self, golden_repo, mock_ctx):
         """Custom thresholds also apply to the RMS computed from a stored
         signal (golden_vel3 has ~3.0 mm/s -> zone B for 2/4/6)."""
         r = await assess_severity(
@@ -560,9 +539,7 @@ class TestCheckBearingFaultsScenarios:
         assert r.source == "user-provided frequencies"
 
     @pytest.mark.asyncio
-    async def test_geometry_route_matches_catalog_route(
-        self, golden_repo, mock_ctx
-    ):
+    async def test_geometry_route_matches_catalog_route(self, golden_repo, mock_ctx):
         """The 6205 catalog entry IS the CWRU geometry: passing that
         geometry explicitly must produce the same expected frequencies as
         the catalog route."""
@@ -619,9 +596,7 @@ class TestCheckBearingFaultsScenarios:
             )
 
     @pytest.mark.asyncio
-    async def test_empty_or_invalid_frequencies_rejected(
-        self, golden_repo, mock_ctx
-    ):
+    async def test_empty_or_invalid_frequencies_rejected(self, golden_repo, mock_ctx):
         with pytest.raises(ValueError, match="empty"):
             await check_bearing_faults(
                 ctx=mock_ctx,
@@ -655,9 +630,7 @@ class TestCheckBearingFaultsScenarios:
 
 class TestAnalyzeEnvelopeScenarios:
     @pytest.mark.asyncio
-    async def test_band_above_nyquist_raises_no_clamp(
-        self, golden_repo, mock_ctx
-    ):
+    async def test_band_above_nyquist_raises_no_clamp(self, golden_repo, mock_ctx):
         """fs = 10 kHz -> Nyquist 5 kHz: filter_high=6000 is an error, the
         band is never silently clamped."""
         with pytest.raises(ValueError, match="Nyquist"):
@@ -711,9 +684,7 @@ class TestAnalyzeEnvelopeScenarios:
 
 class TestAnalyzeSignalTrendScenarios:
     @pytest.mark.asyncio
-    async def test_returns_trend_and_onset_together(
-        self, golden_repo, mock_ctx
-    ):
+    async def test_returns_trend_and_onset_together(self, golden_repo, mock_ctx):
         r = await analyze_signal_trend(
             ctx=mock_ctx,
             signal_id="golden_trend",

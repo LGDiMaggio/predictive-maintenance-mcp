@@ -73,6 +73,7 @@ _MULTI_MEASURE_ERROR = (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _extract_feature_series(
     signal_data: np.ndarray,
     feature_name: str,
@@ -118,9 +119,7 @@ def _truncate_series(
     """Evenly subsample a series down to *max_points* for output echoing."""
     if len(values) <= max_points:
         return values, times, False
-    idx = np.unique(
-        np.linspace(0, len(values) - 1, max_points).round().astype(int)
-    )
+    idx = np.unique(np.linspace(0, len(values) - 1, max_points).round().astype(int))
     return (
         [round(values[i], 6) for i in idx],
         [round(times[i], 4) for i in idx],
@@ -168,65 +167,64 @@ async def estimate_rul(
 ) -> RULEstimationResult:
     """Estimate Remaining Useful Life from repeated measurements over time.
 
-        RUL is only physically meaningful when fitted on a degradation trend
-        across MULTIPLE measurements of the same machine taken at different
-        times (days/weeks/months apart). This tool refuses a single
-        recording or single point — for within-recording screening use
-        analyze_signal_trend instead.
+    RUL is only physically meaningful when fitted on a degradation trend
+    across MULTIPLE measurements of the same machine taken at different
+    times (days/weeks/months apart). This tool refuses a single
+    recording or single point — for within-recording screening use
+    analyze_signal_trend instead.
 
-        Two mutually exclusive input routes (both need `timestamps`, one
-        entry per measurement, strictly increasing, in `time_unit`):
-        1. `feature_values`: the degradation indicator already measured
-           externally (e.g. RMS velocity trended by a data collector).
-        2. `signal_ids`: one stored signal per measurement session (loaded
-           via load_signal); each recording is reduced to a single
-           `feature_name` value.
+    Two mutually exclusive input routes (both need `timestamps`, one
+    entry per measurement, strictly increasing, in `time_unit`):
+    1. `feature_values`: the degradation indicator already measured
+       externally (e.g. RMS velocity trended by a data collector).
+    2. `signal_ids`: one stored signal per measurement session (loaded
+       via load_signal); each recording is reduced to a single
+       `feature_name` value.
 
-        The degradation indicator is assumed to RISE toward
-        `failure_threshold`. A statistically significant increasing trend
-        (slope p-value < 0.05) is required before any RUL is computed; a
-        flat/insignificant series returns status 'no_degradation_trend'
-        with no RUL number.
+    The degradation indicator is assumed to RISE toward
+    `failure_threshold`. A statistically significant increasing trend
+    (slope p-value < 0.05) is required before any RUL is computed; a
+    flat/insignificant series returns status 'no_degradation_trend'
+    with no RUL number.
 
-        Args:
-            ctx: MCP context. Unused — see this module's docstring on logging.
-            failure_threshold: Indicator value considered as failure, in the
-                same units as the feature values. No universal default is
-                imposed — but when the indicator is broadband VELOCITY RMS
-                in mm/s, the standard choice is the ISO 10816-3:2009 zone
-                C/D boundary that assess_severity / get_zone_boundaries()
-                reports for the machine's group and support (single source
-                of truth — no boundaries restated here).
-            timestamps: Measurement times in `time_unit`, strictly
-                increasing (e.g. hours since first measurement).
-            feature_values: Indicator values, one per measurement
-                (mutually exclusive with signal_ids).
-            signal_ids: Stored signal IDs, one per measurement session
-                (mutually exclusive with feature_values).
-            feature_name: Time-domain feature used to reduce each signal
-                (default: "rms"). Ignored for feature_values input.
-            method: "linear" (default), "exponential", or "kalman"
-                (kalman needs approximately uniform measurement spacing).
-            time_unit: Label for the time axis; RUL and
-                observation_horizon are expressed in this unit.
+    Args:
+        ctx: MCP context. Unused — see this module's docstring on logging.
+        failure_threshold: Indicator value considered as failure, in the
+            same units as the feature values. No universal default is
+            imposed — but when the indicator is broadband VELOCITY RMS
+            in mm/s, the standard choice is the ISO 10816-3:2009 zone
+            C/D boundary that assess_severity / get_zone_boundaries()
+            reports for the machine's group and support (single source
+            of truth — no boundaries restated here).
+        timestamps: Measurement times in `time_unit`, strictly
+            increasing (e.g. hours since first measurement).
+        feature_values: Indicator values, one per measurement
+            (mutually exclusive with signal_ids).
+        signal_ids: Stored signal IDs, one per measurement session
+            (mutually exclusive with feature_values).
+        feature_name: Time-domain feature used to reduce each signal
+            (default: "rms"). Ignored for feature_values input.
+        method: "linear" (default), "exponential", or "kalman"
+            (kalman needs approximately uniform measurement spacing).
+        time_unit: Label for the time axis; RUL and
+            observation_horizon are expressed in this unit.
 
-        Returns:
-            RULEstimationResult with status, rul (only when estimated),
-            fit_r_squared (goodness of fit — NOT a confidence),
-            observation_horizon, and a plain-language message.
-        """
+    Returns:
+        RULEstimationResult with status, rul (only when estimated),
+        fit_r_squared (goodness of fit — NOT a confidence),
+        observation_horizon, and a plain-language message.
+    """
     # --- Input route validation -----------------------------------
     if method not in ("linear", "exponential", "kalman"):
         raise ValueError(
-            f"Unknown method '{method}' — use 'linear', 'exponential', "
-                "or 'kalman'."
+            f"Unknown method '{method}' — use 'linear', 'exponential', " "or 'kalman'."
         )
 
     if (feature_values is None) == (signal_ids is None):
         raise ValueError(
             "Provide exactly one of feature_values or signal_ids — "
-                "feature_values for externally measured indicator values, "
-                "signal_ids for stored measurement recordings."
+            "feature_values for externally measured indicator values, "
+            "signal_ids for stored measurement recordings."
         )
 
     n = len(feature_values if feature_values is not None else signal_ids)
@@ -242,13 +240,13 @@ async def estimate_rul(
     if len(timestamps) != n:
         raise ValueError(
             f"Got {n} measurements but {len(timestamps)} timestamps — "
-                "provide one timestamp per measurement."
+            "provide one timestamp per measurement."
         )
     t = [float(x) for x in timestamps]
     if any(b <= a for a, b in zip(t, t[1:])):
         raise ValueError(
             "timestamps must be strictly increasing — sort the "
-                "measurements chronologically and remove duplicates."
+            "measurements chronologically and remove duplicates."
         )
 
     horizon = t[-1] - t[0]
@@ -256,7 +254,7 @@ async def estimate_rul(
 
     logger.info(
         f"Estimating RUL ({method}) from {n} measurements spanning "
-            f"{horizon:g} {time_unit} ..."
+        f"{horizon:g} {time_unit} ..."
     )
 
     common = dict(
@@ -276,8 +274,8 @@ async def estimate_rul(
             trend_p_value=None,
             message=(
                 f"The most recent measurement ({current_value:g}) is at or "
-                    f"above the failure threshold ({failure_threshold:g}) — "
-                    "no remaining life to estimate. Inspect the machine now."
+                f"above the failure threshold ({failure_threshold:g}) — "
+                "no remaining life to estimate. Inspect the machine now."
             ),
             **common,
         )
@@ -290,12 +288,12 @@ async def estimate_rul(
         if trend["slope"] <= 0 and p_value is not None and p_value < TREND_ALPHA:
             reason = (
                 "the indicator is decreasing/flat, moving away from the "
-                    "failure threshold"
+                "failure threshold"
             )
         else:
             reason = (
                 "no statistically significant increasing trend "
-                    f"(slope p-value = {p_value if p_value is not None else 'n/a'})"
+                f"(slope p-value = {p_value if p_value is not None else 'n/a'})"
             )
         return RULEstimationResult(
             status="no_degradation_trend",
@@ -303,9 +301,9 @@ async def estimate_rul(
             fit_r_squared=round(trend["r_squared"], 4),
             message=(
                 f"No degradation trend detected: {reason}. The machine "
-                    f"appears stable over the {horizon:g} {time_unit} "
-                    "observed — keep collecting measurements and re-run "
-                    "estimate_rul as the series grows."
+                f"appears stable over the {horizon:g} {time_unit} "
+                "observed — keep collecting measurements and re-run "
+                "estimate_rul as the series grows."
             ),
             **common,
         )
@@ -323,20 +321,16 @@ async def estimate_rul(
         if spread > KALMAN_MAX_SPACING_SPREAD:
             raise ValueError(
                 "The kalman method assumes uniformly spaced measurements, "
-                    f"but the intervals vary by {spread * 100:.0f}% — use "
-                    "method='linear' or 'exponential', or resample the series "
-                    "to a regular interval."
+                f"but the intervals vary by {spread * 100:.0f}% — use "
+                "method='linear' or 'exponential', or resample the series "
+                "to a regular interval."
             )
         result = estimate_rul_kalman(
             values, failure_threshold, sampling_interval=mean_dt
         )
         if result is not None:
-            extra["rul_interval_95"] = [
-                round(x, 4) for x in result["rul_interval_95"]
-            ]
-            extra["precision_heuristic"] = round(
-                result["precision_heuristic"], 4
-            )
+            extra["rul_interval_95"] = [round(x, 4) for x in result["rul_interval_95"]]
+            extra["precision_heuristic"] = round(result["precision_heuristic"], 4)
             extra["estimated_rate"] = round(result["estimated_rate"], 6)
 
     if result is None:
@@ -346,8 +340,8 @@ async def estimate_rul(
             fit_r_squared=round(trend["r_squared"], 4),
             message=(
                 f"The fitted {method} degradation curve does not reach the "
-                    f"failure threshold ({failure_threshold:g}) after the last "
-                    "measurement — no finite RUL. Keep collecting measurements."
+                f"failure threshold ({failure_threshold:g}) after the last "
+                "measurement — no finite RUL. Keep collecting measurements."
             ),
             **common,
         )
@@ -359,13 +353,13 @@ async def estimate_rul(
 
     message = (
         f"RUL estimated at {rul:g} {time_unit} from {n} measurements "
-            f"spanning {horizon:g} {time_unit}. This is an extrapolation of "
-            "the observed trend — treat it as planning input, not a guarantee."
+        f"spanning {horizon:g} {time_unit}. This is an extrapolation of "
+        "the observed trend — treat it as planning input, not a guarantee."
     )
     if rul > horizon:
         message += (
             f" Caution: the estimate extends {rul / horizon:.1f}x beyond "
-                "the observation horizon, so its reliability is low."
+            "the observation horizon, so its reliability is low."
         )
 
     return RULEstimationResult(
@@ -378,6 +372,7 @@ async def estimate_rul(
         **extra,
     )
 
+
 async def analyze_signal_trend(
     ctx: Context,
     signal_id: str,
@@ -388,67 +383,64 @@ async def analyze_signal_trend(
 ) -> TrendAnalysisResult:
     """Within-recording screening: feature trend + degradation onset.
 
-        THE unified screening tool: feature trend AND degradation
-        onset in one call. Segments a single recording
-        (seconds of data), extracts the requested feature per segment,
-        tests whether the per-segment values show a statistically
-        significant trend (slope p < 0.05), and detects the first segment
-        AFTER the baseline window (first half of the series) whose value
-        exceeds baseline mean + onset_threshold_sigma standard deviations.
-        Onset inside the baseline window cannot be detected (the baseline
-        defines "normal"). Requires the signal loaded via load_signal()
-        first; the sampling rate comes from the stored signal metadata.
+    THE unified screening tool: feature trend AND degradation
+    onset in one call. Segments a single recording
+    (seconds of data), extracts the requested feature per segment,
+    tests whether the per-segment values show a statistically
+    significant trend (slope p < 0.05), and detects the first segment
+    AFTER the baseline window (first half of the series) whose value
+    exceeds baseline mean + onset_threshold_sigma standard deviations.
+    Onset inside the baseline window cannot be detected (the baseline
+    defines "normal"). Requires the signal loaded via load_signal()
+    first; the sampling rate comes from the stored signal metadata.
 
-        This is a SCREENING tool, not a prognosis: a trend inside seconds
-        of signal says whether the recording is stationary, not how long
-        the machine will live. For Remaining Useful Life, collect repeated
-        measurements over days/weeks (one recording per session) and pass
-        them to estimate_rul — this tool returns the per-segment feature
-        series so each recording can be reduced to one measurement point.
+    This is a SCREENING tool, not a prognosis: a trend inside seconds
+    of signal says whether the recording is stationary, not how long
+    the machine will live. For Remaining Useful Life, collect repeated
+    measurements over days/weeks (one recording per session) and pass
+    them to estimate_rul — this tool returns the per-segment feature
+    series so each recording can be reduced to one measurement point.
 
-        Args:
-            ctx: MCP context. Unused — see this module's docstring on logging.
-            signal_id: ID of the stored signal (from load_signal).
-            feature_name: Time-domain feature to analyze (default: "rms").
-            segment_duration: Duration of each segment in seconds.
-            overlap_ratio: Overlap between segments (0-1).
-            onset_threshold_sigma: Baseline standard deviations above the
-                baseline mean that trigger onset detection (default: 3.0).
+    Args:
+        ctx: MCP context. Unused — see this module's docstring on logging.
+        signal_id: ID of the stored signal (from load_signal).
+        feature_name: Time-domain feature to analyze (default: "rms").
+        segment_duration: Duration of each segment in seconds.
+        overlap_ratio: Overlap between segments (0-1).
+        onset_threshold_sigma: Baseline standard deviations above the
+            baseline mean that trigger onset detection (default: 3.0).
 
-        Returns:
-            TrendAnalysisResult with slope, direction (p-value based),
-            fit quality, the (truncated) per-segment feature series, and
-            the onset-detection outcome (onset_detected,
-            onset_segment_index, onset_time_s, baseline_segments).
+    Returns:
+        TrendAnalysisResult with slope, direction (p-value based),
+        fit quality, the (truncated) per-segment feature series, and
+        the onset-detection outcome (onset_detected,
+        onset_segment_index, onset_time_s, baseline_segments).
 
-        Raises:
-            ValueError: If the signal_id is not loaded, or the stored
-                signal has no sampling rate.
-        """
+    Raises:
+        ValueError: If the signal_id is not loaded, or the stored
+            signal has no sampling rate.
+    """
     signal_data, info = resolve_signal(signal_id)
     sr = info.sampling_rate
     logger.info(
-        f"Screening within-recording trend of '{feature_name}' in "
-            f"'{signal_id}' ..."
+        f"Screening within-recording trend of '{feature_name}' in " f"'{signal_id}' ..."
     )
 
     feature_series, segment_times = _extract_feature_series(
-        signal_data, feature_name, sr, segment_duration, overlap_ratio,
+        signal_data,
+        feature_name,
+        sr,
+        segment_duration,
+        overlap_ratio,
     )
-    logger.info(
-        f"Extracted {len(feature_series)} segments, fitting trend ..."
-    )
+    logger.info(f"Extracted {len(feature_series)} segments, fitting trend ...")
 
     trend = analyze_trend(feature_series, timestamps=segment_times)
-    series_out, times_out, truncated = _truncate_series(
-        feature_series, segment_times
-    )
+    series_out, times_out, truncated = _truncate_series(feature_series, segment_times)
 
     # Onset detection (merged detect_signal_degradation_onset): scan only
     # AFTER the baseline window — the baseline defines "normal".
-    onset_index = detect_degradation_onset(
-        feature_series, onset_threshold_sigma
-    )
+    onset_index = detect_degradation_onset(feature_series, onset_threshold_sigma)
     onset_time_s = (
         round(segment_times[onset_index], 4) if onset_index is not None else None
     )

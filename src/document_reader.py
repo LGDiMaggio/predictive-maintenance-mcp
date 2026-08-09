@@ -28,6 +28,7 @@ import logging
 # PDF processing
 try:
     import pypdf
+
     HAS_PDF = True
 except ImportError:
     HAS_PDF = False
@@ -37,6 +38,7 @@ except ImportError:
 try:
     from PIL import Image
     import pytesseract
+
     HAS_OCR = True
 except ImportError:
     HAS_OCR = False
@@ -53,50 +55,53 @@ logger = logging.getLogger(__name__)
 # PDF TEXT EXTRACTION
 # ============================================================================
 
+
 def extract_text_from_pdf(pdf_path: Path, max_pages: Optional[int] = None) -> str:
     """
     Extract text from PDF file.
-    
+
     Falls back to OCR (pytesseract) for scanned/image-based pages when
     the standard text layer is empty or nearly empty.
-    
+
     Args:
         pdf_path: Path to PDF file
         max_pages: Maximum number of pages to extract (None = all pages)
-    
+
     Returns:
         Extracted text content
     """
     if not HAS_PDF:
-        raise ImportError("pypdf required for PDF reading. Install with: pip install pypdf")
-    
+        raise ImportError(
+            "pypdf required for PDF reading. Install with: pip install pypdf"
+        )
+
     if not pdf_path.exists():
         raise FileNotFoundError(f"PDF not found: {pdf_path}")
-    
+
     text_parts = []
     ocr_used = False
-    
-    with open(pdf_path, 'rb') as file:
+
+    with open(pdf_path, "rb") as file:
         pdf_reader = pypdf.PdfReader(file)
         total_pages = len(pdf_reader.pages)
         pages_to_read = min(max_pages, total_pages) if max_pages else total_pages
-        
+
         for page_num in range(pages_to_read):
             page = pdf_reader.pages[page_num]
             page_text = page.extract_text() or ""
-            
+
             # If text layer is empty/minimal, try OCR
             if len(page_text.strip()) < 20 and HAS_OCR:
                 ocr_text = _ocr_pdf_page(pdf_path, page_num)
                 if ocr_text:
                     page_text = ocr_text
                     ocr_used = True
-            
+
             text_parts.append(page_text)
-    
+
     if ocr_used:
         logger.info("OCR was used for some pages of %s", pdf_path.name)
-    
+
     return "\n\n".join(text_parts)
 
 
@@ -112,6 +117,7 @@ def _ocr_pdf_page(pdf_path: Path, page_num: int) -> str:
         return ""
     try:
         from pdf2image import convert_from_path
+
         images = convert_from_path(
             str(pdf_path),
             first_page=page_num + 1,
@@ -121,7 +127,11 @@ def _ocr_pdf_page(pdf_path: Path, page_num: int) -> str:
         if images:
             return pytesseract.image_to_string(images[0])
     except ImportError:
-        logger.debug("pdf2image not installed – skipping OCR for %s p.%d", pdf_path.name, page_num)
+        logger.debug(
+            "pdf2image not installed – skipping OCR for %s p.%d",
+            pdf_path.name,
+            page_num,
+        )
     except Exception as exc:
         logger.debug("OCR failed for %s p.%d: %s", pdf_path.name, page_num, exc)
     return ""
@@ -131,12 +141,13 @@ def _ocr_pdf_page(pdf_path: Path, page_num: int) -> str:
 # BEARING FREQUENCY CALCULATIONS
 # ============================================================================
 
+
 def calculate_bearing_frequencies(
     num_balls: int,
     ball_diameter_mm: float,
     pitch_diameter_mm: float,
     contact_angle_deg: float = 0.0,
-    shaft_speed_rpm: float = 1500.0
+    shaft_speed_rpm: float = 1500.0,
 ) -> Dict[str, float]:
     """
     Calculate bearing characteristic frequencies from geometry.
@@ -171,30 +182,33 @@ def calculate_bearing_frequencies(
     """
     # Convert to radians
     alpha = math.radians(contact_angle_deg)
-    
+
     # Shaft rotation frequency (Hz)
     f_shaft = shaft_speed_rpm / 60.0
-    
+
     # Diameter ratio
     d_ratio = ball_diameter_mm / pitch_diameter_mm
-    
+
     # Ball Pass Frequency Outer race (BPFO)
     # BPFO = (Z/2) * f_shaft * (1 - Bd/Pd * cos(α))
     BPFO = (num_balls / 2.0) * f_shaft * (1 - d_ratio * math.cos(alpha))
-    
+
     # Ball Pass Frequency Inner race (BPFI)
     # BPFI = (Z/2) * f_shaft * (1 + Bd/Pd * cos(α))
     BPFI = (num_balls / 2.0) * f_shaft * (1 + d_ratio * math.cos(alpha))
-    
+
     # Ball Spin Frequency (BSF)
     # BSF = (Pd/(2*Bd)) * f_shaft * (1 - (Bd/Pd * cos(α))²)
-    BSF = (pitch_diameter_mm / (2.0 * ball_diameter_mm)) * f_shaft * \
-          (1 - (d_ratio * math.cos(alpha))**2)
-    
+    BSF = (
+        (pitch_diameter_mm / (2.0 * ball_diameter_mm))
+        * f_shaft
+        * (1 - (d_ratio * math.cos(alpha)) ** 2)
+    )
+
     # Fundamental Train Frequency / Cage frequency (FTF)
     # FTF = (f_shaft/2) * (1 - Bd/Pd * cos(α))
     FTF = (f_shaft / 2.0) * (1 - d_ratio * math.cos(alpha))
-    
+
     return {
         "BPFO": round(BPFO, 2),
         "BPFI": round(BPFI, 2),
@@ -206,8 +220,8 @@ def calculate_bearing_frequencies(
             "ball_diameter_mm": ball_diameter_mm,
             "pitch_diameter_mm": pitch_diameter_mm,
             "contact_angle_deg": contact_angle_deg,
-            "shaft_speed_rpm": shaft_speed_rpm
-        }
+            "shaft_speed_rpm": shaft_speed_rpm,
+        },
     }
 
 
@@ -215,63 +229,63 @@ def calculate_bearing_frequencies(
 # STRUCTURED DATA EXTRACTION (REGEX-BASED)
 # ============================================================================
 
+
 def extract_bearing_designation(text: str) -> List[str]:
     """
     Extract bearing designations from text (e.g., 6205, SKF 6205-2RS).
-    
+
     Patterns:
     - ISO designation: 4-5 digits (6205, 16006)
     - With prefix: SKF 6205, FAG NU2205
     - With suffix: 6205-2RS, 6205-ZZ
     """
     patterns = [
-        r'\b(?:SKF|FAG|NSK|NTN|TIMKEN|INA|KOYO)?\s*(\d{4,5}(?:-\w+)?)\b',
-        r'\b([A-Z]{2,4}\s?\d{4,5})\b'  # NU2205, NJ306
+        r"\b(?:SKF|FAG|NSK|NTN|TIMKEN|INA|KOYO)?\s*(\d{4,5}(?:-\w+)?)\b",
+        r"\b([A-Z]{2,4}\s?\d{4,5})\b",  # NU2205, NJ306
     ]
-    
+
     bearings = set()
     for pattern in patterns:
         matches = re.findall(pattern, text, re.IGNORECASE)
         bearings.update(matches)
-    
+
     return sorted(list(bearings))
 
 
 def extract_rpm_values(text: str) -> List[float]:
     """
     Extract RPM values from text.
-    
+
     Examples: "1500 RPM", "operating speed: 3600 rpm", "750 r/min"
     """
     patterns = [
-        r'(\d+\.?\d*)\s*(?:RPM|rpm|r/min)',
-        r'(?:speed|rotation)[:\s]+(\d+\.?\d*)\s*(?:RPM|rpm)?'
+        r"(\d+\.?\d*)\s*(?:RPM|rpm|r/min)",
+        r"(?:speed|rotation)[:\s]+(\d+\.?\d*)\s*(?:RPM|rpm)?",
     ]
-    
+
     rpms = []
     for pattern in patterns:
         matches = re.findall(pattern, text)
         rpms.extend([float(m) for m in matches])
-    
+
     return sorted(list(set(rpms)))
 
 
 def extract_power_ratings(text: str) -> List[Dict[str, Any]]:
     """
     Extract power ratings (kW, HP, MW).
-    
+
     Examples: "300 kW", "500 HP", "1.5 MW"
     """
-    pattern = r'(\d+\.?\d*)\s*(kW|HP|MW|hp|kilowatt)'
+    pattern = r"(\d+\.?\d*)\s*(kW|HP|MW|hp|kilowatt)"
     matches = re.findall(pattern, text, re.IGNORECASE)
-    
+
     ratings = []
     for value, unit in matches:
-        ratings.append({
-            "value": float(value),
-            "unit": unit.upper().replace("KILOWATT", "kW")
-        })
-    
+        ratings.append(
+            {"value": float(value), "unit": unit.upper().replace("KILOWATT", "kW")}
+        )
+
     return ratings
 
 
@@ -378,41 +392,42 @@ def lookup_bearing_in_catalog(bearing_designation: str) -> Optional[Dict]:
 # CACHING SYSTEM
 # ============================================================================
 
+
 def get_cached_extraction(manual_file: str) -> Optional[Dict]:
     """
     Get cached extraction results for manual.
-    
+
     Args:
         manual_file: Manual filename
-    
+
     Returns:
         Cached data or None if not cached
     """
     cache_file = CACHE_DIR / f"{Path(manual_file).stem}_extraction.json"
-    
+
     if cache_file.exists():
         try:
-            with open(cache_file, 'r') as f:
+            with open(cache_file, "r") as f:
                 return json.load(f)
         except Exception as e:
             logger.error(f"Failed to load cache: {e}")
             return None
-    
+
     return None
 
 
 def save_extraction_cache(manual_file: str, data: Dict):
     """
     Save extraction results to cache.
-    
+
     Args:
         manual_file: Manual filename
         data: Extracted data to cache
     """
     cache_file = CACHE_DIR / f"{Path(manual_file).stem}_extraction.json"
-    
+
     try:
-        with open(cache_file, 'w') as f:
+        with open(cache_file, "w") as f:
             json.dump(data, f, indent=2)
         logger.info(f"Saved extraction cache: {cache_file}")
     except Exception as e:
@@ -423,44 +438,47 @@ def save_extraction_cache(manual_file: str, data: Dict):
 # HIGH-LEVEL EXTRACTION FUNCTION
 # ============================================================================
 
+
 def extract_machine_specs(manual_path: Path, use_cache: bool = True) -> Dict:
     """
     Extract machine specifications from manual (PDF or TXT).
-    
+
     Extracts:
     - Bearing designations
     - Operating speeds (RPM)
     - Power ratings
     - Machine type hints
-    
+
     Args:
         manual_path: Path to manual file (PDF or TXT)
         use_cache: Use cached results if available
-    
+
     Returns:
         Dictionary with extracted specifications
     """
     manual_name = manual_path.stem
-    
+
     # Check cache
     if use_cache:
         cached = get_cached_extraction(manual_name)
         if cached:
             logger.info(f"Using cached extraction for: {manual_name}")
             return cached
-    
+
     # Extract text based on file type
     logger.info(f"Extracting text from: {manual_path.name}")
-    if manual_path.suffix.lower() == '.txt':
+    if manual_path.suffix.lower() == ".txt":
         # Read text file directly
-        with open(manual_path, 'r', encoding='utf-8') as f:
+        with open(manual_path, "r", encoding="utf-8") as f:
             text = f.read()
         pages_analyzed = 1
     else:
         # Extract from PDF
-        text = extract_text_from_pdf(manual_path, max_pages=50)  # Limit to first 50 pages
-        pages_analyzed = min(50, len(text.split('\n\n')))
-    
+        text = extract_text_from_pdf(
+            manual_path, max_pages=50
+        )  # Limit to first 50 pages
+        pages_analyzed = min(50, len(text.split("\n\n")))
+
     # Extract structured data
     specs = {
         "manual_file": manual_path.name,
@@ -469,13 +487,13 @@ def extract_machine_specs(manual_path: Path, use_cache: bool = True) -> Dict:
         "power_ratings": extract_power_ratings(text),
         "text_excerpt": text[:2000],  # First 2000 chars for LLM context
         "extraction_date": datetime.now().isoformat(),
-        "pages_analyzed": pages_analyzed
+        "pages_analyzed": pages_analyzed,
     }
-    
+
     # Save to cache
     if use_cache:
         save_extraction_cache(manual_name, specs)
-    
+
     return specs
 
 
@@ -487,7 +505,7 @@ if __name__ == "__main__":
     print("=" * 80)
     print("MACHINE DOCUMENTATION READER - EXAMPLES")
     print("=" * 80)
-    
+
     # Example 1: Calculate bearing frequencies
     print("\n1. CALCULATE BEARING FREQUENCIES FROM GEOMETRY")
     print("-" * 80)
@@ -501,7 +519,7 @@ if __name__ == "__main__":
         ball_diameter_mm=demo_specs["ball_diameter_mm"],
         pitch_diameter_mm=demo_specs["pitch_diameter_mm"],
         contact_angle_deg=demo_specs["contact_angle_deg"],
-        shaft_speed_rpm=1797
+        shaft_speed_rpm=1797,
     )
     print(
         f"Input (6205 from catalog): {demo_specs['num_balls']} balls, "
@@ -514,7 +532,7 @@ if __name__ == "__main__":
         if isinstance(value, dict):
             continue
         print(f"  {key:15s}: {value:>8.2f} Hz")
-    
+
     # Example 2: Extract structured data from text
     print("\n2. EXTRACT STRUCTURED DATA (REGEX FALLBACK)")
     print("-" * 80)
@@ -534,24 +552,24 @@ if __name__ == "__main__":
     Seals: Mechanical seal type 21, carbon/ceramic faces
     Impeller: Bronze, 5 vanes, closed type
     """
-    
+
     bearings = extract_bearing_designation(sample_text)
     rpms = extract_rpm_values(sample_text)
     power = extract_power_ratings(sample_text)
-    
+
     print("Extracted data:")
     print(f"  Bearings found: {bearings}")
     print(f"  RPM values: {rpms}")
     print(f"  Power ratings: {power}")
     print()
     print("Note: Multiple RPMs are OK - LLM can interpret context (rated vs max)")
-    
+
     # Example 3: Bearing catalog lookup
     print("\n3. BEARING CATALOG LOOKUP (FALLBACK)")
     print("-" * 80)
     print("Use case: Manual lists bearing designation but not geometry")
     print()
-    
+
     bearing_specs = lookup_bearing_in_catalog("6205")
     if bearing_specs:
         print(f"Found bearing: {bearing_specs['designation']}")
@@ -559,25 +577,25 @@ if __name__ == "__main__":
         print(f"  Ball diameter: {bearing_specs['ball_diameter_mm']} mm")
         print(f"  Pitch diameter: {bearing_specs['pitch_diameter_mm']} mm")
         print(f"  Source: {bearing_specs['source']}")
-        
+
         # Auto-calculate frequencies
         print("\n  Auto-calculating frequencies at 1500 RPM:")
         freqs = calculate_bearing_frequencies(
-            num_balls=bearing_specs['num_balls'],
-            ball_diameter_mm=bearing_specs['ball_diameter_mm'],
-            pitch_diameter_mm=bearing_specs['pitch_diameter_mm'],
-            contact_angle_deg=bearing_specs['contact_angle_deg'],
-            shaft_speed_rpm=1500
+            num_balls=bearing_specs["num_balls"],
+            ball_diameter_mm=bearing_specs["ball_diameter_mm"],
+            pitch_diameter_mm=bearing_specs["pitch_diameter_mm"],
+            contact_angle_deg=bearing_specs["contact_angle_deg"],
+            shaft_speed_rpm=1500,
         )
         for key in ["BPFO", "BPFI", "BSF", "FTF"]:
             print(f"    {key}: {freqs[key]:.2f} Hz")
-    
+
     # Example 4: Real-world workflow simulation
     print("\n4. REAL-WORLD WORKFLOW SIMULATION")
     print("-" * 80)
     print("Scenario: Diagnose pump vibration with partial manual information")
     print()
-    
+
     # Simulate manual excerpt
     manual_excerpt = """
     PUMP SPECIFICATIONS - MODEL XYZ-300
@@ -594,36 +612,38 @@ if __name__ == "__main__":
     Impeller: Bronze, closed type, 5 vanes
     Shaft: Stainless steel 316
     """
-    
+
     print("Step 1: Extract bearings from manual")
     bearings_found = extract_bearing_designation(manual_excerpt)
     print(f"  → Found: {bearings_found}")
-    
+
     print("\nStep 2: Lookup bearing geometry from catalog")
     for bearing in bearings_found[:2]:  # First 2 bearings
         specs = lookup_bearing_in_catalog(bearing)
         if specs:
-            print(f"  → {bearing}: {specs['num_balls']} balls, "
-                  f"Bd={specs['ball_diameter_mm']}mm, "
-                  f"Pd={specs['pitch_diameter_mm']}mm")
-    
+            print(
+                f"  → {bearing}: {specs['num_balls']} balls, "
+                f"Bd={specs['ball_diameter_mm']}mm, "
+                f"Pd={specs['pitch_diameter_mm']}mm"
+            )
+
     print("\nStep 3: Calculate fault frequencies for diagnosis")
     rpm_values = extract_rpm_values(manual_excerpt)
     nominal_rpm = 1475  # From manual context
-    
+
     bearing_6205_specs = lookup_bearing_in_catalog("6205")
     if bearing_6205_specs:
         freqs = calculate_bearing_frequencies(
-            num_balls=bearing_6205_specs['num_balls'],
-            ball_diameter_mm=bearing_6205_specs['ball_diameter_mm'],
-            pitch_diameter_mm=bearing_6205_specs['pitch_diameter_mm'],
+            num_balls=bearing_6205_specs["num_balls"],
+            ball_diameter_mm=bearing_6205_specs["ball_diameter_mm"],
+            pitch_diameter_mm=bearing_6205_specs["pitch_diameter_mm"],
             contact_angle_deg=0.0,
-            shaft_speed_rpm=nominal_rpm
+            shaft_speed_rpm=nominal_rpm,
         )
         print(f"  → SKF 6205 at {nominal_rpm} RPM:")
         print(f"     BPFO: {freqs['BPFO']:.2f} Hz (outer race fault)")
         print(f"     BPFI: {freqs['BPFI']:.2f} Hz (inner race fault)")
-    
+
     print("\nStep 4: LLM can now answer complex questions:")
     print("  ❓ 'What type of mechanical seal is used?'")
     print("     → Type 21, carbon/ceramic faces")
@@ -631,7 +651,7 @@ if __name__ == "__main__":
     print("     → 5 vanes, closed type, bronze material")
     print("  ❓ 'What are the expected bearing fault frequencies?'")
     print("     → BPFO/BPFI computed from catalog geometry (see Step 3 output)")
-    
+
     print("\n" + "=" * 80)
     print("CONCLUSION: Hybrid approach works!")
     print("  ✅ MCP Resources → LLM reads full manual for ANY question")

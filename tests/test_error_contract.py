@@ -96,8 +96,7 @@ class TestModuleLevelTools:
         for t in mcp._tool_manager._tools.values():
             module = importlib.import_module(t.fn.__module__)
             assert getattr(module, t.name) is t.fn, (
-                f"Tool '{t.name}' is not importable as "
-                f"{t.fn.__module__}.{t.name}"
+                f"Tool '{t.name}' is not importable as " f"{t.fn.__module__}.{t.name}"
             )
 
     def test_prompts_are_module_level(self, mcp):
@@ -109,9 +108,7 @@ class TestModuleLevelTools:
             assert getattr(module, p.name) is fn
 
     @pytest.mark.asyncio
-    async def test_direct_import_happy_path(
-        self, sandbox_dirs, mock_ctx
-    ):
+    async def test_direct_import_happy_path(self, sandbox_dirs, mock_ctx):
         """load_signal + analyze_fft work via direct import, no MCPServer."""
         from predictive_maintenance_mcp.mcp_tools.analysis_tools import (
             analyze_fft,
@@ -123,9 +120,7 @@ class TestModuleLevelTools:
         fs = 10000
         t = np.linspace(0, 1.0, fs, endpoint=False)
         sig = np.sin(2 * np.pi * 50 * t)
-        pd.DataFrame(sig).to_csv(
-            sandbox_dirs / "direct.csv", index=False, header=False
-        )
+        pd.DataFrame(sig).to_csv(sandbox_dirs / "direct.csv", index=False, header=False)
         with open(sandbox_dirs / "direct_metadata.json", "w") as f:
             json.dump({"sampling_rate": fs, "signal_unit": "g"}, f)
 
@@ -207,9 +202,7 @@ class TestFailuresRaise:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("tool_name", sorted(FAILURE_CASES))
-    async def test_failure_raises(
-        self, tool_name, tools, sandbox_dirs, mock_ctx
-    ):
+    async def test_failure_raises(self, tool_name, tools, sandbox_dirs, mock_ctx):
         tool = tools[tool_name]
         kwargs = dict(FAILURE_CASES[tool_name])
         if "ctx" in inspect.signature(tool.fn).parameters:
@@ -298,8 +291,7 @@ class TestSourceGuards:
             if monolith_name in p.read_text(encoding="utf-8")
         ]
         assert offenders == [], (
-            f"mcp_tools must not import from the deprecated monolith: "
-            f"{offenders}"
+            f"mcp_tools must not import from the deprecated monolith: " f"{offenders}"
         )
 
     def test_no_fstring_json_error_returns(self):
@@ -310,8 +302,7 @@ class TestSourceGuards:
             if pattern.search(p.read_text(encoding="utf-8"))
         ]
         assert offenders == [], (
-            f"JSON must never be built via f-string interpolation: "
-            f"{offenders}"
+            f"JSON must never be built via f-string interpolation: " f"{offenders}"
         )
 
     def test_no_error_key_dict_literals_returned(self):
@@ -336,6 +327,4 @@ class TestSourceGuards:
             )
             if hits:
                 offenders[path.name] = hits
-        assert offenders == {}, (
-            f"error-keyed dict literals found in: {offenders}"
-        )
+        assert offenders == {}, f"error-keyed dict literals found in: {offenders}"

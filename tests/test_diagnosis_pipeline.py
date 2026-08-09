@@ -131,7 +131,10 @@ class TestISOSeverityRefusal:
         """No unit → status='refused' with reason + remedy; other blocks run."""
         signal, fs = healthy_signal
         result = diagnose_vibration(
-            signal, fs, rpm=1500, signal_id="no_unit",
+            signal,
+            fs,
+            rpm=1500,
+            signal_id="no_unit",
             anomaly_model_name="nonexistent_model_u5",
         )
         iso = result["iso_severity"]
@@ -164,7 +167,10 @@ class TestISOSeverityRefusal:
         # With declared unit 'mm/s' → assessed without integration, zone C
         # (group 2 rigid: 2.8 < 4.0 <= 4.5)
         result2 = diagnose_vibration(
-            signal, fs, rpm=3000, signal_unit="mm/s",
+            signal,
+            fs,
+            rpm=3000,
+            signal_unit="mm/s",
             anomaly_model_name="nonexistent_model_u5",
         )
         iso2 = result2["iso_severity"]
@@ -189,7 +195,10 @@ class TestISOSeverityRefusal:
         t = np.linspace(0, 1.0, fs, endpoint=False)
         signal = 0.5 * np.sin(2 * np.pi * 50 * t)
         result = diagnose_vibration(
-            signal, fs, rpm=3000, signal_unit="g",
+            signal,
+            fs,
+            rpm=3000,
+            signal_unit="g",
             anomaly_model_name="nonexistent_model_u5",
         )
         iso = result["iso_severity"]
@@ -259,7 +268,10 @@ class TestRecommendations:
         """
         signal, fs = healthy_signal
         result = diagnose_vibration(
-            signal, fs, rpm=1500, signal_unit="g",
+            signal,
+            fs,
+            rpm=1500,
+            signal_unit="g",
             anomaly_model_name="nonexistent_model_u4",
         )
         assert result["iso_severity"]["zone"] == "A"
@@ -272,7 +284,10 @@ class TestRecommendations:
         t = np.linspace(0, 1.0, fs, endpoint=False)
         signal = 0.01 * np.sin(2 * np.pi * 60 * t)
         result = diagnose_vibration(
-            signal, fs, rpm=rpm, signal_unit="g",
+            signal,
+            fs,
+            rpm=rpm,
+            signal_unit="g",
             anomaly_model_name="nonexistent_model_u4",
         )
         assert result["iso_severity"]["zone"] == "A"
@@ -295,7 +310,10 @@ class TestAnomalyDetection:
     def test_with_real_model(self, healthy_signal):
         """If bearing_health_model exists, anomaly detection should run."""
         from pathlib import Path
-        model_path = Path(__file__).parent.parent / "models" / "bearing_health_model_model.pkl"
+
+        model_path = (
+            Path(__file__).parent.parent / "models" / "bearing_health_model_model.pkl"
+        )
         if not model_path.exists():
             pytest.skip("No trained model available")
         signal, fs = healthy_signal
@@ -313,8 +331,17 @@ class TestFeatureExtraction:
         segment = np.random.randn(1000)
         features = _extract_time_domain_features(segment)
         assert len(features) == 17
-        expected_keys = {"mean", "std", "var", "rms", "kurtosis", "skewness",
-                         "crest_factor", "entropy", "zero_crossing_rate"}
+        expected_keys = {
+            "mean",
+            "std",
+            "var",
+            "rms",
+            "kurtosis",
+            "skewness",
+            "crest_factor",
+            "entropy",
+            "zero_crossing_rate",
+        }
         assert expected_keys.issubset(set(features.keys()))
 
     def test_features_deterministic(self):
@@ -354,7 +381,10 @@ class TestSynthesisEdgeCases:
         """
         signal, fs = self._make_signal(10.0, 70)  # 70 Hz ≠ 1x/2x of 50 Hz shaft
         result = diagnose_vibration(
-            signal, fs, rpm=3000, signal_unit="mm/s",
+            signal,
+            fs,
+            rpm=3000,
+            signal_unit="mm/s",
             anomaly_model_name="nonexistent_model_u4",
         )
         assert result["iso_severity"]["zone"] == "D"
@@ -429,7 +459,10 @@ class TestEvidenceStrengthUpperBranches:
         signal = self._modulated_carrier(t) + 0.02 * rng.standard_normal(t.size)
 
         result = diagnose_vibration(
-            signal, fs, rpm=self.RPM, signal_id="moderate_case",
+            signal,
+            fs,
+            rpm=self.RPM,
+            signal_id="moderate_case",
             bearing_id="6205",
             anomaly_model_name="nonexistent_model_evidence",
         )
@@ -454,7 +487,10 @@ class TestEvidenceStrengthUpperBranches:
         signal = shaft + self._modulated_carrier(t) + 0.02 * rng.standard_normal(t.size)
 
         result = diagnose_vibration(
-            signal, fs, rpm=self.RPM, signal_id="strong_case",
+            signal,
+            fs,
+            rpm=self.RPM,
+            signal_id="strong_case",
             bearing_id="6205",
             anomaly_model_name="nonexistent_model_evidence",
         )
