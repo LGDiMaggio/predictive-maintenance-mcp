@@ -11,9 +11,10 @@ Queste funzioni sono testabili in isolamento senza avviare il server MCP.
 
 Error contract: the historical functions in this module return ``Optional``
 (``None`` on failure). ``load_raw_binary`` deliberately deviates and RAISES
-typed errors ("problem — remedy" ``ValueError``/``FileNotFoundError``): the
-caller must be able to relay exactly which declared parameter contradicts the
-file, which a bare ``None`` cannot express. See its docstring.
+typed errors ("problem — remedy" ``ValueError``s, plus a bare
+``FileNotFoundError``): the caller must be able to relay exactly which
+declared parameter contradicts the file, which a bare ``None`` cannot
+express. See its docstring.
 """
 
 import logging
@@ -28,22 +29,18 @@ from ..path_safety import safe_resolve
 
 logger = logging.getLogger(__name__)
 
-SUPPORTED_EXTENSIONS = [
-    ".csv",
-    ".txt",
-    ".npy",
-    ".dat",
-    ".mat",
-    ".wav",
-    ".parquet",
-    ".bin",
-    ".raw",
-]
-
 # Extensions eligible for raw-binary decoding (headerless files that need an
 # explicit declaration of sample_format/byte_order/... to be loadable).
-# Exported for later wiring (repository dispatch, tool surface).
 RAW_EXTENSIONS = frozenset({".bin", ".raw", ".dat"})
+
+#: Formats whose header/structure declares how to decode them — no raw
+#: declaration is needed (or allowed) for these.
+SELF_DESCRIBING_EXTENSIONS = [".csv", ".txt", ".npy", ".mat", ".wav", ".parquet"]
+
+#: Everything list_signals(scope='disk') surfaces. Composed from the two
+#: classes above so a future raw extension can never be raw-eligible but
+#: unlisted (the inverse of the .dat bug this composition replaced).
+SUPPORTED_EXTENSIONS = [*SELF_DESCRIBING_EXTENSIONS, *sorted(RAW_EXTENSIONS)]
 
 # Closed vocabularies for the raw decoder declaration. Keys are the accepted
 # parameter values; values are the numpy dtype building blocks.
@@ -61,6 +58,19 @@ _RAW_BYTE_ORDER_PREFIXES = {"little": "<", "big": ">"}
 #: name the valid vocabulary, mirroring VALID_SIGNAL_UNITS for units.
 VALID_SAMPLE_FORMATS: tuple[str, ...] = tuple(sorted(_RAW_DTYPE_CODES))
 VALID_BYTE_ORDERS: tuple[str, ...] = tuple(sorted(_RAW_BYTE_ORDER_PREFIXES))
+
+#: Effective defaults for the OPTIONAL raw decode parameters — the single
+#: source of truth for the decoder signature's literal defaults (pinned by
+#: test) and the repository's explicit > companion > default merge.
+#: ``sample_format`` (like ``sampling_rate``) is deliberately absent: for a
+#: raw file it is a REQUIRED declaration with no default.
+RAW_PARAM_DEFAULTS: dict[str, object] = {
+    "byte_order": "little",
+    "n_channels": 1,
+    "channel_index": 0,
+    "header_offset": 0,
+    "scale_factor": None,
+}
 
 
 def load_signal_data(filename: str) -> Optional[np.ndarray]:
@@ -221,15 +231,15 @@ def load_raw_binary(
             f"header size in bytes (0 for a headerless file)."
         )
 
-    if not path.exists():
-        raise FileNotFoundError(
-            f"Signal file not found: {path} — use list_signals(scope='disk') "
-            f"to see the files available on disk."
-        )
-
     # Pre-read size guard: stat() only, so an oversized file is refused
-    # before a single payload byte is read into memory.
-    file_size = path.stat().st_size
+    # before a single payload byte is read into memory. A missing file is a
+    # bare FileNotFoundError — the actionable "use list_signals" remedy is
+    # the repository layer's business (it checks existence on every route
+    # and owns the canonical message).
+    try:
+        file_size = path.stat().st_size
+    except FileNotFoundError:
+        raise FileNotFoundError(str(path)) from None
     max_size = get_max_signal_size()
     if file_size > max_size:
         raise ValueError(
@@ -268,7 +278,7 @@ def load_raw_binary(
         data = data[channel_index::n_channels]
 
     if dtype.kind == "f":
-        nonfinite = int(np.count_nonzero(~np.isfinite(data)))
+        nonfinite = data.size - int(np.count_nonzero(np.isfinite(data)))
         if nonfinite:
             raise ValueError(
                 f"Decoded payload contains {nonfinite} non-finite sample(s) "
@@ -278,9 +288,13 @@ def load_raw_binary(
                 f"declaration."
             )
 
-    result = data.astype(np.float64)
+    result: np.ndarray
     if scale_factor is not None:
-        result = result * scale_factor
+        # Convert + scale in a single float64 pass (one temporary).
+        result = np.multiply(data, scale_factor, dtype=np.float64)
+    else:
+        # No copy when the payload is already native float64.
+        result = data.astype(np.float64, copy=False)
     return result
 
 

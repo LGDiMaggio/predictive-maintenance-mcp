@@ -1,14 +1,17 @@
 """Tests for MCP acquisition tools (ISO 13374 Block 1)."""
 
+import inspect
 import json
+import typing
+
 import pytest
 import numpy as np
 import pandas as pd
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 from mcp.server.mcpserver import MCPServer
 
+from conftest import write_raw_file
 from predictive_maintenance_mcp.mcp_tools.acquisition_tools import register
 
 # ---------------------------------------------------------------------------
@@ -408,19 +411,13 @@ class TestLoadSignalUnit:
 class TestLoadSignalRaw:
     """U3: raw binary (.bin/.raw/.dat) declaration via the load_signal tool."""
 
-    @staticmethod
-    def _write_bin(path: Path, samples, dtype: str = "<f4") -> np.ndarray:
-        arr = np.asarray(samples, dtype=dtype)
-        path.write_bytes(arr.tobytes())
-        return arr
-
     @pytest.mark.asyncio
     async def test_bin_with_full_explicit_params(self, mcp, data_dir, mock_ctx):
         """Full explicit declaration → StoredSignalInfo with raw_format."""
         tools = {t.name: t.fn for t in mcp._tool_manager._tools.values()}
         fs = 10000.0
         t = np.arange(0, 0.1, 1 / fs)
-        arr = self._write_bin(data_dir / "raw_full.bin", np.sin(2 * np.pi * 50 * t))
+        arr = write_raw_file(data_dir / "raw_full.bin", np.sin(2 * np.pi * 50 * t))
         try:
             result = await tools["load_signal"](
                 ctx=mock_ctx,
@@ -452,8 +449,8 @@ class TestLoadSignalRaw:
         )
 
         tools = {t.name: t.fn for t in mcp._tool_manager._tools.values()}
-        self._write_bin(data_dir / "raw_b1.bin", [100, -100, 50, -50], dtype="<i2")
-        self._write_bin(data_dir / "raw_b2.bin", [10, -10, 20, -20], dtype="<i2")
+        write_raw_file(data_dir / "raw_b1.bin", [100, -100, 50, -50], dtype="<i2")
+        write_raw_file(data_dir / "raw_b2.bin", [10, -10, 20, -20], dtype="<i2")
         try:
             results = await tools["load_signal"](
                 ctx=mock_ctx,
@@ -493,7 +490,7 @@ class TestLoadSignalRaw:
         exception type is the server library's business — the contract
         asserted here is only that the call errors instead of loading.
         """
-        self._write_bin(data_dir / "raw_enum.bin", [1.0, 2.0])
+        write_raw_file(data_dir / "raw_enum.bin", [1.0, 2.0])
         tool = mcp._tool_manager._tools["load_signal"]
         with pytest.raises(Exception):
             await tool.run(
@@ -504,3 +501,37 @@ class TestLoadSignalRaw:
                 },
                 context=mock_ctx,
             )
+
+
+class TestRawLiteralVocabularySync:
+    """The tool's Literal vocabularies and the loader's VALID_* constants
+    are the same closed sets (single source of truth, no drift) — the same
+    guard pattern as the fault-type Literal in decision_support_tools."""
+
+    @staticmethod
+    def _literal_values(annotation) -> set:
+        """Unwrap Optional[Literal[...]] to the set of Literal values."""
+        literal = next(
+            a
+            for a in typing.get_args(annotation)
+            if typing.get_origin(a) is typing.Literal
+        )
+        return set(typing.get_args(literal))
+
+    def test_sample_format_literal_matches_loader_vocabulary(self):
+        from predictive_maintenance_mcp.mcp_tools.acquisition_tools import load_signal
+        from predictive_maintenance_mcp.signal_acquisition.loaders import (
+            VALID_SAMPLE_FORMATS,
+        )
+
+        ann = inspect.signature(load_signal).parameters["sample_format"].annotation
+        assert self._literal_values(ann) == set(VALID_SAMPLE_FORMATS)
+
+    def test_byte_order_literal_matches_loader_vocabulary(self):
+        from predictive_maintenance_mcp.mcp_tools.acquisition_tools import load_signal
+        from predictive_maintenance_mcp.signal_acquisition.loaders import (
+            VALID_BYTE_ORDERS,
+        )
+
+        ann = inspect.signature(load_signal).parameters["byte_order"].annotation
+        assert self._literal_values(ann) == set(VALID_BYTE_ORDERS)

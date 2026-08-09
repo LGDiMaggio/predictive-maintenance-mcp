@@ -11,13 +11,14 @@ Covers:
 - PMM_MAX_SIGNAL_SIZE call-time getter
 """
 
+import inspect
 import struct
 
 import pytest
 import numpy as np
 import pandas as pd
-from pathlib import Path
 
+from conftest import write_raw_file
 from predictive_maintenance_mcp.config import get_max_signal_size
 from predictive_maintenance_mcp.signal_acquisition.loaders import (
     load_signal_data,
@@ -27,6 +28,8 @@ from predictive_maintenance_mcp.signal_acquisition.loaders import (
     get_metadata_path_from_dir,
     DATA_DIR,
     RAW_EXTENSIONS,
+    RAW_PARAM_DEFAULTS,
+    SELF_DESCRIBING_EXTENSIONS,
     SUPPORTED_EXTENSIONS,
 )
 
@@ -267,6 +270,25 @@ class TestRawExtensions:
         for ext in (".csv", ".txt", ".npy", ".mat", ".wav", ".parquet"):
             assert ext in SUPPORTED_EXTENSIONS
 
+    def test_supported_is_composed_from_both_classes(self):
+        """SUPPORTED_EXTENSIONS is composed, not hand-listed — a raw
+        extension can never be raw-eligible but unlisted (the inverse of
+        the .dat bug), and the two classes partition the supported set."""
+        assert isinstance(SUPPORTED_EXTENSIONS, list)
+        assert set(SUPPORTED_EXTENSIONS) == (
+            set(SELF_DESCRIBING_EXTENSIONS) | set(RAW_EXTENSIONS)
+        )
+        assert not set(SELF_DESCRIBING_EXTENSIONS) & set(RAW_EXTENSIONS)
+
+    def test_decoder_signature_defaults_match_raw_param_defaults(self):
+        """RAW_PARAM_DEFAULTS is the single source of truth for the
+        optional raw-parameter defaults — the decoder's literal keyword
+        defaults are pinned to it so the two can never drift."""
+        sig = inspect.signature(load_raw_binary)
+        assert {
+            name: sig.parameters[name].default for name in RAW_PARAM_DEFAULTS
+        } == RAW_PARAM_DEFAULTS
+
 
 # ── get_max_signal_size ────────────────────────────────────────────────────
 
@@ -288,18 +310,13 @@ class TestGetMaxSignalSize:
 # ── load_raw_binary ────────────────────────────────────────────────────────
 
 
-def _write_raw(path: Path, values, dtype: str) -> None:
-    """Write values to path as a raw binary dump in the given dtype code."""
-    np.asarray(values, dtype=dtype).tofile(path)
-
-
 class TestLoadRawBinaryHappyPath:
     """Round-trips: known values written raw come back exactly, as float64."""
 
     def test_roundtrip_float32_le(self, tmp_path):
         values = [1.5, -2.25, 0.0, 3.75, -0.5]
         f = tmp_path / "sig.bin"
-        _write_raw(f, values, "<f4")
+        write_raw_file(f, values, "<f4")
         out = load_raw_binary(f, sample_format="float32")
         assert out.dtype == np.float64
         assert out.shape == (5,)
@@ -308,7 +325,7 @@ class TestLoadRawBinaryHappyPath:
     def test_roundtrip_float64_le(self, tmp_path):
         values = [1.1, -2.2, 3.3, 0.0]
         f = tmp_path / "sig.raw"
-        _write_raw(f, values, "<f8")
+        write_raw_file(f, values, "<f8")
         out = load_raw_binary(f, sample_format="float64")
         assert out.dtype == np.float64
         np.testing.assert_array_equal(out, np.array(values, dtype=np.float64))
@@ -316,7 +333,7 @@ class TestLoadRawBinaryHappyPath:
     def test_roundtrip_int16_le(self, tmp_path):
         values = [100, -200, 32767, -32768, 7]
         f = tmp_path / "sig.bin"
-        _write_raw(f, values, "<i2")
+        write_raw_file(f, values, "<i2")
         out = load_raw_binary(f, sample_format="int16")
         assert out.dtype == np.float64
         np.testing.assert_array_equal(out, np.array(values, dtype=np.float64))
@@ -324,7 +341,7 @@ class TestLoadRawBinaryHappyPath:
     def test_roundtrip_int32_le(self, tmp_path):
         values = [100_000, -2_000_000, 2_147_483_647, -2_147_483_648]
         f = tmp_path / "sig.dat"
-        _write_raw(f, values, "<i4")
+        write_raw_file(f, values, "<i4")
         out = load_raw_binary(f, sample_format="int32")
         assert out.dtype == np.float64
         np.testing.assert_array_equal(out, np.array(values, dtype=np.float64))
@@ -332,7 +349,7 @@ class TestLoadRawBinaryHappyPath:
     def test_roundtrip_float32_big_endian(self, tmp_path):
         values = [1.5, -2.25, 42.0]
         f = tmp_path / "sig.bin"
-        _write_raw(f, values, ">f4")
+        write_raw_file(f, values, ">f4")
         out = load_raw_binary(f, sample_format="float32", byte_order="big")
         np.testing.assert_array_equal(out, np.array(values, dtype=np.float64))
 
@@ -384,14 +401,14 @@ class TestLoadRawBinaryHappyPath:
 
     def test_scale_factor_int16_multiplies_exactly(self, tmp_path):
         f = tmp_path / "counts.bin"
-        _write_raw(f, [100, -200, 300], "<i2")
+        write_raw_file(f, [100, -200, 300], "<i2")
         out = load_raw_binary(f, sample_format="int16", scale_factor=0.5)
         np.testing.assert_array_equal(out, np.array([50.0, -100.0, 150.0]))
 
     def test_int16_without_scale_keeps_raw_counts(self, tmp_path):
         """No WAV-style implicit normalization: raw counts stay raw."""
         f = tmp_path / "counts.bin"
-        _write_raw(f, [100, -32768, 32767], "<i2")
+        write_raw_file(f, [100, -32768, 32767], "<i2")
         out = load_raw_binary(f, sample_format="int16")
         assert out.dtype == np.float64
         np.testing.assert_array_equal(out, np.array([100.0, -32768.0, 32767.0]))
@@ -402,7 +419,7 @@ class TestLoadRawBinaryRefusals:
 
     def test_invalid_sample_format_lists_vocabulary(self, tmp_path):
         f = tmp_path / "sig.bin"
-        _write_raw(f, [1.0], "<f4")
+        write_raw_file(f, [1.0], "<f4")
         with pytest.raises(ValueError) as exc:
             load_raw_binary(f, sample_format="Float32")
         msg = str(exc.value)
@@ -411,7 +428,7 @@ class TestLoadRawBinaryRefusals:
 
     def test_invalid_byte_order_lists_vocabulary(self, tmp_path):
         f = tmp_path / "sig.bin"
-        _write_raw(f, [1.0], "<f4")
+        write_raw_file(f, [1.0], "<f4")
         with pytest.raises(ValueError) as exc:
             load_raw_binary(f, sample_format="float32", byte_order="middle")
         msg = str(exc.value)
@@ -420,25 +437,25 @@ class TestLoadRawBinaryRefusals:
 
     def test_n_channels_zero_refused_never_zerodivision(self, tmp_path):
         f = tmp_path / "sig.bin"
-        _write_raw(f, [1.0, 2.0], "<f4")
+        write_raw_file(f, [1.0, 2.0], "<f4")
         with pytest.raises(ValueError, match="n_channels"):
             load_raw_binary(f, sample_format="float32", n_channels=0)
 
     def test_n_channels_negative_refused(self, tmp_path):
         f = tmp_path / "sig.bin"
-        _write_raw(f, [1.0, 2.0], "<f4")
+        write_raw_file(f, [1.0, 2.0], "<f4")
         with pytest.raises(ValueError, match="n_channels"):
             load_raw_binary(f, sample_format="float32", n_channels=-3)
 
     def test_channel_index_negative_refused(self, tmp_path):
         f = tmp_path / "sig.bin"
-        _write_raw(f, [1.0, 2.0], "<f4")
+        write_raw_file(f, [1.0, 2.0], "<f4")
         with pytest.raises(ValueError, match="channel_index"):
             load_raw_binary(f, sample_format="float32", channel_index=-1)
 
     def test_channel_index_out_of_range_names_valid_range(self, tmp_path):
         f = tmp_path / "sig.bin"
-        _write_raw(f, [1.0, 2.0, 3.0, 4.0], "<f4")
+        write_raw_file(f, [1.0, 2.0, 3.0, 4.0], "<f4")
         with pytest.raises(ValueError) as exc:
             load_raw_binary(f, sample_format="float32", n_channels=2, channel_index=2)
         assert "0..1" in str(exc.value)
@@ -452,7 +469,7 @@ class TestLoadRawBinaryRefusals:
 
     def test_negative_header_offset_refused(self, tmp_path):
         f = tmp_path / "sig.bin"
-        _write_raw(f, [1.0, 2.0], "<f4")
+        write_raw_file(f, [1.0, 2.0], "<f4")
         with pytest.raises(ValueError, match="header_offset"):
             load_raw_binary(f, sample_format="float32", header_offset=-1)
 
@@ -478,7 +495,10 @@ class TestLoadRawBinaryRefusals:
         assert "0" in str(exc.value)
 
     def test_missing_file_raises_file_not_found(self, tmp_path):
-        with pytest.raises(FileNotFoundError, match="not found"):
+        """The pure decoder raises a bare FileNotFoundError; the actionable
+        list_signals remedy is the repository layer's business (it checks
+        existence on every route and owns the canonical message)."""
+        with pytest.raises(FileNotFoundError):
             load_raw_binary(tmp_path / "nope.bin", sample_format="float32")
 
     def test_size_off_by_one_larger_refused_with_arithmetic(self, tmp_path):
@@ -546,13 +566,13 @@ class TestLoadRawBinaryRefusals:
     def test_file_over_size_cap_refused_naming_env_var(self, tmp_path, monkeypatch):
         monkeypatch.setenv("PMM_MAX_SIGNAL_SIZE", "16")
         f = tmp_path / "big.bin"
-        _write_raw(f, [1.0, 2.0, 3.0, 4.0, 5.0], "<f4")  # 20 bytes > 16
+        write_raw_file(f, [1.0, 2.0, 3.0, 4.0, 5.0], "<f4")  # 20 bytes > 16
         with pytest.raises(ValueError, match="PMM_MAX_SIGNAL_SIZE"):
             load_raw_binary(f, sample_format="float32")
 
     def test_file_at_exact_size_cap_loads(self, tmp_path, monkeypatch):
         monkeypatch.setenv("PMM_MAX_SIGNAL_SIZE", "16")
         f = tmp_path / "ok.bin"
-        _write_raw(f, [1.0, 2.0, 3.0, 4.0], "<f4")  # exactly 16 bytes
+        write_raw_file(f, [1.0, 2.0, 3.0, 4.0], "<f4")  # exactly 16 bytes
         out = load_raw_binary(f, sample_format="float32")
         assert out.shape == (4,)

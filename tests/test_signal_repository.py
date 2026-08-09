@@ -4,8 +4,8 @@ import json
 import numpy as np
 import pandas as pd
 import pytest
-from pathlib import Path
 
+from conftest import write_raw_file
 from predictive_maintenance_mcp.signal_acquisition.repository import (
     SignalRepository,
     VALID_SIGNAL_UNITS,
@@ -476,19 +476,12 @@ class TestLRUEviction:
         assert "s1" not in ids, "Oldest untouched signal should be evicted"
 
 
-def _write_raw(path: Path, values, dtype: str = "<f4") -> np.ndarray:
-    """Write values to path as a headerless raw blob; return the written array."""
-    arr = np.asarray(values, dtype=np.dtype(dtype))
-    arr.tofile(path)
-    return arr
-
-
 class TestRawBinaryLoad:
     """U2: raw decode parameters thread through the repository on both routes."""
 
     def test_datadir_relative_explicit_params(self, repo, data_dir):
         values = np.sin(np.linspace(0, 10, 400))
-        _write_raw(data_dir / "raw_sig.bin", values)
+        write_raw_file(data_dir / "raw_sig.bin", values)
         info = repo.load_signal(
             "raw_sig.bin",
             sampling_rate=25600.0,
@@ -516,7 +509,7 @@ class TestRawBinaryLoad:
         interleaved = np.empty(400, dtype=np.float32)
         interleaved[0::2] = 5.0
         interleaved[1::2] = 9.0
-        _write_raw(data_dir / "inter.bin", interleaved)
+        write_raw_file(data_dir / "inter.bin", interleaved)
         info = repo.load_signal(
             "inter.bin",
             sampling_rate=1000,
@@ -530,11 +523,12 @@ class TestRawBinaryLoad:
         assert np.all(repo.get_signal("inter_ch1") == 9.0)
 
     def test_absolute_path_outside_data_dir_raw(self, repo, data_dir, tmp_path):
-        """_load_direct route: the outside file wins, the decoy is not touched."""
+        """Outside-DATA_DIR route: the outside file wins, the decoy is not
+        touched (raw dispatch lives in _load_array for both routes)."""
         outside = tmp_path / "baseline_raw.bin"
-        _write_raw(outside, np.full(50, 7.0))
+        write_raw_file(outside, np.full(50, 7.0))
         # Decoy with the same name inside DATA_DIR
-        _write_raw(data_dir / "baseline_raw.bin", np.zeros(50))
+        write_raw_file(data_dir / "baseline_raw.bin", np.zeros(50))
 
         info = repo.load_signal(
             str(outside), sampling_rate=1000, sample_format="float32"
@@ -547,7 +541,7 @@ class TestRawBinaryLoad:
 
     def test_companion_metadata_supplies_all_raw_params(self, repo, data_dir):
         values = np.linspace(-1.0, 1.0, 128)
-        _write_raw(data_dir / "comp.bin", values)
+        write_raw_file(data_dir / "comp.bin", values)
         with open(data_dir / "comp_metadata.json", "w") as f:
             json.dump(
                 {
@@ -567,7 +561,7 @@ class TestRawBinaryLoad:
 
     def test_explicit_param_overrides_companion_field(self, repo, data_dir):
         values = np.arange(64, dtype=np.float32)
-        _write_raw(data_dir / "override.bin", values)
+        write_raw_file(data_dir / "override.bin", values)
         with open(data_dir / "override_metadata.json", "w") as f:
             json.dump({"sampling_rate": 2000, "sample_format": "int16"}, f)
         info = repo.load_signal("override.bin", sample_format="float32")
@@ -576,7 +570,7 @@ class TestRawBinaryLoad:
         np.testing.assert_allclose(repo.get_signal("override"), values)
 
     def test_partial_companion_refusal_names_only_missing(self, repo, data_dir):
-        _write_raw(data_dir / "partial.bin", np.zeros(16))
+        write_raw_file(data_dir / "partial.bin", np.zeros(16))
         with open(data_dir / "partial_metadata.json", "w") as f:
             json.dump({"sample_format": "float32"}, f)
         with pytest.raises(ValueError) as exc:
@@ -592,7 +586,7 @@ class TestRawMissingDeclarationRefusal:
 
     @pytest.fixture
     def bare_bin(self, data_dir):
-        _write_raw(data_dir / "bare.bin", np.zeros(32))
+        write_raw_file(data_dir / "bare.bin", np.zeros(32))
         return "bare.bin"
 
     def test_missing_sample_format_named(self, repo, data_dir, bare_bin):
@@ -629,7 +623,7 @@ class TestRawMultiChannelIds:
         interleaved = np.empty(200, dtype=np.float32)
         interleaved[0::2] = 5.0
         interleaved[1::2] = 9.0
-        _write_raw(data_dir / "multi.bin", interleaved)
+        write_raw_file(data_dir / "multi.bin", interleaved)
         return "multi.bin"
 
     def test_two_channels_coexist_with_suffixed_ids(self, repo, data_dir, multi_bin):
@@ -673,7 +667,7 @@ class TestRawMultiChannelIds:
 
     def test_single_channel_id_unchanged(self, repo, data_dir):
         """n_channels == 1 keeps the pre-raw id (backward compatible)."""
-        _write_raw(data_dir / "mono.bin", np.zeros(10))
+        write_raw_file(data_dir / "mono.bin", np.zeros(10))
         info = repo.load_signal("mono.bin", sampling_rate=1000, sample_format="float32")
         assert info["signal_id"] == "mono"
 
@@ -714,7 +708,7 @@ class TestRawBatchLoad:
 
     def test_batch_broadcasts_raw_params(self, repo, data_dir):
         for name, fill in (("rb0.bin", 1.0), ("rb1.bin", 2.0)):
-            _write_raw(data_dir / name, np.full(20, fill))
+            write_raw_file(data_dir / name, np.full(20, fill))
         infos = repo.load_signals(
             ["rb0.bin", "rb1.bin"], sampling_rate=1000, sample_format="float32"
         )
@@ -723,7 +717,7 @@ class TestRawBatchLoad:
         assert repo.signal_count == 2
 
     def test_batch_non_divisible_file_is_atomic(self, repo, data_dir):
-        _write_raw(data_dir / "good.bin", np.zeros(20))
+        write_raw_file(data_dir / "good.bin", np.zeros(20))
         (data_dir / "bad.bin").write_bytes(b"\x00" * 7)  # 7 % 4 != 0
         with pytest.raises(ValueError, match="frames"):
             repo.load_signals(
@@ -731,11 +725,26 @@ class TestRawBatchLoad:
             )
         assert repo.signal_count == 0  # fail-fast atomic: nothing registered
 
+    def test_batch_invalid_companion_value_gets_batch_framing(self, repo, data_dir):
+        """An invalid companion value in a batch joins the accumulated
+        batch-abort message (nothing loaded) instead of escaping as a lone
+        error without the batch framing."""
+        write_raw_file(data_dir / "okc.bin", np.zeros(8))
+        write_raw_file(data_dir / "badc.bin", np.zeros(8))
+        with open(data_dir / "badc_metadata.json", "w") as f:
+            json.dump({"sampling_rate": 1000, "sample_format": "Float32"}, f)
+        with pytest.raises(ValueError) as exc:
+            repo.load_signals(["okc.bin", "badc.bin"], sampling_rate=1000)
+        msg = str(exc.value)
+        assert "Batch load aborted" in msg
+        assert "Float32" in msg and "badc_metadata.json" in msg
+        assert repo.signal_count == 0
+
     def test_batch_channel_derivation_agrees_with_single_route(self, repo, data_dir):
         interleaved = np.empty(40, dtype=np.float32)
         interleaved[0::2] = 3.0
         interleaved[1::2] = 4.0
-        _write_raw(data_dir / "pair.bin", interleaved)
+        write_raw_file(data_dir / "pair.bin", interleaved)
         repo.load_signal(
             "pair.bin",
             sampling_rate=1000,
@@ -769,7 +778,7 @@ class TestRawCompanionValidation:
     def test_invalid_companion_sample_format_names_vocab_and_source(
         self, repo, data_dir
     ):
-        _write_raw(data_dir / "badcomp.bin", np.zeros(16))
+        write_raw_file(data_dir / "badcomp.bin", np.zeros(16))
         with open(data_dir / "badcomp_metadata.json", "w") as f:
             json.dump({"sampling_rate": 1000, "sample_format": "Float32"}, f)
         with pytest.raises(ValueError) as exc:
@@ -780,7 +789,7 @@ class TestRawCompanionValidation:
         assert "float32" in msg and "int16" in msg  # the valid vocabulary
 
     def test_invalid_companion_byte_order_rejected(self, repo, data_dir):
-        _write_raw(data_dir / "bo.bin", np.zeros(16))
+        write_raw_file(data_dir / "bo.bin", np.zeros(16))
         with open(data_dir / "bo_metadata.json", "w") as f:
             json.dump(
                 {
@@ -798,7 +807,7 @@ class TestRawCompanionValidation:
 
     def test_invalid_companion_n_channels_type_rejected(self, repo, data_dir):
         """Wrong-typed companion ints raise typed errors, never TypeError."""
-        _write_raw(data_dir / "nc.bin", np.zeros(16))
+        write_raw_file(data_dir / "nc.bin", np.zeros(16))
         with open(data_dir / "nc_metadata.json", "w") as f:
             json.dump(
                 {
@@ -829,6 +838,21 @@ class TestRawErrorContract:
     def test_sample_format_on_csv_is_contradiction(self, repo, signal_file):
         with pytest.raises(ValueError, match="contradicts"):
             repo.load_signal(str(signal_file), sample_format="float32")
+        assert repo.signal_count == 0
+
+    def test_raw_params_on_unknown_extension_is_unsupported_format(
+        self, repo, data_dir
+    ):
+        """A `.xyz` file is NOT "self-describing" — declaring raw params
+        for it is refused as an unsupported format naming the supported
+        extensions, not as a contradiction with a header it doesn't have."""
+        (data_dir / "mystery.xyz").write_bytes(b"\x00" * 8)
+        with pytest.raises(ValueError) as exc:
+            repo.load_signal("mystery.xyz", sample_format="float32")
+        msg = str(exc.value)
+        assert "not a supported" in msg
+        assert ".csv" in msg and ".bin" in msg  # names SUPPORTED_EXTENSIONS
+        assert "self-describing" not in msg
         assert repo.signal_count == 0
 
     def test_decoder_error_propagates_not_swallowed(self, repo, data_dir):
