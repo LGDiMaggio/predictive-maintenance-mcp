@@ -221,6 +221,16 @@ class StoredSignalInfo(BaseModel):
             "has no companion metadata."
         ),
     )
+    raw_format: Optional[dict[str, Any]] = Field(
+        None,
+        description=(
+            "EFFECTIVE raw-binary decode parameters (sample_format, "
+            "byte_order, n_channels, channel_index, header_offset, "
+            "scale_factor) after the explicit > companion > default merge — "
+            "recorded as provenance so get_signal_info can answer 'how was "
+            "this file decoded'. None for self-describing formats."
+        ),
+    )
 
 
 class PSDResult(BaseModel):

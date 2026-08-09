@@ -55,6 +55,13 @@ _RAW_DTYPE_CODES = {
 }
 _RAW_BYTE_ORDER_PREFIXES = {"little": "<", "big": ">"}
 
+#: Public closed vocabularies of the raw declaration — the SAME sets the
+#: decoder enforces, exported so the repository layer can validate
+#: companion-metadata values (json.load applies no Literal) with errors that
+#: name the valid vocabulary, mirroring VALID_SIGNAL_UNITS for units.
+VALID_SAMPLE_FORMATS: tuple[str, ...] = tuple(sorted(_RAW_DTYPE_CODES))
+VALID_BYTE_ORDERS: tuple[str, ...] = tuple(sorted(_RAW_BYTE_ORDER_PREFIXES))
+
 
 def load_signal_data(filename: str) -> Optional[np.ndarray]:
     """
