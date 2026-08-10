@@ -1,0 +1,1344 @@
+{
+  "criteria": {
+    "harmonic_leg": {
+      "fault": "BSF",
+      "harmonic": 2
+    },
+    "hit_criterion": "A fault hits when its check has detected == true AND evidence_strength in {'high', 'moderate'}; BSF (ball) ONLY additionally hits when harmonic 2 is present in the BSF check's harmonics_detected (CWRU's published rolling-element factor is 2xBSF). The identical criterion counts detections on faulted records and false positives on normal baselines.",
+    "hit_evidence_levels": [
+      "high",
+      "moderate"
+    ],
+    "label_to_check_key": {
+      "ball": "BSF",
+      "inner_race": "BPFI",
+      "outer_race": "BPFO"
+    },
+    "ranking_rule": "Among faults meeting the hit criterion: evidence tier (high > moderate > harmonic-only) first, then fundamental peak magnitude descending (a harmonic-only hit uses the 2x entry's magnitude), then absolute deviation_pct ascending, then fixed BPFO/BPFI/BSF/FTF order as the final deterministic tie-break. Classification is correct when the ranked-first fault maps to the label; a normal record is correct when no fault meets the criterion."
+  },
+  "headline": {
+    "classification": {
+      "correct": 34,
+      "rate": 0.772727273,
+      "total": 44
+    },
+    "end_to_end": {
+      "correct": 34,
+      "rate": 0.772727273,
+      "total": 44
+    },
+    "false_positives": {
+      "per_fault_counts": {
+        "BPFI": 0,
+        "BPFO": 0,
+        "BSF": 0,
+        "FTF": 0
+      },
+      "rate": null,
+      "records_with_any": 0,
+      "total_normal": 0
+    },
+    "frequency_detection": {
+      "hits": 44,
+      "rate": 1.0,
+      "total": 44
+    },
+    "n_faulted": 44,
+    "n_normal": 0,
+    "n_records": 44,
+    "strata_included": [
+      "Y1",
+      "Y2"
+    ]
+  },
+  "known_anomalies_flagged": {
+    "classification": {
+      "correct": 2,
+      "rate": 1.0,
+      "total": 2
+    },
+    "end_to_end": {
+      "correct": 2,
+      "rate": 1.0,
+      "total": 2
+    },
+    "false_positives": {
+      "per_fault_counts": {
+        "BPFI": 0,
+        "BPFO": 0,
+        "BSF": 0,
+        "FTF": 0
+      },
+      "rate": null,
+      "records_with_any": 0,
+      "total_normal": 0
+    },
+    "frequency_detection": {
+      "hits": 2,
+      "rate": 1.0,
+      "total": 2
+    },
+    "n_faulted": 2,
+    "n_normal": 0,
+    "n_records": 2,
+    "record_ids": [
+      "cwru_045",
+      "cwru_050"
+    ]
+  },
+  "metadata": {
+    "dataset_subset": "CWRU 12 kHz drive-end fault group + normal baselines (v1)",
+    "date": "2026-08-10T14:53:12+00:00",
+    "git_describe": "v0.12.0-17-g70bdae6-dirty",
+    "numpy_version": "2.3.3",
+    "pipeline_version": "0.12.0",
+    "platform": "Windows-10-10.0.26200-SP0",
+    "python_version": "3.11.9",
+    "scipy_version": "1.16.2"
+  },
+  "records": {
+    "cwru_001": {
+      "classification_correct": true,
+      "end_to_end_correct": true,
+      "expected_fault": "BPFI",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": false,
+        "BSF": false,
+        "FTF": false
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "BPFI",
+      "stratum": "Y2"
+    },
+    "cwru_002": {
+      "classification_correct": true,
+      "end_to_end_correct": true,
+      "expected_fault": "BSF",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": true,
+        "BSF": true,
+        "FTF": true
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "BSF",
+      "stratum": "N1"
+    },
+    "cwru_003": {
+      "classification_correct": true,
+      "end_to_end_correct": true,
+      "expected_fault": "BPFO",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": true,
+        "BSF": true,
+        "FTF": true
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "BPFO",
+      "stratum": "Y1"
+    },
+    "cwru_004": {
+      "classification_correct": true,
+      "end_to_end_correct": true,
+      "expected_fault": "BPFO",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": true,
+        "BSF": true,
+        "FTF": true
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "BPFO",
+      "stratum": "Y2"
+    },
+    "cwru_005": {
+      "classification_correct": true,
+      "end_to_end_correct": true,
+      "expected_fault": "BPFO",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": true,
+        "BSF": true,
+        "FTF": true
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "BPFO",
+      "stratum": "Y1"
+    },
+    "cwru_006": {
+      "classification_correct": true,
+      "end_to_end_correct": true,
+      "expected_fault": "BPFI",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": false,
+        "BSF": true,
+        "FTF": false
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "BPFI",
+      "stratum": "Y2"
+    },
+    "cwru_007": {
+      "classification_correct": true,
+      "end_to_end_correct": true,
+      "expected_fault": "BSF",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": true,
+        "BSF": true,
+        "FTF": false
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "BSF",
+      "stratum": "N1"
+    },
+    "cwru_008": {
+      "classification_correct": true,
+      "end_to_end_correct": true,
+      "expected_fault": "BPFO",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": true,
+        "BSF": true,
+        "FTF": true
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "BPFO",
+      "stratum": "Y1"
+    },
+    "cwru_009": {
+      "classification_correct": true,
+      "end_to_end_correct": true,
+      "expected_fault": "BPFO",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": true,
+        "BSF": true,
+        "FTF": true
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "BPFO",
+      "stratum": "Y2"
+    },
+    "cwru_010": {
+      "classification_correct": false,
+      "end_to_end_correct": false,
+      "expected_fault": "BPFO",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": true,
+        "BSF": true,
+        "FTF": true
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "BPFI",
+      "stratum": "Y2"
+    },
+    "cwru_011": {
+      "classification_correct": true,
+      "end_to_end_correct": true,
+      "expected_fault": "BPFI",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": false,
+        "BSF": false,
+        "FTF": false
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "BPFI",
+      "stratum": "Y2"
+    },
+    "cwru_012": {
+      "classification_correct": false,
+      "end_to_end_correct": false,
+      "expected_fault": "BSF",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": true,
+        "BSF": true,
+        "FTF": true
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "BPFO",
+      "stratum": "N1"
+    },
+    "cwru_013": {
+      "classification_correct": true,
+      "end_to_end_correct": true,
+      "expected_fault": "BPFO",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": true,
+        "BSF": true,
+        "FTF": true
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "BPFO",
+      "stratum": "Y1"
+    },
+    "cwru_014": {
+      "classification_correct": true,
+      "end_to_end_correct": true,
+      "expected_fault": "BPFO",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": true,
+        "BSF": true,
+        "FTF": true
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "BPFO",
+      "stratum": "Y2"
+    },
+    "cwru_015": {
+      "classification_correct": true,
+      "end_to_end_correct": true,
+      "expected_fault": "BPFO",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": true,
+        "BSF": true,
+        "FTF": true
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "BPFO",
+      "stratum": "Y2"
+    },
+    "cwru_016": {
+      "classification_correct": true,
+      "end_to_end_correct": true,
+      "expected_fault": "BPFI",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": false,
+        "BSF": true,
+        "FTF": false
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "BPFI",
+      "stratum": "Y2"
+    },
+    "cwru_017": {
+      "classification_correct": false,
+      "end_to_end_correct": false,
+      "expected_fault": "BSF",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": true,
+        "BSF": true,
+        "FTF": true
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "FTF",
+      "stratum": "Y2"
+    },
+    "cwru_018": {
+      "classification_correct": true,
+      "end_to_end_correct": true,
+      "expected_fault": "BPFO",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": true,
+        "BSF": true,
+        "FTF": true
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "BPFO",
+      "stratum": "Y1"
+    },
+    "cwru_019": {
+      "classification_correct": true,
+      "end_to_end_correct": true,
+      "expected_fault": "BPFO",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": true,
+        "BSF": true,
+        "FTF": true
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "BPFO",
+      "stratum": "Y2"
+    },
+    "cwru_020": {
+      "classification_correct": true,
+      "end_to_end_correct": true,
+      "expected_fault": "BPFO",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": true,
+        "BSF": true,
+        "FTF": true
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "BPFO",
+      "stratum": "Y2"
+    },
+    "cwru_021": {
+      "classification_correct": true,
+      "end_to_end_correct": true,
+      "expected_fault": "BPFI",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": true,
+        "BSF": true,
+        "FTF": true
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "BPFI",
+      "stratum": "Y2"
+    },
+    "cwru_022": {
+      "classification_correct": false,
+      "end_to_end_correct": false,
+      "expected_fault": "BSF",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": false,
+        "BPFO": true,
+        "BSF": true,
+        "FTF": true
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "FTF",
+      "stratum": "P2"
+    },
+    "cwru_023": {
+      "classification_correct": false,
+      "end_to_end_correct": false,
+      "expected_fault": "BPFO",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": true,
+        "BSF": true,
+        "FTF": true
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "BPFI",
+      "stratum": "Y2"
+    },
+    "cwru_024": {
+      "classification_correct": true,
+      "end_to_end_correct": true,
+      "expected_fault": "BPFI",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": true,
+        "BSF": true,
+        "FTF": true
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "BPFI",
+      "stratum": "Y2"
+    },
+    "cwru_025": {
+      "classification_correct": false,
+      "end_to_end_correct": false,
+      "expected_fault": "BSF",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": false,
+        "BPFO": true,
+        "BSF": true,
+        "FTF": true
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "FTF",
+      "stratum": "P2"
+    },
+    "cwru_026": {
+      "classification_correct": false,
+      "end_to_end_correct": false,
+      "expected_fault": "BPFO",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": true,
+        "BSF": false,
+        "FTF": true
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "BPFI",
+      "stratum": "P2"
+    },
+    "cwru_027": {
+      "classification_correct": true,
+      "end_to_end_correct": true,
+      "expected_fault": "BPFI",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": true,
+        "BSF": true,
+        "FTF": true
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "BPFI",
+      "stratum": "Y2"
+    },
+    "cwru_028": {
+      "classification_correct": false,
+      "end_to_end_correct": false,
+      "expected_fault": "BSF",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": false,
+        "BPFO": true,
+        "BSF": true,
+        "FTF": true
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "FTF",
+      "stratum": "P2"
+    },
+    "cwru_029": {
+      "classification_correct": false,
+      "end_to_end_correct": false,
+      "expected_fault": "BPFO",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": true,
+        "BSF": true,
+        "FTF": true
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "FTF",
+      "stratum": "P1"
+    },
+    "cwru_030": {
+      "classification_correct": true,
+      "end_to_end_correct": true,
+      "expected_fault": "BPFI",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": true,
+        "BSF": true,
+        "FTF": true
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "BPFI",
+      "stratum": "Y2"
+    },
+    "cwru_031": {
+      "classification_correct": false,
+      "end_to_end_correct": false,
+      "expected_fault": "BSF",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": false,
+        "BPFO": true,
+        "BSF": true,
+        "FTF": true
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "FTF",
+      "stratum": "P2"
+    },
+    "cwru_032": {
+      "classification_correct": false,
+      "end_to_end_correct": false,
+      "expected_fault": "BPFO",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": true,
+        "BSF": true,
+        "FTF": true
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "BPFI",
+      "stratum": "N1"
+    },
+    "cwru_033": {
+      "classification_correct": true,
+      "end_to_end_correct": true,
+      "expected_fault": "BPFI",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": false,
+        "BSF": true,
+        "FTF": true
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "BPFI",
+      "stratum": "Y1"
+    },
+    "cwru_034": {
+      "classification_correct": false,
+      "end_to_end_correct": false,
+      "expected_fault": "BSF",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": true,
+        "BSF": true,
+        "FTF": false
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "BPFI",
+      "stratum": "Y2"
+    },
+    "cwru_035": {
+      "classification_correct": true,
+      "end_to_end_correct": true,
+      "expected_fault": "BPFO",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": true,
+        "BSF": true,
+        "FTF": true
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "BPFO",
+      "stratum": "Y2"
+    },
+    "cwru_036": {
+      "classification_correct": true,
+      "end_to_end_correct": true,
+      "expected_fault": "BPFO",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": true,
+        "BSF": true,
+        "FTF": true
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "BPFO",
+      "stratum": "Y2"
+    },
+    "cwru_037": {
+      "classification_correct": false,
+      "end_to_end_correct": false,
+      "expected_fault": "BPFO",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": true,
+        "BSF": true,
+        "FTF": true
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "FTF",
+      "stratum": "Y2"
+    },
+    "cwru_038": {
+      "classification_correct": true,
+      "end_to_end_correct": true,
+      "expected_fault": "BPFI",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": true,
+        "BSF": true,
+        "FTF": true
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "BPFI",
+      "stratum": "Y1"
+    },
+    "cwru_039": {
+      "classification_correct": false,
+      "end_to_end_correct": false,
+      "expected_fault": "BSF",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": true,
+        "BSF": true,
+        "FTF": false
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "BPFI",
+      "stratum": "Y2"
+    },
+    "cwru_040": {
+      "classification_correct": true,
+      "end_to_end_correct": true,
+      "expected_fault": "BPFO",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": true,
+        "BSF": true,
+        "FTF": true
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "BPFO",
+      "stratum": "Y2"
+    },
+    "cwru_041": {
+      "classification_correct": true,
+      "end_to_end_correct": true,
+      "expected_fault": "BPFO",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": true,
+        "BSF": true,
+        "FTF": true
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "BPFO",
+      "stratum": "Y2"
+    },
+    "cwru_042": {
+      "classification_correct": true,
+      "end_to_end_correct": true,
+      "expected_fault": "BPFO",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": true,
+        "BSF": true,
+        "FTF": true
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "BPFO",
+      "stratum": "Y2"
+    },
+    "cwru_043": {
+      "classification_correct": true,
+      "end_to_end_correct": true,
+      "expected_fault": "BPFI",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": true,
+        "BSF": true,
+        "FTF": true
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "BPFI",
+      "stratum": "Y1"
+    },
+    "cwru_044": {
+      "classification_correct": false,
+      "end_to_end_correct": false,
+      "expected_fault": "BSF",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": true,
+        "BSF": true,
+        "FTF": true
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "BPFO",
+      "stratum": "N1"
+    },
+    "cwru_045": {
+      "classification_correct": true,
+      "end_to_end_correct": true,
+      "expected_fault": "BPFO",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": true,
+        "BSF": true,
+        "FTF": true
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": true,
+      "ranked_first": "BPFO",
+      "stratum": "Y2"
+    },
+    "cwru_046": {
+      "classification_correct": true,
+      "end_to_end_correct": true,
+      "expected_fault": "BPFO",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": true,
+        "BSF": true,
+        "FTF": true
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "BPFO",
+      "stratum": "Y2"
+    },
+    "cwru_047": {
+      "classification_correct": true,
+      "end_to_end_correct": true,
+      "expected_fault": "BPFO",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": true,
+        "BSF": true,
+        "FTF": true
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "BPFO",
+      "stratum": "Y2"
+    },
+    "cwru_048": {
+      "classification_correct": true,
+      "end_to_end_correct": true,
+      "expected_fault": "BPFI",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": false,
+        "BSF": true,
+        "FTF": true
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "BPFI",
+      "stratum": "Y1"
+    },
+    "cwru_049": {
+      "classification_correct": false,
+      "end_to_end_correct": false,
+      "expected_fault": "BSF",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": true,
+        "BSF": true,
+        "FTF": false
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "BPFI",
+      "stratum": "N1"
+    },
+    "cwru_050": {
+      "classification_correct": true,
+      "end_to_end_correct": true,
+      "expected_fault": "BPFO",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": true,
+        "BSF": true,
+        "FTF": true
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": true,
+      "ranked_first": "BPFO",
+      "stratum": "Y2"
+    },
+    "cwru_051": {
+      "classification_correct": true,
+      "end_to_end_correct": true,
+      "expected_fault": "BPFO",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": true,
+        "BSF": true,
+        "FTF": true
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "BPFO",
+      "stratum": "Y2"
+    },
+    "cwru_052": {
+      "classification_correct": true,
+      "end_to_end_correct": true,
+      "expected_fault": "BPFO",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": true,
+        "BSF": true,
+        "FTF": true
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "BPFO",
+      "stratum": "Y2"
+    },
+    "cwru_053": {
+      "classification_correct": false,
+      "end_to_end_correct": false,
+      "expected_fault": "BPFI",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": true,
+        "BSF": true,
+        "FTF": true
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "BPFO",
+      "stratum": "N1"
+    },
+    "cwru_054": {
+      "classification_correct": false,
+      "end_to_end_correct": false,
+      "expected_fault": "BSF",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": true,
+        "BSF": true,
+        "FTF": true
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "FTF",
+      "stratum": "Y2"
+    },
+    "cwru_055": {
+      "classification_correct": false,
+      "end_to_end_correct": false,
+      "expected_fault": "BPFI",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": true,
+        "BSF": false,
+        "FTF": true
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "BPFO",
+      "stratum": "N1"
+    },
+    "cwru_056": {
+      "classification_correct": false,
+      "end_to_end_correct": false,
+      "expected_fault": "BSF",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": true,
+        "BSF": true,
+        "FTF": true
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "BPFO",
+      "stratum": "Y2"
+    },
+    "cwru_057": {
+      "classification_correct": false,
+      "end_to_end_correct": false,
+      "expected_fault": "BPFI",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": true,
+        "BSF": false,
+        "FTF": false
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "BPFO",
+      "stratum": "N1"
+    },
+    "cwru_058": {
+      "classification_correct": false,
+      "end_to_end_correct": false,
+      "expected_fault": "BSF",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": true,
+        "BSF": true,
+        "FTF": true
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "BPFI",
+      "stratum": "Y2"
+    },
+    "cwru_059": {
+      "classification_correct": false,
+      "end_to_end_correct": false,
+      "expected_fault": "BPFI",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": true,
+        "BSF": false,
+        "FTF": true
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "BPFO",
+      "stratum": "N1"
+    },
+    "cwru_060": {
+      "classification_correct": false,
+      "end_to_end_correct": false,
+      "expected_fault": "BSF",
+      "false_positive": null,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": true,
+        "BSF": true,
+        "FTF": true
+      },
+      "frequency_detection_hit": true,
+      "known_anomalies": false,
+      "ranked_first": "FTF",
+      "stratum": "Y2"
+    },
+    "cwru_061": {
+      "classification_correct": false,
+      "end_to_end_correct": false,
+      "expected_fault": null,
+      "false_positive": true,
+      "fault_hits": {
+        "BPFI": false,
+        "BPFO": false,
+        "BSF": true,
+        "FTF": false
+      },
+      "frequency_detection_hit": null,
+      "known_anomalies": false,
+      "ranked_first": "BSF",
+      "stratum": "ungraded"
+    },
+    "cwru_062": {
+      "classification_correct": true,
+      "end_to_end_correct": true,
+      "expected_fault": null,
+      "false_positive": false,
+      "fault_hits": {
+        "BPFI": false,
+        "BPFO": false,
+        "BSF": false,
+        "FTF": false
+      },
+      "frequency_detection_hit": null,
+      "known_anomalies": false,
+      "ranked_first": null,
+      "stratum": "ungraded"
+    },
+    "cwru_063": {
+      "classification_correct": true,
+      "end_to_end_correct": true,
+      "expected_fault": null,
+      "false_positive": false,
+      "fault_hits": {
+        "BPFI": false,
+        "BPFO": false,
+        "BSF": false,
+        "FTF": false
+      },
+      "frequency_detection_hit": null,
+      "known_anomalies": false,
+      "ranked_first": null,
+      "stratum": "ungraded"
+    },
+    "cwru_064": {
+      "classification_correct": false,
+      "end_to_end_correct": false,
+      "expected_fault": null,
+      "false_positive": true,
+      "fault_hits": {
+        "BPFI": false,
+        "BPFO": true,
+        "BSF": false,
+        "FTF": false
+      },
+      "frequency_detection_hit": null,
+      "known_anomalies": false,
+      "ranked_first": "BPFO",
+      "stratum": "ungraded"
+    }
+  },
+  "strata": {
+    "N1": {
+      "classification": {
+        "correct": 2,
+        "rate": 0.2,
+        "total": 10
+      },
+      "end_to_end": {
+        "correct": 2,
+        "rate": 0.2,
+        "total": 10
+      },
+      "false_positives": {
+        "per_fault_counts": {
+          "BPFI": 0,
+          "BPFO": 0,
+          "BSF": 0,
+          "FTF": 0
+        },
+        "rate": null,
+        "records_with_any": 0,
+        "total_normal": 0
+      },
+      "frequency_detection": {
+        "hits": 10,
+        "rate": 1.0,
+        "total": 10
+      },
+      "n_faulted": 10,
+      "n_normal": 0,
+      "n_records": 10
+    },
+    "N2": {
+      "classification": {
+        "correct": 0,
+        "rate": null,
+        "total": 0
+      },
+      "end_to_end": {
+        "correct": 0,
+        "rate": null,
+        "total": 0
+      },
+      "false_positives": {
+        "per_fault_counts": {
+          "BPFI": 0,
+          "BPFO": 0,
+          "BSF": 0,
+          "FTF": 0
+        },
+        "rate": null,
+        "records_with_any": 0,
+        "total_normal": 0
+      },
+      "frequency_detection": {
+        "hits": 0,
+        "rate": null,
+        "total": 0
+      },
+      "n_faulted": 0,
+      "n_normal": 0,
+      "n_records": 0
+    },
+    "P1": {
+      "classification": {
+        "correct": 0,
+        "rate": 0.0,
+        "total": 1
+      },
+      "end_to_end": {
+        "correct": 0,
+        "rate": 0.0,
+        "total": 1
+      },
+      "false_positives": {
+        "per_fault_counts": {
+          "BPFI": 0,
+          "BPFO": 0,
+          "BSF": 0,
+          "FTF": 0
+        },
+        "rate": null,
+        "records_with_any": 0,
+        "total_normal": 0
+      },
+      "frequency_detection": {
+        "hits": 1,
+        "rate": 1.0,
+        "total": 1
+      },
+      "n_faulted": 1,
+      "n_normal": 0,
+      "n_records": 1
+    },
+    "P2": {
+      "classification": {
+        "correct": 0,
+        "rate": 0.0,
+        "total": 5
+      },
+      "end_to_end": {
+        "correct": 0,
+        "rate": 0.0,
+        "total": 5
+      },
+      "false_positives": {
+        "per_fault_counts": {
+          "BPFI": 0,
+          "BPFO": 0,
+          "BSF": 0,
+          "FTF": 0
+        },
+        "rate": null,
+        "records_with_any": 0,
+        "total_normal": 0
+      },
+      "frequency_detection": {
+        "hits": 5,
+        "rate": 1.0,
+        "total": 5
+      },
+      "n_faulted": 5,
+      "n_normal": 0,
+      "n_records": 5
+    },
+    "Y1": {
+      "classification": {
+        "correct": 9,
+        "rate": 1.0,
+        "total": 9
+      },
+      "end_to_end": {
+        "correct": 9,
+        "rate": 1.0,
+        "total": 9
+      },
+      "false_positives": {
+        "per_fault_counts": {
+          "BPFI": 0,
+          "BPFO": 0,
+          "BSF": 0,
+          "FTF": 0
+        },
+        "rate": null,
+        "records_with_any": 0,
+        "total_normal": 0
+      },
+      "frequency_detection": {
+        "hits": 9,
+        "rate": 1.0,
+        "total": 9
+      },
+      "n_faulted": 9,
+      "n_normal": 0,
+      "n_records": 9
+    },
+    "Y2": {
+      "classification": {
+        "correct": 25,
+        "rate": 0.714285714,
+        "total": 35
+      },
+      "end_to_end": {
+        "correct": 25,
+        "rate": 0.714285714,
+        "total": 35
+      },
+      "false_positives": {
+        "per_fault_counts": {
+          "BPFI": 0,
+          "BPFO": 0,
+          "BSF": 0,
+          "FTF": 0
+        },
+        "rate": null,
+        "records_with_any": 0,
+        "total_normal": 0
+      },
+      "frequency_detection": {
+        "hits": 35,
+        "rate": 1.0,
+        "total": 35
+      },
+      "n_faulted": 35,
+      "n_normal": 0,
+      "n_records": 35
+    },
+    "ungraded": {
+      "classification": {
+        "correct": 2,
+        "rate": 0.5,
+        "total": 4
+      },
+      "end_to_end": {
+        "correct": 2,
+        "rate": 0.5,
+        "total": 4
+      },
+      "false_positives": {
+        "per_fault_counts": {
+          "BPFI": 0,
+          "BPFO": 1,
+          "BSF": 1,
+          "FTF": 0
+        },
+        "rate": 0.5,
+        "records_with_any": 2,
+        "total_normal": 4
+      },
+      "frequency_detection": {
+        "hits": 0,
+        "rate": null,
+        "total": 0
+      },
+      "n_faulted": 0,
+      "n_normal": 4,
+      "n_records": 4
+    }
+  }
+}

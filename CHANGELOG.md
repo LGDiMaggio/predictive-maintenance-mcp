@@ -14,6 +14,19 @@ nothing is inferred from file content or names; translating a vendor's
 metadata into the declaration is the user's (or an external adapter's) job.
 
 ### Added
+- **Blind, reproducible CWRU diagnostic benchmark** (`benchmarks/cwru/`,
+  `python -m benchmarks.cwru all`). Measures the deterministic diagnostic
+  pipeline on the CWRU Bearing Data Center 12 kHz drive-end subset (60 fault
+  records + 4 normal baselines): download-on-demand with vendored SHA-256
+  pins (fail-closed; no data redistributed), opaque signal ids with a
+  data-level ops/label split so the scorer is the only label reader,
+  a symmetric hit criterion (including the CWRU 2×BSF ball-fault convention),
+  and results stratified by the Smith & Randall (2015) per-record
+  diagnosability grades. Measured results are committed as a re-runnable
+  artifact (`benchmarks/cwru/results/results.json`); README and methodology
+  numbers are slot-bound to that artifact and drift-guarded by CI-run tests,
+  alongside executable blindness, checksum and determinism guards. Full
+  methodology: `docs/benchmark-methodology.md`.
 - **Raw binary ingestion via declaration parameters on `load_signal`.**
   Additive keyword parameters describe the layout: `sample_format`
   (`float32`/`float64`/`int16`/`int32`), `byte_order` (documented default

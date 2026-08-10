@@ -191,12 +191,17 @@ class TestUngradedGrades:
         assert record.label.sr2015_grade is None
         assert record.grade_stratum == "ungraded"
 
-    def test_vendored_table_is_currently_ungraded(self):
-        """Grades are transcribed in a later unit; until then every record
-        must land in the visible 'ungraded' stratum, never disappear."""
+    def test_vendored_table_grades_are_complete_for_faults(self):
+        """Every fault record carries a transcribed S&R 2015 grade (Table B2,
+        DE channel, best-of-methods); normal baselines are not fault-graded
+        and land in the visible 'ungraded' stratum, never disappearing."""
         for rec in label_view():
-            assert rec.label.sr2015_grade is None
-            assert rec.grade_stratum == "ungraded"
+            if rec.label.fault_type == "normal":
+                assert rec.label.sr2015_grade is None
+                assert rec.grade_stratum == "ungraded"
+            else:
+                assert rec.label.sr2015_grade in {"Y1", "Y2", "P1", "P2", "N1", "N2"}
+                assert rec.grade_stratum == rec.label.sr2015_grade
 
 
 # ---------------------------------------------------------------------------
