@@ -29,9 +29,13 @@ from predictive_maintenance_mcp.signal_processing.spectral import (
     compute_stft_spectrogram,
     compute_envelope_spectrum,
 )
-from predictive_maintenance_mcp.diagnostics.bearing_analyzer import check_all_bearing_faults
+from predictive_maintenance_mcp.diagnostics.bearing_analyzer import (
+    check_all_bearing_faults,
+)
 from predictive_maintenance_mcp.diagnostics.iso20816 import assess_vibration_severity
-from predictive_maintenance_mcp.decision_support.diagnosis_pipeline import diagnose_vibration
+from predictive_maintenance_mcp.decision_support.diagnosis_pipeline import (
+    diagnose_vibration,
+)
 
 
 def _fmt(ms: float, target: float) -> str:
@@ -78,14 +82,18 @@ def bench_signal_repository(signal_sizes: dict[str, int]):
         mem_mb = repo2.current_memory_bytes / 1024**2
         target = 1024  # <1 GB
         status = "PASS" if mem_mb < target else "FAIL"
-        print(f"    Memory for 100 signals: {mem_mb:.1f} MB  (target: <{target} MB)  [{status}]")
+        print(
+            f"    Memory for 100 signals: {mem_mb:.1f} MB  (target: <{target} MB)  [{status}]"
+        )
         print(f"    Signals loaded: {repo2.signal_count}")
 
 
 def bench_fft(signal_sizes: dict[str, int], fs: float = 10000):
     """Benchmark FFT computation."""
     print("\n=== FFT (via diagnosis pipeline) ===")
-    from predictive_maintenance_mcp.decision_support.diagnosis_pipeline import _compute_fft_summary
+    from predictive_maintenance_mcp.decision_support.diagnosis_pipeline import (
+        _compute_fft_summary,
+    )
 
     for label, n_samples in signal_sizes.items():
         signal = np.random.randn(n_samples)
@@ -166,8 +174,12 @@ def bench_full_diagnosis(fs: float = 10000):
         signal = np.random.randn(n)
         start = time.perf_counter()
         diagnose_vibration(
-            signal, fs, rpm=1797, bearing_id="6205",
-            signal_unit="g", anomaly_model_name="nonexistent",
+            signal,
+            fs,
+            rpm=1797,
+            bearing_id="6205",
+            signal_unit="g",
+            anomaly_model_name="nonexistent",
         )
         ms = (time.perf_counter() - start) * 1000
         print(f"  {label} (with bearing): {_fmt(ms, 5000)}")
@@ -176,7 +188,9 @@ def bench_full_diagnosis(fs: float = 10000):
 def main():
     parser = argparse.ArgumentParser(description="Phase 1 performance benchmarks")
     parser.add_argument(
-        "--signals", choices=["small", "medium", "large"], default="medium",
+        "--signals",
+        choices=["small", "medium", "large"],
+        default="medium",
         help="Signal size preset: small (1s), medium (10s), large (60s)",
     )
     args = parser.parse_args()
