@@ -88,8 +88,8 @@
   },
   "metadata": {
     "dataset_subset": "CWRU 12 kHz drive-end fault group + normal baselines (v1)",
-    "date": "2026-08-10T14:53:12+00:00",
-    "git_describe": "v0.12.0-17-g70bdae6-dirty",
+    "date": "2026-08-10T17:53:48+00:00",
+    "git_describe": "v0.12.0-18-gba6c33b",
     "numpy_version": "2.3.3",
     "pipeline_version": "0.12.0",
     "platform": "Windows-10-10.0.26200-SP0",
