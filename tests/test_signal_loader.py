@@ -353,9 +353,9 @@ class TestLoadRawBinaryHappyPath:
         out = load_raw_binary(f, sample_format="float32", byte_order="big")
         np.testing.assert_array_equal(out, np.array(values, dtype=np.float64))
 
-    def test_mvk_shape_exact_sample_count(self, tmp_path):
-        """AE2 shape: a 5,398,528-byte file is exactly 1,349,632 float32."""
-        f = tmp_path / "mvk_shaped.bin"
+    def test_reference_shape_exact_sample_count(self, tmp_path):
+        """Reference shape: a 5,398,528-byte file is exactly 1,349,632 float32."""
+        f = tmp_path / "vendor_capture.bin"
         np.zeros(1_349_632, dtype="<f4").tofile(f)
         assert f.stat().st_size == 5_398_528
         out = load_raw_binary(f, sample_format="float32")
