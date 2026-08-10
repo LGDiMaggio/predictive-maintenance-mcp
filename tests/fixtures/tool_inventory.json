@@ -1202,6 +1202,34 @@
       "is_async": true,
       "parameters": {
         "properties": {
+          "byte_order": {
+            "anyOf": [
+              {
+                "enum": [
+                  "little",
+                  "big"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Byte Order"
+          },
+          "channel_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Channel Index"
+          },
           "filepath": {
             "anyOf": [
               {
@@ -1216,10 +1244,52 @@
             ],
             "title": "Filepath"
           },
+          "header_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Header Offset"
+          },
+          "n_channels": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "N Channels"
+          },
           "overwrite": {
             "default": false,
             "title": "Overwrite",
             "type": "boolean"
+          },
+          "sample_format": {
+            "anyOf": [
+              {
+                "enum": [
+                  "float32",
+                  "float64",
+                  "int16",
+                  "int32"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sample Format"
           },
           "sampling_rate": {
             "anyOf": [
@@ -1232,6 +1302,18 @@
             ],
             "default": null,
             "title": "Sampling Rate"
+          },
+          "scale_factor": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Scale Factor"
           },
           "signal_id": {
             "anyOf": [

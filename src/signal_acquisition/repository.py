@@ -16,12 +16,23 @@ import threading
 from collections import OrderedDict
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import numpy as np
 
 from ..config import DATA_DIR
-from .loaders import load_signal_data
+from ..path_safety import safe_resolve
+from .loaders import (
+    RAW_EXTENSIONS,
+    RAW_PARAM_DEFAULTS,
+    SELF_DESCRIBING_EXTENSIONS,
+    SUPPORTED_EXTENSIONS,
+    VALID_BYTE_ORDERS,
+    VALID_SAMPLE_FORMATS,
+    get_metadata_path_from_dir,
+    load_raw_binary,
+    load_signal_data,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +66,39 @@ def normalize_signal_unit(unit: Optional[str]) -> Optional[str]:
     return u if u in VALID_SIGNAL_UNITS else None
 
 
+#: The six raw-binary decode parameters threaded from load_signal to the
+#: decoder, in canonical order (also the ``raw_format`` provenance key
+#: order): required ``sample_format`` first, then the optional parameters in
+#: RAW_PARAM_DEFAULTS' order (the shared single source of truth in loaders).
+_RAW_PARAM_NAMES: tuple[str, ...] = ("sample_format", *RAW_PARAM_DEFAULTS)
+
+
+def _explicit_raw_params(
+    *,
+    sample_format: Optional[str],
+    byte_order: Optional[str],
+    n_channels: Optional[int],
+    channel_index: Optional[int],
+    header_offset: Optional[int],
+    scale_factor: Optional[float],
+) -> dict[str, Any]:
+    """Bundle the explicitly declared raw decode parameters (keyword-only,
+    so six identically-typed arguments can never be transposed).
+
+    ``None`` means "not explicitly declared", so the explicit > companion >
+    default/refusal merge in :meth:`SignalRepository._merged_raw_params` can
+    tell an omitted parameter from a declared one.
+    """
+    return {
+        "sample_format": sample_format,
+        "byte_order": byte_order,
+        "n_channels": n_channels,
+        "channel_index": channel_index,
+        "header_offset": header_offset,
+        "scale_factor": scale_factor,
+    }
+
+
 class SignalRepository:
     """In-memory signal cache with LRU eviction.
 
@@ -80,17 +124,38 @@ class SignalRepository:
         sampling_rate: Optional[float] = None,
         signal_unit: Optional[str] = None,
         overwrite: bool = False,
+        *,
+        sample_format: Optional[str] = None,
+        byte_order: Optional[str] = None,
+        n_channels: Optional[int] = None,
+        channel_index: Optional[int] = None,
+        header_offset: Optional[int] = None,
+        scale_factor: Optional[float] = None,
     ) -> dict:
         """Load a signal file into the repository.
+
+        For headerless raw binary files (extensions in ``RAW_EXTENSIONS``:
+        .bin/.raw/.dat) the decode parameters below apply, with precedence
+        explicit parameter > companion ``<stem>_metadata.json`` field >
+        documented default. ``sample_format`` AND ``sampling_rate`` are
+        REQUIRED for raw files (a headerless file carries no
+        self-description and parameters are never guessed); a load missing
+        either is refused with one message naming everything missing.
+        Declaring raw parameters on a self-describing format is refused as
+        a contradiction. ``None`` on any raw parameter means "not
+        explicitly declared".
 
         Args:
             filepath: Filename relative to DATA_DIR, or absolute path.
             signal_id: Custom ID. Defaults to the file's path relative to
                 DATA_DIR with separators replaced by underscores (e.g.
                 'real_train/baseline_1.csv' -> 'real_train_baseline_1'),
-                or the filename stem for files outside DATA_DIR.
+                or the filename stem for files outside DATA_DIR. When the
+                effective n_channels > 1, the derived id gains a
+                ``_ch<channel_index>`` suffix so channels never collide.
             sampling_rate: Override sampling rate (Hz). Takes precedence
-                over the companion metadata file.
+                over the companion metadata file. Required (here or in the
+                companion) for raw binary files.
             signal_unit: Declared signal unit — 'g', 'm/s2', 'mm/s', or
                 'm/s'. Takes precedence over the companion metadata file.
                 Required (here or in metadata) for ISO severity verdicts;
@@ -99,18 +164,44 @@ class SignalRepository:
                 Without it a collision is an explicit error, so two files
                 that derive the same id can never silently shadow each
                 other.
+            sample_format: Declared raw sample dtype — one of
+                ``VALID_SAMPLE_FORMATS`` ('float32', 'float64', 'int16',
+                'int32'). Raw files only; REQUIRED for them.
+            byte_order: Declared raw endianness — 'little' (effective
+                default) or 'big'.
+            n_channels: Interleaved channels in the raw file (effective
+                default 1).
+            channel_index: 0-based channel to extract (effective default
+                0).
+            header_offset: Bytes to skip before the first raw sample
+                (effective default 0).
+            scale_factor: Optional multiplier applied after decoding (e.g.
+                ADC counts -> physical unit). Default: no scaling.
 
         Returns:
-            Metadata dict compatible with StoredSignalInfo.
+            Metadata dict compatible with StoredSignalInfo (raw loads
+            record the effective decode parameters under ``raw_format``).
 
         Raises:
             FileNotFoundError: If signal file does not exist.
             ValueError: If signal data cannot be loaded, if signal_unit is
-                not one of the valid units, or if signal_id collides with
-                an existing entry and overwrite is False.
+                not one of the valid units, if signal_id collides with
+                an existing entry and overwrite is False, if a required
+                raw declaration is missing, or if raw parameters are
+                declared for a self-describing format.
         """
         declared_unit = self._validate_unit(signal_unit)
-        entry = self._prepare_entry(filepath, signal_id, sampling_rate, declared_unit)
+        explicit_raw = _explicit_raw_params(
+            sample_format=sample_format,
+            byte_order=byte_order,
+            n_channels=n_channels,
+            channel_index=channel_index,
+            header_offset=header_offset,
+            scale_factor=scale_factor,
+        )
+        entry = self._prepare_entry(
+            filepath, signal_id, sampling_rate, declared_unit, explicit_raw
+        )
         return self._insert_entry(entry, overwrite=overwrite)
 
     def load_signals(
@@ -119,6 +210,13 @@ class SignalRepository:
         sampling_rate: Optional[float] = None,
         signal_unit: Optional[str] = None,
         overwrite: bool = False,
+        *,
+        sample_format: Optional[str] = None,
+        byte_order: Optional[str] = None,
+        n_channels: Optional[int] = None,
+        channel_index: Optional[int] = None,
+        header_offset: Optional[int] = None,
+        scale_factor: Optional[float] = None,
     ) -> list[dict]:
         """Load a batch of signal files atomically (fail-fast, all-or-nothing).
 
@@ -128,6 +226,12 @@ class SignalRepository:
         the offending entries and nothing is loaded — the repository is
         never left half-populated.
 
+        The raw decode parameters (sample_format, byte_order, n_channels,
+        channel_index, header_offset, scale_factor) broadcast to EVERY file
+        in the batch, exactly like sampling_rate/signal_unit; per-file
+        values come from each file's companion ``<stem>_metadata.json``.
+        See :meth:`load_signal` for the per-file merge and refusal rules.
+
         Args:
             filepaths: Signal file paths (relative to DATA_DIR or absolute).
                 signal_ids are derived from each file's relative path.
@@ -136,14 +240,21 @@ class SignalRepository:
             signal_unit: One declared unit applied to every file. None =
                 per-file metadata.
             overwrite: Allow replacing existing entries with the same ids.
+            sample_format: One declared raw sample dtype applied to every
+                file (see :meth:`load_signal`). None = per-file metadata.
+            byte_order: One declared raw endianness applied to every file.
+            n_channels: Interleaved channel count applied to every file.
+            channel_index: 0-based channel extracted from every file.
+            header_offset: Header bytes skipped in every file.
+            scale_factor: One decode multiplier applied to every file.
 
         Returns:
             One StoredSignalInfo-compatible dict per file, in input order.
 
         Raises:
             ValueError: Empty list, invalid unit, missing files, duplicate
-                or colliding signal_ids — raised BEFORE any signal is
-                stored.
+                or colliding signal_ids, or an invalid/missing raw
+                declaration — raised BEFORE any signal is stored.
         """
         if not filepaths:
             raise ValueError(
@@ -152,6 +263,14 @@ class SignalRepository:
                 "files on disk)."
             )
         declared_unit = self._validate_unit(signal_unit)
+        explicit_raw = _explicit_raw_params(
+            sample_format=sample_format,
+            byte_order=byte_order,
+            n_channels=n_channels,
+            channel_index=channel_index,
+            header_offset=header_offset,
+            scale_factor=scale_factor,
+        )
 
         # Phase 1: validate every path and every derived id up front.
         problems: list[str] = []
@@ -161,7 +280,18 @@ class SignalRepository:
             fp = Path(raw)
             if not fp.is_absolute():
                 fp = DATA_DIR / raw
-            sid = self._default_signal_id(fp)
+            # Channel-aware id derivation runs the SAME _merged_raw_params
+            # as _prepare_entry, so a multi-channel raw load derives the
+            # same _ch<k>-suffixed id on the batch route and the single
+            # route. An invalid companion value joins the accumulated
+            # batch-abort message below instead of escaping on its own.
+            try:
+                merged = self._merged_raw_params(fp, explicit_raw)
+            except ValueError as e:
+                problems.append(str(e))
+                continue
+            channel = self._channel_for_id(merged) if merged is not None else None
+            sid = self._default_signal_id(fp, channel)
             if not fp.exists():
                 problems.append(f"'{raw}': file not found")
                 continue
@@ -193,7 +323,7 @@ class SignalRepository:
         # read/validation failure here raises BEFORE the insert phase runs,
         # so a partially-prepared batch never reaches the store.
         entries = [
-            self._prepare_entry(raw, sid, sampling_rate, declared_unit)
+            self._prepare_entry(raw, sid, sampling_rate, declared_unit, explicit_raw)
             for raw, sid in planned
         ]
 
@@ -292,7 +422,7 @@ class SignalRepository:
             )
         return declared
 
-    def _default_signal_id(self, fp: Path) -> str:
+    def _default_signal_id(self, fp: Path, channel: Optional[int] = None) -> str:
         """Derive the default signal_id from the path relative to DATA_DIR.
 
         'real_train/baseline_1.csv' -> 'real_train_baseline_1', so files
@@ -300,12 +430,24 @@ class SignalRepository:
         (stem-only ids let real_train/baseline_1 and real_test/baseline_1
         silently shadow each other). Files outside DATA_DIR fall back to
         the filename stem.
+
+        Args:
+            fp: Resolved file path the id derives from.
+            channel: Channel index to embed as a ``_ch<k>`` suffix — pass
+                it only when the EFFECTIVE n_channels > 1 (see
+                :meth:`_channel_for_id`), so single-channel ids stay
+                byte-identical to the pre-raw behavior while channels of
+                one multi-channel file can never collide.
         """
         try:
             rel = fp.relative_to(DATA_DIR)
         except ValueError:
-            return fp.stem
-        return "_".join(rel.with_suffix("").parts)
+            base = fp.stem
+        else:
+            base = "_".join(rel.with_suffix("").parts)
+        if channel is not None:
+            return f"{base}_ch{channel}"
+        return base
 
     def _not_found_message(self, signal_id: str) -> str:
         """Standard actionable not-found message. Caller must hold lock."""
@@ -320,14 +462,210 @@ class SignalRepository:
             f"see the files available on disk."
         )
 
+    @staticmethod
+    def _channel_for_id(raw_params: dict[str, Any]) -> Optional[int]:
+        """Channel index to embed in a derived signal_id, or None.
+
+        Returns the effective channel_index only when the EFFECTIVE
+        n_channels > 1; a single-channel load returns None so the derived
+        id stays identical to the pre-raw behavior (backward compatible).
+        """
+        n = raw_params.get("n_channels")
+        idx = raw_params.get("channel_index")
+        if isinstance(n, int) and n > 1 and isinstance(idx, int):
+            return idx
+        return None
+
+    def _validate_companion_raw_value(
+        self, name: str, value: Any, companion: str
+    ) -> Any:
+        """Validate one companion-sourced raw decode value.
+
+        ``json.load`` applies no ``Literal``, so companion values are
+        re-validated against the SAME closed vocabularies (and types) as
+        the explicit parameters — mirroring the
+        normalize_signal_unit/VALID_SIGNAL_UNITS approach. An invalid value
+        raises a ValueError naming the offending value, its companion-file
+        source, and the valid vocabulary — never a raw KeyError.
+        """
+        if name == "sample_format":
+            if value not in VALID_SAMPLE_FORMATS:
+                raise ValueError(
+                    f"Invalid sample_format '{value}' in companion "
+                    f"{companion} — declare one of "
+                    f"{list(VALID_SAMPLE_FORMATS)}."
+                )
+        elif name == "byte_order":
+            if value not in VALID_BYTE_ORDERS:
+                raise ValueError(
+                    f"Invalid byte_order '{value}' in companion "
+                    f"{companion} — declare one of {list(VALID_BYTE_ORDERS)} "
+                    f"('little' is the default)."
+                )
+        elif name in ("n_channels", "channel_index", "header_offset"):
+            if not isinstance(value, int) or isinstance(value, bool):
+                raise ValueError(
+                    f"Invalid {name} {value!r} in companion {companion} — "
+                    f"declare an integer."
+                )
+        elif name == "scale_factor":
+            if not isinstance(value, (int, float)) or isinstance(value, bool):
+                raise ValueError(
+                    f"Invalid scale_factor {value!r} in companion "
+                    f"{companion} — declare a number."
+                )
+        return value
+
+    @staticmethod
+    def _companion_filename(fp: Path) -> str:
+        """Name of the companion ``<stem>_metadata.json`` for error messages."""
+        return get_metadata_path_from_dir(fp.parent, fp.name).name
+
+    def _merged_raw_params(
+        self, fp: Path, explicit: dict[str, Any]
+    ) -> Optional[dict[str, Any]]:
+        """Effective raw decode declaration for one file, or None if not raw.
+
+        Non-raw suffixes return None. For a raw file the companion
+        ``<stem>_metadata.json`` is read and merged with precedence:
+        explicit parameter > companion field > documented default
+        (RAW_PARAM_DEFAULTS, applied only AFTER the merge).
+        ``sample_format`` has no default and stays None when neither route
+        declared it, so the caller's required-declaration check can refuse.
+
+        This is the ONE derivation both the single-load route
+        (:meth:`_prepare_entry`) and the batch phase-1 id derivation call,
+        so the two routes cannot drift.
+
+        Args:
+            fp: Resolved file path (names the companion file in errors).
+            explicit: Explicitly declared parameters (None = undeclared).
+
+        Returns:
+            Dict with the six decode parameters in canonical order, or
+            None for non-raw suffixes.
+
+        Raises:
+            ValueError: If a companion-sourced value is outside its closed
+                vocabulary or of the wrong type.
+        """
+        if fp.suffix.lower() not in RAW_EXTENSIONS:
+            return None
+        companion_source = self._read_metadata(fp).get("source_metadata", {})
+        companion = self._companion_filename(fp)
+        merged: dict[str, Any] = {}
+        for name in _RAW_PARAM_NAMES:
+            value = explicit.get(name)
+            if value is None:
+                companion_value = companion_source.get(name)
+                if companion_value is not None:
+                    value = self._validate_companion_raw_value(
+                        name, companion_value, companion
+                    )
+            if value is None:
+                value = RAW_PARAM_DEFAULTS.get(name)
+            merged[name] = value
+        return merged
+
+    def _require_raw_declaration(
+        self,
+        filepath: str,
+        fp: Path,
+        raw_params: dict[str, Any],
+        effective_sampling_rate: Optional[float],
+    ) -> None:
+        """Refuse a raw load whose required declaration is incomplete (R2).
+
+        A headerless raw file has zero self-description, so
+        ``sample_format`` AND ``sampling_rate`` must be available after the
+        explicit > companion merge. ALL missing parameters are accumulated
+        into ONE ValueError (the batch-validator pattern) naming the exact
+        re-call and the companion-file alternative — never one refusal per
+        parameter.
+        """
+        missing = []
+        if raw_params.get("sample_format") is None:
+            missing.append("sample_format")
+        if effective_sampling_rate is None:
+            missing.append("sampling_rate")
+        if not missing:
+            return
+        call_examples = {
+            "sample_format": "sample_format='float32'",
+            "sampling_rate": "sampling_rate=25600.0",
+        }
+        json_examples = {
+            "sample_format": '"sample_format": "float32"',
+            "sampling_rate": '"sampling_rate": 25600.0',
+        }
+        recall = ", ".join(call_examples[m] for m in missing)
+        fields = ", ".join(json_examples[m] for m in missing)
+        companion = self._companion_filename(fp)
+        message = (
+            f"Raw binary file '{filepath}' cannot be decoded — missing "
+            f"required declaration(s): {', '.join(missing)}. A headerless "
+            f"raw file carries no self-description and parameters are never "
+            f"guessed. Declare them explicitly, e.g. "
+            f"load_signal(filepath='{filepath}', {recall}), or create a "
+            f"companion {companion} next to the file with "
+            f"{{{fields}}}."
+        )
+        if "sample_format" in missing:
+            message += f" Valid sample_format values: {list(VALID_SAMPLE_FORMATS)}."
+        raise ValueError(message)
+
+    def _reject_raw_params_on_self_describing(
+        self, filepath: str, fp: Path, explicit: dict[str, Any]
+    ) -> None:
+        """Refuse raw decode parameters declared for a non-raw file.
+
+        Declaring how to decode a self-describing file contradicts the
+        file's own header — the declared-never-guessed policy cuts both
+        ways, so the contradiction is refused instead of silently ignored.
+        An UNKNOWN extension is not "self-describing": for it the honest
+        refusal is that the format is unsupported, not that a header it
+        does not have contradicts the declaration.
+        """
+        declared = [name for name, value in explicit.items() if value is not None]
+        if not declared:
+            return
+        # Only ever called when _merged_raw_params returned None, i.e. the
+        # suffix is not raw — no raw branch needed here.
+        suffix = fp.suffix.lower()
+        if suffix in SELF_DESCRIBING_EXTENSIONS:
+            raise ValueError(
+                f"File '{filepath}' has extension '{fp.suffix}', a "
+                f"self-describing format — declaring raw decode parameter(s) "
+                f"{declared} contradicts the file's own header (the "
+                f"declared-never-guessed policy cuts both ways). Omit them "
+                f"for this file; raw parameters apply only to headerless raw "
+                f"binary files ({sorted(RAW_EXTENSIONS)})."
+            )
+        raise ValueError(
+            f"File '{filepath}' has extension '{fp.suffix}', which is not a "
+            f"supported signal format — raw decode parameter(s) {declared} "
+            f"cannot apply to it. Supported extensions: "
+            f"{SUPPORTED_EXTENSIONS}."
+        )
+
     def _prepare_entry(
         self,
         filepath: str,
         signal_id: Optional[str],
         sampling_rate: Optional[float],
         declared_unit: Optional[str],
+        raw_declared: Optional[dict[str, Any]] = None,
     ) -> dict:
-        """Resolve path/id, read the array and metadata — no store mutation."""
+        """Resolve path/id, read the array and metadata — no store mutation.
+
+        Args:
+            filepath: Filename relative to DATA_DIR, or absolute path.
+            signal_id: Caller-chosen id, or None to derive the default.
+            sampling_rate: Explicitly declared rate (Hz), or None.
+            declared_unit: Already-normalized declared unit, or None.
+            raw_declared: Explicitly declared raw decode parameters (see
+                :func:`_explicit_raw_params`); None means none declared.
+        """
         # Reject a caller-supplied non-positive rate before doing any I/O:
         # a stored 0/negative rate breaks downstream fftfreq(N, 1/rate) with
         # a ZeroDivisionError. (Metadata-derived rates are backstopped by the
@@ -349,19 +687,35 @@ class SignalRepository:
                 f"scope='disk') to see the files available on disk."
             )
 
-        if signal_id is None:
-            signal_id = self._default_signal_id(fp)
+        if raw_declared is None:
+            raw_declared = {}
+        meta = self._read_metadata(fp)
+        raw_params = self._merged_raw_params(fp, raw_declared)
+        if raw_params is not None:
+            effective_sr = (
+                sampling_rate
+                if sampling_rate is not None
+                else meta.get("sampling_rate")
+            )
+            self._require_raw_declaration(filepath, fp, raw_params, effective_sr)
+        else:
+            self._reject_raw_params_on_self_describing(filepath, fp, raw_declared)
 
-        data = self._load_array(fp)
+        if signal_id is None:
+            channel = (
+                self._channel_for_id(raw_params) if raw_params is not None else None
+            )
+            signal_id = self._default_signal_id(fp, channel)
+
+        data = self._load_array(fp, raw_params)
         if data is None:
             raise ValueError(
                 f"Unable to load signal from {filepath} — unsupported "
                 f"format or read error."
             )
 
-        # Companion metadata. Precedence: explicitly declared parameter >
+        # Companion metadata precedence: explicitly declared parameter >
         # companion _metadata.json > None (undeclared).
-        meta = self._read_metadata(fp)
         if sampling_rate is not None:
             meta["sampling_rate"] = sampling_rate
         elif "sampling_rate" not in meta:
@@ -381,7 +735,13 @@ class SignalRepository:
             data = data.copy()
         data.setflags(write=False)
 
-        return {"signal_id": signal_id, "fp": fp, "data": data, "meta": meta}
+        return {
+            "signal_id": signal_id,
+            "fp": fp,
+            "data": data,
+            "meta": meta,
+            "raw": raw_params,
+        }
 
     def _insert_entry(self, entry: dict, overwrite: bool) -> dict:
         """Insert a single prepared entry under the lock (collision-checked)."""
@@ -448,6 +808,10 @@ class SignalRepository:
             "size_bytes": size_bytes,
             "signal_unit": meta.get("signal_unit"),
             "source_metadata": meta.get("source_metadata", {}),
+            # Provenance: the EFFECTIVE raw decode parameters (after the
+            # explicit > companion > default merge); None for
+            # self-describing formats.
+            "raw_format": entry.get("raw"),
         }
         self._store[signal_id] = {"array": data, "info": info}
         self._current_memory += size_bytes
@@ -458,7 +822,9 @@ class SignalRepository:
         )
         return info
 
-    def _load_array(self, fp: Path) -> Optional[np.ndarray]:
+    def _load_array(
+        self, fp: Path, raw_params: Optional[dict[str, Any]] = None
+    ) -> Optional[np.ndarray]:
         """Read the signal array for an already-resolved absolute path.
 
         Files under DATA_DIR go through the shared loader; absolute paths
@@ -466,11 +832,29 @@ class SignalRepository:
         same-named file inside DATA_DIR (the old fallback passed fp.name to
         the DATA_DIR-relative loader, silently loading the wrong file when
         a name collision existed).
+
+        ALL raw dispatch lives here, on both routes, and deliberately
+        OUTSIDE any try/except-return-None shell: the decoder's typed
+        "problem — remedy" errors (and the safe_resolve containment error
+        on the DATA_DIR route) must reach the caller intact, never be
+        swallowed into None.
+
+        Args:
+            fp: Already-resolved absolute path.
+            raw_params: EFFECTIVE raw decode parameters for a raw binary
+                file, or None for self-describing formats.
         """
         try:
             rel = fp.relative_to(DATA_DIR)
         except ValueError:
+            if raw_params is not None:
+                return load_raw_binary(fp, **raw_params)
             return self._load_direct(fp)
+        if raw_params is not None:
+            # Same safe_resolve containment as load_signal_data applies
+            # to DATA_DIR-relative names.
+            resolved = safe_resolve(DATA_DIR, str(rel))
+            return load_raw_binary(resolved, **raw_params)
         return load_signal_data(str(rel))
 
     def _remove_entry(self, signal_id: str) -> None:

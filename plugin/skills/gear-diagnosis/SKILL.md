@@ -29,7 +29,9 @@ Gear faults produce characteristic vibration patterns:
 
 Load the signal with `load_signal(filepath="gearbox_run1.csv", signal_unit="g")`
 or pick a loaded one from `list_signals(scope="memory")`. Verify sampling rate
-and metadata with `get_signal_info(signal_id="<id>")`.
+and metadata with `get_signal_info(signal_id="<id>")`. For raw binary files
+(`.bin`/`.raw`/`.dat`), also declare `sample_format` and `sampling_rate` (or
+provide a companion `<stem>_metadata.json`) — see the signal-management skill.
 
 Gather from the user (do NOT guess):
 - **Shaft RPM** (or shaft frequency in Hz)

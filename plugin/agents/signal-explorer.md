@@ -56,7 +56,8 @@ Explore vibration signals thoroughly to provide:
 
 1. Check `list_signals(scope="memory")`; if needed, load with
    `load_signal(filepath="<file>")` (add `signal_unit="g"` when the unit is
-   known)
+   known; raw binary `.bin`/`.raw`/`.dat` files additionally need
+   `sample_format` and `sampling_rate`, or a companion `<stem>_metadata.json`)
 2. Call `get_signal_info(signal_id="<id>")` for metadata
 3. Call `plot_signal(signal_id="<id>")` for time-domain visualization
 4. Call `analyze_statistics(signal_id="<id>")` for time-domain features

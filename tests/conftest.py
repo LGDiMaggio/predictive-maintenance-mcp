@@ -199,6 +199,18 @@ def temp_csv_file(tmp_path, synthetic_sine_signal):
     return csv_path, fs, freq
 
 
+def write_raw_file(path: Path, values, dtype: str = "<f4") -> np.ndarray:
+    """Write ``values`` to ``path`` as a headerless raw binary dump.
+
+    Shared helper for the raw-ingestion tests (loader, repository, and tool
+    layers all need the same little blob). Returns the written array so
+    callers can assert round-trips against it.
+    """
+    arr = np.asarray(values, dtype=np.dtype(dtype))
+    arr.tofile(path)
+    return arr
+
+
 @pytest.fixture
 def package_caplog(caplog):
     """``caplog``, wired to the package logger instead of root.

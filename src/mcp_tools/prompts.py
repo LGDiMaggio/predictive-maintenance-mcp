@@ -111,6 +111,9 @@ def diagnose_bearing(
        for velocity) in the load call if the unit is known — the ISO severity
        verdict in STEP 1 is REFUSED without a declared unit. Units are never
        guessed from amplitude; ASK USER, do not invent one.
+       Raw binary files (.bin/.raw/.dat) additionally require sample_format
+       and sampling_rate in the load call (or a companion <stem>_metadata.json
+       next to the file) — declared by the user, never guessed.
        If the file is not found or multiple matches exist, ASK USER to clarify.
        Do NOT guess or auto-correct names.
 
@@ -342,6 +345,9 @@ def diagnose_gear(
        If "{signal_id}" is not among the loaded ids, find its file with
        list_signals(scope="disk") and load it:
        Call: load_signal(filepath="<file>"{fs_kwarg})
+       Raw binary files (.bin/.raw/.dat) additionally require sample_format
+       and sampling_rate (or a companion <stem>_metadata.json) — declared by
+       the user, never guessed.
        If the file is not found or multiple matches exist, ASK USER to clarify.
 
     2. Required parameters:
@@ -445,6 +451,9 @@ def quick_diagnostic_report(signal_id: str) -> str:
     If "{signal_id}" is not among the loaded ids, find its file with
     list_signals(scope="disk") and load it:
     Call: load_signal(filepath="<file>")
+    Raw binary files (.bin/.raw/.dat) additionally require sample_format and
+    sampling_rate (or a companion <stem>_metadata.json) — declared by the
+    user, never guessed.
     If not found or multiple matches, ASK USER to clarify.
 
     Guardrails:

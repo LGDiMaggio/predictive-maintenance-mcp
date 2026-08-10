@@ -14,7 +14,9 @@ Otherwise, call `list_signals(scope="memory")` to show loaded signals (and
 
 Follow the bearing-diagnosis skill workflow:
 1. Load/verify the signal — `load_signal(filepath="<file>", signal_unit="g")`
-   (declare the unit only if known; ask, never guess), then
+   (declare the unit only if known; ask, never guess; raw binary
+   `.bin`/`.raw`/`.dat` files also need `sample_format` and `sampling_rate`, or
+   a companion `<stem>_metadata.json`), then
    `get_signal_info(signal_id="<id>")`
 2. Statistical screening — `analyze_statistics(signal_id="<id>")`
 3. FFT analysis — `analyze_fft(signal_id="<id>")`

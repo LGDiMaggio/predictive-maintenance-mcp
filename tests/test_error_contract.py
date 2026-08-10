@@ -226,6 +226,29 @@ class TestFailuresRaise:
         )
 
     @pytest.mark.asyncio
+    async def test_raw_binary_missing_declaration_raises(
+        self, tools, sandbox_dirs, mock_ctx
+    ):
+        """A raw .bin with no declared parameters is refused with AE1's shape.
+
+        The refusal must name EVERY missing declaration (sample_format AND
+        sampling_rate) in ONE message and teach the companion-file remedy.
+        A real file must exist in the sandbox first: FileNotFoundError fires
+        BEFORE the missing-declaration refusal, so an absent path would test
+        the wrong rail.
+        """
+        raw = np.zeros(64, dtype="<f4")
+        (sandbox_dirs / "undeclared.bin").write_bytes(raw.tobytes())
+
+        with pytest.raises(ValueError) as exc_info:
+            await tools["load_signal"].fn(ctx=mock_ctx, filepath="undeclared.bin")
+
+        msg = str(exc_info.value)
+        assert "sample_format" in msg
+        assert "sampling_rate" in msg
+        assert "_metadata.json" in msg  # the companion-file alternative
+
+    @pytest.mark.asyncio
     async def test_docx_missing_dependency_raises(
         self, tools, sandbox_dirs, mock_ctx, monkeypatch
     ):

@@ -35,7 +35,9 @@ guarantee, never a substitute for engineering judgment.
 Call `list_signals(scope="memory")` for loaded signal_ids, or
 `list_signals(scope="disk")` and `load_signal(filepath="<file>")` to load a
 recording. This works best on long monitoring recordings or run-to-failure
-data where degradation evolves within the file.
+data where degradation evolves within the file. For raw binary files
+(`.bin`/`.raw`/`.dat`), also declare `sample_format` and `sampling_rate` (or
+provide a companion `<stem>_metadata.json`) — see the signal-management skill.
 
 ### Step 2 — Trend + Onset Screening (one call)
 

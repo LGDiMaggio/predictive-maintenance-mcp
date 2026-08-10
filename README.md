@@ -97,7 +97,7 @@ The AI doesn't guess — it calls **37 specialized MCP endpoints** (34 tools + 3
 
 | Tool | Description |
 |------|-------------|
-| `load_signal` | Load vibration file(s) (CSV, WAV, MAT, NPY, Parquet) with declared sampling rate and unit — returns the `signal_id` handle |
+| `load_signal` | Load vibration file(s) (CSV, WAV, MAT, NPY, Parquet, raw binary `.bin`/`.raw`/`.dat` with declared decode metadata) with declared sampling rate and unit — returns the `signal_id` handle |
 | `list_signals` | Browse signal files on disk (`scope="disk"`) or loaded signals in memory (`scope="memory"`) |
 | `get_signal_info` | Signal metadata (sampling rate, duration, declared unit, source metadata) |
 | `generate_test_signal` | Create a synthetic signal, auto-registered and immediately analyzable |

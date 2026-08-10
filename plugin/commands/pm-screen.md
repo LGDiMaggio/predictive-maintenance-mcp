@@ -14,7 +14,9 @@ the user to choose one.
 
 Follow the quick-screening skill workflow:
 1. Load/verify the signal — `load_signal(filepath="<file>", signal_unit="g")`
-   if not loaded (declare the unit only if known)
+   if not loaded (declare the unit only if known; raw binary
+   `.bin`/`.raw`/`.dat` files also need `sample_format` and `sampling_rate`, or
+   a companion `<stem>_metadata.json`)
 2. Statistical features — `analyze_statistics(signal_id="<id>")` (RMS, Crest
    Factor, Kurtosis)
 3. FFT snapshot — `analyze_fft(signal_id="<id>")` (top spectral peaks)
