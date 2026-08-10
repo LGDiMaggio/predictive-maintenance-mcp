@@ -61,6 +61,9 @@ Given one or more vibration signals, execute a complete diagnostic workflow:
   and call `load_signal(filepath="<file>", signal_unit="g")` — declare the
   unit only if the user (or the file's metadata) states it; otherwise leave it
   undeclared and note that the ISO block will be refused until declared
+- For raw binary files (`.bin`/`.raw`/`.dat`), also declare `sample_format` and
+  `sampling_rate` up front (or point to a companion `<stem>_metadata.json`) —
+  a raw load without them is refused with the exact re-call to make
 - Call `get_signal_info(signal_id="<id>")` to verify sampling rate and metadata
 - Call `plot_signal(signal_id="<id>")` for a visual record
 

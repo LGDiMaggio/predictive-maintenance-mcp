@@ -505,6 +505,22 @@ class TestRawBinaryLoad:
         arr = repo.get_signal("raw_sig")
         np.testing.assert_allclose(arr, values.astype(np.float32), rtol=1e-6)
 
+    @pytest.mark.parametrize("ext", [".dat", ".raw"])
+    def test_other_raw_extensions_dispatch(self, repo, data_dir, ext):
+        """The historical '.dat listed but unloadable' bug stays fixed at the
+        routing level: every RAW_EXTENSIONS suffix decodes, not just .bin."""
+        values = np.linspace(0.0, 1.0, 64)
+        name = f"other{ext}"
+        write_raw_file(data_dir / name, values)
+        info = repo.load_signal(name, sampling_rate=500, sample_format="float32")
+        assert info["num_samples"] == 64
+        assert info["raw_format"]["sample_format"] == "float32"
+        np.testing.assert_allclose(
+            repo.get_signal(info["signal_id"]),
+            values.astype(np.float32),
+            rtol=1e-6,
+        )
+
     def test_multichannel_counts_are_per_channel(self, repo, data_dir):
         interleaved = np.empty(400, dtype=np.float32)
         interleaved[0::2] = 5.0
@@ -603,6 +619,15 @@ class TestRawMissingDeclarationRefusal:
         msg = str(exc.value)
         assert "sampling_rate" in msg
         assert "sample_format" not in msg
+
+    def test_dat_without_declaration_refused(self, repo, data_dir):
+        """.dat routes to the raw refusal, not the old silent None failure."""
+        write_raw_file(data_dir / "old_style.dat", np.zeros(24))
+        with pytest.raises(ValueError) as exc:
+            repo.load_signal("old_style.dat")
+        msg = str(exc.value)
+        assert "sample_format" in msg and "sampling_rate" in msg
+        assert repo.signal_count == 0
 
     def test_both_missing_named_in_one_message(self, repo, data_dir, bare_bin):
         with pytest.raises(ValueError) as exc:
@@ -821,6 +846,23 @@ class TestRawCompanionValidation:
             repo.load_signal("nc.bin")
         assert "n_channels" in str(exc.value)
         assert "nc_metadata.json" in str(exc.value)
+
+    def test_invalid_companion_scale_factor_type_rejected(self, repo, data_dir):
+        """The scale_factor branch of the companion validator is exercised."""
+        write_raw_file(data_dir / "sf.bin", np.zeros(16))
+        with open(data_dir / "sf_metadata.json", "w") as f:
+            json.dump(
+                {
+                    "sampling_rate": 1000,
+                    "sample_format": "float32",
+                    "scale_factor": "half",
+                },
+                f,
+            )
+        with pytest.raises(ValueError) as exc:
+            repo.load_signal("sf.bin")
+        assert "scale_factor" in str(exc.value)
+        assert "sf_metadata.json" in str(exc.value)
 
 
 class TestRawErrorContract:

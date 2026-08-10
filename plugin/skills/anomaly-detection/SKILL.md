@@ -30,7 +30,10 @@ with `list_signals(scope="memory")`; browse files with
 Call `load_signal(filepath=["real_train/baseline_1.csv", "real_train/baseline_2.csv"], signal_unit="g")`
 
 The batch is fail-fast: if any file is missing or an id collides, ONE error
-names the offending entries and nothing is loaded.
+names the offending entries and nothing is loaded. For raw binary files
+(`.bin`/`.raw`/`.dat`), also declare `sample_format` and `sampling_rate`
+(broadcast to the whole batch), or provide companion `<stem>_metadata.json`
+files — see the signal-management skill.
 
 Ask the user:
 - Which signals represent normal/healthy operation?

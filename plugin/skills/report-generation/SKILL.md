@@ -38,7 +38,9 @@ Ask the user or infer from context which report(s) are needed. For a "full" or
 ### Step 2 — Verify Signal Availability
 
 Call `list_signals(scope="memory")` to confirm the signals are loaded. Load
-with `load_signal(filepath="<file>", signal_unit="g")` if needed. All report
+with `load_signal(filepath="<file>", signal_unit="g")` if needed (raw binary
+`.bin`/`.raw`/`.dat` files additionally need `sample_format` and
+`sampling_rate` — see the signal-management skill). All report
 tools take `signal_id` — the handle returned by load_signal.
 
 ### Step 3 — Gather Parameters and Generate

@@ -15,7 +15,8 @@ Parse the arguments:
 If no arguments are provided, call `list_signals(scope="memory")` and ask the
 user which signal and report type they want. Load files first with
 `load_signal(filepath="<file>", signal_unit="g")` (declare the unit only if
-known).
+known; raw binary `.bin`/`.raw`/`.dat` files also need `sample_format` and
+`sampling_rate`, or a companion `<stem>_metadata.json`).
 
 Report types:
 - **fft**: `generate_fft_report(signal_id="<id>", max_freq=5000, num_peaks=15)`

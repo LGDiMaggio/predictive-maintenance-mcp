@@ -32,6 +32,9 @@ Call `load_signal(filepath="real_train/OuterRaceFault_1.csv", signal_unit="g")`
 
 - The returned `signal_id` (derived from the relative path, e.g.
   `real_train_OuterRaceFault_1`) is the single handle for every later call.
+- For raw binary files (`.bin`/`.raw`/`.dat`), also declare `sample_format` and
+  `sampling_rate` (or provide a companion `<stem>_metadata.json`) — see the
+  signal-management skill.
 - Declare `signal_unit` ("g", "m/s2", "mm/s", or "m/s") if you know it — the
   ISO severity verdict in Step 7 is REFUSED without a declared unit. Units are
   never guessed. Ask the user; do not invent one.

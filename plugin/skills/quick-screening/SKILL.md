@@ -25,7 +25,9 @@ Call `list_signals(scope="memory")` to show loaded signal_ids, or
 specified one, ask. Load with
 `load_signal(filepath="real_test/baseline_1.csv", signal_unit="g")` if
 needed — declaring `signal_unit` up front makes the ISO step work without a
-re-load.
+re-load. For raw binary files (`.bin`/`.raw`/`.dat`), also declare
+`sample_format` and `sampling_rate` (or provide a companion
+`<stem>_metadata.json`) — see the signal-management skill.
 
 ### Step 2 — Statistical Features
 

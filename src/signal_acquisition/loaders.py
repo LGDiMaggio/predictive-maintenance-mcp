@@ -336,7 +336,8 @@ def get_metadata_path(signal_filename: str) -> Path:
     """
     Deriva il path del file metadata JSON da un filename di segnale.
 
-    Funziona con tutte le estensioni supportate: .csv, .txt, .npy, .mat, .wav, .parquet
+    Funziona con tutte le estensioni in ``SUPPORTED_EXTENSIONS`` (il path
+    metadata è derivato dallo stem, quindi è indipendente dal formato).
 
     Args:
         signal_filename: Nome del file segnale (relativo a DATA_DIR)

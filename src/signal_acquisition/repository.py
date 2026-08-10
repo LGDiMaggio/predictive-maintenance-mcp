@@ -516,6 +516,11 @@ class SignalRepository:
                 )
         return value
 
+    @staticmethod
+    def _companion_filename(fp: Path) -> str:
+        """Name of the companion ``<stem>_metadata.json`` for error messages."""
+        return get_metadata_path_from_dir(fp.parent, fp.name).name
+
     def _merged_raw_params(
         self, fp: Path, explicit: dict[str, Any]
     ) -> Optional[dict[str, Any]]:
@@ -547,7 +552,7 @@ class SignalRepository:
         if fp.suffix.lower() not in RAW_EXTENSIONS:
             return None
         companion_source = self._read_metadata(fp).get("source_metadata", {})
-        companion = get_metadata_path_from_dir(fp.parent, fp.name).name
+        companion = self._companion_filename(fp)
         merged: dict[str, Any] = {}
         for name in _RAW_PARAM_NAMES:
             value = explicit.get(name)
@@ -595,7 +600,7 @@ class SignalRepository:
         }
         recall = ", ".join(call_examples[m] for m in missing)
         fields = ", ".join(json_examples[m] for m in missing)
-        companion = get_metadata_path_from_dir(fp.parent, fp.name).name
+        companion = self._companion_filename(fp)
         message = (
             f"Raw binary file '{filepath}' cannot be decoded — missing "
             f"required declaration(s): {', '.join(missing)}. A headerless "
@@ -624,9 +629,9 @@ class SignalRepository:
         declared = [name for name, value in explicit.items() if value is not None]
         if not declared:
             return
+        # Only ever called when _merged_raw_params returned None, i.e. the
+        # suffix is not raw — no raw branch needed here.
         suffix = fp.suffix.lower()
-        if suffix in RAW_EXTENSIONS:
-            return  # raw file: the declaration is exactly what is expected
         if suffix in SELF_DESCRIBING_EXTENSIONS:
             raise ValueError(
                 f"File '{filepath}' has extension '{fp.suffix}', a "
