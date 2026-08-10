@@ -201,6 +201,14 @@ python -m benchmarks.cwru all
   (downloads ~186 MB from the CWRU site on first run, verifies pins, imports,
   runs the pipeline, scores, and rewrites the results artifact).
 
+- **Imported signals persist locally.** `python -m benchmarks.cwru import`
+  (and the `run`/`all` dispatches that invoke it) writes the converted signals
+  to `data/signals/cwru/` — gitignored, never committed. These files remain on
+  disk after the process exits, so in later sessions on the same machine they
+  appear as `cwru_001`…`cwru_064` entries in the MCP server's `list_signals`
+  disk scope. There is no built-in cleanup step: delete the
+  `data/signals/cwru/` directory to remove them.
+
 ## References
 
 - Smith, W.A., Randall, R.B. (2015). *Rolling element bearing diagnostics using

@@ -14,6 +14,8 @@ tests/test_cwru_benchmark_import.py. Coverage:
 - the import-provenance tripwire refuses before any record runs;
 - a record with no imported signal is recorded as missing, and the
   ``all``-style gate helper refuses to proceed to scoring;
+- a pipeline run that degrades ``bearing_faults`` to null is recorded as
+  a ``"failed"`` outcome with no measurement fields;
 - float canonicalization (9-decimal rounding, NumPy scalars, non-finite
   refusal) and the atomic newline-terminated outcomes write;
 - the ``score`` subcommand refuses without an outcomes artifact (full
@@ -349,6 +351,37 @@ class TestMissingSignalAndGate:
         records = (imported["records"][0], imported["records"][0])
         with pytest.raises(ValueError, match="[Dd]uplicate"):
             runner.run_records(records, repository=repo)
+
+
+# ---------------------------------------------------------------------------
+# Error path: pipeline degrades the bearing stage to null -> failed outcome
+# ---------------------------------------------------------------------------
+
+
+class TestFailedOutcome:
+    """A run whose bearing stage degraded to null is a failed outcome."""
+
+    def test_null_bearing_faults_recorded_as_failed(self, imported, repo, monkeypatch):
+        """diagnose_vibration returning bearing_faults=None (the
+        pipeline degrades a failed bearing stage to null) yields the
+        failed status, an error naming the record, and no measurement
+        fields."""
+        monkeypatch.setattr(
+            runner,
+            "diagnose_vibration",
+            lambda *args, **kwargs: {"bearing_faults": None},
+        )
+        outcomes = runner.run_records(imported["records"], repository=repo)
+
+        assert set(outcomes) == {"cwru_001", "cwru_002"}
+        for opaque_id, outcome in outcomes.items():
+            assert outcome["status"] == runner.OUTCOME_STATUS_FAILED
+            assert opaque_id in outcome["error"]  # record named
+            assert "catalog" in outcome["error"]  # remedy named
+            assert "bearing" not in outcome  # no measurement fields
+        # The fail-closed gate refuses to score the failed set.
+        with pytest.raises(ValueError, match="cwru_001"):
+            runner.assert_outcomes_complete(outcomes, imported["records"])
 
 
 # ---------------------------------------------------------------------------

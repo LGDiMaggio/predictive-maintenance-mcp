@@ -469,6 +469,52 @@ class TestClassificationRanking:
         assert results["records"]["cwru_001"]["ranked_first"] == "BPFO"
         assert results["records"]["cwru_001"]["classification_correct"] is False
 
+    def test_lower_absolute_deviation_breaks_equal_tier_and_magnitude(self):
+        """Level 3: with tier and magnitude tied, the smaller
+        |deviation_pct| ranks first. The signs are chosen so a signed
+        (non-absolute) comparison would pick the OTHER fault, and the
+        winner is not first in the fixed order either — isolating the
+        |deviation| tie-break from levels 1, 2, and 4."""
+        labeled = (_labeled("cwru_001", 105, "inner_race", grade="Y1"),)
+        outcomes = {
+            "cwru_001": _outcome(
+                "cwru_001",
+                {
+                    "BPFI": _detected("moderate", magnitude=0.5, deviation_pct=0.3),
+                    "BPFO": _detected("moderate", magnitude=0.5, deviation_pct=-2.0),
+                },
+            )
+        }
+        results = _score(labeled, outcomes)
+        row = results["records"]["cwru_001"]
+        assert row["ranked_first"] == "BPFI"  # |0.3| < |-2.0|
+        assert row["classification_correct"] is True
+
+    def test_fixed_fault_order_is_the_final_deterministic_tie_break(self):
+        """Level 4: a full tie on tier, magnitude, AND |deviation_pct| is
+        decided by the fixed BPFO/BPFI/BSF/FTF order (scorer.FAULT_KEYS),
+        deterministically."""
+        labeled = (_labeled("cwru_001", 130, "ball", grade="Y1"),)
+        outcomes = {
+            "cwru_001": _outcome(
+                "cwru_001",
+                {
+                    # Identical checks: _detected defaults share
+                    # magnitude and deviation_pct exactly.
+                    "BPFI": _detected("moderate"),
+                    "BSF": _detected("moderate"),
+                },
+            )
+        }
+        results = _score(labeled, outcomes)
+        row = results["records"]["cwru_001"]
+        assert scorer.FAULT_KEYS.index("BPFI") < scorer.FAULT_KEYS.index("BSF")
+        assert row["ranked_first"] == "BPFI"  # earlier in the fixed order
+        # The labeled BSF still hits, but ranking is deterministic, so
+        # the fixed order names BPFI first and classification misses.
+        assert row["frequency_detection_hit"] is True
+        assert row["classification_correct"] is False
+
     def test_detected_fundamental_outranks_harmonic_only(self):
         labeled = (_labeled("cwru_001", 118, "ball", grade="Y1"),)
         outcomes = {

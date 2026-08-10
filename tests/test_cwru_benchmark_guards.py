@@ -375,8 +375,8 @@ def _write_results(tmp_path: Path) -> Path:
     return results
 
 
-def _write_document(tmp_path: Path, section_body: str) -> Path:
-    document = tmp_path / "README.md"
+def _write_document(tmp_path: Path, section_body: str, name: str = "README.md") -> Path:
+    document = tmp_path / name
     document.write_text(
         "# Fixture readme\n\nProse before.\n\n"
         f"{drift_guard.SECTION_START}\n{section_body}{drift_guard.SECTION_END}\n"
@@ -479,6 +479,44 @@ class TestDriftGuardOnFixtures:
         document = _write_document(tmp_path, section)
         with pytest.raises(ValueError, match="numeric"):
             drift_guard.check_document(document, _write_results(tmp_path))
+
+    def test_publication_sweep_reaches_every_document(self, tmp_path):
+        """check_publication sweeps ALL documents: a drifted slot is
+        caught whether it sits in the second document (proving the sweep
+        does not stop after the first) or in the first."""
+        results = _write_results(tmp_path)
+        drifted_section = MATCHING_SECTION.replace(
+            "hits -->3<!-- /slot -->", "hits -->2<!-- /slot -->"
+        )
+        assert drifted_section != MATCHING_SECTION
+        clean = _write_document(tmp_path, MATCHING_SECTION, name="clean.md")
+        drifted = _write_document(tmp_path, drifted_section, name="drifted.md")
+
+        # Drift in the SECOND document of the sweep.
+        with pytest.raises(ValueError) as excinfo:
+            drift_guard.check_publication(
+                document_paths=(clean, drifted), results_path=results
+            )
+        message = str(excinfo.value)
+        assert "headline.frequency_detection.hits" in message  # slot named
+        assert "drifted.md" in message  # offending document named
+
+        # Drift in the FIRST document raises just the same.
+        with pytest.raises(ValueError, match="headline.frequency_detection.hits"):
+            drift_guard.check_publication(
+                document_paths=(drifted, clean), results_path=results
+            )
+
+    def test_publication_sweep_green_reports_counts_per_document(self, tmp_path):
+        """Green counterpart: a clean two-document sweep verifies every
+        slot in BOTH documents and reports the per-document counts."""
+        results = _write_results(tmp_path)
+        first = _write_document(tmp_path, MATCHING_SECTION, name="one.md")
+        second = _write_document(tmp_path, MATCHING_SECTION, name="two.md")
+        counts = drift_guard.check_publication(
+            document_paths=(first, second), results_path=results
+        )
+        assert counts == {str(first): 8, str(second): 8}
 
 
 class TestDriftGuardOnTheRealRepo:

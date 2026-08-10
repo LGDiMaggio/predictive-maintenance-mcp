@@ -666,3 +666,49 @@ class TestFreeze:
         assert not pins.exists(), "an empty body must never be pinned"
         assert not (cache_dir / "105.mat").exists()
         assert not (cache_dir / "105.mat.part").exists()
+
+    def test_freeze_partial_failure_writes_no_pins(
+        self, tmp_path, cache_dir, monkeypatch
+    ):
+        """A mid-batch failure never leaves a partial checksums.json.
+
+        The first record downloads fine, the second trips the freeze
+        ceiling: the pin table (the benchmark's contract) is not written
+        at all. The first record's cache file IS already promoted —
+        cache files are just cache; a later, complete freeze re-downloads
+        and pins every record from the live source.
+        """
+        monkeypatch.setattr(download, "FREEZE_CEILING_BYTES", 2000)
+        pins = tmp_path / "checksums.json"
+        record_a = _record()  # 1024-byte PAYLOAD, under the 2000 ceiling
+        record_b = _record(
+            url="https://engineering.case.edu/sites/default/files/118.mat",
+            opaque_id="cwru_002",
+            file_id=118,
+            cache_filename="118.mat",
+        )
+
+        def fetch(url: str, timeout: float) -> _FakeResponse:
+            if url == record_a.url:
+                return _FakeResponse(_chunked(PAYLOAD, 512))
+            # 512-byte chunks against the 2000-byte ceiling: read 4 ->
+            # 2048 > 2000 must abort; a 5th read would raise inside the
+            # fake, proving the oversized body is never fully consumed.
+            return _FakeResponse([b"x" * 512] * 12, max_reads=4)
+
+        with pytest.raises(ValueError, match="freeze-mode ceiling") as excinfo:
+            freeze_checksums(
+                [record_a, record_b],
+                cache_dir=cache_dir,
+                checksums_path=pins,
+                fetch=fetch,
+            )
+        assert "cwru_002" in str(excinfo.value)  # failing record named
+        # The key contract: no partial pin table exists.
+        assert not pins.exists(), "no pins may be written on a partial batch"
+        # First record: promoted into the cache before the batch failed.
+        assert (cache_dir / "105.mat").read_bytes() == PAYLOAD
+        assert not (cache_dir / "105.mat.part").exists()
+        # Failed record: nothing under the final name, .part cleaned up.
+        assert not (cache_dir / "118.mat").exists()
+        assert not (cache_dir / "118.mat.part").exists()
