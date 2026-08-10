@@ -58,6 +58,11 @@ models/*.json
 reports/*.html
 !reports/.gitkeep
 
+# Benchmark datasets (download-on-demand from the official source, never
+# redistributed): raw .mat cache and converted opaque signals (CWRU)
+data/cache/
+data/signals/cwru/
+
 # Temporary files
 *.tmp
 *.log
