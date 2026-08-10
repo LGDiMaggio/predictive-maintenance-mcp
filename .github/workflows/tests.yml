@@ -124,7 +124,10 @@ jobs:
     # the same decorative-check defect removed from the mypy job above.
     #
     # line-length comes from [tool.black] in pyproject.toml rather than this
-    # command line, so a bare `black src tests` locally and this job agree.
+    # command line, so a bare `black src tests benchmarks` locally and this
+    # job agree. `benchmarks` is in scope so the CWRU benchmark package is
+    # format-gated like src and tests (asserted by
+    # tests/test_cwru_benchmark_guards.py).
     - name: Check code formatting
       run: |
-        black --check src tests
+        black --check src tests benchmarks

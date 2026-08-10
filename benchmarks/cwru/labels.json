@@ -1,0 +1,454 @@
+{
+  "cwru_001": {
+    "fault_diameter_in": 0.007,
+    "fault_type": "inner_race",
+    "known_anomalies": [],
+    "or_position": null,
+    "sr2015_grade": "Y2"
+  },
+  "cwru_002": {
+    "fault_diameter_in": 0.007,
+    "fault_type": "ball",
+    "known_anomalies": [],
+    "or_position": null,
+    "sr2015_grade": "N1"
+  },
+  "cwru_003": {
+    "fault_diameter_in": 0.007,
+    "fault_type": "outer_race",
+    "known_anomalies": [],
+    "or_position": "centered_6",
+    "sr2015_grade": "Y1"
+  },
+  "cwru_004": {
+    "fault_diameter_in": 0.007,
+    "fault_type": "outer_race",
+    "known_anomalies": [],
+    "or_position": "orthogonal_3",
+    "sr2015_grade": "Y2"
+  },
+  "cwru_005": {
+    "fault_diameter_in": 0.007,
+    "fault_type": "outer_race",
+    "known_anomalies": [],
+    "or_position": "opposite_12",
+    "sr2015_grade": "Y1"
+  },
+  "cwru_006": {
+    "fault_diameter_in": 0.007,
+    "fault_type": "inner_race",
+    "known_anomalies": [],
+    "or_position": null,
+    "sr2015_grade": "Y2"
+  },
+  "cwru_007": {
+    "fault_diameter_in": 0.007,
+    "fault_type": "ball",
+    "known_anomalies": [],
+    "or_position": null,
+    "sr2015_grade": "N1"
+  },
+  "cwru_008": {
+    "fault_diameter_in": 0.007,
+    "fault_type": "outer_race",
+    "known_anomalies": [],
+    "or_position": "centered_6",
+    "sr2015_grade": "Y1"
+  },
+  "cwru_009": {
+    "fault_diameter_in": 0.007,
+    "fault_type": "outer_race",
+    "known_anomalies": [],
+    "or_position": "orthogonal_3",
+    "sr2015_grade": "Y2"
+  },
+  "cwru_010": {
+    "fault_diameter_in": 0.007,
+    "fault_type": "outer_race",
+    "known_anomalies": [],
+    "or_position": "opposite_12",
+    "sr2015_grade": "Y2"
+  },
+  "cwru_011": {
+    "fault_diameter_in": 0.007,
+    "fault_type": "inner_race",
+    "known_anomalies": [],
+    "or_position": null,
+    "sr2015_grade": "Y2"
+  },
+  "cwru_012": {
+    "fault_diameter_in": 0.007,
+    "fault_type": "ball",
+    "known_anomalies": [],
+    "or_position": null,
+    "sr2015_grade": "N1"
+  },
+  "cwru_013": {
+    "fault_diameter_in": 0.007,
+    "fault_type": "outer_race",
+    "known_anomalies": [],
+    "or_position": "centered_6",
+    "sr2015_grade": "Y1"
+  },
+  "cwru_014": {
+    "fault_diameter_in": 0.007,
+    "fault_type": "outer_race",
+    "known_anomalies": [],
+    "or_position": "orthogonal_3",
+    "sr2015_grade": "Y2"
+  },
+  "cwru_015": {
+    "fault_diameter_in": 0.007,
+    "fault_type": "outer_race",
+    "known_anomalies": [],
+    "or_position": "opposite_12",
+    "sr2015_grade": "Y2"
+  },
+  "cwru_016": {
+    "fault_diameter_in": 0.007,
+    "fault_type": "inner_race",
+    "known_anomalies": [],
+    "or_position": null,
+    "sr2015_grade": "Y2"
+  },
+  "cwru_017": {
+    "fault_diameter_in": 0.007,
+    "fault_type": "ball",
+    "known_anomalies": [],
+    "or_position": null,
+    "sr2015_grade": "Y2"
+  },
+  "cwru_018": {
+    "fault_diameter_in": 0.007,
+    "fault_type": "outer_race",
+    "known_anomalies": [],
+    "or_position": "centered_6",
+    "sr2015_grade": "Y1"
+  },
+  "cwru_019": {
+    "fault_diameter_in": 0.007,
+    "fault_type": "outer_race",
+    "known_anomalies": [],
+    "or_position": "orthogonal_3",
+    "sr2015_grade": "Y2"
+  },
+  "cwru_020": {
+    "fault_diameter_in": 0.007,
+    "fault_type": "outer_race",
+    "known_anomalies": [],
+    "or_position": "opposite_12",
+    "sr2015_grade": "Y2"
+  },
+  "cwru_021": {
+    "fault_diameter_in": 0.014,
+    "fault_type": "inner_race",
+    "known_anomalies": [],
+    "or_position": null,
+    "sr2015_grade": "Y2"
+  },
+  "cwru_022": {
+    "fault_diameter_in": 0.014,
+    "fault_type": "ball",
+    "known_anomalies": [],
+    "or_position": null,
+    "sr2015_grade": "P2"
+  },
+  "cwru_023": {
+    "fault_diameter_in": 0.014,
+    "fault_type": "outer_race",
+    "known_anomalies": [],
+    "or_position": "centered_6",
+    "sr2015_grade": "Y2"
+  },
+  "cwru_024": {
+    "fault_diameter_in": 0.014,
+    "fault_type": "inner_race",
+    "known_anomalies": [],
+    "or_position": null,
+    "sr2015_grade": "Y2"
+  },
+  "cwru_025": {
+    "fault_diameter_in": 0.014,
+    "fault_type": "ball",
+    "known_anomalies": [],
+    "or_position": null,
+    "sr2015_grade": "P2"
+  },
+  "cwru_026": {
+    "fault_diameter_in": 0.014,
+    "fault_type": "outer_race",
+    "known_anomalies": [],
+    "or_position": "centered_6",
+    "sr2015_grade": "P2"
+  },
+  "cwru_027": {
+    "fault_diameter_in": 0.014,
+    "fault_type": "inner_race",
+    "known_anomalies": [],
+    "or_position": null,
+    "sr2015_grade": "Y2"
+  },
+  "cwru_028": {
+    "fault_diameter_in": 0.014,
+    "fault_type": "ball",
+    "known_anomalies": [],
+    "or_position": null,
+    "sr2015_grade": "P2"
+  },
+  "cwru_029": {
+    "fault_diameter_in": 0.014,
+    "fault_type": "outer_race",
+    "known_anomalies": [],
+    "or_position": "centered_6",
+    "sr2015_grade": "P1"
+  },
+  "cwru_030": {
+    "fault_diameter_in": 0.014,
+    "fault_type": "inner_race",
+    "known_anomalies": [],
+    "or_position": null,
+    "sr2015_grade": "Y2"
+  },
+  "cwru_031": {
+    "fault_diameter_in": 0.014,
+    "fault_type": "ball",
+    "known_anomalies": [],
+    "or_position": null,
+    "sr2015_grade": "P2"
+  },
+  "cwru_032": {
+    "fault_diameter_in": 0.014,
+    "fault_type": "outer_race",
+    "known_anomalies": [],
+    "or_position": "centered_6",
+    "sr2015_grade": "N1"
+  },
+  "cwru_033": {
+    "fault_diameter_in": 0.021,
+    "fault_type": "inner_race",
+    "known_anomalies": [],
+    "or_position": null,
+    "sr2015_grade": "Y1"
+  },
+  "cwru_034": {
+    "fault_diameter_in": 0.021,
+    "fault_type": "ball",
+    "known_anomalies": [],
+    "or_position": null,
+    "sr2015_grade": "Y2"
+  },
+  "cwru_035": {
+    "fault_diameter_in": 0.021,
+    "fault_type": "outer_race",
+    "known_anomalies": [],
+    "or_position": "centered_6",
+    "sr2015_grade": "Y2"
+  },
+  "cwru_036": {
+    "fault_diameter_in": 0.021,
+    "fault_type": "outer_race",
+    "known_anomalies": [],
+    "or_position": "orthogonal_3",
+    "sr2015_grade": "Y2"
+  },
+  "cwru_037": {
+    "fault_diameter_in": 0.021,
+    "fault_type": "outer_race",
+    "known_anomalies": [],
+    "or_position": "opposite_12",
+    "sr2015_grade": "Y2"
+  },
+  "cwru_038": {
+    "fault_diameter_in": 0.021,
+    "fault_type": "inner_race",
+    "known_anomalies": [],
+    "or_position": null,
+    "sr2015_grade": "Y1"
+  },
+  "cwru_039": {
+    "fault_diameter_in": 0.021,
+    "fault_type": "ball",
+    "known_anomalies": [],
+    "or_position": null,
+    "sr2015_grade": "Y2"
+  },
+  "cwru_040": {
+    "fault_diameter_in": 0.021,
+    "fault_type": "outer_race",
+    "known_anomalies": [],
+    "or_position": "centered_6",
+    "sr2015_grade": "Y2"
+  },
+  "cwru_041": {
+    "fault_diameter_in": 0.021,
+    "fault_type": "outer_race",
+    "known_anomalies": [],
+    "or_position": "orthogonal_3",
+    "sr2015_grade": "Y2"
+  },
+  "cwru_042": {
+    "fault_diameter_in": 0.021,
+    "fault_type": "outer_race",
+    "known_anomalies": [],
+    "or_position": "opposite_12",
+    "sr2015_grade": "Y2"
+  },
+  "cwru_043": {
+    "fault_diameter_in": 0.021,
+    "fault_type": "inner_race",
+    "known_anomalies": [],
+    "or_position": null,
+    "sr2015_grade": "Y1"
+  },
+  "cwru_044": {
+    "fault_diameter_in": 0.021,
+    "fault_type": "ball",
+    "known_anomalies": [],
+    "or_position": null,
+    "sr2015_grade": "N1"
+  },
+  "cwru_045": {
+    "fault_diameter_in": 0.021,
+    "fault_type": "outer_race",
+    "known_anomalies": [
+      "clipping_de_sections"
+    ],
+    "or_position": "centered_6",
+    "sr2015_grade": "Y2"
+  },
+  "cwru_046": {
+    "fault_diameter_in": 0.021,
+    "fault_type": "outer_race",
+    "known_anomalies": [],
+    "or_position": "orthogonal_3",
+    "sr2015_grade": "Y2"
+  },
+  "cwru_047": {
+    "fault_diameter_in": 0.021,
+    "fault_type": "outer_race",
+    "known_anomalies": [],
+    "or_position": "opposite_12",
+    "sr2015_grade": "Y2"
+  },
+  "cwru_048": {
+    "fault_diameter_in": 0.021,
+    "fault_type": "inner_race",
+    "known_anomalies": [],
+    "or_position": null,
+    "sr2015_grade": "Y1"
+  },
+  "cwru_049": {
+    "fault_diameter_in": 0.021,
+    "fault_type": "ball",
+    "known_anomalies": [],
+    "or_position": null,
+    "sr2015_grade": "N1"
+  },
+  "cwru_050": {
+    "fault_diameter_in": 0.021,
+    "fault_type": "outer_race",
+    "known_anomalies": [
+      "clipping_de_sections"
+    ],
+    "or_position": "centered_6",
+    "sr2015_grade": "Y2"
+  },
+  "cwru_051": {
+    "fault_diameter_in": 0.021,
+    "fault_type": "outer_race",
+    "known_anomalies": [],
+    "or_position": "orthogonal_3",
+    "sr2015_grade": "Y2"
+  },
+  "cwru_052": {
+    "fault_diameter_in": 0.021,
+    "fault_type": "outer_race",
+    "known_anomalies": [],
+    "or_position": "opposite_12",
+    "sr2015_grade": "Y2"
+  },
+  "cwru_053": {
+    "fault_diameter_in": 0.028,
+    "fault_type": "inner_race",
+    "known_anomalies": [],
+    "or_position": null,
+    "sr2015_grade": "N1"
+  },
+  "cwru_054": {
+    "fault_diameter_in": 0.028,
+    "fault_type": "ball",
+    "known_anomalies": [],
+    "or_position": null,
+    "sr2015_grade": "Y2"
+  },
+  "cwru_055": {
+    "fault_diameter_in": 0.028,
+    "fault_type": "inner_race",
+    "known_anomalies": [],
+    "or_position": null,
+    "sr2015_grade": "N1"
+  },
+  "cwru_056": {
+    "fault_diameter_in": 0.028,
+    "fault_type": "ball",
+    "known_anomalies": [],
+    "or_position": null,
+    "sr2015_grade": "Y2"
+  },
+  "cwru_057": {
+    "fault_diameter_in": 0.028,
+    "fault_type": "inner_race",
+    "known_anomalies": [],
+    "or_position": null,
+    "sr2015_grade": "N1"
+  },
+  "cwru_058": {
+    "fault_diameter_in": 0.028,
+    "fault_type": "ball",
+    "known_anomalies": [],
+    "or_position": null,
+    "sr2015_grade": "Y2"
+  },
+  "cwru_059": {
+    "fault_diameter_in": 0.028,
+    "fault_type": "inner_race",
+    "known_anomalies": [],
+    "or_position": null,
+    "sr2015_grade": "N1"
+  },
+  "cwru_060": {
+    "fault_diameter_in": 0.028,
+    "fault_type": "ball",
+    "known_anomalies": [],
+    "or_position": null,
+    "sr2015_grade": "Y2"
+  },
+  "cwru_061": {
+    "fault_diameter_in": null,
+    "fault_type": "normal",
+    "known_anomalies": [],
+    "or_position": null,
+    "sr2015_grade": null
+  },
+  "cwru_062": {
+    "fault_diameter_in": null,
+    "fault_type": "normal",
+    "known_anomalies": [],
+    "or_position": null,
+    "sr2015_grade": null
+  },
+  "cwru_063": {
+    "fault_diameter_in": null,
+    "fault_type": "normal",
+    "known_anomalies": [],
+    "or_position": null,
+    "sr2015_grade": null
+  },
+  "cwru_064": {
+    "fault_diameter_in": null,
+    "fault_type": "normal",
+    "known_anomalies": [],
+    "or_position": null,
+    "sr2015_grade": null
+  }
+}

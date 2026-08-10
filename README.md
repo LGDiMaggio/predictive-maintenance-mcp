@@ -326,6 +326,7 @@ src/predictive_maintenance_mcp/
 | [HTTPS Deployment](docs/DEPLOYMENT.md) | Docker + HTTPS for enterprise environments |
 | [Ollama Guide](docs/OLLAMA_GUIDE.md) | Use with local LLMs (fully air-gapped) |
 | [Architecture](docs/architecture.md) | ISO 13374 block mapping and module design |
+| [Benchmark Methodology](docs/benchmark-methodology.md) | How the CWRU diagnostic benchmark is measured |
 | [Examples](EXAMPLES.md) | Complete diagnostic workflows |
 | [Installation](INSTALL.md) | Detailed setup and troubleshooting |
 | [Contributing](CONTRIBUTING.md) | How to contribute (all skill levels welcome) |
@@ -346,6 +347,39 @@ pytest --cov=src --cov-report=html      # with coverage report
 
 ---
 
+## Benchmark
+
+A blind, reproducible diagnostic-accuracy benchmark on the public
+[CWRU Bearing Data Center](https://engineering.case.edu/bearingdatacenter)
+dataset (12 kHz drive-end subset: 60 fault records + 4 normal baselines).
+Fault labels never reach the system under test — signals enter under opaque
+ids, a separate scorer is the only label reader, and blindness, checksum
+integrity, and determinism are enforced by CI-run guard tests, not prose.
+Results are stratified by the per-record diagnosability grades of the
+Smith & Randall (2015) reference study, so records that study found
+undiagnosable by any classical method are reported separately instead of
+inflating or deflating the headline.
+
+<!-- cwru-benchmark:start -->
+On records the reference study grades clearly diagnosable (Y1+Y2, <!-- slot: headline.n_records -->44<!-- /slot --> records):
+characteristic fault frequency detected on <!-- slot: headline.frequency_detection.hits -->44<!-- /slot -->/<!-- slot: headline.frequency_detection.total -->44<!-- /slot -->,
+correct fault ranked first on <!-- slot: headline.classification.correct -->34<!-- /slot -->/<!-- slot: headline.classification.total -->44<!-- /slot --> (<!-- slot: headline.classification.rate pct1 -->77.3<!-- /slot -->%),
+and <!-- slot: strata.Y1.classification.correct -->9<!-- /slot -->/<!-- slot: strata.Y1.classification.total -->9<!-- /slot --> on the textbook-signature (Y1) stratum.
+On the <!-- slot: strata.ungraded.false_positives.total_normal -->4<!-- /slot --> healthy baselines, <!-- slot: strata.ungraded.false_positives.records_with_any -->2<!-- /slot --> records raised a false indication under the same criterion.
+<!-- cwru-benchmark:end -->
+
+The numbers above are read from the committed, re-runnable artifact
+([results.json](benchmarks/cwru/results/results.json)) and drift-guarded by CI:
+every value is bound to its key in the artifact, and a mismatch fails the build.
+Methodology, blind protocol, and honest-benchmarking notes:
+[docs/benchmark-methodology.md](docs/benchmark-methodology.md). Reproduce with:
+
+```bash
+python -m benchmarks.cwru all
+```
+
+---
+
 ## Roadmap
 
 - [x] 37 MCP endpoints (34 tools, 3 prompts) with modular architecture and a single `signal_id` handle
@@ -353,6 +387,7 @@ pytest --cov=src --cov-report=html      # with coverage report
 - [x] 86% test coverage, CI/CD on 3 platforms
 - [x] Docker + SSE/HTTP transport for enterprise deployment
 - [x] Semantic document search (FAISS + TF-IDF)
+- [x] Blind, reproducible diagnostic benchmark on the CWRU dataset (extensible to Paderborn)
 - [ ] Customizable severity thresholds
 - [x] Remaining useful life (RUL) estimation from repeated measurements (linear, exponential, Kalman)
 - [x] Trend analysis and degradation onset detection

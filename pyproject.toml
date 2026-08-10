@@ -265,6 +265,10 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# The repo-root `benchmarks` package (CWRU benchmark) is deliberately not an
+# installed package; put the rootdir on sys.path so the bare `pytest` that CI
+# invokes can import it from tests.
+pythonpath = ["."]
 python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
