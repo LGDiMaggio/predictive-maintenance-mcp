@@ -16,7 +16,8 @@ tests/test_cwru_benchmark_import.py. Coverage:
   ``all``-style gate helper refuses to proceed to scoring;
 - float canonicalization (9-decimal rounding, NumPy scalars, non-finite
   refusal) and the atomic newline-terminated outcomes write;
-- the ``score`` subcommand raises NotImplementedError naming U5.
+- the ``score`` subcommand refuses without an outcomes artifact (full
+  scoring coverage lives in tests/test_cwru_benchmark_scoring.py).
 
 Generated outcomes always go to tmp_path — never to the real
 benchmarks/cwru/results/ directory (committed only by the maintainer
@@ -402,13 +403,26 @@ class TestSerialization:
 
 
 # ---------------------------------------------------------------------------
-# CLI: score is honestly unimplemented until U5
+# CLI: score refuses without an outcomes artifact (U5 wiring)
 # ---------------------------------------------------------------------------
 
 
 class TestScoreSubcommand:
-    """`python -m benchmarks.cwru score` refuses, naming U5."""
+    """`python -m benchmarks.cwru score` fails closed without outcomes."""
 
-    def test_score_raises_not_implemented_naming_u5(self):
-        with pytest.raises(NotImplementedError, match="U5"):
-            main(["score"])
+    def test_score_refuses_when_outcomes_artifact_is_absent(self, tmp_path, capsys):
+        missing = tmp_path / "outcomes.json"
+        exit_code = main(
+            [
+                "score",
+                "--outcomes",
+                str(missing),
+                "--output",
+                str(tmp_path / "results.json"),
+            ]
+        )
+        assert exit_code == 2
+        err = capsys.readouterr().err
+        assert str(missing) in err
+        assert "benchmarks.cwru run" in err  # remedy names the run stage
+        assert not (tmp_path / "results.json").exists()

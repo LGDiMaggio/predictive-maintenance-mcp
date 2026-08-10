@@ -2,7 +2,7 @@
 
 Maintainer tooling, thin by design: every stage lives in its module
 (:mod:`benchmarks.cwru.download`, :mod:`benchmarks.cwru.importer`,
-:mod:`benchmarks.cwru.runner`, and — from U5 — ``scorer``); this file
+:mod:`benchmarks.cwru.runner`, :mod:`benchmarks.cwru.scorer`); this file
 only parses arguments and chains the calls.
 
 Subcommands::
@@ -11,7 +11,8 @@ Subcommands::
     download   verify-mode download of every ops record into the cache
     import     cached .mat -> opaque signals in the repository
     run        provenance tripwire -> pipeline over all records -> outcomes
-    score      NotImplementedError until U5 lands (scorer.py)
+    score      join outcomes.json with labels -> results.json (sole label
+               reader; refuses when the outcomes artifact is absent)
     all        download -> import -> run -> fail-closed gate -> score
 
 Process boundary (documented decision): the signal repository is
@@ -32,7 +33,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, Optional
 
-from benchmarks.cwru import runner
+from benchmarks.cwru import runner, scorer
 from benchmarks.cwru.download import ensure_cached, freeze_checksums
 from benchmarks.cwru.importer import import_records
 from benchmarks.cwru.records import OpsRecord, ops_view
@@ -108,14 +109,30 @@ def _cmd_run(args: argparse.Namespace) -> int:
     return 0
 
 
+def _score_outcomes(
+    outcomes: dict[str, dict[str, Any]], results_path: Optional[Path]
+) -> Path:
+    """Shared scoring stage: label join, metrics, atomic results write.
+
+    Args:
+        outcomes: Runner outcomes keyed by opaque id.
+        results_path: Results destination; ``None`` uses the scorer's
+            committed default.
+
+    Returns:
+        The results path written.
+    """
+    results = scorer.score_results(outcomes)
+    target = scorer.write_results(results, results_path)
+    print(f"Scored {len(results['records'])} record(s); wrote {target}.")
+    return target
+
+
 def _cmd_score(args: argparse.Namespace) -> int:
-    """Score outcomes against labels — not implemented until U5."""
-    raise NotImplementedError(
-        "Scoring is not implemented yet — it is implemented in U5 "
-        "(benchmarks/cwru/scorer.py, the sole label reader). Produce "
-        "outcomes with 'python -m benchmarks.cwru run' now and score "
-        "once U5 lands."
-    )
+    """Score a previously written outcomes artifact against the labels."""
+    outcomes = scorer.read_outcomes(args.outcomes)
+    _score_outcomes(outcomes, args.output)
+    return 0
 
 
 def _cmd_all(args: argparse.Namespace) -> int:
@@ -130,7 +147,8 @@ def _cmd_all(args: argparse.Namespace) -> int:
         ensure_cached(record)
     outcomes = _run_stage(records, args)
     runner.assert_outcomes_complete(outcomes, records)
-    return _cmd_score(args)
+    _score_outcomes(outcomes, args.results_output)
+    return 0
 
 
 def _add_measurement_flags(parser: argparse.ArgumentParser) -> None:
@@ -196,7 +214,23 @@ def build_parser() -> argparse.ArgumentParser:
     run.set_defaults(func=_cmd_run)
 
     score = subcommands.add_parser(
-        "score", help="score outcomes against labels (U5 — not implemented)"
+        "score",
+        help="join outcomes.json with labels -> results.json (sole label reader)",
+    )
+    score.add_argument(
+        "--outcomes",
+        type=Path,
+        default=None,
+        help=(
+            "outcomes artifact to score (default: "
+            "benchmarks/cwru/results/outcomes.json)"
+        ),
+    )
+    score.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help=("results destination (default: benchmarks/cwru/results/results.json)"),
     )
     score.set_defaults(func=_cmd_score)
 
@@ -204,6 +238,12 @@ def build_parser() -> argparse.ArgumentParser:
         "all", help="download -> import -> run -> gate -> score, fail closed"
     )
     _add_measurement_flags(everything)
+    everything.add_argument(
+        "--results-output",
+        type=Path,
+        default=None,
+        help=("results destination (default: benchmarks/cwru/results/results.json)"),
+    )
     everything.set_defaults(func=_cmd_all)
 
     return parser
@@ -213,10 +253,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     """CLI entry point.
 
     ``ValueError`` — the benchmark's "problem — remedy" failure mode —
-    is rendered as a single stderr line with exit code 2;
-    ``NotImplementedError`` (the U5 scoring placeholder) propagates,
-    because it marks unimplemented surface rather than an operational
-    failure.
+    is rendered as a single stderr line with exit code 2.
 
     Args:
         argv: Argument list override (tests only); ``None`` uses
