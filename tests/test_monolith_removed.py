@@ -48,10 +48,16 @@ SCAN_FILES = [
 SCAN_SUFFIXES = {".py", ".md", ".toml", ".json", ".yml", ".yaml", ".txt", ""}
 
 #: Precise historical-record exceptions (path parts relative to ROOT).
+#: Includes the gitignored local-only doc directories: they never ship in
+#: the public tree, so they are not operational surfaces.
 HISTORICAL = (
     ("docs", "AUDIT-2026-07-10.md"),
     ("docs", "plans"),
     ("docs", "solutions"),
+    ("docs", "brainstorms"),
+    ("docs", "residual-review-findings"),
+    ("docs", "issue-drafts"),
+    ("docs", "distribution-kit"),
 )
 
 

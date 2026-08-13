@@ -336,7 +336,7 @@ src/predictive_maintenance_mcp/
 
 ## Testing
 
-**86% test coverage** across Windows, macOS, and Linux (Python 3.11 & 3.12).
+**85%+ test coverage**, enforced as a CI minimum, across Windows, macOS, and Linux (Python 3.11 & 3.12) — the current measured figure is on the codecov badge above.
 
 ```bash
 pytest                                  # run all tests
@@ -384,7 +384,7 @@ python -m benchmarks.cwru all
 
 - [x] 37 MCP endpoints (34 tools, 3 prompts) with modular architecture and a single `signal_id` handle
 - [x] Claude Code plugin (8 skills, 2 agents, 3 commands)
-- [x] 86% test coverage, CI/CD on 3 platforms
+- [x] 85%+ test coverage enforced in CI, CI/CD on 3 platforms
 - [x] Docker + SSE/HTTP transport for enterprise deployment
 - [x] Semantic document search (FAISS + TF-IDF)
 - [x] Blind, reproducible diagnostic benchmark on the CWRU dataset (extensible to Paderborn)
