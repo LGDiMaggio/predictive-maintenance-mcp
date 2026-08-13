@@ -87,6 +87,8 @@ docs/plans/
 docs/residual-review-findings/
 docs/solutions/
 docs/AUDIT-*.md
+docs/issue-drafts/
+docs/distribution-kit/
 
 # Claude Code per-agent worktrees
 .claude/worktrees/
