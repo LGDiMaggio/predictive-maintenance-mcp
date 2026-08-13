@@ -50,6 +50,7 @@ Not everyone contributes in the same way, and **all contributions are equally va
 **The architecture is clean and extensible.** Adding a new MCP tool is as simple as writing a Python function with a decorator.
 
 - Add new diagnostic tools
+- Write an adapter for a vendor or DAQ data format
 - Improve ML models
 - Build Docker support
 - Enhance the report system
@@ -133,12 +134,13 @@ Browse [**Issues**](https://github.com/LGDiMaggio/predictive-maintenance-mcp/iss
 
 **Can't find a matching issue?** [Open a discussion](https://github.com/LGDiMaggio/predictive-maintenance-mcp/discussions) to propose your idea first.
 
-**Before you start:** `docs/solutions/` holds write-ups of problems this project
-has already hit — bugs, security fixes, and durable patterns — organized by
-category with YAML frontmatter (`module`, `tags`, `problem_type`) so you can
-search it. Worth a look when you're implementing or debugging in an area it
-covers; several entries exist because the obvious approach turned out to be
-wrong in a way that isn't visible from the code alone.
+**Before you start:** search the existing
+[issues](https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues) and
+[discussions](https://github.com/LGDiMaggio/predictive-maintenance-mcp/discussions) —
+the problem you're about to solve may already be mapped, in progress, or
+explained. The guides in `docs/` (quickstarts, tool catalog, adapter guide,
+deployment, benchmark methodology) are the fastest way to pick up the
+project's conventions in the area you're touching.
 
 ### 2. Claim the Issue
 
@@ -279,7 +281,7 @@ flake8 src/ --max-line-length=120
 python tools/check_mypy_baseline.py
 
 # Commit with clear messages
-git commit -m "feat: Add parquet file reading support
+git commit -m "feat(acquisition): add parquet file reading support
 
 - Add load_parquet() function in signal loading
 - Support both single and multi-column parquet files
@@ -309,6 +311,12 @@ Summary:
 3. Add tests in `tests/`
 4. Update `EXAMPLES.md` if the tool adds a new workflow
 5. Submit PR
+
+### Write an Adapter
+
+The server loads headerless raw binary files (`.bin`/`.raw`/`.dat`) through an **explicit decode declaration** — it ships no vendor parsers and infers nothing from file content or names. An adapter is any script that translates a vendor's or DAQ's metadata into that declaration, typically by emitting companion `<stem>_metadata.json` files next to the signal files. There is no plugin API and nothing to register: adapters run outside the server, in any language.
+
+The full contract — declaration parameters, companion file schema, merge precedence, and a worked example — is in the [Adapter Guide](docs/ADAPTER_GUIDE.md).
 
 ### Architecture Contributions
 
@@ -376,7 +384,7 @@ What actually happens (include full error message)
 **Environment:**
 - OS: Windows 11 / macOS 14 / Ubuntu 22.04
 - Python: 3.11.x / 3.12.x
-- Server version: 0.7.1
+- Server version: x.y.z
 ```
 
 ---
@@ -422,7 +430,7 @@ pytest --cov=src --cov-report=term-missing
 ### Commit Message Format
 
 ```
-<type>: <subject>
+<type>(<scope>): <subject>
 
 <body>
 
@@ -431,9 +439,11 @@ pytest --cov=src --cov-report=term-missing
 
 **Types**: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`
 
+**Scope**: the area the change touches (e.g. `analysis`, `reports`, `acquisition`, `benchmark`, `docs`)
+
 **Example:**
 ```
-feat: Add bearing frequency calculator tool
+feat(analysis): add bearing frequency calculator tool
 
 - Implements calculate_bearing_frequencies() function
 - Adds validation for bearing parameters

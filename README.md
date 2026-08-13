@@ -222,6 +222,7 @@ The codebase follows a **modular architecture** organized around the ISO 13374 S
 | [Quickstart for Engineers](docs/QUICKSTART_ENGINEER.md) | Get results fast, no coding required |
 | [Quickstart for Developers](docs/QUICKSTART_DEVELOPER.md) | Understand MCP, extend the server |
 | [Tool Catalog](docs/TOOL_CATALOG.md) | Every MCP endpoint, grouped by category |
+| [Adapter Guide](docs/ADAPTER_GUIDE.md) | Bring vendor/DAQ raw data in via explicit declarations |
 | [Plugin README](plugin/README.md) | Claude Code plugin installation and usage |
 | [HTTPS Deployment](docs/DEPLOYMENT.md) | Docker + HTTPS for enterprise environments |
 | [Ollama Guide](docs/OLLAMA_GUIDE.md) | Use with local LLMs (fully air-gapped) |
