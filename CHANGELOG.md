@@ -57,6 +57,22 @@ metadata into the declaration is the user's (or an external adapter's) job.
   was never implemented and is too low for legitimate captures (1 h at
   25.6 kHz float32 ≈ 368 MB). Extending the cap to the other formats is
   follow-up work.
+- **`docs/TOOL_CATALOG.md` — the complete endpoint reference.** The full
+  tool/prompt catalog migrated out of the README onto a dedicated page,
+  guarded by CI against the registered surface: the set of listed names
+  must equal the registered endpoints exactly, so the catalog can neither
+  list a phantom endpoint nor silently omit a real one.
+- **`docs/ADAPTER_GUIDE.md` — external adapter guide.** Documents how an
+  external adapter translates vendor metadata into the `load_signal`
+  declaration and companion-file parameters. The guide's parameter table —
+  names, allowed values, defaults, required flags — is guarded by CI
+  against the code's own exports, in both directions.
+
+### Changed
+- **README restructured around audience entry paths.** Readers are routed
+  by goal (use, evaluate, extend, contribute), with the measured-benchmark
+  section above the fold; the full tool catalog moved to its own page
+  (`docs/TOOL_CATALOG.md`), leaving the README a short guarded summary.
 
 ### Fixed
 - **`.dat` was listed but unloadable.** The extension sat in
@@ -64,6 +80,12 @@ metadata into the declaration is the user's (or an external adapter's) job.
   files — but no loader branch existed, so every load failed. `.dat` is now
   raw-eligible on the same terms as `.bin`/`.raw`: it loads with a declared
   decode contract and is refused with the full remedy message without one.
+- **Stale public claims corrected and guarded.** Endpoint counts, the
+  plugin skill count, the landing page's software version, and the test
+  coverage figure (now stated as the CI-enforced minimum rather than a
+  measured snapshot) had drifted on public surfaces; the CI guards now
+  scan every copy on every public surface, so the next drift goes red
+  instead of shipping.
 
 ### Security
 - Path-containment tests extended to raw reads: relative traversal,

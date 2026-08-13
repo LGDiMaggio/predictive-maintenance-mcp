@@ -151,6 +151,32 @@ class TestPackageVersionAlignment:
 _MCP_NAME_RE = re.compile(r"<!--\s*mcp-name:\s*(\S+)\s*-->")
 
 
+def mcp_name_marker_violations(readme_text: str, expected_name: str) -> list[str]:
+    """Every way the README can break MCP-registry ownership validation.
+
+    Pure over its inputs so each failure mode can be mutation-tested on
+    small fixtures: the marker missing entirely; the marker naming a
+    different server than *expected_name*; the marker sitting after the
+    first '## ' section heading (outside the header block, where a
+    section-level restructure is most likely to orphan or delete it).
+    """
+    m = _MCP_NAME_RE.search(readme_text)
+    if m is None:
+        return ["<!-- mcp-name: ... --> marker not found"]
+    violations: list[str] = []
+    if m.group(1) != expected_name:
+        violations.append(
+            f"mcp-name marker says {m.group(1)!r} but server.json name is "
+            f"{expected_name!r}"
+        )
+    first_section = readme_text.find("\n## ")
+    if first_section != -1 and m.start() > first_section:
+        violations.append(
+            "the mcp-name marker must appear before the first '## ' section " "heading"
+        )
+    return violations
+
+
 class TestMcpNameMarker:
     """README must carry the registry ownership marker, equal to server.json.
 
@@ -161,27 +187,60 @@ class TestMcpNameMarker:
     patch release. This turns the constraint into an executable check.
     """
 
-    def test_readme_mcp_name_matches_server_json(self):
-        m = _MCP_NAME_RE.search(_read("README.md"))
-        assert m, "README.md: <!-- mcp-name: ... --> marker not found"
+    def test_readme_marker_is_valid(self):
         expected = json.loads(_read("server.json"))["name"]
-        assert m.group(1) == expected, (
-            f"README.md mcp-name marker says {m.group(1)!r} but server.json "
-            f"name is {expected!r}"
+        violations = mcp_name_marker_violations(_read("README.md"), expected)
+        assert violations == [], "README.md: " + "; ".join(violations)
+
+    def test_readme_still_has_a_section_heading(self):
+        """Anti-rot for the header-block rule: it compares the marker's
+        position against the first '## ' heading, so a README with no such
+        heading would make that check vacuously green."""
+        assert "\n## " in _read("README.md"), (
+            "README.md has no '## ' section headings — the mcp-name "
+            "header-block check has nothing to anchor to"
         )
 
-    def test_marker_sits_in_the_header_block(self):
-        """The marker belongs in the README's top area — before the first
-        '## ' section heading — where a section-level restructure is least
-        likely to orphan or delete it."""
-        readme = _read("README.md")
-        m = _MCP_NAME_RE.search(readme)
-        assert m is not None
-        first_section = readme.find("\n## ")
-        assert first_section != -1 and m.start() < first_section, (
-            "README.md: the mcp-name marker must appear before the first "
-            "'## ' section heading"
-        )
+
+#: Synthetic README fixture for the marker mutations — deliberately NOT the
+#: real README, so these tests exercise the checker, not the repo state.
+_MARKER_FIXTURE = (
+    "# Predictive Maintenance MCP\n"
+    "\n"
+    "<!-- mcp-name: io.github.acme/pmm -->\n"
+    "\n"
+    "Intro paragraph.\n"
+    "\n"
+    "## Install\n"
+    "\n"
+    "pip install pmm\n"
+)
+
+
+class TestMcpNameMarkerMutations:
+    """Executable proof the marker check catches each failure mode (and
+    stays green on clean input)."""
+
+    def test_clean_fixture_is_green(self):
+        assert mcp_name_marker_violations(_MARKER_FIXTURE, "io.github.acme/pmm") == []
+
+    def test_missing_marker_goes_red(self):
+        mutated = _MARKER_FIXTURE.replace("<!-- mcp-name: io.github.acme/pmm -->\n", "")
+        violations = mcp_name_marker_violations(mutated, "io.github.acme/pmm")
+        assert any("not found" in v for v in violations), violations
+
+    def test_name_mismatch_goes_red(self):
+        violations = mcp_name_marker_violations(_MARKER_FIXTURE, "io.github.acme/other")
+        assert any(
+            "io.github.acme/pmm" in v and "io.github.acme/other" in v
+            for v in violations
+        ), violations
+
+    def test_marker_after_first_heading_goes_red(self):
+        marker = "<!-- mcp-name: io.github.acme/pmm -->\n"
+        mutated = _MARKER_FIXTURE.replace(marker + "\n", "") + "\n" + marker
+        violations = mcp_name_marker_violations(mutated, "io.github.acme/pmm")
+        assert any("before the first" in v for v in violations), violations
 
 
 # ---------------------------------------------------------------------------
