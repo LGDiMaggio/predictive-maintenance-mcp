@@ -8,17 +8,29 @@
 [![codecov](https://codecov.io/gh/LGDiMaggio/predictive-maintenance-mcp/branch/main/graph/badge.svg)](https://codecov.io/gh/LGDiMaggio/predictive-maintenance-mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**Give any AI assistant the ability to analyze vibration data, detect machinery faults, and generate professional diagnostic reports — through natural conversation.**
+**Give your AI assistant evidence-based vibration diagnostics — machinery fault detection, ISO-cited severity, and diagnostic reports built to support and accelerate expert decision-making.**
 
-An open-source [MCP](https://modelcontextprotocol.io/) server and **predictive maintenance AI agent** that turns LLMs into condition monitoring assistants. Engineers describe what they need in plain language; the AI calls the right analysis tools and delivers results — bearing fault detection, risk assessment, anomaly detection, and remaining useful life estimation. Also available as a **Claude Code plugin** with 8 diagnostic skills. It's designed to **support and accelerate expert decision-making**.
+An open-source [MCP](https://modelcontextprotocol.io/) server that turns LLMs into condition monitoring assistants for reliability engineers. Its core design rule: **the server refuses to guess**. No diagnosis is ever inferred from filenames or statistical parameters alone — a fault indication requires matching spectral evidence. Every severity claim cites ISO 20816-3, and the evaluative wording in reports is authored by the server, not improvised by the model. The AI orchestrates the analysis and presents the evidence — detected fault frequencies, matched fault patterns, severity zones — while the final judgment stays with the engineer. Also available as a **Claude Code plugin** with 8 diagnostic skills.
 
 ---
 
-## Who is this for?
+## See It in Action
 
-- **Reliability & maintenance engineers** who want fast vibration diagnostics in plain language — no coding required. It augments and accelerates expert judgment; it doesn't replace it.
-- **Developers & industrial-AI practitioners** who want to expose predictive-maintenance workflows as MCP tools and build on top of them.
-- **Researchers & students** working on bearing fault diagnosis, condition monitoring, or MCP / agent tooling.
+<p align="center">
+  <img src="assets/claude_gif.gif" alt="Predictive Maintenance MCP — diagnostic workflow in Claude Desktop" width="720">
+</p>
+
+<p align="center"><em>Full diagnostic workflow: load signal → spectral analysis → fault detection → severity assessment → report generation</em></p>
+
+---
+
+## Choose Your Path
+
+| You are | Start here |
+|---------|------------|
+| **Reliability / maintenance engineer** — diagnostics in plain language, no coding | [Engineer's Quickstart](docs/QUICKSTART_ENGINEER.md) |
+| **AI / MCP developer** — run, integrate, and extend the server | [Developer's Quickstart](docs/QUICKSTART_DEVELOPER.md) · [Quick Start](#quick-start) below |
+| **Researcher / evaluator** — how the numbers are measured | [Benchmark Methodology](docs/benchmark-methodology.md) · [Benchmark](#benchmark) below |
 
 ---
 
@@ -67,116 +79,59 @@ Find the full path to `uvx` (`which uvx` on macOS/Linux, `where uvx` on Windows)
 
 ---
 
-## See It in Action
+## Benchmark
 
-<p align="center">
-  <img src="assets/claude_gif.gif" alt="Predictive Maintenance MCP — diagnostic workflow in Claude Desktop" width="720">
-</p>
+A blind, reproducible diagnostic-accuracy benchmark on the public
+[CWRU Bearing Data Center](https://engineering.case.edu/bearingdatacenter)
+dataset (12 kHz drive-end subset: 60 fault records + 4 normal baselines).
+Fault labels never reach the system under test — signals enter under opaque
+ids, a separate scorer is the only label reader, and blindness, checksum
+integrity, and determinism are enforced by CI-run guard tests, not prose.
+Results are stratified by the per-record diagnosability grades of the
+Smith & Randall (2015) reference study, so records that study found
+undiagnosable by any classical method are reported separately instead of
+inflating or deflating the headline.
 
-<p align="center"><em>Full diagnostic workflow: load signal → spectral analysis → fault detection → severity assessment → report generation</em></p>
+<!-- cwru-benchmark:start -->
+On records the reference study grades clearly diagnosable (Y1+Y2, <!-- slot: headline.n_records -->44<!-- /slot --> records):
+characteristic fault frequency detected on <!-- slot: headline.frequency_detection.hits -->44<!-- /slot -->/<!-- slot: headline.frequency_detection.total -->44<!-- /slot -->,
+correct fault ranked first on <!-- slot: headline.classification.correct -->34<!-- /slot -->/<!-- slot: headline.classification.total -->44<!-- /slot --> (<!-- slot: headline.classification.rate pct1 -->77.3<!-- /slot -->%),
+and <!-- slot: strata.Y1.classification.correct -->9<!-- /slot -->/<!-- slot: strata.Y1.classification.total -->9<!-- /slot --> on the textbook-signature (Y1) stratum.
+On the <!-- slot: strata.ungraded.false_positives.total_normal -->4<!-- /slot --> healthy baselines, <!-- slot: strata.ungraded.false_positives.records_with_any -->2<!-- /slot --> records raised a false indication under the same criterion.
+<!-- cwru-benchmark:end -->
+
+The numbers above are read from the committed, re-runnable artifact
+([results.json](benchmarks/cwru/results/results.json)) and drift-guarded by CI:
+every value is bound to its key in the artifact, and a mismatch fails the build.
+Methodology, blind protocol, and honest-benchmarking notes:
+[docs/benchmark-methodology.md](docs/benchmark-methodology.md). Reproduce with:
+
+```bash
+python -m benchmarks.cwru all
+```
 
 ---
 
 ## What Can It Do?
 
-**Upload a vibration signal → get a professional diagnosis through conversation.**
+**Point the AI at a vibration signal → get the evidence behind the fault — detected frequencies, matched fault patterns, ISO-cited severity — to support your call.**
 
 | You say | The AI does |
 |---------|-------------|
-| *"Is this bearing healthy?"* | Loads the signal, runs spectral analysis, checks for fault patterns, classifies severity |
-| *"Generate a full diagnostic report"* | Produces an interactive HTML report with charts, fault markers, and severity assessment |
-| *"Extract specs from test_pump_manual.pdf and diagnose the signal"* | Reads the equipment manual, looks up the bearing model, calculates expected fault frequencies, matches them against the signal |
-| *"Train an anomaly detector on my healthy baselines, then flag anomalies"* | Trains a machine learning model on normal data, scores new signals, highlights outliers |
+| *"Is this bearing healthy?"* | Loads the signal, runs spectral analysis, surfaces matching fault-frequency evidence, cites the ISO 20816-3 severity zone |
+| *"Generate a full diagnostic report"* | Produces an interactive HTML report with charts, fault markers, and server-authored severity wording |
+| *"Extract specs from test_pump_manual.pdf and diagnose the signal"* | Reads the equipment manual, looks up the bearing model, calculates expected fault frequencies, flags which ones the signal actually shows |
+| *"Train an anomaly detector on my healthy baselines, then flag anomalies"* | Trains a model on your normal data, scores new signals, flags outliers for your review |
 
 The AI doesn't guess — it calls **37 specialized MCP endpoints** (34 tools + 3 prompts) running locally on your machine. Every signal is referenced by a single `signal_id` handle from load to report. Your data never leaves your infrastructure.
 
-<details>
-<summary><b>See the full endpoint list (37 MCP endpoints: 34 tools, 3 prompts)</b></summary>
-
-### Signal Lifecycle (5)
-
-| Tool | Description |
-|------|-------------|
-| `load_signal` | Load vibration file(s) (CSV, WAV, MAT, NPY, Parquet, raw binary `.bin`/`.raw`/`.dat` with declared decode metadata) with declared sampling rate and unit — returns the `signal_id` handle |
-| `list_signals` | Browse signal files on disk (`scope="disk"`) or loaded signals in memory (`scope="memory"`) |
-| `get_signal_info` | Signal metadata (sampling rate, duration, declared unit, source metadata) |
-| `generate_test_signal` | Create a synthetic signal, auto-registered and immediately analyzable |
-| `clear_signals` | Remove one signal or the whole in-memory cache |
-
-### Spectral & Statistical Analysis (6)
-
-| Tool | Description |
-|------|-------------|
-| `analyze_fft` | Frequency spectrum with automatic peak detection |
-| `analyze_envelope` | Envelope analysis for bearing fault detection (default band 500–5000 Hz) |
-| `analyze_statistics` | Time-domain features (RMS, kurtosis, crest factor) |
-| `extract_features_from_signal` | Segmented statistical feature extraction |
-| `compute_power_spectral_density` | Power spectral density (Welch method) |
-| `compute_spectrogram_stft` | Time-frequency spectrogram |
-
-### Diagnostics & Health Assessment (7)
-
-| Tool | Description |
-|------|-------------|
-| `assess_severity` | Unified ISO 20816-3 severity assessment (signal or direct RMS reading, custom thresholds) — requires a declared signal unit, never guesses |
-| `check_bearing_faults` | Unified fault-frequency matching (catalog bearing, explicit frequencies, or explicit geometry) |
-| `diagnose_vibration` | Integrated evidence-based diagnosis pipeline (one call) |
-| `calculate_bearing_characteristic_frequencies` | Expected fault frequencies from bearing geometry |
-| `search_bearing_catalog` | Look up verified, source-traced bearing geometry |
-| `train_anomaly_model` | Train novelty detection on healthy baselines |
-| `predict_anomalies` | Score a signal against a trained model (bounded output) |
-
-### Documentation (4)
-
-| Tool | Description |
-|------|-------------|
-| `search_documentation` | Semantic search over equipment manuals |
-| `read_manual_excerpt` | Read pages from a manual |
-| `extract_manual_specs` | Extract structured specs from PDFs |
-| `list_machine_manuals` | Browse available documentation |
-
-### Reporting (9)
-
-| Tool | Description |
-|------|-------------|
-| `plot_signal` | Interactive time-domain plot |
-| `generate_fft_report` | Interactive frequency analysis report |
-| `generate_envelope_report` | Envelope analysis with fault markers |
-| `generate_iso_report` | Severity zone visualization |
-| `generate_diagnostic_report` | Integrated diagnostic report, HTML and PDF, wording authored by the server |
-| `generate_diagnostic_report_docx` | Structured Word document report |
-| `generate_pca_visualization_report` | PCA anomaly projection |
-| `generate_feature_comparison_report` | Cross-signal feature comparison |
-| `list_html_reports` | Report management (list all or inspect one) |
-
-### Prognostics (2)
-
-| Tool | Description |
-|------|-------------|
-| `analyze_signal_trend` | Within-recording screening: feature trend + degradation onset in one call |
-| `estimate_rul` | Remaining Useful Life from repeated measurements over time (linear, exponential, Kalman) — refuses single-recording extrapolation |
-
-### Decision Support (1)
-
-| Tool | Description |
-|------|-------------|
-| `generate_maintenance_recommendations` | Maintenance recommendations from severity zone + canonical fault types |
-
-### Guided Workflows (3 prompts)
-
-| Prompt | Description |
-|--------|-------------|
-| `diagnose_bearing` | Complete bearing fault diagnostic decision tree |
-| `diagnose_gear` | Gear fault detection workflow |
-| `quick_diagnostic_report` | Fast health screening |
-
-</details>
+Full endpoint reference, grouped by category: **[Tool Catalog](docs/TOOL_CATALOG.md)**.
 
 ---
 
 ## Claude Code Plugin
 
-The project includes a **plugin for Claude Code** with domain-specific skills that activate automatically during conversation. Install it and Claude gains guided diagnostic workflows, autonomous agents, and quick commands.
+The project includes a **plugin for Claude Code** with domain-specific skills that activate automatically during conversation.
 
 ```shell
 /plugin marketplace add LGDiMaggio/predictive-maintenance-mcp
@@ -187,35 +142,9 @@ The project includes a **plugin for Claude Code** with domain-specific skills th
   <img src="assets/plugin.gif" alt="Claude Code Plugin — skills, agents, and slash commands in action" width="720">
 </p>
 
-<p align="center"><em>Claude Code plugin: domain skills activate automatically, slash commands for quick diagnostics</em></p>
+The plugin adds **8 skills** that activate automatically based on context (bearing-diagnosis, gear-diagnosis, quick-screening, report-generation, anomaly-detection, signal-management, documentation-search, prognostics), **2 agents** that run multi-step diagnostic workflows end-to-end and hand you the evidence (diagnostic-pipeline, signal-explorer), and **3 commands** for quick entry points (`/pm-diagnose`, `/pm-screen`, `/pm-report`).
 
-### Skills (8) — activate automatically based on context
-
-| Skill | What it does |
-|-------|-------------|
-| **bearing-diagnosis** | Walks through a complete bearing fault diagnostic workflow |
-| **gear-diagnosis** | Gear fault detection via spectral pattern analysis |
-| **quick-screening** | 30-second vibration health check |
-| **report-generation** | Professional HTML and Word report generation |
-| **anomaly-detection** | Train and run ML-based anomaly detection models |
-| **signal-management** | Load, inspect, and manage vibration signals |
-| **documentation-search** | Search equipment manuals and bearing catalogs |
-| **prognostics** | Within-recording trend screening and multi-measurement RUL estimation |
-
-### Agents (2) — run autonomously for complex tasks
-
-| Agent | What it does |
-|-------|-------------|
-| **diagnostic-pipeline** | End-to-end: load signal → spectral analysis → fault detection → severity assessment → report |
-| **signal-explorer** | Explore and compare multiple signals, find outliers, characterize patterns |
-
-### Commands (3) — quick entry points
-
-| Command | Example |
-|---------|---------|
-| `/pm-diagnose` | `/pm-diagnose bearing_signal.csv` — full fault diagnosis |
-| `/pm-screen` | `/pm-screen bearing_signal.csv` — quick health check |
-| `/pm-report` | `/pm-report bearing_signal.csv full` — generate all reports |
+Full skill, agent, and command reference: [Plugin README](plugin/README.md).
 
 ---
 
@@ -245,10 +174,7 @@ All analysis tools generate **interactive HTML reports** you can open in any bro
 
 ## Sample Data Included
 
-The project ships with **20 real bearing vibration signals** from production machinery tests — ready to use out of the box.
-
-- **Training set**: 2 healthy baselines + 12 fault signals (inner race, outer race)
-- **Test set**: 1 healthy baseline + 5 fault signals
+The project ships with **20 real bearing vibration signals** from production machinery tests — ready to use out of the box: a training set (2 healthy baselines + 12 fault signals, inner and outer race) and a test set (1 healthy baseline + 5 fault signals).
 
 Try: *"Load real_train/OuterRaceFault_1.csv and diagnose the bearing fault."*
 
@@ -280,34 +206,7 @@ Full dataset documentation: [data/README.md](data/README.md)
     signals · manuals · models
 ```
 
-The codebase follows a **modular architecture** organized around the ISO 13374 Six-Block Diagnostic standard — signal acquisition, processing, diagnostics, prognostics, and decision support as separate sub-packages.
-
-<details>
-<summary><b>Detailed module structure</b></summary>
-
-```
-src/predictive_maintenance_mcp/
-├── mcp_tools/                 # MCP endpoint registration (37 MCP endpoints)
-│   ├── acquisition_tools.py   # Signal loading & management
-│   ├── analysis_tools.py      # Spectral & statistical analysis
-│   ├── diagnostics_tools.py   # Fault detection, ML, document search
-│   ├── report_tools.py        # HTML/DOCX report generation
-│   ├── prompts.py             # Guided diagnostic workflows
-│   └── _utils.py              # Shared utilities
-├── signal_acquisition/        # Multi-format loaders (CSV, MAT, WAV, NPY, Parquet)
-├── signal_processing/         # Spectral analysis & feature extraction
-├── diagnostics/               # Bearing/gear analysis, ISO standards
-├── decision_support/          # Evidence-based diagnosis pipeline
-├── prognostics/               # RUL estimation (linear, exponential, Kalman) & trend analysis
-├── rag.py                     # Document indexing & search (FAISS/TF-IDF)
-├── models.py                  # Pydantic data models
-├── server.py                  # MCPServer entry point
-└── config.py                  # Configuration management
-```
-
-**Standards implemented**: ISO 13374 (diagnostic architecture), ISO 20816-3 (vibration severity classification), MIMOSA OSA-CBM (condition-based maintenance framework).
-
-</details>
+The codebase follows a **modular architecture** organized around the ISO 13374 Six-Block Diagnostic standard — signal acquisition, processing, diagnostics, prognostics, and decision support as separate sub-packages. Standards implemented: ISO 13374, ISO 20816-3, MIMOSA OSA-CBM. Module-level detail: [Architecture guide](docs/architecture.md).
 
 **Key design choices:**
 - **Privacy-first** — raw vibration data never leaves your machine; only computed results flow to the LLM
@@ -322,6 +221,7 @@ src/predictive_maintenance_mcp/
 |-------|-----|
 | [Quickstart for Engineers](docs/QUICKSTART_ENGINEER.md) | Get results fast, no coding required |
 | [Quickstart for Developers](docs/QUICKSTART_DEVELOPER.md) | Understand MCP, extend the server |
+| [Tool Catalog](docs/TOOL_CATALOG.md) | Every MCP endpoint, grouped by category |
 | [Plugin README](plugin/README.md) | Claude Code plugin installation and usage |
 | [HTTPS Deployment](docs/DEPLOYMENT.md) | Docker + HTTPS for enterprise environments |
 | [Ollama Guide](docs/OLLAMA_GUIDE.md) | Use with local LLMs (fully air-gapped) |
@@ -344,39 +244,6 @@ pytest --cov=src --cov-report=html      # with coverage report
 ```
 
 20+ test files covering signal analysis, fault detection, severity assessment, ML models, report generation, RAG search, and real bearing fault data validation.
-
----
-
-## Benchmark
-
-A blind, reproducible diagnostic-accuracy benchmark on the public
-[CWRU Bearing Data Center](https://engineering.case.edu/bearingdatacenter)
-dataset (12 kHz drive-end subset: 60 fault records + 4 normal baselines).
-Fault labels never reach the system under test — signals enter under opaque
-ids, a separate scorer is the only label reader, and blindness, checksum
-integrity, and determinism are enforced by CI-run guard tests, not prose.
-Results are stratified by the per-record diagnosability grades of the
-Smith & Randall (2015) reference study, so records that study found
-undiagnosable by any classical method are reported separately instead of
-inflating or deflating the headline.
-
-<!-- cwru-benchmark:start -->
-On records the reference study grades clearly diagnosable (Y1+Y2, <!-- slot: headline.n_records -->44<!-- /slot --> records):
-characteristic fault frequency detected on <!-- slot: headline.frequency_detection.hits -->44<!-- /slot -->/<!-- slot: headline.frequency_detection.total -->44<!-- /slot -->,
-correct fault ranked first on <!-- slot: headline.classification.correct -->34<!-- /slot -->/<!-- slot: headline.classification.total -->44<!-- /slot --> (<!-- slot: headline.classification.rate pct1 -->77.3<!-- /slot -->%),
-and <!-- slot: strata.Y1.classification.correct -->9<!-- /slot -->/<!-- slot: strata.Y1.classification.total -->9<!-- /slot --> on the textbook-signature (Y1) stratum.
-On the <!-- slot: strata.ungraded.false_positives.total_normal -->4<!-- /slot --> healthy baselines, <!-- slot: strata.ungraded.false_positives.records_with_any -->2<!-- /slot --> records raised a false indication under the same criterion.
-<!-- cwru-benchmark:end -->
-
-The numbers above are read from the committed, re-runnable artifact
-([results.json](benchmarks/cwru/results/results.json)) and drift-guarded by CI:
-every value is bound to its key in the artifact, and a mismatch fails the build.
-Methodology, blind protocol, and honest-benchmarking notes:
-[docs/benchmark-methodology.md](docs/benchmark-methodology.md). Reproduce with:
-
-```bash
-python -m benchmarks.cwru all
-```
 
 ---
 

@@ -35,6 +35,17 @@ pyproject.toml, src/__init__.py, server.json (x2), CITATION.cff, the
 README.md BibTeX block, and docs/index.html (x2: JSON-LD softwareVersion +
 BibTeX block). The plugin manifests (plugin.json + marketplace.json)
 version independently but must match each other.
+
+U2 (README funnel) widened the guarded surfaces again:
+
+- ``docs/TOOL_CATALOG.md`` (the tool catalog migrated out of the README)
+  joins the count-claim scan, with its own anti-rot check — its stated
+  totals must equal the introspected surface;
+- the ``<!-- mcp-name: ... -->`` marker in README.md must equal the
+  ``name`` field of ``server.json``. The MCP registry validates PyPI
+  package ownership by finding this marker in the long description (the
+  README), and losing it fails ``publish-mcp.yml`` only AFTER the
+  immutable PyPI upload — forcing a patch release.
 """
 
 import json
@@ -134,6 +145,46 @@ class TestPackageVersionAlignment:
 
 
 # ---------------------------------------------------------------------------
+# MCP registry ownership marker (U2)
+# ---------------------------------------------------------------------------
+
+_MCP_NAME_RE = re.compile(r"<!--\s*mcp-name:\s*(\S+)\s*-->")
+
+
+class TestMcpNameMarker:
+    """README must carry the registry ownership marker, equal to server.json.
+
+    The MCP registry validates PyPI-package ownership by finding
+    ``<!-- mcp-name: ... -->`` in the package long description (the README).
+    Losing or mistyping the marker — e.g. in a README restructure — fails
+    ``publish-mcp.yml`` only AFTER the immutable PyPI upload, forcing a
+    patch release. This turns the constraint into an executable check.
+    """
+
+    def test_readme_mcp_name_matches_server_json(self):
+        m = _MCP_NAME_RE.search(_read("README.md"))
+        assert m, "README.md: <!-- mcp-name: ... --> marker not found"
+        expected = json.loads(_read("server.json"))["name"]
+        assert m.group(1) == expected, (
+            f"README.md mcp-name marker says {m.group(1)!r} but server.json "
+            f"name is {expected!r}"
+        )
+
+    def test_marker_sits_in_the_header_block(self):
+        """The marker belongs in the README's top area — before the first
+        '## ' section heading — where a section-level restructure is least
+        likely to orphan or delete it."""
+        readme = _read("README.md")
+        m = _MCP_NAME_RE.search(readme)
+        assert m is not None
+        first_section = readme.find("\n## ")
+        assert first_section != -1 and m.start() < first_section, (
+            "README.md: the mcp-name marker must appear before the first "
+            "'## ' section heading"
+        )
+
+
+# ---------------------------------------------------------------------------
 # Endpoint counts: docs vs the introspected registered surface
 # ---------------------------------------------------------------------------
 
@@ -210,6 +261,7 @@ COUNTED_PROSE_SURFACES: dict[str, Callable[[], str]] = {
     "plugin/README.md": lambda: _read("plugin/README.md"),
     "pyproject.toml (project.description)": _pyproject_description,
     "docs/_config.yml": lambda: _read("docs/_config.yml"),
+    "docs/TOOL_CATALOG.md": lambda: _read("docs/TOOL_CATALOG.md"),
 }
 
 
@@ -284,6 +336,18 @@ class TestEndpointCountClaims:
             assert _claims(COUNTED_PROSE_SURFACES[surface](), "endpoints"), (
                 f"{surface}: no recognizable 'N endpoints' claim found — "
                 f"either the count was removed or the wording escaped "
+                f"CLAIM_PATTERNS"
+            )
+
+    def test_tool_catalog_states_its_totals(self):
+        """Anti-rot for the migrated catalog page (U2): it must keep a
+        recognizable total for endpoints, tools AND prompts — the whole
+        point of the page is the complete guarded inventory."""
+        text = COUNTED_PROSE_SURFACES["docs/TOOL_CATALOG.md"]()
+        for kind in ("endpoints", "tools", "prompts"):
+            assert _claims(text, kind), (
+                f"docs/TOOL_CATALOG.md: no recognizable '{kind}' count claim "
+                f"found — either the total was removed or the wording escaped "
                 f"CLAIM_PATTERNS"
             )
 

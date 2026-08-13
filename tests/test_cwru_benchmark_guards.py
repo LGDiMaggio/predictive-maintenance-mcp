@@ -23,6 +23,13 @@ legs of the plan (origin acceptance example AE3) map to files like this:
   :class:`TestDriftGuardOnFixtures` (tmp-fixture matrix, mutation
   included) and :class:`TestDriftGuardOnTheRealRepo` (activates
   automatically the moment U7 publishes a section).
+- Unguarded-numbers sweep (AE4, permanent — added in U2): the drift
+  guard validates only INSIDE the marked section, so prose OUTSIDE the
+  ``cwru-benchmark`` markers could reintroduce unguarded percentages or
+  record fractions. :func:`scan_unguarded_benchmark_numbers` scans the
+  full text of README.md and docs/benchmark-methodology.md outside the
+  markers and fails on benchmark-result-shaped numbers, mutation-tested
+  in :class:`TestUnguardedBenchmarkNumbers`.
 - CI wiring -- the Black format gate covers ``benchmarks/``: THIS file,
   :class:`TestFormatGateCoversBenchmarks` (blockingness of the job
   itself is asserted by ``tests/test_ci_gates.py``).
@@ -540,6 +547,176 @@ class TestDriftGuardOnTheRealRepo:
         assert readme == drift_guard.REPO_ROOT / "README.md"
         assert readme.exists(), "the README the guard sweeps must exist"
         assert methodology.name == "benchmark-methodology.md"
+
+
+# ---------------------------------------------------------------------------
+# Unguarded benchmark numbers: prose OUTSIDE the markers stays number-free
+# ---------------------------------------------------------------------------
+
+#: A record fraction like ``34/44`` — inside the marked section every such
+#: value is slot-bound, so a bare fraction in prose is an unguarded
+#: benchmark number by construction. Flagged unconditionally.
+_FRACTION_RE = re.compile(r"\b\d+\s*/\s*\d+\b")
+
+#: A percentage. Flagged only near benchmark-result vocabulary (below), so
+#: legitimate non-benchmark percentages stay green.
+_PCT_RE = re.compile(r"\b\d+(?:\.\d+)?\s*%")
+
+#: Result-shaped vocabulary that turns a nearby percentage into a benchmark
+#: claim. Deliberately narrow — generic words like "benchmark", "fault" or
+#: "coverage" alone are NOT triggers, so the README's CI coverage minimum
+#: ("85%+ test coverage") and the methodology's pinned analyzer tolerance
+#: ("frequency tolerance ±5 %") do not false-positive.
+_BENCHMARK_VOCAB_RE = re.compile(
+    r"\b(accurac\w*|detection|detected|classif\w*|diagnos\w*|"
+    r"false[- ]positive\w*|false indication\w*|strat(?:um|a)|CWRU)\b",
+    re.I,
+)
+
+#: Exact snippets exempt from the sweep. Keep this list SHORT and literal:
+#: each entry must quote the text verbatim and justify itself.
+_UNGUARDED_ALLOWLIST = (
+    # docs/benchmark-methodology.md, honest-benchmarking notes: OTHER
+    # studies' inflated CWRU accuracies, quoted to explain why they are
+    # not comparable — literature context, not a claim about this system.
+    "Widely-cited 99–100 %",
+)
+
+#: The two prose documents the sweep covers (the only public surfaces that
+#: carry a marked benchmark section).
+_SWEPT_DOCUMENTS = (
+    REPO_ROOT / "README.md",
+    REPO_ROOT / "docs" / "benchmark-methodology.md",
+)
+
+
+def _blank_marked_sections(text: str) -> str:
+    """Replace every marked section with whitespace, preserving line count
+    so finding line numbers keep pointing at the real file."""
+    pattern = re.compile(
+        re.escape(drift_guard.SECTION_START)
+        + r".*?"
+        + re.escape(drift_guard.SECTION_END),
+        re.S,
+    )
+    return pattern.sub(lambda m: "\n" * m.group(0).count("\n"), text)
+
+
+def scan_unguarded_benchmark_numbers(text: str) -> list[str]:
+    """Benchmark-result-shaped numbers OUTSIDE the cwru-benchmark markers.
+
+    Pure function over text (same shape as the drift guard and the landing
+    page scanner) so it can be mutation-tested on fixtures. Rules:
+
+    - allowlisted snippets are blanked first (equal-length, so offsets and
+      line numbers survive);
+    - the marked section is blanked (numbers inside it are slot-bound and
+      validated by the drift guard — not this sweep's business);
+    - any ``N/M`` fraction in the remainder is a finding;
+    - any percentage in the remainder is a finding when benchmark-result
+      vocabulary appears within one line of it (percentages with no such
+      vocabulary nearby — CI coverage floors, analyzer tolerances — pass).
+    """
+    for phrase in _UNGUARDED_ALLOWLIST:
+        text = text.replace(phrase, " " * len(phrase))
+    lines = _blank_marked_sections(text).splitlines()
+    findings: list[str] = []
+    for i, line in enumerate(lines):
+        for m in _FRACTION_RE.finditer(line):
+            findings.append(
+                f"line {i + 1}: record fraction '{m.group(0)}' outside the "
+                f"cwru-benchmark markers — benchmark numbers must live in "
+                f"slot-bound text inside the marked section"
+            )
+        for m in _PCT_RE.finditer(line):
+            window = " ".join(lines[max(0, i - 1) : i + 2])
+            if _BENCHMARK_VOCAB_RE.search(window):
+                findings.append(
+                    f"line {i + 1}: percentage '{m.group(0)}' near benchmark "
+                    f"vocabulary outside the cwru-benchmark markers — move it "
+                    f"into a slot inside the marked section or reword"
+                )
+    return findings
+
+
+class TestUnguardedBenchmarkNumbers:
+    """AE4, made permanent: the complement of the drift guard. The drift
+    guard validates inside the markers; this sweep proves the OUTSIDE
+    carries no benchmark-shaped numbers at all."""
+
+    @pytest.mark.parametrize("document", _SWEPT_DOCUMENTS, ids=lambda p: p.name)
+    def test_real_documents_are_clean(self, document):
+        findings = scan_unguarded_benchmark_numbers(
+            document.read_text(encoding="utf-8")
+        )
+        assert findings == [], f"{document.name}:\n  " + "\n  ".join(findings)
+
+    def test_swept_documents_still_carry_a_marked_section(self):
+        """Anchor: 'outside the markers is clean' only means something if
+        the markers are still there (and the sweep blanked something)."""
+        for document in _SWEPT_DOCUMENTS:
+            text = document.read_text(encoding="utf-8")
+            assert drift_guard.SECTION_START in text, document.name
+            assert _PCT_RE.search(text), (
+                f"{document.name}: no percentage found anywhere in the raw "
+                f"text — the sweep may be reading the wrong file"
+            )
+
+    def test_injected_stray_result_goes_red(self):
+        """The mutation that matters: a stray '34/44 (77.3%)' pasted into
+        the real README prose is flagged by BOTH rules, with the offending
+        snippets named."""
+        readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+        mutated = readme.replace(
+            "## Testing",
+            "## Testing\n\nClassification stayed correct on 34/44 (77.3%) "
+            "of records.\n",
+            1,
+        )
+        assert mutated != readme
+        findings = scan_unguarded_benchmark_numbers(mutated)
+        assert any("34/44" in f for f in findings), findings
+        assert any("77.3%" in f for f in findings), findings
+
+    def test_numbers_inside_the_marked_section_do_not_flag(self):
+        fixture = (
+            "Prose before, no numbers.\n"
+            f"{drift_guard.SECTION_START}\n"
+            "Classification accuracy 34/44 (77.3%) of records.\n"
+            f"{drift_guard.SECTION_END}\n"
+            "Prose after, no numbers.\n"
+        )
+        assert scan_unguarded_benchmark_numbers(fixture) == []
+
+    def test_bare_fraction_outside_markers_goes_red_without_vocabulary(self):
+        """Fractions are flagged unconditionally — no vocabulary needed."""
+        findings = scan_unguarded_benchmark_numbers("It scored 34/44 overall.\n")
+        assert len(findings) == 1 and "34/44" in findings[0], findings
+
+    def test_percentage_without_benchmark_vocabulary_is_ignored(self):
+        text = (
+            "85%+ test coverage, enforced as a CI minimum.\n"
+            "frequency tolerance is pinned at 5 % here.\n"
+        )
+        assert scan_unguarded_benchmark_numbers(text) == []
+
+    def test_percentage_near_vocabulary_goes_red_across_a_line_break(self):
+        """The window is three lines, so wrapped prose cannot dodge it."""
+        text = "correct on 77.3% of the\nclearly diagnosable records.\n"
+        findings = scan_unguarded_benchmark_numbers(text)
+        assert len(findings) == 1 and "77.3%" in findings[0], findings
+
+    def test_allowlist_masks_only_the_exact_snippet(self):
+        """The allowlisted literature quote stays green, but an unlisted
+        result percentage in the very same text is still flagged."""
+        allowlisted_only = (
+            "Widely-cited 99–100 % accuracies on CWRU typically come from "
+            "segment-level leakage.\n"
+        )
+        assert scan_unguarded_benchmark_numbers(allowlisted_only) == []
+        with_extra = allowlisted_only + "Our detection reached 98.2% there.\n"
+        findings = scan_unguarded_benchmark_numbers(with_extra)
+        assert len(findings) == 1 and "98.2%" in findings[0], findings
 
 
 # ---------------------------------------------------------------------------

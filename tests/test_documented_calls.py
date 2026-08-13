@@ -16,7 +16,13 @@ resource as a tool). This guard makes silent drift impossible:
        ``machine_group`` into ``sampling_rate``). ``...`` placeholders are
        allowed.
 - Retired v0.8.x endpoint names must not appear ANYWHERE in the golden-path
-  docs (plugin, README.md, rendered prompts) — not even as prose.
+  docs (plugin, README.md, docs/TOOL_CATALOG.md, rendered prompts) — not
+  even as prose.
+- ``docs/TOOL_CATALOG.md`` (the catalog migrated out of the README in U2)
+  gets the same call-shape sweep PLUS a name-parity check: the set of
+  backticked names in its table rows must equal the registered surface
+  exactly, so the catalog can neither list a phantom endpoint nor silently
+  omit a real one.
 
 If this test fails after an intentional signature change, fix the docs, not
 the guard: the docs are a public API surface.
@@ -34,6 +40,7 @@ from predictive_maintenance_mcp.mcp_tools import register_all
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_DIR = REPO_ROOT / "plugin"
 README = REPO_ROOT / "README.md"
+TOOL_CATALOG = REPO_ROOT / "docs" / "TOOL_CATALOG.md"
 
 # A documented call: snake_case identifier (>= 1 underscore, all lowercase —
 # every registered endpoint matches this) IMMEDIATELY followed by "(" so that
@@ -313,6 +320,49 @@ class TestPluginDocumentedCalls:
 
 
 # ---------------------------------------------------------------------------
+# docs/TOOL_CATALOG.md: the migrated catalog stays executable and complete
+# ---------------------------------------------------------------------------
+
+#: A catalog table row's name cell: a backticked snake_case identifier as
+#: the FIRST cell of a markdown table row.
+CATALOG_ROW_NAME_RE = re.compile(r"^\|\s*`([a-z][a-z0-9_]*)`\s*\|", re.M)
+
+
+class TestToolCatalogDocumentedCalls:
+    def test_all_calls_executable(self, endpoints):
+        text = TOOL_CATALOG.read_text(encoding="utf-8")
+        violations = validate_documented_calls(text, endpoints, "docs/TOOL_CATALOG.md")
+        assert violations == [], "\n".join(violations)
+
+    def test_catalog_rows_are_exactly_the_registered_surface(self, endpoints):
+        """Name parity, both directions: every table-row name is a real
+        registered endpoint (no phantom or retired names) and every
+        registered endpoint has a row (the catalog is the COMPLETE
+        inventory it claims to be)."""
+        listed = CATALOG_ROW_NAME_RE.findall(TOOL_CATALOG.read_text(encoding="utf-8"))
+        duplicated = sorted({name for name in listed if listed.count(name) > 1})
+        assert duplicated == [], f"docs/TOOL_CATALOG.md: duplicate rows {duplicated}"
+        unknown = sorted(set(listed) - set(endpoints))
+        missing = sorted(set(endpoints) - set(listed))
+        assert unknown == [], (
+            f"docs/TOOL_CATALOG.md lists names that are not registered "
+            f"endpoints: {unknown}"
+        )
+        assert (
+            missing == []
+        ), f"docs/TOOL_CATALOG.md omits registered endpoints: {missing}"
+
+    def test_parity_check_actually_parses_rows(self):
+        """Anti-rot: a table-format change that stopped the row regex from
+        matching would make the parity test pass vacuously."""
+        listed = CATALOG_ROW_NAME_RE.findall(TOOL_CATALOG.read_text(encoding="utf-8"))
+        assert len(listed) >= 30, (
+            f"only {len(listed)} catalog rows parsed — the table format "
+            f"escaped CATALOG_ROW_NAME_RE"
+        )
+
+
+# ---------------------------------------------------------------------------
 # MCP prompt templates: every rendered call template is executable
 # ---------------------------------------------------------------------------
 
@@ -351,6 +401,7 @@ def _golden_path_texts() -> dict[str, str]:
         for p in PLUGIN_FILES
     }
     texts["README.md"] = README.read_text(encoding="utf-8")
+    texts["docs/TOOL_CATALOG.md"] = TOOL_CATALOG.read_text(encoding="utf-8")
     texts.update(rendered_prompt_texts())
     return texts
 
