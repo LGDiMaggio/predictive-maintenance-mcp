@@ -791,3 +791,83 @@ class TestScoreCLI:
         assert exit_code == 2
         assert "cwru_002" in capsys.readouterr().err
         assert not results_path.exists()
+
+
+class TestCommittedResultsDerivedFromOutcomes:
+    """The committed results.json is re-derivable from the committed outcomes.
+
+    The drift guard binds the README numbers to results.json; this binds
+    results.json to outcomes.json, so the whole README -> results ->
+    outcomes chain is tamper-evident. A hand-edited results.json turns
+    this red even when the README still agrees with it.
+
+    Reads only the two committed artifacts: no network, no CWRU cache.
+    """
+
+    @staticmethod
+    def _committed_results_text() -> str:
+        return scorer.DEFAULT_RESULTS_PATH.read_text(encoding="utf-8")
+
+    @staticmethod
+    def _rescore(tmp_path: Path) -> str:
+        """Re-score the committed outcomes and return the serialized bytes.
+
+        Metadata is pinned from the committed artifact itself rather than
+        from a literal: date, git describe, platform and library versions
+        record the machine that produced the artifact, so collecting them
+        here would compare this run's environment against the maintainer's
+        and flap on every machine. Everything outside ``metadata`` is
+        recomputed for real.
+        """
+        committed = json.loads(
+            TestCommittedResultsDerivedFromOutcomes._committed_results_text()
+        )
+        outcomes = scorer.read_outcomes()
+        results = scorer.score_results(
+            outcomes, metadata_overrides=committed["metadata"]
+        )
+        out = tmp_path / "rescored.json"
+        scorer.write_results(results, out)
+        return out.read_text(encoding="utf-8")
+
+    def test_rescoring_committed_outcomes_reproduces_results_byte_for_byte(
+        self, tmp_path: Path
+    ):
+        assert self._rescore(tmp_path) == self._committed_results_text()
+
+    def test_every_metadata_key_is_pinned_by_the_committed_artifact(self):
+        """The override set above must cover every environment-dependent key.
+
+        If a new metadata key is added and not present in the committed
+        artifact, the guard above would silently start collecting it from
+        this machine — and pass locally for the maintainer while flapping
+        in CI.
+        """
+        committed = json.loads(self._committed_results_text())
+        assert set(committed["metadata"]) == set(scorer.METADATA_KEYS)
+
+    def test_a_perturbed_results_copy_fails_the_comparison(self, tmp_path: Path):
+        """Mutation leg: the comparison is demonstrated to fail, not assumed to."""
+        rescored = self._rescore(tmp_path)
+        perturbed = json.loads(rescored)
+        before = perturbed["headline"]["n_records"]
+        perturbed["headline"]["n_records"] = before + 1
+
+        perturbed_path = tmp_path / "perturbed.json"
+        scorer.write_results(perturbed, perturbed_path)
+        perturbed_text = perturbed_path.read_text(encoding="utf-8")
+
+        assert perturbed_text != self._committed_results_text()
+        # The divergence is nameable, not just a byte count.
+        differing = [
+            key
+            for key in json.loads(perturbed_text)["headline"]
+            if json.loads(rescored)["headline"].get(key)
+            != json.loads(perturbed_text)["headline"][key]
+        ]
+        assert differing == ["n_records"]
+
+    def test_guard_needs_no_cache(self):
+        """Only the two committed artifacts are read."""
+        assert scorer.DEFAULT_RESULTS_PATH.exists()
+        assert runner.DEFAULT_OUTCOMES_PATH.exists()
