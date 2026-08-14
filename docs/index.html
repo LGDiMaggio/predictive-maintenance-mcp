@@ -279,6 +279,12 @@
     }
     .diag-note { font-size: 11px; color: var(--fainter); text-align: center; }
 
+    /* Key numbers */
+    .numbers-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
+    .num-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px 22px; text-align: center; }
+    .num-val { font-family: 'Space Grotesk', sans-serif; font-size: 34px; font-weight: 700; color: var(--accent); }
+    .num-label { font-size: 13px; color: var(--muted); margin-top: 4px; font-weight: 500; }
+
     /* Choose your path */
     .paths-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
     .path-card { padding: 22px; display: flex; flex-direction: column; gap: 8px; color: inherit; }
@@ -382,6 +388,20 @@
     .dataset-row.outer { background: rgba(220,38,38,0.06); border: 1px solid rgba(220,38,38,0.25); }
     .dataset-row.outer .badge { background: rgba(220,38,38,0.14); color: var(--red); }
 
+    /* Citation */
+    .cite-box {
+      position: relative;
+      background: var(--code-bg); border: 1px solid var(--border); border-radius: 12px;
+      padding: 24px; font-family: 'IBM Plex Mono', monospace; font-size: 13px; line-height: 1.7;
+      color: #e6ebef; white-space: pre; overflow-x: auto;
+    }
+    .copy-cite-btn {
+      position: absolute; top: 12px; right: 12px;
+      background: rgba(13,148,136,0.18); border: 1px solid rgba(13,148,136,0.4); color: #5eead4;
+      font-family: 'IBM Plex Mono', monospace; font-size: 12px; padding: 5px 12px; border-radius: 5px; cursor: pointer;
+    }
+    .copy-cite-btn:hover { background: rgba(13,148,136,0.3); }
+
     /* FAQ */
     .faq-wrap { max-width: 820px; margin: 0 auto; padding: 0 40px 88px; }
     .faq-list { display: flex; flex-direction: column; gap: 10px; }
@@ -424,6 +444,7 @@
       nav { padding: 12px 20px; }
       .nav-links a:not(.nav-cta):not(.nav-gh) { display: none; }
       .paths-grid, .steps-grid, .plugin-grid, .why-grid, .demo-grid, .cap-grid, .arch-facts { grid-template-columns: 1fr; }
+      .numbers-grid { grid-template-columns: repeat(2, 1fr); }
       .dataset-box { grid-template-columns: 1fr; padding: 24px; }
       .faq-wrap { padding: 0 24px 64px; }
       section { padding-bottom: 56px; }
@@ -497,6 +518,30 @@
     <span class="diag-note">Example output, computed locally by MCP diagnostic tools</span>
   </aside>
 </header>
+
+<!-- KEY NUMBERS -->
+<section id="numbers" style="padding-bottom:72px;">
+  <div class="container">
+    <div class="numbers-grid">
+      <div class="num-card">
+        <div class="num-val" data-target="37">0</div>
+        <div class="num-label">MCP Endpoints</div>
+      </div>
+      <div class="num-card">
+        <div class="num-val" data-target="8">0</div>
+        <div class="num-label">Diagnostic Skills</div>
+      </div>
+      <div class="num-card">
+        <div class="num-val" data-target="85">0</div>
+        <div class="num-label">%+ Test Coverage (CI Minimum)</div>
+      </div>
+      <div class="num-card">
+        <div class="num-val">100%</div>
+        <div class="num-label">Local Processing</div>
+      </div>
+    </div>
+  </div>
+</section>
 
 <!-- BUILD YOUR AGENT / CHOOSE YOUR PATH -->
 <section id="build">
@@ -810,6 +855,24 @@
   </div>
 </section>
 
+<!-- CITATION -->
+<section id="cite">
+  <div class="container">
+    <div class="section-head">
+      <span class="eyebrow">CITATION</span>
+      <h2>Cite this project</h2>
+    </div>
+    <div class="cite-box" id="citationBox"><button class="copy-cite-btn" id="copyCiteBtn">Copy BibTeX</button>@software{dimaggio_predictive_maintenance_mcp_2025,
+  title   = {Predictive Maintenance MCP Server},
+  author  = {Di Maggio, Luigi Gianpio},
+  year    = {2025},
+  version = {0.13.0},
+  url     = {https://github.com/LGDiMaggio/predictive-maintenance-mcp},
+  doi     = {10.5281/zenodo.17611542}
+}</div>
+  </div>
+</section>
+
 <!-- FINAL CTA -->
 <section id="get-started" style="padding-bottom:96px;">
   <div class="container">
@@ -849,6 +912,43 @@
       setTimeout(function () { btn.textContent = prev; }, 1600);
     });
   });
+
+  // Copy BibTeX citation
+  document.getElementById('copyCiteBtn').addEventListener('click', function () {
+    var text = document.getElementById('citationBox').textContent.replace('Copy BibTeX', '').trim();
+    if (navigator.clipboard) navigator.clipboard.writeText(text);
+    var btn = this;
+    btn.textContent = 'Copied ✓';
+    setTimeout(function () { btn.textContent = 'Copy BibTeX'; }, 1600);
+  });
+
+  // Animated counters
+  function animateCounter(el) {
+    var target = parseInt(el.dataset.target, 10);
+    var duration = 900, start = null;
+    function step(ts) {
+      if (!start) start = ts;
+      var p = Math.min((ts - start) / duration, 1);
+      el.textContent = Math.round(target * p);
+      if (p < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
+  var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var counters = document.querySelectorAll('.num-val[data-target]');
+  if (reduced || !('IntersectionObserver' in window)) {
+    counters.forEach(function (el) { el.textContent = el.dataset.target; });
+  } else {
+    var observer = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (entry.isIntersecting) {
+          animateCounter(entry.target);
+          observer.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.4 });
+    counters.forEach(function (el) { observer.observe(el); });
+  }
 </script>
 
 </body>
