@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from collections.abc import Callable, Sequence
 from typing import Any, Literal, Optional
 
 from pydantic import (
@@ -283,7 +284,7 @@ def ops_view(ops_path: Optional[Path] = None) -> tuple[OpsRecord, ...]:
     Raises:
         ValueError: If the table is missing or malformed, carries a
             label-bearing key, fails model validation, or contains
-            duplicate opaque ids.
+            duplicate opaque ids, file ids, or cache filenames.
     """
     source = ops_path if ops_path is not None else RECORDS_OPS_PATH
     raw = _read_json(source, description="CWRU ops table")
@@ -322,7 +323,45 @@ def ops_view(ops_path: Optional[Path] = None) -> tuple[OpsRecord, ...]:
                 f"must be unique; renumber the table."
             )
         seen[record.opaque_id] = index
+
+    # file_id and cache_filename identify the upstream download and its slot on
+    # disk. A duplicate in either maps two logical records onto one cached file,
+    # which is silent: the second record simply reads the first one's signal.
+    _refuse_duplicate_field(records, source, "file_id", lambda r: r.file_id)
+    _refuse_duplicate_field(
+        records, source, "cache_filename", lambda r: r.cache_filename
+    )
     return tuple(records)
+
+
+def _refuse_duplicate_field(
+    records: Sequence[OpsRecord],
+    source: Path,
+    field: str,
+    getter: Callable[[OpsRecord], str],
+) -> None:
+    """Raise if two ops-table records share a value for ``field``.
+
+    Args:
+        records: The validated records, in table order.
+        source: Path of the ops table, for the error message.
+        field: Field name, as it appears in the table.
+        getter: Reads the field off a record.
+
+    Raises:
+        ValueError: If any two records share a value.
+    """
+    seen: dict[str, int] = {}
+    for index, record in enumerate(records):
+        value = getter(record)
+        if value in seen:
+            raise ValueError(
+                f"Ops table {source} entries {seen[value]} "
+                f"('{records[seen[value]].opaque_id}') and {index} "
+                f"('{record.opaque_id}') share {field} '{value}' — {field} "
+                f"must be unique; fix the vendored table."
+            )
+        seen[value] = index
 
 
 def label_view(
