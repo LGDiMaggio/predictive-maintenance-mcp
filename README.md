@@ -7,6 +7,7 @@
 [![Tests](https://github.com/LGDiMaggio/predictive-maintenance-mcp/actions/workflows/tests.yml/badge.svg)](https://github.com/LGDiMaggio/predictive-maintenance-mcp/actions/workflows/tests.yml)
 [![codecov](https://codecov.io/gh/LGDiMaggio/predictive-maintenance-mcp/branch/main/graph/badge.svg)](https://codecov.io/gh/LGDiMaggio/predictive-maintenance-mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![LGDiMaggio/predictive-maintenance-mcp MCP server](https://glama.ai/mcp/servers/LGDiMaggio/predictive-maintenance-mcp/badges/score.svg)](https://glama.ai/mcp/servers/LGDiMaggio/predictive-maintenance-mcp)
 
 **Give your AI assistant evidence-based vibration diagnostics — machinery fault detection, ISO-cited severity, and diagnostic reports built to support and accelerate expert decision-making.**
 
