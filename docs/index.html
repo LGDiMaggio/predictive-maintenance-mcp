@@ -5,20 +5,20 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
   <!-- Primary SEO -->
-  <title>Predictive Maintenance AI Agent — Open-Source MCP Server & Claude Plugin for Condition Monitoring</title>
-  <meta name="description" content="Open-source AI agent for predictive maintenance and condition monitoring. Analyze vibration data, detect bearing faults, and generate diagnostic reports via natural language — with Claude, ChatGPT, or Ollama. 37 MCP endpoints, privacy-first, runs locally.">
-  <meta name="keywords" content="predictive maintenance AI agent, condition monitoring AI agent, predictive maintenance MCP server, machine maintenance copilot, vibration analysis AI tool, bearing fault detection AI, predictive maintenance claude plugin, claude skills predictive maintenance, AI vibration diagnostics, open source predictive maintenance, machine health monitoring AI, MCP server, vibration analysis, bearing fault detection, ISO 20816 AI analysis, FFT analysis, envelope analysis, AI diagnostics, Industry 4.0, condition monitoring, Model Context Protocol, Claude Code plugin, machine learning condition monitoring, industrial AI agent, mcp tools predictive maintenance, predictive maintenance natural language, remaining useful life estimation, maintenance decision support AI, fault diagnosis AI assistant, industrial AI diagnostics">
+  <title>Build Your Predictive Maintenance AI Agent — Open-Source MCP Server & Claude Plugin</title>
+  <meta name="description" content="Build your own predictive maintenance AI agent: open-source MCP server and Claude plugin for condition monitoring. Analyze vibration data, detect bearing faults, and generate diagnostic reports via natural language — with Claude, ChatGPT, or Ollama. 37 MCP endpoints, privacy-first, runs locally.">
+  <meta name="keywords" content="predictive maintenance AI agent, build predictive maintenance agent, condition monitoring AI agent, predictive maintenance MCP server, machine maintenance copilot, vibration analysis AI tool, bearing fault detection AI, predictive maintenance claude plugin, claude skills predictive maintenance, AI vibration diagnostics, open source predictive maintenance, machine health monitoring AI, MCP server, vibration analysis, bearing fault detection, ISO 20816 AI analysis, FFT analysis, envelope analysis, AI diagnostics, Industry 4.0, condition monitoring, Model Context Protocol, Claude Code plugin, machine learning condition monitoring, industrial AI agent, mcp tools predictive maintenance, predictive maintenance natural language, remaining useful life estimation, maintenance decision support AI, fault diagnosis AI assistant, industrial AI diagnostics">
   <meta name="author" content="Luigi Gianpio Di Maggio">
   <meta name="robots" content="index, follow">
   <link rel="canonical" href="https://lgdimaggio.github.io/predictive-maintenance-mcp/">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 
   <!-- Open Graph -->
   <meta property="og:type" content="website">
-  <meta property="og:title" content="Predictive Maintenance AI Agent — Open-Source MCP Server for Condition Monitoring">
-  <meta property="og:description" content="AI agent for predictive maintenance & machine health monitoring. Analyze vibration data, detect bearing faults, assess severity via ISO 20816, and generate reports — all through natural-language conversation with Claude, ChatGPT, or Ollama. Open-source, privacy-first, 37 MCP endpoints.">
+  <meta property="og:title" content="Build Your Predictive Maintenance AI Agent — Open-Source MCP Server">
+  <meta property="og:description" content="Ask your machines what's wrong — with evidence, not guesses. Open-source MCP server and Claude plugin: analyze vibration data, detect bearing faults, assess severity via ISO 20816, and generate reports through natural language. Raw data never leaves your machine.">
   <meta property="og:url" content="https://lgdimaggio.github.io/predictive-maintenance-mcp/">
   <meta property="og:image" content="https://raw.githubusercontent.com/LGDiMaggio/predictive-maintenance-mcp/main/assets/predictive-maintenance-mcp_com.jpg">
   <meta property="og:image:width" content="1200">
@@ -29,7 +29,7 @@
 
   <!-- Twitter Card -->
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Predictive Maintenance AI Agent — Open-Source MCP Server & Claude Plugin">
+  <meta name="twitter:title" content="Build Your Predictive Maintenance AI Agent — Open-Source MCP Server & Claude Plugin">
   <meta name="twitter:description" content="AI-powered condition monitoring and vibration diagnostics. Detect bearing faults, assess machine health, generate reports — via natural language. Open-source, 37 MCP endpoints, runs locally.">
   <meta name="twitter:image" content="https://raw.githubusercontent.com/LGDiMaggio/predictive-maintenance-mcp/main/assets/predictive-maintenance-mcp_com.jpg">
   <meta name="twitter:image:alt" content="Predictive Maintenance AI Agent — MCP Server for vibration analysis and fault detection">
@@ -145,1215 +145,710 @@
 
   <style>
     :root {
-      --bg: #0a0c14;
-      --bg2: #0e1019;
-      --surface: #12141e;
-      --surface2: #181a26;
-      --surface3: #1e2030;
-      --text: #f0f2f8;
-      --text-secondary: #a0a8c0;
-      --text-dim: #636b80;
-      --accent: #6c8aff;
-      --accent-bright: #8da5ff;
-      --accent-deep: #4c6ef5;
-      --accent-glow: rgba(108,138,255,.15);
-      --green: #4ade80;
-      --green-dim: rgba(74,222,128,.12);
-      --purple: #c084fc;
-      --purple-dim: rgba(192,132,252,.12);
-      --amber: #fbbf24;
-      --amber-dim: rgba(251,191,36,.1);
-      --red: #f87171;
-      --red-dim: rgba(248,113,113,.1);
-      --cyan: #22d3ee;
-      --border: rgba(255,255,255,.06);
-      --border-hover: rgba(108,138,255,.3);
-      --radius: 16px;
-      --radius-sm: 10px;
-      --radius-xs: 6px;
+      --accent: #0d9488;
+      --accent-dark: #0f766e;
+      --bg: #f4f6f7;
+      --surface: #ffffff;
+      --ink: #141a1f;
+      --text: #39434c;
+      --muted: #57626d;
+      --faint: #6d7883;
+      --fainter: #7d868e;
+      --border: rgba(90,105,115,0.2);
+      --border-soft: rgba(90,105,115,0.14);
+      --green: #178a43;
+      --amber: #b45309;
+      --red: #dc2626;
+      --code-bg: #14181b;
     }
-
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: var(--bg); }
     html { scroll-behavior: smooth; }
-
     body {
-      font-family: 'Outfit', system-ui, -apple-system, sans-serif;
-      background: var(--bg);
+      font-family: 'IBM Plex Sans', sans-serif;
       color: var(--text);
-      line-height: 1.65;
-      -webkit-font-smoothing: antialiased;
-      overflow-x: hidden;
+      background-image: linear-gradient(rgba(90,105,115,0.045) 1px, transparent 1px), linear-gradient(90deg, rgba(90,105,115,0.045) 1px, transparent 1px);
+      background-size: 44px 44px;
+      min-height: 100vh;
     }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { color: var(--accent-dark); }
+    ::selection { background: #14b8a6; color: #062622; }
+    h1, h2, h3 { font-family: 'Space Grotesk', sans-serif; color: var(--ink); }
+    .mono { font-family: 'IBM Plex Mono', monospace; }
+    .container { max-width: 1180px; margin: 0 auto; padding: 0 40px; }
+    section { padding-bottom: 88px; }
+    .eyebrow { font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--accent); letter-spacing: 2px; }
+    .section-head { display: flex; flex-direction: column; gap: 8px; margin-bottom: 32px; }
+    .section-head h2 { font-size: 34px; font-weight: 700; margin: 0; }
+    .section-head p { font-size: 16px; color: var(--muted); margin: 0; max-width: 640px; line-height: 1.6; }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
+    @keyframes barpulse { 0%,100% { opacity: .85 } 50% { opacity: 1 } }
+    details summary::-webkit-details-marker { display: none; }
+    @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important } html { scroll-behavior: auto; } }
 
-    body::before {
-      content: '';
-      position: fixed; inset: 0;
-      background-image:
-        linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px);
-      background-size: 56px 56px;
-      pointer-events: none; z-index: 0;
-    }
-    body::after {
-      content: '';
-      position: fixed; inset: 0;
-      background: radial-gradient(ellipse at 50% 50%, transparent 40%, rgba(0,0,0,.35) 100%);
-      pointer-events: none; z-index: 0;
-    }
-
-    a { color: var(--accent-bright); text-decoration: none; transition: color .2s; }
-    a:hover { color: #b3c5ff; }
-    code { font-family: 'JetBrains Mono', monospace; font-size: .85em; }
-    img { max-width: 100%; height: auto; display: block; }
-
-    .container { max-width: 1320px; margin: 0 auto; padding: 0 2rem; position: relative; z-index: 1; }
-
-    /* Reveal */
-    .reveal {
-      opacity: 0; transform: translateY(28px);
-      transition: opacity .7s cubic-bezier(.16,1,.3,1), transform .7s cubic-bezier(.16,1,.3,1);
-    }
-    .reveal.visible { opacity: 1; transform: translateY(0); }
-
-    /* ===== Nav ===== */
+    /* Nav */
     nav {
-      position: fixed; top: 0; left: 0; right: 0; z-index: 200;
-      background: rgba(10,12,20,.75);
-      backdrop-filter: blur(20px) saturate(1.5);
-      -webkit-backdrop-filter: blur(20px) saturate(1.5);
-      border-bottom: 1px solid var(--border);
-      padding: .7rem 0;
+      position: sticky; top: 0; z-index: 50;
+      display: flex; align-items: center; justify-content: space-between; gap: 24px;
+      padding: 14px 40px;
+      background: rgba(248,250,250,0.85); backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border-soft);
     }
-    nav .container { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .5rem; }
-    nav .logo {
-      font-weight: 800; font-size: 1rem; color: var(--text);
-      display: flex; align-items: center; gap: .55rem; letter-spacing: -.02em;
+    .nav-brand {
+      font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 18px;
+      color: var(--ink); letter-spacing: 0.5px;
+      display: flex; align-items: center; gap: 10px;
     }
-    nav .logo-icon {
-      width: 32px; height: 32px;
-      background: linear-gradient(135deg, var(--accent-deep), var(--purple));
-      border-radius: 8px;
-      display: flex; align-items: center; justify-content: center;
-      font-size: .85rem;
-    }
-    nav ul { list-style: none; display: flex; gap: 1.3rem; align-items: center; flex-wrap: wrap; }
-    nav ul a { font-size: .92rem; font-weight: 500; color: var(--text-secondary); transition: color .2s; }
-    nav ul a:hover { color: var(--text); }
-    .nav-cta {
-      background: var(--accent-deep); color: #fff !important;
-      padding: .4rem 1rem; border-radius: 8px; font-weight: 700;
-      font-size: .82rem; transition: background .2s, transform .15s;
-    }
-    .nav-cta:hover { background: var(--accent); transform: translateY(-1px); color: #fff !important; }
+    .nav-brand:hover { color: var(--ink); }
+    .nav-dot { display: inline-block; width: 10px; height: 10px; background: var(--accent); border-radius: 2px; box-shadow: 0 0 12px var(--accent); }
+    .nav-links { display: flex; align-items: center; gap: 26px; font-size: 14px; }
+    .nav-links a { color: var(--muted); }
+    .nav-links a:hover { color: var(--ink); }
+    .nav-links a.nav-cta { background: var(--accent); color: #fff; padding: 8px 18px; border-radius: 6px; font-weight: 600; }
+    .nav-links a.nav-cta:hover { filter: brightness(1.15); color: #fff; }
 
-    /* ===== Hero ===== */
+    /* Hero */
     .hero {
-      position: relative; padding: 10rem 0 6rem; text-align: center; overflow: hidden;
+      max-width: 1180px; margin: 0 auto;
+      padding: 72px 40px 64px;
+      display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 56px; align-items: center;
     }
-    .hero::before {
-      content: ''; position: absolute; inset: 0;
-      background:
-        radial-gradient(ellipse 70% 50% at 50% -10%, rgba(34,211,238,.15), transparent 70%),
-        radial-gradient(ellipse 45% 35% at 65% 40%, rgba(99,102,241,.06), transparent);
-      animation: heroGlow 12s ease-in-out infinite alternate;
-    }
-    @keyframes heroGlow { 0%{opacity:.5;transform:scale(1)} 100%{opacity:1;transform:scale(1.03)} }
-
-    .hero .container { position: relative; z-index: 1; }
-    .hero-badge {
-      display: inline-flex; align-items: center; gap: .45rem;
-      background: rgba(108,138,255,.08); border: 1px solid rgba(108,138,255,.18);
-      border-radius: 999px; padding: .32rem 1rem;
-      font-size: .85rem; font-weight: 600; color: var(--accent-bright);
-      margin-bottom: 1.8rem;
-    }
-    .hero-badge .pulse {
-      width: 7px; height: 7px; border-radius: 50%; background: var(--green);
-      animation: pulse 2s ease-in-out infinite;
-    }
-    @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.4;transform:scale(1.6)} }
-
-    .hero h1 {
-      font-size: clamp(2.8rem, 6vw, 4.2rem);
-      font-weight: 900; line-height: 1.1; letter-spacing: -.045em;
-      max-width: 860px; margin: 0 auto 1.5rem;
-    }
-    .hero h1 .gradient-text {
-      background: linear-gradient(135deg, #e0f7fa 0%, #22d3ee 40%, #6366f1 100%);
-      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
-      background-size: 200% auto;
-      animation: gradShift 6s ease-in-out infinite alternate;
-    }
-    @keyframes gradShift { 0%{background-position:0% 50%} 100%{background-position:100% 50%} }
-
-    .hero .tagline {
-      font-size: 1.25rem; color: var(--text-secondary);
-      max-width: 660px; margin: 0 auto 2.5rem;
-      font-weight: 400; line-height: 1.75;
-    }
-    .hero .tagline strong { color: var(--text); font-weight: 600; }
-
-    .cta-row { display: flex; justify-content: center; gap: .85rem; flex-wrap: wrap; }
-    .btn {
-      display: inline-flex; align-items: center; gap: .5rem;
-      padding: .8rem 1.6rem; border-radius: var(--radius-sm);
-      font-weight: 700; font-size: .92rem;
-      transition: transform .15s, box-shadow .25s, background .2s;
-      border: none; cursor: pointer;
-    }
-    .btn:hover { transform: translateY(-2px); }
-    .btn-primary {
-      background: linear-gradient(135deg, var(--accent-deep), #7c5cfc);
-      color: #fff;
-      box-shadow: 0 4px 20px rgba(76,110,245,.35);
-    }
-    .btn-primary:hover { box-shadow: 0 8px 32px rgba(76,110,245,.45); color: #fff; }
-    .btn-ghost {
-      background: rgba(255,255,255,.04); color: var(--text);
-      border: 1px solid var(--border);
-    }
-    .btn-ghost:hover { background: rgba(255,255,255,.07); border-color: rgba(255,255,255,.12); color: var(--text); }
-
-    .install-box {
-      margin: 2.5rem auto 0; max-width: 460px;
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: var(--radius-sm); padding: .8rem 1.1rem;
-      display: flex; align-items: center; justify-content: space-between; gap: .6rem;
-      cursor: pointer; transition: border-color .2s, box-shadow .2s;
-    }
-    .install-box:hover { border-color: var(--border-hover); box-shadow: 0 0 20px var(--accent-glow); }
-    .install-box code { color: var(--accent-bright); font-weight: 500; white-space: nowrap; font-size: .95rem; }
-    .install-box code::before { content: '$ '; color: var(--green); }
-    .install-box .copy-btn {
-      background: rgba(255,255,255,.05); border: 1px solid var(--border);
-      border-radius: 6px; padding: .25rem .6rem; color: var(--text-dim);
-      font-size: .72rem; font-weight: 600; cursor: pointer;
-      transition: background .2s, color .2s; flex-shrink: 0; font-family: 'Outfit', sans-serif;
-    }
-    .install-box .copy-btn:hover { background: rgba(255,255,255,.1); color: var(--text); }
-
-    .badge-row { display: flex; justify-content: center; gap: .5rem; flex-wrap: wrap; margin-top: 2rem; }
-    .badge-row img { height: 20px; }
-
-    /* ===== Key Numbers ===== */
-    .numbers { padding: 3.5rem 0 1rem; }
-    .numbers-grid {
-      display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem;
-    }
-    .num-card {
-      text-align: center; padding: 1.5rem .75rem;
-      border-radius: var(--radius); background: var(--surface);
-      border: 1px solid var(--border); transition: border-color .3s, box-shadow .3s;
-    }
-    .num-card:hover { border-color: var(--border-hover); box-shadow: 0 0 30px var(--accent-glow); }
-    .num-val {
-      font-size: 2.5rem; font-weight: 900; letter-spacing: -.04em;
-      background: linear-gradient(135deg, var(--accent-bright), var(--green));
-      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
-    }
-    .num-label { font-size: .92rem; color: var(--text-secondary); margin-top: .2rem; font-weight: 500; }
-
-    /* ===== Generic Section ===== */
-    section { padding: 5rem 0; }
-    .section-header { text-align: center; margin-bottom: 3.5rem; }
-    .section-header .overline {
-      display: inline-block; font-size: .8rem; font-weight: 700;
-      text-transform: uppercase; letter-spacing: .15em;
-      color: var(--accent); margin-bottom: .75rem;
-    }
-    .section-header h2 {
-      font-size: clamp(1.9rem, 3.5vw, 2.6rem);
-      font-weight: 800; letter-spacing: -.035em; margin-bottom: .6rem;
-    }
-    .section-header p { color: var(--text-secondary); max-width: 620px; margin: 0 auto; font-size: 1.1rem; }
-
-    /* ===== Comparison (Tools vs No Tools) ===== */
-    .compare-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; max-width: 1000px; margin: 0 auto; }
-    .compare-card {
-      border-radius: var(--radius); padding: 2rem 1.75rem; position: relative; overflow: hidden;
-    }
-    .compare-card.bad {
-      background: var(--surface); border: 1px solid rgba(248,113,113,.15);
-    }
-    .compare-card.good {
-      background: var(--surface); border: 1px solid rgba(74,222,128,.2);
-    }
-    .compare-card .tag {
-      display: inline-flex; align-items: center; gap: .35rem;
-      font-size: .8rem; font-weight: 700; text-transform: uppercase; letter-spacing: .1em;
-      margin-bottom: 1rem; padding: .25rem .7rem; border-radius: 999px;
-    }
-    .compare-card.bad .tag { background: var(--red-dim); color: var(--red); }
-    .compare-card.good .tag { background: var(--green-dim); color: var(--green); }
-    .compare-card blockquote {
-      font-size: 1.05rem; line-height: 1.7; font-style: italic; color: var(--text-secondary);
-      border-left: 3px solid var(--border); padding-left: 1rem; margin: 0;
-    }
-    .compare-card.good blockquote { border-left-color: rgba(74,222,128,.3); color: var(--text); }
-    .compare-check {
-      margin-top: 1.2rem; display: flex; flex-direction: column; gap: .5rem;
-    }
-    .compare-check span {
-      font-size: .95rem; color: var(--text-secondary); display: flex; align-items: center; gap: .4rem;
-    }
-    .compare-check span .dot {
-      width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
-    }
-    .compare-card.bad .dot { background: var(--red); }
-    .compare-card.good .dot { background: var(--green); }
-    .compare-takeaway {
-      text-align: center; margin-top: 2rem;
-      font-size: 1.05rem; color: var(--text-secondary); font-weight: 500;
-    }
-    .compare-takeaway strong { color: var(--text); }
-
-    /* ===== Conversation examples ===== */
-    .convo-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.25rem; }
-    .convo-card {
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: var(--radius); padding: 1.75rem;
-      transition: border-color .3s, box-shadow .3s, transform .3s;
-    }
-    .convo-card:hover { border-color: var(--border-hover); box-shadow: 0 8px 36px var(--accent-glow); transform: translateY(-3px); }
-    .convo-prompt {
-      font-size: 1.05rem; font-weight: 600; color: var(--text);
-      margin-bottom: .7rem; display: flex; align-items: flex-start; gap: .55rem;
-    }
-    .convo-prompt .icon {
-      flex-shrink: 0; width: 26px; height: 26px; border-radius: 7px;
-      background: var(--accent-glow);
-      display: flex; align-items: center; justify-content: center;
-      font-size: .72rem; color: var(--accent); margin-top: .1rem;
-    }
-    .convo-response { font-size: .98rem; color: var(--text-secondary); line-height: 1.7; padding-left: 2.15rem; }
-
-    /* ===== Feature grid ===== */
-    .feat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.25rem; }
-    .feat-card {
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: var(--radius); padding: 1.75rem;
-      transition: border-color .3s, box-shadow .3s, transform .3s;
-      position: relative; overflow: hidden;
-    }
-    .feat-card::after {
-      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
-      background: linear-gradient(90deg, transparent, var(--accent), var(--purple), transparent);
-      opacity: 0; transition: opacity .3s;
-    }
-    .feat-card:hover { border-color: var(--border-hover); box-shadow: 0 8px 36px var(--accent-glow); transform: translateY(-3px); }
-    .feat-card:hover::after { opacity: 1; }
-    .feat-icon {
-      width: 44px; height: 44px; border-radius: 11px;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 1.25rem; margin-bottom: 1rem;
-    }
-    .feat-icon.blue { background: var(--accent-glow); border: 1px solid rgba(108,138,255,.12); }
-    .feat-icon.green { background: var(--green-dim); border: 1px solid rgba(74,222,128,.12); }
-    .feat-icon.purple { background: var(--purple-dim); border: 1px solid rgba(192,132,252,.12); }
-    .feat-icon.amber { background: var(--amber-dim); border: 1px solid rgba(251,191,36,.12); }
-    .feat-card h3 { font-size: 1.12rem; font-weight: 700; margin-bottom: .4rem; }
-    .feat-card p { font-size: .98rem; color: var(--text-secondary); line-height: 1.65; }
-
-    /* ===== How it works ===== */
-    .how-section { background: var(--bg2); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
-    .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2.5rem; position: relative; }
-    .steps::before {
-      content: ''; position: absolute; top: 32px; left: 16%; right: 16%;
-      height: 2px; background: linear-gradient(90deg, var(--accent-deep), var(--green));
-      opacity: .15;
-    }
-    .step { text-align: center; position: relative; }
-    .step-num {
-      width: 64px; height: 64px; border-radius: 50%;
-      display: inline-flex; align-items: center; justify-content: center;
-      font-size: 1.3rem; font-weight: 900;
-      background: linear-gradient(135deg, var(--accent-deep), var(--purple));
-      color: #fff; margin-bottom: 1.3rem;
-      box-shadow: 0 0 30px rgba(108,138,255,.2);
-      position: relative; z-index: 1;
-    }
-    .step h3 { font-size: 1.15rem; font-weight: 700; margin-bottom: .45rem; }
-    .step p { font-size: .98rem; color: var(--text-secondary); max-width: 300px; margin: 0 auto; }
-    .step code {
-      background: rgba(108,138,255,.1); padding: .15rem .45rem;
-      border-radius: 5px; color: var(--accent-bright); font-size: .78rem;
-    }
-
-    /* ===== Chat demo ===== */
-    .chat-demo {
-      max-width: 760px; margin: 0 auto;
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: var(--radius); overflow: hidden;
-    }
-    .chat-bar {
-      background: var(--surface2); padding: .65rem 1.1rem;
-      display: flex; align-items: center; gap: .6rem;
-      border-bottom: 1px solid var(--border);
-      font-size: .8rem; font-weight: 600; color: var(--text-dim);
-    }
-    .chat-dots { display: flex; gap: 6px; }
-    .chat-dots span { width: 11px; height: 11px; border-radius: 50%; }
-    .chat-dots span:nth-child(1) { background: #f87171; }
-    .chat-dots span:nth-child(2) { background: #fbbf24; }
-    .chat-dots span:nth-child(3) { background: #4ade80; }
-    .chat-body { padding: 1.3rem; display: flex; flex-direction: column; gap: .9rem; }
-    .chat-msg {
-      max-width: 88%; padding: .8rem 1.1rem;
-      border-radius: 14px; font-size: .98rem; line-height: 1.6;
-      animation: msgIn .5s ease both;
-    }
-    .chat-msg:nth-child(1) { animation-delay: .1s; }
-    .chat-msg:nth-child(2) { animation-delay: .3s; }
-    .chat-msg:nth-child(3) { animation-delay: .5s; }
-    .chat-msg:nth-child(4) { animation-delay: .7s; }
-    @keyframes msgIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
-    .chat-msg.user {
-      align-self: flex-end;
-      background: linear-gradient(135deg, var(--accent-deep), #6c5ce7);
-      color: #fff; border-bottom-right-radius: 4px;
-    }
-    .chat-msg.ai {
+    .hero-left { display: flex; flex-direction: column; gap: 22px; }
+    .hero-pill {
+      display: inline-block;
+      font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--accent);
+      border: 1px solid rgba(13,148,136,0.35); border-radius: 999px; padding: 6px 14px;
+      background: rgba(13,148,136,0.08);
       align-self: flex-start;
-      background: var(--surface2); border: 1px solid var(--border);
-      color: var(--text); border-bottom-left-radius: 4px;
     }
-    .chat-msg .sender {
-      font-size: .68rem; font-weight: 700; text-transform: uppercase;
-      letter-spacing: .06em; margin-bottom: .3rem; opacity: .55;
+    .hero h1 { font-size: 52px; line-height: 1.08; font-weight: 700; margin: 0; text-wrap: balance; }
+    .hero h1 .accent { color: var(--accent); }
+    .hero-tagline { font-size: 18px; line-height: 1.6; color: var(--muted); margin: 0; max-width: 520px; text-wrap: pretty; }
+    .cta-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+    .btn-primary { background: var(--accent); color: #fff; padding: 13px 26px; border-radius: 8px; font-weight: 600; font-size: 16px; }
+    .btn-primary:hover { filter: brightness(1.15); color: #fff; }
+    .btn-outline { border: 1px solid rgba(13,148,136,0.4); color: var(--text); padding: 13px 26px; border-radius: 8px; font-weight: 500; font-size: 16px; }
+    .btn-outline:hover { border-color: var(--accent); color: var(--ink); }
+    .btn-ghost { border: 1px solid rgba(90,105,115,0.3); color: var(--muted); padding: 13px 26px; border-radius: 8px; }
+    .btn-ghost:hover { color: var(--ink); border-color: var(--muted); }
+    .link-plain { color: var(--muted); font-size: 15px; }
+    .link-plain:hover { color: var(--ink); }
+    .install-box {
+      display: flex; align-items: center; gap: 10px;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+      padding: 12px 16px; max-width: 480px;
+    }
+    .install-box .prompt-sign { font-family: 'IBM Plex Mono', monospace; font-size: 14px; color: var(--green); }
+    .install-box code { font-family: 'IBM Plex Mono', monospace; font-size: 14px; color: #242c33; flex: 1; overflow-x: auto; white-space: nowrap; }
+    .copy-btn {
+      background: rgba(13,148,136,0.12); border: 1px solid rgba(13,148,136,0.3); color: var(--accent);
+      font-family: 'IBM Plex Mono', monospace; font-size: 12px; padding: 5px 12px; border-radius: 5px; cursor: pointer;
+      flex-shrink: 0;
+    }
+    .copy-btn:hover { background: rgba(13,148,136,0.22); }
+    .hero-meta { display: flex; gap: 14px; font-size: 12px; font-family: 'IBM Plex Mono', monospace; color: var(--faint); flex-wrap: wrap; }
+
+    /* Diagnosis card */
+    .diag-card {
+      background: linear-gradient(160deg, #ffffff, #eef1f2);
+      border: 1px solid rgba(90,105,115,0.25); border-radius: 14px; padding: 24px;
+      box-shadow: 0 24px 60px rgba(40,55,70,0.18);
+      display: flex; flex-direction: column; gap: 16px;
+    }
+    .diag-head { display: flex; align-items: center; justify-content: space-between; }
+    .diag-label { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--faint); letter-spacing: 1px; }
+    .diag-title { font-family: 'Space Grotesk', sans-serif; font-size: 17px; font-weight: 600; color: var(--ink); }
+    .diag-alert {
+      background: rgba(180,83,9,0.14); border: 1px solid rgba(180,83,9,0.45); color: var(--amber);
+      font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 600; padding: 5px 12px; border-radius: 999px;
+    }
+    .spectrum { display: flex; align-items: flex-end; gap: 3px; height: 64px; padding: 0 2px; }
+    .spectrum div { flex: 1; background: rgba(13,148,136,0.45); border-radius: 1px; animation: barpulse 3s ease-in-out infinite; }
+    .spectrum div.peak { background: var(--amber); }
+    .spectrum-axis { display: flex; justify-content: space-between; font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: var(--faint); }
+    .diag-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .diag-cell { background: rgba(90,105,115,0.06); border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; }
+    .diag-cell .k { font-size: 11px; color: var(--faint); }
+    .diag-cell .v { font-family: 'IBM Plex Mono', monospace; font-size: 15px; font-weight: 600; }
+    .diag-cell .v.small { font-size: 13px; font-weight: 400; color: #242c33; }
+    .diag-foot { display: flex; align-items: center; justify-content: space-between; border-top: 1px solid rgba(90,105,115,0.15); padding-top: 14px; }
+    .conf-pill {
+      background: rgba(23,138,67,0.12); border: 1px solid rgba(23,138,67,0.4); color: var(--green);
+      font-family: 'IBM Plex Mono', monospace; font-size: 11px; padding: 4px 10px; border-radius: 999px;
+    }
+    .diag-note { font-size: 11px; color: var(--fainter); text-align: center; }
+
+    /* Choose your path */
+    .paths-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+    .path-card { padding: 22px; display: flex; flex-direction: column; gap: 8px; color: inherit; }
+    .path-card:hover { border-color: var(--accent); color: inherit; }
+    .path-tag { font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 1px; }
+    .path-title { font-family: 'Space Grotesk', sans-serif; font-size: 18px; font-weight: 600; color: var(--ink); }
+    .path-desc { font-size: 14px; color: var(--muted); line-height: 1.5; }
+    .path-link { color: var(--accent); font-size: 14px; font-weight: 500; }
+
+    /* Why */
+    .why-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    .why-card { border-radius: 12px; padding: 26px; display: flex; flex-direction: column; gap: 14px; }
+    .why-card.bad { background: var(--surface); border: 1px solid rgba(220,38,38,0.25); }
+    .why-card.good { background: linear-gradient(160deg, #ffffff, #eef1f2); border: 1px solid rgba(23,138,67,0.3); }
+    .why-tag { font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 600; }
+    .why-card blockquote { margin: 0; font-size: 16px; line-height: 1.6; padding-left: 16px; }
+    .why-card.bad blockquote { color: var(--text); font-style: italic; border-left: 2px solid rgba(220,38,38,0.4); }
+    .why-card.good blockquote { color: #242c33; border-left: 2px solid rgba(23,138,67,0.5); }
+    .why-points { display: flex; flex-direction: column; gap: 8px; font-size: 14px; color: var(--muted); }
+    .why-footnote { font-size: 14px; color: var(--faint); margin: 20px 0 0; text-align: center; }
+
+    /* Steps */
+    .steps-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+    .step-card { padding: 24px; display: flex; flex-direction: column; gap: 12px; }
+    .step-num { font-family: 'Space Grotesk', sans-serif; font-size: 28px; font-weight: 700; color: var(--accent); }
+    .step-title { font-family: 'Space Grotesk', sans-serif; font-size: 18px; font-weight: 600; color: var(--ink); }
+    .step-card code { font-family: 'IBM Plex Mono', monospace; font-size: 13px; border-radius: 6px; padding: 10px 12px; display: block; background: var(--code-bg); overflow-x: auto; }
+    .step-card code.cmd { color: #5dd68a; }
+    .step-card code.ask { color: #e6ebef; }
+    .step-note { font-size: 14px; color: var(--muted); line-height: 1.5; }
+
+    /* Demo */
+    .demo-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    .demo-fig { margin: 0; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+    .demo-fig figcaption { display: flex; flex-direction: column; gap: 4px; }
+    .demo-fig .cap-title { font-family: 'Space Grotesk', sans-serif; font-size: 16px; font-weight: 600; color: var(--ink); }
+    .demo-fig .cap-sub { font-size: 13px; color: var(--muted); }
+    .demo-fig img { width: 100%; border-radius: 8px; border: 1px solid rgba(90,105,115,0.15); }
+
+    /* Capabilities */
+    .cap-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; }
+    .cap-card { padding: 24px; display: flex; flex-direction: column; gap: 12px; }
+    .cap-tag { font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 1.5px; }
+    .cap-title { font-family: 'Space Grotesk', sans-serif; font-size: 20px; font-weight: 600; color: var(--ink); }
+    .cap-desc { font-size: 14px; color: var(--muted); line-height: 1.6; }
+    .chips { display: flex; gap: 8px; flex-wrap: wrap; }
+    .chip {
+      font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--accent);
+      background: rgba(13,148,136,0.08); border: 1px solid rgba(13,148,136,0.22);
+      border-radius: 999px; padding: 4px 10px;
     }
 
-    /* ===== Plugin ===== */
-    .plugin-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.25rem; }
+    /* Architecture */
+    .arch-box { padding: 32px; display: flex; flex-direction: column; gap: 24px; }
+    .arch-flow { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; justify-content: center; }
+    .arch-node { border-radius: 8px; padding: 12px 18px; text-align: center; }
+    .arch-node .t { font-size: 14px; font-weight: 600; color: var(--ink); }
+    .arch-node .s { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--faint); }
+    .arch-node.neutral { background: rgba(90,105,115,0.08); border: 1px solid rgba(90,105,115,0.25); }
+    .arch-node.teal { background: rgba(13,148,136,0.08); border: 1px solid rgba(13,148,136,0.3); }
+    .arch-node.teal-strong { background: rgba(13,148,136,0.14); border: 1px solid var(--accent); }
+    .arch-node.teal-strong .s { color: var(--accent); }
+    .arch-node.green { background: rgba(23,138,67,0.08); border: 1px solid rgba(23,138,67,0.35); }
+    .arch-node.green .t { color: var(--green); }
+    .arch-arrow { color: #9aa3ab; font-size: 18px; }
+    .arch-facts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; border-top: 1px solid rgba(90,105,115,0.15); padding-top: 24px; }
+    .arch-fact { display: flex; flex-direction: column; gap: 4px; }
+    .arch-fact .t { font-size: 14px; font-weight: 600; color: var(--ink); }
+    .arch-fact .s { font-size: 13px; color: var(--muted); line-height: 1.5; }
 
-    /* ===== Architecture ===== */
-    .arch-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 2.5rem; align-items: start; }
-    .arch-diagram {
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: var(--radius); padding: 2rem;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: .85rem; line-height: 1.6; color: var(--text-dim);
-      white-space: pre; overflow-x: auto;
-    }
-    .arch-diagram .hl-b { color: var(--accent-bright); }
-    .arch-diagram .hl-g { color: var(--green); }
-    .arch-diagram .hl-p { color: var(--purple); }
-    .arch-diagram .hl-a { color: var(--amber); }
-    .principle-stack { display: flex; flex-direction: column; gap: .9rem; }
-    .prin-card {
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: var(--radius-sm); padding: 1.25rem 1.5rem;
-      transition: border-color .3s, box-shadow .3s;
-    }
-    .prin-card:hover { border-color: var(--border-hover); box-shadow: 0 4px 24px var(--accent-glow); }
-    .prin-card h4 { font-size: 1.02rem; font-weight: 700; margin-bottom: .3rem; display: flex; align-items: center; gap: .4rem; }
-    .prin-card p { font-size: .95rem; color: var(--text-secondary); line-height: 1.6; }
+    /* Plugin */
+    .plugin-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-bottom: 20px; }
+    .plugin-card { padding: 22px; display: flex; flex-direction: column; gap: 8px; }
+    .plugin-num { font-family: 'Space Grotesk', sans-serif; font-size: 32px; font-weight: 700; color: var(--accent); }
+    .plugin-title { font-size: 15px; font-weight: 600; color: var(--ink); }
+    .plugin-desc { font-size: 13px; color: var(--muted); line-height: 1.5; }
+    .plugin-desc strong { color: var(--text); }
+    .plugin-desc code { font-family: 'IBM Plex Mono', monospace; color: var(--accent); }
+    .plugin-install { max-width: 560px; }
+    .plugin-install code { font-size: 13px; }
 
-    /* ===== Audience ===== */
-    .audience-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.5rem; }
-    .aud-card {
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: var(--radius); padding: 2rem 1.75rem;
-      transition: border-color .3s, box-shadow .3s;
+    /* Dataset */
+    .dataset-box {
+      background: linear-gradient(160deg, #ffffff, #eef1f2);
+      border: 1px solid rgba(90,105,115,0.25); border-radius: 14px; padding: 32px;
+      display: grid; grid-template-columns: 1fr 1fr; gap: 32px; align-items: center;
     }
-    .aud-card:hover { border-color: var(--border-hover); box-shadow: 0 8px 36px var(--accent-glow); }
-    .aud-icon {
-      width: 50px; height: 50px; border-radius: 13px;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 1.5rem; margin-bottom: 1.1rem;
-    }
-    .aud-icon.eng { background: var(--amber-dim); border: 1px solid rgba(251,191,36,.18); }
-    .aud-icon.dev { background: var(--purple-dim); border: 1px solid rgba(192,132,252,.18); }
-    .aud-card h3 { font-size: 1.18rem; font-weight: 700; margin-bottom: .4rem; }
-    .aud-card > p { font-size: 1rem; color: var(--text-secondary); margin-bottom: 1rem; }
-    .aud-card ul { list-style: none; padding: 0; margin-bottom: 1.2rem; }
-    .aud-card ul li {
-      padding: .35rem 0; font-size: .98rem; color: var(--text-secondary);
-      display: flex; align-items: flex-start; gap: .5rem;
-    }
-    .aud-card ul li::before { content: '\2713'; color: var(--green); font-weight: 800; flex-shrink: 0; }
-    .btn-card {
-      display: inline-flex; align-items: center; gap: .35rem;
-      padding: .55rem 1.1rem; border-radius: 8px;
-      font-weight: 600; font-size: .95rem;
-      color: var(--accent-bright);
-      background: rgba(108,138,255,.06); border: 1px solid rgba(108,138,255,.15);
-      transition: background .2s, border-color .2s;
-    }
-    .btn-card:hover { background: rgba(108,138,255,.12); border-color: rgba(108,138,255,.3); color: var(--accent-bright); }
+    .dataset-left { display: flex; flex-direction: column; gap: 10px; }
+    .dataset-left h2 { font-size: 28px; font-weight: 700; margin: 0; }
+    .dataset-left p { font-size: 15px; color: var(--muted); margin: 0; line-height: 1.6; }
+    .dataset-left code { font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: #e6ebef; background: var(--code-bg); border-radius: 6px; padding: 10px 14px; display: block; overflow-x: auto; }
+    .dataset-attr { font-size: 12px; color: var(--fainter); margin: 0; }
+    .dataset-right { display: flex; flex-direction: column; gap: 10px; }
+    .dataset-row { display: flex; align-items: center; justify-content: space-between; border-radius: 8px; padding: 12px 16px; }
+    .dataset-row .name { font-size: 14px; color: #242c33; }
+    .dataset-row .badge { font-family: 'IBM Plex Mono', monospace; font-size: 11px; padding: 3px 10px; border-radius: 999px; }
+    .dataset-row.healthy { background: rgba(23,138,67,0.06); border: 1px solid rgba(23,138,67,0.25); }
+    .dataset-row.healthy .badge { background: rgba(23,138,67,0.14); color: var(--green); }
+    .dataset-row.inner { background: rgba(180,83,9,0.06); border: 1px solid rgba(180,83,9,0.25); }
+    .dataset-row.inner .badge { background: rgba(180,83,9,0.14); color: var(--amber); }
+    .dataset-row.outer { background: rgba(220,38,38,0.06); border: 1px solid rgba(220,38,38,0.25); }
+    .dataset-row.outer .badge { background: rgba(220,38,38,0.14); color: var(--red); }
 
-    /* ===== Sample Data ===== */
-    .sample-box {
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: var(--radius); padding: 2rem 2.5rem;
-      display: grid; grid-template-columns: 1fr auto; gap: 2rem; align-items: center;
+    /* FAQ */
+    .faq-wrap { max-width: 820px; margin: 0 auto; padding: 0 40px 88px; }
+    .faq-list { display: flex; flex-direction: column; gap: 10px; }
+    .faq-list details { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 0 20px; }
+    .faq-list summary {
+      font-size: 15px; font-weight: 600; color: #242c33; cursor: pointer; padding: 16px 0;
+      list-style: none; display: flex; justify-content: space-between; align-items: center; gap: 16px;
     }
-    .sample-box h3 { font-size: 1.25rem; font-weight: 700; margin-bottom: .5rem; }
-    .sample-box p { font-size: 1rem; color: var(--text-secondary); line-height: 1.65; }
-    .data-nums { display: flex; gap: 1.5rem; margin-top: .9rem; }
-    .data-num { text-align: center; }
-    .data-num .val {
-      font-size: 1.6rem; font-weight: 900;
-      background: linear-gradient(135deg, var(--accent-bright), var(--green));
-      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
-    }
-    .data-num .lbl { font-size: .72rem; color: var(--text-dim); font-weight: 500; }
-    .sample-try {
-      background: var(--bg); border: 1px solid var(--border);
-      border-radius: var(--radius-sm); padding: 1rem 1.25rem;
-      font-size: .95rem; color: var(--text-secondary); font-style: italic; max-width: 300px;
-    }
-    .sample-try code { color: var(--accent-bright); font-style: normal; font-size: .88rem; }
+    .faq-list summary .plus { color: var(--faint); font-family: 'IBM Plex Mono', monospace; }
+    .faq-list details[open] summary .plus { display: none; }
+    .faq-list p { font-size: 14px; color: var(--muted); line-height: 1.65; margin: 0; padding: 0 0 18px; }
+    .faq-disclaimer { font-size: 13px; color: var(--faint); margin: 24px 0 0; line-height: 1.6; border-left: 2px solid rgba(180,83,9,0.4); padding-left: 14px; }
 
-    /* ===== FAQ ===== */
-    .faq-list { max-width: 840px; margin: 0 auto; }
-    .faq-item {
-      border-bottom: 1px solid var(--border);
+    /* Final CTA */
+    .final-cta {
+      background: linear-gradient(160deg, #e9f2f0, #eef1f2);
+      border: 1px solid rgba(13,148,136,0.3); border-radius: 16px; padding: 56px 40px;
+      display: flex; flex-direction: column; align-items: center; gap: 20px; text-align: center;
     }
-    .faq-q {
-      width: 100%; background: none; border: none; color: var(--text);
-      padding: 1.25rem 0; text-align: left; cursor: pointer;
-      font-size: 1.1rem; font-weight: 600; font-family: 'Outfit', sans-serif;
-      display: flex; justify-content: space-between; align-items: center; gap: 1rem;
-    }
-    .faq-q:hover { color: var(--accent-bright); }
-    .faq-q::after {
-      content: '+'; font-size: 1.3rem; font-weight: 300; color: var(--text-dim);
-      transition: transform .3s; flex-shrink: 0;
-    }
-    .faq-item.open .faq-q::after { transform: rotate(45deg); }
-    .faq-a {
-      max-height: 0; overflow: hidden; transition: max-height .35s ease, padding .35s ease;
-      font-size: 1rem; color: var(--text-secondary); line-height: 1.7;
-    }
-    .faq-item.open .faq-a { max-height: 300px; padding-bottom: 1.25rem; }
+    .final-cta h2 { font-size: 36px; font-weight: 700; margin: 0; text-wrap: balance; }
+    .final-cta p { font-size: 16px; color: var(--muted); margin: 0; max-width: 520px; }
+    .final-cta .row { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
 
-    /* ===== Docs grid ===== */
-    .docs-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: .85rem; }
-    .doc-link {
-      display: flex; align-items: center; gap: .65rem;
-      padding: .9rem 1.1rem;
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: var(--radius-sm); transition: border-color .2s, box-shadow .2s, transform .15s;
-      color: var(--text); font-size: 1rem; font-weight: 500;
-    }
-    .doc-link:hover { border-color: var(--border-hover); box-shadow: 0 4px 20px var(--accent-glow); transform: translateY(-1px); color: var(--text); }
-    .doc-link .doc-icon {
-      width: 34px; height: 34px; border-radius: 9px;
-      display: flex; align-items: center; justify-content: center;
-      font-size: .95rem; background: rgba(108,138,255,.08); flex-shrink: 0;
-    }
-    .doc-link .doc-for { font-size: .72rem; color: var(--text-dim); font-weight: 400; display: block; margin-top: .1rem; }
-
-    /* ===== Related ===== */
-    .related-card {
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: var(--radius); padding: 1.75rem 2rem;
-      display: flex; gap: 1.5rem; align-items: center;
-      max-width: 800px; margin: 0 auto;
-      transition: border-color .3s, box-shadow .3s;
-    }
-    .related-card:hover { border-color: var(--border-hover); box-shadow: 0 6px 32px var(--accent-glow); }
-    .related-icon {
-      width: 56px; height: 56px; border-radius: 14px;
-      background: var(--green-dim); border: 1px solid rgba(74,222,128,.15);
-      display: flex; align-items: center; justify-content: center;
-      font-size: 1.5rem; flex-shrink: 0;
-    }
-    .related-card h3 { font-size: 1.1rem; font-weight: 700; margin-bottom: .25rem; }
-    .related-card p { font-size: .98rem; color: var(--text-secondary); line-height: 1.6; }
-
-    /* ===== Citation ===== */
-    .cite-box {
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: var(--radius-sm); padding: 1.3rem 1.5rem;
-      max-width: 540px; margin: 0 auto;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: .82rem; color: var(--text-secondary); line-height: 1.65;
-      position: relative; overflow: hidden;
-    }
-    .cite-box .copy-cite-btn {
-      position: absolute; top: .75rem; right: .75rem;
-      background: rgba(255,255,255,.05); border: 1px solid var(--border);
-      border-radius: 6px; padding: .22rem .55rem; color: var(--text-dim);
-      font-size: .68rem; font-weight: 600; cursor: pointer;
-      transition: background .2s, color .2s; font-family: 'Outfit', sans-serif;
-    }
-    .cite-box .copy-cite-btn:hover { background: rgba(255,255,255,.1); color: var(--text); }
-
-    /* ===== Footer ===== */
+    /* Footer */
     footer {
-      border-top: 1px solid var(--border); padding: 2.5rem 0; text-align: center;
+      border-top: 1px solid var(--border-soft); padding: 40px;
+      max-width: 1180px; margin: 0 auto;
+      display: flex; flex-direction: column; gap: 20px;
     }
-    .footer-links { display: flex; justify-content: center; gap: 1.3rem; flex-wrap: wrap; margin-bottom: .8rem; }
-    .footer-links a { color: var(--text-dim); font-size: .92rem; font-weight: 500; }
-    .footer-links a:hover { color: var(--text); }
-    footer .copy { color: var(--text-dim); font-size: .85rem; }
+    .footer-links { display: flex; gap: 24px; flex-wrap: wrap; font-size: 14px; }
+    .footer-links a { color: var(--muted); }
+    .footer-links a:hover { color: var(--ink); }
+    .footer-note { font-size: 13px; color: var(--fainter); }
 
-    /* ===== Responsive ===== */
-    @media (max-width: 900px) {
-      .feat-grid { grid-template-columns: repeat(2, 1fr); }
-      .plugin-grid { grid-template-columns: 1fr; }
-      .arch-layout { grid-template-columns: 1fr; }
-    }
-    @media (max-width: 768px) {
-      .hero { padding: 8rem 0 4rem; }
-      .numbers-grid { grid-template-columns: repeat(2, 1fr); }
-      .steps { grid-template-columns: 1fr; gap: 1.5rem; }
-      .steps::before { display: none; }
-      .convo-grid { grid-template-columns: 1fr; }
-      .compare-grid { grid-template-columns: 1fr; }
-      .audience-grid { grid-template-columns: 1fr; }
-      .sample-box { grid-template-columns: 1fr; }
-    }
-    @media (max-width: 480px) {
-      .numbers-grid { grid-template-columns: repeat(2, 1fr); }
-      .feat-grid { grid-template-columns: 1fr; }
-      .hero h1 { font-size: 1.8rem; }
+    /* Responsive */
+    @media (max-width: 980px) {
+      .hero { grid-template-columns: 1fr; padding: 48px 24px 40px; gap: 40px; }
+      .hero h1 { font-size: 38px; }
+      .container { padding: 0 24px; }
+      nav { padding: 12px 20px; }
+      .nav-links a:not(.nav-cta):not(.nav-gh) { display: none; }
+      .paths-grid, .steps-grid, .plugin-grid, .why-grid, .demo-grid, .cap-grid, .arch-facts { grid-template-columns: 1fr; }
+      .dataset-box { grid-template-columns: 1fr; padding: 24px; }
+      .faq-wrap { padding: 0 24px 64px; }
+      section { padding-bottom: 56px; }
+      .final-cta h2 { font-size: 28px; }
     }
   </style>
 </head>
 <body>
 
-<!-- Nav -->
+<!-- NAV -->
 <nav>
-  <div class="container">
-    <a href="#" class="logo"><div class="logo-icon">&#x1F3ED;</div>PM-MCP</a>
-    <ul>
-      <li><a href="#why">Why</a></li>
-      <li><a href="#capabilities">Capabilities</a></li>
-      <li><a href="#how-it-works">How It Works</a></li>
-      <li><a href="#see-it">Demo</a></li>
-      <li><a href="#features">Features</a></li>
-      <li><a href="#docs">Docs</a></li>
-      <li><a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp" class="nav-cta" target="_blank" rel="noopener">GitHub &#x2197;</a></li>
-    </ul>
+  <a href="#top" class="nav-brand"><span class="nav-dot"></span>PM-MCP</a>
+  <div class="nav-links">
+    <a href="#build">Build</a>
+    <a href="#why">Why</a>
+    <a href="#demo">Demo</a>
+    <a href="#capabilities">Capabilities</a>
+    <a href="#plugin">Plugin</a>
+    <a href="#docs">Docs</a>
+    <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp" class="nav-gh" target="_blank" rel="noopener">GitHub ↗</a>
+    <a href="#install" class="nav-cta">Install</a>
   </div>
 </nav>
 
-<!-- Hero -->
-<header class="hero">
-  <div class="container">
-    <div class="hero-badge"><span class="pulse"></span>Open-source &middot; runs on your machine &middot; MIT licensed</div>
-
-    <h1>Ask Your Machines<br><span class="gradient-text">How They're Feeling</span></h1>
-
-    <p class="tagline">
-      An AI copilot for maintenance teams. Upload vibration data, ask questions in plain language,
-      get <strong>clear diagnoses</strong>, <strong>risk levels</strong>, and <strong>actionable reports</strong> &mdash; without writing a single line of code.
-    </p>
-
+<!-- HERO -->
+<header id="top" class="hero">
+  <div class="hero-left">
+    <span class="hero-pill">Open-source · local-first · MCP server + Claude plugin</span>
+    <h1>Ask your machines what's wrong. With <span class="accent">evidence</span>, not guesses.</h1>
+    <p class="hero-tagline">Analyze vibration data, detect likely bearing faults, classify risk, and generate maintenance reports through natural-language AI workflows. Raw data never leaves your machine.</p>
     <div class="cta-row">
-      <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp" class="btn btn-primary" target="_blank" rel="noopener">&#9733; Star on GitHub</a>
-      <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp/blob/main/INSTALL.md" class="btn btn-ghost" target="_blank" rel="noopener">Quick Start &rarr;</a>
+      <a href="#install" class="btn-primary">Install in 5 minutes</a>
+      <a href="#demo" class="btn-outline">See example diagnosis</a>
+      <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp" class="link-plain" target="_blank" rel="noopener">★ Star on GitHub</a>
     </div>
-
-    <div class="install-box" id="installBox" title="Click to copy">
-      <code>pip install predictive-maintenance-mcp</code>
-      <button class="copy-btn" id="copyBtn">Copy</button>
+    <div class="install-box">
+      <span class="prompt-sign">$</span>
+      <code id="pipCmd">pip install predictive-maintenance-mcp</code>
+      <button class="copy-btn" data-copy="pip install predictive-maintenance-mcp">copy</button>
     </div>
-
-    <div class="badge-row">
-      <a href="https://pypi.org/project/predictive-maintenance-mcp/" target="_blank" rel="noopener"><img alt="PyPI version" src="https://img.shields.io/pypi/v/predictive-maintenance-mcp?style=flat-square&color=4c6ef5" loading="lazy"></a>
-      <a href="https://doi.org/10.5281/zenodo.17611542" target="_blank" rel="noopener"><img alt="DOI" src="https://img.shields.io/badge/DOI-10.5281%2Fzenodo.17611542-4c6ef5?style=flat-square" loading="lazy"></a>
-      <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp/actions/workflows/tests.yml" target="_blank" rel="noopener"><img alt="Tests" src="https://img.shields.io/github/actions/workflow/status/LGDiMaggio/predictive-maintenance-mcp/tests.yml?label=tests&style=flat-square" loading="lazy"></a>
-      <a href="https://codecov.io/gh/LGDiMaggio/predictive-maintenance-mcp" target="_blank" rel="noopener"><img alt="Coverage" src="https://img.shields.io/codecov/c/github/LGDiMaggio/predictive-maintenance-mcp?style=flat-square" loading="lazy"></a>
-      <img alt="License MIT" src="https://img.shields.io/badge/license-MIT-4ade80?style=flat-square" loading="lazy">
-      <img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11+-4c6ef5?style=flat-square" loading="lazy">
+    <div class="hero-meta">
+      <span>MIT license</span><span>·</span><span>Python 3.11+</span><span>·</span><a href="https://pypi.org/project/predictive-maintenance-mcp/" class="link-plain" style="font-size:12px" target="_blank" rel="noopener">PyPI</a><span>·</span><a href="https://doi.org/10.5281/zenodo.17611542" class="link-plain" style="font-size:12px" target="_blank" rel="noopener">DOI 10.5281/zenodo.17611542</a>
     </div>
   </div>
+
+  <!-- Diagnosis card -->
+  <aside class="diag-card" aria-label="Example diagnosis output">
+    <div class="diag-head">
+      <div style="display:flex;flex-direction:column;gap:2px;">
+        <span class="diag-label">DIAGNOSIS</span>
+        <span class="diag-title">Pump DE bearing</span>
+      </div>
+      <span class="diag-alert">● ALERT</span>
+    </div>
+    <div class="spectrum" aria-hidden="true">
+      <div style="height:12px"></div><div style="height:18px"></div><div style="height:10px"></div><div style="height:26px"></div><div style="height:14px"></div><div style="height:34px"></div><div style="height:20px"></div><div style="height:15px"></div><div class="peak" style="height:58px"></div><div style="height:22px"></div><div style="height:11px"></div><div style="height:30px"></div><div style="height:16px"></div><div style="height:42px"></div><div style="height:13px"></div><div style="height:24px"></div><div style="height:17px"></div><div style="height:10px"></div><div style="height:28px"></div><div style="height:12px"></div><div style="height:20px"></div><div style="height:9px"></div><div style="height:15px"></div><div style="height:11px"></div>
+    </div>
+    <div class="spectrum-axis">
+      <span>0 Hz</span><span style="color:var(--amber);">▲ 89.4 Hz</span><span>500 Hz</span>
+    </div>
+    <div class="diag-grid">
+      <div class="diag-cell"><span class="k">RMS velocity</span><span class="v" style="color:var(--amber);">4.2 mm/s</span></div>
+      <div class="diag-cell"><span class="k">ISO 20816 zone</span><span class="v" style="color:var(--amber);">C (Alert)</span></div>
+      <div class="diag-cell"><span class="k">Fault signature</span><span class="v small">Outer-race wear</span></div>
+      <div class="diag-cell"><span class="k">Expected / measured</span><span class="v small">89.8 / 89.4 Hz</span></div>
+    </div>
+    <div class="diag-foot">
+      <span style="font-size:13px;color:var(--text);">→ Inspect within 24 h</span>
+      <span class="conf-pill">confidence: high</span>
+    </div>
+    <span class="diag-note">Example output, computed locally by MCP diagnostic tools</span>
+  </aside>
 </header>
 
-<!-- Key Numbers -->
-<section class="numbers reveal">
+<!-- BUILD YOUR AGENT / CHOOSE YOUR PATH -->
+<section id="build">
   <div class="container">
-    <div class="numbers-grid">
-      <div class="num-card">
-        <div class="num-val" data-target="37">0</div>
-        <div class="num-label">MCP Endpoints</div>
-      </div>
-      <div class="num-card">
-        <div class="num-val" data-target="8">0</div>
-        <div class="num-label">Diagnostic Skills</div>
-      </div>
-      <div class="num-card">
-        <div class="num-val" data-target="85">0</div>
-        <div class="num-label">%+ Test Coverage (CI Minimum)</div>
-      </div>
-      <div class="num-card">
-        <div class="num-val">100%</div>
-        <div class="num-label">Local Processing</div>
-      </div>
+    <div class="section-head">
+      <span class="eyebrow">BUILD YOUR AGENT</span>
+      <h2>Build your predictive maintenance AI agent</h2>
+      <p>An MCP server, Claude Code skills, and workflow agents you assemble around the AI client you already use. Choose your path.</p>
+    </div>
+    <div class="paths-grid">
+      <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp/blob/main/docs/QUICKSTART_ENGINEER.md" class="card path-card" target="_blank" rel="noopener">
+        <span class="path-tag" style="color:var(--green);">PATH A</span>
+        <span class="path-title">I maintain machines</span>
+        <span class="path-desc">Screen machine health by asking questions. No code, no signal-processing background needed.</span>
+        <span class="path-link">Engineer quickstart →</span>
+      </a>
+      <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp/blob/main/docs/QUICKSTART_DEVELOPER.md" class="card path-card" target="_blank" rel="noopener">
+        <span class="path-tag" style="color:var(--accent);">PATH B</span>
+        <span class="path-title">I build AI tools</span>
+        <span class="path-desc">A production-grade MCP reference: 37 endpoints, plugin architecture, real industrial pipeline.</span>
+        <span class="path-link">Developer quickstart →</span>
+      </a>
+      <a href="#plugin" class="card path-card">
+        <span class="path-tag" style="color:var(--amber);">PATH C</span>
+        <span class="path-title">I use Claude Code</span>
+        <span class="path-desc">8 domain skills, 2 workflow agents, 3 slash commands: repeatable diagnostics in your editor.</span>
+        <span class="path-link">Plugin install →</span>
+      </a>
     </div>
   </div>
 </section>
 
-<!-- Why: Tools vs No Tools -->
+<!-- WHY TOOLS MATTER -->
 <section id="why">
   <div class="container">
-    <div class="section-header reveal">
-      <span class="overline">Why This Exists</span>
-      <h2>Tools Turn Guesses into Evidence</h2>
-      <p>Without dedicated diagnostic tools, an AI can only speculate. With them, it runs a real analysis pipeline and delivers measured, repeatable answers.</p>
+    <div class="section-head">
+      <span class="eyebrow">WHY THIS EXISTS</span>
+      <h2>Tools turn guesses into evidence</h2>
+      <p>Same AI, different outcomes. Without diagnostic tools an LLM can only speculate. With them, it runs a real signal-processing pipeline and answers with measured values.</p>
     </div>
-
-    <div class="compare-grid reveal">
-      <div class="compare-card bad">
-        <div class="tag">&#x2718; Plain LLM &mdash; No Tools</div>
-        <blockquote>&ldquo;It might be a bearing fault&hellip; maybe check the alignment? I&rsquo;d suggest monitoring it.&rdquo;</blockquote>
-        <div class="compare-check">
-          <span><span class="dot"></span>Text-only, no real data</span>
-          <span><span class="dot"></span>No measurements or frequencies</span>
-          <span><span class="dot"></span>Not repeatable across operators</span>
+    <div class="why-grid">
+      <div class="why-card bad">
+        <span class="why-tag" style="color:var(--red);">✕ PLAIN LLM, NO TOOLS</span>
+        <blockquote>"It might be a bearing fault… maybe check the alignment? I'd suggest monitoring it."</blockquote>
+        <div class="why-points">
+          <span>· Text-only: never touched your data</span>
+          <span>· No measurements, no frequencies</span>
+          <span>· Not repeatable across operators</span>
         </div>
       </div>
-      <div class="compare-card good">
-        <div class="tag">&#x2714; With MCP Tools</div>
-        <blockquote>&ldquo;Outer-race bearing wear detected at 89.4&nbsp;Hz (expected 89.8&nbsp;Hz). Vibration: 4.2&nbsp;mm/s &mdash; <strong>alert zone</strong>. Recommend inspection within 24&nbsp;h.&rdquo;</blockquote>
-        <div class="compare-check">
-          <span><span class="dot"></span>Real sensor data processed locally</span>
-          <span><span class="dot"></span>Measured frequencies and severity</span>
-          <span><span class="dot"></span>Consistent, auditable results</span>
+      <div class="why-card good">
+        <span class="why-tag" style="color:var(--green);">✓ WITH MCP DIAGNOSTIC TOOLS</span>
+        <blockquote>"Outer-race bearing wear detected at 89.4 Hz (expected 89.8 Hz). Vibration: 4.2 mm/s, alert zone. Recommend inspection within 24 h."</blockquote>
+        <div class="why-points">
+          <span>· Real sensor data, processed locally</span>
+          <span>· Measured frequencies and ISO severity</span>
+          <span>· Consistent, auditable results</span>
         </div>
       </div>
     </div>
-    <p class="compare-takeaway reveal"><strong>Same AI, different outcomes.</strong> The tools make the difference.</p>
+    <p class="why-footnote">Raw waveforms stay on your machine: only computed summaries (severity scores, fault classes) reach the model.</p>
   </div>
 </section>
 
-<!-- What Can It Do -->
-<section id="capabilities">
+<!-- THREE-STEP WORKFLOW -->
+<section id="install">
   <div class="container">
-    <div class="section-header reveal">
-      <span class="overline">What Can You Do With It</span>
-      <h2>Talk to Your Data, Get Answers You Can Act On</h2>
-      <p>The assistant runs the full analysis pipeline on your machine and explains results in language your team understands.</p>
+    <div class="section-head">
+      <span class="eyebrow">GET STARTED</span>
+      <h2>From install to first diagnosis in 5 minutes</h2>
     </div>
-
-    <div class="convo-grid">
-      <div class="convo-card reveal">
-        <div class="convo-prompt"><span class="icon">&#x1F4AC;</span>&ldquo;Is this bearing healthy?&rdquo;</div>
-        <div class="convo-response">Loads your data, checks fault patterns, estimates severity, and returns a clear health verdict with supporting evidence.</div>
+    <div class="steps-grid">
+      <div class="card step-card">
+        <span class="step-num">1</span>
+        <span class="step-title">Install</span>
+        <code class="cmd">pip install predictive-maintenance-mcp</code>
+        <span class="step-note">Then connect to Claude Desktop, VS Code, or any MCP client. <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp/blob/main/INSTALL.md" target="_blank" rel="noopener">Full setup guide →</a></span>
       </div>
-      <div class="convo-card reveal">
-        <div class="convo-prompt"><span class="icon">&#x1F4AC;</span>&ldquo;Generate a report for my supervisor&rdquo;</div>
-        <div class="convo-response">Creates a manager-friendly HTML report with key charts, risk level, findings summary, and recommended next actions.</div>
+      <div class="card step-card">
+        <span class="step-num">2</span>
+        <span class="step-title">Ask</span>
+        <code class="ask">"Load OuterRaceFault_1.csv and check if the bearing is healthy."</code>
+        <span class="step-note">Sample bearing data is included in the <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp" target="_blank" rel="noopener">repository</a> — clone it and try a diagnosis with no sensors connected.</span>
       </div>
-      <div class="convo-card reveal">
-        <div class="convo-prompt"><span class="icon">&#x1F4AC;</span>&ldquo;Use the pump manual to diagnose this signal&rdquo;</div>
-        <div class="convo-response">Reads equipment documentation and bearing catalog specs, then matches expected fault signatures against your measured data.</div>
-      </div>
-      <div class="convo-card reveal">
-        <div class="convo-prompt"><span class="icon">&#x1F4AC;</span>&ldquo;Learn what &lsquo;normal&rsquo; looks like for these machines&rdquo;</div>
-        <div class="convo-response">Trains on healthy baseline runs and flags unusual patterns in future signals &mdash; before they become failures.</div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- How It Works -->
-<section id="how-it-works" class="how-section">
-  <div class="container">
-    <div class="section-header reveal">
-      <span class="overline">Get Started</span>
-      <h2>From Install to Insight in Five Minutes</h2>
-    </div>
-
-    <div class="steps reveal">
-      <div class="step">
-        <div class="step-num">1</div>
-        <h3>Install</h3>
-        <p><code>pip install predictive-maintenance-mcp</code> &mdash; connect to Claude Desktop, VS&nbsp;Code, or any MCP&nbsp;client.</p>
-      </div>
-      <div class="step">
-        <div class="step-num">2</div>
-        <h3>Ask</h3>
-        <p>&ldquo;Load OuterRaceFault_1.csv and check if the bearing is healthy.&rdquo;</p>
-      </div>
-      <div class="step">
-        <div class="step-num">3</div>
-        <h3>Act</h3>
-        <p>Get a clear diagnosis, confidence signals, risk classification, and recommended next steps.</p>
+      <div class="card step-card">
+        <span class="step-num">3</span>
+        <span class="step-title">Act</span>
+        <span class="step-note">Get a diagnosis with measured evidence, an ISO 20816 risk class, confidence level, and a shareable HTML report for your team.</span>
       </div>
     </div>
   </div>
 </section>
 
-<!-- Chat Demo -->
+<!-- DEMO -->
 <section id="demo">
   <div class="container">
-    <div class="section-header reveal">
-      <span class="overline">Live Preview</span>
-      <h2>What a Conversation Looks Like</h2>
+    <div class="section-head">
+      <span class="eyebrow">SEE IT IN ACTION</span>
+      <h2>Real workflows, not marketing slides</h2>
     </div>
-
-    <div class="chat-demo reveal">
-      <div class="chat-bar">
-        <div class="chat-dots"><span></span><span></span><span></span></div>
-        Claude Desktop &mdash; PM-MCP Connected
-      </div>
-      <div class="chat-body">
-        <div class="chat-msg user"><div class="sender">You</div>Is this pump safe to run for the next shift?</div>
-        <div class="chat-msg ai"><div class="sender">Assistant</div>I ran a vibration severity assessment on the latest data. The RMS velocity is <strong>4.2&nbsp;mm/s</strong>, placing this pump in the <strong>Alert zone</strong>. I recommend planning an inspection within 24&nbsp;hours and reducing load if possible.</div>
-        <div class="chat-msg user"><div class="sender">You</div>What's the most likely fault? Create a report for my supervisor.</div>
-        <div class="chat-msg ai"><div class="sender">Assistant</div>The fault signature is consistent with <strong>outer-race bearing wear</strong> on the drive-end side. I&rsquo;ve generated an HTML report with key charts and a recommended action plan &mdash; saved to <code>reports/</code>.</div>
-      </div>
+    <div class="demo-grid">
+      <figure class="card demo-fig">
+        <figcaption>
+          <span class="cap-title">Claude Desktop: conversational diagnostics</span>
+          <span class="cap-sub">Load signal → spectral analysis → fault detection → severity → report</span>
+        </figcaption>
+        <img src="https://raw.githubusercontent.com/LGDiMaggio/predictive-maintenance-mcp/main/assets/claude_gif.gif" alt="Animated demo: a full diagnostic conversation in Claude Desktop, from loading a vibration signal to generating a severity report" loading="lazy">
+      </figure>
+      <figure class="card demo-fig">
+        <figcaption>
+          <span class="cap-title">Claude Code plugin: repeatable workflows</span>
+          <span class="cap-sub">Domain skills activate automatically · slash commands for quick checks</span>
+        </figcaption>
+        <img src="https://raw.githubusercontent.com/LGDiMaggio/predictive-maintenance-mcp/main/assets/plugin.gif" alt="Animated demo: Claude Code plugin running diagnostic skills and slash commands on vibration data" loading="lazy">
+      </figure>
     </div>
   </div>
 </section>
 
-<!-- See It in Action -->
-<section id="see-it">
+<!-- CAPABILITIES BY OUTCOME -->
+<section id="capabilities">
   <div class="container">
-    <div class="section-header reveal">
-      <span class="overline">See It in Action</span>
-      <h2>Real Workflows, Not Marketing Slides</h2>
-      <p>Watch the full diagnostic flow &mdash; from raw signal to professional report &mdash; in Claude Desktop and Claude Code.</p>
+    <div class="section-head">
+      <span class="eyebrow">CAPABILITIES</span>
+      <h2>Grouped by what you get done</h2>
     </div>
-
-    <div class="compare-grid reveal">
-      <div style="text-align:center">
-        <h3 style="font-size:1rem;font-weight:700;margin-bottom:.8rem">&#x1F4AC; Claude Desktop</h3>
-        <img src="https://raw.githubusercontent.com/LGDiMaggio/predictive-maintenance-mcp/main/assets/claude_gif.gif" alt="Predictive Maintenance MCP — diagnostic workflow in Claude Desktop" style="border-radius:var(--radius);border:1px solid var(--border);width:100%;" loading="lazy">
-        <p style="font-size:.82rem;color:var(--text-secondary);margin-top:.6rem">Load signal &rarr; spectral analysis &rarr; fault detection &rarr; severity assessment &rarr; report</p>
+    <div class="cap-grid">
+      <div class="card cap-card">
+        <span class="cap-tag" style="color:#3b5bdb;">DIAGNOSE</span>
+        <span class="cap-title">Find the fault</span>
+        <span class="cap-desc">Decompose signals into frequency components, detect impact patterns from early bearing or gear wear, and match measured peaks against expected fault signatures.</span>
+        <div class="chips">
+          <span class="chip">FFT + peak detection</span>
+          <span class="chip">Envelope analysis</span>
+          <span class="chip">Bearing &amp; gear signatures</span>
+          <span class="chip">Manual-aware (RAG)</span>
+        </div>
       </div>
-      <div style="text-align:center">
-        <h3 style="font-size:1rem;font-weight:700;margin-bottom:.8rem">&#x1F50C; Claude Code Plugin</h3>
-        <img src="https://raw.githubusercontent.com/LGDiMaggio/predictive-maintenance-mcp/main/assets/plugin.gif" alt="Claude Code Plugin — skills and slash commands in action" style="border-radius:var(--radius);border:1px solid var(--border);width:100%;" loading="lazy">
-        <p style="font-size:.82rem;color:var(--text-secondary);margin-top:.6rem">Domain skills activate automatically &middot; slash commands for quick diagnostics</p>
+      <div class="card cap-card">
+        <span class="cap-tag" style="color:var(--amber);">ASSESS RISK</span>
+        <span class="cap-title">Know how urgent it is</span>
+        <span class="cap-desc">Automatic severity zones per ISO 20816 and ML anomaly scores trained on your healthy baselines, so the team knows what needs attention now and what can wait.</span>
+        <div class="chips">
+          <span class="chip">ISO 20816 zones</span>
+          <span class="chip">Anomaly detection</span>
+          <span class="chip">RUL estimation</span>
+        </div>
       </div>
-    </div>
-  </div>
-</section>
-
-<!-- Features -->
-<section id="features">
-  <div class="container">
-    <div class="section-header reveal">
-      <span class="overline">Capabilities</span>
-      <h2>Everything You Need for Machine Diagnostics</h2>
-      <p>From raw vibration files to maintenance decisions &mdash; all running locally on your infrastructure.</p>
-    </div>
-
-    <div class="feat-grid">
-      <div class="feat-card reveal">
-        <div class="feat-icon blue">&#x1F50D;</div>
-        <h3>Frequency Analysis</h3>
-        <p>Decompose signals into frequency components with automatic peak detection, harmonic identification, and clear visualizations.</p>
+      <div class="card cap-card">
+        <span class="cap-tag" style="color:var(--green);">DECIDE</span>
+        <span class="cap-title">Act with confidence</span>
+        <span class="cap-desc">Evidence-based recommendations with confidence levels, plus HTML and Word reports designed for engineers, operators, and management. Every claim cites its source data.</span>
+        <div class="chips">
+          <span class="chip">Recommendations</span>
+          <span class="chip">Confidence levels</span>
+          <span class="chip">HTML / Word reports</span>
+        </div>
       </div>
-      <div class="feat-card reveal">
-        <div class="feat-icon green">&#x2699;&#xFE0F;</div>
-        <h3>Early Fault Detection</h3>
-        <p>Highlight subtle impact patterns that indicate early bearing or gear wear &mdash; even when the raw signal looks normal.</p>
-      </div>
-      <div class="feat-card reveal">
-        <div class="feat-icon purple">&#x1F6A6;</div>
-        <h3>Risk Classification</h3>
-        <p>Automatic severity zones so teams know immediately what needs urgent attention and what can wait.</p>
-      </div>
-      <div class="feat-card reveal">
-        <div class="feat-icon amber">&#x1F916;</div>
-        <h3>Anomaly Detection</h3>
-        <p>Train on healthy baselines, then automatically flag unusual signals. Machine learning models with zero-code setup.</p>
-      </div>
-      <div class="feat-card reveal">
-        <div class="feat-icon green">&#x1F4CB;</div>
-        <h3>Clear Reports</h3>
-        <p>Generate HTML reports with interactive charts and structured Word documents. Designed for engineers, operators, and management.</p>
-      </div>
-      <div class="feat-card reveal">
-        <div class="feat-icon blue">&#x1F4D6;</div>
-        <h3>Manual-Aware Diagnosis</h3>
-        <p>Search equipment manuals and bearing catalogs. Extract specs from PDFs and cross-check against measured data automatically.</p>
-      </div>
-      <div class="feat-card reveal">
-        <div class="feat-icon purple">&#x1F4C8;</div>
-        <h3>Multi-Format Ingestion</h3>
-        <p>Load vibration data from CSV, WAV, MAT, NPY, and Parquet files. Automatic sampling rate detection and metadata extraction.</p>
-      </div>
-      <div class="feat-card reveal">
-        <div class="feat-icon amber">&#x1F9E0;</div>
-        <h3>Action Recommendations</h3>
-        <p>Evidence-based maintenance suggestions with confidence levels. No guessing &mdash; every recommendation cites its source data.</p>
-      </div>
-      <div class="feat-card reveal">
-        <div class="feat-icon green">&#x1F50C;</div>
-        <h3>Extensible &amp; Open</h3>
-        <p>Plugin architecture for custom signal processors and report formats. Works with Claude, ChatGPT, Ollama, or any MCP-compatible client.</p>
+      <div class="card cap-card">
+        <span class="cap-tag" style="color:#7c3aed;">EXTEND</span>
+        <span class="cap-title">Build on it</span>
+        <span class="cap-desc">Plugin architecture for custom signal processors and report formats. Ingest CSV, WAV, MAT, NPY, and Parquet. Works with any MCP-compatible client, including air-gapped Ollama.</span>
+        <div class="chips">
+          <span class="chip">37 MCP endpoints</span>
+          <span class="chip">Custom processors</span>
+          <span class="chip">Multi-format ingestion</span>
+          <span class="chip">Ollama air-gapped</span>
+        </div>
       </div>
     </div>
   </div>
 </section>
 
-<!-- Plugin -->
-<section id="plugin" class="how-section">
-  <div class="container">
-    <div class="section-header reveal">
-      <span class="overline">Claude Code Plugin</span>
-      <h2>Automate Diagnostics From Your Editor</h2>
-      <p>8 skills, 2 agents that run multi-step diagnostic workflows end-to-end, 3 slash commands &mdash; works inside Claude Code.</p>
-    </div>
-
-    <div class="install-box" style="max-width:580px;margin:0 auto 2rem" id="installPluginBox" title="Click to copy">
-      <code style="font-size:.8rem">/plugin marketplace add LGDiMaggio/predictive-maintenance-mcp</code>
-      <button class="copy-btn" id="copyPluginBtn">Copy</button>
-    </div>
-
-    <div class="plugin-grid">
-      <div class="feat-card reveal">
-        <div class="feat-icon green">&#x1F3AF;</div>
-        <h3>8 Domain Skills</h3>
-        <p>Bearing diagnosis, gear analysis, quick screening, prognostics, report generation, anomaly detection, signal management, and documentation search.</p>
-      </div>
-      <div class="feat-card reveal">
-        <div class="feat-icon purple">&#x1F916;</div>
-        <h3>2 End-to-End Workflow Agents</h3>
-        <p><strong>diagnostic-pipeline</strong>: End-to-end workflow from signal to report. <strong>signal-explorer</strong>: Compare and characterize multiple signals.</p>
-      </div>
-      <div class="feat-card reveal">
-        <div class="feat-icon blue">&#x26A1;</div>
-        <h3>3 Slash Commands</h3>
-        <p><code>/pm-diagnose</code> for bearing diagnosis, <code>/pm-screen</code> for quick health checks, <code>/pm-report</code> for instant reports.</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- Architecture -->
+<!-- ARCHITECTURE -->
 <section id="architecture">
   <div class="container">
-    <div class="section-header reveal">
-      <span class="overline">Under the Hood</span>
-      <h2>Your Data Never Leaves Your Machine</h2>
-      <p>Raw vibration files stay local. Only computed results (severity scores, fault types) flow to the AI for interpretation.</p>
+    <div class="section-head">
+      <span class="eyebrow">UNDER THE HOOD</span>
+      <h2>Your data never leaves your machine</h2>
     </div>
-
-    <div class="arch-layout reveal">
-      <div class="arch-diagram"><span class="hl-p">        YOU</span>  (natural language)
-             |
-             v
-  <span class="hl-b">     LLM</span>  (Claude / GPT / Ollama)
-             |  Model Context Protocol
-             v
-  +----------------------------------+
-  |  <span class="hl-b">Predictive Maintenance MCP</span>     |
-  |                                  |
-  |  <span class="hl-g">data_ingestion</span>                 |
-  |  <span class="hl-g">signal_processing</span>              |
-  |  <span class="hl-b">diagnostics</span>                    |
-  |  <span class="hl-p">prognostics</span>                    |
-  |  <span class="hl-a">decision_support</span>               |
-  +----------------------------------+
-             |
-             v
-  <span class="hl-g">  YOUR DATA</span>  (always local)
-  signals &middot; manuals &middot; models</div>
-
-      <div class="principle-stack">
-        <div class="prin-card">
-          <h4>&#x1F512; Privacy-First</h4>
-          <p>Raw vibration data is processed entirely on your machine. Only computed results flow to the LLM &mdash; never raw waveforms.</p>
+    <div class="card arch-box">
+      <div class="arch-flow">
+        <div class="arch-node neutral"><div class="t">You</div><div class="s">natural language</div></div>
+        <span class="arch-arrow">→</span>
+        <div class="arch-node teal"><div class="t">AI client</div><div class="s">Claude · GPT · Ollama</div></div>
+        <span class="arch-arrow">→</span>
+        <div class="arch-node teal-strong"><div class="t">PM-MCP server</div><div class="s">37 MCP endpoints</div></div>
+        <span class="arch-arrow">→</span>
+        <div class="arch-node green"><div class="t">Your data, local</div><div class="s">signals · manuals · models</div></div>
+        <span class="arch-arrow">→</span>
+        <div class="arch-node neutral"><div class="t">Computed evidence</div><div class="s">severity · faults · reports</div></div>
+      </div>
+      <div class="arch-facts">
+        <div class="arch-fact">
+          <span class="t">Privacy-first</span>
+          <span class="s">Raw waveforms are processed entirely locally. Only computed results flow to the LLM.</span>
         </div>
-        <div class="prin-card">
-          <h4>&#x1F310; Works With Any AI</h4>
-          <p>Claude, ChatGPT, Microsoft Copilot Studio, or Ollama for fully air-gapped deployments. Any MCP client works.</p>
+        <div class="arch-fact">
+          <span class="t">Works with any AI</span>
+          <span class="s">Claude, ChatGPT, Copilot Studio, or Ollama for fully air-gapped deployments.</span>
         </div>
-        <div class="prin-card">
-          <h4>&#x1F3D7; Structured Pipeline</h4>
-          <p>Six-stage diagnostic flow: ingest &rarr; process &rarr; detect &rarr; assess &rarr; predict &rarr; recommend. Each stage is independent and testable.</p>
-        </div>
-        <div class="prin-card">
-          <h4>&#x1F9E9; Extensible by Design</h4>
-          <p>Use only the tools you need. Plugin architecture for custom signal processors, diagnostics, and report formats.</p>
+        <div class="arch-fact">
+          <span class="t">Six-stage pipeline</span>
+          <span class="s">Ingest → process → detect → assess → predict → recommend. Each stage independent and testable.</span>
         </div>
       </div>
     </div>
   </div>
 </section>
 
-<!-- Audience -->
-<section>
+<!-- PLUGIN -->
+<section id="plugin">
   <div class="container">
-    <div class="section-header reveal">
-      <span class="overline">Who It's For</span>
-      <h2>Engineers &amp; Developers</h2>
-      <p>Whether you maintain machines or build AI tools &mdash; this is your starting point.</p>
+    <div class="section-head">
+      <span class="eyebrow">CLAUDE CODE PLUGIN</span>
+      <h2>Repeatable workflows inside your editor</h2>
+      <p>For developers and power users. The MCP server answers questions; the plugin automates whole diagnostic pipelines.</p>
     </div>
-
-    <div class="audience-grid">
-      <div class="aud-card reveal">
-        <div class="aud-icon eng">&#x1F527;</div>
-        <h3>Reliability &amp; Maintenance Engineers</h3>
-        <p>Diagnose machine health through conversation. No signal-processing expertise required.</p>
-        <ul>
-          <li>Screen machine health by asking simple questions</li>
-          <li>Identify likely fault families from real vibration data</li>
-          <li>Generate shareable reports for management</li>
-          <li>Follow guided diagnostic workflows</li>
-        </ul>
-        <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp/blob/main/docs/QUICKSTART_ENGINEER.md" class="btn-card" target="_blank" rel="noopener">Engineer Quick Start &rarr;</a>
+    <div class="plugin-grid">
+      <div class="card plugin-card">
+        <span class="plugin-num">8</span>
+        <span class="plugin-title">Domain skills</span>
+        <span class="plugin-desc">Bearing diagnosis, gear analysis, screening, prognostics, reports, anomaly detection, signal management, docs search.</span>
       </div>
-      <div class="aud-card reveal">
-        <div class="aud-icon dev">&#x1F4BB;</div>
-        <h3>AI &amp; Software Developers</h3>
-        <p>Study real MCP tool architecture and build industrial copilots on a production-ready foundation.</p>
-        <ul>
-          <li>Learn MCP tool design patterns from a real project</li>
-          <li>Extend with custom tools and datasets</li>
-          <li>Build reusable industrial AI workflows</li>
-          <li>Install the Claude Code plugin for fast iteration</li>
-        </ul>
-        <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp/blob/main/docs/QUICKSTART_DEVELOPER.md" class="btn-card" target="_blank" rel="noopener">Developer Quick Start &rarr;</a>
+      <div class="card plugin-card">
+        <span class="plugin-num">2</span>
+        <span class="plugin-title">Workflow agents</span>
+        <span class="plugin-desc"><strong>diagnostic-pipeline</strong> runs signal → report end-to-end; <strong>signal-explorer</strong> compares multiple signals.</span>
       </div>
+      <div class="card plugin-card">
+        <span class="plugin-num">3</span>
+        <span class="plugin-title">Slash commands</span>
+        <span class="plugin-desc"><code>/pm-diagnose</code> · <code>/pm-screen</code> · <code>/pm-report</code></span>
+      </div>
+    </div>
+    <div class="install-box plugin-install">
+      <span class="prompt-sign">$</span>
+      <code>/plugin marketplace add LGDiMaggio/predictive-maintenance-mcp</code>
+      <button class="copy-btn" data-copy="/plugin marketplace add LGDiMaggio/predictive-maintenance-mcp">copy</button>
     </div>
   </div>
 </section>
 
-<!-- Sample Data -->
-<section>
+<!-- DATASET -->
+<section id="dataset">
   <div class="container">
-    <div class="section-header reveal">
-      <span class="overline">Ready to Try</span>
-      <h2>Real Bearing Data Included</h2>
-      <p>20 vibration signals from production machinery &mdash; install and start diagnosing immediately.</p>
-    </div>
-
-    <div class="sample-box reveal">
-      <div>
-        <h3>Production Bearing Fault Dataset</h3>
-        <p>Training set: 2 healthy baselines + 12 fault signals (inner race, outer race). Test set: 1 healthy baseline + 5 fault signals.</p>
-        <div class="data-nums">
-          <div class="data-num"><div class="val">20</div><div class="lbl">Signals</div></div>
-          <div class="data-num"><div class="val">3</div><div class="lbl">Fault Types</div></div>
-          <div class="data-num"><div class="val">3</div><div class="lbl">Healthy Baselines</div></div>
+    <div class="dataset-box">
+      <div class="dataset-left">
+        <span class="eyebrow" style="color:var(--green);">READY TO TRY</span>
+        <h2>Real bearing data included</h2>
+        <p>20 real bearing vibration signals are included in the repository — 3 healthy baselines plus inner-race and outer-race fault signals from the MathWorks rolling-element bearing dataset. Clone the repo and diagnose your first fault without connecting a single sensor.</p>
+        <code>"Load OuterRaceFault_1.csv and diagnose the bearing."</code>
+        <p class="dataset-attr">Dataset: <a href="https://github.com/mathworks/RollingElementBearingFaultDiagnosis-Data" target="_blank" rel="noopener">MathWorks RollingElementBearingFaultDiagnosis-Data</a> (CC BY-NC-SA 4.0). Not included in the PyPI package.</p>
+      </div>
+      <div class="dataset-right">
+        <div class="dataset-row healthy">
+          <span class="name">Healthy baseline</span>
+          <span class="badge">3 signals · ZONE A</span>
+        </div>
+        <div class="dataset-row inner">
+          <span class="name">Inner-race fault</span>
+          <span class="badge">BPFI signature</span>
+        </div>
+        <div class="dataset-row outer">
+          <span class="name">Outer-race fault</span>
+          <span class="badge">BPFO signature</span>
         </div>
       </div>
-      <div class="sample-try">Try: <code>&ldquo;Load OuterRaceFault_1.csv and diagnose the bearing.&rdquo;</code></div>
     </div>
   </div>
 </section>
 
 <!-- FAQ -->
-<section id="faq">
-  <div class="container">
-    <div class="section-header reveal">
-      <span class="overline">Questions</span>
-      <h2>Frequently Asked</h2>
+<section id="faq" style="padding-bottom:0;">
+  <div class="faq-wrap">
+    <div class="section-head" style="margin-bottom:28px;">
+      <span class="eyebrow">QUESTIONS</span>
+      <h2>Frequently asked</h2>
     </div>
+    <div class="faq-list">
+      <details>
+        <summary>What is this project, in one sentence?<span class="plus">+</span></summary>
+        <p>An open-source tool that lets you ask an AI assistant about your machine's vibration data and get real, evidence-based maintenance answers, running entirely on your computer.</p>
+      </details>
+      <details>
+        <summary>Does my data leave my machine?<span class="plus">+</span></summary>
+        <p>No. Raw vibration files are processed locally. Only computed summaries (severity scores, fault classifications) are sent to the AI for interpretation. Use Ollama for a fully air-gapped setup.</p>
+      </details>
+      <details>
+        <summary>Which AI models are supported?<span class="plus">+</span></summary>
+        <p>Any MCP-compatible client: Claude Desktop, VS Code with Copilot, ChatGPT (via MCP bridge), Microsoft Copilot Studio, or local models with Ollama.</p>
+      </details>
+      <details>
+        <summary>Do I need signal-processing knowledge?<span class="plus">+</span></summary>
+        <p>No. Ask questions in plain language like "Is this bearing healthy?" The AI handles the analysis pipeline and explains results in everyday terms.</p>
+      </details>
+      <details>
+        <summary>What kinds of faults can it detect?<span class="plus">+</span></summary>
+        <p>Outer race, inner race, and rolling element bearing defects; gear mesh issues; general unbalance and misalignment, via frequency analysis, envelope detection, and trained anomaly models.</p>
+      </details>
+      <details>
+        <summary>Is this a replacement for professional vibration analysis?<span class="plus">+</span></summary>
+        <p>No. It's a screening and decision-support tool that helps prioritize and communicate. Critical decisions should always be validated by qualified reliability engineers.</p>
+      </details>
+      <details>
+        <summary>Can I add my own analysis tools?<span class="plus">+</span></summary>
+        <p>Yes. The plugin architecture supports custom signal processors, diagnostic logic, and report formats. See the Developer Quick Start.</p>
+      </details>
+    </div>
+    <p class="faq-disclaimer">PM-MCP is a screening and decision-support tool. Critical maintenance decisions should always be validated by qualified reliability engineers; it does not replace certified vibration analysis.</p>
+  </div>
+</section>
 
-    <div class="faq-list reveal">
-      <div class="faq-item">
-        <button class="faq-q">What is this project, in one sentence?</button>
-        <div class="faq-a">An open-source tool that lets you ask an AI assistant about your machine's vibration data and get real, evidence-based maintenance answers &mdash; running entirely on your computer.</div>
-      </div>
-      <div class="faq-item">
-        <button class="faq-q">Does my data leave my machine?</button>
-        <div class="faq-a">No. Raw vibration files are processed locally. Only computed summaries (severity scores, fault classifications) are sent to the AI for interpretation. Use Ollama for a fully air-gapped setup.</div>
-      </div>
-      <div class="faq-item">
-        <button class="faq-q">Which AI models are supported?</button>
-        <div class="faq-a">Any MCP-compatible client: Claude Desktop, VS Code with Copilot, ChatGPT (via MCP bridge), Microsoft Copilot Studio, or local models with Ollama.</div>
-      </div>
-      <div class="faq-item">
-        <button class="faq-q">Do I need signal-processing knowledge?</button>
-        <div class="faq-a">No. Ask questions in plain language like &ldquo;Is this bearing healthy?&rdquo; The AI handles the analysis pipeline and explains results in everyday terms.</div>
-      </div>
-      <div class="faq-item">
-        <button class="faq-q">What kinds of faults can it detect?</button>
-        <div class="faq-a">Outer race, inner race, and rolling element bearing defects; gear mesh issues; general unbalance and misalignment. The system uses frequency analysis, envelope detection, and trained anomaly models.</div>
-      </div>
-      <div class="faq-item">
-        <button class="faq-q">Is this a replacement for professional vibration analysis?</button>
-        <div class="faq-a">No. It's a screening and decision-support tool that helps prioritize and communicate. Critical decisions should always be validated by qualified reliability engineers.</div>
-      </div>
-      <div class="faq-item">
-        <button class="faq-q">Can I add my own analysis tools?</button>
-        <div class="faq-a">Yes. The plugin architecture supports custom signal processors, diagnostic logic, and report formats. See the Developer Quick Start for details.</div>
+<!-- FINAL CTA -->
+<section id="get-started" style="padding-bottom:96px;">
+  <div class="container">
+    <div class="final-cta">
+      <h2>Start your first diagnosis locally in 5 minutes</h2>
+      <p>Open source, MIT licensed, sample data in the repository. Your vibration data stays on your machine.</p>
+      <div class="row">
+        <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp/blob/main/INSTALL.md" class="btn-primary" target="_blank" rel="noopener">Install</a>
+        <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp" class="btn-outline" target="_blank" rel="noopener">★ GitHub</a>
+        <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp/blob/main/docs/QUICKSTART_ENGINEER.md" class="btn-ghost" target="_blank" rel="noopener">Engineer quickstart</a>
+        <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp/blob/main/docs/QUICKSTART_DEVELOPER.md" class="btn-ghost" target="_blank" rel="noopener">Developer quickstart</a>
       </div>
     </div>
   </div>
 </section>
 
-<!-- Documentation -->
-<section id="docs">
-  <div class="container">
-    <div class="section-header reveal">
-      <span class="overline">Documentation</span>
-      <h2>Guides for Every Background</h2>
-    </div>
-
-    <div class="docs-grid reveal">
-      <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp/blob/main/docs/QUICKSTART_ENGINEER.md" class="doc-link" target="_blank" rel="noopener">
-        <div class="doc-icon">&#x1F527;</div>
-        <div>Engineer Quickstart<span class="doc-for">Get results fast, no coding</span></div>
-      </a>
-      <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp/blob/main/docs/QUICKSTART_DEVELOPER.md" class="doc-link" target="_blank" rel="noopener">
-        <div class="doc-icon">&#x1F4BB;</div>
-        <div>Developer Quickstart<span class="doc-for">Understand MCP, extend the server</span></div>
-      </a>
-      <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp/blob/main/plugin/README.md" class="doc-link" target="_blank" rel="noopener">
-        <div class="doc-icon">&#x1F50C;</div>
-        <div>Plugin Guide<span class="doc-for">Skills, agents, commands</span></div>
-      </a>
-      <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp/blob/main/docs/DEPLOYMENT.md" class="doc-link" target="_blank" rel="noopener">
-        <div class="doc-icon">&#x1F433;</div>
-        <div>Deployment<span class="doc-for">Docker + enterprise setup</span></div>
-      </a>
-      <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp/blob/main/docs/OLLAMA_GUIDE.md" class="doc-link" target="_blank" rel="noopener">
-        <div class="doc-icon">&#x1F310;</div>
-        <div>Ollama Guide<span class="doc-for">Fully air-gapped local LLMs</span></div>
-      </a>
-      <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp/blob/main/EXAMPLES.md" class="doc-link" target="_blank" rel="noopener">
-        <div class="doc-icon">&#x1F4D6;</div>
-        <div>Examples<span class="doc-for">Complete diagnostic workflows</span></div>
-      </a>
-      <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp/blob/main/CONTRIBUTING.md" class="doc-link" target="_blank" rel="noopener">
-        <div class="doc-icon">&#x1F91D;</div>
-        <div>Contributing<span class="doc-for">All skill levels welcome</span></div>
-      </a>
-      <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp/blob/main/docs/architecture.md" class="doc-link" target="_blank" rel="noopener">
-        <div class="doc-icon">&#x1F3D7;</div>
-        <div>Architecture<span class="doc-for">Pipeline design &amp; standards</span></div>
-      </a>
-    </div>
+<!-- FOOTER -->
+<footer id="docs">
+  <div class="footer-links">
+    <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp" target="_blank" rel="noopener">GitHub</a>
+    <a href="https://pypi.org/project/predictive-maintenance-mcp/" target="_blank" rel="noopener">PyPI</a>
+    <a href="https://doi.org/10.5281/zenodo.17611542" target="_blank" rel="noopener">DOI</a>
+    <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp/blob/main/EXAMPLES.md" target="_blank" rel="noopener">Examples</a>
+    <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp/blob/main/docs/OLLAMA_GUIDE.md" target="_blank" rel="noopener">Ollama guide</a>
+    <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener">Contributing</a>
+    <a href="https://github.com/LGDiMaggio/claude-stwinbox-diagnostics" target="_blank" rel="noopener">Hardware extension ↗</a>
   </div>
-</section>
-
-<!-- Related -->
-<section>
-  <div class="container">
-    <div class="section-header reveal">
-      <span class="overline">Related</span>
-      <h2>Hardware Extension</h2>
-    </div>
-    <a href="https://github.com/LGDiMaggio/claude-stwinbox-diagnostics" class="related-card reveal" target="_blank" rel="noopener">
-      <div class="related-icon">&#x1F4E1;</div>
-      <div>
-        <h3>claude-stwinbox-diagnostics</h3>
-        <p>Connects a physical edge sensor (STEVAL-STWINBX1) to Claude via MCP. Same analysis engine, real hardware, operator-friendly reports.</p>
-      </div>
-    </a>
-  </div>
-</section>
-
-<!-- Citation -->
-<section>
-  <div class="container">
-    <div class="section-header reveal">
-      <span class="overline">Citation</span>
-      <h2>Cite This Project</h2>
-    </div>
-    <div class="cite-box reveal" id="citationBox">
-      <button class="copy-cite-btn" id="copyCiteBtn">Copy BibTeX</button>
-@software{dimaggio_predictive_maintenance_mcp_2025,
-  title   = {Predictive Maintenance MCP Server},
-  author  = {Di Maggio, Luigi Gianpio},
-  year    = {2025},
-  version = {0.13.0},
-  url     = {https://github.com/LGDiMaggio/predictive-maintenance-mcp},
-  doi     = {10.5281/zenodo.17611542}
-}</div>
-  </div>
-</section>
-
-<!-- Footer -->
-<footer>
-  <div class="container">
-    <div class="footer-links">
-      <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp" target="_blank" rel="noopener">GitHub</a>
-      <a href="https://pypi.org/project/predictive-maintenance-mcp/" target="_blank" rel="noopener">PyPI</a>
-      <a href="https://doi.org/10.5281/zenodo.17611542" target="_blank" rel="noopener">DOI</a>
-      <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp/blob/main/INSTALL.md" target="_blank" rel="noopener">Install</a>
-      <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp/blob/main/EXAMPLES.md" target="_blank" rel="noopener">Examples</a>
-      <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener">Contribute</a>
-      <a href="https://www.linkedin.com/in/luigi-gianpio-di-maggio" target="_blank" rel="noopener">Luigi Di Maggio</a>
-    </div>
-    <p class="copy">MIT License &copy; 2025&ndash;2026 Luigi Gianpio Di Maggio &middot; An open-source predictive maintenance AI agent &amp; condition monitoring copilot &mdash; built for reliability engineers and the developer community.</p>
-  </div>
+  <span class="footer-note">MIT License © 2025–2026 Luigi Gianpio Di Maggio · Open-source predictive maintenance AI agent, built for reliability engineers and the developer community.</span>
 </footer>
 
-<!-- Scripts -->
 <script>
-  // Copy install command
-  document.getElementById('installBox').addEventListener('click', function(e) {
-    if (e.target.closest('.copy-btn')) return;
-    copyInstall();
-  });
-  document.getElementById('copyBtn').addEventListener('click', copyInstall);
-  function copyInstall() {
-    navigator.clipboard.writeText('pip install predictive-maintenance-mcp').then(function() {
-      var btn = document.getElementById('copyBtn');
-      btn.textContent = 'Copied!';
-      btn.style.color = '#4ade80';
-      setTimeout(function() { btn.textContent = 'Copy'; btn.style.color = ''; }, 2000);
-    });
-  }
-
-  // Copy plugin install
-  var pluginBox = document.getElementById('installPluginBox');
-  var pluginBtn = document.getElementById('copyPluginBtn');
-  if (pluginBox && pluginBtn) {
-    pluginBox.addEventListener('click', function(e) {
-      if (e.target.closest('.copy-btn')) return;
-      copyPlugin();
-    });
-    pluginBtn.addEventListener('click', copyPlugin);
-  }
-  function copyPlugin() {
-    navigator.clipboard.writeText('/plugin marketplace add LGDiMaggio/predictive-maintenance-mcp').then(function() {
-      var btn = document.getElementById('copyPluginBtn');
-      btn.textContent = 'Copied!';
-      btn.style.color = '#4ade80';
-      setTimeout(function() { btn.textContent = 'Copy'; btn.style.color = ''; }, 2000);
-    });
-  }
-
-  // Copy citation
-  document.getElementById('copyCiteBtn').addEventListener('click', function() {
-    var text = document.getElementById('citationBox').textContent.replace('Copy BibTeX', '').trim();
-    navigator.clipboard.writeText(text).then(function() {
-      var btn = document.getElementById('copyCiteBtn');
-      btn.textContent = 'Copied!';
-      btn.style.color = '#4ade80';
-      setTimeout(function() { btn.textContent = 'Copy BibTeX'; btn.style.color = ''; }, 2000);
+  document.querySelectorAll('.copy-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      if (navigator.clipboard) navigator.clipboard.writeText(btn.dataset.copy);
+      var prev = btn.textContent;
+      btn.textContent = 'copied ✓';
+      setTimeout(function () { btn.textContent = prev; }, 1600);
     });
   });
-
-  // FAQ accordion
-  document.querySelectorAll('.faq-q').forEach(function(btn) {
-    btn.addEventListener('click', function() {
-      var item = this.parentElement;
-      var wasOpen = item.classList.contains('open');
-      document.querySelectorAll('.faq-item.open').forEach(function(el) { el.classList.remove('open'); });
-      if (!wasOpen) item.classList.add('open');
-    });
-  });
-
-  // Scroll reveal
-  var observer = new IntersectionObserver(function(entries) {
-    entries.forEach(function(entry) {
-      if (entry.isIntersecting) {
-        entry.target.classList.add('visible');
-        entry.target.querySelectorAll('.num-val[data-target]').forEach(animateCounter);
-        observer.unobserve(entry.target);
-      }
-    });
-  }, { threshold: 0.12, rootMargin: '0px 0px -30px 0px' });
-  document.querySelectorAll('.reveal').forEach(function(el) { observer.observe(el); });
-
-  // Counter animation
-  function animateCounter(el) {
-    var target = parseInt(el.dataset.target);
-    var duration = 1000;
-    var start = performance.now();
-    function tick(now) {
-      var elapsed = now - start;
-      var progress = Math.min(elapsed / duration, 1);
-      var eased = 1 - Math.pow(1 - progress, 3);
-      el.textContent = Math.round(eased * target);
-      if (progress < 1) requestAnimationFrame(tick);
-    }
-    requestAnimationFrame(tick);
-  }
 </script>
 
 </body>
