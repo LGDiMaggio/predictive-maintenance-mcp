@@ -131,6 +131,9 @@ Browse [**Issues**](https://github.com/LGDiMaggio/predictive-maintenance-mcp/iss
 | `bug` | Something isn't working correctly |
 | `enhancement` | New feature or improvement |
 | `domain-knowledge` | Requires industrial/engineering expertise, not necessarily code |
+| `adapter` | Vendor data adapters for the ingestion boundary — run outside the server, any language |
+| `benchmark` | Measured benchmark coverage and extensions |
+| `research` | Literature-grounded investigation before implementation |
 
 **Can't find a matching issue?** [Open a discussion](https://github.com/LGDiMaggio/predictive-maintenance-mcp/discussions) to propose your idea first.
 
@@ -295,11 +298,14 @@ Closes #42"
 
 | Task | What You'll Learn | Issue |
 |------|-------------------|-------|
-| ~~**Add Parquet data format support**~~ | ~~Signal loading pipeline, pandas I/O~~ | ✅ Done in v0.5.0 |
-| **Make ISO thresholds configurable** | Tool parameter design, ISO standard | [Browse issues](https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues) |
-| **Add unit conversion tool** | MCP tool pattern, unit systems | [Browse issues](https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues) |
-| **Improve error messages** | Error handling best practices | [Browse issues](https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues) |
-| **Create Dockerfile** | Docker, deployment, DevOps | [Browse issues](https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues) |
+| **Embed measurement-time provenance in the benchmark outcomes artifact** | Benchmark artifact design, reproducibility | [#50](https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues/50) |
+| **CI guard that `results.json` stays derived from `outcomes.json`** | Drift-guard test design | [#51](https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues/51) |
+| **Enforce `file_id` uniqueness in the benchmark ops table** | Pydantic validation patterns | [#52](https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues/52) |
+| **Tutorial notebook: loading raw binary vibration data** | The raw-ingestion declaration contract | [#54](https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues/54) |
+| **End-to-end diagnostic session walkthrough in EXAMPLES.md** | The full diagnostic workflow | [#55](https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues/55) |
+| **Adapter example: headerless float32 captures** | The adapter / companion-file contract | [#57](https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues/57) |
+
+The full set of open contribution opportunities — benchmark extensions, external adapters, documentation, and domain-expert review — is on the [issue tracker](https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues).
 
 ### How to Create a New MCP Tool
 
