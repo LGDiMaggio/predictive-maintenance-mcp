@@ -5,13 +5,18 @@ All notable changes to the Predictive Maintenance MCP Server project will be doc
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.13.0] - 2026-08-14
 
-Lets the existing `load_signal` tool open headerless raw binary waveforms
+Three additions. `load_signal` now opens headerless raw binary waveforms
 (`.bin`, `.raw`, `.dat`) when — and only when — the caller declares how to
-decode them. Vendor-neutral by design: no format parsers ship in the core and
+decode them: vendor-neutral by design, no format parsers ship in the core and
 nothing is inferred from file content or names; translating a vendor's
 metadata into the declaration is the user's (or an external adapter's) job.
+A blind, reproducible CWRU diagnostic benchmark measures the pipeline on
+public data and commits the results as a re-runnable, drift-guarded artifact.
+And the public documentation is restructured around audience entry paths,
+with every count, version, and coverage figure on every public surface
+guarded by CI against the code itself.
 
 ### Added
 - **Blind, reproducible CWRU diagnostic benchmark** (`benchmarks/cwru/`,
