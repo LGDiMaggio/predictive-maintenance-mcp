@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "predictive-maintenance-mcp"
-version = "0.12.0"
+version = "0.13.0"
 description = "AI agent for predictive maintenance & condition monitoring — Open-source MCP server and Claude Code plugin with 37 MCP endpoints for vibration analysis, bearing fault detection, ISO 20816 severity assessment, ML anomaly detection, and remaining useful life estimation via natural language"
 readme = "README.md"
 authors = [
