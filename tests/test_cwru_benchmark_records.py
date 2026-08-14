@@ -258,3 +258,49 @@ class TestMutationGuard:
         harness."""
         clean = _write_ops_variant(tmp_path, lambda entries: None)
         assert len(ops_view(clean)) == 64
+
+
+class TestOpsTableUniqueness:
+    """file_id and cache_filename must be unique, not merely opaque_id.
+
+    A duplicate in either maps two logical records onto one cached download,
+    which fails silently: the second record reads the first one's signal.
+    """
+
+    @pytest.mark.parametrize("field", ["file_id", "cache_filename"])
+    def test_injected_duplicate_is_refused(self, tmp_path, field):
+        def mutate(entries: list[dict[str, Any]]) -> None:
+            entries[1][field] = entries[0][field]
+
+        mutated = _write_ops_variant(tmp_path, mutate)
+        with pytest.raises(ValueError, match=field) as excinfo:
+            ops_view(mutated)
+
+        message = str(excinfo.value)
+        # Both offending entries are named, matching the opaque_id error.
+        assert "entries 0" in message
+        assert "and 1" in message
+        assert "must be unique" in message
+
+    @pytest.mark.parametrize("field", ["file_id", "cache_filename"])
+    def test_duplicate_names_the_colliding_opaque_ids(self, tmp_path, field):
+        raw = _raw_ops()
+        first, second = raw[0]["opaque_id"], raw[1]["opaque_id"]
+
+        def mutate(entries: list[dict[str, Any]]) -> None:
+            entries[1][field] = entries[0][field]
+
+        mutated = _write_ops_variant(tmp_path, mutate)
+        with pytest.raises(ValueError) as excinfo:
+            ops_view(mutated)
+
+        message = str(excinfo.value)
+        assert first in message
+        assert second in message
+
+    def test_real_vendored_table_passes(self):
+        """The other half of the mutation test: the shipped table is clean."""
+        records = ops_view()
+        for field in ("file_id", "cache_filename"):
+            values = [getattr(record, field) for record in records]
+            assert len(set(values)) == len(values), f"{field} must be unique"
