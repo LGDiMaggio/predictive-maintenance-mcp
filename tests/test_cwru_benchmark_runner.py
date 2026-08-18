@@ -235,6 +235,41 @@ class TestDeterminism:
         with pytest.raises(ValueError, match="[Dd]eterminism"):
             runner.check_determinism((), repository=None)
 
+    def test_artifacts_differ_only_in_the_provenance_block(self):
+        """Determinism is about measurement content, not the written bytes.
+
+        Two documents over the SAME outcomes with different provenance
+        blocks differ only in the ``_provenance`` subtree — the exclusion
+        the ``check_determinism`` docstring claims.
+        """
+
+        def build(date: str, describe: str) -> dict:
+            provenance = runner.collect_provenance(
+                {"date": date, "git_describe": describe, "platform": "pin"}
+            )
+            return json.loads(
+                runner.serialize_outcomes(
+                    runner.compose_outcomes_document(outcomes, provenance)
+                ).decode("utf-8")
+            )
+
+        outcomes = {"cwru_001": {"status": runner.OUTCOME_STATUS_OK, "value": 1.5}}
+        first = build("2026-08-10T00:00:00+00:00", "pin-a")
+        second = build("2026-08-11T00:00:00+00:00", "pin-b")
+
+        # Identical measurement content: every record subtree matches.
+        assert set(first) == set(second)
+        for key in outcomes:
+            assert first[key] == second[key]
+        # Only the provenance block differs, and it is a namedable
+        # divergence (git describe), not a byte count.
+        block_a = first[runner.PROVENANCE_MARKER_KEY]
+        block_b = second[runner.PROVENANCE_MARKER_KEY]
+        assert block_a != block_b
+        assert block_a["git_describe"] != block_b["git_describe"]
+        # The block records every provenance key.
+        assert set(block_a) == set(runner.PROVENANCE_KEYS)
+
 
 # ---------------------------------------------------------------------------
 # Happy path: anomaly block excluded even when a local model ran
@@ -459,3 +494,89 @@ class TestScoreSubcommand:
         assert str(missing) in err
         assert "benchmarks.cwru run" in err  # remedy names the run stage
         assert not (tmp_path / "results.json").exists()
+
+
+# ---------------------------------------------------------------------------
+# Measurement provenance: collection, composition, and the explicit split
+# ---------------------------------------------------------------------------
+
+
+class TestMeasurementProvenance:
+    """collect_provenance, compose_outcomes_document, split_provenance.
+
+    The measurement block is collected once before the run, composed into
+    a flat ``_provenance`` sibling of the record ids, and split back out
+    on read so the marker never reaches the gate or the status loop.
+    """
+
+    def test_collect_provenance_returns_exactly_provenance_keys(self):
+        provenance = runner.collect_provenance(
+            {
+                "date": "2026-08-10T00:00:00+00:00",
+                "git_describe": "pin",
+                "platform": "pin",
+            }
+        )
+        assert set(provenance) == set(runner.PROVENANCE_KEYS)
+        assert provenance["date"] == "2026-08-10T00:00:00+00:00"
+        assert provenance["git_describe"] == "pin"
+        assert provenance["platform"] == "pin"
+        assert provenance["pipeline_version"] == str(
+            getattr(predictive_maintenance_mcp, "__version__", "unknown")
+        )
+        assert provenance["numpy_version"] == str(np.__version__)
+
+    def test_unknown_override_key_refused(self):
+        with pytest.raises(ValueError, match="bogus_key"):
+            runner.collect_provenance({"bogus_key": "typo"})
+
+    def test_pipeline_version_is_measured(self):
+        assert "pipeline_version" in runner.PROVENANCE_KEYS
+
+    def test_compose_and_split_round_trip(self):
+        outcomes = {"cwru_001": {"status": runner.OUTCOME_STATUS_OK}}
+        provenance = {
+            "date": "2026-08-10T00:00:00+00:00",
+            "git_describe": "pin",
+            "platform": "pin",
+        }
+        document = runner.compose_outcomes_document(outcomes, provenance)
+        assert set(document) == {"cwru_001", runner.PROVENANCE_MARKER_KEY}
+        assert document[runner.PROVENANCE_MARKER_KEY] == provenance
+        records, block = runner.split_provenance(document)
+        assert records == outcomes
+        assert block == provenance
+
+    def test_split_legacy_artifact_returns_none(self):
+        outcomes = {"cwru_001": {"status": runner.OUTCOME_STATUS_OK}}
+        records, block = runner.split_provenance(outcomes)
+        assert records == outcomes
+        assert block is None
+
+    def test_split_refuses_a_non_object_marker(self):
+        with pytest.raises(ValueError, match=runner.PROVENANCE_MARKER_KEY):
+            runner.split_provenance(
+                {
+                    "cwru_001": {"status": runner.OUTCOME_STATUS_OK},
+                    runner.PROVENANCE_MARKER_KEY: "not-a-block",
+                }
+            )
+
+    def test_gate_sees_only_records_after_the_split(self):
+        records = (
+            _record("cwru_001", 105, "X105_DE_time"),
+            _record("cwru_002", 118, "X118_DE_time"),
+        )
+        outcomes = {
+            record.opaque_id: {"status": runner.OUTCOME_STATUS_OK} for record in records
+        }
+        document = runner.compose_outcomes_document(
+            outcomes,
+            {
+                "date": "2026-08-10T00:00:00+00:00",
+                "git_describe": "pin",
+                "platform": "pin",
+            },
+        )
+        clean, _ = runner.split_provenance(document)
+        runner.assert_outcomes_complete(clean, records)

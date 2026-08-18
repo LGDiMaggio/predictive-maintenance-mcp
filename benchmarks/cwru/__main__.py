@@ -31,7 +31,7 @@ import argparse
 import sys
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Mapping, Optional
 
 from benchmarks.cwru import runner, scorer
 from benchmarks.cwru.download import ensure_cached, freeze_checksums
@@ -70,8 +70,9 @@ def _cmd_import(args: argparse.Namespace) -> int:
 
 def _run_stage(
     records: Sequence[OpsRecord], args: argparse.Namespace
-) -> dict[str, dict[str, Any]]:
-    """Shared measurement stage for ``run`` and ``all``.
+) -> tuple[dict[str, dict[str, Any]], dict[str, str]]:
+    """
+    Shared measurement stage for ``run`` and ``all``.
 
     Tripwire first, then an in-process re-import (see the module
     docstring's process-boundary note), then the runner — doubled when
@@ -82,15 +83,19 @@ def _run_stage(
         args: Parsed CLI namespace (``check_determinism``, ``output``).
 
     Returns:
-        The outcomes produced (and written).
+        ``(outcomes, provenance)`` — the outcomes produced
+        (and written) plus the provenance block that accompanied the write.
+
     """
     runner.assert_import_provenance()
+    provenance = runner.collect_provenance()
     import_records(records, overwrite=True)
     if args.check_determinism:
         outcomes = runner.check_determinism(records)
     else:
         outcomes = runner.run_records(records)
-    target = runner.write_outcomes(outcomes, args.output)
+    outcomes_w_provenance = runner.compose_outcomes_document(outcomes, provenance)
+    target = runner.write_outcomes(outcomes_w_provenance, args.output)
     ok = sum(
         1
         for outcome in outcomes.values()
@@ -100,7 +105,7 @@ def _run_stage(
         f"Wrote {len(outcomes)} outcome(s) ({ok} ok, "
         f"{len(outcomes) - ok} missing/failed) to {target}."
     )
-    return outcomes
+    return outcomes, provenance
 
 
 def _cmd_run(args: argparse.Namespace) -> int:
@@ -110,7 +115,9 @@ def _cmd_run(args: argparse.Namespace) -> int:
 
 
 def _score_outcomes(
-    outcomes: dict[str, dict[str, Any]], results_path: Optional[Path]
+    outcomes: dict[str, dict[str, Any]],
+    results_path: Optional[Path],
+    measurement_provenance: Optional[Mapping[str, str]],
 ) -> Path:
     """Shared scoring stage: label join, metrics, atomic results write.
 
@@ -118,11 +125,14 @@ def _score_outcomes(
         outcomes: Runner outcomes keyed by opaque id.
         results_path: Results destination; ``None`` uses the scorer's
             committed default.
+        measurement_provenance: Provenance values coming from the outcomes.
 
     Returns:
         The results path written.
     """
-    results = scorer.score_results(outcomes)
+    results = scorer.score_results(
+        outcomes, measurement_provenance=measurement_provenance
+    )
     target = scorer.write_results(results, results_path)
     print(f"Scored {len(results['records'])} record(s); wrote {target}.")
     return target
@@ -130,8 +140,8 @@ def _score_outcomes(
 
 def _cmd_score(args: argparse.Namespace) -> int:
     """Score a previously written outcomes artifact against the labels."""
-    outcomes = scorer.read_outcomes(args.outcomes)
-    _score_outcomes(outcomes, args.output)
+    outcomes, measurement_provenance = scorer.read_outcomes(args.outcomes)
+    _score_outcomes(outcomes, args.output, measurement_provenance)
     return 0
 
 
@@ -145,9 +155,9 @@ def _cmd_all(args: argparse.Namespace) -> int:
     records = ops_view()
     for record in records:
         ensure_cached(record)
-    outcomes = _run_stage(records, args)
+    outcomes, measurement_provenance = _run_stage(records, args)
     runner.assert_outcomes_complete(outcomes, records)
-    _score_outcomes(outcomes, args.results_output)
+    _score_outcomes(outcomes, args.results_output, measurement_provenance)
     return 0
 
 
@@ -165,9 +175,7 @@ def _add_measurement_flags(parser: argparse.ArgumentParser) -> None:
         "--output",
         type=Path,
         default=None,
-        help=(
-            "outcomes destination (default: " "benchmarks/cwru/results/outcomes.json)"
-        ),
+        help=("outcomes destination (default: benchmarks/cwru/results/outcomes.json)"),
     )
 
 
