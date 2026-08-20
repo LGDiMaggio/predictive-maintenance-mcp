@@ -41,9 +41,13 @@ Load-bearing decisions, documented here:
   repr makes the bytes a pure function of the rounded values.
 - **Determinism claim scope** (:func:`check_determinism`): the
   double-run byte-identity check is scoped to the measured environment
-  (one machine, one interpreter, one BLAS). Cross-platform re-runs are
-  expected to reproduce metric-level results, not byte-identical
-  artifacts — scipy/BLAS low-order float bits differ across builds.
+  (one machine, one interpreter, one BLAS). The comparison covers
+  deterministic measurement content only: both runs serialize the clean
+  per-record outcomes, and the ``_provenance`` block (date, git describe,
+  platform, versions) is attached only when the artifact document is composed
+  for writing — so a changing date or git describe can never fail this check.
+  Cross-platform re-runs are expected to reproduce metric-level results,
+  not byte-identical artifacts — scipy/BLAS low-order float bits differ across builds.
 
 Outcome schema (per opaque id):
 
@@ -66,15 +70,17 @@ from __future__ import annotations
 import json
 import math
 import os
-from collections.abc import Iterable, Mapping
+import platform as platform_module
+import subprocess
+from collections.abc import Callable, Iterable, Mapping
+from datetime import datetime, timezone
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Optional
 
 import numpy as np
-
-from benchmarks.cwru.importer import SIGNAL_UNIT
-from benchmarks.cwru.records import OpsRecord
+import predictive_maintenance_mcp
+import scipy
 from predictive_maintenance_mcp.decision_support.diagnosis_pipeline import (
     diagnose_vibration,
 )
@@ -82,6 +88,9 @@ from predictive_maintenance_mcp.signal_acquisition.repository import (
     SignalRepository,
     get_repository,
 )
+
+from benchmarks.cwru.importer import SIGNAL_UNIT
+from benchmarks.cwru.records import OpsRecord
 
 __all__ = [
     "BEARING_ID",
@@ -93,13 +102,18 @@ __all__ = [
     "OUTCOME_STATUS_FAILED",
     "OUTCOME_STATUS_MISSING_SIGNAL",
     "OUTCOME_STATUS_OK",
+    "PROVENANCE_KEYS",
+    "PROVENANCE_MARKER_KEY",
     "REPO_ROOT",
     "SUPPORT_TYPE",
     "assert_import_provenance",
     "assert_outcomes_complete",
     "check_determinism",
+    "collect_provenance",
+    "compose_outcomes_document",
     "run_records",
     "serialize_outcomes",
+    "split_provenance",
     "write_outcomes",
 ]
 
@@ -149,6 +163,19 @@ OUTCOME_STATUS_FAILED: str = "failed"
 EXCLUDED_ANOMALY_MARKER: Mapping[str, str] = MappingProxyType(
     {"status": "excluded_unversioned_models"}
 )
+PROVENANCE_KEYS: frozenset[str] = frozenset(
+    {
+        "date",
+        "git_describe",
+        "platform",
+        "python_version",
+        "numpy_version",
+        "scipy_version",
+        "pipeline_version",
+    }
+)
+
+PROVENANCE_MARKER_KEY: str = "_provenance"
 
 #: Per-fault fields copied verbatim from each ``check_all_bearing_faults``
 #: fault check into the outcome (``fault_type`` itself becomes the key).
@@ -242,6 +269,82 @@ def _extract_iso_context(iso: Mapping[str, Any]) -> dict[str, Any]:
         if key in iso:
             context[key] = iso[key]
     return context
+
+
+def collect_provenance(overrides: Optional[Mapping[str, str]] = None) -> dict[str, str]:
+    """Collect the measurement provenance, with deterministic overrides.
+
+    Every value that varies between runs (date, git describe, platform,
+    versions) is produced lazily and can be overridden, so tests never
+    depend on the machine or the clock. Overridden keys skip their
+    producer entirely (no subprocess runs for an overridden
+    ``git_describe``).
+
+    Args:
+        overrides: Values to use verbatim instead of collecting. Keys
+            must be a subset of :data:`PROVENANCE_KEYS`.
+
+    Returns:
+        The complete provenance mapping (every key in
+        :data:`PROVENANCE_KEYS` present).
+
+    Raises:
+        ValueError: On an unknown override key (fail closed — a typo'd
+            override silently ignored would leave a varying value in an
+            artifact a test believed pinned), or from
+            :func:`_git_describe`.
+    """
+    resolved = dict(overrides or {})
+    unknown = sorted(set(resolved) - PROVENANCE_KEYS)
+    if unknown:
+        raise ValueError(
+            f"Unknown override key(s) {unknown} — valid keys are "
+            f"{sorted(PROVENANCE_KEYS)}. Fix the caller."
+        )
+    producers: dict[str, Callable[[], str]] = {
+        "date": lambda: datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "git_describe": _git_describe,
+        "platform": platform_module.platform,
+        "python_version": platform_module.python_version,
+        "numpy_version": lambda: str(np.__version__),
+        "scipy_version": lambda: str(scipy.__version__),
+        "pipeline_version": lambda: str(
+            getattr(predictive_maintenance_mcp, "__version__", "unknown")
+        ),
+    }
+    return {
+        key: resolved[key] if key in resolved else producer()
+        for key, producer in producers.items()
+    }
+
+
+def compose_outcomes_document(
+    outcomes: Mapping[str, Mapping[str, Any]],
+    provenance: Mapping[str, str],
+) -> dict[str, Any]:
+    """Build the outcomes artifact payload from records + provenance."""
+    return {**dict(outcomes), PROVENANCE_MARKER_KEY: dict(provenance)}
+
+
+def split_provenance(
+    payload: Mapping[str, Any],
+) -> tuple[dict[str, dict[str, Any]], Optional[dict[str, str]]]:
+    """Split a read artifact into its records and its provenance block.
+
+    Every key except the ``_provenance`` marker is a record; ``None``
+    provenance means the artifact predates provenance collection.
+    """
+    if PROVENANCE_MARKER_KEY in payload and not isinstance(
+        payload[PROVENANCE_MARKER_KEY], Mapping
+    ):
+        raise ValueError(
+            f"Outcomes artifact carries a non-object {PROVENANCE_MARKER_KEY!r}"
+        )
+    records = {
+        key: value for key, value in payload.items() if key != PROVENANCE_MARKER_KEY
+    }
+    block = payload.get(PROVENANCE_MARKER_KEY)
+    return records, dict(block) if isinstance(block, Mapping) else None
 
 
 def _run_one(record: OpsRecord, repository: SignalRepository) -> dict[str, Any]:
@@ -476,6 +579,47 @@ def write_outcomes(
     return target
 
 
+def _git_describe() -> str:
+    """Run ``git describe --always --dirty`` on the measured tree.
+
+    Returns:
+        The describe output, stripped.
+
+    Raises:
+        ValueError: If git cannot run or reports an error — the results
+            and outcomes artifacts must record which tree was measured, so
+            an unknown tree is a refusal, not a placeholder (pass an
+            explicit ``git_describe`` override).
+    """
+    command = ["git", "describe", "--always", "--dirty"]
+    try:
+        proc = subprocess.run(
+            command,
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise ValueError(
+            f"Cannot run '{' '.join(command)}' in {REPO_ROOT} "
+            f"({exc}) — the results and outcomes artifacts must record the "
+            f"measured tree. Install/repair git, or pass an explicit "
+            f"git_describe override."
+        ) from exc
+    described = proc.stdout.strip()
+    if proc.returncode != 0 or not described:
+        raise ValueError(
+            f"'{' '.join(command)}' failed in {REPO_ROOT} "
+            f"(exit {proc.returncode}, stderr: {proc.stderr.strip()!r}) — "
+            f"the results and outcomes artifacts must record the measured "
+            f"tree. Run again from the git checkout being measured, or pass "
+            f"an explicit git_describe override."
+        )
+    return described
+
+
 def check_determinism(
     records: Iterable[OpsRecord],
     *,
@@ -488,6 +632,12 @@ def check_determinism(
     re-runs are expected to reproduce metric-level results, not
     byte-identical artifacts (low-order float bits differ across
     builds) — the methodology states this explicitly.
+
+    The comparison covers deterministic measurement content only: both
+    runs serialize the clean per-record outcomes, and the ``_provenance``
+    block (date, git describe, platform, versions) is attached only when
+    the artifact document is composed for writing — so a changing date or
+    git describe can never fail this check.
 
     Args:
         records: Ops records to measure (materialized once, run twice).

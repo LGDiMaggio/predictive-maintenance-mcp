@@ -764,6 +764,48 @@ class TestScoreCLI:
         assert set(parsed["records"]) == {"cwru_001", "cwru_002"}
         assert parsed["strata"]["Y1"]["classification"]["correct"] == 1
         assert parsed["metadata"]["git_describe"] == META["git_describe"]
+        # The flat artifact predates provenance: the key is present, null.
+        assert parsed["measurement_provenance"] is None
+
+    def test_score_echoes_measurement_provenance_from_the_artifact(
+        self, tmp_path: Path, monkeypatch, capsys
+    ):
+        labeled = (
+            _labeled("cwru_001", 105, "inner_race", grade="Y1"),
+            _labeled("cwru_002", 97, "normal"),
+        )
+        outcomes = {
+            "cwru_001": _outcome("cwru_001", {"BPFI": _detected("high")}),
+            "cwru_002": _outcome("cwru_002"),
+        }
+        provenance = {
+            "date": "2026-08-10T00:00:00+00:00",
+            "git_describe": "pin",
+            "platform": "pin",
+        }
+        outcomes_path = tmp_path / "outcomes.json"
+        results_path = tmp_path / "results.json"
+        runner.write_outcomes(
+            runner.compose_outcomes_document(outcomes, provenance), outcomes_path
+        )
+        monkeypatch.setattr(scorer, "label_view", lambda: labeled)
+        monkeypatch.setattr(
+            scorer, "collect_metadata", lambda overrides=None: dict(META)
+        )
+
+        exit_code = main(
+            [
+                "score",
+                "--outcomes",
+                str(outcomes_path),
+                "--output",
+                str(results_path),
+            ]
+        )
+
+        assert exit_code == 0
+        parsed = json.loads(results_path.read_text(encoding="utf-8"))
+        assert parsed["measurement_provenance"] == provenance
 
     def test_score_partial_outcomes_exit_2_naming_ids(
         self, tmp_path: Path, monkeypatch, capsys
@@ -809,6 +851,10 @@ class TestCommittedResultsDerivedFromOutcomes:
         return scorer.DEFAULT_RESULTS_PATH.read_text(encoding="utf-8")
 
     @staticmethod
+    def _committed_outcomes_text() -> str:
+        return runner.DEFAULT_OUTCOMES_PATH.read_text(encoding="utf-8")
+
+    @staticmethod
     def _rescore(tmp_path: Path) -> str:
         """Re-score the committed outcomes and return the serialized bytes.
 
@@ -822,10 +868,19 @@ class TestCommittedResultsDerivedFromOutcomes:
         committed = json.loads(
             TestCommittedResultsDerivedFromOutcomes._committed_results_text()
         )
-        outcomes = scorer.read_outcomes()
+        outcomes, provenance = scorer.read_outcomes()
         results = scorer.score_results(
-            outcomes, metadata_overrides=committed["metadata"]
+            outcomes,
+            metadata_overrides=committed["metadata"],
+            measurement_provenance=provenance,
         )
+
+        # Transitional: committed results predate provenance. Once outcomes are
+        # regenerated, provenance is never None and this pop must go.
+
+        if provenance is None:
+            results.pop("measurement_provenance")
+
         out = tmp_path / "rescored.json"
         scorer.write_results(results, out)
         return out.read_text(encoding="utf-8")
@@ -845,6 +900,25 @@ class TestCommittedResultsDerivedFromOutcomes:
         """
         committed = json.loads(self._committed_results_text())
         assert set(committed["metadata"]) == set(scorer.METADATA_KEYS)
+
+    def test_every_provenance_key_is_pinned_by_the_committed_artifact(self):
+        """The committed outcomes' provenance keys must equal PROVENANCE_KEYS.
+
+        If a new provenance key is added without regenerating the
+        committed outcomes artifact, the derivation guard would silently
+        drop it. The guard is dormant while the committed artifact
+        predates provenance collection (no ``_provenance`` marker) and
+        becomes live once the maintainer re-measures.
+        """
+        committed = json.loads(self._committed_outcomes_text())
+        if runner.PROVENANCE_MARKER_KEY not in committed:
+            pytest.skip(
+                "committed outcomes predate provenance collection; "
+                "regenerate to arm this guard"
+            )
+        assert set(committed[runner.PROVENANCE_MARKER_KEY]) == set(
+            runner.PROVENANCE_KEYS
+        )
 
     def test_a_perturbed_results_copy_fails_the_comparison(self, tmp_path: Path):
         """Mutation leg: the comparison is demonstrated to fail, not assumed to."""
@@ -871,3 +945,81 @@ class TestCommittedResultsDerivedFromOutcomes:
         """Only the two committed artifacts are read."""
         assert scorer.DEFAULT_RESULTS_PATH.exists()
         assert runner.DEFAULT_OUTCOMES_PATH.exists()
+
+
+# ---------------------------------------------------------------------------
+# Measurement provenance: read split, results echo, schema-stable null
+# ---------------------------------------------------------------------------
+
+
+class TestMeasurementProvenance:
+    """Provenance round-trips from the artifact into the results.
+
+    ``read_outcomes`` splits the ``_provenance`` block from the record
+    ids; ``score_results`` echoes it verbatim into
+    ``measurement_provenance``, which is always present — ``None`` for
+    artifacts that predate provenance collection.
+    """
+
+    @staticmethod
+    def _pair():
+        labeled = (
+            _labeled("cwru_001", 105, "inner_race", grade="Y1"),
+            _labeled("cwru_002", 97, "normal"),
+        )
+        outcomes = {
+            "cwru_001": _outcome("cwru_001", {"BPFI": _detected("high")}),
+            "cwru_002": _outcome("cwru_002"),
+        }
+        return labeled, outcomes
+
+    def test_read_outcomes_round_trips_provenance(self, tmp_path):
+        _, outcomes = self._pair()
+        provenance = {
+            "date": "2026-08-10T00:00:00+00:00",
+            "git_describe": "pin",
+            "platform": "pin",
+        }
+        path = tmp_path / "outcomes.json"
+        runner.write_outcomes(
+            runner.compose_outcomes_document(outcomes, provenance), path
+        )
+        records, block = scorer.read_outcomes(path)
+        assert records == outcomes
+        assert block == provenance
+
+    def test_read_outcomes_legacy_artifact_returns_none(self, tmp_path):
+        _, outcomes = self._pair()
+        path = tmp_path / "outcomes.json"
+        runner.write_outcomes(outcomes, path)
+        records, block = scorer.read_outcomes(path)
+        assert records == outcomes
+        assert block is None
+
+    def test_measurement_provenance_echoed_verbatim(self):
+        labeled, outcomes = self._pair()
+        provenance = {
+            "date": "2026-08-10T00:00:00+00:00",
+            "git_describe": "pin",
+            "platform": "pin",
+        }
+        results = scorer.score_results(
+            outcomes,
+            labeled,
+            metadata_overrides=META,
+            measurement_provenance=provenance,
+        )
+        assert results["measurement_provenance"] == provenance
+
+    def test_measurement_provenance_null_when_omitted(self):
+        labeled, outcomes = self._pair()
+        results = scorer.score_results(outcomes, labeled, metadata_overrides=META)
+        assert "measurement_provenance" in results
+        assert results["measurement_provenance"] is None
+
+    def test_empty_provenance_mapping_honored_verbatim(self):
+        labeled, outcomes = self._pair()
+        results = scorer.score_results(
+            outcomes, labeled, metadata_overrides=META, measurement_provenance={}
+        )
+        assert results["measurement_provenance"] == {}

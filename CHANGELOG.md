@@ -5,6 +5,19 @@ All notable changes to the Predictive Maintenance MCP Server project will be doc
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Measurement provenance recorded with the CWRU benchmark outcomes.** The
+  runner now collects a measurement-environment block — date, git describe of
+  the measured tree, platform, Python/NumPy/SciPy versions, and the measured
+  pipeline version — once before the run and stores it as a `_provenance`
+  sibling inside the outcomes artifact; the scorer echoes it into
+  `results.json` as `measurement_provenance`, so every published number stays
+  bound to the exact environment that measured it. A dormant CI guard
+  (documented in `docs/benchmark-methodology.md`) arms itself once the
+  committed outcomes are regenerated.
+
 ## [0.13.0] - 2026-08-14
 
 Three additions. `load_signal` now opens headerless raw binary waveforms

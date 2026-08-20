@@ -189,6 +189,12 @@ records get hard — most residual misclassifications sit in the ball-fault and
   results (per-record hits and rates), not byte-identical artifacts —
   low-order floating-point bits differ across BLAS builds and operating
   systems.
+- **Measurement provenance is recorded with the outcomes.** Each outcomes
+  artifact carries a `_provenance` block — date, git describe of the measured
+  tree, platform, Python/NumPy/SciPy versions, and the measured pipeline
+  version — collected once before the run. `results.json` echoes it as
+  `measurement_provenance`, so every published number stays bound to the exact
+  environment that measured it.
 - An import-provenance tripwire refuses to run if the measured package does not
   resolve to the working tree being benchmarked (guards against measuring a
   different checkout, e.g. from a stale editable install).

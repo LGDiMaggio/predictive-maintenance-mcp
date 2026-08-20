@@ -59,18 +59,11 @@ a rate over zero records is ``None``, never a fabricated percentage.
 from __future__ import annotations
 
 import json
-import platform as platform_module
-import subprocess
-from collections.abc import Callable, Mapping, Sequence
-from datetime import datetime, timezone
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Optional
 
-import numpy as np
-import scipy
-
-import predictive_maintenance_mcp
 from benchmarks.cwru import runner
 from benchmarks.cwru.records import LabeledRecord, label_view
 
@@ -136,18 +129,7 @@ HEADLINE_STRATA: tuple[str, ...] = ("Y1", "Y2")
 
 #: Metadata keys of the results artifact; every one is overridable so
 #: tests stay deterministic (date, git describe, platform vary by run).
-METADATA_KEYS: frozenset[str] = frozenset(
-    {
-        "dataset_subset",
-        "date",
-        "git_describe",
-        "pipeline_version",
-        "platform",
-        "python_version",
-        "numpy_version",
-        "scipy_version",
-    }
-)
+METADATA_KEYS: frozenset[str] = frozenset({*runner.PROVENANCE_KEYS, "dataset_subset"})
 
 #: Ranking tiers for the primary (detected + evidence) leg.
 _EVIDENCE_TIER: Mapping[str, int] = MappingProxyType({"high": 3, "moderate": 2})
@@ -155,47 +137,6 @@ _EVIDENCE_TIER: Mapping[str, int] = MappingProxyType({"high": 3, "moderate": 2})
 #: Ranking tier for a harmonic-only BSF hit — below every primary-leg
 #: tier: a detected fundamental always outranks a 2x-only finding.
 _HARMONIC_ONLY_TIER: int = 1
-
-
-def _git_describe() -> str:
-    """Run ``git describe --always --dirty`` on the measured tree.
-
-    Returns:
-        The describe output, stripped.
-
-    Raises:
-        ValueError: If git cannot run or reports an error — the results
-            artifact must record which tree was measured, so an unknown
-            tree is a refusal, not a placeholder (override via
-            ``metadata_overrides`` when scoring outside a git checkout).
-    """
-    command = ["git", "describe", "--always", "--dirty"]
-    try:
-        proc = subprocess.run(
-            command,
-            cwd=runner.REPO_ROOT,
-            capture_output=True,
-            text=True,
-            timeout=30,
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        raise ValueError(
-            f"Cannot run '{' '.join(command)}' in {runner.REPO_ROOT} "
-            f"({exc}) — the results artifact must record the measured "
-            f"tree. Install/repair git, or pass "
-            f"metadata_overrides={{'git_describe': ...}} explicitly."
-        ) from exc
-    described = proc.stdout.strip()
-    if proc.returncode != 0 or not described:
-        raise ValueError(
-            f"'{' '.join(command)}' failed in {runner.REPO_ROOT} "
-            f"(exit {proc.returncode}, stderr: {proc.stderr.strip()!r}) — "
-            f"the results artifact must record the measured tree. Run the "
-            f"scorer from the git checkout being measured, or pass "
-            f"metadata_overrides={{'git_describe': ...}} explicitly."
-        )
-    return described
 
 
 def collect_metadata(overrides: Optional[Mapping[str, str]] = None) -> dict[str, str]:
@@ -228,21 +169,12 @@ def collect_metadata(overrides: Optional[Mapping[str, str]] = None) -> dict[str,
             f"Unknown metadata override key(s) {unknown} — valid keys are "
             f"{sorted(METADATA_KEYS)}. Fix the caller."
         )
-    producers: dict[str, Callable[[], str]] = {
-        "dataset_subset": lambda: DATASET_SUBSET,
-        "date": lambda: datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "git_describe": _git_describe,
-        "pipeline_version": lambda: str(
-            getattr(predictive_maintenance_mcp, "__version__", "unknown")
-        ),
-        "platform": platform_module.platform,
-        "python_version": platform_module.python_version,
-        "numpy_version": lambda: str(np.__version__),
-        "scipy_version": lambda: str(scipy.__version__),
-    }
+    provenance = runner.collect_provenance(
+        {key: value for key, value in resolved.items() if key in runner.PROVENANCE_KEYS}
+    )
     return {
-        key: resolved[key] if key in resolved else producer()
-        for key, producer in producers.items()
+        **provenance,
+        "dataset_subset": resolved.get("dataset_subset", DATASET_SUBSET),
     }
 
 
@@ -503,6 +435,7 @@ def score_results(
     labeled: Optional[Sequence[LabeledRecord]] = None,
     *,
     metadata_overrides: Optional[Mapping[str, str]] = None,
+    measurement_provenance: Optional[Mapping[str, str]] = None,
 ) -> dict[str, Any]:
     """Join outcomes with labels and compute the stratified results.
 
@@ -516,13 +449,15 @@ def score_results(
             ``None`` reads the vendored tables via ``label_view()``.
         metadata_overrides: Verbatim metadata values (tests pin date,
             git describe, and platform for determinism).
+        measurement_provenance: Provenance values coming from the outcomes.
 
     Returns:
         The results document (see this module's docstring and
         ``write_results`` for the artifact schema): ``metadata``,
-        ``criteria``, per-stratum aggregates in ``strata``, the
-        Y1/Y2-only ``headline``, the ``known_anomalies_flagged`` line,
-        and the per-record ``records`` table.
+        ``measurement_provenance``, ``criteria``, per-stratum aggregates
+        in ``strata``, the Y1/Y2-only ``headline``, the
+        ``known_anomalies_flagged`` line, and the per-record ``records``
+        table.
 
     Raises:
         ValueError: On empty outcomes, an empty label view, duplicate
@@ -567,6 +502,9 @@ def score_results(
     flagged_ids = sorted(oid for oid, row in rows.items() if row["known_anomalies"])
     return {
         "metadata": collect_metadata(metadata_overrides),
+        "measurement_provenance": (
+            dict(measurement_provenance) if measurement_provenance is not None else None
+        ),
         "criteria": _criteria(),
         "strata": strata,
         "headline": {
@@ -581,7 +519,9 @@ def score_results(
     }
 
 
-def read_outcomes(path: Optional[Path] = None) -> dict[str, Any]:
+def read_outcomes(
+    path: Optional[Path] = None,
+) -> tuple[dict[str, dict[str, Any]], Optional[dict[str, str]]]:
     """Read a runner outcomes artifact for scoring.
 
     Args:
@@ -589,8 +529,9 @@ def read_outcomes(path: Optional[Path] = None) -> dict[str, Any]:
             default (``benchmarks/cwru/results/outcomes.json``).
 
     Returns:
-        The parsed outcomes, keyed by opaque id.
-
+         A ``(outcomes, provenance)`` pair, where ``provenance`` is the
+        ``_provenance`` block when present and ``None`` for artifacts
+        that predate provenance collection.
     Raises:
         ValueError: If the artifact is absent (remedy: run the
             measurement first), unparseable, or not a JSON object.
@@ -615,7 +556,7 @@ def read_outcomes(path: Optional[Path] = None) -> dict[str, Any]:
             f"opaque id, got {type(raw).__name__} — re-run 'python -m "
             f"benchmarks.cwru run' to regenerate it."
         )
-    return raw
+    return runner.split_provenance(raw)
 
 
 def write_results(results: Mapping[str, Any], path: Optional[Path] = None) -> Path:
