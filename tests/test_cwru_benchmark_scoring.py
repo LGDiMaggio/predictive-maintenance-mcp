@@ -874,13 +874,6 @@ class TestCommittedResultsDerivedFromOutcomes:
             metadata_overrides=committed["metadata"],
             measurement_provenance=provenance,
         )
-
-        # Transitional: committed results predate provenance. Once outcomes are
-        # regenerated, provenance is never None and this pop must go.
-
-        if provenance is None:
-            results.pop("measurement_provenance")
-
         out = tmp_path / "rescored.json"
         scorer.write_results(results, out)
         return out.read_text(encoding="utf-8")
