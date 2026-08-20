@@ -59,16 +59,10 @@ a rate over zero records is ``None``, never a fabricated percentage.
 from __future__ import annotations
 
 import json
-import platform as platform_module
-import subprocess
-from collections.abc import Callable, Mapping, Sequence
-from datetime import datetime, timezone
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Optional
-
-import numpy as np
-import scipy
 
 from benchmarks.cwru import runner
 from benchmarks.cwru.records import LabeledRecord, label_view
@@ -135,9 +129,8 @@ HEADLINE_STRATA: tuple[str, ...] = ("Y1", "Y2")
 
 #: Metadata keys of the results artifact; every one is overridable so
 #: tests stay deterministic (date, git describe, platform vary by run).
-METADATA_KEYS = frozenset({*runner.PROVENANCE_KEYS, "dataset_subset"})
+METADATA_KEYS: frozenset[str] = frozenset({*runner.PROVENANCE_KEYS, "dataset_subset"})
 #: Ranking tiers for the primary (detected + evidence) leg.
-
 _EVIDENCE_TIER: Mapping[str, int] = MappingProxyType({"high": 3, "moderate": 2})
 
 #: Ranking tier for a harmonic-only BSF hit — below every primary-leg

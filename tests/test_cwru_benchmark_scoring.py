@@ -874,8 +874,13 @@ class TestCommittedResultsDerivedFromOutcomes:
             metadata_overrides=committed["metadata"],
             measurement_provenance=provenance,
         )
+
+        # Transitional: committed results predate provenance. Once outcomes are
+        # regenerated, provenance is never None and this pop must go.
+
         if provenance is None:
             results.pop("measurement_provenance")
+
         out = tmp_path / "rescored.json"
         scorer.write_results(results, out)
         return out.read_text(encoding="utf-8")
@@ -907,7 +912,10 @@ class TestCommittedResultsDerivedFromOutcomes:
         """
         committed = json.loads(self._committed_outcomes_text())
         if runner.PROVENANCE_MARKER_KEY not in committed:
-            return
+            pytest.skip(
+                "committed outcomes predate provenance collection; "
+                "regenerate to arm this guard"
+            )
         assert set(committed[runner.PROVENANCE_MARKER_KEY]) == set(
             runner.PROVENANCE_KEYS
         )

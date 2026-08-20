@@ -31,7 +31,6 @@ import argparse
 import sys
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Mapping, Optional
 
 from benchmarks.cwru import runner, scorer
 from benchmarks.cwru.download import ensure_cached, freeze_checksums
@@ -71,8 +70,7 @@ def _cmd_import(args: argparse.Namespace) -> int:
 def _run_stage(
     records: Sequence[OpsRecord], args: argparse.Namespace
 ) -> tuple[dict[str, dict[str, Any]], dict[str, str]]:
-    """
-    Shared measurement stage for ``run`` and ``all``.
+    """Shared measurement stage for ``run`` and ``all``.
 
     Tripwire first, then an in-process re-import (see the module
     docstring's process-boundary note), then the runner — doubled when

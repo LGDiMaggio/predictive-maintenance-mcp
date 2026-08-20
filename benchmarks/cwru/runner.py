@@ -41,9 +41,9 @@ Load-bearing decisions, documented here:
   repr makes the bytes a pure function of the rounded values.
 - **Determinism claim scope** (:func:`check_determinism`): the
   double-run byte-identity check is scoped to the measured environment
-  (one machine, one interpreter, one BLAS).The comparison covers
+  (one machine, one interpreter, one BLAS). The comparison covers
   deterministic measurement content only: both runs serialize the clean
-  per-record outcomes, and the ``_provenance``block (date, git describe,
+  per-record outcomes, and the ``_provenance`` block (date, git describe,
   platform, versions) is attached only when the artifact document is composed
   for writing — so a changing date or git describe can never fail this check.
   Cross-platform re-runs are expected to reproduce metric-level results,
@@ -70,19 +70,17 @@ from __future__ import annotations
 import json
 import math
 import os
-from collections.abc import Iterable, Mapping, Callable
+import platform as platform_module
+import subprocess
+from collections.abc import Callable, Iterable, Mapping
+from datetime import datetime, timezone
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Optional
 
-from datetime import datetime, timezone
-import platform as platform_module
-import scipy
 import numpy as np
 import predictive_maintenance_mcp
-import subprocess
-from benchmarks.cwru.importer import SIGNAL_UNIT
-from benchmarks.cwru.records import OpsRecord
+import scipy
 from predictive_maintenance_mcp.decision_support.diagnosis_pipeline import (
     diagnose_vibration,
 )
@@ -91,9 +89,11 @@ from predictive_maintenance_mcp.signal_acquisition.repository import (
     get_repository,
 )
 
+from benchmarks.cwru.importer import SIGNAL_UNIT
+from benchmarks.cwru.records import OpsRecord
+
 __all__ = [
     "BEARING_ID",
-    "PROVENANCE_KEYS",
     "DEFAULT_OUTCOMES_PATH",
     "EXCLUDED_ANOMALY_MARKER",
     "EXPECTED_PACKAGE_INIT",
@@ -102,17 +102,18 @@ __all__ = [
     "OUTCOME_STATUS_FAILED",
     "OUTCOME_STATUS_MISSING_SIGNAL",
     "OUTCOME_STATUS_OK",
+    "PROVENANCE_KEYS",
     "REPO_ROOT",
     "SUPPORT_TYPE",
     "assert_import_provenance",
     "assert_outcomes_complete",
     "check_determinism",
-    "run_records",
-    "serialize_outcomes",
-    "write_outcomes",
     "collect_provenance",
     "compose_outcomes_document",
+    "run_records",
+    "serialize_outcomes",
     "split_provenance",
+    "write_outcomes",
 ]
 
 _PACKAGE_DIR = Path(__file__).resolve().parent
@@ -270,7 +271,7 @@ def _extract_iso_context(iso: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def collect_provenance(overrides: Optional[Mapping[str, str]] = None) -> dict[str, str]:
-    """Collect the results-artifact metadata, with deterministic overrides.
+    """Collect the measurement provenance, with deterministic overrides.
 
     Every value that varies between runs (date, git describe, platform,
     versions) is produced lazily and can be overridden, so tests never
@@ -283,7 +284,7 @@ def collect_provenance(overrides: Optional[Mapping[str, str]] = None) -> dict[st
             must be a subset of :data:`PROVENANCE_KEYS`.
 
     Returns:
-        The complete metadata mapping (every key in
+        The complete provenance mapping (every key in
         :data:`PROVENANCE_KEYS` present).
 
     Raises:
@@ -296,7 +297,7 @@ def collect_provenance(overrides: Optional[Mapping[str, str]] = None) -> dict[st
     unknown = sorted(set(resolved) - PROVENANCE_KEYS)
     if unknown:
         raise ValueError(
-            f"Unknown metadata override key(s) {unknown} — valid keys are "
+            f"Unknown override key(s) {unknown} — valid keys are "
             f"{sorted(PROVENANCE_KEYS)}. Fix the caller."
         )
     producers: dict[str, Callable[[], str]] = {
@@ -585,9 +586,9 @@ def _git_describe() -> str:
 
     Raises:
         ValueError: If git cannot run or reports an error — the results
-            artifact must record which tree was measured, so an unknown
+            and outcomes artifacts must record which tree was measured, so an unknown
             tree is a refusal, not a placeholder (override via
-            ``metadata_overrides`` when scoring outside a git checkout).
+            ``overrides`` when scoring outside a git checkout).
     """
     command = ["git", "describe", "--always", "--dirty"]
     try:
@@ -602,18 +603,18 @@ def _git_describe() -> str:
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise ValueError(
             f"Cannot run '{' '.join(command)}' in {REPO_ROOT} "
-            f"({exc}) — the results artifact must record the measured "
+            f"({exc}) — the results and outcomes artifacts must record the measured "
             f"tree. Install/repair git, or pass "
-            f"metadata_overrides={{'git_describe': ...}} explicitly."
+            f"overrides={{'git_describe': ...}} explicitly."
         ) from exc
     described = proc.stdout.strip()
     if proc.returncode != 0 or not described:
         raise ValueError(
             f"'{' '.join(command)}' failed in {REPO_ROOT} "
             f"(exit {proc.returncode}, stderr: {proc.stderr.strip()!r}) — "
-            f"the results artifact must record the measured tree. Run the "
+            f"the results and outcomes artifacts must record the measured tree. Run the "
             f"scorer from the git checkout being measured, or pass "
-            f"metadata_overrides={{'git_describe': ...}} explicitly."
+            f"overrides={{'git_describe': ...}} explicitly."
         )
     return described
 

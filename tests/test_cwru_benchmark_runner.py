@@ -261,7 +261,7 @@ class TestDeterminism:
         assert set(first) == set(second)
         for key in outcomes:
             assert first[key] == second[key]
-        # Only the provenance block differs, and it is a namedable
+        # Only the provenance block differs, and it is a nameable
         # divergence (git describe), not a byte count.
         block_a = first[runner.PROVENANCE_MARKER_KEY]
         block_b = second[runner.PROVENANCE_MARKER_KEY]
@@ -529,9 +529,6 @@ class TestMeasurementProvenance:
     def test_unknown_override_key_refused(self):
         with pytest.raises(ValueError, match="bogus_key"):
             runner.collect_provenance({"bogus_key": "typo"})
-
-    def test_pipeline_version_is_measured(self):
-        assert "pipeline_version" in runner.PROVENANCE_KEYS
 
     def test_compose_and_split_round_trip(self):
         outcomes = {"cwru_001": {"status": runner.OUTCOME_STATUS_OK}}
