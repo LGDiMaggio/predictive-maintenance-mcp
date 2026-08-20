@@ -86,12 +86,21 @@
       "cwru_050"
     ]
   },
+  "measurement_provenance": {
+    "date": "2026-08-20T16:21:36+00:00",
+    "git_describe": "v0.13.0-18-gf755388",
+    "numpy_version": "2.3.3",
+    "pipeline_version": "0.13.0",
+    "platform": "Windows-10-10.0.26200-SP0",
+    "python_version": "3.11.9",
+    "scipy_version": "1.16.2"
+  },
   "metadata": {
     "dataset_subset": "CWRU 12 kHz drive-end fault group + normal baselines (v1)",
-    "date": "2026-08-10T17:53:48+00:00",
-    "git_describe": "v0.12.0-18-gba6c33b",
+    "date": "2026-08-20T16:27:12+00:00",
+    "git_describe": "v0.13.0-19-g3fe533a",
     "numpy_version": "2.3.3",
-    "pipeline_version": "0.12.0",
+    "pipeline_version": "0.13.0",
     "platform": "Windows-10-10.0.26200-SP0",
     "python_version": "3.11.9",
     "scipy_version": "1.16.2"

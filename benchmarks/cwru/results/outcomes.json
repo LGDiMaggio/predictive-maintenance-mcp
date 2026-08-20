@@ -1,4 +1,13 @@
 {
+  "_provenance": {
+    "date": "2026-08-20T16:21:36+00:00",
+    "git_describe": "v0.13.0-18-gf755388",
+    "numpy_version": "2.3.3",
+    "pipeline_version": "0.13.0",
+    "platform": "Windows-10-10.0.26200-SP0",
+    "python_version": "3.11.9",
+    "scipy_version": "1.16.2"
+  },
   "cwru_001": {
     "anomaly_detection": {
       "status": "excluded_unversioned_models"
