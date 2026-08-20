@@ -29,8 +29,9 @@ from __future__ import annotations
 
 import argparse
 import sys
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
+from typing import Any, Optional
 
 from benchmarks.cwru import runner, scorer
 from benchmarks.cwru.download import ensure_cached, freeze_checksums

@@ -130,6 +130,7 @@ HEADLINE_STRATA: tuple[str, ...] = ("Y1", "Y2")
 #: Metadata keys of the results artifact; every one is overridable so
 #: tests stay deterministic (date, git describe, platform vary by run).
 METADATA_KEYS: frozenset[str] = frozenset({*runner.PROVENANCE_KEYS, "dataset_subset"})
+
 #: Ranking tiers for the primary (detected + evidence) leg.
 _EVIDENCE_TIER: Mapping[str, int] = MappingProxyType({"high": 3, "moderate": 2})
 

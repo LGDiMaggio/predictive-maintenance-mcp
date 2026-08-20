@@ -103,6 +103,7 @@ __all__ = [
     "OUTCOME_STATUS_MISSING_SIGNAL",
     "OUTCOME_STATUS_OK",
     "PROVENANCE_KEYS",
+    "PROVENANCE_MARKER_KEY",
     "REPO_ROOT",
     "SUPPORT_TYPE",
     "assert_import_provenance",
@@ -586,9 +587,9 @@ def _git_describe() -> str:
 
     Raises:
         ValueError: If git cannot run or reports an error — the results
-            and outcomes artifacts must record which tree was measured, so an unknown
-            tree is a refusal, not a placeholder (override via
-            ``overrides`` when scoring outside a git checkout).
+            and outcomes artifacts must record which tree was measured, so
+            an unknown tree is a refusal, not a placeholder (pass an
+            explicit ``git_describe`` override).
     """
     command = ["git", "describe", "--always", "--dirty"]
     try:
@@ -603,18 +604,18 @@ def _git_describe() -> str:
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise ValueError(
             f"Cannot run '{' '.join(command)}' in {REPO_ROOT} "
-            f"({exc}) — the results and outcomes artifacts must record the measured "
-            f"tree. Install/repair git, or pass "
-            f"overrides={{'git_describe': ...}} explicitly."
+            f"({exc}) — the results and outcomes artifacts must record the "
+            f"measured tree. Install/repair git, or pass an explicit "
+            f"git_describe override."
         ) from exc
     described = proc.stdout.strip()
     if proc.returncode != 0 or not described:
         raise ValueError(
             f"'{' '.join(command)}' failed in {REPO_ROOT} "
             f"(exit {proc.returncode}, stderr: {proc.stderr.strip()!r}) — "
-            f"the results and outcomes artifacts must record the measured tree. Run the "
-            f"scorer from the git checkout being measured, or pass "
-            f"overrides={{'git_describe': ...}} explicitly."
+            f"the results and outcomes artifacts must record the measured "
+            f"tree. Run again from the git checkout being measured, or pass "
+            f"an explicit git_describe override."
         )
     return described
 
