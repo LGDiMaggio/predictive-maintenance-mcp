@@ -4,7 +4,11 @@ Since U8 every analysis tool takes signal_id as its only signal handle:
 signals are loaded once via the repository and referenced by id.
 """
 
+import asyncio
 import json
+import tempfile
+from pathlib import Path
+
 import pytest
 import numpy as np
 import pandas as pd
@@ -12,8 +16,88 @@ from unittest.mock import AsyncMock
 
 from mcp.server.mcpserver import MCPServer
 
-from predictive_maintenance_mcp.mcp_tools.analysis_tools import register
+from predictive_maintenance_mcp.mcp_tools.analysis_tools import analyze_fft, register
 from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
+
+from _golden_signals import load_golden_signals
+
+#: Characterization snapshot of ``analyze_fft`` on the golden signals.
+ANALYZE_FFT_GOLDEN_FILE = Path(__file__).parent / "fixtures" / "analyze_fft_golden.json"
+
+#: The ``analyze_fft`` calls frozen in the snapshot (keyword arguments only;
+#: ``ctx`` is added by the caller). Default segment (leading 1 s), the whole
+#: signal, and a ``max_frequency`` cut, on both golden signals.
+ANALYZE_FFT_GOLDEN_CASES: dict[str, dict] = {
+    "golden_iso_default": {"signal_id": "golden_iso"},
+    "golden_iso_full_signal": {"signal_id": "golden_iso", "segment_duration": None},
+    "golden_bearing_default": {"signal_id": "golden_bearing"},
+    "golden_bearing_max_4000": {"signal_id": "golden_bearing", "max_frequency": 4000.0},
+}
+
+
+def build_analyze_fft_golden() -> dict:
+    """Run every golden ``analyze_fft`` case and return the snapshot payload.
+
+    Loads the deterministic golden signals into the repository (temporary
+    directory, explicit rate and unit, no companions), runs each case of
+    :data:`ANALYZE_FFT_GOLDEN_CASES` and dumps the ``FFTResult`` as JSON.
+    Clears the repository afterwards. Not for use inside a running event
+    loop: the capture recipe calls it from a plain interpreter.
+    """
+    repo = get_repository()
+    repo.clear_all()
+    payload: dict = {}
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            load_golden_signals(repo, Path(tmp))
+            ctx = AsyncMock()
+            for name, kwargs in ANALYZE_FFT_GOLDEN_CASES.items():
+                result = asyncio.run(analyze_fft(ctx=ctx, **kwargs))
+                payload[name] = {
+                    "call": kwargs,
+                    "result": result.model_dump(mode="json"),
+                }
+    finally:
+        repo.clear_all()
+    return payload
+
+
+def write_analyze_fft_golden() -> Path:
+    """Regenerate the characterization fixture ON PURPOSE (see the recipe)."""
+    ANALYZE_FFT_GOLDEN_FILE.write_text(
+        json.dumps(build_analyze_fft_golden(), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return ANALYZE_FFT_GOLDEN_FILE
+
+
+def assert_close_tree(
+    new, old, path: str = "", rel: float = 1e-7, abs_tol: float = 1e-9
+):
+    """Recursive equality of a JSON tree, numbers via ``pytest.approx``.
+
+    Every key of the golden tree must be present with the same value; the
+    tolerance is tight on purpose (same platform: bit-identical; across the
+    CI matrix: a few ulps at most). Any algorithmic drift (window, scaling,
+    segment choice) differs by orders of magnitude more.
+    """
+    if isinstance(old, dict):
+        assert isinstance(new, dict), f"{path}: expected dict, got {type(new)}"
+        for key, old_val in old.items():
+            assert key in new, f"{path}.{key}: missing in new output"
+            assert_close_tree(new[key], old_val, f"{path}.{key}", rel, abs_tol)
+    elif isinstance(old, list):
+        assert isinstance(new, (list, tuple)), f"{path}: expected list"
+        assert len(new) == len(old), f"{path}: length {len(new)} != golden {len(old)}"
+        for i, (n, o) in enumerate(zip(new, old)):
+            assert_close_tree(n, o, f"{path}[{i}]", rel, abs_tol)
+    elif isinstance(old, bool) or old is None or isinstance(old, str):
+        assert new == old, f"{path}: {new!r} != golden {old!r}"
+    else:
+        assert new == pytest.approx(
+            old, rel=rel, abs=abs_tol
+        ), f"{path}: {new} != golden {old}"
+
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -81,6 +165,74 @@ def mock_ctx():
     ctx.info = AsyncMock()
     ctx.warning = AsyncMock()
     return ctx
+
+
+@pytest.fixture
+def golden_repo(tmp_path):
+    """Repository holding the deterministic golden signals (function scope:
+    the ``repo`` fixture of this module clears the shared repository)."""
+    repo = get_repository()
+    repo.clear_all()
+    load_golden_signals(repo, tmp_path)
+    yield repo
+    repo.clear_all()
+
+
+# ---------------------------------------------------------------------------
+# analyze_fft: characterization against the frozen snapshot
+# ---------------------------------------------------------------------------
+
+
+class TestAnalyzeFFTCharacterization:
+    """``analyze_fft`` output is frozen in tests/fixtures/analyze_fft_golden.json.
+
+    Captured BEFORE the amplitude-spectrum core (Hamming window,
+    ``scipy.fft.fft``, positive frequencies, single-sided ``2|X|/N``) was
+    extracted from the tool into ``signal_processing.spectral.amplitude_spectrum``
+    and the deterministic leading-segment rule into ``select_leading_segment``
+    (asset-ledger U3). The extraction must be numerically invisible: every
+    peak frequency, magnitude and summary field of the ``FFTResult`` must
+    still match the snapshot within ``assert_close_tree``'s tight tolerance.
+
+    Fixture history:
+    - U3 (2026-09-08): initial capture on the inline implementation, four
+      cases of :data:`ANALYZE_FFT_GOLDEN_CASES`.
+
+    Regenerate ON PURPOSE only when ``analyze_fft``'s numbers are meant to
+    change (never to make a red test green), adding a line to the history
+    above. From the repo root, with the checkout's interpreter:
+
+        python -c "import sys; sys.path.insert(0, 'tests'); \\
+                   from test_analysis_tools import write_analyze_fft_golden; \\
+                   print(write_analyze_fft_golden())"
+    """
+
+    @pytest.fixture(scope="class")
+    def golden(self) -> dict:
+        with open(ANALYZE_FFT_GOLDEN_FILE, encoding="utf-8") as fh:
+            return json.load(fh)
+
+    def test_fixture_covers_every_case(self, golden):
+        assert set(golden) == set(ANALYZE_FFT_GOLDEN_CASES)
+        for name, kwargs in ANALYZE_FFT_GOLDEN_CASES.items():
+            assert golden[name]["call"] == kwargs, name
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("case", sorted(ANALYZE_FFT_GOLDEN_CASES))
+    async def test_matches_golden(self, case, golden, golden_repo, mock_ctx):
+        result = await analyze_fft(ctx=mock_ctx, **ANALYZE_FFT_GOLDEN_CASES[case])
+        assert_close_tree(result.model_dump(mode="json"), golden[case]["result"], case)
+
+    @pytest.mark.asyncio
+    async def test_golden_peaks_are_where_the_fixtures_put_them(
+        self, golden, golden_repo, mock_ctx
+    ):
+        """Sanity anchor independent of the snapshot: the golden_iso sine
+        peaks at 50 Hz and golden_bearing at its 3 kHz carrier."""
+        iso = await analyze_fft(ctx=mock_ctx, signal_id="golden_iso")
+        bearing = await analyze_fft(ctx=mock_ctx, signal_id="golden_bearing")
+        assert iso.peak_frequency == pytest.approx(50.0, abs=1.0)
+        assert bearing.peak_frequency == pytest.approx(3000.0, abs=1.0)
 
 
 # ---------------------------------------------------------------------------

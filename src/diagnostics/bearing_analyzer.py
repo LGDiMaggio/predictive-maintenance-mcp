@@ -131,6 +131,7 @@ def check_all_bearing_faults(
     signal_id: str = "",
     tolerance_pct: float = 5.0,
     envelope_freq_range: Optional[tuple[float, float]] = None,
+    num_harmonics: int = 3,
 ) -> dict:
     """Run all four fault checks (BPFO, BPFI, BSF, FTF) for a bearing.
 
@@ -144,6 +145,9 @@ def check_all_bearing_faults(
         envelope_freq_range: Bandpass filter range for envelope. ``None``
             (default) uses the fs-aware default band (500 Hz up to
             min(5000, just below Nyquist)).
+        num_harmonics: Harmonics (2x, 3x, ...) checked per fault type; the
+            default reproduces :func:`check_bearing_fault_peak`'s. Exposed
+            so the asset ledger's snapshot policy can pin it explicitly.
 
     Returns:
         Dict compatible with BearingFaultsSummary.
@@ -176,6 +180,7 @@ def check_all_bearing_faults(
             bearing_id=bearing_id,
             signal_id=signal_id,
             tolerance_pct=tolerance_pct,
+            num_harmonics=num_harmonics,
             envelope_freq_range=envelope_freq_range,
         )
         checks.append(result)
@@ -240,6 +245,7 @@ def check_frequency_set(
     signal_id: str = "",
     tolerance_pct: float = 5.0,
     envelope_freq_range: Optional[tuple[float, float]] = None,
+    num_harmonics: int = 3,
 ) -> dict:
     """Check an arbitrary set of labeled expected frequencies in the envelope.
 
@@ -257,6 +263,8 @@ def check_frequency_set(
         envelope_freq_range: Bandpass filter range for envelope. ``None``
             (default) uses the fs-aware default band (500 Hz up to
             min(5000, just below Nyquist)).
+        num_harmonics: Harmonics (2x, 3x, ...) checked per label; the
+            default reproduces :func:`check_bearing_fault_peak`'s.
 
     Returns:
         Dict compatible with BearingFaultsSummary (bearing_id/source None).
@@ -285,6 +293,7 @@ def check_frequency_set(
             bearing_id="",
             signal_id=signal_id,
             tolerance_pct=tolerance_pct,
+            num_harmonics=num_harmonics,
             envelope_freq_range=envelope_freq_range,
         )
         for label, freq in frequencies.items()

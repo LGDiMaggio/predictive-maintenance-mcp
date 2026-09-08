@@ -20,7 +20,6 @@ from typing import Optional
 
 import numpy as np
 import pandas as pd
-from scipy.fft import fft, fftfreq
 from scipy.stats import kurtosis, skew
 from mcp.server.mcpserver import MCPServer, Context
 
@@ -35,9 +34,11 @@ from ..models import (
     STFTResult,
 )
 from ..signal_processing.spectral import (
+    amplitude_spectrum,
     compute_psd as _compute_psd,
     compute_stft_spectrogram as _compute_stft,
     compute_envelope_spectrum as _compute_envelope,
+    select_leading_segment,
 )
 from ..signal_processing.features import extract_time_domain_features
 from ._utils import resolve_signal
@@ -53,18 +54,16 @@ def _select_segment(
 ) -> np.ndarray:
     """Select the analysis segment DETERMINISTICALLY by default.
 
-    None -> full signal. Otherwise the LEADING segment_duration seconds,
-    so two identical calls analyze identical samples (reproducibility
-    invariant). Pass random_seed to sample a seeded random segment
-    position instead — still reproducible for the same seed.
+    None -> full signal. Otherwise the LEADING segment_duration seconds
+    (``spectral.select_leading_segment``, the rule the asset ledger's
+    health snapshot shares), so two identical calls analyze identical
+    samples (reproducibility invariant). Pass random_seed to sample a
+    seeded random segment position instead — still reproducible for the
+    same seed. A duration that covers the whole signal returns the whole
+    signal on both branches.
     """
-    if segment_duration is None:
-        return signal_data
-    n = int(segment_duration * sampling_rate)
-    if n >= len(signal_data):
-        return signal_data
-    if random_seed is None:
-        return signal_data[:n]
+    if random_seed is None or segment_duration is None:
+        return select_leading_segment(signal_data, sampling_rate, segment_duration)
     return extract_segment(
         signal_data, segment_duration, sampling_rate, seed=random_seed
     )
@@ -134,23 +133,10 @@ async def analyze_fft(
     # Number of samples
     N = len(signal_data)
 
-    # Apply Hamming window to reduce spectral leakage
-    window = np.hamming(N)
-    signal_windowed = signal_data * window
-
-    # Calculate FFT
-    fft_values = fft(signal_windowed)
-    frequencies = fftfreq(N, 1 / sampling_rate)
-
-    # Take only positive frequencies (excluding DC component at index 0)
-    positive_freq_idx = frequencies > 0
-    frequencies = frequencies[positive_freq_idx]
-
-    # Correct normalization for single-sided spectrum:
-    # - Multiply by 2 (energy from negative frequencies)
-    # - Divide by N (FFT normalization)
-    # Note: DC component (freq=0) should not be multiplied by 2, but we exclude it with frequencies > 0
-    magnitudes = 2.0 * np.abs(fft_values[positive_freq_idx]) / N
+    # Single-sided amplitude spectrum (Hamming window, 2|X|/N, DC excluded):
+    # the shared core of spectral.py, so the asset ledger's 1x amplitude and
+    # the diagnosis pipeline's fft_summary coincide with these numbers.
+    frequencies, magnitudes = amplitude_spectrum(signal_data, sampling_rate)
 
     # Apply maximum frequency limit if specified
     if max_frequency is not None:

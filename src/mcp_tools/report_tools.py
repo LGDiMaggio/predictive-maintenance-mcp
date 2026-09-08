@@ -53,6 +53,7 @@ from ._utils import resolve_model_paths, resolve_signal
 # since U6) — replaces the former runtime import from the deprecated monolith.
 from .diagnostics_tools import assess_severity
 from ..signal_processing.spectral import (
+    amplitude_spectrum,
     envelope_spectrum_arrays,
     resolve_envelope_band,
     validate_bandpass_band,
@@ -334,18 +335,9 @@ async def generate_fft_report(
     signal_data, info = resolve_signal(signal_id)
     sampling_rate = info.sampling_rate
 
-    # Perform FFT
-    N = len(signal_data)
-    window = np.hamming(N)
-    signal_windowed = signal_data * window
-
-    fft_values = fft(signal_windowed)
-    frequencies = fftfreq(N, 1 / sampling_rate)
-
-    # Positive frequencies only
-    positive_idx = frequencies > 0
-    frequencies = frequencies[positive_idx]
-    magnitudes = 2.0 * np.abs(fft_values[positive_idx]) / N
+    # Amplitude spectrum over the whole signal: the shared core of
+    # spectral.py (Hamming window, 2|X|/N), the same one analyze_fft plots.
+    frequencies, magnitudes = amplitude_spectrum(signal_data, sampling_rate)
 
     # Generate and save report (signal_id is the report's signal label).
     # rpm is user-facing; the engine labels harmonics in Hz.

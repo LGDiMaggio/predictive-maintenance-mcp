@@ -1,0 +1,564 @@
+{
+  "golden_bearing_default": {
+    "call": {
+      "signal_id": "golden_bearing"
+    },
+    "result": {
+      "freq_range_hz": [
+        1.0,
+        4999.0
+      ],
+      "frequency_resolution": 1.0,
+      "num_samples": 10000,
+      "peak_frequency": 3000.0,
+      "peak_magnitude": 0.5415730828777038,
+      "rms_spectral": 0.010462,
+      "sampling_rate": 10000.0,
+      "top_peaks": [
+        {
+          "frequency_hz": 2784.0,
+          "magnitude": 0.039721,
+          "magnitude_db": -22.69,
+          "note": ""
+        },
+        {
+          "frequency_hz": 2785.0,
+          "magnitude": 0.080444,
+          "magnitude_db": -16.56,
+          "note": ""
+        },
+        {
+          "frequency_hz": 2786.0,
+          "magnitude": 0.029277,
+          "magnitude_db": -25.34,
+          "note": ""
+        },
+        {
+          "frequency_hz": 2891.0,
+          "magnitude": 0.027733,
+          "magnitude_db": -25.81,
+          "note": ""
+        },
+        {
+          "frequency_hz": 2892.0,
+          "magnitude": 0.182392,
+          "magnitude_db": -9.45,
+          "note": ""
+        },
+        {
+          "frequency_hz": 2893.0,
+          "magnitude": 0.171293,
+          "magnitude_db": -10.0,
+          "note": ""
+        },
+        {
+          "frequency_hz": 2894.0,
+          "magnitude": 0.021376,
+          "magnitude_db": -28.07,
+          "note": ""
+        },
+        {
+          "frequency_hz": 2897.0,
+          "magnitude": 0.002357,
+          "magnitude_db": -47.23,
+          "note": ""
+        },
+        {
+          "frequency_hz": 2899.0,
+          "magnitude": 0.00241,
+          "magnitude_db": -47.03,
+          "note": ""
+        },
+        {
+          "frequency_hz": 2918.0,
+          "magnitude": 0.002006,
+          "magnitude_db": -48.63,
+          "note": ""
+        },
+        {
+          "frequency_hz": 2999.0,
+          "magnitude": 0.230757,
+          "magnitude_db": -7.41,
+          "note": ""
+        },
+        {
+          "frequency_hz": 3000.0,
+          "magnitude": 0.541573,
+          "magnitude_db": 0.0,
+          "note": ""
+        },
+        {
+          "frequency_hz": 3001.0,
+          "magnitude": 0.230534,
+          "magnitude_db": -7.42,
+          "note": ""
+        },
+        {
+          "frequency_hz": 3106.0,
+          "magnitude": 0.021275,
+          "magnitude_db": -28.12,
+          "note": ""
+        },
+        {
+          "frequency_hz": 3107.0,
+          "magnitude": 0.170874,
+          "magnitude_db": -10.02,
+          "note": ""
+        },
+        {
+          "frequency_hz": 3108.0,
+          "magnitude": 0.182185,
+          "magnitude_db": -9.46,
+          "note": ""
+        },
+        {
+          "frequency_hz": 3109.0,
+          "magnitude": 0.028095,
+          "magnitude_db": -25.7,
+          "note": ""
+        },
+        {
+          "frequency_hz": 3214.0,
+          "magnitude": 0.029377,
+          "magnitude_db": -25.31,
+          "note": ""
+        },
+        {
+          "frequency_hz": 3215.0,
+          "magnitude": 0.081114,
+          "magnitude_db": -16.49,
+          "note": ""
+        },
+        {
+          "frequency_hz": 3216.0,
+          "magnitude": 0.040084,
+          "magnitude_db": -22.61,
+          "note": ""
+        }
+      ],
+      "total_bins": 4999
+    }
+  },
+  "golden_bearing_max_4000": {
+    "call": {
+      "max_frequency": 4000.0,
+      "signal_id": "golden_bearing"
+    },
+    "result": {
+      "freq_range_hz": [
+        1.0,
+        4000.0
+      ],
+      "frequency_resolution": 1.0,
+      "num_samples": 10000,
+      "peak_frequency": 3000.0,
+      "peak_magnitude": 0.5415730828777038,
+      "rms_spectral": 0.011692,
+      "sampling_rate": 10000.0,
+      "top_peaks": [
+        {
+          "frequency_hz": 2784.0,
+          "magnitude": 0.039721,
+          "magnitude_db": -22.69,
+          "note": ""
+        },
+        {
+          "frequency_hz": 2785.0,
+          "magnitude": 0.080444,
+          "magnitude_db": -16.56,
+          "note": ""
+        },
+        {
+          "frequency_hz": 2786.0,
+          "magnitude": 0.029277,
+          "magnitude_db": -25.34,
+          "note": ""
+        },
+        {
+          "frequency_hz": 2891.0,
+          "magnitude": 0.027733,
+          "magnitude_db": -25.81,
+          "note": ""
+        },
+        {
+          "frequency_hz": 2892.0,
+          "magnitude": 0.182392,
+          "magnitude_db": -9.45,
+          "note": ""
+        },
+        {
+          "frequency_hz": 2893.0,
+          "magnitude": 0.171293,
+          "magnitude_db": -10.0,
+          "note": ""
+        },
+        {
+          "frequency_hz": 2894.0,
+          "magnitude": 0.021376,
+          "magnitude_db": -28.07,
+          "note": ""
+        },
+        {
+          "frequency_hz": 2897.0,
+          "magnitude": 0.002357,
+          "magnitude_db": -47.23,
+          "note": ""
+        },
+        {
+          "frequency_hz": 2899.0,
+          "magnitude": 0.00241,
+          "magnitude_db": -47.03,
+          "note": ""
+        },
+        {
+          "frequency_hz": 2918.0,
+          "magnitude": 0.002006,
+          "magnitude_db": -48.63,
+          "note": ""
+        },
+        {
+          "frequency_hz": 2999.0,
+          "magnitude": 0.230757,
+          "magnitude_db": -7.41,
+          "note": ""
+        },
+        {
+          "frequency_hz": 3000.0,
+          "magnitude": 0.541573,
+          "magnitude_db": 0.0,
+          "note": ""
+        },
+        {
+          "frequency_hz": 3001.0,
+          "magnitude": 0.230534,
+          "magnitude_db": -7.42,
+          "note": ""
+        },
+        {
+          "frequency_hz": 3106.0,
+          "magnitude": 0.021275,
+          "magnitude_db": -28.12,
+          "note": ""
+        },
+        {
+          "frequency_hz": 3107.0,
+          "magnitude": 0.170874,
+          "magnitude_db": -10.02,
+          "note": ""
+        },
+        {
+          "frequency_hz": 3108.0,
+          "magnitude": 0.182185,
+          "magnitude_db": -9.46,
+          "note": ""
+        },
+        {
+          "frequency_hz": 3109.0,
+          "magnitude": 0.028095,
+          "magnitude_db": -25.7,
+          "note": ""
+        },
+        {
+          "frequency_hz": 3214.0,
+          "magnitude": 0.029377,
+          "magnitude_db": -25.31,
+          "note": ""
+        },
+        {
+          "frequency_hz": 3215.0,
+          "magnitude": 0.081114,
+          "magnitude_db": -16.49,
+          "note": ""
+        },
+        {
+          "frequency_hz": 3216.0,
+          "magnitude": 0.040084,
+          "magnitude_db": -22.61,
+          "note": ""
+        }
+      ],
+      "total_bins": 4000
+    }
+  },
+  "golden_iso_default": {
+    "call": {
+      "signal_id": "golden_iso"
+    },
+    "result": {
+      "freq_range_hz": [
+        1.0,
+        4999.0
+      ],
+      "frequency_resolution": 1.0,
+      "num_samples": 10000,
+      "peak_frequency": 50.0,
+      "peak_magnitude": 0.2699769977008235,
+      "rms_spectral": 0.004458,
+      "sampling_rate": 10000.0,
+      "top_peaks": [
+        {
+          "frequency_hz": 41.0,
+          "magnitude": 0.0,
+          "magnitude_db": -119.54,
+          "note": ""
+        },
+        {
+          "frequency_hz": 42.0,
+          "magnitude": 0.0,
+          "magnitude_db": -117.44,
+          "note": ""
+        },
+        {
+          "frequency_hz": 43.0,
+          "magnitude": 0.0,
+          "magnitude_db": -115.06,
+          "note": ""
+        },
+        {
+          "frequency_hz": 44.0,
+          "magnitude": 1e-06,
+          "magnitude_db": -112.31,
+          "note": ""
+        },
+        {
+          "frequency_hz": 45.0,
+          "magnitude": 1e-06,
+          "magnitude_db": -109.02,
+          "note": ""
+        },
+        {
+          "frequency_hz": 46.0,
+          "magnitude": 2e-06,
+          "magnitude_db": -104.93,
+          "note": ""
+        },
+        {
+          "frequency_hz": 47.0,
+          "magnitude": 3e-06,
+          "magnitude_db": -99.46,
+          "note": ""
+        },
+        {
+          "frequency_hz": 48.0,
+          "magnitude": 8e-06,
+          "magnitude_db": -90.93,
+          "note": ""
+        },
+        {
+          "frequency_hz": 49.0,
+          "magnitude": 0.115006,
+          "magnitude_db": -7.41,
+          "note": ""
+        },
+        {
+          "frequency_hz": 50.0,
+          "magnitude": 0.269977,
+          "magnitude_db": 0.0,
+          "note": ""
+        },
+        {
+          "frequency_hz": 51.0,
+          "magnitude": 0.115006,
+          "magnitude_db": -7.41,
+          "note": ""
+        },
+        {
+          "frequency_hz": 52.0,
+          "magnitude": 8e-06,
+          "magnitude_db": -90.93,
+          "note": ""
+        },
+        {
+          "frequency_hz": 53.0,
+          "magnitude": 3e-06,
+          "magnitude_db": -99.46,
+          "note": ""
+        },
+        {
+          "frequency_hz": 54.0,
+          "magnitude": 2e-06,
+          "magnitude_db": -104.92,
+          "note": ""
+        },
+        {
+          "frequency_hz": 55.0,
+          "magnitude": 1e-06,
+          "magnitude_db": -109.01,
+          "note": ""
+        },
+        {
+          "frequency_hz": 56.0,
+          "magnitude": 1e-06,
+          "magnitude_db": -112.3,
+          "note": ""
+        },
+        {
+          "frequency_hz": 57.0,
+          "magnitude": 0.0,
+          "magnitude_db": -115.05,
+          "note": ""
+        },
+        {
+          "frequency_hz": 58.0,
+          "magnitude": 0.0,
+          "magnitude_db": -117.42,
+          "note": ""
+        },
+        {
+          "frequency_hz": 59.0,
+          "magnitude": 0.0,
+          "magnitude_db": -119.51,
+          "note": ""
+        },
+        {
+          "frequency_hz": 60.0,
+          "magnitude": 0.0,
+          "magnitude_db": -121.37,
+          "note": ""
+        }
+      ],
+      "total_bins": 4999
+    }
+  },
+  "golden_iso_full_signal": {
+    "call": {
+      "segment_duration": null,
+      "signal_id": "golden_iso"
+    },
+    "result": {
+      "freq_range_hz": [
+        0.5,
+        4999.5
+      ],
+      "frequency_resolution": 0.5,
+      "num_samples": 20000,
+      "peak_frequency": 50.0,
+      "peak_magnitude": 0.2699884997126532,
+      "rms_spectral": 0.003152,
+      "sampling_rate": 10000.0,
+      "top_peaks": [
+        {
+          "frequency_hz": 45.5,
+          "magnitude": 0.0,
+          "magnitude_db": -125.49,
+          "note": ""
+        },
+        {
+          "frequency_hz": 46.0,
+          "magnitude": 0.0,
+          "magnitude_db": -123.41,
+          "note": ""
+        },
+        {
+          "frequency_hz": 46.5,
+          "magnitude": 0.0,
+          "magnitude_db": -121.05,
+          "note": ""
+        },
+        {
+          "frequency_hz": 47.0,
+          "magnitude": 0.0,
+          "magnitude_db": -118.3,
+          "note": ""
+        },
+        {
+          "frequency_hz": 47.5,
+          "magnitude": 0.0,
+          "magnitude_db": -115.02,
+          "note": ""
+        },
+        {
+          "frequency_hz": 48.0,
+          "magnitude": 1e-06,
+          "magnitude_db": -110.94,
+          "note": ""
+        },
+        {
+          "frequency_hz": 48.5,
+          "magnitude": 1e-06,
+          "magnitude_db": -105.48,
+          "note": ""
+        },
+        {
+          "frequency_hz": 49.0,
+          "magnitude": 4e-06,
+          "magnitude_db": -96.95,
+          "note": ""
+        },
+        {
+          "frequency_hz": 49.5,
+          "magnitude": 0.115003,
+          "magnitude_db": -7.41,
+          "note": ""
+        },
+        {
+          "frequency_hz": 50.0,
+          "magnitude": 0.269988,
+          "magnitude_db": 0.0,
+          "note": ""
+        },
+        {
+          "frequency_hz": 50.5,
+          "magnitude": 0.115003,
+          "magnitude_db": -7.41,
+          "note": ""
+        },
+        {
+          "frequency_hz": 51.0,
+          "magnitude": 4e-06,
+          "magnitude_db": -96.95,
+          "note": ""
+        },
+        {
+          "frequency_hz": 51.5,
+          "magnitude": 1e-06,
+          "magnitude_db": -105.48,
+          "note": ""
+        },
+        {
+          "frequency_hz": 52.0,
+          "magnitude": 1e-06,
+          "magnitude_db": -110.94,
+          "note": ""
+        },
+        {
+          "frequency_hz": 52.5,
+          "magnitude": 0.0,
+          "magnitude_db": -115.02,
+          "note": ""
+        },
+        {
+          "frequency_hz": 53.0,
+          "magnitude": 0.0,
+          "magnitude_db": -118.3,
+          "note": ""
+        },
+        {
+          "frequency_hz": 53.5,
+          "magnitude": 0.0,
+          "magnitude_db": -121.05,
+          "note": ""
+        },
+        {
+          "frequency_hz": 54.0,
+          "magnitude": 0.0,
+          "magnitude_db": -123.41,
+          "note": ""
+        },
+        {
+          "frequency_hz": 54.5,
+          "magnitude": 0.0,
+          "magnitude_db": -125.49,
+          "note": ""
+        },
+        {
+          "frequency_hz": 55.0,
+          "magnitude": 0.0,
+          "magnitude_db": -127.34,
+          "note": ""
+        }
+      ],
+      "total_bins": 9999
+    }
+  }
+}
