@@ -48,22 +48,18 @@ def mock_ctx():
 
 
 @pytest.fixture
-def sandbox_dirs(tmp_path, monkeypatch):
-    """Point every directory-bearing module at an empty sandbox."""
-    signals_dir = tmp_path / "data" / "signals"
-    signals_dir.mkdir(parents=True)
+def sandbox_dirs(sandbox_data_dir, tmp_path, monkeypatch):
+    """Point every directory-bearing module at an empty sandbox.
+
+    DATA_DIR goes through conftest's shared ``sandbox_data_dir`` (the
+    four-module patch); the model and report directories are patched here.
+    """
+    signals_dir = sandbox_data_dir
     models_dir = tmp_path / "models"
     models_dir.mkdir()
     reports_dir = tmp_path / "reports"
     reports_dir.mkdir()
 
-    for target in (
-        "predictive_maintenance_mcp.config.DATA_DIR",
-        "predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR",
-        "predictive_maintenance_mcp.signal_acquisition.repository.DATA_DIR",
-        "predictive_maintenance_mcp.mcp_tools.acquisition_tools.DATA_DIR",
-    ):
-        monkeypatch.setattr(target, signals_dir)
     for target in (
         "predictive_maintenance_mcp.mcp_tools.diagnostics_tools.MODELS_DIR",
         "predictive_maintenance_mcp.mcp_tools.report_tools.MODELS_DIR",
@@ -247,6 +243,37 @@ class TestFailuresRaise:
         assert "sample_format" in msg
         assert "sampling_rate" in msg
         assert "_metadata.json" in msg  # the companion-file alternative
+
+    @pytest.mark.asyncio
+    async def test_invalid_measurement_object_raises(
+        self, tools, sandbox_dirs, mock_ctx
+    ):
+        """A readable companion whose "measurement" object is invalid is a
+        refusal (raised), not a warning: a declared identity that breaks the
+        contract is misuse, unlike an unreadable companion, which loads with
+        a ``companion_warning``. Lives here rather than in FAILURE_CASES
+        because that table is keyed by tool name (load_signal already holds
+        its missing-file case) and the sandbox file must exist first.
+        """
+        from predictive_maintenance_mcp.signal_acquisition.repository import (
+            get_repository,
+        )
+
+        pd.DataFrame([0.1, 0.2, 0.3]).to_csv(
+            sandbox_dirs / "half.csv", index=False, header=False
+        )
+        with open(sandbox_dirs / "half_metadata.json", "w") as f:
+            json.dump({"sampling_rate": 1000, "measurement": {"asset_id": "P-101"}}, f)
+
+        with pytest.raises(ValueError) as exc_info:
+            await tools["load_signal"].fn(ctx=mock_ctx, filepath="half.csv")
+
+        msg = str(exc_info.value)
+        assert "measurement_point_id" in msg
+        assert "acquired_at" in msg
+        assert "half_metadata.json" in msg
+        loaded = [s["signal_id"] for s in get_repository().list_signals()]
+        assert "half" not in loaded  # refused BEFORE insertion
 
     @pytest.mark.asyncio
     async def test_docx_missing_dependency_raises(

@@ -52,6 +52,26 @@ def get_max_signal_size() -> int:
     return int(os.environ.get("PMM_MAX_SIGNAL_SIZE", "500000000"))
 
 
+def get_ledger_dir() -> Path:
+    """Directory of the append-only asset ledger (one JSONL file per asset).
+
+    Reads ``PMM_LEDGER_DIR`` from the environment at EACH call (the
+    ``get_max_signal_size`` pattern) so tests and operators can redirect it
+    with a plain env change; a set-but-blank value counts as unset. Nothing
+    is created here: the ledger store creates the directory on first append
+    and ``server._setup_environment`` creates it at startup (warning when it
+    is not writable or lies under a cloud-synced folder).
+
+    Returns:
+        The configured directory (not resolved, not created). Default:
+        ``PROJECT_ROOT / "data" / "ledger"``.
+    """
+    configured = (os.environ.get("PMM_LEDGER_DIR") or "").strip()
+    if configured:
+        return Path(configured)
+    return PROJECT_ROOT / "data" / "ledger"
+
+
 PROJECT_ROOT = resolve_project_root()
 
 DATA_DIR = PROJECT_ROOT / "data" / "signals"

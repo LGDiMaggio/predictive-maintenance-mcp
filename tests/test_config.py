@@ -98,3 +98,46 @@ class TestPathConstants:
         import config
 
         assert str(config.CACHE_DIR).startswith(str(config.RESOURCES_DIR))
+
+
+class TestGetLedgerDir:
+    """get_ledger_dir() reads PMM_LEDGER_DIR at EVERY call (never frozen at
+    import, unlike the path constants) and creates nothing.
+
+    Uses the same top-level ``config`` alias as the classes above (the same
+    source file the package imports as ``predictive_maintenance_mcp.config``).
+    """
+
+    def test_env_var_is_read_at_each_call(self, tmp_path, monkeypatch):
+        import config
+
+        monkeypatch.setenv("PMM_LEDGER_DIR", str(tmp_path / "one"))
+        assert config.get_ledger_dir() == tmp_path / "one"
+        monkeypatch.setenv("PMM_LEDGER_DIR", str(tmp_path / "two"))
+        assert config.get_ledger_dir() == tmp_path / "two"
+
+    def test_unset_defaults_to_data_ledger_under_project_root(self, monkeypatch):
+        import config
+
+        monkeypatch.delenv("PMM_LEDGER_DIR", raising=False)
+        assert config.get_ledger_dir() == config.PROJECT_ROOT / "data" / "ledger"
+
+    @pytest.mark.parametrize("blank", ["", "   "])
+    def test_blank_counts_as_unset(self, monkeypatch, blank):
+        import config
+
+        monkeypatch.setenv("PMM_LEDGER_DIR", blank)
+        assert config.get_ledger_dir() == config.PROJECT_ROOT / "data" / "ledger"
+
+    def test_import_creates_no_directory(self, tmp_path, monkeypatch):
+        """No side effect at import: the ledger store creates the directory on
+        first append, the server at startup."""
+        import importlib
+        import config
+
+        target = tmp_path / "fresh_ledger"
+        monkeypatch.setenv("PMM_LEDGER_DIR", str(target))
+        importlib.reload(config)
+        assert config.get_ledger_dir() == target
+        assert not target.exists()
+        importlib.reload(config)

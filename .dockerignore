@@ -26,6 +26,9 @@ env
 .DS_Store
 Thumbs.db
 
+# Asset health ledger: operator data, never baked into an image
+data/ledger/
+
 # Test and dev files
 tests/
 *.pytest_cache

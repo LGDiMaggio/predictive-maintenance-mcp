@@ -231,6 +231,29 @@ class StoredSignalInfo(BaseModel):
             "this file decoded'. None for self-describing formats."
         ),
     )
+    measurement: Optional[dict[str, Any]] = Field(
+        None,
+        description=(
+            "Normalized measurement identity declared in the companion's "
+            '"measurement" object: asset_id, measurement_point_id, '
+            "acquired_at (ISO 8601 normalized to UTC), timezone_declared, "
+            "timestamp_suspect, rpm, load, operating_state, sensor_id, "
+            "direction, declared_by, measurement_id (first 16 hex of the "
+            "SHA-256 of the file bytes plus the channel index) and "
+            "channel_index. This block is AUTHORITATIVE over the verbatim "
+            "object kept in source_metadata. None when the companion declares "
+            "no measurement object (the file behaves exactly as before)."
+        ),
+    )
+    companion_warning: Optional[str] = Field(
+        None,
+        description=(
+            "Set when a companion _metadata.json exists but could not be used "
+            "(not valid JSON, or not a JSON object): names the file and the "
+            "case, and the signal was loaded exactly as if it had no "
+            "companion. None when the companion was read fine or is absent."
+        ),
+    )
 
 
 class PSDResult(BaseModel):
