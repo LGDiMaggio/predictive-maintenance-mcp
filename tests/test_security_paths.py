@@ -60,6 +60,34 @@ class TestPathSafetyHelpers:
         assert resolved == (base / "bearing_health_model.pkl").resolve()
         assert resolved.parent == base.resolve()
 
+    @pytest.mark.skipif(os.name != "nt", reason="Windows extended-length prefix")
+    def test_safe_resolve_tolerates_extended_length_prefix(self, tmp_path, monkeypatch):
+        """A ``\\\\?\\``-prefixed resolution is still contained.
+
+        ``Path.resolve`` keeps the Win32 extended-length prefix when the
+        prefix-stripping check it performs hits a transient sharing violation
+        (another process appending to the file, an antivirus scan). The prefix
+        is a namespace marker, not a different location, so containment must
+        not report a false escape.
+        """
+        base = tmp_path / "ledger"
+        base.mkdir()
+        target = base / "P-101.jsonl"
+        target.write_text("x")
+        real_resolve = Path.resolve
+        plain = str(real_resolve(target))
+
+        def prefixed_resolve(self, strict=False):
+            resolved = real_resolve(self, strict=strict)
+            if self.name == "P-101.jsonl":
+                return Path("\\\\?\\" + str(resolved))
+            return resolved
+
+        monkeypatch.setattr(Path, "resolve", prefixed_resolve)
+        assert str(safe_resolve(base, "P-101.jsonl")) == plain
+        with pytest.raises(ValueError):
+            safe_resolve(base, "../P-101.jsonl")
+
     def test_safe_resolve_rejects_parent_traversal(self, tmp_path):
         base = tmp_path / "models"
         base.mkdir()

@@ -55,13 +55,35 @@ def safe_resolve(base_dir: Path, user_input: str) -> Path:
     Raises:
         ValueError: If the resolved path escapes *base_dir*.
     """
-    candidate = (Path(base_dir) / user_input).resolve()
-    allowed = Path(base_dir).resolve()
+    candidate = _without_extended_prefix((Path(base_dir) / user_input).resolve())
+    allowed = _without_extended_prefix(Path(base_dir).resolve())
     # Path.is_relative_to (Python 3.9+) avoids the sibling-directory bypass:
     # /data/signals_evil would pass a naive startswith("/data/signals") check.
     if not candidate.is_relative_to(allowed):
         raise ValueError(f"Invalid path — escapes base directory: {user_input}")
     return candidate
+
+
+_EXTENDED_PREFIX = "\\\\?\\"
+_EXTENDED_UNC_PREFIX = "\\\\?\\UNC\\"
+
+
+def _without_extended_prefix(path: Path) -> Path:
+    """Drop the Windows extended-length prefix ``\\\\?\\`` when present.
+
+    ``Path.resolve`` on Windows normally strips the prefix that the Win32
+    final-path API returns, but it keeps it when the check it performs to do
+    so hits a transient error (a sharing violation while another process or
+    an antivirus scanner holds the file open). The prefix is only a namespace
+    marker: comparing a prefixed candidate against an unprefixed base would
+    report a false escape, so containment is checked on the plain form.
+    """
+    text = str(path)
+    if text.startswith(_EXTENDED_UNC_PREFIX):
+        return Path("\\\\" + text[len(_EXTENDED_UNC_PREFIX) :])
+    if text.startswith(_EXTENDED_PREFIX):
+        return Path(text[len(_EXTENDED_PREFIX) :])
+    return path
 
 
 def sanitize_filename(name: str) -> str:
