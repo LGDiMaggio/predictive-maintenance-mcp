@@ -38,6 +38,7 @@ where they are today. Historical top-level keys such as ``shaft_speed``
 
 import hashlib
 import math
+import os
 import unicodedata
 from datetime import datetime, timedelta, timezone
 from functools import partial
@@ -67,6 +68,8 @@ __all__ = [
     "normalize_direction",
     "normalize_acquired_at",
     "validate_measurement_declaration",
+    "digest_file",
+    "measurement_id_from_digest",
     "compute_measurement_id",
     "build_measurement_identity",
 ]
@@ -172,11 +175,16 @@ MEASUREMENT_DECLARATION_KEYS: tuple[str, ...] = (
 )
 
 #: Keys of the full identity block stored on ``StoredSignalInfo.measurement``:
-#: the declaration plus the two file-derived keys.
+#: the declaration plus the four file-derived keys (the identity hash, the
+#: decoded channel, and the full content digest with the file size, which
+#: the asset ledger records so a moved file can be re-verified without
+#: hashing it twice at load time).
 MEASUREMENT_IDENTITY_KEYS: tuple[str, ...] = (
     *MEASUREMENT_DECLARATION_KEYS,
     "measurement_id",
     "channel_index",
+    "content_sha256",
+    "size_bytes",
 )
 
 #: Instants before this are flagged ``timestamp_suspect``: a real-time clock
@@ -509,6 +517,71 @@ def validate_measurement_declaration(
     return identity
 
 
+def _validate_channel_index(channel_index: object) -> int:
+    """Return *channel_index* if it is a non-negative int (bool excluded)."""
+    if (
+        isinstance(channel_index, bool)
+        or not isinstance(channel_index, int)
+        or channel_index < 0
+    ):
+        raise ValueError(
+            f"Invalid channel_index {channel_index!r}: the measurement identity "
+            f"needs the 0-based integer index of the decoded channel (0 for "
+            f"single-channel files)."
+        )
+    return channel_index
+
+
+def digest_file(path: Union[str, Path]) -> tuple[str, int]:
+    """SHA-256 of a file's bytes and its size, read once.
+
+    The single place the file is hashed: the identity hash, the ledger's
+    ``file.content_sha256`` and the re-verification of a moved file all
+    derive from this digest.
+
+    Args:
+        path: The file to digest.
+
+    Returns:
+        ``(sha256_hex, size_bytes)``: 64 lowercase hex characters and the
+        number of bytes hashed.
+
+    Raises:
+        FileNotFoundError: If *path* does not exist.
+    """
+    with open(path, "rb") as fh:
+        size = os.fstat(fh.fileno()).st_size
+        content_digest = hashlib.file_digest(fh, "sha256").hexdigest()
+    return content_digest, size
+
+
+def measurement_id_from_digest(content_sha256: str, channel_index: int) -> str:
+    """The identity of a measurement from an already computed content digest.
+
+    ``measurement_id`` is the first 16 hex digits of
+    ``sha256("<sha256 of the file bytes, hex>:<channel_index>")``.
+
+    Args:
+        content_sha256: Hex digest of the file bytes (see :func:`digest_file`).
+        channel_index: 0-based index of the decoded channel.
+
+    Returns:
+        16 lowercase hex characters.
+
+    Raises:
+        ValueError: If *channel_index* is not a non-negative int or the
+            digest is not a hex string.
+    """
+    channel = _validate_channel_index(channel_index)
+    if not isinstance(content_sha256, str) or not content_sha256:
+        raise ValueError(
+            f"Invalid content_sha256 {content_sha256!r}: pass the hex digest "
+            f"returned by digest_file()."
+        )
+    combined = f"{content_sha256}:{channel}".encode("ascii")
+    return hashlib.sha256(combined).hexdigest()[:MEASUREMENT_ID_HEX_CHARS]
+
+
 def compute_measurement_id(path: Union[str, Path], channel_index: int) -> str:
     """Identity of a measurement: the file's bytes plus the decoded channel.
 
@@ -530,20 +603,9 @@ def compute_measurement_id(path: Union[str, Path], channel_index: int) -> str:
         ValueError: If *channel_index* is not a non-negative int.
         FileNotFoundError: If *path* does not exist.
     """
-    if (
-        isinstance(channel_index, bool)
-        or not isinstance(channel_index, int)
-        or channel_index < 0
-    ):
-        raise ValueError(
-            f"Invalid channel_index {channel_index!r}: the measurement identity "
-            f"needs the 0-based integer index of the decoded channel (0 for "
-            f"single-channel files)."
-        )
-    with open(path, "rb") as fh:
-        content_digest = hashlib.file_digest(fh, "sha256").hexdigest()
-    combined = f"{content_digest}:{channel_index}".encode("ascii")
-    return hashlib.sha256(combined).hexdigest()[:MEASUREMENT_ID_HEX_CHARS]
+    channel = _validate_channel_index(channel_index)
+    content_digest, _ = digest_file(path)
+    return measurement_id_from_digest(content_digest, channel)
 
 
 def build_measurement_identity(
@@ -558,8 +620,9 @@ def build_measurement_identity(
 
     The single composition point the repository uses: the pure validation
     runs first (an invalid object is refused before the file is touched),
-    then the identity hash is computed from the file bytes and the EFFECTIVE
-    channel index.
+    then the file is digested ONCE: the identity hash is derived from the
+    content digest and the EFFECTIVE channel index, and the full digest
+    with the file size is kept in the block for the asset ledger.
 
     Args:
         companion: Parsed companion dict (see
@@ -571,13 +634,19 @@ def build_measurement_identity(
         now: Reference instant for the timestamp plausibility check.
 
     Returns:
-        A dict with exactly ``MEASUREMENT_IDENTITY_KEYS``, in that order.
+        A dict with exactly ``MEASUREMENT_IDENTITY_KEYS``, in that order:
+        the declaration, ``measurement_id``, ``channel_index``,
+        ``content_sha256`` (64 hex) and ``size_bytes`` (file size).
 
     Raises:
         ValueError: From the validator, or for a bad *channel_index*.
         FileNotFoundError: If *signal_path* does not exist.
     """
     identity = validate_measurement_declaration(companion, companion_path, now=now)
-    identity["measurement_id"] = compute_measurement_id(signal_path, channel_index)
-    identity["channel_index"] = channel_index
+    channel = _validate_channel_index(channel_index)
+    content_digest, size_bytes = digest_file(signal_path)
+    identity["measurement_id"] = measurement_id_from_digest(content_digest, channel)
+    identity["channel_index"] = channel
+    identity["content_sha256"] = content_digest
+    identity["size_bytes"] = size_bytes
     return identity

@@ -10,9 +10,9 @@ Dependency direction: ``mcp_tools -> asset_ledger -> signal_acquisition ->
 {config, path_safety}``. No module of this package imports
 ``signal_acquisition.repository``, ``models`` or anything MCP; the
 measurement contract it builds on lives in
-``signal_acquisition.measurement``. Later units add the store, snapshot,
-comparability, assessment and service modules and re-export their public
-functions from here.
+``signal_acquisition.measurement``. The store, snapshot, comparability and
+service modules re-export their public functions from here; a later unit
+adds the assessment module.
 """
 
 from .store import (  # noqa: F401
@@ -68,4 +68,19 @@ from .comparability import (  # noqa: F401
     grade_of,
     summarize_comparability,
     unit_conversion_factor,
+)
+
+from .service import (  # noqa: F401
+    DECLARATION_KEYS,
+    LEDGER_STATUSES,
+    LOAD_OUTCOME_KEYS,
+    OUTCOME_KEYS,
+    SNAPSHOT_PAYLOAD_KEYS,
+    SNAPSHOT_STATUSES,
+    build_declaration,
+    changed_keys,
+    declaration_fingerprint,
+    file_block,
+    record_measurements,
+    resolve_point_context,
 )

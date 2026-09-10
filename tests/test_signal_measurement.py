@@ -173,8 +173,10 @@ class TestVocabularies:
             "declared_by",
             "measurement_id",
             "channel_index",
+            "content_sha256",
+            "size_bytes",
         )
-        assert m.MEASUREMENT_DECLARATION_KEYS == m.MEASUREMENT_IDENTITY_KEYS[:-2]
+        assert m.MEASUREMENT_DECLARATION_KEYS == m.MEASUREMENT_IDENTITY_KEYS[:-4]
 
     def test_unit_families_partition_valid_signal_units(self):
         """Every unit the repository accepts belongs to EXACTLY one family, and
@@ -657,6 +659,32 @@ class TestMeasurementId:
         with pytest.raises(FileNotFoundError):
             m.compute_measurement_id(tmp_path / "absent.csv", 0)
 
+    def test_digest_file_returns_full_hash_and_size(self, tmp_path):
+        path = tmp_path / "sig.csv"
+        payload = b"1.0\n2.0\n3.0\n"
+        path.write_bytes(payload)
+        digest, size = m.digest_file(path)
+        assert digest == hashlib.sha256(payload).hexdigest()
+        assert size == len(payload)
+
+    def test_id_from_digest_equals_id_from_file(self, tmp_path):
+        """The two routes to the id (file, or a digest read earlier) agree,
+        so a re-verification of a moved file never needs a second recipe."""
+        path = tmp_path / "sig.csv"
+        write_csv(path)
+        digest, _ = m.digest_file(path)
+        assert m.measurement_id_from_digest(digest, 0) == m.compute_measurement_id(
+            path, 0
+        )
+        assert m.measurement_id_from_digest(digest, 1) != m.measurement_id_from_digest(
+            digest, 0
+        )
+
+    @pytest.mark.parametrize("digest", ["", None, 5])
+    def test_id_from_digest_refuses_a_bad_digest(self, digest):
+        with pytest.raises(ValueError, match="content_sha256"):
+            m.measurement_id_from_digest(digest, 0)
+
 
 class TestBuildMeasurementIdentity:
     def test_composes_declaration_and_hash(self, tmp_path):
@@ -672,6 +700,10 @@ class TestBuildMeasurementIdentity:
         assert identity["measurement_id"] == m.compute_measurement_id(path, 0)
         assert identity["channel_index"] == 0
         assert identity["asset_id"] == "P-101"
+        assert (
+            identity["content_sha256"] == hashlib.sha256(path.read_bytes()).hexdigest()
+        )
+        assert identity["size_bytes"] == path.stat().st_size
         assert "error" not in identity
 
     def test_validation_failure_precedes_hashing(self, tmp_path):

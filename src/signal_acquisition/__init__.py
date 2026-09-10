@@ -20,6 +20,8 @@ from .measurement import (  # noqa: F401
     unit_family,
     validate_ledger_id,
     validate_measurement_declaration,
+    digest_file,
+    measurement_id_from_digest,
     compute_measurement_id,
     build_measurement_identity,
 )

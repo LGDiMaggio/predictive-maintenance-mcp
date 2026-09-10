@@ -51,7 +51,9 @@ and the upper layers; the reader validates only the envelope):
 ``health_snapshot_computed``
     ``snapshot_id``, ``measurement_id``, ``measurement_point_id``,
     ``processing`` ({``processing_id``, ``algorithm_version``, ``params``,
-    ``effective``, ``provenance``}), ``context_digest``,
+    ``effective``, ``provenance``}), ``context_digest``, ``context`` (the
+    resolved inputs the digest hashes: rpm and its source, bearing or
+    orders, group, support, power, unit, direction),
     ``point_declaration_version``, ``indicators``, ``one_x``, ``bearing``,
     ``iso``, ``missing``.
 
