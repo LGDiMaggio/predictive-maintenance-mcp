@@ -19,7 +19,12 @@ real). These tests pin, from the plan's U5 scenarios:
   failure (retry appends exactly one snapshot);
 - privacy (free-form companion keys never reach the ledger bytes) and the
   wrong-asset correction (reattribution without deleting anything);
-- the outcome contract (keys, no ``error`` key anywhere).
+- the outcome contract (keys, no ``error`` key anywhere);
+- the re-processing of stale snapshots (U6): the priority order under the
+  per-call limit (reference first, then the last K newest first), the
+  assessment reachable within two calls, the hash-verified search of the
+  file across every recorded location, the per-measurement refusals (file
+  missing everywhere, content changed, append failure) and idempotence.
 """
 
 import copy
@@ -28,6 +33,7 @@ import json
 import os
 import shutil
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -35,13 +41,17 @@ import numpy as np
 import pytest
 
 from _golden_signals import FS, golden_signals
+from conftest import write_raw_file
 from predictive_maintenance_mcp.asset_ledger import service
 from predictive_maintenance_mcp.asset_ledger import store as store_module
+from predictive_maintenance_mcp.asset_ledger.assessment import assess_change
 from predictive_maintenance_mcp.asset_ledger.service import (
     DECLARATION_KEYS,
     LEDGER_STATUSES,
     LOAD_OUTCOME_KEYS,
+    MAX_REPROCESS_PER_CALL,
     OUTCOME_KEYS,
+    REPROCESS_OUTCOMES,
     SNAPSHOT_PAYLOAD_KEYS,
     SNAPSHOT_STATUSES,
     build_declaration,
@@ -49,6 +59,7 @@ from predictive_maintenance_mcp.asset_ledger.service import (
     declaration_fingerprint,
     file_block,
     record_measurements,
+    reprocess_stale_snapshots,
     resolve_point_context,
 )
 from predictive_maintenance_mcp.asset_ledger.snapshot import (
@@ -263,6 +274,56 @@ def record_one(
     store: LedgerStore, data_dir: Path, info: dict[str, Any], values: np.ndarray
 ) -> dict[str, Any]:
     return record(store, data_dir, [info], {info["signal_id"]: values})[0]
+
+
+#: A previous processing lineage (a policy that is not the default).
+OLD_POLICY = SnapshotPolicy(tolerance_pct=2.0)
+
+#: Weekly acquisitions from a fixed instant, like the synthetic sequence.
+FIRST_ACQUIRED = datetime(2026, 1, 5, 9, 0, tzinfo=timezone(timedelta(hours=1)))
+
+REPROCESS_CALL = (
+    "assess_asset_change(asset_id='P-101', measurement_point_id='motor_de_h', "
+    "reprocess=True)"
+)
+
+
+def acquired(index: int) -> str:
+    return (FIRST_ACQUIRED + (index - 1) * timedelta(weeks=1)).isoformat()
+
+
+def load_sequence(
+    store: LedgerStore,
+    data_dir: Path,
+    count: int,
+    *,
+    policy: Optional[SnapshotPolicy] = OLD_POLICY,
+) -> list[str]:
+    """Record *count* weekly noise measurements ``m01.csv``.. and return their
+    measurement ids in acquisition order (snapshots on *policy*'s lineage)."""
+    infos: list[dict[str, Any]] = []
+    arrays: dict[str, np.ndarray] = {}
+    for index in range(1, count + 1):
+        values = noise(index, 5000)
+        info = make_info(
+            data_dir / f"m{index:02d}.csv", values, acquired_at=acquired(index)
+        )
+        infos.append(info)
+        arrays[info["signal_id"]] = values
+    outcomes = record(store, data_dir, infos, arrays, policy=policy)
+    assert [o["ledger_status"] for o in outcomes] == ["recorded"] * count
+    return [o["measurement_id"] for o in outcomes]
+
+
+def reprocess(store: LedgerStore, data_dir: Path, **kwargs: Any) -> dict[str, Any]:
+    return reprocess_stale_snapshots(
+        ASSET,
+        POINT,
+        store=store,
+        data_dir=data_dir,
+        provenance_overrides=PROVENANCE,
+        **kwargs,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1107,3 +1168,263 @@ class TestModulePurity:
             store, data_dir, make_info(data_dir / "m01.csv", values), values
         )
         json.dumps(outcome, allow_nan=False)
+
+
+# ---------------------------------------------------------------------------
+# Re-processing of stale snapshots (U6)
+# ---------------------------------------------------------------------------
+
+
+class TestReprocessStaleSnapshots:
+    def test_contract_constants(self):
+        assert MAX_REPROCESS_PER_CALL == 10
+        assert REPROCESS_OUTCOMES == ("reprocessed", "up_to_date", "not_reprocessable")
+
+    def test_twenty_five_stale_with_limit_ten_over_three_calls(self, store, data_dir):
+        """Reference first, then the last K newest first, then the rest
+        newest first; the assessment succeeds after every call because the
+        old lineage still covers everything, and the old snapshots stay."""
+        declare_point(store)
+        ids = load_sequence(store, data_dir, 25)
+        old, new = processing_id(OLD_POLICY), processing_id()
+
+        before = assess_change(store.read_view(ASSET), ASSET, POINT)
+        assert before["status"] == "assessed"
+        assert before["lineage"]["processing_id"] == old
+        assert before["lineage"]["is_current"] is False
+        assert before["lineage"]["missing_for_current"] == 25
+
+        first = reprocess(store, data_dir)
+        assert first["processing_id"] == new
+        assert first["stale"] == 25
+        assert first["reprocessed"] == 10
+        assert first["not_reprocessable"] == 0
+        assert first["up_to_date"] == 0
+        assert first["remaining"] == 15
+        assert [r["measurement_id"] for r in first["results"]] == ids[:10]
+        assert [r["outcome"] for r in first["results"]] == ["reprocessed"] * 10
+        assert [r["location_used"] for r in first["results"]] == [
+            f"m{i:02d}.csv" for i in range(1, 11)
+        ]
+        assert all(len(r["snapshot_id"]) == 16 for r in first["results"])
+        assert first["next_call"] == REPROCESS_CALL
+        assert REPROCESS_CALL in first["message"]
+        assert "error" not in set(walk(first))
+        json.dumps(first, allow_nan=False)
+
+        second = reprocess(store, data_dir)
+        assert second["reprocessed"] == 10
+        assert second["remaining"] == 5
+        # M25..M21 (the last K, newest first), then M20..M16.
+        assert [r["measurement_id"] for r in second["results"]] == (
+            ids[24:19:-1] + ids[19:14:-1]
+        )
+        after_two = assess_change(store.read_view(ASSET), ASSET, POINT)
+        assert after_two["status"] == "assessed"
+        assert after_two["lineage"]["candidates"] == {old: 25, new: 20}
+        assert after_two["lineage"]["processing_id"] == old
+
+        third = reprocess(store, data_dir)
+        assert third["reprocessed"] == 5
+        assert third["remaining"] == 0
+        assert third["next_call"] is None
+        assert [r["measurement_id"] for r in third["results"]] == ids[14:9:-1]
+        final = assess_change(store.read_view(ASSET), ASSET, POINT)
+        assert final["status"] == "assessed"
+        assert final["lineage"]["processing_id"] == new
+        assert final["lineage"]["is_current"] is True
+        assert final["lineage"]["candidates"] == {old: 25, new: 25}
+        assert len(payloads(store, EVENT_HEALTH_SNAPSHOT_COMPUTED)) == 50
+
+        again = reprocess(store, data_dir)
+        assert again["stale"] == 0
+        assert again["reprocessed"] == 0
+        assert again["up_to_date"] == 25
+        assert again["results"] == []
+        assert again["next_call"] is None
+        assert "nothing to reprocess" in again["message"]
+        assert len(payloads(store, EVENT_HEALTH_SNAPSHOT_COMPUTED)) == 50
+
+    def test_baseline_members_come_first(self, store, data_dir):
+        declare_point(store)
+        ids = load_sequence(store, data_dir, 12)
+        members = [ids[i] for i in (4, 6, 8)]
+        payload = {
+            "baseline_id": store_module.short_id(POINT, *sorted(members), "t"),
+            "measurement_point_id": POINT,
+            "measurement_ids": members,
+            "members": [
+                {
+                    "measurement_id": m,
+                    "declaration_version": 1,
+                    "point_declaration_version": 1,
+                }
+                for m in members
+            ],
+            "declared_by": "L. Rossi",
+            "note": None,
+            "declared_at": "2026-04-01T00:00:00+00:00",
+        }
+        store.append(
+            ASSET, make_event(store_module.EVENT_BASELINE_DECLARED, ASSET, payload)
+        )
+        result = reprocess(store, data_dir, limit=5)
+        # The three members, then the two newest of the last K.
+        assert [r["measurement_id"] for r in result["results"]] == members + [
+            ids[11],
+            ids[10],
+        ]
+        assert result["remaining"] == 7
+
+    def test_file_missing_everywhere_is_not_reprocessable(self, store, data_dir):
+        declare_point(store)
+        load_sequence(store, data_dir, 1)
+        (data_dir / "m01.csv").unlink()
+        result = reprocess(store, data_dir)
+        assert result["stale"] == 1
+        assert result["reprocessed"] == 0
+        assert result["not_reprocessable"] == 1
+        assert result["remaining"] == 0
+        assert result["next_call"] is None
+        entry = result["results"][0]
+        assert entry["outcome"] == "not_reprocessable"
+        assert entry["location_used"] is None
+        assert "file not found at m01.csv" in entry["reason"]
+        assert entry["acquired_at"] == "2026-01-05T08:00:00+00:00"
+        # The old snapshot is kept untouched.
+        assert len(payloads(store, EVENT_HEALTH_SNAPSHOT_COMPUTED)) == 1
+
+    def test_changed_content_is_not_reprocessable(self, store, data_dir):
+        declare_point(store)
+        load_sequence(store, data_dir, 1)
+        write_signal(data_dir / "m01.csv", noise(99, 5000))
+        result = reprocess(store, data_dir)
+        entry = result["results"][0]
+        assert entry["outcome"] == "not_reprocessable"
+        assert "content differs at m01.csv" in entry["reason"]
+        assert len(payloads(store, EVENT_HEALTH_SNAPSHOT_COMPUTED)) == 1
+
+    def test_deleted_temporary_copy_falls_back_to_the_original(
+        self, store, data_dir, tmp_path
+    ):
+        declare_point(store)
+        values = noise(1, 5000)
+        original = data_dir / "m01.csv"
+        first = record(
+            store,
+            data_dir,
+            [make_info(original, values, acquired_at=acquired(1))],
+            {"m01": values},
+            policy=OLD_POLICY,
+        )[0]
+        temp = tmp_path / "scratch" / "m01.csv"
+        temp.parent.mkdir()
+        shutil.copy(original, temp)
+        second = record(
+            store,
+            data_dir,
+            [make_info(temp, values, acquired_at=acquired(1))],
+            {"m01": values},
+            policy=OLD_POLICY,
+        )[0]
+        assert second["ledger_status"] == "superseded"
+        assert second["changed"] == ["location"]
+        temp.unlink()
+
+        result = reprocess(store, data_dir)
+        entry = result["results"][0]
+        assert entry["outcome"] == "reprocessed"
+        assert entry["location_used"] == "m01.csv"
+        lineages = store.read_view(ASSET)["measurements"][first["measurement_id"]][
+            "snapshots_by_lineage"
+        ]
+        assert set(lineages) == {processing_id(OLD_POLICY), processing_id()}
+
+    def test_raw_file_is_decoded_with_the_recorded_declaration(self, store, data_dir):
+        declare_point(store)
+        values = noise(1, 5000)
+        path = data_dir / "m01.bin"
+        written = write_raw_file(path, values)
+        raw = {
+            "sample_format": "float32",
+            "byte_order": "little",
+            "n_channels": 1,
+            "channel_index": 0,
+            "header_offset": 0,
+            "scale_factor": None,
+        }
+        info = make_info(path, values, raw_format=raw, acquired_at=acquired(1))
+        outcome = record(
+            store,
+            data_dir,
+            [info],
+            {"m01": written.astype(np.float64)},
+            policy=OLD_POLICY,
+        )[0]
+        assert outcome["snapshot_status"] == "complete"
+
+        result = reprocess(store, data_dir)
+        assert result["results"][0]["outcome"] == "reprocessed"
+        assert result["results"][0]["location_used"] == "m01.bin"
+        lineages = store.read_view(ASSET)["measurements"][outcome["measurement_id"]][
+            "snapshots_by_lineage"
+        ]
+        old = lineages[processing_id(OLD_POLICY)]
+        new = lineages[processing_id()]
+        assert new["indicators"]["rms"] == pytest.approx(old["indicators"]["rms"])
+        assert new["iso"]["velocity_rms_mm_s"] == pytest.approx(
+            old["iso"]["velocity_rms_mm_s"]
+        )
+
+    def test_later_point_declaration_makes_the_snapshot_stale(self, store, data_dir):
+        """Loaded before the point was declared: the snapshot is on the
+        current lineage but with the old context (no ISO block); the
+        re-processing computes it with the current declaration."""
+        [measurement_id] = load_sequence(store, data_dir, 1, policy=None)
+        declare_point(store)
+        result = reprocess(store, data_dir)
+        assert result["stale"] == 1
+        assert result["reprocessed"] == 1
+        snapshots = store.read_view(ASSET)["measurements"][measurement_id]["snapshots"]
+        assert len(snapshots) == 2
+        assert snapshots[0]["iso"] is None
+        assert snapshots[1]["iso"] is not None
+        assert snapshots[1]["point_declaration_version"] == 1
+        assert snapshots[0]["context_digest"] != snapshots[1]["context_digest"]
+        assert reprocess(store, data_dir)["stale"] == 0
+
+    def test_append_failure_is_reported_not_raised(self, store, data_dir, monkeypatch):
+        declare_point(store)
+        load_sequence(store, data_dir, 2)
+
+        def failing(self, asset_id, event):
+            raise store_module.LedgerWriteError("disk full while appending")
+
+        monkeypatch.setattr(LedgerStore, "append", failing)
+        result = reprocess(store, data_dir)
+        assert result["reprocessed"] == 0
+        assert result["not_reprocessable"] == 2
+        for entry in result["results"]:
+            assert entry["outcome"] == "not_reprocessable"
+            assert "not appended" in entry["reason"]
+            assert "disk full" in entry["reason"]
+            assert entry["snapshot_id"] is not None
+        assert result["remaining"] == 0
+
+    def test_limit_is_validated_and_an_empty_point_has_nothing_to_do(
+        self, store, data_dir
+    ):
+        with pytest.raises(ValueError, match="limit"):
+            reprocess(store, data_dir, limit=0)
+        declare_point(store)
+        result = reprocess(store, data_dir)
+        assert result["stale"] == 0
+        assert result["results"] == []
+        assert result["next_call"] is None
+        assert "nothing to reprocess" in result["message"]
+
+    def test_package_reexports_the_reprocessing_api(self):
+        import predictive_maintenance_mcp.asset_ledger as pkg
+
+        assert pkg.reprocess_stale_snapshots is reprocess_stale_snapshots
+        assert pkg.MAX_REPROCESS_PER_CALL is MAX_REPROCESS_PER_CALL

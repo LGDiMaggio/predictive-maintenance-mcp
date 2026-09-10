@@ -46,6 +46,28 @@ A ledger failure never undoes a load: it is reported as
 because every event is deduplicated by content. A snapshot failure leaves
 the measurement recorded (``snapshot_status == "failed"``); the next load
 of the same file appends the missing snapshot and nothing else.
+
+Re-processing (:func:`reprocess_stale_snapshots`, behind
+``assess_asset_change(..., reprocess=True)``): a measurement of the point is
+STALE when its view holds no snapshot with the current ``processing_id``
+AND the ``context_digest`` of the current point declaration. Up to
+``MAX_REPROCESS_PER_CALL`` stale measurements are re-processed per call, in
+the order members of the active reference (declared baseline or the first N
+slots), then the last K slots newest first, then the rest newest first, so
+the reference and the last K slots carry the current lineage within two
+calls whatever the length of the history (the assessment moves onto the
+current lineage once EVERY evaluated slot carries it; until then it uses
+the older lineage that still covers the whole set, or reports
+``processing_not_homogeneous`` when none does). The file is searched in
+every location ever declared for the measurement, most recent first
+(relative locations under
+the data directory, contained by ``safe_resolve``; absolute ones as
+recorded), its content hash is verified against the ledger before a single
+sample is decoded, and the location used is reported. A file missing
+everywhere or changed is a per-measurement ``not_reprocessable`` with the
+reason; the old snapshot is never touched. Only derived events are
+appended, each deduplicated by its deterministic ``snapshot_id``, so a
+repeated call is idempotent.
 """
 
 import logging
@@ -55,10 +77,13 @@ from typing import Any, Callable, Mapping, Optional, Sequence, Union
 
 import numpy as np
 
+from ..path_safety import safe_resolve
+from ..signal_acquisition.loaders import load_raw_binary, load_self_describing
 from ..signal_acquisition.measurement import (
     MEASUREMENT_DECLARATION_KEYS,
     digest_file,
 )
+from .assessment import AssessmentParams, collect_point_slots, current_snapshot_id_of
 from .comparability import assess_measurement_comparability
 from .snapshot import (
     SnapshotPolicy,
@@ -85,6 +110,8 @@ __all__ = [
     "OUTCOME_KEYS",
     "LOAD_OUTCOME_KEYS",
     "SNAPSHOT_PAYLOAD_KEYS",
+    "MAX_REPROCESS_PER_CALL",
+    "REPROCESS_OUTCOMES",
     "SignalSource",
     "build_declaration",
     "file_block",
@@ -92,9 +119,29 @@ __all__ = [
     "changed_keys",
     "record_measurements",
     "resolve_point_context",
+    "reprocess_stale_snapshots",
 ]
 
 logger = logging.getLogger(__name__)
+
+#: Stale measurements re-processed per :func:`reprocess_stale_snapshots`
+#: call. Ten keeps one tool call bounded (ten hashes, ten decodes, ten
+#: snapshots) while reference plus last K fit in two calls.
+MAX_REPROCESS_PER_CALL = 10
+
+#: Per-measurement outcomes of a re-processing call.
+REPROCESS_OUTCOMES: tuple[str, ...] = ("reprocessed", "up_to_date", "not_reprocessable")
+
+#: Raw decode parameters a recorded ``raw_format`` block may carry, as the
+#: decoder's keyword arguments (``sample_format`` is required by it).
+_RAW_DECODE_KEYS: tuple[str, ...] = (
+    "sample_format",
+    "byte_order",
+    "n_channels",
+    "channel_index",
+    "header_offset",
+    "scale_factor",
+)
 
 #: Keys of the effective declaration recorded in a ``measurement_recorded``
 #: payload: the normalized ``measurement`` object (identity minus the two
@@ -426,6 +473,34 @@ def _snapshot_ids(view: Mapping[str, Any], measurement_id: str) -> set[str]:
         snapshot["snapshot_id"]
         for snapshot in slot.get("snapshots", [])
         if isinstance(snapshot, dict) and isinstance(snapshot.get("snapshot_id"), str)
+    }
+
+
+def _snapshot_payload(
+    snapshot_id: str,
+    measurement_id: str,
+    point_id: str,
+    snapshot: Mapping[str, Any],
+    point: Optional[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """The ``health_snapshot_computed`` payload (exactly
+    :data:`SNAPSHOT_PAYLOAD_KEYS`), shared by the load path and the
+    re-processing path so the two can never drift."""
+    return {
+        "snapshot_id": snapshot_id,
+        "measurement_id": measurement_id,
+        "measurement_point_id": point_id,
+        "processing": snapshot["processing"],
+        "context_digest": str(snapshot["context_digest"]),
+        "context": snapshot["context"],
+        "point_declaration_version": (
+            None if point is None else point.get("declaration_version")
+        ),
+        "indicators": snapshot["indicators"],
+        "one_x": snapshot["one_x"],
+        "bearing": snapshot["bearing"],
+        "iso": snapshot["iso"],
+        "missing": snapshot["missing"],
     }
 
 
@@ -877,22 +952,13 @@ class _Batch:
         if snapshot_id in _snapshot_ids(state.view, measurement_id):
             return
 
-        payload = {
-            "snapshot_id": snapshot_id,
-            "measurement_id": measurement_id,
-            "measurement_point_id": outcome["measurement_point_id"],
-            "processing": snapshot["processing"],
-            "context_digest": digest,
-            "context": snapshot["context"],
-            "point_declaration_version": (
-                None if point is None else point.get("declaration_version")
-            ),
-            "indicators": snapshot["indicators"],
-            "one_x": snapshot["one_x"],
-            "bearing": snapshot["bearing"],
-            "iso": snapshot["iso"],
-            "missing": snapshot["missing"],
-        }
+        payload = _snapshot_payload(
+            snapshot_id,
+            measurement_id,
+            outcome["measurement_point_id"],
+            snapshot,
+            point,
+        )
         try:
             event = make_event(EVENT_HEALTH_SNAPSHOT_COMPUTED, asset_id, payload)
             result = self.store.append(asset_id, event)
@@ -1002,3 +1068,331 @@ def resolve_point_context(
             read.
     """
     return _current_point(store.read_view(asset_id), measurement_point_id)
+
+
+# ---------------------------------------------------------------------------
+# Re-processing of stale snapshots
+# ---------------------------------------------------------------------------
+
+
+def _reprocess_order(
+    view: Mapping[str, Any],
+    measurement_point_id: str,
+    params: AssessmentParams,
+) -> list[str]:
+    """Measurement ids of the point in re-processing priority: members of
+    the active reference (declared baseline, else the first N usable slots
+    by ``acquired_at``), then the last K slots newest first, then the rest
+    newest first, then the non-comparable ones newest first (they are
+    re-processed last: a corrected declaration may make them usable)."""
+    staged = collect_point_slots(dict(view), measurement_point_id, params=params)
+    usable = staged["usable"]
+    head = staged["reference"]["slots"] or usable[: params.reference_measurements]
+    ordered: list[str] = []
+
+    def add(slots: Sequence[Mapping[str, Any]]) -> None:
+        for slot in slots:
+            measurement_id = str(slot["measurement_id"])
+            if measurement_id not in ordered:
+                ordered.append(measurement_id)
+
+    add(head)
+    add(list(reversed(usable[-params.last_k :])))
+    add(list(reversed(usable)))
+    add(list(reversed(staged["slots"])))
+    return ordered
+
+
+def _candidate_locations(payload: Mapping[str, Any]) -> list[str]:
+    """Every location ever declared, most recent first, without repeats."""
+    locations = payload.get("locations")
+    candidates = (
+        [str(item) for item in locations] if isinstance(locations, list) else []
+    )
+    file_info = payload.get("file")
+    if isinstance(file_info, dict) and file_info.get("location") is not None:
+        candidates.append(str(file_info["location"]))
+    ordered: list[str] = []
+    for location in reversed(candidates):
+        if location not in ordered:
+            ordered.append(location)
+    return ordered
+
+
+def _locate_file(
+    payload: Mapping[str, Any], data_dir: Path
+) -> tuple[Optional[Path], Optional[str], list[str]]:
+    """Find the measurement's file at one of its declared locations.
+
+    Returns:
+        ``(path, location, reasons)``: the first existing location (most
+        recent first) whose content hash equals the recorded one, or
+        ``(None, None, reasons)`` with one reason per location tried.
+    """
+    file_info = payload.get("file")
+    expected = (
+        str(file_info.get("content_sha256"))
+        if isinstance(file_info, dict) and file_info.get("content_sha256")
+        else None
+    )
+    reasons: list[str] = []
+    for location in _candidate_locations(payload):
+        candidate = Path(location)
+        if not candidate.is_absolute():
+            try:
+                candidate = safe_resolve(data_dir, location)
+            except ValueError:
+                reasons.append(f"location escapes the data directory: {location}")
+                continue
+        if not candidate.is_file():
+            reasons.append(f"file not found at {location}")
+            continue
+        if expected is None:
+            reasons.append(
+                f"no content hash recorded for {location}: the file cannot be "
+                f"verified"
+            )
+            continue
+        try:
+            digest, _ = digest_file(candidate)
+        except OSError as exc:
+            reasons.append(f"cannot read {location}: {exc.strerror or exc}")
+            continue
+        if digest != expected:
+            reasons.append(f"content differs at {location}")
+            continue
+        return candidate, location, reasons
+    if not reasons:
+        reasons.append("no file location recorded for the measurement")
+    return None, None, reasons
+
+
+def _decode(path: Path, declaration: Mapping[str, Any]) -> np.ndarray:
+    """Decode the verified file with the recorded declaration.
+
+    Raises:
+        ValueError: A raw declaration without ``sample_format``, a decoder
+            refusal, or an unsupported / unreadable self-describing file.
+        OSError: From the decoders.
+    """
+    raw_format = declaration.get("raw_format")
+    if isinstance(raw_format, dict):
+        kwargs = {
+            key: raw_format[key]
+            for key in _RAW_DECODE_KEYS
+            if key in raw_format
+            and (raw_format[key] is not None or key == "scale_factor")
+        }
+        if kwargs.get("sample_format") is None:
+            raise ValueError(
+                "recorded raw_format declares no sample_format; re-load the file "
+                "with the raw declaration (the new declaration supersedes this one)"
+            )
+        return load_raw_binary(path, **kwargs)
+    data = load_self_describing(path)
+    if data is None:
+        raise ValueError(
+            f"unsupported or empty self-describing file {path.suffix!r}; re-load "
+            f"the file as CSV, NPY or raw float32 with a companion"
+        )
+    return np.asarray(data, dtype=np.float64)
+
+
+def reprocess_stale_snapshots(
+    asset_id: str,
+    measurement_point_id: str,
+    *,
+    store: LedgerStore,
+    data_dir: Union[str, Path],
+    limit: int = MAX_REPROCESS_PER_CALL,
+    policy: Optional[SnapshotPolicy] = None,
+    provenance_overrides: Optional[Mapping[str, str]] = None,
+    params: AssessmentParams = AssessmentParams(),
+) -> dict[str, Any]:
+    """Re-process up to *limit* stale measurements of one point.
+
+    See the module docstring (Re-processing). Idempotent: a second call on
+    an unchanged ledger re-processes nothing. Per-measurement failures are
+    reported, never raised.
+
+    Args:
+        asset_id: The asset (validated by the store).
+        measurement_point_id: The point.
+        store: The ledger store.
+        data_dir: The data directory relative locations are resolved under
+            (``config.DATA_DIR`` read at call time by the caller).
+        limit: Maximum measurements ATTEMPTED (re-processed or not
+            reprocessable) in this call; ``MAX_REPROCESS_PER_CALL`` by
+            default. Must be >= 1.
+        policy: Snapshot policy defining the current lineage; None means
+            the defaults.
+        provenance_overrides: See ``snapshot.collect_provenance``.
+        params: Assessment policy (reference size N and last K decide the
+            priority order).
+
+    Returns:
+        ``{asset_id, measurement_point_id, processing_id, stale,
+        reprocessed, not_reprocessable, up_to_date, remaining, results,
+        next_call, message}`` where ``results`` lists one
+        ``{measurement_id, acquired_at, outcome, location_used, reason,
+        snapshot_id}`` per measurement attempted (``outcome`` in
+        :data:`REPROCESS_OUTCOMES`; ``up_to_date`` appears only when a
+        snapshot with the expected id was appended meanwhile), ``remaining``
+        counts the stale measurements not attempted, and ``next_call`` is
+        the exact call to make when ``remaining > 0`` (else None).
+
+    Raises:
+        ValueError: An invalid ``asset_id``, ``limit`` < 1, or out-of-range
+            *params*; ``LedgerError`` when the ledger cannot be read.
+    """
+    if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
+        raise ValueError(f"limit must be an integer >= 1, got {limit!r}.")
+    view = store.read_view(asset_id)
+    point = _current_point(view, measurement_point_id)
+    current_processing = compute_processing_id(policy)
+    base_dir = Path(data_dir)
+
+    stale: list[str] = []
+    up_to_date = 0
+    for measurement_id in _reprocess_order(view, measurement_point_id, params):
+        slot = view["measurements"][measurement_id]
+        declaration = slot["current"].get("declaration") or {}
+        try:
+            expected = current_snapshot_id_of(
+                declaration,
+                point,
+                processing=current_processing,
+                measurement_id=measurement_id,
+            )
+        except ValueError:
+            stale.append(measurement_id)  # reported by the attempt below
+            continue
+        if expected in _snapshot_ids(view, measurement_id):
+            up_to_date += 1
+        else:
+            stale.append(measurement_id)
+
+    results: list[dict[str, Any]] = []
+    reprocessed = 0
+    failed = 0
+    for measurement_id in stale[:limit]:
+        payload = view["measurements"][measurement_id]["current"]
+        declaration = payload.get("declaration") or {}
+        result: dict[str, Any] = {
+            "measurement_id": measurement_id,
+            "acquired_at": declaration.get("acquired_at"),
+            "outcome": "not_reprocessable",
+            "location_used": None,
+            "reason": None,
+            "snapshot_id": None,
+        }
+        results.append(result)
+        fs = declaration.get("sampling_rate")
+        if fs is None or not fs > 0:
+            result["reason"] = (
+                "sampling_rate not declared; re-load the file with a declared "
+                "sampling rate (the new declaration supersedes this one)"
+            )
+            failed += 1
+            continue
+        path, location, reasons = _locate_file(payload, base_dir)
+        if path is None:
+            result["reason"] = "; ".join(reasons)
+            failed += 1
+            continue
+        result["location_used"] = location
+        try:
+            signal = _decode(path, declaration)
+            snapshot = compute_health_snapshot(
+                signal,
+                float(fs),
+                declaration=declaration,
+                point=point,
+                policy=policy,
+                provenance_overrides=provenance_overrides,
+            )
+        except (ValueError, OSError) as exc:
+            result["reason"] = f"snapshot not computed: {_describe(exc)}"
+            failed += 1
+            logger.warning(
+                "Re-processing of measurement %s (%s) failed: %s",
+                measurement_id,
+                location,
+                _describe(exc),
+            )
+            continue
+        snapshot_id = compute_snapshot_id(
+            measurement_id,
+            str(snapshot["processing"]["processing_id"]),
+            str(snapshot["context_digest"]),
+        )
+        result["snapshot_id"] = snapshot_id
+        if snapshot_id in _snapshot_ids(view, measurement_id):
+            result["outcome"] = "up_to_date"
+            result["reason"] = "a snapshot with this id was already recorded"
+            up_to_date += 1
+            continue
+        event = make_event(
+            EVENT_HEALTH_SNAPSHOT_COMPUTED,
+            asset_id,
+            _snapshot_payload(
+                snapshot_id, measurement_id, measurement_point_id, snapshot, point
+            ),
+        )
+        try:
+            store.append(asset_id, event)
+        except _LEDGER_FAILURES as exc:
+            result["reason"] = f"snapshot computed but not appended: {_describe(exc)}"
+            failed += 1
+            logger.warning(
+                "Re-processed snapshot %s of measurement %s not appended: %s",
+                snapshot_id,
+                measurement_id,
+                _describe(exc),
+            )
+            continue
+        result["outcome"] = "reprocessed"
+        reprocessed += 1
+        logger.info(
+            "Re-processed measurement %s of %s from %s (lineage %s)",
+            measurement_id,
+            asset_id,
+            location,
+            current_processing,
+        )
+
+    remaining = max(0, len(stale) - len(results))
+    next_call = (
+        None
+        if remaining == 0
+        else (
+            f"assess_asset_change(asset_id={asset_id!r}, "
+            f"measurement_point_id={measurement_point_id!r}, reprocess=True)"
+        )
+    )
+    if not stale:
+        message = (
+            f"nothing to reprocess: {up_to_date} snapshot(s) of "
+            f"{measurement_point_id} already on lineage {current_processing} with "
+            f"the current point declaration"
+        )
+    else:
+        message = (
+            f"{reprocessed} measurement(s) re-processed on lineage "
+            f"{current_processing}, {failed} not reprocessable, {remaining} stale "
+            f"measurement(s) remaining"
+            + (f"; call {next_call} to continue" if next_call else "")
+        )
+    return {
+        "asset_id": asset_id,
+        "measurement_point_id": measurement_point_id,
+        "processing_id": current_processing,
+        "stale": len(stale),
+        "reprocessed": reprocessed,
+        "not_reprocessable": failed,
+        "up_to_date": up_to_date,
+        "remaining": remaining,
+        "results": results,
+        "next_call": next_call,
+        "message": message,
+    }

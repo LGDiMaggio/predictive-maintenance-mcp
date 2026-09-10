@@ -10,9 +10,8 @@ Dependency direction: ``mcp_tools -> asset_ledger -> signal_acquisition ->
 {config, path_safety}``. No module of this package imports
 ``signal_acquisition.repository``, ``models`` or anything MCP; the
 measurement contract it builds on lives in
-``signal_acquisition.measurement``. The store, snapshot, comparability and
-service modules re-export their public functions from here; a later unit
-adds the assessment module.
+``signal_acquisition.measurement``. The store, snapshot, comparability,
+assessment and service modules re-export their public functions from here.
 """
 
 from .store import (  # noqa: F401
@@ -70,11 +69,33 @@ from .comparability import (  # noqa: F401
     unit_conversion_factor,
 )
 
+from .assessment import (  # noqa: F401
+    AMPLITUDE_INDICATORS,
+    ASSESSMENT_STATUSES,
+    BASELINE_QUALIFICATION_CODES,
+    CLASSIFICATIONS,
+    ENVELOPE_INDICATOR_PREFIX,
+    EVIDENCE_INDICATOR_PREFIX,
+    MAX_LISTED_ITEMS,
+    MIN_REFERENCE_MEASUREMENTS,
+    MIN_USABLE_SLOTS,
+    REFERENCE_KINDS,
+    STATISTICS_QUALITIES,
+    SUPPORT_INDICATORS,
+    AssessmentParams,
+    assess_change,
+    collect_point_slots,
+    current_snapshot_id_of,
+    validate_params,
+)
+
 from .service import (  # noqa: F401
     DECLARATION_KEYS,
     LEDGER_STATUSES,
     LOAD_OUTCOME_KEYS,
+    MAX_REPROCESS_PER_CALL,
     OUTCOME_KEYS,
+    REPROCESS_OUTCOMES,
     SNAPSHOT_PAYLOAD_KEYS,
     SNAPSHOT_STATUSES,
     build_declaration,
@@ -82,5 +103,6 @@ from .service import (  # noqa: F401
     declaration_fingerprint,
     file_block,
     record_measurements,
+    reprocess_stale_snapshots,
     resolve_point_context,
 )

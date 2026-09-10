@@ -100,50 +100,72 @@ def load_signal_data(filename: str) -> Optional[np.ndarray]:
         if not file_path.exists():
             return None
 
-        if file_path.suffix == ".npy":
-            return np.load(file_path)
-
-        elif file_path.suffix in [".csv", ".txt"]:
-            df = pd.read_csv(file_path, header=None)
-            return df.iloc[:, 0].values
-
-        elif file_path.suffix == ".mat":
-            from scipy.io import loadmat
-
-            mat_data = loadmat(str(file_path))
-            for key, value in mat_data.items():
-                if key.startswith("__"):
-                    continue
-                if isinstance(value, np.ndarray) and value.dtype.kind in (
-                    "f",
-                    "i",
-                    "u",
-                ):
-                    data = value.flatten()
-                    if len(data) > 0:
-                        return data.astype(np.float64)
-            logger.warning(f"No numeric data found in MAT file: {filename}")
-            return None
-
-        elif file_path.suffix == ".wav":
-            from scipy.io import wavfile
-
-            sample_rate, data = wavfile.read(str(file_path))
-            if data.ndim > 1:
-                data = data[:, 0]
-            if data.dtype.kind == "i":
-                data = data.astype(np.float64) / np.iinfo(data.dtype).max
-            return data.astype(np.float64)
-
-        elif file_path.suffix == ".parquet":
-            df = pd.read_parquet(file_path)
-            return df.iloc[:, 0].values.astype(np.float64)
-
-        return None
+        return load_self_describing(file_path)
 
     except Exception as e:
         logger.error(f"Error loading signal {filename}: {e}")
         return None
+
+
+def load_self_describing(path: Path) -> Optional[np.ndarray]:
+    """Decode an already-resolved self-describing signal file.
+
+    The format dispatch of :func:`load_signal_data`, on a path the caller
+    has already contained (``safe_resolve``) or deliberately accepts as
+    absolute (the asset ledger re-reads a recorded location only after
+    verifying the file's content hash against the ledger). No containment
+    and no existence check are applied here, and nothing is swallowed:
+    ``load_signal_data`` keeps its "None on failure" contract by catching
+    what this function raises.
+
+    Args:
+        path: Resolved filesystem path of a ``SELF_DESCRIBING_EXTENSIONS``
+            file.
+
+    Returns:
+        The first column / channel as a 1-D array (WAV integer PCM
+        normalized to [-1, 1] as before); None for an unsupported suffix or
+        a MAT file without numeric data.
+
+    Raises:
+        OSError, ValueError: From the decoders (missing or malformed file).
+    """
+    if path.suffix == ".npy":
+        return np.load(path)
+
+    if path.suffix in (".csv", ".txt"):
+        df = pd.read_csv(path, header=None)
+        return df.iloc[:, 0].values
+
+    if path.suffix == ".mat":
+        from scipy.io import loadmat
+
+        mat_data = loadmat(str(path))
+        for key, value in mat_data.items():
+            if key.startswith("__"):
+                continue
+            if isinstance(value, np.ndarray) and value.dtype.kind in ("f", "i", "u"):
+                data = value.flatten()
+                if len(data) > 0:
+                    return data.astype(np.float64)
+        logger.warning(f"No numeric data found in MAT file: {path.name}")
+        return None
+
+    if path.suffix == ".wav":
+        from scipy.io import wavfile
+
+        sample_rate, data = wavfile.read(str(path))
+        if data.ndim > 1:
+            data = data[:, 0]
+        if data.dtype.kind == "i":
+            data = data.astype(np.float64) / np.iinfo(data.dtype).max
+        return data.astype(np.float64)
+
+    if path.suffix == ".parquet":
+        df = pd.read_parquet(path)
+        return df.iloc[:, 0].values.astype(np.float64)
+
+    return None
 
 
 def load_raw_binary(

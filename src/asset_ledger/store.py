@@ -1190,6 +1190,7 @@ def _measurement_slot() -> dict[str, Any]:
         "current": None,
         "snapshots": [],
         "snapshots_by_lineage": {},
+        "lineage_positions": {},
     }
 
 
@@ -1220,10 +1221,17 @@ def build_asset_view(
     Returns:
         ``{asset_id, event_count, points, measurements,
         ordered_measurement_ids, reattributed, baselines, integrity,
-        end_offset}`` where ``points[point_id] = {history, current}``,
+        end_offset}`` where ``points[point_id] = {history, current}``
+        (``current`` is the latest payload as recorded; every ``history``
+        entry is a copy of its payload plus ``recorded_at``, the envelope's
+        server instant, so a query can tell which measurements were
+        acquired before the current declaration),
         ``measurements[measurement_id] = {history, current, snapshots,
-        snapshots_by_lineage}`` (measurements whose latest declaration names
-        another asset are moved to ``reattributed`` as
+        snapshots_by_lineage, lineage_positions}`` (``lineage_positions``
+        maps a ``processing_id`` to the position, in the event order, of
+        its latest snapshot, so lineages can be ranked by recency across
+        measurements; measurements whose latest declaration names another
+        asset are moved to ``reattributed`` as
         ``{measurement_id, to_asset_id}``), ``ordered_measurement_ids`` sorts
         the remaining measurements by ``current.declaration.acquired_at``
         (as an instant, naive strings as UTC; unparsable strings after every
@@ -1266,7 +1274,7 @@ def build_asset_view(
                 malformed += 1
                 continue
             slot = points.setdefault(point_id, {"history": [], "current": None})
-            slot["history"].append(payload)
+            slot["history"].append({**payload, "recorded_at": event.get("recorded_at")})
             slot["current"] = payload
 
         elif event_type == EVENT_MEASUREMENT_RECORDED:
@@ -1295,6 +1303,7 @@ def build_asset_view(
             slot = measurements.setdefault(measurement_id, _measurement_slot())
             slot["snapshots"].append(payload)
             slot["snapshots_by_lineage"][processing_id] = payload
+            slot["lineage_positions"][processing_id] = position
 
         elif event_type == EVENT_BASELINE_DECLARED:
             point_id = payload.get("measurement_point_id")
