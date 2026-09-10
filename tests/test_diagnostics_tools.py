@@ -13,6 +13,15 @@ from unittest.mock import AsyncMock
 
 from mcp.server.mcpserver import MCPServer
 
+from predictive_maintenance_mcp.asset_ledger.store import (
+    EVENT_MEASUREMENT_POINT_DECLARED,
+    LedgerStore,
+    make_event,
+)
+from predictive_maintenance_mcp.config import get_ledger_dir
+from predictive_maintenance_mcp.decision_support.diagnosis_pipeline import (
+    diagnose_vibration as run_diagnosis_pipeline,
+)
 from predictive_maintenance_mcp.mcp_tools.diagnostics_tools import register
 from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
 
@@ -1209,6 +1218,300 @@ class TestDiagnoseVibrationRefusedISO:
             assert result.iso_severity.zone in ("A", "B", "C", "D")
         finally:
             repo.clear_all()
+
+
+# ---------------------------------------------------------------------------
+# diagnose_vibration: the declared context as default (asset ledger U9)
+# ---------------------------------------------------------------------------
+
+LEDGER_ASSET = "P-101"
+LEDGER_POINT = "motor_de_h"
+LEDGER_ACQUIRED_AT = "2026-08-20T13:42:00+02:00"
+
+#: The four keys ``parameter_sources`` always carries.
+PARAMETER_KEYS = {"rpm", "bearing_id", "machine_group", "support_type"}
+
+
+def _write_identified_signal(data_dir: Path, name: str, *, rpm=None) -> None:
+    """A 1 s noise CSV whose companion declares a measurement identity
+    (asset P-101, point motor_de_h) and, optionally, the measurement's rpm."""
+    fs = 10000
+    sig = 0.05 * np.random.default_rng(7).standard_normal(fs)
+    pd.DataFrame(sig).to_csv(data_dir / f"{name}.csv", index=False, header=False)
+    measurement = {
+        "asset_id": LEDGER_ASSET,
+        "measurement_point_id": LEDGER_POINT,
+        "acquired_at": LEDGER_ACQUIRED_AT,
+        "direction": "horizontal",
+    }
+    if rpm is not None:
+        measurement["rpm"] = rpm
+    with open(data_dir / f"{name}_metadata.json", "w") as f:
+        json.dump(
+            {"sampling_rate": fs, "signal_unit": "g", "measurement": measurement}, f
+        )
+
+
+def _declare_point(**overrides) -> None:
+    """Append a ``measurement_point_declared`` event for P-101/motor_de_h
+    (payload contract: the store module docstring). Defaults differ from
+    the tool's historical defaults on purpose, so a value that came from
+    the point is distinguishable from one that came from nowhere."""
+    payload = {
+        "measurement_point_id": LEDGER_POINT,
+        "declaration_version": 1,
+        "bearing_id": "6205",
+        "fault_orders": None,
+        "machine_group": 1,
+        "support_type": "flexible",
+        "machine_power_kw": None,
+        "expected_signal_unit": "g",
+        "expected_sensor_id": None,
+        "expected_direction": "horizontal",
+        "nominal_rpm": 1800.0,
+        "declared_by": "test",
+        "note": None,
+        "changed": [],
+    }
+    payload.update(overrides)
+    LedgerStore(get_ledger_dir()).append(
+        LEDGER_ASSET,
+        make_event(EVENT_MEASUREMENT_POINT_DECLARED, LEDGER_ASSET, payload),
+    )
+
+
+class TestDiagnoseVibrationPointContext:
+    """diagnose_vibration reads rpm, bearing, group and support from the
+    declared context when the call omits them; an explicit argument wins;
+    the result reports where every value came from."""
+
+    @pytest.mark.asyncio
+    async def test_explicit_rpm_without_identity_is_unchanged(
+        self, tools, repo, mock_ctx
+    ):
+        """A signal loaded without identity + explicit rpm: the pre-U9
+        result (the pipeline run with the historical defaults), with
+        parameter_sources saying explicit / none / default."""
+        result = await tools["diagnose_vibration"](
+            ctx=mock_ctx, signal_id="normal", rpm=1800.0
+        )
+        expected = run_diagnosis_pipeline(
+            signal=repo.get_signal("normal"),
+            fs=10000.0,
+            rpm=1800.0,
+            signal_id="normal",
+            signal_unit="g",
+        )
+        assert result.rpm == 1800.0
+        assert result.bearing_id is None
+        assert result.machine_group == 2
+        assert result.support_type == "rigid"
+        assert result.fft_summary == expected["fft_summary"]
+        assert result.psd_summary == expected["psd_summary"]
+        assert result.iso_severity.status == "assessed"
+        assert result.iso_severity.zone == expected["iso_severity"]["zone"]
+        assert result.overall_diagnosis == expected["overall_diagnosis"]
+        assert result.recommendations == expected["recommendations"]
+        assert result.evidence_strength == expected["evidence_strength"]
+        assert result.parameter_sources == {
+            "rpm": "explicit",
+            "bearing_id": "none",
+            "machine_group": "default",
+            "support_type": "default",
+        }
+
+    @pytest.mark.asyncio
+    async def test_all_explicit_arguments_are_reported_explicit(
+        self, tools, repo, mock_ctx
+    ):
+        result = await tools["diagnose_vibration"](
+            ctx=mock_ctx,
+            signal_id="normal",
+            rpm=1800.0,
+            bearing_id="6205",
+            machine_group=1,
+            support_type="flexible",
+        )
+        assert (result.rpm, result.bearing_id) == (1800.0, "6205")
+        assert (result.machine_group, result.support_type) == (1, "flexible")
+        assert result.bearing_faults is not None
+        assert result.bearing_faults.bearing_id == "6205"
+        assert result.parameter_sources == {key: "explicit" for key in PARAMETER_KEYS}
+
+    @pytest.mark.asyncio
+    async def test_measurement_and_point_supply_the_defaults(
+        self, tools, data_dir, repo, mock_ctx
+    ):
+        """Identity with rpm 1500 + a declared point (6205, group 1,
+        flexible, nominal 1800): the call without arguments takes the rpm
+        from the measurement and everything else from the point."""
+        _write_identified_signal(data_dir, "m_ctx", rpm=1500)
+        repo.load_signal("m_ctx.csv")
+        _declare_point()
+
+        result = await tools["diagnose_vibration"](ctx=mock_ctx, signal_id="m_ctx")
+
+        assert result.rpm == 1500.0  # the measurement's own rpm, not nominal_rpm
+        assert result.bearing_id == "6205"
+        assert result.machine_group == 1
+        assert result.support_type == "flexible"
+        assert result.bearing_faults is not None
+        assert result.bearing_faults.bearing_id == "6205"
+        assert result.bearing_faults.rpm == 1500.0
+        assert result.parameter_sources == {
+            "rpm": "measurement",
+            "bearing_id": "point",
+            "machine_group": "point",
+            "support_type": "point",
+        }
+
+    @pytest.mark.asyncio
+    async def test_point_nominal_rpm_when_the_measurement_declares_none(
+        self, tools, data_dir, repo, mock_ctx
+    ):
+        _write_identified_signal(data_dir, "m_nominal")  # no rpm declared
+        repo.load_signal("m_nominal.csv")
+        _declare_point(nominal_rpm=1800.0)
+
+        result = await tools["diagnose_vibration"](ctx=mock_ctx, signal_id="m_nominal")
+
+        assert result.rpm == 1800.0
+        assert result.parameter_sources["rpm"] == "point"
+        assert result.bearing_faults is not None
+        assert result.bearing_faults.rpm == 1800.0
+
+    @pytest.mark.asyncio
+    async def test_explicit_arguments_win_over_the_point(
+        self, tools, data_dir, repo, mock_ctx
+    ):
+        """Point at 1800 rpm / 6205 / group 1 / flexible; explicit 1500 /
+        6203 / group 2 / rigid: the explicit values are used and reported."""
+        _write_identified_signal(data_dir, "m_explicit")  # no rpm declared
+        repo.load_signal("m_explicit.csv")
+        _declare_point(nominal_rpm=1800.0)
+
+        result = await tools["diagnose_vibration"](
+            ctx=mock_ctx,
+            signal_id="m_explicit",
+            rpm=1500.0,
+            bearing_id="6203",
+            machine_group=2,
+            support_type="rigid",
+        )
+
+        assert result.rpm == 1500.0
+        assert result.bearing_id == "6203"
+        assert result.bearing_faults is not None
+        assert result.bearing_faults.bearing_id == "6203"
+        assert result.bearing_faults.rpm == 1500.0
+        assert (result.machine_group, result.support_type) == (2, "rigid")
+        assert result.parameter_sources == {key: "explicit" for key in PARAMETER_KEYS}
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("point_declared", [False, True])
+    async def test_rpm_with_no_source_is_refused_naming_the_three_remedies(
+        self, tools, data_dir, repo, mock_ctx, point_declared
+    ):
+        """No explicit rpm, no rpm in the measurement, no nominal_rpm on the
+        point (declared without one, or never declared): refused, never
+        defaulted, and the message names all three ways out."""
+        _write_identified_signal(data_dir, "m_norpm")
+        repo.load_signal("m_norpm.csv")
+        if point_declared:
+            _declare_point(nominal_rpm=None)
+
+        with pytest.raises(ValueError) as exc_info:
+            await tools["diagnose_vibration"](ctx=mock_ctx, signal_id="m_norpm")
+
+        msg = str(exc_info.value)
+        assert "rpm=" in msg
+        assert '"measurement"' in msg
+        assert "nominal_rpm" in msg
+        assert "declare_measurement_point" in msg
+
+    @pytest.mark.asyncio
+    async def test_rpm_without_identity_and_without_argument_is_refused(
+        self, tools, repo, mock_ctx
+    ):
+        """A signal loaded without identity has no declared layer at all:
+        the same refusal, so the caller learns the three remedies."""
+        with pytest.raises(ValueError) as exc_info:
+            await tools["diagnose_vibration"](ctx=mock_ctx, signal_id="normal")
+
+        msg = str(exc_info.value)
+        assert "rpm=" in msg
+        assert '"measurement"' in msg
+        assert "declare_measurement_point" in msg
+
+    @pytest.mark.asyncio
+    async def test_point_without_group_and_support_uses_historical_defaults(
+        self, tools, data_dir, repo, mock_ctx
+    ):
+        _write_identified_signal(data_dir, "m_default", rpm=1500)
+        repo.load_signal("m_default.csv")
+        _declare_point(machine_group=None, support_type=None)
+
+        result = await tools["diagnose_vibration"](ctx=mock_ctx, signal_id="m_default")
+
+        assert (result.machine_group, result.support_type) == (2, "rigid")
+        assert result.parameter_sources == {
+            "rpm": "measurement",
+            "bearing_id": "point",
+            "machine_group": "default",
+            "support_type": "default",
+        }
+
+    @pytest.mark.asyncio
+    async def test_point_with_fault_orders_only_reports_the_unsupported_block(
+        self, tools, data_dir, repo, mock_ctx
+    ):
+        """A point declared with fault_orders and no bearing_id: no bearing
+        block, and the result SAYS why (never a silent skip) and how to
+        check the orders outside this tool."""
+        _write_identified_signal(data_dir, "m_orders", rpm=1500)
+        repo.load_signal("m_orders.csv")
+        _declare_point(bearing_id=None, fault_orders={"BPFO": 3.585, "BPFI": 5.415})
+
+        result = await tools["diagnose_vibration"](ctx=mock_ctx, signal_id="m_orders")
+
+        assert result.bearing_faults is None
+        assert result.bearing_id is None
+        assert result.parameter_sources["bearing_id"] == "not_supported_fault_orders"
+        assert result.parameter_sources["rpm"] == "measurement"
+        reason = "not supported by diagnose_vibration in this stage"
+        assert reason in result.overall_diagnosis
+        assert "fault_orders" in result.overall_diagnosis
+        remedies = [r for r in result.recommendations if reason in r]
+        assert len(remedies) == 1
+        assert "check_bearing_faults(" in remedies[0]
+        assert "frequencies=" in remedies[0]
+        expected_bpfo_hz = round(3.585 * 1500 / 60.0, 2)
+        assert f"'BPFO': {expected_bpfo_hz}" in remedies[0]
+
+    @pytest.mark.asyncio
+    async def test_unreadable_ledger_counts_as_no_point_context(
+        self, tools, data_dir, repo, mock_ctx, ledger_dir, package_caplog
+    ):
+        """A ledger the store cannot read (a directory where the asset's
+        file should be) is logged and treated as "no point context": the
+        diagnosis runs on the measurement's rpm and the historical defaults."""
+        _write_identified_signal(data_dir, "m_broken", rpm=1500)
+        repo.load_signal("m_broken.csv")
+        (ledger_dir / f"{LEDGER_ASSET}.jsonl").mkdir(parents=True)
+
+        result = await tools["diagnose_vibration"](ctx=mock_ctx, signal_id="m_broken")
+
+        assert result.rpm == 1500.0
+        assert result.parameter_sources == {
+            "rpm": "measurement",
+            "bearing_id": "none",
+            "machine_group": "default",
+            "support_type": "default",
+        }
+        assert any(
+            "Point context" in record.getMessage() and record.levelname == "WARNING"
+            for record in package_caplog.records
+        )
 
 
 # ---------------------------------------------------------------------------

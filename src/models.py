@@ -528,6 +528,18 @@ class VibrationSeverityResult(BaseModel):
         return self
 
 
+#: Where one diagnostic parameter of ``diagnose_vibration`` came from: the
+#: closed vocabulary of the values of ``DiagnosisResult.parameter_sources``.
+DiagnosisParameterSource = Literal[
+    "explicit",
+    "measurement",
+    "point",
+    "default",
+    "not_supported_fault_orders",
+    "none",
+]
+
+
 class DiagnosisResult(BaseModel):
     """Full integrated diagnosis pipeline result."""
 
@@ -570,6 +582,25 @@ class DiagnosisResult(BaseModel):
         )
     )
     recommendations: list[str] = Field(description="Recommended actions")
+    parameter_sources: Optional[dict[str, DiagnosisParameterSource]] = Field(
+        None,
+        description=(
+            "Origin of each diagnostic parameter, keyed rpm, bearing_id, "
+            "machine_group and support_type. Precedence: 'explicit' (passed "
+            "to the call) > 'measurement' (the rpm declared in the "
+            "companion's \"measurement\" object) > 'point' (the current "
+            "declaration of the measurement point in the asset ledger: "
+            "nominal_rpm, bearing_id, machine_group, support_type) > "
+            "'default' (the historical machine_group=2 / "
+            "support_type='rigid'; rpm has no default and is refused "
+            "instead). bearing_id only: 'none' (no bearing from any source, "
+            "bearing block skipped) or 'not_supported_fault_orders' (the "
+            "point declares fault_orders without a bearing_id: the bearing "
+            "block was not computed because frequency sets are not "
+            "supported by diagnose_vibration in this stage; use "
+            "check_bearing_faults(frequencies=...))."
+        ),
+    )
 
 
 # ============================================================================

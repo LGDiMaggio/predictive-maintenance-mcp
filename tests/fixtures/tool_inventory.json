@@ -513,35 +513,56 @@
             "title": "Bearing Id"
           },
           "machine_group": {
-            "default": 2,
-            "enum": [
-              1,
-              2
+            "anyOf": [
+              {
+                "enum": [
+                  1,
+                  2
+                ],
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
             ],
-            "title": "Machine Group",
-            "type": "integer"
+            "default": null,
+            "title": "Machine Group"
           },
           "rpm": {
-            "title": "Rpm",
-            "type": "number"
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Rpm"
           },
           "signal_id": {
             "title": "Signal Id",
             "type": "string"
           },
           "support_type": {
-            "default": "rigid",
-            "enum": [
-              "rigid",
-              "flexible"
+            "anyOf": [
+              {
+                "enum": [
+                  "rigid",
+                  "flexible"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
             ],
-            "title": "Support Type",
-            "type": "string"
+            "default": null,
+            "title": "Support Type"
           }
         },
         "required": [
-          "signal_id",
-          "rpm"
+          "signal_id"
         ],
         "title": "diagnose_vibrationArguments",
         "type": "object"

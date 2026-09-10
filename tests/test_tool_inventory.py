@@ -49,6 +49,16 @@ Fixture history:
   (sample_format, byte_order, n_channels, channel_index, header_offset,
   scale_factor), all defaulting to null. No other tool's schema changed;
   counts unchanged (34/0/3).
+- Asset ledger U9 (2026-09-10): regenerated intentionally — ADDITIVE.
+  diagnose_vibration: rpm, machine_group, support_type optional (point
+  context defaults). The three parameters now default to null and are
+  resolved explicit argument > the measurement's own declaration (rpm
+  from the companion's "measurement" object) > the measurement point's
+  current declaration in the asset ledger (nominal_rpm, bearing_id,
+  machine_group, support_type) > the historical defaults 2 / rigid; an
+  rpm with no source is refused. Only signal_id stays required. No other
+  tool's schema changed; counts unchanged (34/0/3) — the four ledger
+  tools of U7 regenerate this fixture once more.
 
 Snapshot recipe (run from the repo root):
     python -c "from tests.test_tool_inventory import build_inventory, \\
