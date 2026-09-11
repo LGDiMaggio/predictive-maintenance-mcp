@@ -123,6 +123,7 @@ python -m benchmarks.cwru all
 | *"Generate a full diagnostic report"* | Produces an interactive HTML report with charts, fault markers, and server-authored severity wording |
 | *"Extract specs from test_pump_manual.pdf and diagnose the signal"* | Reads the equipment manual, looks up the bearing model, calculates expected fault frequencies, flags which ones the signal actually shows |
 | *"Train an anomaly detector on my healthy baselines, then flag anomalies"* | Trains a model on your normal data, scores new signals, flags outliers for your review |
+| *"What changed on pump P-101 since the baseline?"* | Reads the asset's recorded history, compares the latest acquisitions with the declared reference, and reports each indicator's change with the criterion it applied |
 
 The AI doesn't guess: it calls **41 specialized MCP endpoints** (38 tools + 3 prompts) running locally on your machine. Every signal is referenced by a single `signal_id` handle from load to report. Your data never leaves your infrastructure.
 
@@ -180,6 +181,20 @@ The project ships with **20 real bearing vibration signals** from production mac
 Try: *"Load real_train/OuterRaceFault_1.csv and diagnose the bearing fault."*
 
 Full dataset documentation: [data/README.md](data/README.md)
+
+---
+
+## Asset Health Ledger
+
+A single diagnosis answers "what does this signal show". The asset health ledger answers "what changed on this machine since the reference", from measurements taken weeks apart, on terms the engineer declared.
+
+- **Declared identity.** The companion metadata file names the asset, the measurement point and the acquisition instant, plus the conditions a comparison depends on (speed, load, sensor, direction). Nothing is inferred from file names or content.
+- **A history that survives restarts.** Every loaded measurement with an identity is recorded in a local append-only ledger, one JSON Lines file per asset, with its derived indicators. Waveforms are never copied, events are never rewritten.
+- **Qualified comparability.** A measurement that contradicts its point or its reference (another unit family, another direction, a speed too far off) is excluded with the reason; one that only lacks context (no speed, no direction, a naive timestamp) stays in the trend with the qualification attached.
+- **A reference that is declared, never assumed.** The engineer declares which measurements are the healthy baseline, and the declaration is attributed. Without one, the first comparable acquisitions serve as a relative reference and are never called healthy.
+- **Change with its criterion.** Each indicator is judged against the reference band; the classification (no change, isolated episode, unconfirmed single acquisition, persistent change) states the rule it applied, and bearing evidence is counted over the last acquisitions.
+
+Four tools carry the workflow: `declare_measurement_point`, `declare_healthy_baseline`, `get_asset_history` and `assess_asset_change`. The ledger puts the evidence over time in front of the engineer; the judgement about the machine stays with the engineer. Contract and operations: [Adapter Guide](docs/ADAPTER_GUIDE.md#declaring-a-measurement) · worked flow: [Examples](EXAMPLES.md#example-8-asset-history) · reference adapter: [STWIN.box](examples/adapters/stwinbox/README.md).
 
 ---
 
@@ -260,6 +275,7 @@ pytest --cov=src --cov-report=html      # with coverage report
 - [ ] Customizable severity thresholds
 - [x] Remaining useful life (RUL) estimation from repeated measurements (linear, exponential, Kalman)
 - [x] Trend analysis and degradation onset detection
+- [x] Asset health ledger: per-asset measurement history with a declared reference and qualified comparability
 - [ ] Multi-signal trending and historical comparison
 - [ ] Real-time streaming (MQTT/Kafka)
 - [ ] Fleet dashboard for multi-asset monitoring

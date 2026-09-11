@@ -17,6 +17,116 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bound to the exact environment that measured it. A dormant CI guard
   (documented in `docs/benchmark-methodology.md`) arms itself once the
   committed outcomes are regenerated.
+- **Asset health ledger: a per-asset measurement history on disk.** The
+  companion `<stem>_metadata.json` may carry a `measurement` object that
+  declares the identity of the file: `asset_id`, `measurement_point_id`
+  and `acquired_at` (required), `rpm`, `load`, `operating_state`,
+  `sensor_id`, `direction` and `declared_by` (optional). The object is
+  validated on load with the discipline of the raw-binary declaration:
+  closed vocabularies, a ledger id grammar, one refusal naming every
+  problem and the remedy; a companion without the object behaves exactly
+  as before. A file loaded with a valid object is recorded in a local
+  append-only ledger (`data/ledger/<asset_id>.jsonl`, JSON Lines, one
+  file per asset, plus a `_measurements.jsonl` index and a lock sidecar
+  per file) together with a derived health snapshot: time-domain
+  indicators, 1x amplitude, envelope amplitude at each expected bearing
+  fault frequency and ISO 20816-3 severity, each tagged with its
+  processing lineage, and a `{reason, remedy}` entry for every block the
+  declared context cannot support. The ledger keeps indicators,
+  declarations and a file reference (location, SHA-256, size), never
+  waveforms; events are never rewritten or deleted; the history survives
+  restarts. A complete snapshot on a 10 s capture at 26.6 kHz took about
+  200 ms, measured warm on one workstation. Every ledger tool reads the
+  whole file of the asset at each call: the documented threshold beyond
+  which an index becomes future work is 5,000 events or 20 MB per
+  ledger, observable through `event_count` and `ledger_bytes` in
+  `get_asset_history`. Contract: `docs/ADAPTER_GUIDE.md`, "Declaring a
+  Measurement".
+- **Qualified comparability.** Every measurement is graded against the
+  current declaration of its point and, at assessment time, against the
+  reference it is trended with. A contradiction excludes it from the
+  trend with the reason (another unit family or no declared unit, a
+  direction different from the point's or the reference's, a speed more
+  than 10 percent from the anchor, amplitudes that are not physical); an
+  absence, or a difference no model corrects, keeps it in the trend with
+  the qualification attached (no direction, no rpm, a naive timestamp,
+  another sensor, another load or operating state, another acquisition
+  setup, a measurement older than the point's current declaration).
+  Grades are computed at query time and reported, never stored as facts.
+- **Declared reference and classified change.** `assess_asset_change`
+  compares one point against its reference: the active declared baseline
+  (attributed to its declarer, quoted verbatim with the date and the
+  note) or, when none is declared, the first comparable acquisitions as a
+  relative comparison that is never called healthy (`health_declared`
+  false). Per amplitude indicator the band is the reference mean plus or
+  minus the larger of 3 sigma and 25 percent of the mean (ISO 20816-3,
+  6.3); the post-reference acquisitions are classified `no_change`,
+  `isolated_episode`, `unconfirmed_single_acquisition` or
+  `persistent_change` (three consecutive outside the band on the same
+  side, at least four of the last five on the same side, or a
+  significant drift ending outside),
+  with the criterion stated in the response; bearing evidence is counted
+  over the last K acquisitions; snapshots are compared only within one
+  processing lineage; non-comparable acquisitions are listed, never
+  dropped silently; at most one suggested verification and no list of
+  recommendations.
+- **Four ledger tools** (34 to 38 tools, 41 endpoints):
+  `declare_measurement_point` (versioned context of a point: bearing or
+  fault orders, nominal speed, ISO 20816-3 group and support, expected
+  unit, sensor and direction; a re-declaration reports the changed keys
+  and how many snapshots need re-processing), `declare_healthy_baseline`
+  (which recorded measurements are the healthy reference, at least
+  three, attributed to `declared_by`; an empty list withdraws it),
+  `get_asset_history` (the index of the assets, or one asset's history
+  newest first with an indicator preview, declarations, baselines and
+  the integrity block) and `assess_asset_change` (above;
+  `reprocess=True` recomputes at most 10 stale snapshots per call from
+  the original files, hash-verified, and names the next call while
+  measurements remain).
+- **Generic integration path and a reference adapter.** A file plus its
+  companion is the integration model for any acquisition system: an
+  adapter converts the device output into a file the server reads and a
+  companion that declares the decode parameters and the `measurement`
+  object, before the server is involved and without importing from it.
+  `examples/adapters/stwinbox/` is the reference implementation for the
+  STEVAL-STWINBX1 board: FP-SNS-DATALOG2 acquisition folders and USB
+  window CSVs become one float32 `.bin` per axis, in g, each with its
+  companion; the decoder was verified against the ST SDK on stored
+  acquisitions.
+- **`companion_warning` on `StoredSignalInfo`.** When a companion
+  `_metadata.json` exists but is not valid JSON, or not a JSON object,
+  the file loads exactly as if it had no companion and the returned
+  value names the file and the case (previously the problem reached only
+  a log the client never sees). A readable companion with an invalid
+  `measurement` object is still a refusal.
+- **`PMM_LEDGER_DIR`** relocates the ledger (default `data/ledger` under
+  the project root), read from the environment at each call like
+  `PMM_MAX_SIGNAL_SIZE`. The server creates the directory at startup and
+  warns when it is not writable or lies under a cloud-synced folder
+  (OneDrive, Dropbox, iCloud Drive); a local, unsynced path is
+  recommended, and `PDM_PROJECT_DIR` keeps the relative file locations
+  recorded in the ledger valid across restarts. `docker-compose.yml`
+  sets `PMM_LEDGER_DIR=/app/ledger` on a named volume, since `./data` is
+  mounted read-only.
+
+### Changed
+- **`diagnose_vibration`: `rpm`, `machine_group` and `support_type` are
+  now optional** (additive; calls that pass them behave as before).
+  Precedence: the explicit argument, then the `rpm` declared in the
+  companion's `measurement` object, then the current declaration of the
+  measurement point in the asset ledger (`nominal_rpm`, `bearing_id`,
+  `machine_group`, `support_type`), then the historical defaults
+  (`machine_group=2`, `support_type="rigid"`); `rpm` has no default, and
+  a call with no source anywhere is refused with the three remedies. The
+  new `parameter_sources` block of `DiagnosisResult` names the origin of
+  each value. A point declared with `fault_orders` but no `bearing_id`
+  gets no bearing block from this tool; the result says so.
+- **One amplitude-spectrum helper.** The single-sided amplitude spectrum
+  (Hamming window, FFT, 2|X|/N) that `analyze_fft`, the diagnosis
+  pipeline's `fft_summary` and `generate_fft_report` each inlined now
+  lives in `signal_processing.spectral.amplitude_spectrum`, shared with
+  the ledger's 1x amplitude. Behaviour-preserving: the operation order is
+  unchanged and the golden fixture pins the numbers.
 
 ## [0.13.0] - 2026-08-14
 
