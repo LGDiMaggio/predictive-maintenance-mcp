@@ -560,6 +560,19 @@ class TestRawLiteralVocabularySync:
         ann = inspect.signature(load_signal).parameters["byte_order"].annotation
         assert self._literal_values(ann) == set(VALID_BYTE_ORDERS)
 
+    def test_signal_unit_literal_matches_repository_vocabulary(self):
+        """load_signal's signal_unit Literal is a hand copy of the
+        repository's VALID_SIGNAL_UNITS; the asset ledger's
+        expected_signal_unit is bound to the same tuple (see
+        tests/test_asset_tools.py), so both copies are guarded here."""
+        from predictive_maintenance_mcp.mcp_tools.acquisition_tools import load_signal
+        from predictive_maintenance_mcp.signal_acquisition.repository import (
+            VALID_SIGNAL_UNITS,
+        )
+
+        ann = inspect.signature(load_signal).parameters["signal_unit"].annotation
+        assert self._literal_values(ann) == set(VALID_SIGNAL_UNITS)
+
 
 # ---------------------------------------------------------------------------
 # U5: registration in the asset ledger at load time

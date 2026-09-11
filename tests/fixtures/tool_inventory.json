@@ -186,6 +186,67 @@
         "type": "object"
       }
     },
+    "assess_asset_change": {
+      "context_kwarg": "ctx",
+      "is_async": true,
+      "parameters": {
+        "properties": {
+          "acquired_since": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Acquired Since"
+          },
+          "acquired_until": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Acquired Until"
+          },
+          "asset_id": {
+            "title": "Asset Id",
+            "type": "string"
+          },
+          "last_k": {
+            "default": 5,
+            "title": "Last K",
+            "type": "integer"
+          },
+          "measurement_point_id": {
+            "title": "Measurement Point Id",
+            "type": "string"
+          },
+          "reference_measurements": {
+            "default": 10,
+            "title": "Reference Measurements",
+            "type": "integer"
+          },
+          "reprocess": {
+            "default": false,
+            "title": "Reprocess",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "asset_id",
+          "measurement_point_id"
+        ],
+        "title": "assess_asset_changeArguments",
+        "type": "object"
+      }
+    },
     "assess_severity": {
       "context_kwarg": "ctx",
       "is_async": true,
@@ -492,6 +553,232 @@
           "signal_id"
         ],
         "title": "compute_spectrogram_stftArguments",
+        "type": "object"
+      }
+    },
+    "declare_healthy_baseline": {
+      "context_kwarg": "ctx",
+      "is_async": true,
+      "parameters": {
+        "properties": {
+          "asset_id": {
+            "title": "Asset Id",
+            "type": "string"
+          },
+          "declared_by": {
+            "title": "Declared By",
+            "type": "string"
+          },
+          "measurement_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Measurement Ids",
+            "type": "array"
+          },
+          "measurement_point_id": {
+            "title": "Measurement Point Id",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Note"
+          }
+        },
+        "required": [
+          "asset_id",
+          "measurement_point_id",
+          "measurement_ids",
+          "declared_by"
+        ],
+        "title": "declare_healthy_baselineArguments",
+        "type": "object"
+      }
+    },
+    "declare_measurement_point": {
+      "context_kwarg": "ctx",
+      "is_async": true,
+      "parameters": {
+        "properties": {
+          "asset_id": {
+            "title": "Asset Id",
+            "type": "string"
+          },
+          "bearing_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Bearing Id"
+          },
+          "declared_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Declared By"
+          },
+          "expected_direction": {
+            "anyOf": [
+              {
+                "enum": [
+                  "horizontal",
+                  "vertical",
+                  "axial",
+                  "x",
+                  "y",
+                  "z"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expected Direction"
+          },
+          "expected_sensor_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expected Sensor Id"
+          },
+          "expected_signal_unit": {
+            "anyOf": [
+              {
+                "enum": [
+                  "g",
+                  "m/s2",
+                  "mm/s",
+                  "m/s"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expected Signal Unit"
+          },
+          "fault_orders": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "number"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Fault Orders"
+          },
+          "machine_group": {
+            "anyOf": [
+              {
+                "enum": [
+                  1,
+                  2
+                ],
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Machine Group"
+          },
+          "machine_power_kw": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Machine Power Kw"
+          },
+          "measurement_point_id": {
+            "title": "Measurement Point Id",
+            "type": "string"
+          },
+          "nominal_rpm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Nominal Rpm"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Note"
+          },
+          "support_type": {
+            "anyOf": [
+              {
+                "enum": [
+                  "rigid",
+                  "flexible"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Support Type"
+          }
+        },
+        "required": [
+          "asset_id",
+          "measurement_point_id"
+        ],
+        "title": "declare_measurement_pointArguments",
         "type": "object"
       }
     },
@@ -1148,6 +1435,45 @@
           }
         },
         "title": "generate_test_signalArguments",
+        "type": "object"
+      }
+    },
+    "get_asset_history": {
+      "context_kwarg": "ctx",
+      "is_async": true,
+      "parameters": {
+        "properties": {
+          "asset_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Asset Id"
+          },
+          "max_measurements": {
+            "default": 20,
+            "title": "Max Measurements",
+            "type": "integer"
+          },
+          "measurement_point_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Measurement Point Id"
+          }
+        },
+        "title": "get_asset_historyArguments",
         "type": "object"
       }
     },

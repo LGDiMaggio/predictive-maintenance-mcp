@@ -184,6 +184,28 @@ FAILURE_CASES = {
     "analyze_signal_trend": {"signal_id": "__not_loaded__"},
     "load_signal": {"filepath": "__missing__.csv"},
     "get_signal_info": {"signal_id": "__not_loaded__"},
+    # Asset ledger (U7): one misuse case per tool. Unknown assets and
+    # points are typed 'not_found' results by design and live in
+    # TestTypedNegativeOutcomes.test_asset_change_miss_is_typed.
+    "declare_measurement_point": {
+        "asset_id": "../evil",  # traversal: refused by the ledger id grammar
+        "measurement_point_id": "motor_de_h",
+    },
+    "declare_healthy_baseline": {
+        "asset_id": "P-101",
+        "measurement_point_id": "motor_de_h",
+        "measurement_ids": ["0123456789abcdef"],
+        "declared_by": "",  # the declarer is required
+    },
+    "get_asset_history": {
+        "asset_id": None,  # a point without its asset is a misuse
+        "measurement_point_id": "motor_de_h",
+    },
+    "assess_asset_change": {
+        "asset_id": "P-101",
+        "measurement_point_id": "motor_de_h",
+        "last_k": 0,  # below the documented minimum of 1
+    },
 }
 
 
@@ -363,6 +385,24 @@ class TestTypedNegativeOutcomes:
         assert "error" not in dumped
         for key in ("num_balls", "ball_diameter_mm", "pitch_diameter_mm"):
             assert key not in dumped
+
+    @pytest.mark.asyncio
+    async def test_asset_change_miss_is_typed(self, tools, sandbox_dirs, mock_ctx):
+        """An asset without a ledger is a legitimate negative outcome of
+        assess_asset_change: a typed 'not_found' naming the known assets
+        (the autouse ledger directory is empty here), never an exception
+        and never an error-shaped payload."""
+        from predictive_maintenance_mcp.models import AssetChangeAssessment
+
+        result = await tools["assess_asset_change"].fn(
+            ctx=mock_ctx, asset_id="P-404", measurement_point_id="motor_de_h"
+        )
+        assert isinstance(result, AssetChangeAssessment)
+        assert result.status == "not_found"
+        assert result.known_assets == []
+        assert result.suggestion  # actionable next step present
+        assert result.assessed is None and result.observed is None
+        assert "error" not in json.dumps(result.model_dump())
 
 
 # ---------------------------------------------------------------------------

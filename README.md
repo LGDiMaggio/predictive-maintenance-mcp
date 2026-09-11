@@ -124,7 +124,7 @@ python -m benchmarks.cwru all
 | *"Extract specs from test_pump_manual.pdf and diagnose the signal"* | Reads the equipment manual, looks up the bearing model, calculates expected fault frequencies, flags which ones the signal actually shows |
 | *"Train an anomaly detector on my healthy baselines, then flag anomalies"* | Trains a model on your normal data, scores new signals, flags outliers for your review |
 
-The AI doesn't guess — it calls **37 specialized MCP endpoints** (34 tools + 3 prompts) running locally on your machine. Every signal is referenced by a single `signal_id` handle from load to report. Your data never leaves your infrastructure.
+The AI doesn't guess: it calls **41 specialized MCP endpoints** (38 tools + 3 prompts) running locally on your machine. Every signal is referenced by a single `signal_id` handle from load to report. Your data never leaves your infrastructure.
 
 Full endpoint reference, grouped by category: **[Tool Catalog](docs/TOOL_CATALOG.md)**.
 
@@ -251,7 +251,7 @@ pytest --cov=src --cov-report=html      # with coverage report
 
 ## Roadmap
 
-- [x] 37 MCP endpoints (34 tools, 3 prompts) with modular architecture and a single `signal_id` handle
+- [x] 41 MCP endpoints (38 tools, 3 prompts) with modular architecture and a single `signal_id` handle
 - [x] Claude Code plugin (8 skills, 2 agents, 3 commands)
 - [x] 85%+ test coverage enforced in CI, CI/CD on 3 platforms
 - [x] Docker + SSE/HTTP transport for enterprise deployment

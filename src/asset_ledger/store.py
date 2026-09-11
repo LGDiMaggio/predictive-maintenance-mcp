@@ -33,7 +33,8 @@ and the upper layers; the reader validates only the envelope):
     ``bearing_id``, ``fault_orders``, ``machine_group``, ``support_type``,
     ``machine_power_kw``, ``expected_signal_unit``, ``expected_sensor_id``,
     ``expected_direction``, ``nominal_rpm``, ``declared_by``, ``note``,
-    ``changed`` (keys changed vs the previous version; empty for version 1).
+    ``changed`` (keys changed vs the previous version; for version 1, every
+    key declared with a value).
 
 ``measurement_recorded``
     ``measurement_id``, ``measurement_point_id``, ``declaration_version``,

@@ -46,6 +46,38 @@ POST_U9_ADDITIONS: dict[str, str] = {
         "generate_diagnostic_report_docx takes its content sections from the "
         "caller, this one authors them."
     ),
+    "declare_measurement_point": (
+        "Asset ledger U7 — versioned declaration of a measurement point's "
+        "context in the local append-only ledger (bearing or fault orders, ISO "
+        "group and support, expected unit / sensor / direction). New concept: "
+        "no v0.8.x tool persisted anything across sessions. Its nominal_rpm is "
+        "the DESIGN speed of the point, a concept distinct from the observed "
+        "rpm of a measurement (the companion's rpm, or the rpm argument of the "
+        "analysis tools), which is why it is not spelled rpm: the two coexist "
+        "and the measurement's rpm wins whenever it is declared."
+    ),
+    "declare_healthy_baseline": (
+        "Asset ledger U7 — declares which recorded measurements are the healthy "
+        "reference of a point, attributed to declared_by. New concept: the "
+        "reference used by assess_asset_change was never a tool input before; "
+        "the automatic window is never called healthy, only this declaration is."
+    ),
+    "get_asset_history": (
+        "Asset ledger U7 — the recorded history of one asset (measurements, "
+        "declarations, baselines, integrity) read from its ledger alone. "
+        "get_asset_history(asset_id=None) is the INDEX of the assets, on the "
+        "'None = index' precedent of list_html_reports(file_name=None) and "
+        "clear_signals(signal_id=None): one tool, not a separate list tool."
+    ),
+    "assess_asset_change": (
+        "Asset ledger U7 — change of one point against its reference across "
+        "acquisitions over time (band per indicator, classification with its "
+        "criterion, bearing evidence over the last K). New concept: "
+        "estimate_rul and analyze_signal_trend take explicit series or one "
+        "recording; this one reads the ledger and needs only asset and point. "
+        "reprocess=True (not force_reindex) recomputes stale snapshots, bounded "
+        "per call."
+    ),
 }
 
 

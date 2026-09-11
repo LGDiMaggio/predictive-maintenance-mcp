@@ -218,6 +218,23 @@ class TestFaultVocabularySync:
 
         assert literal_values == set(FAULT_TYPE_CANONICAL.values())
 
+    def test_signal_unit_literal_matches_repository_vocabulary(self):
+        """StoredSignalInfo.signal_unit hand-duplicates the repository's
+        VALID_SIGNAL_UNITS (the single source of truth the asset ledger's
+        expected_signal_unit is also bound to). Same get_args guard."""
+        from typing import get_args
+
+        from predictive_maintenance_mcp.signal_acquisition.repository import (
+            VALID_SIGNAL_UNITS,
+        )
+
+        annotation = StoredSignalInfo.model_fields["signal_unit"].annotation
+        literal_values: set = set()
+        for member in get_args(annotation):
+            literal_values.update(get_args(member))
+
+        assert literal_values == set(VALID_SIGNAL_UNITS)
+
 
 # ── VibrationSeverityResult (unified severity model) ─────────────────────
 

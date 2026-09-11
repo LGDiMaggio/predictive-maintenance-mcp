@@ -68,32 +68,74 @@ everywhere or changed is a per-measurement ``not_reprocessable`` with the
 reason; the old snapshot is never touched. Only derived events are
 appended, each deduplicated by its deterministic ``snapshot_id``, so a
 repeated call is idempotent.
+
+Declarations and queries (behind the four ledger tools):
+
+* :func:`declare_measurement_point` validates the declared context of a
+  point (ids by the ledger grammar, closed vocabularies, the companion's
+  free-text rule, positive numbers) and appends a
+  ``measurement_point_declared`` event with ``declaration_version`` =
+  current + 1 under the versioned-append lock; a declaration identical to
+  the current version appends nothing and returns the current version. The
+  response names the keys that changed and how many recorded measurements
+  of the point now lack a snapshot with the current context and lineage
+  (the staleness test shared with the re-processing), with the exact
+  re-processing call as the remedy.
+* :func:`declare_healthy_baseline` validates that every id is a recorded
+  measurement of the point, that no two share an acquisition slot, and that
+  each is comparable or qualified against the point and against the
+  context built from the members themselves (the revalidation the
+  assessment performs at query time), then appends a ``baseline_declared``
+  event; an empty list with a note withdraws the active baseline.
+* :func:`asset_index` reads at most ``max_assets`` ledgers and summarizes
+  each (points, counts, latest lineage, baseline present, integrity);
+  :func:`asset_history` reads ONE ledger and returns its summary, the last
+  N measurements newest first with an indicator preview, the point
+  declarations, the baselines, the reattributions and the integrity block.
 """
 
 import logging
+import math
 import os
+from datetime import datetime, timezone
+from functools import partial
 from pathlib import Path
 from typing import Any, Callable, Mapping, Optional, Sequence, Union
 
 import numpy as np
 
+from ..diagnostics.bearing_catalog import lookup_bearing
 from ..path_safety import safe_resolve
 from ..signal_acquisition.loaders import load_raw_binary, load_self_describing
 from ..signal_acquisition.measurement import (
     MEASUREMENT_DECLARATION_KEYS,
+    UNIT_FAMILIES,
     digest_file,
+    normalize_direction,
+    validate_free_text,
+    validate_ledger_id,
 )
-from .assessment import AssessmentParams, collect_point_slots, current_snapshot_id_of
-from .comparability import assess_measurement_comparability
+from .assessment import (
+    MAX_LISTED_ITEMS,
+    MIN_REFERENCE_MEASUREMENTS,
+    AssessmentParams,
+    collect_point_slots,
+    current_snapshot_id_of,
+)
+from .comparability import assess_measurement_comparability, build_reference_context
 from .snapshot import (
+    BEARING_LABELS,
     SnapshotPolicy,
     compute_health_snapshot,
     processing_id as compute_processing_id,
     snapshot_id as compute_snapshot_id,
 )
 from .store import (
+    EVENT_BASELINE_DECLARED,
     EVENT_HEALTH_SNAPSHOT_COMPUTED,
+    EVENT_MEASUREMENT_POINT_DECLARED,
     EVENT_MEASUREMENT_RECORDED,
+    LEDGER_SUFFIX,
     LedgerError,
     LedgerReadResult,
     LedgerStore,
@@ -101,6 +143,8 @@ from .store import (
     canonical_json,
     content_hash,
     make_event,
+    short_id,
+    utc_now_iso,
 )
 
 __all__ = [
@@ -112,6 +156,14 @@ __all__ = [
     "SNAPSHOT_PAYLOAD_KEYS",
     "MAX_REPROCESS_PER_CALL",
     "REPROCESS_OUTCOMES",
+    "POINT_DECLARATION_KEYS",
+    "POINT_DECLARED_KEYS",
+    "POINT_FREE_TEXT_FIELDS",
+    "POINT_SIGNAL_UNITS",
+    "VALID_MACHINE_GROUPS",
+    "VALID_SUPPORT_TYPES",
+    "BASELINE_PAYLOAD_KEYS",
+    "MAX_BASELINE_MEMBERS",
     "SignalSource",
     "build_declaration",
     "file_block",
@@ -119,7 +171,12 @@ __all__ = [
     "changed_keys",
     "record_measurements",
     "resolve_point_context",
+    "reprocess_call",
     "reprocess_stale_snapshots",
+    "declare_measurement_point",
+    "declare_healthy_baseline",
+    "asset_index",
+    "asset_history",
 ]
 
 logger = logging.getLogger(__name__)
@@ -131,6 +188,68 @@ MAX_REPROCESS_PER_CALL = 10
 
 #: Per-measurement outcomes of a re-processing call.
 REPROCESS_OUTCOMES: tuple[str, ...] = ("reprocessed", "up_to_date", "not_reprocessable")
+
+#: Keys of a ``measurement_point_declared`` payload (the store's contract),
+#: in canonical order. ``declaration_version`` and ``changed`` are assigned
+#: by :func:`declare_measurement_point`; every other key is declared.
+POINT_DECLARATION_KEYS: tuple[str, ...] = (
+    "measurement_point_id",
+    "declaration_version",
+    "bearing_id",
+    "fault_orders",
+    "machine_group",
+    "support_type",
+    "machine_power_kw",
+    "expected_signal_unit",
+    "expected_sensor_id",
+    "expected_direction",
+    "nominal_rpm",
+    "declared_by",
+    "note",
+    "changed",
+)
+
+#: The declared part of a point payload: what two versions are compared on
+#: (an identical re-declaration appends nothing).
+POINT_DECLARED_KEYS: tuple[str, ...] = tuple(
+    key
+    for key in POINT_DECLARATION_KEYS
+    if key not in ("declaration_version", "changed")
+)
+
+#: Free-text fields of a point declaration, under the companion's rule
+#: (``validate_free_text``: bounded, one line, never interpreted).
+POINT_FREE_TEXT_FIELDS: tuple[str, ...] = (
+    "bearing_id",
+    "expected_sensor_id",
+    "declared_by",
+    "note",
+)
+
+#: Units a point may expect: the union of the leaf module's unit families,
+#: a partition of the repository's ``VALID_SIGNAL_UNITS`` asserted by test
+#: (the repository is never imported by this package).
+POINT_SIGNAL_UNITS: tuple[str, ...] = tuple(
+    unit for units in UNIT_FAMILIES.values() for unit in units
+)
+
+#: ISO 20816-3 machine groups and support types a point may declare.
+VALID_MACHINE_GROUPS: tuple[int, ...] = (1, 2)
+VALID_SUPPORT_TYPES: tuple[str, ...] = ("rigid", "flexible")
+
+#: Keys of a ``baseline_declared`` payload (the store's contract).
+BASELINE_PAYLOAD_KEYS: tuple[str, ...] = (
+    "baseline_id",
+    "measurement_point_id",
+    "measurement_ids",
+    "members",
+    "declared_by",
+    "note",
+    "declared_at",
+)
+
+#: Largest declared baseline accepted (lists stay bounded everywhere).
+MAX_BASELINE_MEMBERS = 100
 
 #: Raw decode parameters a recorded ``raw_format`` block may carry, as the
 #: decoder's keyword arguments (``sample_format`` is required by it).
@@ -1075,6 +1194,37 @@ def resolve_point_context(
 # ---------------------------------------------------------------------------
 
 
+def reprocess_call(asset_id: str, measurement_point_id: str) -> str:
+    """The exact call that re-processes the stale snapshots of a point."""
+    return (
+        f"assess_asset_change(asset_id={asset_id!r}, "
+        f"measurement_point_id={measurement_point_id!r}, reprocess=True)"
+    )
+
+
+def _snapshot_is_current(
+    view: Mapping[str, Any],
+    measurement_id: str,
+    declaration: Mapping[str, Any],
+    point: Optional[Mapping[str, Any]],
+    processing: str,
+) -> bool:
+    """Whether the view holds the snapshot the current context and lineage
+    would produce for the measurement (the staleness test shared by the
+    re-processing and the point declaration). A malformed declaration is
+    not current: the re-processing attempt reports it."""
+    try:
+        expected = current_snapshot_id_of(
+            dict(declaration),
+            None if point is None else dict(point),
+            processing=processing,
+            measurement_id=measurement_id,
+        )
+    except ValueError:
+        return False
+    return expected in _snapshot_ids(view, measurement_id)
+
+
 def _reprocess_order(
     view: Mapping[str, Any],
     measurement_point_id: str,
@@ -1257,20 +1407,12 @@ def reprocess_stale_snapshots(
     for measurement_id in _reprocess_order(view, measurement_point_id, params):
         slot = view["measurements"][measurement_id]
         declaration = slot["current"].get("declaration") or {}
-        try:
-            expected = current_snapshot_id_of(
-                declaration,
-                point,
-                processing=current_processing,
-                measurement_id=measurement_id,
-            )
-        except ValueError:
-            stale.append(measurement_id)  # reported by the attempt below
-            continue
-        if expected in _snapshot_ids(view, measurement_id):
+        if _snapshot_is_current(
+            view, measurement_id, declaration, point, current_processing
+        ):
             up_to_date += 1
         else:
-            stale.append(measurement_id)
+            stale.append(measurement_id)  # a malformed one is reported below
 
     results: list[dict[str, Any]] = []
     reprocessed = 0
@@ -1363,12 +1505,7 @@ def reprocess_stale_snapshots(
 
     remaining = max(0, len(stale) - len(results))
     next_call = (
-        None
-        if remaining == 0
-        else (
-            f"assess_asset_change(asset_id={asset_id!r}, "
-            f"measurement_point_id={measurement_point_id!r}, reprocess=True)"
-        )
+        None if remaining == 0 else reprocess_call(asset_id, measurement_point_id)
     )
     if not stale:
         message = (
@@ -1395,4 +1532,983 @@ def reprocess_stale_snapshots(
         "results": results,
         "next_call": next_call,
         "message": message,
+    }
+
+
+# ---------------------------------------------------------------------------
+# View helpers shared by the declarations and the queries
+# ---------------------------------------------------------------------------
+
+
+def _asset_known(view: Mapping[str, Any]) -> bool:
+    """Whether the view holds anything at all (an unknown asset is empty)."""
+    return bool(
+        view.get("event_count") or view.get("points") or view.get("measurements")
+    )
+
+
+def _point_ids(view: Mapping[str, Any]) -> list[str]:
+    """Declared points plus the points the measurements name, sorted."""
+    known: set[str] = {str(key) for key in (view.get("points") or {})}
+    for slot in (view.get("measurements") or {}).values():
+        current = slot.get("current") if isinstance(slot, dict) else None
+        if isinstance(current, dict) and isinstance(
+            current.get("measurement_point_id"), str
+        ):
+            known.add(current["measurement_point_id"])
+    return sorted(known)
+
+
+def _measurements_of_point(
+    view: Mapping[str, Any], point_id: str
+) -> list[tuple[str, dict[str, Any]]]:
+    """``(measurement_id, current payload)`` of the point's measurements in
+    the view's order (``acquired_at``, then file order)."""
+    measurements = view.get("measurements") or {}
+    found: list[tuple[str, dict[str, Any]]] = []
+    for measurement_id in view.get("ordered_measurement_ids") or []:
+        slot = measurements.get(measurement_id)
+        current = slot.get("current") if isinstance(slot, dict) else None
+        if isinstance(current, dict) and current.get("measurement_point_id") == (
+            point_id
+        ):
+            found.append((str(measurement_id), current))
+    return found
+
+
+def _declaration_of(payload: Mapping[str, Any]) -> dict[str, Any]:
+    declaration = payload.get("declaration")
+    return dict(declaration) if isinstance(declaration, dict) else {}
+
+
+def _acquired_key(declaration: Mapping[str, Any]) -> tuple[Any, ...]:
+    """Ordering key of an acquisition instant (instants first, then
+    unparsable strings, then missing), the view's rule."""
+    acquired = declaration.get("acquired_at")
+    if isinstance(acquired, str):
+        try:
+            parsed = datetime.fromisoformat(acquired)
+        except ValueError:
+            return (1, 0.0, acquired)
+        if parsed.tzinfo is None or parsed.utcoffset() is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return (0, parsed.timestamp(), "")
+    return (2, 0.0, "")
+
+
+def _point_version(view: Mapping[str, Any], point_id: str) -> int:
+    """The current declaration version of a point (0 when never declared)."""
+    slot = (view.get("points") or {}).get(point_id)
+    if not isinstance(slot, dict):
+        return 0
+    current = slot.get("current") or {}
+    version = current.get("declaration_version")
+    if isinstance(version, int) and not isinstance(version, bool) and version > 0:
+        return version
+    return len(slot.get("history") or [])
+
+
+def _stale_measurement_ids(
+    view: Mapping[str, Any], point_id: str, point: Optional[Mapping[str, Any]]
+) -> list[str]:
+    """Measurements of the point lacking the snapshot the current lineage
+    and *point* context would produce (what a re-processing would do)."""
+    processing = compute_processing_id(None)
+    return [
+        measurement_id
+        for measurement_id, current in _measurements_of_point(view, point_id)
+        if not _snapshot_is_current(
+            view, measurement_id, _declaration_of(current), point, processing
+        )
+    ]
+
+
+def _ledger_bytes(store: LedgerStore, asset_id: str, view: Mapping[str, Any]) -> int:
+    """Size of the ledger file on disk (the readable extent as a fallback)."""
+    try:
+        return os.path.getsize(Path(store.root) / f"{asset_id}{LEDGER_SUFFIX}")
+    except OSError:
+        end_offset = view.get("end_offset")
+        return int(end_offset) if isinstance(end_offset, int) else 0
+
+
+def _integrity_summary(integrity: Mapping[str, Any]) -> dict[str, Any]:
+    """The integrity counters without the per-record listing."""
+    summary = {key: value for key, value in integrity.items() if key != "issues"}
+    issues = integrity.get("issues")
+    summary["issue_count"] = len(issues) if isinstance(issues, list) else 0
+    return summary
+
+
+def _latest_lineage(
+    view: Mapping[str, Any], measurement_ids: Sequence[str]
+) -> Optional[str]:
+    """The ``processing_id`` of the most recently recorded snapshot among
+    the measurements, or None when none has a snapshot."""
+    latest: Optional[str] = None
+    latest_position = -1
+    measurements = view.get("measurements") or {}
+    for measurement_id in measurement_ids:
+        slot = measurements.get(measurement_id) or {}
+        for processing, position in (slot.get("lineage_positions") or {}).items():
+            if isinstance(position, int) and position > latest_position:
+                latest, latest_position = str(processing), position
+    return latest
+
+
+def _point_summaries(view: Mapping[str, Any]) -> list[dict[str, Any]]:
+    summaries: list[dict[str, Any]] = []
+    baselines = view.get("baselines") or {}
+    for point_id in _point_ids(view):
+        records = _measurements_of_point(view, point_id)
+        acquired = [
+            _declaration_of(current).get("acquired_at") for _, current in records
+        ]
+        point = _current_point(view, point_id)
+        baseline_slot = baselines.get(point_id) or {}
+        summaries.append(
+            {
+                "measurement_point_id": point_id,
+                "measurement_count": len(records),
+                "first_acquired_at": acquired[0] if acquired else None,
+                "last_acquired_at": acquired[-1] if acquired else None,
+                "latest_lineage": _latest_lineage(view, [mid for mid, _ in records]),
+                "baseline_declared": baseline_slot.get("current") is not None,
+                "declaration_version": (
+                    None if point is None else point.get("declaration_version")
+                ),
+            }
+        )
+    return summaries
+
+
+def _asset_summary(
+    store: LedgerStore, asset_id: str, view: Mapping[str, Any]
+) -> dict[str, Any]:
+    ordered = [str(mid) for mid in (view.get("ordered_measurement_ids") or [])]
+    measurements = view.get("measurements") or {}
+
+    def acquired_of(measurement_id: str) -> Any:
+        slot = measurements.get(measurement_id) or {}
+        return _declaration_of(slot.get("current") or {}).get("acquired_at")
+
+    points = _point_summaries(view)
+    return {
+        "asset_id": asset_id,
+        "points": points,
+        "point_count": len(points),
+        "measurement_count": len(ordered),
+        "first_acquired_at": acquired_of(ordered[0]) if ordered else None,
+        "last_acquired_at": acquired_of(ordered[-1]) if ordered else None,
+        "reattributed_count": len(view.get("reattributed") or []),
+        "event_count": int(view.get("event_count") or 0),
+        "ledger_bytes": _ledger_bytes(store, asset_id, view),
+        "integrity": _integrity_summary(view.get("integrity") or {}),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Declaration validation
+# ---------------------------------------------------------------------------
+
+
+def _positive(field: str, value: object) -> float:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+        or value <= 0
+    ):
+        raise ValueError(
+            f"{field} must be a positive number, got {value!r}; omit it when unknown"
+        )
+    return float(value)
+
+
+def _normalize_fault_orders(value: object) -> Optional[dict[str, float]]:
+    """Canonical ``{label: order}`` with labels from ``BEARING_LABELS``."""
+    if not isinstance(value, Mapping):
+        raise ValueError(
+            f"fault_orders must be a mapping {{label: order}} with labels among "
+            f"{list(BEARING_LABELS)} and orders as multiples of the shaft "
+            f"frequency (for example {{'BPFO': 3.58}}), got {type(value).__name__}"
+        )
+    if not value:
+        return None
+    orders: dict[str, float] = {}
+    for label, order in value.items():
+        canonical = label.upper() if isinstance(label, str) else None
+        if canonical not in BEARING_LABELS:
+            raise ValueError(
+                f"fault_orders label {label!r} is not one of {list(BEARING_LABELS)}"
+            )
+        if canonical in orders:
+            raise ValueError(f"fault_orders declares {canonical} more than once")
+        orders[canonical] = _positive(f"fault_orders[{canonical!r}]", order)
+    return {label: orders[label] for label in BEARING_LABELS if label in orders}
+
+
+def _validate_machine_group(value: object) -> int:
+    if isinstance(value, bool) or value not in VALID_MACHINE_GROUPS:
+        raise ValueError(
+            f"machine_group must be one of {list(VALID_MACHINE_GROUPS)} "
+            f"(ISO 20816-3: 1 large machines, 2 medium machines), got {value!r}; "
+            f"omit it when unknown"
+        )
+    return 1 if value == 1 else 2
+
+
+def _validate_support_type(value: object) -> str:
+    if not isinstance(value, str) or value.lower() not in VALID_SUPPORT_TYPES:
+        raise ValueError(
+            f"support_type must be one of {list(VALID_SUPPORT_TYPES)}, got "
+            f"{value!r}; omit it when unknown"
+        )
+    return value.lower()
+
+
+def _validate_unit(value: object) -> str:
+    if not isinstance(value, str) or value not in POINT_SIGNAL_UNITS:
+        raise ValueError(
+            f"expected_signal_unit must be one of {list(POINT_SIGNAL_UNITS)} "
+            f"('g'/'m/s2' acceleration, 'mm/s'/'m/s' velocity), got {value!r}; "
+            f"omit it when unknown"
+        )
+    return value
+
+
+def _normalize_point_context(
+    measurement_point_id: str,
+    *,
+    bearing_id: Optional[str],
+    fault_orders: Optional[Mapping[str, float]],
+    machine_group: Optional[int],
+    support_type: Optional[str],
+    machine_power_kw: Optional[float],
+    expected_signal_unit: Optional[str],
+    expected_sensor_id: Optional[str],
+    expected_direction: Optional[str],
+    nominal_rpm: Optional[float],
+    declared_by: Optional[str],
+    note: Optional[str],
+) -> dict[str, Any]:
+    """The declared part of a point payload, validated; every problem is
+    accumulated into ONE ``ValueError`` naming the field and the remedy."""
+    problems: list[str] = []
+    context: dict[str, Any] = {key: None for key in POINT_DECLARED_KEYS}
+    context["measurement_point_id"] = measurement_point_id
+
+    def attempt(field: str, value: Any, normalize: Callable[[Any], Any]) -> None:
+        if value is None:
+            return
+        try:
+            context[field] = normalize(value)
+        except ValueError as exc:
+            problems.append(str(exc))
+
+    for field, text in (
+        ("bearing_id", bearing_id),
+        ("expected_sensor_id", expected_sensor_id),
+        ("declared_by", declared_by),
+        ("note", note),
+    ):
+        attempt(field, text, partial(validate_free_text, field))
+    attempt("fault_orders", fault_orders, _normalize_fault_orders)
+    attempt("machine_group", machine_group, _validate_machine_group)
+    attempt("support_type", support_type, _validate_support_type)
+    attempt(
+        "machine_power_kw",
+        machine_power_kw,
+        lambda value: _positive("machine_power_kw", value),
+    )
+    attempt("expected_signal_unit", expected_signal_unit, _validate_unit)
+    attempt("expected_direction", expected_direction, normalize_direction)
+    attempt("nominal_rpm", nominal_rpm, lambda value: _positive("nominal_rpm", value))
+    if problems:
+        raise ValueError(
+            f"Invalid declaration of measurement point {measurement_point_id!r}: "
+            + "; ".join(problems)
+            + ". Fix the named field(s) and declare again."
+        )
+    return context
+
+
+def _declared_part(payload: Mapping[str, Any]) -> dict[str, Any]:
+    return {key: payload.get(key) for key in POINT_DECLARED_KEYS}
+
+
+def _validate_measurement_ids(measurement_ids: object) -> list[str]:
+    if isinstance(measurement_ids, (str, bytes)) or not isinstance(
+        measurement_ids, Sequence
+    ):
+        raise ValueError(
+            "measurement_ids must be a list of measurement ids (the 16-hex "
+            "measurement_id values reported by load_signal and get_asset_history); "
+            "an empty list withdraws the active baseline"
+        )
+    ids: list[str] = []
+    for item in measurement_ids:
+        if not isinstance(item, str) or not item.strip():
+            raise ValueError(
+                f"measurement_ids contains {item!r}: every entry must be a non-empty "
+                f"measurement_id string"
+            )
+        if item in ids:
+            raise ValueError(f"measurement_ids lists {item!r} more than once")
+        ids.append(item)
+    if len(ids) > MAX_BASELINE_MEMBERS:
+        raise ValueError(
+            f"measurement_ids lists {len(ids)} measurements, over the "
+            f"{MAX_BASELINE_MEMBERS}-member cap of a baseline"
+        )
+    return ids
+
+
+def _comparability_refusals(
+    records: Mapping[str, Mapping[str, Any]],
+    ids: Sequence[str],
+    point: Optional[dict[str, Any]],
+    context: Optional[dict[str, Any]],
+) -> list[str]:
+    refusals: list[str] = []
+    for measurement_id in ids:
+        assessment = assess_measurement_comparability(
+            dict(records[measurement_id]), point, context
+        )
+        if assessment["grade"] == "non_comparable":
+            reasons = "; ".join(
+                f"{entry['code']}: {entry['detail']}"
+                for entry in assessment["qualifications"]
+            )
+            refusals.append(f"{measurement_id} ({reasons})")
+    return refusals
+
+
+# ---------------------------------------------------------------------------
+# Declarations
+# ---------------------------------------------------------------------------
+
+
+def declare_measurement_point(
+    *,
+    store: LedgerStore,
+    asset_id: str,
+    measurement_point_id: str,
+    bearing_id: Optional[str] = None,
+    fault_orders: Optional[Mapping[str, float]] = None,
+    machine_group: Optional[int] = None,
+    support_type: Optional[str] = None,
+    machine_power_kw: Optional[float] = None,
+    expected_signal_unit: Optional[str] = None,
+    expected_sensor_id: Optional[str] = None,
+    expected_direction: Optional[str] = None,
+    nominal_rpm: Optional[float] = None,
+    declared_by: Optional[str] = None,
+    note: Optional[str] = None,
+) -> dict[str, Any]:
+    """Declare (or re-declare) the context of a measurement point.
+
+    See the module docstring (Declarations). The event is appended under
+    the versioned-append lock, so two processes never assign the same
+    version; a declaration identical to the current version appends
+    nothing and returns the current version.
+
+    Args:
+        store: The ledger store.
+        asset_id: The asset (ledger grammar).
+        measurement_point_id: The point (ledger grammar).
+        bearing_id: Catalog designation of the bearing at the point, or None.
+        fault_orders: ``{label: order}`` with labels among ``BEARING_LABELS``
+            and orders in multiples of the shaft frequency, or None.
+        machine_group: ISO 20816-3 group (1 or 2), or None (not declared).
+        support_type: ``"rigid"`` or ``"flexible"``, or None.
+        machine_power_kw: Rated power (positive), or None.
+        expected_signal_unit: Canonical unit the point's measurements are
+            expected in, or None.
+        expected_sensor_id: Sensor expected at the point (free text), or
+            None.
+        expected_direction: Expected direction (``VALID_DIRECTIONS`` and
+            its form aliases), or None.
+        nominal_rpm: Design speed of the point (positive), or None.
+        declared_by: Who declares (free text), or None.
+        note: Free-text note, or None.
+
+    Returns:
+        ``{asset_id, measurement_point_id, declaration_version, appended,
+        changed, previous_version, measurements_with_stale_context, remedy,
+        declaration, event_id, bearing_in_catalog, message}``: ``changed``
+        lists the declared keys that differ from the previous version
+        (every declared key for version 1, empty when nothing changed),
+        ``measurements_with_stale_context`` counts the recorded measurements
+        of the point that lack a snapshot with the current context and
+        lineage, ``remedy`` is the exact re-processing call when that count
+        is positive (else None), ``declaration`` is the payload as recorded
+        (the current one when nothing was appended) and
+        ``bearing_in_catalog`` says whether a declared ``bearing_id`` is in
+        the verified catalog (None without a bearing).
+
+    Raises:
+        ValueError: Invalid ids or values (one message naming every
+            problem and its remedy); ``LedgerError`` when the ledger cannot
+            be read or written.
+    """
+    validate_ledger_id(asset_id, kind="asset_id")
+    validate_ledger_id(measurement_point_id, kind="measurement_point_id")
+    declared = _normalize_point_context(
+        measurement_point_id,
+        bearing_id=bearing_id,
+        fault_orders=fault_orders,
+        machine_group=machine_group,
+        support_type=support_type,
+        machine_power_kw=machine_power_kw,
+        expected_signal_unit=expected_signal_unit,
+        expected_sensor_id=expected_sensor_id,
+        expected_direction=expected_direction,
+        nominal_rpm=nominal_rpm,
+        declared_by=declared_by,
+        note=note,
+    )
+    state = _AssetState(asset_id, store.read(asset_id))
+    decided: dict[str, Any] = {}
+
+    def build_event(delta: list[dict[str, Any]]) -> Optional[dict[str, Any]]:
+        state.merge(delta)
+        current = _current_point(state.view, measurement_point_id)
+        previous_version = _point_version(state.view, measurement_point_id)
+        if current is not None and canonical_json(
+            _declared_part(current)
+        ) == canonical_json(declared):
+            decided.update(
+                version=previous_version,
+                changed=[],
+                previous_version=previous_version,
+                payload=current,
+            )
+            return None
+        if current is None:
+            changed = sorted(
+                key
+                for key in POINT_DECLARED_KEYS
+                if key != "measurement_point_id" and declared[key] is not None
+            )
+        else:
+            changed = sorted(
+                key
+                for key in POINT_DECLARED_KEYS
+                if canonical_json(current.get(key)) != canonical_json(declared[key])
+            )
+        payload: dict[str, Any] = {}
+        for key in POINT_DECLARATION_KEYS:
+            if key == "declaration_version":
+                payload[key] = previous_version + 1
+            elif key == "changed":
+                payload[key] = changed
+            else:
+                payload[key] = declared[key]
+        event = make_event(EVENT_MEASUREMENT_POINT_DECLARED, asset_id, payload)
+        decided.update(
+            version=previous_version + 1,
+            changed=changed,
+            previous_version=previous_version or None,
+            payload=event["payload"],
+            event=event,
+        )
+        return event
+
+    result = store.append_versioned(asset_id, state.end_offset, build_event)
+    event = decided.get("event")
+    appended = bool(result.appended and event is not None)
+    if appended:
+        state.appended_versioned(event, result.offset_after)
+    else:
+        state.end_offset = result.offset_after
+    point = _current_point(state.view, measurement_point_id) or dict(decided["payload"])
+    version = int(decided["version"])
+    changed = list(decided["changed"])
+    stale = _stale_measurement_ids(state.view, measurement_point_id, point)
+    remedy = reprocess_call(asset_id, measurement_point_id) if stale else None
+
+    in_catalog: Optional[bool] = None
+    declared_bearing = point.get("bearing_id")
+    if isinstance(declared_bearing, str) and declared_bearing:
+        in_catalog = lookup_bearing(declared_bearing) is not None
+
+    message = (
+        f"Measurement point {measurement_point_id!r} of asset {asset_id!r} is at "
+        f"declaration version {version}"
+    )
+    if appended:
+        message += (
+            f" (appended; changed: {', '.join(changed) if changed else 'nothing'})"
+        )
+    else:
+        message += " (identical to the current declaration: nothing appended)"
+    if stale:
+        message += (
+            f"; {len(stale)} recorded measurement(s) carry a snapshot computed "
+            f"with a previous context or lineage; call {remedy} to recompute them"
+        )
+    if in_catalog is False:
+        message += (
+            f"; bearing {declared_bearing!r} is not in the verified catalog, so "
+            f"the bearing block of every snapshot reports it as missing until the "
+            f"catalog knows it or fault_orders are declared instead"
+        )
+    message += "."
+    logger.info(
+        "Measurement point %s/%s declared at version %s (%s)",
+        asset_id,
+        measurement_point_id,
+        version,
+        "appended" if appended else "unchanged",
+    )
+    return {
+        "asset_id": asset_id,
+        "measurement_point_id": measurement_point_id,
+        "declaration_version": version,
+        "appended": appended,
+        "changed": changed,
+        "previous_version": decided.get("previous_version"),
+        "measurements_with_stale_context": len(stale),
+        "remedy": remedy,
+        "declaration": dict(point),
+        "event_id": event["event_id"] if appended and event is not None else None,
+        "bearing_in_catalog": in_catalog,
+        "message": message,
+    }
+
+
+def declare_healthy_baseline(
+    *,
+    store: LedgerStore,
+    asset_id: str,
+    measurement_point_id: str,
+    measurement_ids: Sequence[str],
+    declared_by: str,
+    note: Optional[str] = None,
+    declared_at: Optional[datetime] = None,
+) -> dict[str, Any]:
+    """Declare which recorded measurements are the healthy reference of a
+    point, or withdraw the active baseline with an empty list and a note.
+
+    See the module docstring (Declarations). The event is a blind append:
+    its ``baseline_id`` hashes the point, the sorted ids and the instant,
+    so a duplicate is absorbed by the reader.
+
+    Args:
+        store: The ledger store.
+        asset_id: The asset (ledger grammar); it must have a ledger.
+        measurement_point_id: The point (ledger grammar).
+        measurement_ids: Ids of recorded measurements of the point, at
+            least ``MIN_REFERENCE_MEASUREMENTS`` and at most
+            ``MAX_BASELINE_MEMBERS``; an empty list withdraws the active
+            baseline (a *note* is then required).
+        declared_by: Who declares (free text, required): the baseline is
+            attributed to this string, never to the server.
+        note: Free-text note, or None.
+        declared_at: Timezone-aware instant to record; None means now.
+
+    Returns:
+        ``{asset_id, measurement_point_id, baseline_id, measurement_ids,
+        members, declared_by, note, declared_at, superseded_baseline_id,
+        withdrawn, event_id, message}`` with ``measurement_ids`` and
+        ``members`` in acquisition order, each member recording the
+        ``declaration_version`` of the measurement and the
+        ``point_declaration_version`` it was validated against.
+
+    Raises:
+        ValueError: Invalid ids or free text, an asset without a ledger
+            (naming the known assets), an id that is not a measurement of
+            the point (naming the valid ids, capped), two ids in the same
+            acquisition slot, a member that is not comparable or qualified
+            (naming the reasons), a withdrawal without a note or without
+            an active baseline; ``LedgerError`` on a ledger failure.
+    """
+    validate_ledger_id(asset_id, kind="asset_id")
+    validate_ledger_id(measurement_point_id, kind="measurement_point_id")
+    declarer = validate_free_text("declared_by", declared_by)
+    note_text = None if note is None else validate_free_text("note", note)
+    ids = _validate_measurement_ids(measurement_ids)
+    if declared_at is not None and (
+        declared_at.tzinfo is None or declared_at.utcoffset() is None
+    ):
+        raise ValueError(
+            "declared_at must be timezone-aware (use datetime.now(timezone.utc))."
+        )
+
+    view = store.read_view(asset_id)
+    if not _asset_known(view):
+        raise ValueError(
+            f"Asset {asset_id!r} has no ledger; known assets: "
+            f"{store.list_assets() or 'none'}. Load a measurement whose companion "
+            f'declares "asset_id": "{asset_id}" before declaring a baseline.'
+        )
+    baseline_slot = (view.get("baselines") or {}).get(measurement_point_id) or {}
+    active = baseline_slot.get("current")
+    active_id = active.get("baseline_id") if isinstance(active, dict) else None
+    point = _current_point(view, measurement_point_id)
+    point_version = None if point is None else point.get("declaration_version")
+
+    members: list[dict[str, Any]] = []
+    if not ids:
+        if note_text is None:
+            raise ValueError(
+                "An empty measurement_ids withdraws the active baseline of the "
+                "point: pass a note saying why, or list the measurement ids of "
+                "the new baseline."
+            )
+        if active is None:
+            raise ValueError(
+                f"Point {measurement_point_id!r} of asset {asset_id!r} has no "
+                f"active baseline to withdraw; declare one by listing at least "
+                f"{MIN_REFERENCE_MEASUREMENTS} measurement ids of the point."
+            )
+    else:
+        records = dict(_measurements_of_point(view, measurement_point_id))
+        if not records:
+            raise ValueError(
+                f"Point {measurement_point_id!r} of asset {asset_id!r} has no "
+                f"recorded measurement; known points: "
+                f"{_point_ids(view) or 'none'}. Load measurements of the point "
+                f"before declaring its baseline."
+            )
+        unknown = [
+            measurement_id for measurement_id in ids if measurement_id not in records
+        ]
+        if unknown:
+            all_measurements = view.get("measurements") or {}
+            elsewhere = []
+            for measurement_id in unknown:
+                other = (all_measurements.get(measurement_id) or {}).get("current")
+                if isinstance(other, dict):
+                    elsewhere.append(
+                        f"{measurement_id} belongs to point "
+                        f"{other.get('measurement_point_id')!r}"
+                    )
+            valid = list(records)
+            raise ValueError(
+                f"measurement_ids {unknown} are not measurements of point "
+                f"{measurement_point_id!r} of asset {asset_id!r}"
+                + (f" ({'; '.join(elsewhere)})" if elsewhere else "")
+                + f"; valid ids of the point: {valid[:MAX_LISTED_ITEMS]}"
+                + (
+                    f" (first {MAX_LISTED_ITEMS} of {len(valid)})"
+                    if len(valid) > MAX_LISTED_ITEMS
+                    else ""
+                )
+                + ". Use get_asset_history(asset_id=..., measurement_point_id=...) "
+                "to list them."
+            )
+        if len(ids) < MIN_REFERENCE_MEASUREMENTS:
+            raise ValueError(
+                f"A baseline needs at least {MIN_REFERENCE_MEASUREMENTS} "
+                f"measurements of the point, got {len(ids)}; list more ids (the "
+                f"point has {len(records)} recorded measurement(s))."
+            )
+        slots: dict[tuple[Any, ...], str] = {}
+        for measurement_id in ids:
+            declaration = _declaration_of(records[measurement_id])
+            key = (
+                _acquired_key(declaration),
+                declaration.get("direction"),
+                declaration.get("sensor_id"),
+            )
+            if key in slots:
+                raise ValueError(
+                    f"measurement_ids {slots[key]} and {measurement_id} share the "
+                    f"same acquisition slot (acquired_at, direction, sensor_id): "
+                    f"the same capture exported twice counts once; keep one of them."
+                )
+            slots[key] = measurement_id
+        refusals = _comparability_refusals(records, ids, point, None)
+        if not refusals:
+            context = build_reference_context(
+                [dict(records[measurement_id]) for measurement_id in ids], point
+            )
+            refusals = _comparability_refusals(records, ids, point, context)
+        if refusals:
+            raise ValueError(
+                f"Baseline refused: {len(refusals)} measurement(s) are not "
+                f"comparable or qualified against the current declaration of "
+                f"point {measurement_point_id!r} and the other members: "
+                + "; ".join(refusals)
+                + ". Leave them out, or correct the declarations (companion or "
+                "declare_measurement_point) and re-load."
+            )
+        ids = sorted(ids, key=lambda mid: _acquired_key(_declaration_of(records[mid])))
+        members = [
+            {
+                "measurement_id": measurement_id,
+                "declaration_version": records[measurement_id].get(
+                    "declaration_version"
+                ),
+                "point_declaration_version": point_version,
+            }
+            for measurement_id in ids
+        ]
+
+    instant = (
+        utc_now_iso()
+        if declared_at is None
+        else declared_at.astimezone(timezone.utc).isoformat(timespec="microseconds")
+    )
+    baseline_id = short_id(measurement_point_id, *sorted(ids), instant)
+    payload: dict[str, Any] = {
+        "baseline_id": baseline_id,
+        "measurement_point_id": measurement_point_id,
+        "measurement_ids": list(ids),
+        "members": members,
+        "declared_by": declarer,
+        "note": note_text,
+        "declared_at": instant,
+    }
+    event = make_event(EVENT_BASELINE_DECLARED, asset_id, payload)
+    store.append(asset_id, event)
+    withdrawn = not ids
+    if withdrawn:
+        message = (
+            f"Baseline {active_id} of point {measurement_point_id!r} of asset "
+            f"{asset_id!r} withdrawn by {declarer} on {instant}; assessments fall "
+            f"back to the automatic reference window and report the withdrawal."
+        )
+    else:
+        message = (
+            f"Baseline {baseline_id} declared for point {measurement_point_id!r} "
+            f"of asset {asset_id!r} by {declarer} on {instant}: {len(ids)} "
+            f"measurement(s) validated at point declaration version "
+            f"{point_version}"
+            + (f"; it supersedes baseline {active_id}" if active_id else "")
+            + "."
+        )
+    logger.info(
+        "Baseline %s of %s/%s %s by %s",
+        baseline_id,
+        asset_id,
+        measurement_point_id,
+        "withdrawn" if withdrawn else "declared",
+        declarer,
+    )
+    return {
+        "asset_id": asset_id,
+        "measurement_point_id": measurement_point_id,
+        "baseline_id": baseline_id,
+        "measurement_ids": list(ids),
+        "members": members,
+        "declared_by": declarer,
+        "note": note_text,
+        "declared_at": instant,
+        "superseded_baseline_id": active_id,
+        "withdrawn": withdrawn,
+        "event_id": event["event_id"],
+        "message": message,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Queries: index and history
+# ---------------------------------------------------------------------------
+
+
+def asset_index(store: LedgerStore, *, max_assets: int) -> dict[str, Any]:
+    """Summarize the assets of the ledger directory, at most *max_assets*.
+
+    Args:
+        store: The ledger store.
+        max_assets: Ledgers read (and listed) at most; the ids beyond it
+            are counted, never read.
+
+    Returns:
+        ``{assets, asset_count, truncated}`` where every asset entry is
+        ``{asset_id, points, point_count, measurement_count,
+        first_acquired_at, last_acquired_at, reattributed_count,
+        event_count, ledger_bytes, integrity}`` and every point entry is
+        ``{measurement_point_id, measurement_count, first_acquired_at,
+        last_acquired_at, latest_lineage, baseline_declared,
+        declaration_version}``.
+
+    Raises:
+        ValueError: ``max_assets`` < 1; ``LedgerError`` when a ledger
+            cannot be read.
+    """
+    if (
+        isinstance(max_assets, bool)
+        or not isinstance(max_assets, int)
+        or max_assets < 1
+    ):
+        raise ValueError(f"max_assets must be an integer >= 1, got {max_assets!r}.")
+    all_assets = store.list_assets()
+    listed = all_assets[:max_assets]
+    return {
+        "assets": [
+            _asset_summary(store, asset_id, store.read_view(asset_id))
+            for asset_id in listed
+        ],
+        "asset_count": len(all_assets),
+        "truncated": len(all_assets) > max_assets,
+    }
+
+
+def _measurement_entry(
+    view: Mapping[str, Any], measurement_id: str, current: Mapping[str, Any]
+) -> dict[str, Any]:
+    declaration = _declaration_of(current)
+    file_info = current.get("file")
+    slot = (view.get("measurements") or {}).get(measurement_id) or {}
+    snapshots = list(slot.get("snapshots") or [])
+    latest = snapshots[-1] if snapshots else None
+    indicators: Optional[dict[str, Any]] = None
+    if isinstance(latest, dict):
+        values = latest.get("indicators") or {}
+        indicators = {
+            "rms": values.get("rms"),
+            "peak": values.get("peak"),
+            "crest_factor": values.get("crest_factor"),
+            "kurtosis": values.get("kurtosis"),
+            "unit": declaration.get("signal_unit"),
+        }
+    point_id = current.get("measurement_point_id")
+    point = _current_point(view, point_id) if isinstance(point_id, str) else None
+    assessment = assess_measurement_comparability(dict(current), point)
+    return {
+        "measurement_id": measurement_id,
+        "measurement_point_id": point_id,
+        "acquired_at": declaration.get("acquired_at"),
+        "signal_id": current.get("signal_id"),
+        "location": file_info.get("location") if isinstance(file_info, dict) else None,
+        "declaration_version": current.get("declaration_version"),
+        "rpm": declaration.get("rpm"),
+        "direction": declaration.get("direction"),
+        "sensor_id": declaration.get("sensor_id"),
+        "lineages": sorted(
+            str(key) for key in (slot.get("snapshots_by_lineage") or {})
+        ),
+        "snapshot_count": len(snapshots),
+        "indicators": indicators,
+        "comparability": {
+            "grade": assessment["grade"],
+            "codes": [str(entry["code"]) for entry in assessment["qualifications"]],
+        },
+    }
+
+
+def _capped_history(slot: Mapping[str, Any]) -> dict[str, Any]:
+    history = list(slot.get("history") or [])
+    return {
+        "current": slot.get("current"),
+        "history": history[-MAX_LISTED_ITEMS:],
+        "history_truncated": len(history) > MAX_LISTED_ITEMS,
+    }
+
+
+def asset_history(
+    store: LedgerStore,
+    asset_id: str,
+    *,
+    measurement_point_id: Optional[str] = None,
+    max_measurements: int = 20,
+) -> Optional[dict[str, Any]]:
+    """The history of ONE asset, read from its ledger alone.
+
+    Args:
+        store: The ledger store.
+        asset_id: The asset (ledger grammar).
+        measurement_point_id: Restrict the measurements, declarations and
+            baselines to one point, or None for the whole asset.
+        max_measurements: Measurements listed at most, newest first.
+
+    Returns:
+        None when the asset has no ledger; else ``{asset_id, summary
+        (measurement_count, point_count, first_acquired_at,
+        last_acquired_at, points), measurement_point_id, point_found,
+        known_points, measurements, measurement_count, truncated,
+        point_declarations, baselines, reattributed, reattributed_truncated,
+        integrity, event_count, ledger_bytes}``: every measurement entry
+        carries ``{measurement_id, measurement_point_id, acquired_at,
+        signal_id, location, declaration_version, rpm, direction,
+        sensor_id, lineages, snapshot_count, indicators (rms, peak,
+        crest_factor, kurtosis, unit from the latest snapshot, or None),
+        comparability (grade and codes against the point)}``; the
+        declarations and baselines map each selected point to ``{current,
+        history, history_truncated}``.
+
+    Raises:
+        ValueError: Invalid ids or ``max_measurements`` < 1; ``LedgerError``
+            when the ledger cannot be read.
+    """
+    validate_ledger_id(asset_id, kind="asset_id")
+    if measurement_point_id is not None:
+        validate_ledger_id(measurement_point_id, kind="measurement_point_id")
+    if (
+        isinstance(max_measurements, bool)
+        or not isinstance(max_measurements, int)
+        or max_measurements < 1
+    ):
+        raise ValueError(
+            f"max_measurements must be an integer >= 1, got {max_measurements!r}."
+        )
+    view = store.read_view(asset_id)
+    if not _asset_known(view):
+        return None
+
+    known_points = _point_ids(view)
+    point_found = measurement_point_id is None or measurement_point_id in known_points
+    if measurement_point_id is None:
+        selected_points = known_points
+    else:
+        selected_points = [measurement_point_id] if point_found else []
+    summary = _asset_summary(store, asset_id, view)
+
+    measurements = view.get("measurements") or {}
+    ordered: list[tuple[str, dict[str, Any]]] = []
+    for measurement_id in view.get("ordered_measurement_ids") or []:
+        current = (measurements.get(measurement_id) or {}).get("current")
+        if not isinstance(current, dict):
+            continue
+        if measurement_point_id is not None and (
+            current.get("measurement_point_id") != measurement_point_id
+        ):
+            continue
+        ordered.append((str(measurement_id), current))
+    newest_first = list(reversed(ordered))[:max_measurements]
+
+    points = view.get("points") or {}
+    baselines = view.get("baselines") or {}
+    reattributed = list(view.get("reattributed") or [])
+    return {
+        "asset_id": asset_id,
+        "summary": {
+            "measurement_count": summary["measurement_count"],
+            "point_count": summary["point_count"],
+            "first_acquired_at": summary["first_acquired_at"],
+            "last_acquired_at": summary["last_acquired_at"],
+            "points": [
+                point
+                for point in summary["points"]
+                if point["measurement_point_id"] in selected_points
+            ],
+        },
+        "measurement_point_id": measurement_point_id,
+        "point_found": point_found,
+        "known_points": known_points,
+        "measurements": [
+            _measurement_entry(view, measurement_id, current)
+            for measurement_id, current in newest_first
+        ],
+        "measurement_count": len(ordered),
+        "truncated": len(ordered) > max_measurements,
+        "point_declarations": {
+            point_id: _capped_history(points[point_id])
+            for point_id in selected_points
+            if isinstance(points.get(point_id), dict)
+        },
+        "baselines": {
+            point_id: _capped_history(baselines[point_id])
+            for point_id in selected_points
+            if isinstance(baselines.get(point_id), dict)
+        },
+        "reattributed": reattributed[:MAX_LISTED_ITEMS],
+        "reattributed_truncated": len(reattributed) > MAX_LISTED_ITEMS,
+        "integrity": dict(view.get("integrity") or {}),
+        "event_count": summary["event_count"],
+        "ledger_bytes": summary["ledger_bytes"],
     }

@@ -65,6 +65,7 @@ __all__ = [
     "MEASUREMENT_IDENTITY_KEYS",
     "unit_family",
     "validate_ledger_id",
+    "validate_free_text",
     "normalize_direction",
     "normalize_acquired_at",
     "validate_measurement_declaration",
@@ -355,8 +356,25 @@ def _is_control(char: str) -> bool:
     return category.startswith("C") or category in ("Zl", "Zp")
 
 
-def _validate_free_text(field: str, value: object) -> str:
-    """Validate one free-text field: non-empty string, bounded, one line."""
+def validate_free_text(field: str, value: object) -> str:
+    """Validate one free-text field: non-empty string, bounded, one line.
+
+    The single free-text rule of the contract, shared by the companion's
+    ``operating_state`` / ``sensor_id`` / ``declared_by`` and by the ledger
+    declarations (``declared_by``, ``note``, ``expected_sensor_id``): at most
+    ``MAX_FREE_TEXT_CHARS`` characters, no control, format, separator or
+    unassigned characters, never interpreted by the server.
+
+    Args:
+        field: Field name used in the message.
+        value: The declared value (any JSON value; only strings can pass).
+
+    Returns:
+        The same string.
+
+    Raises:
+        ValueError: Naming the field, the limit or the offending characters.
+    """
     if not isinstance(value, str) or not value.strip():
         raise ValueError(
             f"Invalid {field} {value!r}: declare a non-empty string of at most "
@@ -501,7 +519,7 @@ def validate_measurement_declaration(
     for field in FREE_TEXT_FIELDS:
         if declaration.get(field) is not None:
             identity[field] = _collect(
-                problems, declaration[field], partial(_validate_free_text, field)
+                problems, declaration[field], partial(validate_free_text, field)
             )
     if declaration.get("direction") is not None:
         identity["direction"] = _collect(

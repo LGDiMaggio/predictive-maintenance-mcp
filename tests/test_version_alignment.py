@@ -431,13 +431,15 @@ class TestEndpointCountClaims:
         """The current surface, restated here so a surface change makes
         BOTH the inventory test and the doc guards go red together.
 
-        v0.10 added generate_diagnostic_report (33 -> 34 tools). The
+        v0.10 added generate_diagnostic_report (33 -> 34 tools); the asset
+        ledger (U7) added declare_measurement_point, declare_healthy_baseline,
+        get_asset_history and assess_asset_change (34 -> 38 tools). The
         additions register lives in tests/test_surface_parity.py."""
         assert surface_counts == {
-            "tools": 34,
+            "tools": 38,
             "resources": 0,
             "prompts": 3,
-            "endpoints": 37,
+            "endpoints": 41,
         }
 
 
