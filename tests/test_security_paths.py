@@ -21,6 +21,7 @@ import pytest
 from mcp.server.mcpserver import MCPServer
 
 from predictive_maintenance_mcp.path_safety import (
+    _without_extended_prefix,
     resolve_model_paths,
     safe_resolve,
     sanitize_filename,
@@ -87,6 +88,53 @@ class TestPathSafetyHelpers:
         assert str(safe_resolve(base, "P-101.jsonl")) == plain
         with pytest.raises(ValueError):
             safe_resolve(base, "../P-101.jsonl")
+
+    @pytest.mark.skipif(os.name != "nt", reason="Windows extended-length prefix")
+    def test_safe_resolve_tolerates_extended_length_unc_prefix(
+        self, tmp_path, monkeypatch
+    ):
+        """The UNC form of the prefix, ``\\\\?\\UNC\\server\\share\\...``, is
+        the plain ``\\\\server\\share\\...`` location.
+
+        Same transient as the drive-letter case, on a network share: the
+        base resolves plain while the candidate keeps the prefix. The
+        result must be the plain UNC path, and a traversal on the share is
+        still refused.
+        """
+        base = tmp_path / "ledger"
+        base.mkdir()
+        (base / "P-101.jsonl").write_text("x")
+        real_resolve = Path.resolve
+        root = str(real_resolve(tmp_path))
+
+        def unc_resolve(self, strict=False):
+            tail = str(real_resolve(self, strict=strict))[len(root) :]
+            if self.name == "P-101.jsonl":
+                return Path("\\\\?\\UNC\\server\\share" + tail)
+            return Path("\\\\server\\share" + tail)
+
+        monkeypatch.setattr(Path, "resolve", unc_resolve)
+        resolved = safe_resolve(base, "P-101.jsonl")
+        assert str(resolved) == "\\\\server\\share\\ledger\\P-101.jsonl"
+        assert not str(resolved).startswith("\\\\?\\")
+        with pytest.raises(ValueError):
+            safe_resolve(base, "../P-101.jsonl")
+
+    @pytest.mark.parametrize(
+        ("prefixed", "plain"),
+        [
+            ("\\\\?\\C:\\data\\ledger\\P-101.jsonl", "C:\\data\\ledger\\P-101.jsonl"),
+            (
+                "\\\\?\\UNC\\server\\share\\ledger\\P-101.jsonl",
+                "\\\\server\\share\\ledger\\P-101.jsonl",
+            ),
+            ("C:\\data\\ledger\\P-101.jsonl", "C:\\data\\ledger\\P-101.jsonl"),
+        ],
+    )
+    def test_without_extended_prefix_strips_both_prefix_forms(self, prefixed, plain):
+        """The prefix strip is pure string work, so both forms are checked on
+        every platform even though only Windows resolves paths with the prefix."""
+        assert str(_without_extended_prefix(Path(prefixed))) == str(Path(plain))
 
     def test_safe_resolve_rejects_parent_traversal(self, tmp_path):
         base = tmp_path / "models"

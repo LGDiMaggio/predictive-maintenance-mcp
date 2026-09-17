@@ -45,7 +45,11 @@ from predictive_maintenance_mcp.asset_ledger.assessment import (
     assess_change,
     collect_point_slots,
 )
-from predictive_maintenance_mcp.asset_ledger.snapshot import processing_id
+from predictive_maintenance_mcp.asset_ledger.snapshot import (
+    context_digest,
+    processing_id,
+    resolve_context,
+)
 from predictive_maintenance_mcp.asset_ledger.store import (
     EVENT_BASELINE_DECLARED,
     EVENT_HEALTH_SNAPSHOT_COMPUTED,
@@ -301,6 +305,14 @@ def view_of(events: Sequence[dict[str, Any]]) -> dict[str, Any]:
     return build_asset_view(ASSET, list(events), {})
 
 
+def digest_of(measurement: dict[str, Any], point: Optional[dict[str, Any]]) -> str:
+    """The ``context_digest`` the snapshot code records for a measurement
+    event under a point declaration event (None: point never declared)."""
+    declaration = measurement["payload"]["declaration"]
+    context = resolve_context(declaration, None if point is None else point["payload"])
+    return context_digest(context, declaration)
+
+
 def series_events(
     values: Sequence[float],
     *,
@@ -313,26 +325,30 @@ def series_events(
     sensor_of: Any = None,
     unit_of: Any = None,
     start: int = 1,
+    real_digests: bool = False,
 ) -> list[dict[str, Any]]:
     """Point declaration plus one measurement and one snapshot per value.
 
     ``rms`` is the value itself; peak, 1x and ISO velocity are proportional
     to it; the bearing block is quiet unless ``bearing_of(index)`` says
-    otherwise, so every amplitude indicator classifies alike.
+    otherwise, so every amplitude indicator classifies alike. With
+    ``real_digests`` every snapshot carries the ``context_digest`` the
+    snapshot code computes for its declaration and the point; otherwise the
+    placeholder ``"ctx"``, which never matches the current context.
     """
-    events: list[dict[str, Any]] = [point_event()] if with_point else []
+    point = point_event() if with_point else None
+    events: list[dict[str, Any]] = [point] if point is not None else []
     for offset, value in enumerate(values):
         index = start + offset
         sensor = sensor_of(index) if sensor_of else "ACC01"
         unit = unit_of(index) if unit_of else "g"
-        events.append(
-            measurement_event(
-                index,
-                rpm=None if index in rpm_missing else 1800.0,
-                sensor_id=sensor,
-                unit=unit,
-            )
+        measurement = measurement_event(
+            index,
+            rpm=None if index in rpm_missing else 1800.0,
+            sensor_id=sensor,
+            unit=unit,
         )
+        events.append(measurement)
         events.append(
             snapshot_event(
                 index,
@@ -342,6 +358,7 @@ def series_events(
                 one_x=0.1 * value if with_one_x else None,
                 iso_velocity=0.3 * value if with_iso else None,
                 bearing=bearing_of(index) if bearing_of else bearing_block(),
+                context_digest=digest_of(measurement, point) if real_digests else "ctx",
             )
         )
     return events
@@ -1145,6 +1162,42 @@ class TestLineage:
         assert result["lineage"]["missing_for_current"] == 0
         assert result["lineage"]["algorithm_version"] == 1
 
+    def test_current_context_leaves_no_stale_snapshot(self):
+        """Snapshots carrying the digest the current point declaration
+        produces are not stale: no count and no re-processing suggestion."""
+        result = assess(view_of(series_events(STABLE + [1.0], real_digests=True)))
+        assert result["status"] == "assessed"
+        assert result["lineage"]["stale_context"] == 0
+        assert "previous point declaration" not in result["message"]
+        assert REPROCESS_CALL not in result["message"]
+        # The placeholder digest of the other fixtures never matches the
+        # current context: every one of their evaluated slots counts as stale.
+        placeholder = assess(view_of(series_events(STABLE + [1.0])))
+        assert (
+            placeholder["lineage"]["stale_context"] == placeholder["lineage"]["covered"]
+        )
+
+    def test_redeclared_point_counts_every_evaluated_slot_as_stale(self):
+        """A re-declaration changing the resolved context (machine group)
+        with no snapshot added since: every evaluated slot is stale and the
+        message names the count and the re-processing call."""
+        events = series_events(STABLE + [1.0], real_digests=True)
+        events.append(
+            point_event(
+                2,
+                machine_group=1,
+                recorded_at=datetime(2026, 9, 1, tzinfo=timezone.utc),
+            )
+        )
+        result = assess(view_of(events))
+        assert result["status"] == "assessed"
+        assert result["lineage"]["covered"] == 11
+        assert result["lineage"]["stale_context"] == 11
+        assert (
+            "(11 snapshot(s) computed with a previous point declaration; "
+            f"{REPROCESS_CALL} recomputes them)"
+        ) in result["message"]
+
     def test_window_shrinks_the_evaluated_set_for_the_lineage(self):
         events = self.split(
             lambda i: [LINEAGE_A] if i <= 20 else [LINEAGE_A, LINEAGE_B]
@@ -1196,6 +1249,16 @@ class TestContract:
             "suggested_verification",
             "message",
         ]
+        assert set(result["lineage"]) == {
+            "processing_id",
+            "algorithm_version",
+            "covered",
+            "candidates",
+            "current_processing_id",
+            "is_current",
+            "missing_for_current",
+            "stale_context",
+        }
         assert set(result["observed"]) == {
             "reference_statistics",
             "latest",

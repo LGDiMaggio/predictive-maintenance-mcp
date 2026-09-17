@@ -51,12 +51,15 @@ from predictive_maintenance_mcp.asset_ledger.service import (
     LOAD_OUTCOME_KEYS,
     MAX_REPROCESS_PER_CALL,
     OUTCOME_KEYS,
+    POINT_DECLARED_KEYS,
+    POINT_FREE_TEXT_FIELDS,
     REPROCESS_OUTCOMES,
     SNAPSHOT_PAYLOAD_KEYS,
     SNAPSHOT_STATUSES,
     build_declaration,
     changed_keys,
     declaration_fingerprint,
+    declare_measurement_point,
     file_block,
     record_measurements,
     reprocess_stale_snapshots,
@@ -435,6 +438,13 @@ class TestDeclarationAndFile:
         assert set(LOAD_OUTCOME_KEYS) < set(OUTCOME_KEYS)
         assert "event_ids" not in LOAD_OUTCOME_KEYS
         assert "context" in SNAPSHOT_PAYLOAD_KEYS
+        assert POINT_FREE_TEXT_FIELDS == (
+            "bearing_id",
+            "expected_sensor_id",
+            "declared_by",
+            "note",
+        )
+        assert set(POINT_FREE_TEXT_FIELDS) <= set(POINT_DECLARED_KEYS)
 
 
 # ---------------------------------------------------------------------------
@@ -1303,6 +1313,113 @@ class TestReprocessStaleSnapshots:
         assert entry["outcome"] == "not_reprocessable"
         assert "content differs at m01.csv" in entry["reason"]
         assert len(payloads(store, EVENT_HEALTH_SNAPSHOT_COMPUTED)) == 1
+
+    def test_undeclared_sampling_rate_is_not_reprocessable(self, store, data_dir):
+        """Recorded without a rate (the snapshot was skipped at load) and
+        stale since the point was declared: the re-processing names the
+        remedy per measurement instead of guessing a rate."""
+        values = noise(1)
+        info = make_info(data_dir / "m01.csv", values, sampling_rate=None)
+        assert record_one(store, data_dir, info, values)["snapshot_status"] == "skipped"
+        declare_point(store)
+        result = reprocess(store, data_dir)
+        assert result["stale"] == 1
+        assert result["reprocessed"] == 0
+        assert result["not_reprocessable"] == 1
+        assert result["remaining"] == 0
+        entry = result["results"][0]
+        assert entry["outcome"] == "not_reprocessable"
+        assert entry["location_used"] is None
+        assert entry["snapshot_id"] is None
+        assert "sampling_rate not declared" in entry["reason"]
+        assert "re-load the file" in entry["reason"]
+        assert payloads(store, EVENT_HEALTH_SNAPSHOT_COMPUTED) == []
+
+    def test_undecodable_declaration_is_not_reprocessable(
+        self, store, data_dir, monkeypatch
+    ):
+        """The file is found and its hash verified, but the recorded
+        declaration cannot decode it: reported per measurement with the
+        decoder's reason, never raised, and the old snapshot stays."""
+        declare_point(store)
+        load_sequence(store, data_dir, 1)
+
+        def refusing(path: Path, declaration: Any) -> np.ndarray:
+            raise ValueError(
+                "recorded raw_format declares no sample_format; re-load the file "
+                "with the raw declaration (the new declaration supersedes this one)"
+            )
+
+        monkeypatch.setattr(service, "_decode", refusing)
+        result = reprocess(store, data_dir)
+        assert result["stale"] == 1
+        assert result["reprocessed"] == 0
+        assert result["not_reprocessable"] == 1
+        assert result["remaining"] == 0
+        entry = result["results"][0]
+        assert entry["outcome"] == "not_reprocessable"
+        assert entry["location_used"] == "m01.csv"
+        assert entry["snapshot_id"] is None
+        assert entry["reason"].startswith("snapshot not computed:")
+        assert "sample_format" in entry["reason"]
+        assert len(payloads(store, EVENT_HEALTH_SNAPSHOT_COMPUTED)) == 1
+
+    def test_collapsed_duplicates_are_reprocessed_too(self, store, data_dir):
+        """Two exports of one capture (other bytes, same acquisition slot):
+        the slot collapse keeps the latest recorded, but the point
+        declaration counts both as stale, so the remedy it names must
+        recompute both before that count returns to zero."""
+        declare_point(store)
+        arrays = {"m01": noise(1, 5000), "m01_again": noise(2, 5000)}
+        infos = [
+            make_info(data_dir / f"{name}.csv", values, acquired_at=acquired(1))
+            for name, values in arrays.items()
+        ]
+        outcomes = record(store, data_dir, infos, arrays, policy=None)
+        assert [o["ledger_status"] for o in outcomes] == ["recorded", "recorded"]
+        duplicate, kept = (o["measurement_id"] for o in outcomes)
+
+        def redeclare() -> dict[str, Any]:
+            return declare_measurement_point(
+                store=store,
+                asset_id=ASSET,
+                measurement_point_id=POINT,
+                bearing_id="6205",
+                machine_group=1,
+                support_type="rigid",
+                expected_signal_unit="g",
+                expected_direction="horizontal",
+                nominal_rpm=1800.0,
+                declared_by="test",
+            )
+
+        redeclared = redeclare()
+        assert redeclared["declaration_version"] == 2
+        assert redeclared["changed"] == ["machine_group"]
+        assert redeclared["measurements_with_stale_context"] == 2
+        assert redeclared["remedy"] == REPROCESS_CALL
+
+        # One measurement per call, so the collapsed tail needs a second call.
+        first = reprocess(store, data_dir, limit=1)
+        assert (first["stale"], first["reprocessed"], first["remaining"]) == (2, 1, 1)
+        assert first["next_call"] == REPROCESS_CALL
+        # The slot's representative first, the collapsed duplicate last.
+        assert [r["measurement_id"] for r in first["results"]] == [kept]
+        second = reprocess(store, data_dir, limit=1)
+        assert (second["stale"], second["reprocessed"], second["remaining"]) == (
+            1,
+            1,
+            0,
+        )
+        assert second["not_reprocessable"] == 0
+        assert second["next_call"] is None
+        assert [r["measurement_id"] for r in second["results"]] == [duplicate]
+
+        again = redeclare()
+        assert again["appended"] is False
+        assert again["measurements_with_stale_context"] == 0
+        assert again["remedy"] is None
+        assert reprocess(store, data_dir)["stale"] == 0
 
     def test_deleted_temporary_copy_falls_back_to_the_original(
         self, store, data_dir, tmp_path

@@ -53,9 +53,11 @@ STALE when its view holds no snapshot with the current ``processing_id``
 AND the ``context_digest`` of the current point declaration. Up to
 ``MAX_REPROCESS_PER_CALL`` stale measurements are re-processed per call, in
 the order members of the active reference (declared baseline or the first N
-slots), then the last K slots newest first, then the rest newest first, so
-the reference and the last K slots carry the current lineage within two
-calls whatever the length of the history (the assessment moves onto the
+slots), then the last K slots newest first, then the rest newest first
+(the duplicates collapsed into another acquisition slot last), so the
+reference and the last K slots carry the current lineage within two calls
+whatever the length of the history and every measurement the point
+declaration counts as stale is reached (the assessment moves onto the
 current lineage once EVERY evaluated slot carries it; until then it uses
 the older lineage that still covers the whole set, or reports
 ``processing_not_homogeneous`` when none does). The file is searched in
@@ -119,6 +121,7 @@ from .assessment import (
     MAX_LISTED_ITEMS,
     MIN_REFERENCE_MEASUREMENTS,
     AssessmentParams,
+    _known_points,
     collect_point_slots,
     current_snapshot_id_of,
 )
@@ -1234,7 +1237,11 @@ def _reprocess_order(
     the active reference (declared baseline, else the first N usable slots
     by ``acquired_at``), then the last K slots newest first, then the rest
     newest first, then the non-comparable ones newest first (they are
-    re-processed last: a corrected declaration may make them usable)."""
+    re-processed last: a corrected declaration may make them usable), then
+    the duplicates collapsed into another slot newest first (they never
+    represent a slot, but they are measurements of the point and the point
+    declaration counts them as stale, so the remedy it names must reach
+    them)."""
     staged = collect_point_slots(dict(view), measurement_point_id, params=params)
     usable = staged["usable"]
     head = staged["reference"]["slots"] or usable[: params.reference_measurements]
@@ -1250,6 +1257,7 @@ def _reprocess_order(
     add(list(reversed(usable[-params.last_k :])))
     add(list(reversed(usable)))
     add(list(reversed(staged["slots"])))
+    add(list(reversed(staged["collapsed"])))
     return ordered
 
 
@@ -1547,18 +1555,6 @@ def _asset_known(view: Mapping[str, Any]) -> bool:
     )
 
 
-def _point_ids(view: Mapping[str, Any]) -> list[str]:
-    """Declared points plus the points the measurements name, sorted."""
-    known: set[str] = {str(key) for key in (view.get("points") or {})}
-    for slot in (view.get("measurements") or {}).values():
-        current = slot.get("current") if isinstance(slot, dict) else None
-        if isinstance(current, dict) and isinstance(
-            current.get("measurement_point_id"), str
-        ):
-            known.add(current["measurement_point_id"])
-    return sorted(known)
-
-
 def _measurements_of_point(
     view: Mapping[str, Any], point_id: str
 ) -> list[tuple[str, dict[str, Any]]]:
@@ -1659,7 +1655,7 @@ def _latest_lineage(
 def _point_summaries(view: Mapping[str, Any]) -> list[dict[str, Any]]:
     summaries: list[dict[str, Any]] = []
     baselines = view.get("baselines") or {}
-    for point_id in _point_ids(view):
+    for point_id in _known_points(dict(view)):
         records = _measurements_of_point(view, point_id)
         acquired = [
             _declaration_of(current).get("acquired_at") for _, current in records
@@ -1806,13 +1802,14 @@ def _normalize_point_context(
         except ValueError as exc:
             problems.append(str(exc))
 
-    for field, text in (
-        ("bearing_id", bearing_id),
-        ("expected_sensor_id", expected_sensor_id),
-        ("declared_by", declared_by),
-        ("note", note),
-    ):
-        attempt(field, text, partial(validate_free_text, field))
+    free_text = {
+        "bearing_id": bearing_id,
+        "expected_sensor_id": expected_sensor_id,
+        "declared_by": declared_by,
+        "note": note,
+    }
+    for field in POINT_FREE_TEXT_FIELDS:
+        attempt(field, free_text[field], partial(validate_free_text, field))
     attempt("fault_orders", fault_orders, _normalize_fault_orders)
     attempt("machine_group", machine_group, _validate_machine_group)
     attempt("support_type", support_type, _validate_support_type)
@@ -2169,7 +2166,7 @@ def declare_healthy_baseline(
             raise ValueError(
                 f"Point {measurement_point_id!r} of asset {asset_id!r} has no "
                 f"recorded measurement; known points: "
-                f"{_point_ids(view) or 'none'}. Load measurements of the point "
+                f"{_known_points(view) or 'none'}. Load measurements of the point "
                 f"before declaring its baseline."
             )
         unknown = [
@@ -2450,7 +2447,7 @@ def asset_history(
     if not _asset_known(view):
         return None
 
-    known_points = _point_ids(view)
+    known_points = _known_points(view)
     point_found = measurement_point_id is None or measurement_point_id in known_points
     if measurement_point_id is None:
         selected_points = known_points
