@@ -248,6 +248,78 @@ class TestEdgeCases:
         assert info["duration_s"] == pytest.approx(1.0, abs=0.01)
 
 
+class TestCompanionWarning:
+    """U1: a present but unusable companion is reported, never swallowed and
+    never a refusal. The load proceeds exactly as a companion-less load."""
+
+    @staticmethod
+    def _csv(tmp_path):
+        path = tmp_path / "sig.csv"
+        pd.DataFrame(np.zeros(100)).to_csv(path, index=False, header=False)
+        return path
+
+    def test_malformed_json_names_the_file_and_loads_as_today(self, repo, tmp_path):
+        path = self._csv(tmp_path)
+        (tmp_path / "sig_metadata.json").write_text(
+            '{"sampling_rate": 1000,', encoding="utf-8"
+        )
+        info = repo.load_signal(str(path))
+        assert "sig_metadata.json" in info["companion_warning"]
+        assert "not valid JSON" in info["companion_warning"]
+        assert info["sampling_rate"] is None
+        assert info["signal_unit"] is None
+        assert info["source_metadata"] == {}
+        assert info["measurement"] is None
+        assert repo.signal_count == 1
+
+    def test_non_object_json_is_distinguished(self, repo, tmp_path):
+        path = self._csv(tmp_path)
+        (tmp_path / "sig_metadata.json").write_text(
+            '[{"sampling_rate": 1000}]', encoding="utf-8"
+        )
+        info = repo.load_signal(str(path))
+        assert "sig_metadata.json" in info["companion_warning"]
+        assert "not a JSON object" in info["companion_warning"]
+        assert info["sampling_rate"] is None
+        assert repo.signal_count == 1
+
+    def test_explicit_declaration_still_wins_over_a_broken_companion(
+        self, repo, tmp_path
+    ):
+        path = self._csv(tmp_path)
+        (tmp_path / "sig_metadata.json").write_text("not json", encoding="utf-8")
+        info = repo.load_signal(str(path), sampling_rate=2000, signal_unit="mm/s")
+        assert info["sampling_rate"] == 2000
+        assert info["signal_unit"] == "mm/s"
+        assert info["companion_warning"] is not None
+
+    def test_healthy_companion_has_no_warning(self, repo, signal_file):
+        info = repo.load_signal(str(signal_file))
+        assert info["companion_warning"] is None
+        assert info["measurement"] is None  # no "measurement" object declared
+
+    def test_absent_companion_has_no_warning(self, repo, tmp_path):
+        info = repo.load_signal(str(self._csv(tmp_path)))
+        assert info["companion_warning"] is None
+
+    def test_read_metadata_shapes(self, repo, tmp_path):
+        """The private reader returns ``{}`` for no companion, a
+        ``companion_warning``-only dict for an unusable one, and the full
+        shape (with ``companion_warning: None``) for a usable one."""
+        path = self._csv(tmp_path)
+        assert repo._read_metadata(path) == {}
+        companion = tmp_path / "sig_metadata.json"
+        companion.write_text("{", encoding="utf-8")
+        assert set(repo._read_metadata(path)) == {"companion_warning"}
+        companion.write_text('{"sampling_rate": 1000}', encoding="utf-8")
+        assert repo._read_metadata(path) == {
+            "sampling_rate": 1000,
+            "signal_unit": None,
+            "source_metadata": {"sampling_rate": 1000},
+            "companion_warning": None,
+        }
+
+
 @pytest.fixture
 def data_dir(tmp_path, monkeypatch):
     """A DATA_DIR with same-named files in two subfolders (audit 3.6)."""

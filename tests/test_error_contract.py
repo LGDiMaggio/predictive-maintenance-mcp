@@ -48,22 +48,18 @@ def mock_ctx():
 
 
 @pytest.fixture
-def sandbox_dirs(tmp_path, monkeypatch):
-    """Point every directory-bearing module at an empty sandbox."""
-    signals_dir = tmp_path / "data" / "signals"
-    signals_dir.mkdir(parents=True)
+def sandbox_dirs(sandbox_data_dir, tmp_path, monkeypatch):
+    """Point every directory-bearing module at an empty sandbox.
+
+    DATA_DIR goes through conftest's shared ``sandbox_data_dir`` (the
+    four-module patch); the model and report directories are patched here.
+    """
+    signals_dir = sandbox_data_dir
     models_dir = tmp_path / "models"
     models_dir.mkdir()
     reports_dir = tmp_path / "reports"
     reports_dir.mkdir()
 
-    for target in (
-        "predictive_maintenance_mcp.config.DATA_DIR",
-        "predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR",
-        "predictive_maintenance_mcp.signal_acquisition.repository.DATA_DIR",
-        "predictive_maintenance_mcp.mcp_tools.acquisition_tools.DATA_DIR",
-    ):
-        monkeypatch.setattr(target, signals_dir)
     for target in (
         "predictive_maintenance_mcp.mcp_tools.diagnostics_tools.MODELS_DIR",
         "predictive_maintenance_mcp.mcp_tools.report_tools.MODELS_DIR",
@@ -163,6 +159,8 @@ FAILURE_CASES = {
         "rpm": 1500.0,
     },
     "assess_severity": {"signal_id": "__not_loaded__"},
+    # The unresolvable-rpm refusal needs a LOADED signal, so it lives in
+    # TestFailuresRaise.test_diagnose_vibration_unresolvable_rpm_raises.
     "diagnose_vibration": {"signal_id": "__not_loaded__", "rpm": 1500.0},
     "plot_signal": {"signal_id": "__not_loaded__"},
     "generate_fft_report": {"signal_id": "__not_loaded__"},
@@ -186,6 +184,28 @@ FAILURE_CASES = {
     "analyze_signal_trend": {"signal_id": "__not_loaded__"},
     "load_signal": {"filepath": "__missing__.csv"},
     "get_signal_info": {"signal_id": "__not_loaded__"},
+    # Asset ledger (U7): one misuse case per tool. Unknown assets and
+    # points are typed 'not_found' results by design and live in
+    # TestTypedNegativeOutcomes.test_asset_change_miss_is_typed.
+    "declare_measurement_point": {
+        "asset_id": "../evil",  # traversal: refused by the ledger id grammar
+        "measurement_point_id": "motor_de_h",
+    },
+    "declare_healthy_baseline": {
+        "asset_id": "P-101",
+        "measurement_point_id": "motor_de_h",
+        "measurement_ids": ["0123456789abcdef"],
+        "declared_by": "",  # the declarer is required
+    },
+    "get_asset_history": {
+        "asset_id": None,  # a point without its asset is a misuse
+        "measurement_point_id": "motor_de_h",
+    },
+    "assess_asset_change": {
+        "asset_id": "P-101",
+        "measurement_point_id": "motor_de_h",
+        "last_k": 0,  # below the documented minimum of 1
+    },
 }
 
 
@@ -249,6 +269,75 @@ class TestFailuresRaise:
         assert "_metadata.json" in msg  # the companion-file alternative
 
     @pytest.mark.asyncio
+    async def test_invalid_measurement_object_raises(
+        self, tools, sandbox_dirs, mock_ctx
+    ):
+        """A readable companion whose "measurement" object is invalid is a
+        refusal (raised), not a warning: a declared identity that breaks the
+        contract is misuse, unlike an unreadable companion, which loads with
+        a ``companion_warning``. Lives here rather than in FAILURE_CASES
+        because that table is keyed by tool name (load_signal already holds
+        its missing-file case) and the sandbox file must exist first.
+        """
+        from predictive_maintenance_mcp.signal_acquisition.repository import (
+            get_repository,
+        )
+
+        pd.DataFrame([0.1, 0.2, 0.3]).to_csv(
+            sandbox_dirs / "half.csv", index=False, header=False
+        )
+        with open(sandbox_dirs / "half_metadata.json", "w") as f:
+            json.dump({"sampling_rate": 1000, "measurement": {"asset_id": "P-101"}}, f)
+
+        with pytest.raises(ValueError) as exc_info:
+            await tools["load_signal"].fn(ctx=mock_ctx, filepath="half.csv")
+
+        msg = str(exc_info.value)
+        assert "measurement_point_id" in msg
+        assert "acquired_at" in msg
+        assert "half_metadata.json" in msg
+        loaded = [s["signal_id"] for s in get_repository().list_signals()]
+        assert "half" not in loaded  # refused BEFORE insertion
+
+    @pytest.mark.asyncio
+    async def test_diagnose_vibration_unresolvable_rpm_raises(
+        self, tools, sandbox_dirs, mock_ctx
+    ):
+        """rpm with no source anywhere is a refusal naming the three remedies.
+
+        Since rpm became optional, diagnose_vibration resolves it from the
+        call, then the companion's "measurement" object, then the point's
+        nominal_rpm in the asset ledger; with none of them it must raise,
+        never default. Lives here rather than in FAILURE_CASES because that
+        table is keyed by tool name (diagnose_vibration already holds its
+        not-loaded case) and a LOADED signal is needed: on an unknown id the
+        not-loaded rail fires first and would test the wrong refusal.
+        """
+        from predictive_maintenance_mcp.signal_acquisition.repository import (
+            get_repository,
+        )
+
+        fs = 10000
+        sig = 0.1 * np.random.default_rng(3).standard_normal(fs)
+        pd.DataFrame(sig).to_csv(sandbox_dirs / "no_rpm.csv", index=False, header=False)
+        with open(sandbox_dirs / "no_rpm_metadata.json", "w") as f:
+            json.dump({"sampling_rate": fs, "signal_unit": "g"}, f)  # no identity
+
+        repo = get_repository()
+        try:
+            repo.load_signal("no_rpm.csv", overwrite=True)
+            with pytest.raises(ValueError) as exc_info:
+                await tools["diagnose_vibration"].fn(ctx=mock_ctx, signal_id="no_rpm")
+        finally:
+            repo.clear_signal("no_rpm")
+
+        msg = str(exc_info.value)
+        assert "rpm=" in msg  # remedy 1: the explicit argument
+        assert '"measurement"' in msg  # remedy 2: the companion's object
+        assert "nominal_rpm" in msg and "declare_measurement_point" in msg  # 3
+        assert "error" not in msg.lower().split("cannot resolve")[0]
+
+    @pytest.mark.asyncio
     async def test_docx_missing_dependency_raises(
         self, tools, sandbox_dirs, mock_ctx, monkeypatch
     ):
@@ -296,6 +385,24 @@ class TestTypedNegativeOutcomes:
         assert "error" not in dumped
         for key in ("num_balls", "ball_diameter_mm", "pitch_diameter_mm"):
             assert key not in dumped
+
+    @pytest.mark.asyncio
+    async def test_asset_change_miss_is_typed(self, tools, sandbox_dirs, mock_ctx):
+        """An asset without a ledger is a legitimate negative outcome of
+        assess_asset_change: a typed 'not_found' naming the known assets
+        (the autouse ledger directory is empty here), never an exception
+        and never an error-shaped payload."""
+        from predictive_maintenance_mcp.models import AssetChangeAssessment
+
+        result = await tools["assess_asset_change"].fn(
+            ctx=mock_ctx, asset_id="P-404", measurement_point_id="motor_de_h"
+        )
+        assert isinstance(result, AssetChangeAssessment)
+        assert result.status == "not_found"
+        assert result.known_assets == []
+        assert result.suggestion  # actionable next step present
+        assert result.assessed is None and result.observed is None
+        assert "error" not in json.dumps(result.model_dump())
 
 
 # ---------------------------------------------------------------------------

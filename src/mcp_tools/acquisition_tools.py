@@ -25,12 +25,59 @@ import numpy as np
 import pandas as pd
 from mcp.server.mcpserver import MCPServer, Context
 
-from ..config import DATA_DIR
+from .. import config
+from ..asset_ledger.service import LOAD_OUTCOME_KEYS, record_measurements
+from ..asset_ledger.store import LedgerStore
+from ..config import DATA_DIR, get_ledger_dir
 from ..signal_acquisition.loaders import SUPPORTED_EXTENSIONS
-from ..signal_acquisition.repository import get_repository
+from ..signal_acquisition.repository import SignalRepository, get_repository
 from ..models import StoredSignalInfo
 
 logger = logging.getLogger(__name__)
+
+
+def _record_in_ledger(repo: SignalRepository, infos: list[dict]) -> list[dict]:
+    """Register the loaded signals that declare an identity in the asset ledger.
+
+    Called after the repository insert succeeded, so a ledger failure can
+    never undo a load: the service reports it in the outcome instead of
+    raising. Returns NEW info dicts (the repository's cached dicts are
+    never mutated, so ``get_signal_info`` keeps showing the identity only):
+    a signal with an identity block gets a copy of that block extended with
+    the outcome fields (``LOAD_OUTCOME_KEYS``); a signal without one is
+    returned as is.
+
+    The ledger directory and the data directory are read here, at call
+    time (``get_ledger_dir()`` reads the environment; ``config.DATA_DIR`` is
+    the module attribute), and passed to the service by argument.
+    """
+    with_identity = [i for i in infos if isinstance(i.get("measurement"), dict)]
+    if not with_identity:
+        return infos
+    outcomes = record_measurements(
+        with_identity,
+        repo.get_signal,
+        store=LedgerStore(get_ledger_dir()),
+        data_dir=config.DATA_DIR,
+    )
+    by_signal = {outcome["signal_id"]: outcome for outcome in outcomes}
+    annotated: list[dict] = []
+    for info in infos:
+        outcome = by_signal.get(info["signal_id"])
+        if outcome is None:
+            annotated.append(info)
+            continue
+        block = dict(info["measurement"])
+        block.update({key: outcome[key] for key in LOAD_OUTCOME_KEYS})
+        annotated.append({**info, "measurement": block})
+        logger.info(
+            f"Asset ledger: signal '{info['signal_id']}' -> "
+            f"{outcome['asset_id']}/{outcome['measurement_point_id']} "
+            f"{outcome['ledger_status']}, snapshot {outcome['snapshot_status']}, "
+            f"comparability {outcome['comparability']['grade']}"
+        )
+    return annotated
+
 
 #: Process-local sequence for generated test-signal filenames — the Windows
 #: clock can return identical timestamps for back-to-back calls, so a
@@ -289,10 +336,24 @@ async def load_signal(
             decoding (e.g. ADC counts -> physical unit); default: no
             scaling.
 
+    Asset ledger: a file whose companion declares a "measurement" object
+    (asset_id, measurement_point_id, acquired_at, ...) is also RECORDED in
+    the local append-only asset ledger after the load, and its health
+    snapshot is derived and appended; the returned measurement block
+    carries the outcome (ledger_status, snapshot_status, changed keys of a
+    corrected declaration, comparability against the declared point,
+    missing snapshot blocks with their remedy). A ledger problem never
+    fails the load: it is reported as ledger_status 'not_recorded' with
+    the reason, and re-loading the file is a safe retry. Re-loading the
+    same file with the same declaration appends nothing
+    ('already_recorded'); a corrected companion supersedes the previous
+    declaration ('superseded') and the history keeps both.
+
     Returns:
         StoredSignalInfo for a single load; a list of StoredSignalInfo
         (input order) for a batch. Raw loads record the effective decode
-        parameters under raw_format.
+        parameters under raw_format; loads with an asset identity carry
+        the ledger outcome in the measurement block (see StoredSignalInfo).
 
     Raises:
         ValueError: If signal_unit is invalid, the signal data cannot be
@@ -332,7 +393,7 @@ async def load_signal(
                 f"severity verdicts will be refused for these until "
                 f"the unit is declared."
             )
-        return [StoredSignalInfo(**i) for i in infos]
+        return [StoredSignalInfo(**i) for i in _record_in_ledger(repo, infos)]
 
     info = repo.load_signal(
         filepath,
@@ -358,7 +419,7 @@ async def load_signal(
             "refused until the unit is declared "
             "(load_signal(signal_unit=...) or metadata 'signal_unit')."
         )
-    return StoredSignalInfo(**info)
+    return StoredSignalInfo(**_record_in_ledger(repo, [info])[0])
 
 
 async def get_signal_info(ctx: Context, signal_id: str) -> StoredSignalInfo:
@@ -391,6 +452,10 @@ async def clear_signals(
     ctx: Context, signal_id: Optional[str] = None
 ) -> dict[str, Any]:
     """Remove one signal — or all signals — from the in-memory repository.
+
+    Memory only; the asset ledger on disk is untouched. A measurement
+    recorded at load time stays in its asset's history, and re-loading the
+    file later is recognized as the same measurement.
 
     Args:
         ctx: MCP context. Unused — see this module's docstring on logging.

@@ -49,6 +49,29 @@ Fixture history:
   (sample_format, byte_order, n_channels, channel_index, header_offset,
   scale_factor), all defaulting to null. No other tool's schema changed;
   counts unchanged (34/0/3).
+- Asset ledger U9 (2026-09-10): regenerated intentionally — ADDITIVE.
+  diagnose_vibration: rpm, machine_group, support_type optional (point
+  context defaults). The three parameters now default to null and are
+  resolved explicit argument > the measurement's own declaration (rpm
+  from the companion's "measurement" object) > the measurement point's
+  current declaration in the asset ledger (nominal_rpm, bearing_id,
+  machine_group, support_type) > the historical defaults 2 / rigid; an
+  rpm with no source is refused. Only signal_id stays required. No other
+  tool's schema changed; counts unchanged (34/0/3) — the four ledger
+  tools of U7 regenerate this fixture once more.
+- Asset ledger U7 (2026-09-11): regenerated intentionally — ADDITIVE.
+  Four tools join the surface (34 -> 38 tools; resources/prompts
+  unchanged at 0/3): declare_measurement_point (versioned point context:
+  bearing_id or fault_orders, machine_group, support_type,
+  machine_power_kw, expected_signal_unit, expected_sensor_id,
+  expected_direction, nominal_rpm, declared_by, note),
+  declare_healthy_baseline (measurement_ids, declared_by, note),
+  get_asset_history (asset_id=None is the index; measurement_point_id,
+  max_measurements) and assess_asset_change (acquired_since,
+  acquired_until, last_k, reference_measurements, reprocess). All four
+  carry ctx (context_kwarg pinned) and are declared in
+  tests/test_surface_parity.py POST_U9_ADDITIONS. No existing tool's
+  schema changed.
 
 Snapshot recipe (run from the repo root):
     python -c "from tests.test_tool_inventory import build_inventory, \\

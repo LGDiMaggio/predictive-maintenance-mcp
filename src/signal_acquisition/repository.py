@@ -33,6 +33,7 @@ from .loaders import (
     load_raw_binary,
     load_signal_data,
 )
+from .measurement import MEASUREMENT_KEY, build_measurement_identity
 
 logger = logging.getLogger(__name__)
 
@@ -180,15 +181,21 @@ class SignalRepository:
 
         Returns:
             Metadata dict compatible with StoredSignalInfo (raw loads
-            record the effective decode parameters under ``raw_format``).
+            record the effective decode parameters under ``raw_format``;
+            a companion ``"measurement"`` object is validated and stored,
+            normalized, under ``measurement``; an unusable companion is
+            reported under ``companion_warning``).
 
         Raises:
             FileNotFoundError: If signal file does not exist.
             ValueError: If signal data cannot be loaded, if signal_unit is
                 not one of the valid units, if signal_id collides with
                 an existing entry and overwrite is False, if a required
-                raw declaration is missing, or if raw parameters are
-                declared for a self-describing format.
+                raw declaration is missing, if raw parameters are
+                declared for a self-describing format, or if the
+                companion's ``"measurement"`` object is invalid (one
+                message listing every problem; see
+                :mod:`.measurement`).
         """
         declared_unit = self._validate_unit(signal_unit)
         explicit_raw = _explicit_raw_params(
@@ -707,6 +714,24 @@ class SignalRepository:
             )
             signal_id = self._default_signal_id(fp, channel)
 
+        # Declared asset identity (the companion "measurement" object). The
+        # pure validation runs BEFORE the array is read, so an invalid
+        # declaration anywhere in a batch aborts it before any array is
+        # loaded; the identity hash binds the declaration to the file bytes
+        # plus the EFFECTIVE decoded channel (0 for self-describing formats).
+        measurement = None
+        companion_source = meta.get("source_metadata", {})
+        if MEASUREMENT_KEY in companion_source:
+            effective_channel = (
+                raw_params["channel_index"] if raw_params is not None else 0
+            )
+            measurement = build_measurement_identity(
+                companion_source,
+                self._companion_filename(fp),
+                signal_path=fp,
+                channel_index=int(effective_channel),
+            )
+
         data = self._load_array(fp, raw_params)
         if data is None:
             raise ValueError(
@@ -741,6 +766,7 @@ class SignalRepository:
             "data": data,
             "meta": meta,
             "raw": raw_params,
+            "measurement": measurement,
         }
 
     def _insert_entry(self, entry: dict, overwrite: bool) -> dict:
@@ -812,6 +838,13 @@ class SignalRepository:
             # explicit > companion > default merge); None for
             # self-describing formats.
             "raw_format": entry.get("raw"),
+            # Normalized identity from the companion "measurement" object
+            # (authoritative over the verbatim copy in source_metadata);
+            # None when no object was declared.
+            "measurement": entry.get("measurement"),
+            # Why a present companion was NOT honored (unparsable or not an
+            # object); None when it was read fine or does not exist.
+            "companion_warning": meta.get("companion_warning"),
         }
         self._store[signal_id] = {"array": data, "info": info}
         self._current_memory += size_bytes
@@ -874,34 +907,67 @@ class SignalRepository:
             self._remove_entry(oldest_id)
 
     def _read_metadata(self, filepath: Path) -> dict:
-        """Read companion _metadata.json if it exists.
+        """Read the companion ``<stem>_metadata.json`` if it exists.
 
-        The metadata 'signal_unit' is normalized to the canonical vocabulary;
-        an unrecognized value is treated as undeclared (None) with a warning —
-        it is never coerced to a default unit. The COMPLETE raw metadata dict
-        (rpm, shaft_speed, reference frequencies, ...) is preserved under
-        'source_metadata' so get_signal_info can expose it.
+        Returns ``{}`` when there is no companion. A companion that exists
+        but cannot be used (not valid JSON, not a JSON object, unreadable)
+        is reported as ``{"companion_warning": <message naming the file>}``
+        so the load proceeds EXACTLY as a companion-less load while the
+        client can see why its declarations were not honored (a log line
+        never reaches it); the message distinguishes the cases. A usable
+        companion yields ``sampling_rate``, the ``signal_unit`` normalized
+        to the canonical vocabulary (an unrecognized value is treated as
+        undeclared with a warning, never coerced to a default unit), the
+        COMPLETE dict (rpm, shaft_speed, reference frequencies, ...) under
+        ``source_metadata`` so get_signal_info can expose it, and
+        ``companion_warning: None``.
         """
         meta_path = filepath.parent / f"{filepath.stem}_metadata.json"
-        if meta_path.exists():
-            try:
-                with open(meta_path, "r", encoding="utf-8") as f:
-                    meta = json.load(f)
-                raw_unit = meta.get("signal_unit")
-                unit = normalize_signal_unit(raw_unit)
-                if raw_unit is not None and unit is None:
-                    logger.warning(
-                        f"Unrecognized signal_unit '{raw_unit}' in {meta_path.name} — "
-                        f"treating as undeclared; valid units: {list(VALID_SIGNAL_UNITS)}"
-                    )
-                return {
-                    "sampling_rate": meta.get("sampling_rate"),
-                    "signal_unit": unit,
-                    "source_metadata": meta if isinstance(meta, dict) else {},
-                }
-            except Exception as e:
-                logger.warning(f"Error reading metadata {meta_path}: {e}")
-        return {}
+        if not meta_path.exists():
+            return {}
+        try:
+            with open(meta_path, "r", encoding="utf-8") as f:
+                meta = json.load(f)
+        except ValueError as e:  # JSONDecodeError, UnicodeDecodeError
+            warning = (
+                f"Companion {meta_path.name} is not valid JSON ({e}); the "
+                f"file was loaded as if it had no companion. Fix the JSON, or "
+                f"pass sampling_rate/signal_unit explicitly."
+            )
+            logger.warning(warning)
+            return {"companion_warning": warning}
+        except OSError as e:
+            warning = (
+                f"Companion {meta_path.name} could not be read "
+                f"({e.strerror or e}); the file was loaded as if it had no "
+                f"companion. Check the file's permissions, or pass "
+                f"sampling_rate/signal_unit explicitly."
+            )
+            logger.warning(warning)
+            return {"companion_warning": warning}
+        if not isinstance(meta, dict):
+            warning = (
+                f"Companion {meta_path.name} is not a JSON object (top-level "
+                f"{type(meta).__name__}); the file was loaded as if it had no "
+                f"companion. Make the top level an object with sampling_rate, "
+                f'signal_unit and, optionally, a "measurement" object.'
+            )
+            logger.warning(warning)
+            return {"companion_warning": warning}
+
+        raw_unit = meta.get("signal_unit")
+        unit = normalize_signal_unit(raw_unit)
+        if raw_unit is not None and unit is None:
+            logger.warning(
+                f"Unrecognized signal_unit '{raw_unit}' in {meta_path.name} — "
+                f"treating as undeclared; valid units: {list(VALID_SIGNAL_UNITS)}"
+            )
+        return {
+            "sampling_rate": meta.get("sampling_rate"),
+            "signal_unit": unit,
+            "source_metadata": meta,
+            "companion_warning": None,
+        }
 
     def _load_direct(self, filepath: Path) -> Optional[np.ndarray]:
         """Fallback loader for absolute paths outside DATA_DIR."""

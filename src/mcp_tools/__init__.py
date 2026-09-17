@@ -7,6 +7,7 @@ from . import report_tools  # noqa: F401
 from . import prompts  # noqa: F401
 from . import prognostics_tools  # noqa: F401
 from . import decision_support_tools  # noqa: F401
+from . import asset_tools  # noqa: F401
 
 
 def register_all(mcp):
@@ -18,3 +19,4 @@ def register_all(mcp):
     prompts.register(mcp)
     prognostics_tools.register(mcp)
     decision_support_tools.register(mcp)
+    asset_tools.register(mcp)

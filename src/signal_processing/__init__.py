@@ -1,14 +1,17 @@
 """
 ISO 13374 Block 2 — Signal Processing.
 
-Spectral analysis: PSD (Welch), STFT spectrogram, envelope spectrum.
-Feature extraction: time-domain features, segmentation.
+Spectral analysis: amplitude spectrum, PSD (Welch), STFT spectrogram,
+envelope spectrum. Feature extraction: time-domain features, segmentation.
 """
 
 from .spectral import (  # noqa: F401
+    amplitude_near_frequency,
+    amplitude_spectrum,
     compute_psd,
     compute_stft_spectrogram,
     compute_envelope_spectrum,
+    select_leading_segment,
     validate_bandpass_band,
 )
 

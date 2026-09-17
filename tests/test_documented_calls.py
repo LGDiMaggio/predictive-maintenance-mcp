@@ -31,6 +31,14 @@ resource as a tool). This guard makes silent drift impossible:
   vocabularies (set-equality, per table cell) and documented defaults (in
   the 'Default' cell specifically) — both directions, so the guide can
   neither document a parameter the code dropped nor omit one it gained.
+- The guide's SECOND marked table (asset ledger, U11), the fields of the
+  companion's ``measurement`` object, is guarded the same way against the
+  leaf module ``signal_acquisition/measurement.py``: name parity both ways
+  (required = ``REQUIRED_MEASUREMENT_FIELDS``, optional = the rest of
+  ``MEASUREMENT_FIELDS``), the 'Required' cell of every row, the direction
+  vocabulary and aliases, and the id / free-text length caps. The
+  companion-file paragraph that enumerates the honored keys must name the
+  ``measurement`` object next to every raw declaration parameter.
 
 If this test fails after an intentional signature change, fix the docs, not
 the guard: the docs are a public API surface.
@@ -49,6 +57,17 @@ from predictive_maintenance_mcp.signal_acquisition.loaders import (
     RAW_PARAM_DEFAULTS,
     VALID_BYTE_ORDERS,
     VALID_SAMPLE_FORMATS,
+)
+from predictive_maintenance_mcp.signal_acquisition.measurement import (
+    DIRECTION_ALIASES,
+    FREE_TEXT_FIELDS,
+    MAX_FREE_TEXT_CHARS,
+    MAX_LEDGER_ID_CHARS,
+    MEASUREMENT_FIELD_DEFAULTS,
+    MEASUREMENT_FIELDS,
+    MEASUREMENT_KEY,
+    REQUIRED_MEASUREMENT_FIELDS,
+    VALID_DIRECTIONS,
 )
 from predictive_maintenance_mcp.signal_acquisition.repository import VALID_SIGNAL_UNITS
 
@@ -456,8 +475,10 @@ def _row_cells(row: str) -> list[str]:
     return [c.strip() for c in row.strip().strip("|").split("|")]
 
 
-def adapter_declaration_rows(text: str) -> Optional[dict[str, list[str]]]:
-    """Parse ``{parameter name: [full table row, ...]}`` from the marked table.
+def _marked_table_rows(
+    text: str, start_marker: str, end_marker: str
+) -> Optional[dict[str, list[str]]]:
+    """Parse ``{name: [full table row, ...]}`` from the table between two markers.
 
     EVERY row for a name is kept (not last-wins) so the caller can flag
     duplicates instead of letting a stale duplicate silently shadow — or
@@ -465,10 +486,12 @@ def adapter_declaration_rows(text: str) -> Optional[dict[str, list[str]]]:
 
     Returns None when the markers are missing or misordered — the caller
     treats that as a violation, so deleting a marker cannot silently
-    disable the guard.
+    disable the guard. Shared by the raw-declaration table and the
+    measurement-object table of the adapter guide, which differ only in
+    their markers and in the code surface they are checked against.
     """
-    start = text.find(ADAPTER_DECL_START)
-    end = text.find(ADAPTER_DECL_END)
+    start = text.find(start_marker)
+    end = text.find(end_marker)
     if start == -1 or end == -1 or end < start:
         return None
     rows: dict[str, list[str]] = {}
@@ -479,17 +502,63 @@ def adapter_declaration_rows(text: str) -> Optional[dict[str, list[str]]]:
     return rows
 
 
-def _adapter_table_header(text: str) -> Optional[list[str]]:
-    """Lowercased header cells of the marked declaration table (the first
-    ``|``-row between the markers), or None when it cannot be found."""
-    start = text.find(ADAPTER_DECL_START)
-    end = text.find(ADAPTER_DECL_END)
+def _marked_table_header(
+    text: str, start_marker: str, end_marker: str
+) -> Optional[list[str]]:
+    """Lowercased header cells of the marked table (the first ``|``-row
+    between the markers), or None when it cannot be found."""
+    start = text.find(start_marker)
+    end = text.find(end_marker)
     if start == -1 or end == -1 or end < start:
         return None
     for line in text[start:end].splitlines():
         if line.lstrip().startswith("|"):
             return [c.lower() for c in _row_cells(line)]
     return None
+
+
+def _resolve_columns(
+    header: Optional[list[str]], labels: tuple[str, ...], table: str
+) -> tuple[dict[str, int], list[str]]:
+    """``{label: column index}`` for the *labels* the cell-anchored checks
+    read, plus one violation per label the header of *table* lacks."""
+    columns: dict[str, int] = {}
+    violations: list[str] = []
+    if header is None:
+        violations.append(
+            f"docs/ADAPTER_GUIDE.md: no header row found in the {table} table"
+        )
+        return columns, violations
+    for label in labels:
+        if label in header:
+            columns[label] = header.index(label)
+        else:
+            violations.append(
+                f"docs/ADAPTER_GUIDE.md: the {table} table header lacks a "
+                f"'{label}' column: the cell-anchored checks need it"
+            )
+    return columns, violations
+
+
+def _table_cell(
+    rows: dict[str, list[str]], columns: dict[str, int], name: str, label: str
+) -> Optional[str]:
+    """The named column's cell of *name*'s (last) row, or None when the row
+    or column is unavailable (each already reported by the caller)."""
+    if label not in columns or name not in rows:
+        return None
+    cells = _row_cells(rows[name][-1])
+    return cells[columns[label]] if columns[label] < len(cells) else ""
+
+
+def adapter_declaration_rows(text: str) -> Optional[dict[str, list[str]]]:
+    """The raw-declaration table's rows (see :func:`_marked_table_rows`)."""
+    return _marked_table_rows(text, ADAPTER_DECL_START, ADAPTER_DECL_END)
+
+
+def _adapter_table_header(text: str) -> Optional[list[str]]:
+    """Header cells of the raw-declaration table (see :func:`_marked_table_header`)."""
+    return _marked_table_header(text, ADAPTER_DECL_START, ADAPTER_DECL_END)
 
 
 def validate_adapter_declaration_table(text: str) -> list[str]:
@@ -537,31 +606,15 @@ def validate_adapter_declaration_table(text: str) -> list[str]:
             f"exports: {missing}"
         )
 
-    header = _adapter_table_header(text)
-    columns: dict[str, int] = {}
-    if header is None:
-        violations.append(
-            "docs/ADAPTER_GUIDE.md: no header row found in the "
-            "adapter-declaration table"
-        )
-    else:
-        for label in ("scope", "allowed values", "default"):
-            if label in header:
-                columns[label] = header.index(label)
-            else:
-                violations.append(
-                    f"docs/ADAPTER_GUIDE.md: the declaration table header "
-                    f"lacks a '{label}' column — the cell-anchored checks "
-                    f"need it"
-                )
+    columns, header_violations = _resolve_columns(
+        _adapter_table_header(text),
+        ("scope", "allowed values", "default"),
+        "adapter-declaration",
+    )
+    violations.extend(header_violations)
 
     def cell(name: str, label: str) -> Optional[str]:
-        """The named column's cell of *name*'s (last) row, or None when the
-        row or column is unavailable (each already reported above)."""
-        if label not in columns or name not in rows:
-            return None
-        cells = _row_cells(rows[name][-1])
-        return cells[columns[label]] if columns[label] < len(cells) else ""
+        return _table_cell(rows, columns, name, label)
 
     vocabularies = {
         "sample_format": VALID_SAMPLE_FORMATS,
@@ -747,6 +800,284 @@ class TestAdapterGuideDeclarationParams:
         )
         violations = validate_adapter_declaration_table(mutated)
         assert any("marker" in v for v in violations), violations
+
+
+# ---------------------------------------------------------------------------
+# docs/ADAPTER_GUIDE.md: the documented measurement contract cannot drift
+# ---------------------------------------------------------------------------
+
+#: Markers delimiting the guide's table of the companion's ``measurement``
+#: object. Distinct from the raw-declaration markers: the two tables are
+#: checked against two different code surfaces.
+MEASUREMENT_DECL_START = "<!-- measurement-declaration:start -->"
+MEASUREMENT_DECL_END = "<!-- measurement-declaration:end -->"
+
+#: The companion-file paragraph that enumerates the honored keys: from the
+#: line starting with "Honored keys" to the next blank line.
+HONORED_KEYS_RE = re.compile(r"^Honored keys\b.*?(?=\n[ \t]*\n|\Z)", re.M | re.S)
+
+
+def expected_measurement_fields() -> dict[str, bool]:
+    """``{field: required}`` of the companion's ``measurement`` object,
+    derived from the leaf module, never a hand-maintained copy: the
+    required fields are ``REQUIRED_MEASUREMENT_FIELDS`` and every other
+    member of ``MEASUREMENT_FIELDS`` is optional (it has a default)."""
+    return {name: name in REQUIRED_MEASUREMENT_FIELDS for name in MEASUREMENT_FIELDS}
+
+
+def validate_measurement_declaration_table(text: str) -> list[str]:
+    """One violation string per way the guide's measurement table can drift.
+
+    Cell-anchored like :func:`validate_adapter_declaration_table`, every
+    check derived from ``signal_acquisition/measurement.py``:
+    - name parity BOTH ways against :func:`expected_measurement_fields`,
+      with duplicate rows reported by name;
+    - the 'Required' cell reads exactly 'yes' for a required field and
+      'no' for an optional one, so a flipped flag and hedged wording both
+      go red;
+    - the 'Notes' cell of ``direction`` shows every value of
+      ``VALID_DIRECTIONS`` and every alias of ``DIRECTION_ALIASES``,
+      backticked;
+    - the 'Notes' cells of the two ids state ``MAX_LEDGER_ID_CHARS`` and
+      those of the free-text fields state ``MAX_FREE_TEXT_CHARS``.
+    """
+    rows = _marked_table_rows(text, MEASUREMENT_DECL_START, MEASUREMENT_DECL_END)
+    if rows is None:
+        return [
+            "docs/ADAPTER_GUIDE.md: measurement-declaration markers missing or "
+            f"misordered: the measurement table must sit between "
+            f"'{MEASUREMENT_DECL_START}' and '{MEASUREMENT_DECL_END}'"
+        ]
+    violations: list[str] = []
+    duplicated = sorted(name for name, lines in rows.items() if len(lines) > 1)
+    if duplicated:
+        violations.append(
+            f"docs/ADAPTER_GUIDE.md: duplicate measurement row(s) for "
+            f"{duplicated}: each field must have exactly one row"
+        )
+    expected = expected_measurement_fields()
+    phantom = sorted(set(rows) - set(expected))
+    missing = sorted(set(expected) - set(rows))
+    if phantom:
+        violations.append(
+            f"docs/ADAPTER_GUIDE.md documents measurement field(s) the "
+            f"contract does not accept: {phantom}"
+        )
+    if missing:
+        violations.append(
+            f"docs/ADAPTER_GUIDE.md omits measurement field(s) the contract "
+            f"accepts: {missing}"
+        )
+
+    columns, header_violations = _resolve_columns(
+        _marked_table_header(text, MEASUREMENT_DECL_START, MEASUREMENT_DECL_END),
+        ("field", "required", "type", "notes"),
+        "measurement-declaration",
+    )
+    violations.extend(header_violations)
+
+    def cell(name: str, label: str) -> Optional[str]:
+        return _table_cell(rows, columns, name, label)
+
+    for name, required in expected.items():
+        required_cell = cell(name, "required")
+        if required_cell is None:
+            continue
+        wanted = "yes" if required else "no"
+        if required_cell.replace("*", "").strip().lower() != wanted:
+            violations.append(
+                f"docs/ADAPTER_GUIDE.md: 'Required' cell for '{name}' must read "
+                f"'{wanted}' (the contract {'requires' if required else 'defaults'} "
+                f"it), got {required_cell!r}"
+            )
+
+    direction_notes = cell("direction", "notes")
+    if direction_notes is not None:
+        documented = set(_BACKTICKED_RE.findall(direction_notes))
+        absent = sorted((set(VALID_DIRECTIONS) | set(DIRECTION_ALIASES)) - documented)
+        if absent:
+            violations.append(
+                f"docs/ADAPTER_GUIDE.md: 'Notes' cell for 'direction' is missing "
+                f"vocabulary value(s) or alias(es) {absent} (each must appear "
+                f"backticked)"
+            )
+
+    for name, cap in (
+        ("asset_id", MAX_LEDGER_ID_CHARS),
+        ("measurement_point_id", MAX_LEDGER_ID_CHARS),
+        *((field, MAX_FREE_TEXT_CHARS) for field in FREE_TEXT_FIELDS),
+    ):
+        notes = cell(name, "notes")
+        if notes is not None and not re.search(rf"\b{cap}\b", notes):
+            violations.append(
+                f"docs/ADAPTER_GUIDE.md: 'Notes' cell for '{name}' does not state "
+                f"its length cap of {cap} characters"
+            )
+    return violations
+
+
+def validate_honored_keys_paragraph(text: str) -> list[str]:
+    """The companion-file paragraph that enumerates the honored keys must
+    name every raw declaration parameter the code exports AND the
+    ``measurement`` object (the pre-ledger wording listed only the raw
+    parameters, which would misdocument the object as a free-form key)."""
+    m = HONORED_KEYS_RE.search(text)
+    if m is None:
+        return [
+            "docs/ADAPTER_GUIDE.md: the companion-file section must keep a "
+            "paragraph starting with 'Honored keys' that enumerates the keys "
+            "the loader honors"
+        ]
+    documented = set(_BACKTICKED_RE.findall(m.group(0)))
+    violations: list[str] = []
+    missing = sorted(expected_adapter_declaration_params() - documented)
+    if missing:
+        violations.append(
+            f"docs/ADAPTER_GUIDE.md: the 'Honored keys' paragraph omits "
+            f"declaration parameter(s) {missing}"
+        )
+    if MEASUREMENT_KEY not in documented:
+        violations.append(
+            f"docs/ADAPTER_GUIDE.md: the 'Honored keys' paragraph must name the "
+            f"`{MEASUREMENT_KEY}` object as an honored companion key"
+        )
+    return violations
+
+
+def _measurement_row(text: str, name: str) -> str:
+    """The (last) row of *name* in the guide's measurement table."""
+    rows = _marked_table_rows(text, MEASUREMENT_DECL_START, MEASUREMENT_DECL_END)
+    assert rows is not None and name in rows, f"no measurement row for {name!r}"
+    return rows[name][-1]
+
+
+class TestAdapterGuideMeasurementFields:
+    def test_expected_fields_tie_the_three_exports_together(self):
+        """The derived {field: required} map must agree with the leaf
+        module's three exports, so a field added to one tuple but not the
+        other goes red here rather than passing vacuously."""
+        expected = expected_measurement_fields()
+        assert set(expected) == set(MEASUREMENT_FIELDS)
+        assert {n for n, r in expected.items() if r} == set(REQUIRED_MEASUREMENT_FIELDS)
+        assert {n for n, r in expected.items() if not r} == set(
+            MEASUREMENT_FIELD_DEFAULTS
+        )
+
+    def test_guide_table_matches_the_code(self):
+        violations = validate_measurement_declaration_table(
+            ADAPTER_GUIDE.read_text(encoding="utf-8")
+        )
+        assert violations == [], "\n".join(violations)
+
+    def test_parity_check_actually_parses_rows(self):
+        """Anti-rot: assert the parse directly so a table-format change
+        fails by name, not as mass 'omits' violations."""
+        rows = _marked_table_rows(
+            ADAPTER_GUIDE.read_text(encoding="utf-8"),
+            MEASUREMENT_DECL_START,
+            MEASUREMENT_DECL_END,
+        )
+        assert rows is not None, "measurement-declaration markers not found"
+        assert len(rows) >= len(MEASUREMENT_FIELDS), (
+            f"only {len(rows)} measurement rows parsed: the table format "
+            f"escaped TABLE_ROW_NAME_RE"
+        )
+
+    def test_honored_keys_paragraph_names_the_measurement_object(self):
+        violations = validate_honored_keys_paragraph(
+            ADAPTER_GUIDE.read_text(encoding="utf-8")
+        )
+        assert violations == [], "\n".join(violations)
+
+    # --- mutation tests: the checker really goes red on drifted text ---
+
+    def test_mutation_removed_row_goes_red(self):
+        """A field the contract accepts but the guide dropped is flagged."""
+        text = ADAPTER_GUIDE.read_text(encoding="utf-8")
+        mutated = text.replace(_measurement_row(text, "load"), "")
+        violations = validate_measurement_declaration_table(mutated)
+        assert any("load" in v and "omits" in v for v in violations), violations
+
+    def test_mutation_phantom_row_goes_red(self):
+        """A documented field the contract does not accept is flagged."""
+        mutated = ADAPTER_GUIDE.read_text(encoding="utf-8").replace(
+            MEASUREMENT_DECL_END,
+            "| `shaft_speed` | no | number | Shaft frequency in Hz |\n\n"
+            + MEASUREMENT_DECL_END,
+        )
+        violations = validate_measurement_declaration_table(mutated)
+        assert any("shaft_speed" in v for v in violations), violations
+
+    def test_mutation_renamed_field_goes_red(self):
+        """A renamed field is flagged in BOTH directions."""
+        text = ADAPTER_GUIDE.read_text(encoding="utf-8")
+        row = _measurement_row(text, "sensor_id")
+        mutated = text.replace(row, row.replace("`sensor_id`", "`sensor`", 1))
+        violations = validate_measurement_declaration_table(mutated)
+        assert any("'sensor'" in v for v in violations), violations
+        assert any("sensor_id" in v for v in violations), violations
+
+    @pytest.mark.parametrize(
+        "name, before, after",
+        [("rpm", "| no |", "| yes |"), ("asset_id", "| yes |", "| no |")],
+    )
+    def test_mutation_flipped_required_goes_red(self, name, before, after):
+        """An optional field marked required, and a required one marked
+        optional, are both flagged by name."""
+        text = ADAPTER_GUIDE.read_text(encoding="utf-8")
+        row = _measurement_row(text, name)
+        assert before in row, row
+        mutated = text.replace(row, row.replace(before, after, 1))
+        violations = validate_measurement_declaration_table(mutated)
+        assert any(f"'{name}'" in v and "Required" in v for v in violations), violations
+
+    def test_mutation_dropped_direction_value_goes_red(self):
+        """A direction missing from the documented vocabulary is flagged."""
+        text = ADAPTER_GUIDE.read_text(encoding="utf-8")
+        row = _measurement_row(text, "direction")
+        mutated = text.replace(row, row.replace("`axial`", "`radial`", 1))
+        violations = validate_measurement_declaration_table(mutated)
+        assert any("axial" in v for v in violations), violations
+
+    def test_mutation_removed_marker_goes_red(self):
+        """Deleting a marker cannot silently disable the guard."""
+        mutated = ADAPTER_GUIDE.read_text(encoding="utf-8").replace(
+            MEASUREMENT_DECL_START, ""
+        )
+        violations = validate_measurement_declaration_table(mutated)
+        assert any("marker" in v for v in violations), violations
+
+    def test_mutation_old_honored_keys_sentence_goes_red(self):
+        """Restoring the pre-ledger sentence (raw parameters only) is
+        flagged: the paragraph must name the measurement object."""
+        old_sentence = (
+            "Honored keys are exactly the declaration parameters above: "
+            "`sampling_rate`, `signal_unit`, `sample_format`, `byte_order`, "
+            "`n_channels`, `channel_index`, `header_offset`, and `scale_factor`."
+        )
+        text = ADAPTER_GUIDE.read_text(encoding="utf-8")
+        assert HONORED_KEYS_RE.search(text) is not None
+        mutated = HONORED_KEYS_RE.sub(lambda _m: old_sentence, text, count=1)
+        violations = validate_honored_keys_paragraph(mutated)
+        assert any(f"`{MEASUREMENT_KEY}`" in v for v in violations), violations
+
+    def test_mutation_honored_keys_dropping_a_parameter_goes_red(self):
+        """A raw declaration parameter the code exports but the paragraph
+        no longer lists is flagged by name."""
+        text = ADAPTER_GUIDE.read_text(encoding="utf-8")
+        paragraph = HONORED_KEYS_RE.search(text)
+        assert paragraph is not None and "`scale_factor`" in paragraph.group(0)
+        mutated = text.replace(
+            paragraph.group(0), paragraph.group(0).replace("`scale_factor`", ""), 1
+        )
+        violations = validate_honored_keys_paragraph(mutated)
+        assert any("scale_factor" in v for v in violations), violations
+
+    def test_mutation_removed_honored_keys_paragraph_goes_red(self):
+        text = ADAPTER_GUIDE.read_text(encoding="utf-8")
+        mutated = HONORED_KEYS_RE.sub("", text, count=1)
+        violations = validate_honored_keys_paragraph(mutated)
+        assert any("Honored keys" in v for v in violations), violations
 
 
 class TestAdapterGuideDocumentedCalls:

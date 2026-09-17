@@ -2,7 +2,7 @@
 
 The complete endpoint reference for the Predictive Maintenance MCP server: every registered MCP tool and guided prompt, grouped by category.
 
-**Total: 37 MCP endpoints — 34 tools and 3 prompts.**
+**Total: 41 MCP endpoints, 38 tools and 3 prompts.**
 
 ## Signal Lifecycle (5)
 
@@ -72,6 +72,17 @@ The complete endpoint reference for the Predictive Maintenance MCP server: every
 | Tool | Description |
 |------|-------------|
 | `generate_maintenance_recommendations` | Maintenance recommendations from severity zone + canonical fault types |
+
+## Asset Health Ledger (4)
+
+Measurements whose companion declares a `measurement` object (asset, point, acquisition instant) are recorded in a local append-only ledger at load time, with a health snapshot each. These tools declare the context of a point, declare its healthy reference, read the recorded history and assess the change of a point across acquisitions. Nothing leaves the machine.
+
+| Tool | Description |
+|------|-------------|
+| `declare_measurement_point` | Versioned declaration of a point's context: bearing or fault orders, nominal speed, ISO 20816-3 group and support, expected unit, sensor and direction; a re-declaration reports the changed keys and how many recorded measurements need re-processing. Example: `declare_measurement_point(asset_id="P-101", measurement_point_id="motor_de_h", bearing_id="6205", nominal_rpm=1800, machine_group=2, support_type="rigid", expected_signal_unit="g", expected_direction="horizontal")` |
+| `declare_healthy_baseline` | Declares which recorded measurements are the healthy reference of a point, attributed to the declarer; an empty list withdraws it. Example: `declare_healthy_baseline(asset_id="P-101", measurement_point_id="motor_de_h", measurement_ids=["3f2a9c1d8e7b6a50", "b81c2d3e4f5a6978", "c0ffee1234567890"], declared_by="vibration-analyst", note="after bearing replacement")` |
+| `get_asset_history` | Index of the recorded assets (no arguments) or the history of one asset read from its ledger alone: measurements newest first with an indicator preview, point declarations, baselines, integrity. Example: `get_asset_history(asset_id="P-101", max_measurements=20)` |
+| `assess_asset_change` | Change of one point against its reference (declared baseline, or the first comparable acquisitions with health not declared): band per indicator, classification with its criterion, bearing evidence over the last K acquisitions, at most one suggested verification; `reprocess=True` recomputes stale snapshots, at most 10 per call. Example: `assess_asset_change(asset_id="P-101", measurement_point_id="motor_de_h", last_k=5)` |
 
 ## Guided Workflows (3 prompts)
 

@@ -1,0 +1,440 @@
+{
+  "1": {
+    "cases": {
+      "catalog_bearing_group2_rigid": {
+        "declaration": {
+          "direction": "horizontal",
+          "raw_format": null,
+          "rpm": 1800.0,
+          "sampling_rate": 10000.0,
+          "signal_unit": "g"
+        },
+        "fs": 10000.0,
+        "point": {
+          "bearing_id": "6205",
+          "machine_group": 2,
+          "support_type": "rigid"
+        },
+        "signal_id": "golden_bearing",
+        "snapshot": {
+          "bearing": {
+            "bearing_id": "6205",
+            "catalog_source": "CWRU Bearing Data Center, drive-end bearing SKF 6205-2RS JEM (https://engineering.case.edu/bearingdatacenter/bearing-information): ID 0.9843 in, OD 2.0472 in, thickness 0.5906 in, ball diameter 0.3126 in, pitch diameter 1.537 in; published defect frequency factors BPFO=3.5848x, BPFI=5.4152x, FTF=0.39828x shaft speed",
+            "labels": {
+              "BPFI": {
+                "detected": false,
+                "deviation_pct": null,
+                "envelope_amplitude": 7.532374608011829,
+                "envelope_peak_hz": 159.0,
+                "evidence_strength": "low",
+                "expected_hz": 162.46,
+                "harmonics_detected": [
+                  {
+                    "detected_hz": 323.0,
+                    "expected_hz": 324.92,
+                    "harmonic": 2,
+                    "magnitude": 9.82357
+                  }
+                ],
+                "magnitude": null
+              },
+              "BPFO": {
+                "detected": true,
+                "deviation_pct": 0.43,
+                "envelope_amplitude": 1734.2108118334522,
+                "envelope_peak_hz": 108.0,
+                "evidence_strength": "high",
+                "expected_hz": 107.54,
+                "harmonics_detected": [
+                  {
+                    "detected_hz": 215.0,
+                    "expected_hz": 215.08,
+                    "harmonic": 2,
+                    "magnitude": 741.12761
+                  },
+                  {
+                    "detected_hz": 323.0,
+                    "expected_hz": 322.62,
+                    "harmonic": 3,
+                    "magnitude": 9.82357
+                  },
+                  {
+                    "detected_hz": 431.0,
+                    "expected_hz": 430.16,
+                    "harmonic": 4,
+                    "magnitude": 9.555077
+                  }
+                ],
+                "magnitude": 1734.210812
+              },
+              "BSF": {
+                "detected": true,
+                "deviation_pct": -3.82,
+                "envelope_amplitude": 10.32659049235357,
+                "envelope_peak_hz": 68.0,
+                "evidence_strength": "moderate",
+                "expected_hz": 70.7,
+                "harmonics_detected": [
+                  {
+                    "detected_hz": 215.0,
+                    "expected_hz": 212.1,
+                    "harmonic": 3,
+                    "magnitude": 741.12761
+                  }
+                ],
+                "magnitude": 10.32659
+              },
+              "FTF": {
+                "detected": false,
+                "deviation_pct": null,
+                "envelope_amplitude": 5.479949457274106,
+                "envelope_peak_hz": 12.0,
+                "evidence_strength": "none",
+                "expected_hz": 11.95,
+                "harmonics_detected": [],
+                "magnitude": null
+              }
+            },
+            "shaft_hz": 30.0,
+            "source": "catalog"
+          },
+          "context": {
+            "bearing_id": "6205",
+            "direction": "horizontal",
+            "fault_orders": null,
+            "machine_group": 2,
+            "machine_power_kw": null,
+            "rpm": 1800.0,
+            "rpm_source": "measurement",
+            "signal_unit": "g",
+            "support_type": "rigid"
+          },
+          "context_digest": "7c1c451e3c05dbd3",
+          "indicators": {
+            "crest_factor": 2.395681487215255,
+            "kurtosis": -0.2426319307538809,
+            "peak": 1.98949090603737,
+            "rms": 0.8304488374829653,
+            "unit": "g"
+          },
+          "iso": {
+            "boundaries": {
+              "AB": 1.4,
+              "BC": 2.8,
+              "CD": 4.5
+            },
+            "direction": "horizontal",
+            "frequency_range": "10-1000 Hz (speed >= 600 RPM)",
+            "machine_group": 2,
+            "machine_power_kw": null,
+            "operating_speed_rpm": 1800.0,
+            "support_type": "rigid",
+            "velocity_rms_mm_s": 0.3201,
+            "zone": "A"
+          },
+          "missing": {},
+          "one_x": {
+            "amplitude": 0.0008534433096197532,
+            "bins_searched": 3,
+            "frequency_hz": 30.0,
+            "target_hz": 30.0,
+            "tolerance_pct": 5.0,
+            "unit": "g"
+          },
+          "processing": {
+            "algorithm_version": 1,
+            "effective": {
+              "envelope_band_hz": [
+                500.0,
+                4999.0
+              ],
+              "fft_segment_samples": 10000,
+              "num_samples": 10000,
+              "sampling_rate": 10000.0
+            },
+            "params": {
+              "envelope_band_policy": "default",
+              "fft_segment_s": 1.0,
+              "num_harmonics": 3,
+              "one_x_tolerance_pct": 5.0,
+              "tolerance_pct": 5.0
+            },
+            "processing_id": "health_snapshot/1+09700c336464a0ff",
+            "provenance": {
+              "numpy_version": "0.0.0",
+              "pipeline_version": "0.0.0",
+              "platform": "golden-fixture",
+              "python_version": "0.0.0",
+              "scipy_version": "0.0.0"
+            }
+          }
+        }
+      },
+      "fault_orders_group1_flexible": {
+        "declaration": {
+          "direction": "vertical",
+          "raw_format": null,
+          "rpm": null,
+          "sampling_rate": 10000.0,
+          "signal_unit": "g"
+        },
+        "fs": 10000.0,
+        "point": {
+          "fault_orders": {
+            "BPFI": 5.415333333333334,
+            "BPFO": 3.5846666666666667,
+            "BSF": 2.356666666666667,
+            "FTF": 0.3983333333333333
+          },
+          "machine_group": 1,
+          "nominal_rpm": 1800.0,
+          "support_type": "flexible"
+        },
+        "signal_id": "golden_bearing",
+        "snapshot": {
+          "bearing": {
+            "bearing_id": null,
+            "catalog_source": null,
+            "labels": {
+              "BPFI": {
+                "detected": false,
+                "deviation_pct": null,
+                "envelope_amplitude": 7.532374608011829,
+                "envelope_peak_hz": 159.0,
+                "evidence_strength": "low",
+                "expected_hz": 162.46,
+                "harmonics_detected": [
+                  {
+                    "detected_hz": 323.0,
+                    "expected_hz": 324.92,
+                    "harmonic": 2,
+                    "magnitude": 9.82357
+                  }
+                ],
+                "magnitude": null
+              },
+              "BPFO": {
+                "detected": true,
+                "deviation_pct": 0.43,
+                "envelope_amplitude": 1734.2108118334522,
+                "envelope_peak_hz": 108.0,
+                "evidence_strength": "high",
+                "expected_hz": 107.54,
+                "harmonics_detected": [
+                  {
+                    "detected_hz": 215.0,
+                    "expected_hz": 215.08,
+                    "harmonic": 2,
+                    "magnitude": 741.12761
+                  },
+                  {
+                    "detected_hz": 323.0,
+                    "expected_hz": 322.62,
+                    "harmonic": 3,
+                    "magnitude": 9.82357
+                  },
+                  {
+                    "detected_hz": 431.0,
+                    "expected_hz": 430.16,
+                    "harmonic": 4,
+                    "magnitude": 9.555077
+                  }
+                ],
+                "magnitude": 1734.210812
+              },
+              "BSF": {
+                "detected": true,
+                "deviation_pct": -3.82,
+                "envelope_amplitude": 10.32659049235357,
+                "envelope_peak_hz": 68.0,
+                "evidence_strength": "moderate",
+                "expected_hz": 70.7,
+                "harmonics_detected": [
+                  {
+                    "detected_hz": 215.0,
+                    "expected_hz": 212.1,
+                    "harmonic": 3,
+                    "magnitude": 741.12761
+                  }
+                ],
+                "magnitude": 10.32659
+              },
+              "FTF": {
+                "detected": false,
+                "deviation_pct": null,
+                "envelope_amplitude": 5.479949457274106,
+                "envelope_peak_hz": 12.0,
+                "evidence_strength": "none",
+                "expected_hz": 11.95,
+                "harmonics_detected": [],
+                "magnitude": null
+              }
+            },
+            "shaft_hz": 30.0,
+            "source": "fault_orders"
+          },
+          "context": {
+            "bearing_id": null,
+            "direction": "vertical",
+            "fault_orders": {
+              "BPFI": 5.415333333333334,
+              "BPFO": 3.5846666666666667,
+              "BSF": 2.356666666666667,
+              "FTF": 0.3983333333333333
+            },
+            "machine_group": 1,
+            "machine_power_kw": null,
+            "rpm": 1800.0,
+            "rpm_source": "point",
+            "signal_unit": "g",
+            "support_type": "flexible"
+          },
+          "context_digest": "eca778045e8108f2",
+          "indicators": {
+            "crest_factor": 2.395681487215255,
+            "kurtosis": -0.2426319307538809,
+            "peak": 1.98949090603737,
+            "rms": 0.8304488374829653,
+            "unit": "g"
+          },
+          "iso": {
+            "boundaries": {
+              "AB": 3.5,
+              "BC": 7.1,
+              "CD": 11.0
+            },
+            "direction": "vertical",
+            "frequency_range": "10-1000 Hz (speed >= 600 RPM)",
+            "machine_group": 1,
+            "machine_power_kw": null,
+            "operating_speed_rpm": 1800.0,
+            "support_type": "flexible",
+            "velocity_rms_mm_s": 0.3201,
+            "zone": "A"
+          },
+          "missing": {},
+          "one_x": {
+            "amplitude": 0.0008534433096197532,
+            "bins_searched": 3,
+            "frequency_hz": 30.0,
+            "target_hz": 30.0,
+            "tolerance_pct": 5.0,
+            "unit": "g"
+          },
+          "processing": {
+            "algorithm_version": 1,
+            "effective": {
+              "envelope_band_hz": [
+                500.0,
+                4999.0
+              ],
+              "fft_segment_samples": 10000,
+              "num_samples": 10000,
+              "sampling_rate": 10000.0
+            },
+            "params": {
+              "envelope_band_policy": "default",
+              "fft_segment_s": 1.0,
+              "num_harmonics": 3,
+              "one_x_tolerance_pct": 5.0,
+              "tolerance_pct": 5.0
+            },
+            "processing_id": "health_snapshot/1+09700c336464a0ff",
+            "provenance": {
+              "numpy_version": "0.0.0",
+              "pipeline_version": "0.0.0",
+              "platform": "golden-fixture",
+              "python_version": "0.0.0",
+              "scipy_version": "0.0.0"
+            }
+          }
+        }
+      },
+      "partial_no_rpm_no_group": {
+        "declaration": {
+          "direction": "horizontal",
+          "raw_format": null,
+          "rpm": null,
+          "sampling_rate": 10000.0,
+          "signal_unit": "g"
+        },
+        "fs": 10000.0,
+        "point": null,
+        "signal_id": "golden_iso",
+        "snapshot": {
+          "bearing": null,
+          "context": {
+            "bearing_id": null,
+            "direction": "horizontal",
+            "fault_orders": null,
+            "machine_group": null,
+            "machine_power_kw": null,
+            "rpm": null,
+            "rpm_source": null,
+            "signal_unit": "g",
+            "support_type": null
+          },
+          "context_digest": "fa9015d6c951c90e",
+          "indicators": {
+            "crest_factor": 1.414213562373095,
+            "kurtosis": -1.4999999999999998,
+            "peak": 0.5,
+            "rms": 0.3535533905932738,
+            "unit": "g"
+          },
+          "iso": null,
+          "missing": {
+            "bearing": {
+              "reason": "rpm not declared: neither the measurement nor the measurement point declares a shaft speed",
+              "remedy": "declare \"rpm\" in the \"measurement\" object of the companion and re-load the file, or declare nominal_rpm for the measurement point via declare_measurement_point and re-process"
+            },
+            "iso": {
+              "reason": "machine group / support type not declared for the measurement point",
+              "remedy": "declare machine_group (1 or 2) and support_type ('rigid' or 'flexible') via declare_measurement_point and re-process"
+            },
+            "one_x": {
+              "reason": "rpm not declared: neither the measurement nor the measurement point declares a shaft speed",
+              "remedy": "declare \"rpm\" in the \"measurement\" object of the companion and re-load the file, or declare nominal_rpm for the measurement point via declare_measurement_point and re-process"
+            }
+          },
+          "one_x": null,
+          "processing": {
+            "algorithm_version": 1,
+            "effective": {
+              "envelope_band_hz": [
+                500.0,
+                4999.0
+              ],
+              "fft_segment_samples": 10000,
+              "num_samples": 20000,
+              "sampling_rate": 10000.0
+            },
+            "params": {
+              "envelope_band_policy": "default",
+              "fft_segment_s": 1.0,
+              "num_harmonics": 3,
+              "one_x_tolerance_pct": 5.0,
+              "tolerance_pct": 5.0
+            },
+            "processing_id": "health_snapshot/1+09700c336464a0ff",
+            "provenance": {
+              "numpy_version": "0.0.0",
+              "pipeline_version": "0.0.0",
+              "platform": "golden-fixture",
+              "python_version": "0.0.0",
+              "scipy_version": "0.0.0"
+            }
+          }
+        }
+      }
+    },
+    "processing_id": "health_snapshot/1+09700c336464a0ff",
+    "provenance_overrides": {
+      "numpy_version": "0.0.0",
+      "pipeline_version": "0.0.0",
+      "platform": "golden-fixture",
+      "python_version": "0.0.0",
+      "scipy_version": "0.0.0"
+    }
+  }
+}

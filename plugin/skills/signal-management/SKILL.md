@@ -44,6 +44,14 @@ Call `load_signal(filepath="real_train/baseline_1.csv", signal_unit="g")`.
   declared unit; units are never guessed from amplitude
 - **overwrite**: re-loading a path whose signal_id already exists is an
   explicit error unless `overwrite=True`
+- **Asset identity**: a companion whose `measurement` object declares
+  `asset_id`, `measurement_point_id` and `acquired_at` (optionally `rpm` in
+  rev/min, `load`, `operating_state`, `sensor_id`, `direction`,
+  `declared_by`) is validated on load, and the measurement is then recorded
+  in the local asset ledger; the returned `measurement` block reports
+  `ledger_status`, `snapshot_status` and the comparability grade against
+  the point. An invalid object is refused with every problem named; a
+  companion without the object loads exactly as before
 
 **Batch loading** (e.g. for model training) — pass a list; the batch is
 atomic and fail-fast (one error names the bad entries, nothing is loaded):
@@ -78,6 +86,19 @@ Call `get_signal_info(signal_id="real_train_baseline_1")` — sampling rate,
 duration, sample count, declared unit, and the full companion metadata
 (source_metadata: rpm, reference frequencies, ...) without loading the array
 into the conversation.
+
+Two further fields of the result matter for the asset history:
+- **measurement**: the normalized identity declared in the companion's
+  `measurement` object (asset_id, measurement_point_id, acquired_at in UTC,
+  timezone_declared, timestamp_suspect, rpm, load, operating_state,
+  sensor_id, direction, declared_by, measurement_id, channel_index,
+  content_sha256, size_bytes); None when the companion declares no such
+  object. This block is authoritative over the verbatim copy in
+  source_metadata
+- **companion_warning**: set when a `_metadata.json` file exists next to the
+  signal but is not valid JSON or not a JSON object; the signal was loaded
+  as if it had no companion. Report it to the user instead of assuming the
+  metadata was read. None when the companion was read or is absent
 
 ### Generate Test Signals
 
@@ -127,6 +148,9 @@ If no data files are available, generate a test signal:
 
 - Signals are cached in memory; they persist for the session but not across
   server restarts (re-load after a restart)
+- The asset ledger on disk (`data/ledger/`, or `PMM_LEDGER_DIR`) is
+  untouched by `clear_signals` and survives restarts; a file re-loaded later
+  is recognized as the same measurement
 - CSV files: the first numeric column is used
 - Raw binary files decode exactly as declared (`get_signal_info` reports the
   effective decode parameters under `raw_format`); a wrong declaration is

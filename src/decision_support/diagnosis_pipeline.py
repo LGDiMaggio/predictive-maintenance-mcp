@@ -17,11 +17,14 @@ from typing import Any, Literal, Optional
 
 import numpy as np
 import pandas as pd
-from scipy.fft import fft, fftfreq
 
 from ..config import MODELS_DIR
 from ..path_safety import resolve_model_paths
-from ..signal_processing.spectral import compute_psd, compute_stft_spectrogram
+from ..signal_processing.spectral import (
+    amplitude_spectrum,
+    compute_psd,
+    compute_stft_spectrogram,
+)
 from ..signal_processing.features import (
     extract_time_domain_features as _extract_time_domain_features,
 )
@@ -50,17 +53,12 @@ def _refused_iso_block(signal_id: str, reason: str, remedy: str) -> dict:
 def _compute_fft_summary(
     signal: np.ndarray, fs: float, num_peaks: int = 10
 ) -> dict[str, Any]:
-    """Compute FFT and return compact summary."""
-    N = len(signal)
-    window = np.hamming(N)
-    windowed = signal * window
+    """Compute FFT and return compact summary.
 
-    fft_vals = fft(windowed)
-    freqs = fftfreq(N, 1 / fs)
-
-    pos = freqs > 0
-    freqs = freqs[pos]
-    mags = 2.0 * np.abs(fft_vals[pos]) / N
+    The spectrum is ``spectral.amplitude_spectrum`` (Hamming, ``2|X|/N``),
+    the same core ``analyze_fft`` and the asset ledger's 1x amplitude use.
+    """
+    freqs, mags = amplitude_spectrum(signal, fs)
 
     peak_idx = int(np.argmax(mags))
     peak_freq = float(freqs[peak_idx])

@@ -46,15 +46,24 @@ U2 (README funnel) widened the guarded surfaces again:
   package ownership by finding this marker in the long description (the
   README), and losing it fails ``publish-mcp.yml`` only AFTER the
   immutable PyPI upload — forcing a patch release.
+
+U11 (asset ledger) adds a deployment rule: ``docker-compose.yml`` must set
+``PMM_LEDGER_DIR`` outside the read-only ``./data`` mount and mount a NAMED
+volume there (:func:`compose_ledger_violations`), or the ledger is either
+unwritable or lost with the container. The ignore-file side (``data/ledger/``
+in ``.gitignore`` and ``.dockerignore``) is guarded in
+``tests/test_signal_measurement.py::TestPackaging``.
 """
 
+import copy
 import json
 import re
 import tomllib
 from collections.abc import Callable
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import pytest
+import yaml
 from mcp.server.mcpserver import MCPServer
 
 from predictive_maintenance_mcp.mcp_tools import register_all
@@ -431,13 +440,15 @@ class TestEndpointCountClaims:
         """The current surface, restated here so a surface change makes
         BOTH the inventory test and the doc guards go red together.
 
-        v0.10 added generate_diagnostic_report (33 -> 34 tools). The
+        v0.10 added generate_diagnostic_report (33 -> 34 tools); the asset
+        ledger (U7) added declare_measurement_point, declare_healthy_baseline,
+        get_asset_history and assess_asset_change (34 -> 38 tools). The
         additions register lives in tests/test_surface_parity.py."""
         assert surface_counts == {
-            "tools": 34,
+            "tools": 38,
             "resources": 0,
             "prompts": 3,
-            "endpoints": 37,
+            "endpoints": 41,
         }
 
 
@@ -728,3 +739,223 @@ class TestLockfileAgreesWithManifest:
             "uv.lock does not record these declared specifiers — run "
             "`uv lock` and commit the result:\n  " + "\n  ".join(mismatches)
         )
+
+
+# ---------------------------------------------------------------------------
+# docker-compose.yml: the asset ledger must outlive the container
+# ---------------------------------------------------------------------------
+
+#: The service the compose file runs, the variable that relocates the
+#: ledger, and the target of the read-only data mount.
+COMPOSE_SERVICE = "mcp-server"
+LEDGER_ENV_VAR = "PMM_LEDGER_DIR"
+DATA_MOUNT_TARGET = PurePosixPath("/app/data")
+
+
+def _environment_mapping(environment: object) -> dict[str, str]:
+    """Compose's two ``environment`` forms (a mapping, or a list of
+    ``KEY=VALUE`` strings) as one ``{key: value}`` dict."""
+    if isinstance(environment, dict):
+        return {str(k): "" if v is None else str(v) for k, v in environment.items()}
+    mapping: dict[str, str] = {}
+    for entry in environment or []:
+        key, _, value = str(entry).partition("=")
+        mapping[key.strip()] = value.strip()
+    return mapping
+
+
+def _mount(entry: object) -> tuple[str, str, bool]:
+    """``(source, target, read_only)`` of one service volume entry, in the
+    short ``source:target[:mode]`` or the long mapping syntax."""
+    if isinstance(entry, dict):
+        return (
+            str(entry.get("source") or ""),
+            str(entry.get("target") or ""),
+            bool(entry.get("read_only", False)),
+        )
+    parts = str(entry).split(":")
+    source = parts[0]
+    target = parts[1] if len(parts) > 1 else ""
+    mode = parts[2] if len(parts) > 2 else ""
+    return source, target, "ro" in mode.split(",")
+
+
+def compose_ledger_violations(compose: dict) -> list[str]:
+    """Every way the compose file can lose the ledger, as violation strings.
+
+    Pure over the parsed document so it can be mutation-tested on small
+    fixtures. The service must set ``PMM_LEDGER_DIR`` to an absolute path
+    outside the read-only ``/app/data`` mount (the code's default,
+    ``data/ledger`` under the project root, would land on that mount and
+    nothing would be recorded) and mount a NAMED volume, declared under the
+    top-level ``volumes``, read-write at that path: a bind mount gives the
+    sidecar file locks the semantics of the host's sharing layer rather
+    than of a local filesystem, and a path in the container's writable
+    layer vanishes with the container. The data mount must stay read-only.
+    """
+    services = compose.get("services") or {}
+    service = services.get(COMPOSE_SERVICE)
+    if not isinstance(service, dict):
+        return [f"docker-compose.yml: no '{COMPOSE_SERVICE}' service"]
+    violations: list[str] = []
+    mounts = [_mount(entry) for entry in service.get("volumes") or []]
+
+    for source, target, read_only in mounts:
+        if PurePosixPath(target) == DATA_MOUNT_TARGET and not read_only:
+            violations.append(
+                f"docker-compose.yml: the {DATA_MOUNT_TARGET} mount ({source}) must "
+                f"stay read-only: the container never writes raw signals"
+            )
+
+    ledger_dir = _environment_mapping(service.get("environment")).get(
+        LEDGER_ENV_VAR, ""
+    )
+    if not ledger_dir:
+        violations.append(
+            f"docker-compose.yml: service '{COMPOSE_SERVICE}' does not set "
+            f"{LEDGER_ENV_VAR}; the default lands under the read-only "
+            f"{DATA_MOUNT_TARGET} mount and no measurement is recorded"
+        )
+        return violations
+    ledger_path = PurePosixPath(ledger_dir)
+    if not ledger_path.is_absolute():
+        violations.append(
+            f"docker-compose.yml: {LEDGER_ENV_VAR}={ledger_dir!r} must be an "
+            f"absolute container path"
+        )
+    if ledger_path == DATA_MOUNT_TARGET or DATA_MOUNT_TARGET in ledger_path.parents:
+        violations.append(
+            f"docker-compose.yml: {LEDGER_ENV_VAR}={ledger_dir!r} lies under the "
+            f"read-only {DATA_MOUNT_TARGET} mount"
+        )
+
+    at_ledger = [m for m in mounts if PurePosixPath(m[1]) == ledger_path]
+    if not at_ledger:
+        violations.append(
+            f"docker-compose.yml: no volume mounted at {ledger_dir}; the ledger "
+            f"would live in the container's writable layer and vanish with it"
+        )
+        return violations
+    source, _, read_only = at_ledger[-1]
+    if read_only:
+        violations.append(
+            f"docker-compose.yml: the volume at {ledger_dir} is read-only; the "
+            f"ledger must be writable"
+        )
+    if not source or source[0] in "./~":
+        violations.append(
+            f"docker-compose.yml: {source!r} at {ledger_dir} is a bind mount; the "
+            f"ledger needs a NAMED volume (file-lock semantics, survival across "
+            f"rebuilds)"
+        )
+    elif source not in (compose.get("volumes") or {}):
+        violations.append(
+            f"docker-compose.yml: named volume {source!r} at {ledger_dir} is not "
+            f"declared under the top-level 'volumes'"
+        )
+    return violations
+
+
+class TestComposeLedgerVolume:
+    """The real compose file keeps the ledger, and the checker really goes
+    red on every way of losing it (small-fixture mutations)."""
+
+    _CLEAN: dict = {
+        "services": {
+            COMPOSE_SERVICE: {
+                "environment": ["MCP_TRANSPORT=sse", f"{LEDGER_ENV_VAR}=/app/ledger"],
+                "volumes": ["./data:/app/data:ro", "ledger:/app/ledger"],
+            }
+        },
+        "volumes": {"ledger": None},
+    }
+
+    @pytest.fixture(scope="class")
+    def compose(self) -> dict:
+        return yaml.safe_load(_read("docker-compose.yml"))
+
+    def test_real_compose_file_keeps_the_ledger(self, compose):
+        assert compose_ledger_violations(compose) == []
+
+    def test_real_compose_file_actually_parsed(self, compose):
+        """Anti-rot: the real file was read into a service with an
+        environment and volumes before any 'no violations' is believed."""
+        service = compose["services"][COMPOSE_SERVICE]
+        assert service.get("environment") and service.get("volumes")
+
+    def _mutated(self, **service_overrides) -> dict:
+        doc = copy.deepcopy(self._CLEAN)
+        doc["services"][COMPOSE_SERVICE].update(service_overrides)
+        return doc
+
+    def test_clean_fixture_is_green(self):
+        assert compose_ledger_violations(self._CLEAN) == []
+
+    def test_mapping_environment_form_is_green(self):
+        doc = self._mutated(
+            environment={"MCP_TRANSPORT": "sse", LEDGER_ENV_VAR: "/app/ledger"}
+        )
+        assert compose_ledger_violations(doc) == []
+
+    def test_long_volume_syntax_is_green(self):
+        doc = self._mutated(
+            volumes=[
+                {
+                    "type": "bind",
+                    "source": "./data",
+                    "target": "/app/data",
+                    "read_only": True,
+                },
+                {"type": "volume", "source": "ledger", "target": "/app/ledger"},
+            ]
+        )
+        assert compose_ledger_violations(doc) == []
+
+    def test_missing_env_var_goes_red(self):
+        doc = self._mutated(environment=["MCP_TRANSPORT=sse"])
+        violations = compose_ledger_violations(doc)
+        assert any(LEDGER_ENV_VAR in v for v in violations), violations
+
+    def test_ledger_under_the_data_mount_goes_red(self):
+        doc = self._mutated(
+            environment=[f"{LEDGER_ENV_VAR}=/app/data/ledger"],
+            volumes=["./data:/app/data:ro", "ledger:/app/data/ledger"],
+        )
+        violations = compose_ledger_violations(doc)
+        assert any(
+            "read-only" in v and "lies under" in v for v in violations
+        ), violations
+
+    def test_relative_ledger_path_goes_red(self):
+        doc = self._mutated(
+            environment=[f"{LEDGER_ENV_VAR}=data/ledger"],
+            volumes=["./data:/app/data:ro", "ledger:data/ledger"],
+        )
+        violations = compose_ledger_violations(doc)
+        assert any("absolute" in v for v in violations), violations
+
+    def test_bind_mount_goes_red(self):
+        doc = self._mutated(volumes=["./data:/app/data:ro", "./ledger:/app/ledger"])
+        violations = compose_ledger_violations(doc)
+        assert any("bind mount" in v for v in violations), violations
+
+    def test_undeclared_named_volume_goes_red(self):
+        doc = copy.deepcopy(self._CLEAN)
+        doc["volumes"] = {}
+        violations = compose_ledger_violations(doc)
+        assert any("not declared" in v for v in violations), violations
+
+    def test_read_only_ledger_goes_red(self):
+        doc = self._mutated(volumes=["./data:/app/data:ro", "ledger:/app/ledger:ro"])
+        violations = compose_ledger_violations(doc)
+        assert any("read-only" in v and "writable" in v for v in violations), violations
+
+    def test_no_mount_at_the_ledger_path_goes_red(self):
+        doc = self._mutated(volumes=["./data:/app/data:ro"])
+        violations = compose_ledger_violations(doc)
+        assert any("no volume mounted" in v for v in violations), violations
+
+    def test_writable_data_mount_goes_red(self):
+        doc = self._mutated(volumes=["./data:/app/data", "ledger:/app/ledger"])
+        violations = compose_ledger_violations(doc)
+        assert any("stay read-only" in v for v in violations), violations

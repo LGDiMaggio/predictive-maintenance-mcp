@@ -18,6 +18,9 @@ services:
       - MCP_TRANSPORT=sse
       - MCP_HOST=0.0.0.0
       - MCP_PORT=8000
+      # Asset health ledger: ./data is mounted read-only, so the ledger
+      # lives on its own named volume (declared at the bottom).
+      - PMM_LEDGER_DIR=/app/ledger
     ports:
       - "8000:8000"   # remove this line when using caddy
     volumes:
@@ -25,6 +28,7 @@ services:
       - ./resources:/app/resources:ro
       - ./models:/app/models
       - ./reports:/app/reports
+      - ledger:/app/ledger
 
   # Uncomment below for production HTTPS via Caddy
   # caddy:
@@ -40,6 +44,12 @@ services:
   #   depends_on:
   #     - mcp-server
 
-# volumes:
-#   caddy_data:
-#   caddy_config:
+volumes:
+  # Asset health ledger (PMM_LEDGER_DIR): append-only JSON Lines, one file
+  # per asset. A named volume rather than a bind mount, so the sidecar file
+  # locks behave like a local filesystem and the history survives rebuilds.
+  # Back it up with `docker run --rm -v <project>_ledger:/ledger ...`.
+  ledger:
+  # Uncomment together with the caddy service above
+  # caddy_data:
+  # caddy_config:

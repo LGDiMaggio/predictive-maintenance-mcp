@@ -139,7 +139,55 @@ _sys.meta_path.insert(0, _Pin)
 # Test data directory
 TEST_DATA_DIR = REPO_ROOT / "data" / "signals" / "real_train"
 
+#: Modules that imported ``DATA_DIR`` BY VALUE (``from ..config import
+#: DATA_DIR``). Redirecting the data directory means patching each of them:
+#: patching ``config`` alone leaves the other three pointing at the checkout.
+DATA_DIR_IMPORT_SITES = (
+    "predictive_maintenance_mcp.config.DATA_DIR",
+    "predictive_maintenance_mcp.signal_acquisition.loaders.DATA_DIR",
+    "predictive_maintenance_mcp.signal_acquisition.repository.DATA_DIR",
+    "predictive_maintenance_mcp.mcp_tools.acquisition_tools.DATA_DIR",
+)
+
+
+def patch_data_dir(monkeypatch, signals_dir: Path) -> None:
+    """Point every ``DATA_DIR`` import site at ``signals_dir``."""
+    for target in DATA_DIR_IMPORT_SITES:
+        monkeypatch.setattr(target, signals_dir)
+
+
 # Fixtures
+
+
+@pytest.fixture
+def sandbox_data_dir(tmp_path, monkeypatch) -> Path:
+    """An empty ``data/signals`` sandbox seen by every ``DATA_DIR`` import site.
+
+    The shared form of the four-module monkeypatch that test_error_contract,
+    test_raw_ingestion_e2e and test_acquisition_tools each spelled out by
+    hand; fixtures that pre-populate a directory can call ``patch_data_dir``
+    directly.
+    """
+    signals_dir = tmp_path / "data" / "signals"
+    signals_dir.mkdir(parents=True)
+    patch_data_dir(monkeypatch, signals_dir)
+    return signals_dir
+
+
+@pytest.fixture(autouse=True)
+def ledger_dir(tmp_path, monkeypatch) -> Path:
+    """Every test gets its own asset-ledger directory under ``tmp_path``.
+
+    Autouse and fail-closed: ``config.get_ledger_dir()`` reads
+    ``PMM_LEDGER_DIR`` at each call, so no test can write into the
+    checkout's ``data/ledger/`` (which OneDrive would sync) by forgetting to
+    set it. The directory is NOT created here; the ledger store creates it
+    on first append. A test that needs another location overrides the
+    variable itself.
+    """
+    target = tmp_path / "ledger"
+    monkeypatch.setenv("PMM_LEDGER_DIR", str(target))
+    return target
 
 
 @pytest.fixture

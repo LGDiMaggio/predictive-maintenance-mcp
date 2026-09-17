@@ -231,6 +231,45 @@ class StoredSignalInfo(BaseModel):
             "this file decoded'. None for self-describing formats."
         ),
     )
+    measurement: Optional[dict[str, Any]] = Field(
+        None,
+        description=(
+            "Normalized measurement identity declared in the companion's "
+            '"measurement" object: asset_id, measurement_point_id, '
+            "acquired_at (ISO 8601 normalized to UTC), timezone_declared, "
+            "timestamp_suspect, rpm, load, operating_state, sensor_id, "
+            "direction, declared_by, measurement_id (first 16 hex of the "
+            "SHA-256 of the file bytes plus the channel index), "
+            "channel_index, content_sha256 (full digest of the file bytes) "
+            "and size_bytes (file size). This block is AUTHORITATIVE over "
+            "the verbatim object kept in source_metadata. None when the "
+            "companion declares no measurement object (the file behaves "
+            "exactly as before). The value RETURNED BY load_signal carries, "
+            "in addition, the outcome of the asset-ledger registration: "
+            "ledger_status ('recorded' | 'already_recorded' | 'superseded' "
+            "| 'not_recorded'), reason (None, or why the status or the "
+            "snapshot is not nominal), changed (keys that differ from the "
+            "previous declaration of the same measurement, 'location' when "
+            "the file moved), reattributed_from (asset the measurement was "
+            "recorded under by mistake, or None), declaration_version, "
+            "snapshot_status ('complete' | 'partial' | 'failed' | "
+            "'skipped'), snapshot_id, processing_id (the snapshot lineage), "
+            "comparability ({grade, qualifications} against the current "
+            "declaration of the measurement point, informational, never "
+            "stored) and missing ({block: {reason, remedy}} of the snapshot "
+            "blocks the declared context could not support). "
+            "get_signal_info and list_signals show the identity only."
+        ),
+    )
+    companion_warning: Optional[str] = Field(
+        None,
+        description=(
+            "Set when a companion _metadata.json exists but could not be used "
+            "(not valid JSON, or not a JSON object): names the file and the "
+            "case, and the signal was loaded exactly as if it had no "
+            "companion. None when the companion was read fine or is absent."
+        ),
+    )
 
 
 class PSDResult(BaseModel):
@@ -489,6 +528,18 @@ class VibrationSeverityResult(BaseModel):
         return self
 
 
+#: Where one diagnostic parameter of ``diagnose_vibration`` came from: the
+#: closed vocabulary of the values of ``DiagnosisResult.parameter_sources``.
+DiagnosisParameterSource = Literal[
+    "explicit",
+    "measurement",
+    "point",
+    "default",
+    "not_supported_fault_orders",
+    "none",
+]
+
+
 class DiagnosisResult(BaseModel):
     """Full integrated diagnosis pipeline result."""
 
@@ -531,6 +582,25 @@ class DiagnosisResult(BaseModel):
         )
     )
     recommendations: list[str] = Field(description="Recommended actions")
+    parameter_sources: Optional[dict[str, DiagnosisParameterSource]] = Field(
+        None,
+        description=(
+            "Origin of each diagnostic parameter, keyed rpm, bearing_id, "
+            "machine_group and support_type. Precedence: 'explicit' (passed "
+            "to the call) > 'measurement' (the rpm declared in the "
+            "companion's \"measurement\" object) > 'point' (the current "
+            "declaration of the measurement point in the asset ledger: "
+            "nominal_rpm, bearing_id, machine_group, support_type) > "
+            "'default' (the historical machine_group=2 / "
+            "support_type='rigid'; rpm has no default and is refused "
+            "instead). bearing_id only: 'none' (no bearing from any source, "
+            "bearing block skipped) or 'not_supported_fault_orders' (the "
+            "point declares fault_orders without a bearing_id: the bearing "
+            "block was not computed because frequency sets are not "
+            "supported by diagnose_vibration in this stage; use "
+            "check_bearing_faults(frequencies=...))."
+        ),
+    )
 
 
 # ============================================================================
@@ -698,3 +768,352 @@ class TrendAnalysisResult(BaseModel):
             "the baseline cannot be detected by this method."
         )
     )
+
+
+# ============================================================================
+# Phase 3 Models: Asset Health Ledger
+# ============================================================================
+
+
+class MeasurementPointDeclarationResult(BaseModel):
+    """Outcome of ``declare_measurement_point``.
+
+    The declaration is versioned per point in the local append-only asset
+    ledger. A re-declaration identical to the current version appends
+    nothing and reports the current version; a different one appends the
+    next version and names the keys that changed. The count of recorded
+    measurements whose snapshot no longer matches the declared context is
+    reported with the exact re-processing call, never applied silently.
+    """
+
+    asset_id: str = Field(description="Asset the point belongs to (ledger id)")
+    measurement_point_id: str = Field(description="The declared point (ledger id)")
+    declaration_version: int = Field(
+        description=(
+            "Version of the point's declaration after this call (1-based, "
+            "per point); unchanged when nothing was appended"
+        )
+    )
+    appended: bool = Field(
+        description=(
+            "True when a new declaration version was appended to the ledger; "
+            "False when the declaration equals the current version"
+        )
+    )
+    changed: list[str] = Field(
+        description=(
+            "Declared keys whose value differs from the previous version "
+            "(every key declared with a value for version 1; empty when "
+            "nothing was appended)"
+        )
+    )
+    previous_version: Optional[int] = Field(
+        None,
+        description="Version this declaration supersedes; None for a first declaration",
+    )
+    measurements_with_stale_context: int = Field(
+        description=(
+            "Recorded measurements of the point that lack a health snapshot "
+            "computed with the current declared context and the current "
+            "processing lineage; their existing snapshots are kept"
+        )
+    )
+    remedy: Optional[str] = Field(
+        None,
+        description=(
+            "The exact assess_asset_change(..., reprocess=True) call that "
+            "recomputes the stale snapshots (bounded per call); None when "
+            "nothing is stale"
+        ),
+    )
+    declaration: dict[str, Any] = Field(
+        description=(
+            "The point declaration as recorded in the ledger: "
+            "measurement_point_id, declaration_version, bearing_id, "
+            "fault_orders, machine_group, support_type, machine_power_kw, "
+            "expected_signal_unit, expected_sensor_id, expected_direction, "
+            "nominal_rpm (the design speed of the point, distinct from the "
+            "observed rpm of a measurement), declared_by, note, changed"
+        )
+    )
+    event_id: Optional[str] = Field(
+        None,
+        description="Id of the appended ledger event; None when nothing was appended",
+    )
+    bearing_in_catalog: Optional[bool] = Field(
+        None,
+        description=(
+            "Whether the declared bearing_id is in the verified bearing catalog "
+            "(a bearing outside it leaves the bearing block of every snapshot "
+            "missing); None when no bearing_id is declared"
+        ),
+    )
+    message: str = Field(description="One-paragraph summary of the outcome")
+
+
+class BaselineDeclarationResult(BaseModel):
+    """Outcome of ``declare_healthy_baseline``.
+
+    A declared baseline is the only reference the assessment reports as
+    health_declared; it is attributed to the declarer named in
+    ``declared_by`` (a user-supplied string), never to the server. An empty
+    measurement list withdraws the active baseline, and later assessments
+    fall back to the automatic window while naming the withdrawal.
+    """
+
+    asset_id: str = Field(description="Asset the point belongs to (ledger id)")
+    measurement_point_id: str = Field(description="The point (ledger id)")
+    baseline_id: str = Field(
+        description=(
+            "Deterministic id of this baseline declaration (hash of the point, "
+            "the sorted measurement ids and the declaration instant)"
+        )
+    )
+    measurement_ids: list[str] = Field(
+        description=(
+            "Members of the baseline in acquisition order; empty for a withdrawal"
+        )
+    )
+    members: list[dict[str, Any]] = Field(
+        description=(
+            "One entry per member: measurement_id, declaration_version of the "
+            "measurement and point_declaration_version it was validated against "
+            "(a later re-declaration excludes the member at query time with a "
+            "qualification, never silently)"
+        )
+    )
+    declared_by: str = Field(
+        description=(
+            "Who declared the baseline, as given by the caller; quoted verbatim "
+            "in every assessment that uses it"
+        )
+    )
+    note: Optional[str] = Field(
+        None, description="Free-text note of the declarer, as given; None when absent"
+    )
+    declared_at: str = Field(description="Declaration instant (ISO 8601, UTC)")
+    superseded_baseline_id: Optional[str] = Field(
+        None,
+        description=(
+            "Id of the baseline that was active before this call; None when "
+            "the point had none"
+        ),
+    )
+    withdrawn: bool = Field(
+        description="True when this call withdrew the active baseline (empty list)"
+    )
+    event_id: str = Field(description="Id of the appended ledger event")
+    message: str = Field(description="One-paragraph summary of the outcome")
+
+
+class AssetHistoryResult(BaseModel):
+    """Outcome of ``get_asset_history``: the index of the assets, the history
+    of one asset, or a typed miss.
+
+    ``status`` discriminates the three shapes: 'index' (no asset_id given:
+    ``assets`` lists at most the configured number of assets, ``truncated``
+    says whether more exist), 'found' (``asset`` holds the history read from
+    that ledger alone) and 'not_found' (an unknown asset or point, with the
+    known ids and a suggestion; never an exception).
+    """
+
+    status: Literal["index", "found", "not_found"] = Field(
+        description="'index', 'found' or 'not_found' (see the class description)"
+    )
+    assets: list[dict[str, Any]] = Field(
+        description=(
+            "Index entries (status 'index' only, else empty): asset_id, points "
+            "(measurement_point_id, measurement_count, first_acquired_at, "
+            "last_acquired_at, latest_lineage, baseline_declared, "
+            "declaration_version), point_count, measurement_count, "
+            "first_acquired_at, last_acquired_at, reattributed_count, "
+            "event_count, ledger_bytes, integrity (counters)"
+        )
+    )
+    asset: Optional[dict[str, Any]] = Field(
+        None,
+        description=(
+            "History of the asset (status 'found' only): summary, measurements "
+            "newest first (measurement_id, measurement_point_id, acquired_at, "
+            "signal_id, location, declaration_version, rpm, direction, "
+            "sensor_id, lineages, snapshot_count, indicators preview from the "
+            "latest snapshot, comparability grade and codes against the point), "
+            "measurement_count, truncated, point_declarations and baselines "
+            "(current plus history per point), reattributed, integrity, "
+            "event_count, ledger_bytes"
+        ),
+    )
+    known_assets: list[str] = Field(
+        description=(
+            "Asset ids the ledger directory lists (the listed ones for the "
+            "index, every id for a miss; empty for a found asset, whose ledger "
+            "is the only one read)"
+        )
+    )
+    known_points: list[str] = Field(
+        description=(
+            "Points of the asset (declared or named by its measurements) when "
+            "the asset is known; empty otherwise"
+        )
+    )
+    suggestion: Optional[str] = Field(
+        None, description="Concrete next step on a miss; None otherwise"
+    )
+    truncated: bool = Field(
+        description=(
+            "True when the index holds fewer assets than exist, or the history "
+            "fewer measurements than max_measurements would have to cover"
+        )
+    )
+    message: str = Field(description="One-paragraph summary of the outcome")
+
+
+class AssetChangeAssessment(BaseModel):
+    """Outcome of ``assess_asset_change``: the change of one measurement point
+    against its reference, or a typed reason why it cannot be assessed.
+
+    ``status`` discriminates: 'assessed' fills reference, lineage, observed,
+    derived, assessed, comparability and suggested_verification;
+    'not_found' names the known assets and points with a suggestion;
+    'insufficient_history' reports available versus required with a remedy;
+    'processing_not_homogeneous' reports the snapshot lineages and the
+    re-processing remedy. The reference is a declared baseline only when
+    one was declared (health_declared True); otherwise it is the automatic
+    window of the first comparable acquisitions, a relative comparison
+    whose health is not declared.
+    """
+
+    status: Literal[
+        "assessed",
+        "not_found",
+        "insufficient_history",
+        "processing_not_homogeneous",
+    ] = Field(description="Outcome discriminator (see the class description)")
+    asset_id: str = Field(description="The assessed asset (ledger id)")
+    measurement_point_id: str = Field(description="The assessed point (ledger id)")
+    reference: Optional[dict[str, Any]] = Field(
+        None,
+        description=(
+            "The reference used: kind ('automatic_window' or "
+            "'declared_baseline'), health_declared (True only for a declared "
+            "baseline), message (cites declared_by, declared_at and note of a "
+            "baseline verbatim), measurement_ids, count, acquired_from, "
+            "acquired_to, provisional, statistics_quality ('relative_only', "
+            "'provisional', 'full'), qualification_codes of the reference "
+            "slots, outside_window, baseline, withdrawn_baseline, "
+            "excluded_inside_span; None for a miss"
+        ),
+    )
+    lineage: Optional[dict[str, Any]] = Field(
+        None,
+        description=(
+            "Processing lineage the assessment used: processing_id, "
+            "algorithm_version, covered slots, candidates per lineage, "
+            "current_processing_id, is_current, missing_for_current, "
+            "stale_context; None unless assessed"
+        ),
+    )
+    observed: Optional[dict[str, Any]] = Field(
+        None,
+        description=(
+            "Observed values: reference_statistics per indicator (mean, std, "
+            "n, band, unit), latest values, latest_measurement_id, "
+            "latest_acquired_at, evidence_presence per bearing label over the "
+            "last K acquisitions, indicators_unavailable with reasons, "
+            "acquisitions_assessed, slots_assessed, measurement_ids_assessed; "
+            "None unless assessed"
+        ),
+    )
+    derived: Optional[dict[str, Any]] = Field(
+        None,
+        description=(
+            "Derived comparisons: deltas per indicator against the reference "
+            "mean, exceedance_runs, drift regressions, iso_change (change "
+            "against 25 percent of the ISO 20816-3 B/C boundary when group and "
+            "support are known) and per_indicator classifications with their "
+            "criterion; None unless assessed"
+        ),
+    )
+    assessed: Optional[dict[str, Any]] = Field(
+        None,
+        description=(
+            "The verdict: classification ('no_change', 'isolated_episode', "
+            "'unconfirmed_single_acquisition', 'persistent_change'), direction "
+            "('increase' or 'decrease'), sudden, criterion, "
+            "indicators_driving, onset_measurement_id, onset_acquired_at, "
+            "onset_coincides_with (qualifications of the onset acquisition) "
+            "and evidence per bearing label; None unless assessed"
+        ),
+    )
+    comparability: Optional[dict[str, Any]] = Field(
+        None,
+        description=(
+            "Comparability of the point's acquisitions: counts per grade, "
+            "qualifications (code, count, detail), excluded measurements with "
+            "reasons and collapsed duplicates; None for a miss"
+        ),
+    )
+    suggested_verification: Optional[str] = Field(
+        None,
+        description=(
+            "At most ONE verification sentence the evidence calls for; None "
+            "when no verification is needed or the point was not assessed"
+        ),
+    )
+    remedy: Optional[str] = Field(
+        None,
+        description=(
+            "Concrete action for 'insufficient_history' or "
+            "'processing_not_homogeneous' (the exact re-processing call); "
+            "None otherwise"
+        ),
+    )
+    suggestion: Optional[str] = Field(
+        None, description="Concrete next step on 'not_found'; None otherwise"
+    )
+    known_assets: list[str] = Field(
+        description="Asset ids the ledger directory lists (for a miss); else empty"
+    )
+    known_points: list[str] = Field(
+        description="Points of a known asset when the point is unknown; else empty"
+    )
+    available: Optional[int] = Field(
+        None,
+        description="Usable acquisition slots available ('insufficient_history')",
+    )
+    required: Optional[int] = Field(
+        None, description="Slots required ('insufficient_history')"
+    )
+    lineages: Optional[dict[str, int]] = Field(
+        None,
+        description=(
+            "Covered evaluated slots per processing lineage "
+            "('processing_not_homogeneous')"
+        ),
+    )
+    evaluated_slots: Optional[int] = Field(
+        None,
+        description="Evaluated slots, reference plus post-reference ('processing_not_homogeneous')",
+    )
+    missing_for_current: Optional[int] = Field(
+        None,
+        description=(
+            "Evaluated slots without a snapshot on the current lineage "
+            "('processing_not_homogeneous')"
+        ),
+    )
+    current_processing_id: Optional[str] = Field(
+        None,
+        description="The current processing lineage ('processing_not_homogeneous')",
+    )
+    reprocess: Optional[dict[str, Any]] = Field(
+        None,
+        description=(
+            "Outcome of the re-processing run before the assessment when "
+            "reprocess=True: processing_id, stale, reprocessed, "
+            "not_reprocessable, up_to_date, remaining, results per attempted "
+            "measurement, next_call (the exact call to continue, or None) and "
+            "message; None when reprocess was False"
+        ),
+    )
+    message: str = Field(description="One-paragraph summary of the outcome")

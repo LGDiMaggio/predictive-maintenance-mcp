@@ -324,6 +324,8 @@ The server loads headerless raw binary files (`.bin`/`.raw`/`.dat`) through an *
 
 The full contract — declaration parameters, companion file schema, merge precedence, and a worked example — is in the [Adapter Guide](docs/ADAPTER_GUIDE.md).
 
+Reference adapters live under `examples/adapters/`, one directory per adapter (`examples/adapters/stwinbox/` is the first). The convention: a standalone script that runs from the command line, a `README.md` that states what the script reads, what it declares and its limitations, an `__init__.py` so the test suite can import the decoder in-process, and no imports from the server package (standard library plus NumPy at most). Tests for an adapter live in `tests/` next to the others and build their fixtures synthetically; a check against real hardware stays a documented manual step in the adapter's README.
+
 ### Architecture Contributions
 
 For bigger features, **open a discussion first** to align on approach:

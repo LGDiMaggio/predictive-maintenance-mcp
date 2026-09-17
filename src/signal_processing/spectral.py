@@ -1,18 +1,181 @@
 """
-Pure spectral analysis functions: PSD, STFT, envelope spectrum.
+Pure spectral analysis functions: amplitude spectrum, PSD, STFT, envelope.
 
-No MCP dependency, no file I/O. Takes numpy arrays, returns dicts.
-Suitable for direct testing and reuse across MCP tools and pipelines.
+No MCP dependency, no file I/O. Takes numpy arrays, returns arrays or dicts.
+Suitable for direct testing and reuse across MCP tools, the diagnosis
+pipeline and the asset ledger's health snapshot.
 """
 
 import logging
-from typing import Optional
+from typing import Any, Optional
 
 import numpy as np
 from scipy.fft import fft, fftfreq
 from scipy.signal import welch, stft, hilbert, butter, sosfiltfilt, find_peaks
 
 logger = logging.getLogger(__name__)
+
+
+def select_leading_segment(
+    signal: np.ndarray, fs: float, duration_s: Optional[float]
+) -> np.ndarray:
+    """Return the LEADING *duration_s* seconds of *signal*, deterministically.
+
+    ``None`` returns the whole signal; so does a duration that covers it
+    (never padded, never an error). This is the deterministic segment rule
+    ``analyze_fft`` applies by default and the asset ledger's health
+    snapshot uses for the 1x amplitude: the same samples for the same
+    input, always, so two analyses of one file are comparable.
+
+    Args:
+        signal: 1D time-domain signal.
+        fs: Sampling frequency (Hz).
+        duration_s: Segment length in seconds, or ``None`` for the whole
+            signal.
+
+    Returns:
+        A view of the first ``int(duration_s * fs)`` samples, or *signal*
+        itself when it is not longer than that.
+
+    Raises:
+        ValueError: If *duration_s* is not positive.
+    """
+    if duration_s is None:
+        return signal
+    if duration_s <= 0:
+        raise ValueError(
+            f"duration_s must be positive, got {duration_s!r} — pass the segment "
+            f"length in seconds, or None to analyze the whole signal."
+        )
+    n = int(duration_s * fs)
+    if n >= len(signal):
+        return signal
+    return signal[:n]
+
+
+def amplitude_spectrum(signal: np.ndarray, fs: float) -> tuple[np.ndarray, np.ndarray]:
+    """Single-sided amplitude spectrum: Hamming window, FFT, ``2|X|/N``.
+
+    THE amplitude-spectrum core of the codebase, extracted from the three
+    places that used to inline it (``analyze_fft``, the diagnosis pipeline's
+    ``fft_summary`` and ``generate_fft_report``) so that the asset ledger's
+    1x amplitude, the tool's peaks and the report's spectrum coincide by
+    construction. The operation order is exactly the historical one
+    (Hamming window, ``scipy.fft.fft``, positive frequencies only,
+    ``2|X|/N``), so the numbers did not change;
+    ``tests/fixtures/analyze_fft_golden.json`` pins them.
+
+    A sinusoid of amplitude ``A`` sitting exactly on a bin reads about
+    ``0.54 x A`` (the Hamming coherent gain): no gain correction is applied,
+    deliberately, so every value stays comparable with every FFT amplitude
+    the server ever reported.
+
+    Args:
+        signal: 1D time-domain signal with at least 3 samples (so that at
+            least one positive-frequency bin exists).
+        fs: Sampling frequency (Hz), > 0.
+
+    Returns:
+        ``(frequencies, magnitudes)``: the positive frequencies in Hz (DC
+        excluded) and the single-sided amplitudes in the signal's unit. Full
+        arrays: callers returning data to an LLM must summarise first.
+
+    Raises:
+        ValueError: If *signal* is not 1-D with at least 3 samples, or *fs*
+            is not positive.
+    """
+    signal = np.asarray(signal)
+    if signal.ndim != 1 or signal.size < 3:
+        raise ValueError(
+            f"amplitude_spectrum needs a 1-D signal of at least 3 samples, got "
+            f"shape {signal.shape} — pass the raw waveform or a longer segment."
+        )
+    if not fs > 0:
+        raise ValueError(f"amplitude_spectrum needs fs > 0 Hz, got {fs!r}.")
+
+    N = len(signal)
+
+    # Apply Hamming window to reduce spectral leakage
+    window = np.hamming(N)
+    signal_windowed = signal * window
+
+    fft_values = fft(signal_windowed)
+    frequencies = fftfreq(N, 1 / fs)
+
+    # Positive frequencies only (the DC bin, which must not be doubled, is
+    # excluded by the strict inequality).
+    positive_freq_idx = frequencies > 0
+    frequencies = frequencies[positive_freq_idx]
+
+    # Single-sided normalization: x2 for the energy of the negative
+    # frequencies, /N for the FFT scaling.
+    magnitudes = 2.0 * np.abs(fft_values[positive_freq_idx]) / N
+    return frequencies, magnitudes
+
+
+def amplitude_near_frequency(
+    freqs: np.ndarray, mags: np.ndarray, target_hz: float, tolerance_pct: float
+) -> dict[str, Any]:
+    """Largest amplitude within ``target_hz`` +/- ``tolerance_pct`` percent.
+
+    Pure helper shared by the asset ledger's health snapshot: the 1x
+    amplitude on :func:`amplitude_spectrum` and the envelope amplitude at
+    every expected bearing frequency on :func:`envelope_spectrum_arrays`. It
+    searches BINS, not detected peaks, so the value exists in every
+    spectrum, also when nothing stands out: the emergence of a line over a
+    sequence of measurements is trendable from the first snapshot.
+
+    Args:
+        freqs: Frequency axis (Hz), any order.
+        mags: Amplitudes aligned with *freqs*.
+        target_hz: Centre of the search window (Hz), > 0.
+        tolerance_pct: Half-width of the window in percent of *target_hz*,
+            >= 0.
+
+    Returns:
+        Dict with ``target_hz``, ``amplitude`` (the maximum amplitude among
+        the bins inside the window), ``frequency_hz`` (where that maximum
+        sits), ``tolerance_pct`` and ``bins_searched``. When NO bin falls
+        inside the window (frequency resolution coarser than the window, or
+        a target beyond the axis) ``amplitude`` is ``0.0`` and
+        ``frequency_hz`` is ``None`` with ``bins_searched == 0`` saying why:
+        the absence of a bin is reported as such, never raised and never
+        replaced by the nearest bin outside the window.
+
+    Raises:
+        ValueError: If *target_hz* is not positive, *tolerance_pct* is
+            negative, or the two arrays are not 1-D of the same length.
+    """
+    freqs = np.asarray(freqs, dtype=float)
+    mags = np.asarray(mags, dtype=float)
+    if freqs.ndim != 1 or freqs.shape != mags.shape:
+        raise ValueError(
+            f"freqs and mags must be 1-D arrays of the same length, got shapes "
+            f"{freqs.shape} and {mags.shape}."
+        )
+    if not target_hz > 0:
+        raise ValueError(f"target_hz must be positive, got {target_hz!r}.")
+    if not tolerance_pct >= 0:
+        raise ValueError(f"tolerance_pct must be >= 0, got {tolerance_pct!r}.")
+
+    half_width = target_hz * tolerance_pct / 100.0
+    inside = np.flatnonzero(np.abs(freqs - target_hz) <= half_width)
+    if inside.size == 0:
+        return {
+            "target_hz": float(target_hz),
+            "amplitude": 0.0,
+            "frequency_hz": None,
+            "tolerance_pct": float(tolerance_pct),
+            "bins_searched": 0,
+        }
+    best = inside[int(np.argmax(mags[inside]))]
+    return {
+        "target_hz": float(target_hz),
+        "amplitude": float(mags[best]),
+        "frequency_hz": float(freqs[best]),
+        "tolerance_pct": float(tolerance_pct),
+        "bins_searched": int(inside.size),
+    }
 
 
 def compute_psd(

@@ -9,6 +9,7 @@ Covers:
 """
 
 import argparse
+import logging
 import sys
 from pathlib import Path
 from unittest.mock import patch, MagicMock
@@ -17,6 +18,31 @@ import pytest
 
 # Ensure src is importable
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
+
+@pytest.fixture
+def sandbox_server(tmp_path, monkeypatch):
+    """The server module with every directory _setup_environment creates
+    redirected under tmp_path (the ledger directory follows PMM_LEDGER_DIR,
+    which conftest already points at tmp_path for every test)."""
+    import predictive_maintenance_mcp.server as srv
+
+    resources_dir = tmp_path / "resources"
+    monkeypatch.setattr(srv, "DATA_DIR", tmp_path / "data" / "signals")
+    monkeypatch.setattr(srv, "MODELS_DIR", tmp_path / "models")
+    monkeypatch.setattr(srv, "REPORTS_DIR", tmp_path / "reports")
+    monkeypatch.setattr(srv, "RESOURCES_DIR", resources_dir)
+    monkeypatch.setattr(srv, "CACHE_DIR", resources_dir / "cache")
+    return srv
+
+
+def _ledger_warnings(caplog) -> list[str]:
+    """Warning-or-worse records about the asset ledger directory."""
+    return [
+        record.getMessage()
+        for record in caplog.records
+        if record.levelno >= logging.WARNING and "ledger" in record.getMessage().lower()
+    ]
 
 
 class TestSetupEnvironment:
@@ -70,6 +96,112 @@ class TestSetupEnvironment:
         srv._setup_environment()  # second call — no error expected
 
         assert data_dir.is_dir()
+
+
+class TestLedgerDirectorySetup:
+    """_setup_environment creates the asset ledger directory and warns, once
+    at startup, about the two ways it can silently fail later: not writable,
+    or under a cloud-synced folder. Warnings only: the server still starts."""
+
+    def _silence_sync_env(self, srv, monkeypatch):
+        for var in srv.SYNC_ROOT_ENV_VARS:
+            monkeypatch.delenv(var, raising=False)
+
+    def test_creates_ledger_dir_from_env(self, sandbox_server, tmp_path, monkeypatch):
+        target = tmp_path / "custom" / "ledger"
+        monkeypatch.setenv("PMM_LEDGER_DIR", str(target))
+        sandbox_server._setup_environment()
+        assert target.is_dir()
+        sandbox_server._setup_environment()  # idempotent
+        assert target.is_dir()
+
+    def test_local_unsynced_dir_is_silent(
+        self, sandbox_server, tmp_path, monkeypatch, package_caplog
+    ):
+        self._silence_sync_env(sandbox_server, monkeypatch)
+        monkeypatch.setenv("PMM_LEDGER_DIR", str(tmp_path / "ledger"))
+        sandbox_server._setup_environment()
+        assert _ledger_warnings(package_caplog) == []
+
+    def test_warns_when_dir_cannot_be_created(
+        self, sandbox_server, tmp_path, monkeypatch, package_caplog
+    ):
+        """A regular file where the parent should be: mkdir fails, the server
+        still starts, and the warning names the remedy."""
+        self._silence_sync_env(sandbox_server, monkeypatch)
+        blocker = tmp_path / "blocker"
+        blocker.write_text("a file, not a directory", encoding="utf-8")
+        monkeypatch.setenv("PMM_LEDGER_DIR", str(blocker / "ledger"))
+
+        sandbox_server._setup_environment()  # must not raise
+
+        warnings = _ledger_warnings(package_caplog)
+        assert len(warnings) == 1
+        assert "cannot be created" in warnings[0]
+        assert "PMM_LEDGER_DIR" in warnings[0]
+
+    def test_warns_when_dir_is_not_writable(
+        self, sandbox_server, tmp_path, monkeypatch, package_caplog
+    ):
+        self._silence_sync_env(sandbox_server, monkeypatch)
+        monkeypatch.setenv("PMM_LEDGER_DIR", str(tmp_path / "ledger"))
+        monkeypatch.setattr(sandbox_server, "_ledger_dir_writable", lambda path: False)
+
+        sandbox_server._setup_environment()
+
+        warnings = _ledger_warnings(package_caplog)
+        assert len(warnings) == 1
+        assert "not writable" in warnings[0]
+        assert "PMM_LEDGER_DIR" in warnings[0]
+
+    def test_write_probe_is_a_real_write(self, sandbox_server, tmp_path):
+        """The probe writes and removes a file: a regular file in place of the
+        directory fails it, a writable directory passes it and is left clean."""
+        blocker = tmp_path / "file"
+        blocker.write_text("x", encoding="utf-8")
+        assert sandbox_server._ledger_dir_writable(blocker) is False
+        assert sandbox_server._ledger_dir_writable(tmp_path) is True
+        assert sorted(p.name for p in tmp_path.iterdir()) == ["file"]
+
+    def test_warns_under_onedrive_env_root(
+        self, sandbox_server, tmp_path, monkeypatch, package_caplog
+    ):
+        """PMM_LEDGER_DIR under the folder named by the OneDrive variable."""
+        self._silence_sync_env(sandbox_server, monkeypatch)
+        monkeypatch.setenv("OneDrive", str(tmp_path))
+        monkeypatch.setenv("PMM_LEDGER_DIR", str(tmp_path / "data" / "ledger"))
+
+        sandbox_server._setup_environment()
+
+        warnings = _ledger_warnings(package_caplog)
+        assert len(warnings) == 1
+        assert "OneDrive" in warnings[0]
+        assert "PMM_LEDGER_DIR" in warnings[0]
+
+    @pytest.mark.parametrize("marker", ["Dropbox", "iCloud Drive"])
+    def test_warns_under_named_sync_ancestor(
+        self, sandbox_server, tmp_path, monkeypatch, package_caplog, marker
+    ):
+        self._silence_sync_env(sandbox_server, monkeypatch)
+        target = tmp_path / marker / "project" / "data" / "ledger"
+        monkeypatch.setenv("PMM_LEDGER_DIR", str(target))
+
+        sandbox_server._setup_environment()
+
+        warnings = _ledger_warnings(package_caplog)
+        assert len(warnings) == 1
+        assert marker in warnings[0]
+        assert "PMM_LEDGER_DIR" in warnings[0]
+
+    def test_find_sync_root_is_none_outside_known_roots(
+        self, sandbox_server, tmp_path, monkeypatch
+    ):
+        self._silence_sync_env(sandbox_server, monkeypatch)
+        assert sandbox_server.find_sync_root(tmp_path / "plain" / "ledger") is None
+        monkeypatch.setenv("OneDriveCommercial", str(tmp_path / "cloud"))
+        assert sandbox_server.find_sync_root(tmp_path / "plain" / "ledger") is None
+        found = sandbox_server.find_sync_root(tmp_path / "cloud" / "ledger")
+        assert found is not None and found.startswith("OneDriveCommercial=")
 
 
 class TestMCPInstance:

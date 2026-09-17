@@ -31,7 +31,8 @@ Handles data ingestion from multiple file formats and in-memory caching.
 
 | Module | Purpose |
 |--------|---------|
-| `loaders.py` | Multi-format signal loading (CSV, NPY, MAT, WAV, Parquet) |
+| `loaders.py` | Multi-format signal loading (CSV, NPY, MAT, WAV, Parquet, declared raw binary) |
+| `measurement.py` | Contract of the companion's `measurement` object: vocabularies, ledger id grammar, pure validator, measurement identity hash (leaf module: standard library and `path_safety` only) |
 | `repository.py` | LRU-cached signal store with signal_id reference pattern |
 
 **Signal Repository Pattern**: Signals are loaded once and referenced by ID across tool calls. This avoids re-reading files on every analysis and enables efficient batch processing.
@@ -62,6 +63,34 @@ State detection and health assessment.
 | `bearing_analyzer.py` | Fault peak detection, evidence scoring, harmonic analysis |
 | `bearing_catalog.py` | Verified bearing geometries with sources, characteristic frequencies |
 | `iso20816.py` | ISO 20816-3 vibration severity zones A-D (boundary values from ISO 10816-3:2009) |
+
+### Block 3 over time: Asset Health Ledger (`asset_ledger/`)
+
+State detection across acquisitions: the append-only history of each asset and the change of a measurement point against its reference (ISO 20816-3, 6.3; ISO 13373-1, 7.3.2; ISO 17359, 8.4).
+
+| Module | Purpose |
+|--------|---------|
+| `store.py` | Event envelope, deterministic ids, canonical JSON, `LedgerStore` (locked append, tolerant read), `build_asset_view` |
+| `snapshot.py` | Derived health snapshot of one measurement (time-domain indicators, 1x amplitude, bearing evidence, ISO severity) with its processing lineage |
+| `comparability.py` | Grade of a measurement against its point and its reference: comparable, qualified, non-comparable |
+| `assessment.py` | Acquisition slots, reference selection, band per indicator, classification with an explicit criterion |
+| `service.py` | Orchestration behind the tools: registration at load, re-processing, point and baseline declarations, index and history |
+
+The contract of the companion's `measurement` object lives in the leaf module `signal_acquisition/measurement.py`: the repository validates it while preparing an entry, the ledger imports its vocabularies, and the documentation guard derives the field table from it.
+
+**Storage** (`data/ledger/`, or `PMM_LEDGER_DIR`):
+
+```
+data/ledger/
+├── P-101.jsonl               # one JSON Lines file per asset, append-only
+├── P-101.jsonl.lock          # sidecar lock, held around versioned appends
+├── _measurements.jsonl       # index: measurement id -> asset it was recorded under
+└── _measurements.jsonl.lock
+```
+
+Four event types (`measurement_point_declared`, `measurement_recorded`, `health_snapshot_computed`, `baseline_declared`) share one envelope with a content-derived `event_id`, so a retried write is absorbed as a duplicate. Files are only appended to, never rewritten; a tolerant binary reader reports every integrity problem instead of failing. The ledger holds indicators, declarations and file references (location, SHA-256, size), never waveforms.
+
+**Dependency direction**: `mcp_tools` → `asset_ledger` → `signal_acquisition` → `config`, `path_safety`. The ledger package also calls the pure engines of `signal_processing`, `diagnostics` and `prognostics`; it never imports the signal repository, `models.py` or MCP, and the ledger directory is resolved at the tool boundary (`config.get_ledger_dir()`) and passed by argument.
 
 ### Block 5: Prognostics (`prognostics/`) — Implemented
 
@@ -126,12 +155,14 @@ src/
 │   ├── prognostics_tools.py           #   Block 5 tools
 │   ├── report_tools.py                #   Block 6 report tools
 │   ├── decision_support_tools.py      #   Block 6 decision tools
+│   ├── asset_tools.py                 #   Asset health ledger tools
 │   ├── prompts.py                     #   Workflow prompts
 │   └── _utils.py                      #   Shared helpers (safe_resolve, ...)
 │
 ├── signal_acquisition/                # ISO 13374 Block 1
 │   ├── __init__.py                    #   re-exports loaders + repository
 │   ├── loaders.py                     #   multi-format signal loading
+│   ├── measurement.py                 #   companion measurement contract (leaf)
 │   └── repository.py                  #   LRU signal cache
 │
 ├── signal_processing/                 # ISO 13374 Block 2
@@ -144,6 +175,14 @@ src/
 │   ├── bearing_analyzer.py            #   fault peak detection
 │   ├── bearing_catalog.py             #   bearing specs lookup
 │   └── iso20816.py                    #   severity zone classification
+│
+├── asset_ledger/                      # ISO 13374 Block 3, state over time
+│   ├── __init__.py                    #   re-exports the ledger functions
+│   ├── store.py                       #   append-only JSONL store, locks, asset view
+│   ├── snapshot.py                    #   derived health snapshot, processing lineage
+│   ├── comparability.py               #   comparable / qualified / non-comparable
+│   ├── assessment.py                  #   reference, band, classification
+│   └── service.py                     #   registration, re-processing, queries
 │
 ├── decision_support/                  # ISO 13374 Block 6
 │   ├── __init__.py                    #   re-exports diagnosis pipeline
@@ -205,6 +244,7 @@ User's Machine (Local Processing Only)
 ├── Signal Files (on disk)
 ├── SignalRepository (in-memory cache)
 ├── Analysis Results (computed locally)
+├── Asset Ledger (data/ledger/: indicators, declarations, file references; no waveforms)
 └── Reports (generated locally)
 
 ↓ Network Boundary ↓
@@ -218,3 +258,4 @@ Only: Diagnostic reports, LLM queries (no raw waveforms)
 | ISO 13374 | Blocks 1-6 | All sub-packages |
 | ISO 20816-3 (thresholds from ISO 10816-3:2009) | Severity zones A-D | `diagnostics/iso20816.py` |
 | MIMOSA OSA-CBM | Signature analysis, detection | `diagnostics/`, `signal_processing/` |
+| ISO 20816-3 (6.3, change against a reference), ISO 13373-1, ISO 17359 | Reference band, change classification, comparability of operating conditions | `asset_ledger/` |

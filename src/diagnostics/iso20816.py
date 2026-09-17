@@ -33,6 +33,13 @@ THRESHOLD_PROVENANCE = (
     "the A/B boundary is kept here for practitioner familiarity."
 )
 
+#: Standard gravity, m/s^2 per g (ISO 80000-3). The single source for the
+#: g -> m/s^2 conversion; the asset ledger's unit comparisons import it.
+G_TO_M_S2 = 9.80665
+
+#: Metres per second to millimetres per second (the ISO 20816-3 unit).
+M_S_TO_MM_S = 1000.0
+
 # Zone boundaries per (machine_group, support_type) in mm/s RMS velocity.
 # ISO 10816-3:2009 velocity criteria — each tuple is the upper limit of
 # zones (A, B, C); zone D is anything above. THE single threshold table of
@@ -234,7 +241,7 @@ def _convert_to_velocity_mm_s(
 
         # Convert to m/s²
         if unit == "g":
-            accel_ms2 = signal_ac * 9.80665
+            accel_ms2 = signal_ac * G_TO_M_S2
         else:
             accel_ms2 = signal_ac
 
@@ -248,10 +255,10 @@ def _convert_to_velocity_mm_s(
         vel_fft[1:] = accel_fft[1:] / (1j * 2 * np.pi * freqs[1:])
 
         vel_ms = np.fft.irfft(vel_fft, n=n)
-        return vel_ms * 1000.0, True, unit
+        return vel_ms * M_S_TO_MM_S, True, unit
 
     elif unit == "m/s":
-        return signal * 1000.0, True, unit
+        return signal * M_S_TO_MM_S, True, unit
 
     elif unit == "mm/s":
         return signal.copy(), False, unit

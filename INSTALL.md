@@ -147,12 +147,31 @@ Edit `%APPDATA%\Claude\claude_desktop_config.json` (Windows) or
 > - Use **absolute paths** — Claude Desktop launches servers with a minimal PATH
 > - `PDM_PROJECT_DIR` tells the server where to find `data/` and `models/`;
 >   required only when the venv lives outside the repo directory
+> - `PDM_PROJECT_DIR` also keeps the file locations recorded in the asset
+>   ledger valid across restarts; see [Environment Variables](#environment-variables)
 > - On macOS/Linux use `.venv/bin/python` and forward slashes
 
 #### 3. Restart Claude Desktop
 
 Fully quit (File → Quit) and restart. The `predictive-maintenance` server
 should appear in the tools list.
+
+---
+
+## Environment Variables
+
+All optional.
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `PDM_PROJECT_DIR` | auto-detected: the current directory when it holds `data/signals/`, else the directory above the installed package when that does, else the current directory | Project root: where `data/`, `models/`, `reports/` and `resources/` live. Set it when the venv lives outside the repository. It also keeps the relative file locations recorded in the asset ledger valid across restarts, whatever directory the server is launched from. |
+| `PMM_LEDGER_DIR` | `data/ledger` under the project root | Directory of the asset health ledger: append-only JSON Lines, one file per asset. Use a local, non-synced path. The server creates it at startup and warns when it is not writable or lies under OneDrive, Dropbox or iCloud Drive, where a sync client can lock the files or replace them with stale copies. Read at each call. |
+| `PMM_MAX_SIGNAL_SIZE` | `500000000` (500 MB) | Size cap in bytes for raw binary loads, checked before a byte is read. Read at each call. |
+| `PMM_SIGNAL_CACHE_GB` | `10` | Memory cap of the in-memory signal repository, in GB. |
+| `MCP_LOG_LEVEL` | `INFO` | Level of the server's log narration on stderr (`DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`). |
+| `MCP_TRANSPORT`, `MCP_HOST`, `MCP_PORT` | `stdio`, `127.0.0.1`, `8000` | Transport settings; the CLI options take precedence. See [DEPLOYMENT.md](docs/DEPLOYMENT.md). |
+
+A backup of the ledger is a copy of its directory. Deleting the history of one asset means deleting its `<asset_id>.jsonl` file while the server is stopped; events inside a file are never removed individually.
 
 ---
 

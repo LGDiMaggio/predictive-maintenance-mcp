@@ -23,7 +23,8 @@ global-exclude __pycache__
 global-exclude *.so
 global-exclude .DS_Store
 
-# Exclude generated files
+# Exclude generated files (data/ledger holds operator data: never packaged)
+prune data/ledger
 prune htmlcov
 prune .pytest_cache
 prune .mypy_cache

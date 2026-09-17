@@ -18,7 +18,7 @@ notifications; any fact a caller needs is carried by the return value.
 import logging
 import json
 import pickle
-from typing import Any, Literal, Optional
+from typing import Any, Literal, NamedTuple, Optional
 
 import numpy as np
 import pandas as pd
@@ -28,7 +28,13 @@ from sklearn.svm import OneClassSVM
 from sklearn.neighbors import LocalOutlierFactor
 from mcp.server.mcpserver import MCPServer, Context
 
-from ..config import MODELS_DIR, RESOURCES_DIR
+from ..asset_ledger.service import resolve_point_context
+from ..asset_ledger.snapshot import (
+    expected_frequencies as _expected_frequencies,
+    resolve_context as _resolve_declared_context,
+)
+from ..asset_ledger.store import LedgerStore
+from ..config import MODELS_DIR, RESOURCES_DIR, get_ledger_dir
 from ..models import (
     AnomalyModelResult,
     AnomalyPredictionResult,
@@ -37,6 +43,7 @@ from ..models import (
     BearingFaultsSummary,
     VibrationSeverityResult,
     ISOSeverityRefusal,
+    DiagnosisParameterSource,
     DiagnosisResult,
 )
 from ..document_reader import (
@@ -1457,14 +1464,264 @@ async def check_bearing_faults(
 # Integrated diagnosis (signal_id based)
 # ------------------------------------------------------------------
 
+#: Historical defaults of the ISO 20816-3 context, applied only when neither
+#: the call nor the measurement point declares a value. rpm has no default.
+_DEFAULT_MACHINE_GROUP: Literal[1, 2] = 2
+_DEFAULT_SUPPORT_TYPE: Literal["rigid", "flexible"] = "rigid"
+
+#: Why the bearing block is absent when the point declares fault orders
+#: instead of a designation (the plan's wording, stated in the result).
+_FAULT_ORDERS_NOT_SUPPORTED = (
+    "frequency sets are not supported by diagnose_vibration in this stage"
+)
+
+
+class _DiagnosisParameters(NamedTuple):
+    """The effective diagnostic parameters after the precedence is applied.
+
+    Attributes:
+        rpm: Operating speed (rpm), always resolved (never defaulted).
+        bearing_id: Catalog designation, or None (bearing block skipped).
+        machine_group: ISO 20816-3 machine group.
+        support_type: ISO 20816-3 support type.
+        fault_orders: The point's declared ``{label: order}`` set, kept so
+            the result can say how to check it when no designation exists.
+    """
+
+    rpm: float
+    bearing_id: Optional[str]
+    machine_group: Literal[1, 2]
+    support_type: Literal["rigid", "flexible"]
+    fault_orders: Optional[dict[str, float]]
+
+
+def _point_context_for(
+    signal_id: str, identity: Optional[dict[str, Any]]
+) -> Optional[dict[str, Any]]:
+    """The current declaration of the signal's measurement point, or None.
+
+    Only a signal whose companion declared a measurement identity has a
+    point to look up. A ledger that cannot be read (``LedgerError``) or an
+    id the store refuses (``ValueError``) is logged and treated as "no
+    point context": the diagnosis still runs on the explicit arguments,
+    the measurement's own declaration and the historical defaults, and
+    ``parameter_sources`` says so.
+    """
+    if not isinstance(identity, dict):
+        return None
+    asset_id = identity.get("asset_id")
+    point_id = identity.get("measurement_point_id")
+    if not isinstance(asset_id, str) or not isinstance(point_id, str):
+        return None
+    try:
+        return resolve_point_context(LedgerStore(get_ledger_dir()), asset_id, point_id)
+    except ValueError as exc:  # LedgerError is a ValueError
+        logger.warning(
+            f"Point context {asset_id}/{point_id} of signal '{signal_id}' not "
+            f"available ({exc}); diagnosing without it"
+        )
+        return None
+
+
+def _point_machine_group(value: object, signal_id: str) -> Literal[1, 2]:
+    """The point's declared machine group, checked against the ISO vocabulary."""
+    if not isinstance(value, bool) and value == 1:
+        return 1
+    if not isinstance(value, bool) and value == 2:
+        return 2
+    raise ValueError(
+        f"The measurement point of signal '{signal_id}' declares machine_group "
+        f"{value!r}, which is neither 1 nor 2 — re-declare the point with "
+        f"declare_measurement_point(machine_group=1|2), or pass machine_group= "
+        f"to this call."
+    )
+
+
+def _point_support_type(value: object, signal_id: str) -> Literal["rigid", "flexible"]:
+    """The point's declared support type, checked against the ISO vocabulary."""
+    if value == "rigid":
+        return "rigid"
+    if value == "flexible":
+        return "flexible"
+    raise ValueError(
+        f"The measurement point of signal '{signal_id}' declares support_type "
+        f"{value!r}, which is neither 'rigid' nor 'flexible' — re-declare the "
+        f"point with declare_measurement_point(support_type=...), or pass "
+        f"support_type= to this call."
+    )
+
+
+def _missing_rpm_message(
+    signal_id: str,
+    identity: Optional[dict[str, Any]],
+    point: Optional[dict[str, Any]],
+) -> str:
+    """The refusal for an rpm with no source, naming the three remedies."""
+    if identity is None:
+        situation = (
+            'the signal declares no measurement identity (no "measurement" '
+            "object in its companion), so no declared rpm exists"
+        )
+    else:
+        where = f"{identity.get('asset_id')}/{identity.get('measurement_point_id')}"
+        if point is None:
+            situation = (
+                f"the measurement declares no rpm and its point {where} has no "
+                f"current declaration in the asset ledger"
+            )
+        else:
+            situation = (
+                f"the measurement declares no rpm and the current declaration "
+                f"of its point {where} has no nominal_rpm"
+            )
+    return (
+        f"Cannot resolve the operating speed of signal '{signal_id}': no rpm "
+        f"was passed and {situation}. Pass rpm=... to this call, declare "
+        f'"rpm" in the companion\'s "measurement" object and re-load the '
+        f"file, or declare nominal_rpm for the point with "
+        f"declare_measurement_point(asset_id=..., measurement_point_id=..., "
+        f"nominal_rpm=...)."
+    )
+
+
+def _resolve_diagnosis_parameters(
+    signal_id: str,
+    identity: Optional[dict[str, Any]],
+    point: Optional[dict[str, Any]],
+    *,
+    rpm: Optional[float],
+    bearing_id: Optional[str],
+    machine_group: Optional[Literal[1, 2]],
+    support_type: Optional[Literal["rigid", "flexible"]],
+) -> tuple[_DiagnosisParameters, dict[str, DiagnosisParameterSource]]:
+    """Apply the diagnostic-parameter precedence and record each origin.
+
+    Explicit argument > the measurement's own declaration (rpm) > the
+    point's current declaration (nominal_rpm, bearing_id, machine_group,
+    support_type) > historical defaults (machine_group 2, support 'rigid').
+    The two declared layers are read by ``asset_ledger.snapshot.
+    resolve_context``, the function the health snapshot uses, so the tool
+    and the snapshot can never disagree on what a declaration means.
+
+    Args:
+        signal_id: The stored signal (for messages).
+        identity: ``StoredSignalInfo.measurement`` (None without identity).
+        point: The point's current declaration payload, or None.
+        rpm: Explicit operating speed, or None.
+        bearing_id: Explicit designation, or None (an empty string counts
+            as not given, as the pipeline treats it).
+        machine_group: Explicit ISO machine group, or None.
+        support_type: Explicit ISO support type, or None.
+
+    Returns:
+        The effective parameters and, keyed ``rpm``, ``bearing_id``,
+        ``machine_group`` and ``support_type``, the origin of each with the
+        values of ``DiagnosisParameterSource``.
+
+    Raises:
+        ValueError: If no source provides an rpm (the message names the
+            three remedies), or if a declared value is malformed.
+    """
+    declared: dict[str, Any] = dict(identity) if identity is not None else {}
+    try:
+        context = _resolve_declared_context(declared, point)
+    except ValueError as exc:
+        raise ValueError(
+            f"The declared context of signal '{signal_id}' cannot be used: "
+            f"{exc} Re-declare the measurement point with "
+            f"declare_measurement_point(...), fix the companion and re-load "
+            f"the file, or pass the parameter explicitly to this call."
+        ) from exc
+
+    sources: dict[str, DiagnosisParameterSource] = {}
+
+    effective_rpm: float
+    if rpm is not None:
+        effective_rpm = float(rpm)
+        sources["rpm"] = "explicit"
+    elif context["rpm"] is not None:
+        effective_rpm = float(context["rpm"])
+        if context["rpm_source"] == "measurement":
+            sources["rpm"] = "measurement"
+        else:
+            sources["rpm"] = "point"
+    else:
+        raise ValueError(_missing_rpm_message(signal_id, identity, point))
+
+    effective_bearing: Optional[str]
+    if bearing_id:
+        effective_bearing = bearing_id
+        sources["bearing_id"] = "explicit"
+    elif context["bearing_id"] is not None:
+        effective_bearing = str(context["bearing_id"])
+        sources["bearing_id"] = "point"
+    elif context["fault_orders"] is not None:
+        # A frequency set has no route through this tool yet: the result
+        # says so instead of skipping the bearing block silently.
+        effective_bearing = None
+        sources["bearing_id"] = "not_supported_fault_orders"
+    else:
+        effective_bearing = None
+        sources["bearing_id"] = "none"
+
+    effective_group: Literal[1, 2]
+    if machine_group is not None:
+        effective_group = machine_group
+        sources["machine_group"] = "explicit"
+    elif context["machine_group"] is not None:
+        effective_group = _point_machine_group(context["machine_group"], signal_id)
+        sources["machine_group"] = "point"
+    else:
+        effective_group = _DEFAULT_MACHINE_GROUP
+        sources["machine_group"] = "default"
+
+    effective_support: Literal["rigid", "flexible"]
+    if support_type is not None:
+        effective_support = support_type
+        sources["support_type"] = "explicit"
+    elif context["support_type"] is not None:
+        effective_support = _point_support_type(context["support_type"], signal_id)
+        sources["support_type"] = "point"
+    else:
+        effective_support = _DEFAULT_SUPPORT_TYPE
+        sources["support_type"] = "default"
+
+    parameters = _DiagnosisParameters(
+        rpm=effective_rpm,
+        bearing_id=effective_bearing,
+        machine_group=effective_group,
+        support_type=effective_support,
+        fault_orders=context["fault_orders"],
+    )
+    return parameters, sources
+
+
+def _fault_orders_remedy(
+    signal_id: str, rpm: float, fault_orders: dict[str, float]
+) -> str:
+    """How to check the point's declared orders outside this tool."""
+    targets = _expected_frequencies(rpm, fault_orders=fault_orders)
+    frequencies = {
+        label: round(float(hz), 2)
+        for label, hz in (targets["frequencies"] or {}).items()
+    }
+    return (
+        f"Bearing block not computed: the measurement point declares "
+        f"fault_orders {fault_orders} without a bearing_id, and "
+        f"{_FAULT_ORDERS_NOT_SUPPORTED}. Check them with "
+        f"check_bearing_faults(signal_id='{signal_id}', rpm={rpm:g}, "
+        f"frequencies={frequencies}), or pass bearing_id=... to "
+        f"diagnose_vibration."
+    )
+
 
 async def diagnose_vibration(
     ctx: Context,
     signal_id: str,
-    rpm: float,
+    rpm: Optional[float] = None,
     bearing_id: Optional[str] = None,
-    machine_group: Literal[1, 2] = 2,
-    support_type: Literal["rigid", "flexible"] = "rigid",
+    machine_group: Optional[Literal[1, 2]] = None,
+    support_type: Optional[Literal["rigid", "flexible"]] = None,
 ) -> DiagnosisResult:
     """Full integrated diagnosis: FFT + PSD + STFT + bearing faults + ISO severity.
 
@@ -1481,37 +1738,102 @@ async def diagnose_vibration(
     still run. Units are never guessed from amplitude — declare them via
     load_signal(signal_unit=...) or the companion _metadata.json.
 
+    Diagnostic parameters default to the DECLARED context of the signal
+    (the result's parameter_sources block says where each value came
+    from): an explicit argument always wins; rpm then falls back to the
+    rpm declared in the companion's "measurement" object, then to the
+    nominal_rpm of the measurement point's current declaration in the
+    asset ledger (declare_measurement_point), and with no source anywhere
+    the call is refused, never defaulted; bearing_id, machine_group and
+    support_type fall back to the point's current declaration, and
+    machine_group / support_type then to the historical defaults 2 and
+    'rigid' (without a bearing anywhere the bearing block is skipped). A
+    point declared with fault_orders but no bearing_id gets no bearing
+    block in this stage — frequency sets are not supported here; the
+    result says so and names check_bearing_faults(frequencies=...). A
+    signal loaded without a measurement identity behaves exactly as
+    before: only the explicit arguments and the historical defaults apply.
+
     Args:
+        ctx: MCP context. Unused — see this module's docstring on logging.
         signal_id: ID of the stored signal.
-        rpm: Machine operating speed in RPM.
-        bearing_id: Bearing designation for fault detection (optional).
+        rpm: Machine operating speed in RPM. Optional: the measurement's
+            declared rpm, then the point's nominal_rpm.
+        bearing_id: Bearing designation for fault detection. Optional: the
+            point's declared bearing_id.
         machine_group: 1 (large, >300 kW) or 2 (medium, 15-300 kW).
-            Default 2.
-        support_type: 'rigid' or 'flexible'. Default 'rigid'.
+            Optional: the point's declaration, then 2.
+        support_type: 'rigid' or 'flexible'. Optional: the point's
+            declaration, then 'rigid'.
 
     Raises:
-        ValueError: If the stored signal has no sampling rate.
+        ValueError: If the stored signal has no sampling rate, if no rpm
+            can be resolved from the call, the measurement or the point
+            (the message names the three remedies), or if the point's
+            declaration carries a malformed value.
     """
     signal_data, info = resolve_signal(signal_id)
     fs = info.sampling_rate
 
+    # The point is looked up only for a signal that declares an identity;
+    # an unreadable ledger is logged and counts as "no point context".
+    identity = info.measurement
+    point = _point_context_for(signal_id, identity)
+    parameters, sources = _resolve_diagnosis_parameters(
+        signal_id,
+        identity,
+        point,
+        rpm=rpm,
+        bearing_id=bearing_id,
+        machine_group=machine_group,
+        support_type=support_type,
+    )
+
     # None = undeclared: pipeline degrades to a refused ISO block while
     # the other diagnosis blocks still run (no unit guessing).
     signal_unit = info.signal_unit
-    logger.info(f"Running full diagnosis for '{signal_id}' at {rpm} RPM")
-    if bearing_id:
-        logger.info(f"Bearing analysis: {bearing_id}")
+    logger.info(
+        f"Running full diagnosis for '{signal_id}' at {parameters.rpm} RPM "
+        f"(rpm: {sources['rpm']}; group {parameters.machine_group}: "
+        f"{sources['machine_group']}; support {parameters.support_type}: "
+        f"{sources['support_type']})"
+    )
+    if parameters.bearing_id:
+        logger.info(
+            f"Bearing analysis: {parameters.bearing_id} ({sources['bearing_id']})"
+        )
+    elif sources["bearing_id"] == "not_supported_fault_orders":
+        logger.info(
+            f"Bearing analysis: not computed — the point declares fault_orders "
+            f"and {_FAULT_ORDERS_NOT_SUPPORTED}"
+        )
 
     result = _diagnose_vibration(
         signal=signal_data,
         fs=fs,
-        rpm=rpm,
+        rpm=parameters.rpm,
         signal_id=signal_id,
-        bearing_id=bearing_id,
-        machine_group=machine_group,
-        support_type=support_type,
+        bearing_id=parameters.bearing_id,
+        machine_group=parameters.machine_group,
+        support_type=parameters.support_type,
         signal_unit=signal_unit,
     )
+
+    # The absent bearing block gets its reason where the pipeline already
+    # states the ISO refusal: the diagnosis text and the recommendations.
+    overall_diagnosis: str = result["overall_diagnosis"]
+    recommendations: list[str] = list(result["recommendations"])
+    if sources["bearing_id"] == "not_supported_fault_orders":
+        overall_diagnosis = (
+            f"{overall_diagnosis} Bearing analysis: not computed — the "
+            f"measurement point declares fault_orders and "
+            f"{_FAULT_ORDERS_NOT_SUPPORTED}."
+        )
+        recommendations.append(
+            _fault_orders_remedy(
+                signal_id, parameters.rpm, parameters.fault_orders or {}
+            )
+        )
 
     # Convert nested dicts to Pydantic models
     bearing_faults_model = None
@@ -1546,7 +1868,7 @@ async def diagnose_vibration(
         logger.info(f"ISO severity: refused — {iso_block['reason']}")
     else:
         logger.info(f"ISO Zone: {iso_block['zone']}")
-    for rec in result["recommendations"]:
+    for rec in recommendations:
         logger.info(f"  -> {rec}")
 
     return DiagnosisResult(
@@ -1561,9 +1883,10 @@ async def diagnose_vibration(
         bearing_faults=bearing_faults_model,
         iso_severity=iso_model,
         anomaly_detection=result.get("anomaly_detection"),
-        overall_diagnosis=result["overall_diagnosis"],
+        overall_diagnosis=overall_diagnosis,
         evidence_strength=result["evidence_strength"],
-        recommendations=result["recommendations"],
+        recommendations=recommendations,
+        parameter_sources=sources,
     )
 
 
