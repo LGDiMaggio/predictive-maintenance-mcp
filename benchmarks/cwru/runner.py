@@ -48,6 +48,19 @@ Load-bearing decisions, documented here:
   for writing — so a changing date or git describe can never fail this check.
   Cross-platform re-runs are expected to reproduce metric-level results,
   not byte-identical artifacts — scipy/BLAS low-order float bits differ across builds.
+- **Score-time describe vs. the pipeline's own write** (:func:`_git_describe`,
+  issue #69): ``python -m benchmarks.cwru all`` writes the tracked
+  ``outcomes.json`` before it scores, so a score-time ``git describe``
+  collected after that write always reports ``-dirty``: the pipeline's
+  own output permanently masks the one case this field exists to report
+  (a real uncommitted source edit). ``benchmarks.cwru.__main__._cmd_all``
+  works around it at the call site, not here: it snapshots the whole
+  score-time metadata via :func:`benchmarks.cwru.scorer.collect_metadata`
+  before anything is written, and passes that snapshot into scoring as
+  an override, so ``_git_describe`` only ever runs once per ``all``
+  invocation, before the write. Standalone ``score`` is unaffected: it
+  still calls this function fresh, against whatever tree it is actually
+  run against.
 
 Outcome schema (per opaque id):
 
