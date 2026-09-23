@@ -57,10 +57,12 @@ Load-bearing decisions, documented here:
   works around it at the call site, not here: it snapshots the whole
   score-time metadata via :func:`benchmarks.cwru.scorer.collect_metadata`
   before anything is written, and passes that snapshot into scoring as
-  an override, so ``_git_describe`` only ever runs once per ``all``
-  invocation, before the write. Standalone ``score`` is unaffected: it
-  still calls this function fresh, against whatever tree it is actually
-  run against.
+  an override, so the score-time describe is collected once, before the
+  run stage writes anything. ``_run_stage`` still calls ``_git_describe``
+  a second time on its own, via :func:`collect_provenance`, for the
+  measurement block; that call happens after the score-time snapshot and
+  does not affect it. Standalone ``score`` is unaffected: it still calls
+  this function fresh, against whatever tree it is actually run against.
 
 Outcome schema (per opaque id):
 
