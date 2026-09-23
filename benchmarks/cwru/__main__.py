@@ -23,6 +23,22 @@ separately verifiable stage, but running it in another process does not
 populate this one. ``all`` refuses to proceed to scoring unless every
 record produced an ``"ok"`` outcome (a prior-stage failure raises and
 aborts the chain on its own).
+
+Score-time metadata snapshot (documented decision, issue #69): ``all``
+writes ``outcomes.json``, a tracked file, before it scores, so a
+score-time metadata collection done after that write always sees a
+dirty tree and the ``git_describe`` field degenerates to permanently
+``-dirty``. ``_cmd_all`` snapshots the whole score-time metadata via
+``scorer.collect_metadata()`` once at the very start, before anything
+is written, and passes it into ``_score_outcomes`` as an override, so
+``git_describe`` reflects the tree the run actually started from. A
+genuinely dirty tree (uncommitted source edits present before the run)
+still reports ``-dirty``, since the snapshot is taken before, not
+instead of, the describe. Standalone ``score`` is untouched: it keeps
+collecting fresh against whatever tree it is actually run against. The
+manual workaround from 3fe533a / 5b8cd3e (commit ``outcomes.json`` on
+its own, then re-run ``score`` against the now-clean tree) is no longer
+needed.
 """
 
 from __future__ import annotations
@@ -117,6 +133,7 @@ def _score_outcomes(
     outcomes: dict[str, dict[str, Any]],
     results_path: Optional[Path],
     measurement_provenance: Optional[Mapping[str, str]],
+    metadata_overrides: Optional[Mapping[str, str]] = None,
 ) -> Path:
     """Shared scoring stage: label join, metrics, atomic results write.
 
@@ -125,12 +142,19 @@ def _score_outcomes(
         results_path: Results destination; ``None`` uses the scorer's
             committed default.
         measurement_provenance: Provenance values coming from the outcomes.
+        metadata_overrides: Score-time metadata to use verbatim instead
+            of collecting it here. ``all`` passes its start-of-run
+            snapshot (see its docstring); ``score`` leaves this
+            ``None`` so it keeps describing whatever tree it is
+            actually run against.
 
     Returns:
         The results path written.
     """
     results = scorer.score_results(
-        outcomes, measurement_provenance=measurement_provenance
+        outcomes,
+        metadata_overrides=metadata_overrides,
+        measurement_provenance=measurement_provenance,
     )
     target = scorer.write_results(results, results_path)
     print(f"Scored {len(results['records'])} record(s); wrote {target}.")
@@ -150,13 +174,22 @@ def _cmd_all(args: argparse.Namespace) -> int:
     Any stage failure raises and aborts the chain; the explicit gate
     additionally refuses to reach scoring when a record is missing or
     produced a non-ok outcome, so a partial run can never be scored.
+
+    The score-time metadata (including ``git_describe``) is snapshotted
+    via ``scorer.collect_metadata()`` before anything below is written,
+    since the run stage writes the tracked ``outcomes.json`` and a
+    collection done afterwards would always see a dirty tree (see the
+    module docstring's "Score-time metadata snapshot" decision).
     """
+    metadata_overrides = scorer.collect_metadata()
     records = ops_view()
     for record in records:
         ensure_cached(record)
     outcomes, measurement_provenance = _run_stage(records, args)
     runner.assert_outcomes_complete(outcomes, records)
-    _score_outcomes(outcomes, args.results_output, measurement_provenance)
+    _score_outcomes(
+        outcomes, args.results_output, measurement_provenance, metadata_overrides
+    )
     return 0
 
 

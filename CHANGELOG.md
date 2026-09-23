@@ -128,6 +128,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the ledger's 1x amplitude. Behaviour-preserving: the operation order is
   unchanged and the golden fixture pins the numbers.
 
+### Fixed
+- **`all` no longer reports a permanently `-dirty` score-time `git_describe`.**
+  `python -m benchmarks.cwru all` writes the tracked `outcomes.json` before it
+  scores, so a `git describe` collected after that write always saw the
+  pipeline's own output and reported `-dirty`, masking the one case the field
+  exists to report. `_cmd_all` now snapshots the whole score-time metadata
+  before anything is written and passes it into scoring as an override; the
+  manual commit-then-rescore workaround from 3fe533a/5b8cd3e is no longer
+  needed.
+
 ## [0.13.0] - 2026-08-14
 
 Three additions. `load_signal` now opens headerless raw binary waveforms

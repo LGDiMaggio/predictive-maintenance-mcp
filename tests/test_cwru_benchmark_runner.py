@@ -26,7 +26,9 @@ benchmarks/cwru/results/ directory (committed only by the maintainer
 run in a later unit).
 """
 
+import argparse
 import json
+import subprocess
 from pathlib import Path
 
 import numpy as np
@@ -34,7 +36,8 @@ import pytest
 from scipy.io import savemat
 
 import predictive_maintenance_mcp
-from benchmarks.cwru import runner
+from benchmarks.cwru import __main__ as cwru_main
+from benchmarks.cwru import runner, scorer
 from benchmarks.cwru.__main__ import main
 from benchmarks.cwru.importer import SIGNAL_UNIT, import_record
 from benchmarks.cwru.records import OpsRecord
@@ -577,3 +580,146 @@ class TestMeasurementProvenance:
         )
         clean, _ = runner.split_provenance(document)
         runner.assert_outcomes_complete(clean, records)
+
+
+# ---------------------------------------------------------------------------
+# `all`'s score-time metadata snapshot (issue #69): the pipeline's own
+# outcomes.json write must not be able to dirty the score-time describe.
+# ---------------------------------------------------------------------------
+
+
+def _init_tmp_git_repo(tmp_path: Path) -> tuple[Path, Path]:
+    """A throwaway git repo with one tracked, committed file.
+
+    Returns ``(repo_root, tracked_file)``. Never the real checkout: the
+    maintainer's own review on #69 requires the two legs run against a
+    temporary repo, not this one.
+    """
+    repo_root = tmp_path / "tmp_repo"
+    repo_root.mkdir()
+    tracked = repo_root / "outcomes.json"
+    tracked.write_text("{}\n")
+    run = lambda *cmd: subprocess.run(  # noqa: E731
+        cmd, cwd=repo_root, check=True, capture_output=True, text=True
+    )
+    run("git", "init", "-q")
+    run("git", "config", "user.email", "test@example.invalid")
+    run("git", "config", "user.name", "Test")
+    run("git", "add", "outcomes.json")
+    run("git", "commit", "-q", "-m", "init")
+    return repo_root, tracked
+
+
+class TestCmdAllScoreTimeMetadataSnapshot:
+    """``all`` snapshots score-time metadata before the run stage writes.
+
+    A score-time ``git describe`` collected AFTER the run stage writes
+    the tracked ``outcomes.json`` always reports ``-dirty``, masking the
+    one case (a real uncommitted source edit) it exists to report.
+    ``_cmd_all`` snapshots via the real, unmocked ``scorer.collect_metadata``
+    before anything is written and passes that snapshot through as an
+    override; only ``score_results``/``write_results`` are stubbed, so
+    the snapshot's ``git_describe`` comes from an actual subprocess call
+    against a throwaway ``tmp_path`` repo, never the real checkout.
+    """
+
+    def _run_cmd_all_against(self, tmp_path, monkeypatch, repo_root):
+        monkeypatch.setattr(runner, "REPO_ROOT", repo_root)
+
+        captured = {}
+
+        def fake_run_stage(records, args):
+            # Simulate the real `_run_stage`: writes the tracked
+            # outcomes.json (dirtying the tree) only AFTER `_cmd_all`
+            # is supposed to have already taken its metadata snapshot.
+            (repo_root / "outcomes.json").write_text('{"cwru_001": {}}\n')
+            return {"cwru_001": {"status": runner.OUTCOME_STATUS_OK}}, {
+                "date": "measured-at",
+                "git_describe": "measured-describe",
+            }
+
+        def fake_score_results(
+            outcomes,
+            labeled=None,
+            *,
+            metadata_overrides=None,
+            measurement_provenance=None,
+        ):
+            captured["metadata_overrides"] = metadata_overrides
+            captured["measurement_provenance"] = measurement_provenance
+            return {"records": {}, "metadata": metadata_overrides}
+
+        monkeypatch.setattr(cwru_main, "ops_view", lambda: ())
+        monkeypatch.setattr(cwru_main, "ensure_cached", lambda record: None)
+        monkeypatch.setattr(cwru_main, "_run_stage", fake_run_stage)
+        monkeypatch.setattr(
+            runner, "assert_outcomes_complete", lambda outcomes, records: None
+        )
+        monkeypatch.setattr(scorer, "score_results", fake_score_results)
+        monkeypatch.setattr(
+            scorer,
+            "write_results",
+            lambda results, path=None: tmp_path / "results.json",
+        )
+
+        args = argparse.Namespace(
+            check_determinism=False, output=None, results_output=None
+        )
+        exit_code = cwru_main._cmd_all(args)
+        assert exit_code == 0
+        return captured
+
+    def test_clean_tree_snapshot_carries_no_dirty_suffix(self, tmp_path, monkeypatch):
+        repo_root, _tracked = _init_tmp_git_repo(tmp_path)
+
+        captured = self._run_cmd_all_against(tmp_path, monkeypatch, repo_root)
+
+        describe = captured["metadata_overrides"]["git_describe"]
+        assert not describe.endswith("-dirty"), describe
+        # Sanity: the snapshot is really the pre-write describe, not the
+        # run stage's own (unrelated) measurement-provenance value.
+        assert describe != "measured-describe"
+
+    def test_genuinely_dirty_tree_still_reports_dirty(self, tmp_path, monkeypatch):
+        repo_root, tracked = _init_tmp_git_repo(tmp_path)
+        # A real uncommitted source edit, already present before `all`
+        # ever runs: the case the field exists to report.
+        tracked.write_text('{"pre-existing-edit": true}\n')
+
+        captured = self._run_cmd_all_against(tmp_path, monkeypatch, repo_root)
+
+        describe = captured["metadata_overrides"]["git_describe"]
+        assert describe.endswith("-dirty"), describe
+
+    def test_cmd_score_metadata_snapshot_unaffected(self, tmp_path, monkeypatch):
+        """Standalone ``score`` keeps collecting metadata fresh (unchanged)."""
+        outcomes = {"cwru_001": {"status": runner.OUTCOME_STATUS_OK}}
+        monkeypatch.setattr(
+            scorer,
+            "read_outcomes",
+            lambda path: (outcomes, {"git_describe": "measured"}),
+        )
+        captured = {}
+
+        def fake_score_results(
+            outcomes,
+            labeled=None,
+            *,
+            metadata_overrides=None,
+            measurement_provenance=None,
+        ):
+            captured["metadata_overrides"] = metadata_overrides
+            return {"records": {}, "metadata": metadata_overrides}
+
+        monkeypatch.setattr(scorer, "score_results", fake_score_results)
+        monkeypatch.setattr(
+            scorer,
+            "write_results",
+            lambda results, path=None: tmp_path / "results.json",
+        )
+
+        args = argparse.Namespace(outcomes=None, output=None)
+        exit_code = cwru_main._cmd_score(args)
+
+        assert exit_code == 0
+        assert captured["metadata_overrides"] is None
