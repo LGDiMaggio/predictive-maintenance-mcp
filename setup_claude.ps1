@@ -25,20 +25,17 @@ $repoPath = $PSScriptRoot
 # Run a native command and return its exit code and merged output.
 # Under Windows PowerShell 5.1 a line on stderr becomes a terminating
 # NativeCommandError while $ErrorActionPreference is "Stop", so the
-# preference is relaxed around the call and the exit code decides.
+# preference is relaxed inside this function (the assignment is
+# function-scoped and leaves the caller's value untouched) and the exit
+# code decides.
 function Invoke-Native {
     param(
         [Parameter(Mandatory = $true)][string]$Exe,
         [string[]]$Arguments = @()
     )
-    $previous = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
-    try {
-        $lines = & $Exe @Arguments 2>&1 | ForEach-Object { "$_" }
-        $code = $LASTEXITCODE
-    } finally {
-        $ErrorActionPreference = $previous
-    }
+    $lines = & $Exe @Arguments 2>&1 | ForEach-Object { "$_" }
+    $code = $LASTEXITCODE
     return @{ Code = $code; Output = (@($lines) -join "`n") }
 }
 
@@ -95,6 +92,7 @@ if ($isCloudSynced) {
     $venvPath = "$repoPath\.venv"
     Write-Host "    Venv location: $venvPath" -ForegroundColor Gray
 }
+$venvPython = "$venvPath\Scripts\python.exe"
 
 # -----------------------------------------------------------------------
 # 3. Create venv + install package (non-editable for local file locality)
@@ -111,7 +109,7 @@ if ($venvResult.Code -ne 0) {
 }
 
 Write-Host "Installing dependencies (this may take a minute on first run)..." -ForegroundColor Cyan
-$installResult = Invoke-Native -Exe $uvExe -Arguments @("pip", "install", "--python", "$venvPath\Scripts\python.exe", $repoPath, "--quiet")
+$installResult = Invoke-Native -Exe $uvExe -Arguments @("pip", "install", "--python", $venvPython, $repoPath, "--quiet")
 if ($installResult.Code -ne 0) {
     Write-Host "[X] Dependency installation failed." -ForegroundColor Red
     Write-Host $installResult.Output -ForegroundColor Gray
@@ -121,14 +119,14 @@ Write-Host "[OK] Dependencies installed" -ForegroundColor Green
 
 # Pre-compile .pyc files - cuts cold-start time significantly
 Write-Host "Pre-compiling bytecode for faster startup..." -ForegroundColor Cyan
-$null = Invoke-Native -Exe "$venvPath\Scripts\python.exe" -Arguments @("-m", "compileall", "-q", "$venvPath\Lib\site-packages")
+$null = Invoke-Native -Exe $venvPython -Arguments @("-m", "compileall", "-q", "$venvPath\Lib\site-packages")
 Write-Host "[OK] Bytecode compiled" -ForegroundColor Green
 
 # -----------------------------------------------------------------------
 # 4. Quick smoke-test
 # -----------------------------------------------------------------------
 Write-Host "Testing server import..." -ForegroundColor Cyan
-$importResult = Invoke-Native -Exe "$venvPath\Scripts\python.exe" -Arguments @("-c", "import predictive_maintenance_mcp; print('OK')")
+$importResult = Invoke-Native -Exe $venvPython -Arguments @("-c", "import predictive_maintenance_mcp; print('OK')")
 if ($importResult.Code -eq 0) {
     Write-Host "[OK] Server import OK" -ForegroundColor Green
 } else {
@@ -139,7 +137,7 @@ if ($importResult.Code -eq 0) {
 # -----------------------------------------------------------------------
 # 5. Build the server config entry for claude_desktop_config.json
 # -----------------------------------------------------------------------
-$pythonExePath = "$venvPath\Scripts\python.exe".Replace('\', '/')
+$pythonExePath = $venvPython.Replace('\', '/')
 $serverEntry = [ordered]@{
     command = $pythonExePath
     args    = @("-m", "predictive_maintenance_mcp")
@@ -163,7 +161,9 @@ if (Test-Path $claudeConfigFile) {
     Write-Host ""
     Write-Host "[OK] Existing config backed up: $backupFile" -ForegroundColor Gray
 
-    $existingConfig = Get-Content $claudeConfigFile -Raw | ConvertFrom-Json
+    # ReadAllText decodes UTF-8 with or without BOM in both editions; under
+    # 5.1 Get-Content would read a BOM-less file as the ANSI code page.
+    $existingConfig = [System.IO.File]::ReadAllText($claudeConfigFile) | ConvertFrom-Json
 
     if (-not $existingConfig.PSObject.Properties["mcpServers"]) {
         $existingConfig | Add-Member -MemberType NoteProperty -Name "mcpServers" -Value ([PSCustomObject]@{})

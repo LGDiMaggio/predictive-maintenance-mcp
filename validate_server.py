@@ -86,17 +86,26 @@ prompts = list(mcp._prompt_manager._prompts)
 resources = list(mcp._resource_manager._resources) + list(
     mcp._resource_manager._templates
 )
-print("   [OK ] from predictive_maintenance_mcp.server import mcp")
-print(f"   MCP Tools: {len(tools)} (expected 38)")
-print(f"   MCP Prompts: {len(prompts)} (expected 3)")
-print(f"   MCP Resources: {len(resources)} (expected 0)")
-
-# Frozen surface of v0.13.0 (tools, resources, prompts). The same numbers are
+# Frozen registered surface (tools, resources, prompts). The same numbers are
 # pinned by tests/test_version_alignment.py::test_expected_final_surface;
 # update both together when the registered surface changes.
-counts_ok = (len(tools), len(resources), len(prompts)) == (38, 0, 3)
+EXPECTED_TOOLS, EXPECTED_RESOURCES, EXPECTED_PROMPTS = 38, 0, 3
+EXPECTED_LABEL = f"{EXPECTED_TOOLS}/{EXPECTED_RESOURCES}/{EXPECTED_PROMPTS}"
+
+print("   [OK ] from predictive_maintenance_mcp.server import mcp")
+print(f"   MCP Tools: {len(tools)} (expected {EXPECTED_TOOLS})")
+print(f"   MCP Prompts: {len(prompts)} (expected {EXPECTED_PROMPTS})")
+print(f"   MCP Resources: {len(resources)} (expected {EXPECTED_RESOURCES})")
+
+counts_ok = (len(tools), len(resources), len(prompts)) == (
+    EXPECTED_TOOLS,
+    EXPECTED_RESOURCES,
+    EXPECTED_PROMPTS,
+)
 if not counts_ok:
-    print("   [FAIL] Registered surface differs from the frozen 38/0/3 target")
+    print(
+        f"   [FAIL] Registered surface differs from the frozen {EXPECTED_LABEL} target"
+    )
 print()
 
 # 6. Check for key MCP tools
@@ -137,7 +146,7 @@ if missing or not counts_ok:
     if not counts_ok:
         print(
             "VALIDATION FAILED - endpoint counts "
-            f"{len(tools)}/{len(resources)}/{len(prompts)} != 38/0/3"
+            f"{len(tools)}/{len(resources)}/{len(prompts)} != {EXPECTED_LABEL}"
         )
     sys.exit(1)
 print("VALIDATION PASSED - Server ready for testing!")
