@@ -127,6 +127,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   lives in `signal_processing.spectral.amplitude_spectrum`, shared with
   the ledger's 1x amplitude. Behaviour-preserving: the operation order is
   unchanged and the golden fixture pins the numbers.
+- **New cover images.** The README opens with a banner that follows the
+  GitHub light/dark theme (`assets/banner-light.png`, `assets/banner-dark.png`),
+  and the docs site's social preview (`og:image`, `twitter:image`) now uses
+  `assets/cover-social.png` at 1280×640.
 
 ### Fixed
 - **`all` no longer reports a permanently `-dirty` score-time `git_describe`.**

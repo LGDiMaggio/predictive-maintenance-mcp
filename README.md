@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/LGDiMaggio/predictive-maintenance-mcp/main/assets/banner-dark.png">
+    <img src="https://raw.githubusercontent.com/LGDiMaggio/predictive-maintenance-mcp/main/assets/banner-light.png" alt="Predictive Maintenance MCP — ask your machines what's wrong, with evidence, not guesses" width="100%">
+  </picture>
+</p>
+
 # Predictive Maintenance MCP Server
 
 <!-- mcp-name: io.github.LGDiMaggio/predictive-maintenance-mcp -->

@@ -25,6 +25,8 @@ global-exclude .DS_Store
 
 # Exclude generated files (data/ledger holds operator data: never packaged)
 prune data/ledger
+# README/docs images are served from GitHub by absolute URL: never packaged
+prune assets
 prune htmlcov
 prune .pytest_cache
 prune .mypy_cache
