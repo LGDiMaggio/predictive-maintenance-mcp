@@ -36,54 +36,90 @@ An open-source [MCP](https://modelcontextprotocol.io/) server that turns LLMs in
 
 | You are | Start here |
 |---------|------------|
-| **Reliability / maintenance engineer** — diagnostics in plain language, no coding | [Engineer's Quickstart](docs/QUICKSTART_ENGINEER.md) |
-| **AI / MCP developer** — run, integrate, and extend the server | [Developer's Quickstart](docs/QUICKSTART_DEVELOPER.md) · [Quick Start](#quick-start) below |
+| **Reliability / maintenance engineer** — diagnostics in plain language, no coding | [Quick Start](#quick-start) below · then [Engineer's guide](docs/QUICKSTART_ENGINEER.md) for your own data, manuals and workflows |
+| **AI / MCP developer** — run, integrate, and extend the server | [Developer's Quickstart](docs/QUICKSTART_DEVELOPER.md) · [Installation](INSTALL.md) |
 | **Researcher / evaluator** — how the numbers are measured | [Benchmark Methodology](docs/benchmark-methodology.md) · [Benchmark](#benchmark) below |
+
+---
+
+## What Can It Do?
+
+**Point the AI at a vibration signal → get the evidence behind the fault — detected frequencies, matched fault patterns, ISO-cited severity — to support your call.**
+
+| You say | The AI does |
+|---------|-------------|
+| *"Is this bearing healthy?"* | Loads the signal, runs spectral analysis, surfaces matching fault-frequency evidence, cites the ISO 20816-3 severity zone |
+| *"Generate a full diagnostic report"* | Produces an interactive HTML report with charts, fault markers, and server-authored severity wording |
+| *"Extract specs from test_pump_manual.pdf and diagnose the signal"* | Reads the equipment manual, looks up the bearing model, calculates expected fault frequencies, flags which ones the signal actually shows |
+| *"Train an anomaly detector on my healthy baselines, then flag anomalies"* | Trains a model on your normal data, scores new signals, flags outliers for your review |
+| *"What changed on pump P-101 since the baseline?"* | Reads the asset's recorded history, compares the latest acquisitions with the declared reference, and reports each indicator's change with the criterion it applied |
+
+The AI doesn't guess: it calls **41 specialized MCP endpoints** (38 tools + 3 prompts) running locally on your machine. Every signal is referenced by a single `signal_id` handle from load to report. Your data never leaves your infrastructure.
+
+Full endpoint reference, grouped by category: **[Tool Catalog](docs/TOOL_CATALOG.md)**.
 
 ---
 
 ## Quick Start
 
-**Get running in ~3 minutes.** On Windows, one script wires everything into Claude Desktop — it installs the venv, pre-compiles dependencies, and writes `claude_desktop_config.json` for you (OneDrive / cloud-sync paths included):
+One route, from a fresh clone to a first diagnosis in Claude Desktop. You need [Git](https://git-scm.com/) (or the repository ZIP from GitHub, extracted), [uv](https://docs.astral.sh/uv/getting-started/installation/) (it fetches Python 3.11 by itself) and [Claude Desktop](https://claude.ai/download).
 
-```powershell
-git clone https://github.com/LGDiMaggio/predictive-maintenance-mcp.git
-cd predictive-maintenance-mcp
-.\setup_claude.ps1
-```
-
-Restart Claude Desktop, then try:
-
-> *"Load real_train/OuterRaceFault_1.csv and check if the bearing is healthy."*
-
-<details>
-<summary><b>Manual config (macOS / Linux / other MCP clients)</b></summary>
-
-Install the package:
+**1. Get the repository.** The 20 sample signals ship with it, not with the PyPI package: real bearing measurements from the MathWorks rolling-element bearing dataset, healthy baselines plus inner and outer race faults, each with its companion metadata ([data/README.md](data/README.md)).
 
 ```bash
-pip install predictive-maintenance-mcp
+git clone https://github.com/LGDiMaggio/predictive-maintenance-mcp.git
+cd predictive-maintenance-mcp
 ```
 
-Find the full path to `uvx` (`which uvx` on macOS/Linux, `where uvx` on Windows), then add to your client config — `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
+**2. Install and connect.** On Windows, one script creates the environment, installs the server and writes the Claude Desktop entry (clones inside OneDrive or other synced folders are handled):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\setup_claude.ps1
+```
+
+<details>
+<summary><b>macOS</b></summary>
+
+```bash
+uv venv .venv --python 3.11
+uv pip install --python .venv/bin/python .
+```
+
+Add this entry to `~/Library/Application Support/Claude/claude_desktop_config.json`, with the absolute path of your clone in place of `/path/to/predictive-maintenance-mcp`. If a `predictive-maintenance` entry is already there, replace it:
 
 ```json
 {
   "mcpServers": {
     "predictive-maintenance": {
-      "command": "/full/path/to/uvx",
-      "args": ["predictive-maintenance-mcp"],
-      "env": { "UV_LINK_MODE": "copy" }
+      "command": "/path/to/predictive-maintenance-mcp/.venv/bin/python",
+      "args": ["-m", "predictive_maintenance_mcp"],
+      "env": { "PDM_PROJECT_DIR": "/path/to/predictive-maintenance-mcp" }
     }
   }
 }
 ```
 
-> **Why the full path?** Claude Desktop launches servers with a minimal `PATH` that often omits user-local tool directories (e.g. `~/.local/bin`). Using the full path to `uvx` avoids a silent "command not found" failure. On Windows the typical path is `C:\Users\<you>\.local\bin\uvx.exe`.
+`PDM_PROJECT_DIR` tells the server where the sample signals and the reports live. Keep every path absolute: Claude Desktop launches servers with a minimal `PATH`.
 
 </details>
 
-> **More options**: [install from source](INSTALL.md) · [VS Code setup](INSTALL.md) · [Docker / HTTPS deployment](docs/DEPLOYMENT.md) · [use with local LLMs (Ollama)](docs/OLLAMA_GUIDE.md)
+**3. Restart and check.** Quit Claude Desktop completely (File, then Quit) and start it again. In a new chat ask:
+
+> *"List the available vibration signals."*
+
+The 20 included signals should appear. If they do not, see [INSTALL.md, Troubleshooting](INSTALL.md#troubleshooting).
+
+**4. First diagnosis.** Try:
+
+> *"Load real_train/OuterRaceFault_1.csv. The shaft runs at 1500 rpm: check the bearing against the fault frequencies declared in its metadata, assess the ISO severity and generate the envelope report."*
+
+What comes back is the server's evidence, not the model's opinion: the outer-race characteristic frequency found in the envelope spectrum with its harmonics, graded as high evidence, with the ball and cage frequencies unmatched; the ISO 20816-3 severity zone of the broadband velocity, with the machine group and support type the assessment assumed; and the path of an HTML report in `reports/` with those frequencies marked on the envelope spectrum. The call on the machine stays with you.
+
+The file name carries the fault label, but the server never reads names. Ask which frequencies matched and with what deviation: the answer rests on the spectrum alone.
+
+**Use your own data.** Put a single-column CSV without a header row where the server can read it (a folder of yours under `data/signals/`, or an absolute path), add a `<name>_metadata.json` next to it with `sampling_rate` and `signal_unit` (for example `"g"`), and ask for the analysis stating the shaft speed. Details and traps: [Use Your Own Data](docs/QUICKSTART_ENGINEER.md#use-your-own-data).
+
+> **Other clients**: Claude Code, VS Code, Cursor and any other MCP client: [INSTALL.md, Manual Setup](INSTALL.md#manual-setup-windows--macos--linux).
 
 ---
 
@@ -117,24 +153,6 @@ Methodology, blind protocol, and honest-benchmarking notes:
 ```bash
 python -m benchmarks.cwru all
 ```
-
----
-
-## What Can It Do?
-
-**Point the AI at a vibration signal → get the evidence behind the fault — detected frequencies, matched fault patterns, ISO-cited severity — to support your call.**
-
-| You say | The AI does |
-|---------|-------------|
-| *"Is this bearing healthy?"* | Loads the signal, runs spectral analysis, surfaces matching fault-frequency evidence, cites the ISO 20816-3 severity zone |
-| *"Generate a full diagnostic report"* | Produces an interactive HTML report with charts, fault markers, and server-authored severity wording |
-| *"Extract specs from test_pump_manual.pdf and diagnose the signal"* | Reads the equipment manual, looks up the bearing model, calculates expected fault frequencies, flags which ones the signal actually shows |
-| *"Train an anomaly detector on my healthy baselines, then flag anomalies"* | Trains a model on your normal data, scores new signals, flags outliers for your review |
-| *"What changed on pump P-101 since the baseline?"* | Reads the asset's recorded history, compares the latest acquisitions with the declared reference, and reports each indicator's change with the criterion it applied |
-
-The AI doesn't guess: it calls **41 specialized MCP endpoints** (38 tools + 3 prompts) running locally on your machine. Every signal is referenced by a single `signal_id` handle from load to report. Your data never leaves your infrastructure.
-
-Full endpoint reference, grouped by category: **[Tool Catalog](docs/TOOL_CATALOG.md)**.
 
 ---
 
@@ -181,27 +199,9 @@ All analysis tools generate **interactive HTML reports** you can open in any bro
 
 ---
 
-## Sample Data Included
-
-The project ships with **20 real bearing vibration signals** from production machinery tests — ready to use out of the box: a training set (2 healthy baselines + 12 fault signals, inner and outer race) and a test set (1 healthy baseline + 5 fault signals).
-
-Try: *"Load real_train/OuterRaceFault_1.csv and diagnose the bearing fault."*
-
-Full dataset documentation: [data/README.md](data/README.md)
-
----
-
 ## Asset Health Ledger
 
-A single diagnosis answers "what does this signal show". The asset health ledger answers "what changed on this machine since the reference", from measurements taken weeks apart, on terms the engineer declared.
-
-- **Declared identity.** The companion metadata file names the asset, the measurement point and the acquisition instant, plus the conditions a comparison depends on (speed, load, sensor, direction). Nothing is inferred from file names or content.
-- **A history that survives restarts.** Every loaded measurement with an identity is recorded in a local append-only ledger, one JSON Lines file per asset, with its derived indicators. Waveforms are never copied, events are never rewritten.
-- **Qualified comparability.** A measurement that contradicts its point or its reference (another unit family, another direction, a speed too far off) is excluded with the reason; one that only lacks context (no speed, no direction, a naive timestamp) stays in the trend with the qualification attached.
-- **A reference that is declared, never assumed.** The engineer declares which measurements are the healthy baseline, and the declaration is attributed. Without one, the first comparable acquisitions serve as a relative reference and are never called healthy.
-- **Change with its criterion.** Each indicator is judged against the reference band; the classification (no change, isolated episode, unconfirmed single acquisition, persistent change) states the rule it applied, and bearing evidence is counted over the last acquisitions.
-
-Four tools carry the workflow: `declare_measurement_point`, `declare_healthy_baseline`, `get_asset_history` and `assess_asset_change`. The ledger puts the evidence over time in front of the engineer; the judgement about the machine stays with the engineer. Contract and operations: [Adapter Guide](docs/ADAPTER_GUIDE.md#declaring-a-measurement) · worked flow: [Examples](EXAMPLES.md#example-8-asset-history) · reference adapter: [STWIN.box](examples/adapters/stwinbox/README.md).
+A single diagnosis answers "what does this signal show". The asset health ledger answers "what changed on this machine since the reference": every measurement loaded with a declared identity (asset, measurement point, acquisition instant, operating conditions) is recorded in a local append-only ledger with its derived indicators, compared with the healthy baseline the engineer declares, and judged against the reference band with the rule it applied stated in the result. Four tools carry the workflow: `declare_measurement_point`, `declare_healthy_baseline`, `get_asset_history` and `assess_asset_change`. Contract and operations: [Adapter Guide](docs/ADAPTER_GUIDE.md#declaring-a-measurement) · worked flow: [Examples](EXAMPLES.md#example-8-asset-history) · reference adapter: [STWIN.box](examples/adapters/stwinbox/README.md).
 
 ---
 
@@ -242,7 +242,7 @@ The codebase follows a **modular architecture** organized around the ISO 13374 S
 
 | Guide | For |
 |-------|-----|
-| [Quickstart for Engineers](docs/QUICKSTART_ENGINEER.md) | Get results fast, no coding required |
+| [Engineer's guide](docs/QUICKSTART_ENGINEER.md) | After the first diagnosis: your own data, machine manuals, workflows |
 | [Quickstart for Developers](docs/QUICKSTART_DEVELOPER.md) | Understand MCP, extend the server |
 | [Tool Catalog](docs/TOOL_CATALOG.md) | Every MCP endpoint, grouped by category |
 | [Adapter Guide](docs/ADAPTER_GUIDE.md) | Bring vendor/DAQ raw data in via explicit declarations |
