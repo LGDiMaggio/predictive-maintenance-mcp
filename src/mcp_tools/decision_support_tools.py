@@ -25,6 +25,7 @@ from typing import Literal, Optional
 from mcp.server.mcpserver import MCPServer, Context
 
 from ..decision_support import generate_recommendations
+from ._utils import refusal_boundary
 
 logger = logging.getLogger(__name__)
 
@@ -97,4 +98,4 @@ async def generate_maintenance_recommendations(
 
 def register(mcp: MCPServer) -> None:
     """Register decision-support MCP tools on *mcp*."""
-    mcp.tool()(generate_maintenance_recommendations)
+    mcp.tool()(refusal_boundary(generate_maintenance_recommendations))

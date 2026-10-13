@@ -32,6 +32,7 @@ from ..config import DATA_DIR, get_ledger_dir
 from ..signal_acquisition.loaders import SUPPORTED_EXTENSIONS
 from ..signal_acquisition.repository import SignalRepository, get_repository
 from ..models import StoredSignalInfo
+from ._utils import refusal_boundary
 
 logger = logging.getLogger(__name__)
 
@@ -483,8 +484,8 @@ async def clear_signals(
 
 def register(mcp: MCPServer) -> None:
     """Register acquisition tools on the given MCPServer instance."""
-    mcp.tool()(list_signals)
-    mcp.tool()(generate_test_signal)
-    mcp.tool()(load_signal)
-    mcp.tool()(get_signal_info)
-    mcp.tool()(clear_signals)
+    mcp.tool()(refusal_boundary(list_signals))
+    mcp.tool()(refusal_boundary(generate_test_signal))
+    mcp.tool()(refusal_boundary(load_signal))
+    mcp.tool()(refusal_boundary(get_signal_info))
+    mcp.tool()(refusal_boundary(clear_signals))

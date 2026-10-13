@@ -50,6 +50,7 @@ from ..models import (
     MeasurementPointDeclarationResult,
 )
 from ..signal_acquisition.measurement import validate_ledger_id
+from ._utils import refusal_boundary
 
 logger = logging.getLogger(__name__)
 
@@ -538,7 +539,7 @@ async def assess_asset_change(
 
 def register(mcp: MCPServer) -> None:
     """Register the asset health ledger tools on *mcp*."""
-    mcp.tool()(declare_measurement_point)
-    mcp.tool()(declare_healthy_baseline)
-    mcp.tool()(get_asset_history)
-    mcp.tool()(assess_asset_change)
+    mcp.tool()(refusal_boundary(declare_measurement_point))
+    mcp.tool()(refusal_boundary(declare_healthy_baseline))
+    mcp.tool()(refusal_boundary(get_asset_history))
+    mcp.tool()(refusal_boundary(assess_asset_change))

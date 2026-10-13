@@ -41,7 +41,7 @@ from ..signal_processing.spectral import (
     select_leading_segment,
 )
 from ..signal_processing.features import extract_time_domain_features
-from ._utils import resolve_signal
+from ._utils import refusal_boundary, resolve_signal
 
 logger = logging.getLogger(__name__)
 
@@ -574,9 +574,9 @@ async def compute_spectrogram_stft(
 
 def register(mcp: MCPServer) -> None:
     """Register signal-analysis MCP tools on *mcp*."""
-    mcp.tool()(analyze_fft)
-    mcp.tool()(analyze_envelope)
-    mcp.tool()(analyze_statistics)
-    mcp.tool()(extract_features_from_signal)
-    mcp.tool()(compute_power_spectral_density)
-    mcp.tool()(compute_spectrogram_stft)
+    mcp.tool()(refusal_boundary(analyze_fft))
+    mcp.tool()(refusal_boundary(analyze_envelope))
+    mcp.tool()(refusal_boundary(analyze_statistics))
+    mcp.tool()(refusal_boundary(extract_features_from_signal))
+    mcp.tool()(refusal_boundary(compute_power_spectral_density))
+    mcp.tool()(refusal_boundary(compute_spectrogram_stft))

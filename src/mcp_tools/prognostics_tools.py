@@ -34,7 +34,7 @@ from mcp.server.mcpserver import MCPServer, Context
 
 from ..signal_processing.features import extract_time_domain_features
 from ..signal_acquisition.repository import get_repository
-from ._utils import resolve_signal
+from ._utils import refusal_boundary, resolve_signal
 from ..prognostics import (
     estimate_rul_linear,
     estimate_rul_exponential,
@@ -467,5 +467,5 @@ async def analyze_signal_trend(
 
 def register(mcp: MCPServer) -> None:
     """Register prognostics MCP tools on *mcp*."""
-    mcp.tool()(estimate_rul)
-    mcp.tool()(analyze_signal_trend)
+    mcp.tool()(refusal_boundary(estimate_rul))
+    mcp.tool()(refusal_boundary(analyze_signal_trend))

@@ -499,7 +499,7 @@ PRs are typically reviewed on a **weekly basis**. Critical bug fixes may receive
 ### Template
 
 ```python
-@mcp.tool()
+# Registered in the module's register(): mcp.tool()(refusal_boundary(new_analysis_tool))
 def new_analysis_tool(
     file_path: str,
     sampling_rate: float,
