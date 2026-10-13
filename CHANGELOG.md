@@ -131,8 +131,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   GitHub light/dark theme (`assets/banner-light.png`, `assets/banner-dark.png`),
   and the docs site's social preview (`og:image`, `twitter:image`) now uses
   `assets/cover-social.png` at 1280×640.
+- **README reordered around a single Quick Start.** Below "Choose Your
+  Path" the README now reads "What Can It Do?", Quick Start, Benchmark,
+  then the rest. The Quick Start is one clone-based route to a first
+  diagnosis in Claude Desktop: prerequisites, the Windows installer
+  command, a macOS block, a restart check on the signal list, a first
+  prompt on an included signal with the result described in words, a note
+  on file names, and three lines for your own data. The sample-data
+  section merges into it; the asset health ledger section is one paragraph
+  with its links. `docs/QUICKSTART_ENGINEER.md` is now a guide for after
+  the first diagnosis (own data, machine manuals, workflows, anomaly
+  detection, usage troubleshooting), and `docs/QUICKSTART_DEVELOPER.md`
+  matches v0.13.0: `analyze_fft` signature, tools and prompts only,
+  `plugin/skills/`, inspector commands.
 
 ### Fixed
+- **`setup_claude.ps1` runs under Windows PowerShell 5.1 on any clone.**
+  The script is ASCII-only, writes `PDM_PROJECT_DIR` into the Claude
+  Desktop entry on every clone, saves `claude_desktop_config.json` as
+  UTF-8 without BOM, and judges native commands by exit code. `INSTALL.md`
+  shows the command in the form that the default execution policy accepts
+  and documents the variable as required for a non-editable install.
+  `validate_server.py` expects the v0.13.0 surface of 38 tools, 0 resources
+  and 3 prompts.
 - **`all` no longer reports a permanently `-dirty` score-time `git_describe`.**
   `python -m benchmarks.cwru all` writes the tracked `outcomes.json` before it
   scores, so a `git describe` collected after that write always saw the

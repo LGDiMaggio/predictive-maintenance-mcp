@@ -1,237 +1,136 @@
-# 🔧 Quickstart for Maintenance & Reliability Engineers
+# Engineer's Guide: After the First Diagnosis
 
-> **Goal**: Get your first AI-powered diagnostic report in under 10 minutes — no coding experience needed.
-
----
-
-## What You'll Achieve
-
-By the end of this guide, you will have:
-
-1. ✅ A running AI diagnostics server on your computer
-2. ✅ An interactive bearing fault detection report (HTML)
-3. ✅ An ISO 20816-3 vibration severity assessment
-4. ✅ The ability to ask questions about your machinery in plain language
-
-**No Python knowledge required.** You'll copy-paste a few commands, and then everything happens through conversation.
+> **Not there yet?** The [README Quick Start](../README.md#quick-start) takes you from a fresh copy of the repository to a first diagnosis in Claude Desktop. This guide covers what comes after: your own measurements, machine manuals, complete workflows, anomaly detection, and the questions that come up along the way. Everything happens in conversation; the server computes, you judge.
 
 ---
 
-## What This Tool Does
+## What This Guide Covers
 
-Imagine having a vibration analyst available 24/7, who can:
-
-- **Read your vibration data** (CSV, MAT, WAV, NPY, Parquet files from accelerometers, DAQ systems)
-- **Run FFT spectrum analysis** and detect dominant frequencies
-- **Perform envelope analysis** to identify bearing fault signatures (BPFO, BPFI, BSF)
-- **Evaluate ISO 20816-3 compliance** and classify vibration severity zones
-- **Read equipment manuals** (PDF/TXT) and extract bearing specifications automatically
-- **Train anomaly detection models** on your healthy baselines and flag deviations
-- **Generate professional HTML reports** you can share with your team or management
-
-You interact with all of this through **natural language** — just describe what you need.
+- Loading your own vibration files so that every tool, including the ISO severity assessment, can work on them
+- Reading equipment manuals to get bearing designations and operating speeds
+- Complete workflows: manual, bearing, fault frequencies, envelope analysis, report
+- Training an anomaly model on your healthy baselines
+- Troubleshooting the answers that look wrong
 
 ---
 
-## Step 1: Install the Server (One-Time Setup)
+## Use Your Own Data
 
-### What You Need
+The server reads a signal file and the companion metadata file next to it. Three things decide whether a diagnosis works on your data: the file layout, the companion keys, and the shaft speed.
 
-- A computer with **Python 3.11 or 3.12** installed ([Download Python](https://www.python.org/downloads/))
-- **Claude Desktop** app ([Download Claude Desktop](https://claude.ai/download))
+### The signal file
 
-### Installation (Copy-Paste Each Line)
+- One channel per file: a CSV with a single column of acceleration or velocity samples and **no header row**. A header row is loaded as text and the analysis fails later; a time column in first position is analysed as if it were the signal.
+- Formats: CSV, TXT, MAT, WAV, NPY, Parquet, and raw binary (`.bin`, `.raw`, `.dat`) with the decode parameters declared in the companion, see the [Adapter Guide](ADAPTER_GUIDE.md#supported-formats).
+- Where: a folder of yours under `data/signals/` (for example `data/signals/pump_p101/`), or an absolute path given in the prompt. Keep your files out of `real_train/` and `real_test/`: those folders hold the labelled samples that the anomaly workflows treat as references.
 
-Open **Command Prompt** (Windows) or **Terminal** (macOS/Linux) and run:
+### The companion file
 
-```bash
-git clone https://github.com/LGDiMaggio/predictive-maintenance-mcp.git
-cd predictive-maintenance-mcp
-python setup_venv.py
-```
-
-Wait for the setup to complete (1-2 minutes). Then verify:
-
-```bash
-python validate_server.py
-```
-
-You should see: `✅ Server validation passed`
-
-> **Don't have Git?** Download the project as a ZIP from GitHub and extract it instead of running `git clone`.
-
-### Connect to Claude Desktop
-
-**Windows**: Run the automated setup:
-```powershell
-.\setup_claude.ps1
-```
-
-**Or configure manually**: See [INSTALL.md](../INSTALL.md) → "For Claude Desktop Users" section.
-
-After configuration, **restart Claude Desktop** completely (quit and reopen).
-
----
-
-## Step 2: Your First Analysis (5 Minutes)
-
-The server comes with **20 real bearing vibration signals** for you to explore immediately.
-
-### Open Claude Desktop and Try These
-
-#### 2.1 — See What Data Is Available
-
-Type in Claude:
-```
-List all available vibration signals
-```
-
-Claude will show you the 20 included signals: healthy baselines, inner race faults, and outer race faults.
-
-#### 2.2 — Generate a Bearing Fault Report
-
-Type:
-```
-Generate an envelope analysis report for real_train/OuterRaceFault_1.csv
-```
-
-**What happens:**
-1. Claude reads the vibration signal (97,656 samples/second!)
-2. Applies bandpass filtering to isolate fault frequencies
-3. Performs envelope demodulation
-4. Generates a professional interactive HTML report
-5. Saves it to your `reports/` folder
-
-**Open the HTML file** in your browser — you'll see an interactive Plotly chart with bearing fault frequencies marked. You can zoom, pan, and hover for details.
-
-#### 2.3 — Check ISO Compliance
-
-Type:
-```
-Evaluate the vibration severity of real_train/OuterRaceFault_1.csv according to ISO 20816-3
-```
-
-Claude will:
-- Calculate RMS velocity
-- Classify it into ISO zones (A/B/C/D)
-- Generate a color-coded compliance report
-- Give you a clear recommendation
-
-#### 2.4 — Ask Questions in Plain Language
-
-You're not limited to specific commands. Try conversational questions:
-
-```
-Compare the FFT spectrum of baseline_1.csv with OuterRaceFault_1.csv. 
-What differences do you see?
-```
-
-```
-Train an anomaly detection model using the two healthy baselines, 
-then check if OuterRaceFault_1.csv is anomalous
-```
-
-```
-What bearing frequencies should I look for if the shaft speed is 1500 RPM 
-and I'm using a 6205 bearing?
-```
-
----
-
-## Step 3: Use Your Own Data
-
-### Prepare Your Data
-
-Your vibration data can be in **CSV, MAT (MATLAB), WAV, NPY, or Parquet format**. For CSV files, use one column of acceleration values. Example:
-
-```csv
-acceleration
-0.0023
-0.0045
--0.0012
-0.0067
-...
-```
-
-### Add Your Files
-
-1. Copy your signal files to: `data/signals/real_train/` (or `real_test/`)
-2. (Optional) Create a metadata JSON file with the same name:
+Name it `<signal name>_metadata.json`, next to the signal (`drive_end.csv` and `drive_end_metadata.json`). Two keys are read as parameters:
 
 ```json
 {
-    "sampling_rate_hz": 10000,
-    "shaft_speed_rpm": 1475,
-    "unit": "g",
-    "description": "Pump A - Drive end bearing"
+  "sampling_rate": 25600,
+  "signal_unit": "g"
 }
 ```
 
-> **No metadata file? No problem.** You can provide the sampling rate directly in conversation:  
-> *"Analyze the FFT of my_signal.csv with a sampling rate of 10,000 Hz"*
+- `sampling_rate` in Hz. Without it the signal cannot be analysed.
+- `signal_unit`: `g` or `m/s2` for acceleration, `mm/s` or `m/s` for velocity. Without a declared unit the ISO 20816-3 severity assessment is refused with a structured reason; the unit is never guessed from the amplitude.
+- Any other top-level key is kept for your reference (`BPFO`, `BPFI`, `BSF`, `FTF`, a description) but is not read as a parameter: a key named `sampling_rate_hz` or `unit` is ignored without a warning. The envelope report does read `BPFO`, `BPFI`, `BSF` and `FTF` from the companion to mark the spectrum.
+- Both values can also be given in the prompt ("load drive_end.csv at 25600 Hz, unit g"); an explicit value wins over the companion.
+- To record which asset and measurement point a file belongs to, and to build a history over time, add the `measurement` object described in the [Adapter Guide](ADAPTER_GUIDE.md#declaring-a-measurement).
 
-### Add Equipment Manuals
+### The shaft speed and the bearing
 
-Copy PDF or TXT manuals to: `resources/machine_manuals/`
+- Every diagnosis needs the shaft speed. State it in the prompt ("the shaft runs at 1480 rpm") or declare it in the `measurement` object; without a source the diagnosis is refused rather than defaulted.
+- Fault-frequency matching needs the bearing: a designation present in the catalog (for example `6205`), the four characteristic frequencies in Hz, or the geometry (number of rolling elements, ball and pitch diameters). Give it in the prompt, or ask the server to read it from the machine manual (next section).
 
-Then ask Claude:
+### Example
+
+With `data/signals/pump_p101/drive_end.csv` and its companion in place:
+
 ```
-What bearings are specified in my_pump_manual.pdf?
+Load pump_p101/drive_end.csv. The shaft runs at 1480 rpm and the bearing is a 6205:
+check the fault frequencies, assess the ISO severity and generate the envelope report.
 ```
-
-Claude will extract bearing designations, operating speeds, and automatically calculate fault frequencies.
 
 ---
 
-## Step 4: Common Workflow Examples
+## Machine Manuals
 
-### Complete Bearing Diagnosis Workflow
-
-```
-1. Read the specifications from pump_manual.pdf
-2. Look up the bearing geometry for SKF 6205-2RS
-3. Calculate the characteristic frequencies at 1475 RPM
-4. Run envelope analysis on pump_vibration.csv looking for those frequencies
-5. Generate a report with your findings
-```
-
-Claude handles all five steps automatically, chaining the tools together.
-
-### Batch Analysis
+Copy PDF or TXT manuals to `resources/machine_manuals/`. A sample is included, `test_pump_manual.pdf`. Then ask:
 
 ```
-Generate ISO 20816-3 reports for all the training signals
+What bearings are specified in test_pump_manual.pdf?
 ```
 
-### ML-Based Anomaly Detection
+The server extracts bearing designations and operating speeds from the manual and can compute the characteristic frequencies from the catalog geometry. Targeted questions ("what is the maximum allowed vibration for this pump?") search the manual text and return the passages they rest on.
+
+---
+
+## Complete Workflows
+
+### Bearing diagnosis from the manual to the report
 
 ```
-Train an anomaly detection model using baseline_1.csv and baseline_2.csv 
-as healthy references. Then evaluate all the fault signals against it.
+1. Read the specifications from test_pump_manual.pdf
+2. Look up the bearing geometry for the bearing it specifies
+3. Calculate the characteristic frequencies at the operating speed in the manual
+4. Run the envelope analysis on real_train/OuterRaceFault_1.csv looking for those frequencies
+5. Generate a report with the findings
 ```
+
+The assistant chains the tools; every number in the answer comes from the server.
+
+### Severity for a batch of signals
+
+```
+Generate ISO 20816-3 severity reports for all the signals in real_train
+```
+
+### Compare two spectra
+
+```
+Compare the FFT spectrum of real_train/baseline_1.csv with real_train/OuterRaceFault_1.csv.
+What differences do you see?
+```
+
+---
+
+## Anomaly Detection
+
+Train on healthy references, then score the rest:
+
+```
+Train an anomaly detection model using real_train/baseline_1.csv and real_train/baseline_2.csv
+as healthy references. Then evaluate all the fault signals in real_train against it.
+```
+
+The model learns the normal pattern from the baselines; each scored signal returns the share of segments outside that pattern. With your own data, train on acquisitions you know to be healthy and keep them in a folder of their own.
 
 ---
 
 ## Troubleshooting
 
-| Problem | Solution |
-|---------|----------|
-| Claude doesn't see the server | Restart Claude Desktop completely. Check paths in config. |
-| "Server not found" error | Make sure you used **absolute paths** in the config file |
-| Python not found | Download from [python.org](https://www.python.org/downloads/) — version 3.11 or 3.12 |
-| Reports don't open | Navigate to the `reports/` folder and double-click the HTML file |
-
-📖 **More help**: See [INSTALL.md](../INSTALL.md) → Troubleshooting section
-
----
-
-## What's Next?
-
-- 📚 **Explore more workflows**: [EXAMPLES.md](../EXAMPLES.md) has 7 complete step-by-step tutorials
-- 📊 **Add your own data**: Copy CSV files and manuals to start analyzing your real machinery
-- 🤝 **Give feedback**: Your real-world experience is invaluable — [tell us what worked and what didn't](https://github.com/LGDiMaggio/predictive-maintenance-mcp/discussions)
-- 🔧 **Help validate**: Even without coding, you can help by [testing diagnostic accuracy with your data](https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues)
+| Symptom | What to do |
+|---------|------------|
+| The severity assessment is refused | Declare `signal_unit` in the companion file or in the prompt; the unit is never guessed |
+| The diagnosis asks for the shaft speed | State the rpm in the prompt, or declare it in the `measurement` object of the companion |
+| "Signal file not found" | Ask for the list of available signals; a relative name resolves under `data/signals/`, otherwise give the absolute path |
+| The companion values are ignored | Check the file name (`<signal name>_metadata.json`) and the keys (`sampling_rate`, `signal_unit`) |
+| The report does not open | Open the HTML file in the `reports/` folder with a browser |
+| No signals are listed, or the server is missing | See [INSTALL.md, Troubleshooting](../INSTALL.md#troubleshooting) |
 
 ---
 
-**You are the expert on your machines. This tool gives you an AI assistant that speaks your language.**
+## What's Next
+
+- **More workflows**: [EXAMPLES.md](../EXAMPLES.md), step-by-step tutorials with the included data
+- **The included dataset**: [data/README.md](../data/README.md)
+- **Give feedback**: your real-world experience shapes what gets built next, [tell us what worked and what did not](https://github.com/LGDiMaggio/predictive-maintenance-mcp/discussions)
+- **Help validate**: [test the diagnostics with your data](https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues)
+
+---
+
+**You are the expert on your machines. This tool gives you an assistant that speaks your language.**
