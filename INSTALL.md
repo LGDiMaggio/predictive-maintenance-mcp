@@ -85,7 +85,7 @@ See [DEPLOYMENT.md](docs/DEPLOYMENT.md) for HTTPS setup with Docker + Caddy auto
 
 ### Automatic Setup (Windows) — Recommended
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\setup_claude.ps1
+powershell -ExecutionPolicy Bypass -File setup_claude.ps1
 ```
 
 The script does everything automatically:

@@ -74,7 +74,7 @@ cd predictive-maintenance-mcp
 **2. Install and connect.** On Windows, one script creates the environment, installs the server and writes the Claude Desktop entry (clones inside OneDrive or other synced folders are handled):
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\setup_claude.ps1
+powershell -ExecutionPolicy Bypass -File setup_claude.ps1
 ```
 
 <details>
@@ -113,7 +113,7 @@ The 20 included signals should appear. If they do not, see [INSTALL.md, Troubles
 
 > *"Load real_train/OuterRaceFault_1.csv. The shaft runs at 1500 rpm: check the bearing against the fault frequencies declared in its metadata, assess the ISO severity and generate the envelope report."*
 
-What comes back is the server's evidence, not the model's opinion: the outer-race characteristic frequency found in the envelope spectrum with its harmonics, graded as high evidence, with the ball and cage frequencies unmatched; the ISO 20816-3 severity zone of the broadband velocity, with the machine group and support type the assessment assumed; and the path of an HTML report in `reports/` with those frequencies marked on the envelope spectrum. The call on the machine stays with you.
+What comes back is the server's evidence, not the model's opinion: two of the four declared frequencies come back as high evidence in the envelope spectrum, the outer race ranked most likely and the inner race graded high as well because its second harmonic shares a peak with the third outer-race harmonic, while the ball and cage frequencies stay unmatched; the ISO 20816-3 severity zone of the broadband velocity, with the machine group and support type the assessment assumed; and the path of an HTML report in `reports/` with those frequencies marked on the envelope spectrum. The call on the machine stays with you.
 
 The file name carries the fault label, but the server never reads names. Ask which frequencies matched and with what deviation: the answer rests on the spectrum alone.
 
