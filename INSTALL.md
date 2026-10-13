@@ -85,7 +85,7 @@ See [DEPLOYMENT.md](docs/DEPLOYMENT.md) for HTTPS setup with Docker + Caddy auto
 
 ### Automatic Setup (Windows) — Recommended
 ```powershell
-.\setup_claude.ps1
+powershell -ExecutionPolicy Bypass -File .\setup_claude.ps1
 ```
 
 The script does everything automatically:
@@ -146,7 +146,8 @@ Edit `%APPDATA%\Claude\claude_desktop_config.json` (Windows) or
 > **Important notes:**
 > - Use **absolute paths** — Claude Desktop launches servers with a minimal PATH
 > - `PDM_PROJECT_DIR` tells the server where to find `data/` and `models/`;
->   required only when the venv lives outside the repo directory
+>   required for a non-editable install like the one above, whatever the venv
+>   location (an editable install, `pip install -e .`, finds the repo on its own)
 > - `PDM_PROJECT_DIR` also keeps the file locations recorded in the asset
 >   ledger valid across restarts; see [Environment Variables](#environment-variables)
 > - On macOS/Linux use `.venv/bin/python` and forward slashes
@@ -164,7 +165,7 @@ All optional.
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `PDM_PROJECT_DIR` | auto-detected: the current directory when it holds `data/signals/`, else the directory above the installed package when that does, else the current directory | Project root: where `data/`, `models/`, `reports/` and `resources/` live. Set it when the venv lives outside the repository. It also keeps the relative file locations recorded in the asset ledger valid across restarts, whatever directory the server is launched from. |
+| `PDM_PROJECT_DIR` | auto-detected: the current directory when it holds `data/signals/`, else the directory above the installed package when that does (an editable install), else the current directory | Project root: where `data/`, `models/`, `reports/` and `resources/` live. Set it for a non-editable install, whatever the venv location; without it the server looks for the data in the directory it was launched from. It also keeps the relative file locations recorded in the asset ledger valid across restarts, whatever directory the server is launched from. |
 | `PMM_LEDGER_DIR` | `data/ledger` under the project root | Directory of the asset health ledger: append-only JSON Lines, one file per asset. Use a local, non-synced path. The server creates it at startup and warns when it is not writable or lies under OneDrive, Dropbox or iCloud Drive, where a sync client can lock the files or replace them with stale copies. Read at each call. |
 | `PMM_MAX_SIGNAL_SIZE` | `500000000` (500 MB) | Size cap in bytes for raw binary loads, checked before a byte is read. Read at each call. |
 | `PMM_SIGNAL_CACHE_GB` | `10` | Memory cap of the in-memory signal repository, in GB. |
