@@ -45,7 +45,7 @@ The **Model Context Protocol** is the bridge. It's an open standard (by Anthropi
 
 **The LLM has no idea what FFT is.** It just knows:
 - *"There's a tool called `analyze_fft`"*
-- *"It takes a file path and sampling rate"*
+- *"It takes the id of a signal loaded with `load_signal`"*
 - *"It returns peaks and frequencies"*
 
 This is **the same pattern** you can use for any domain: medical imaging, financial analysis, climate modeling, robotics. This project is a production-quality reference implementation for the **predictive maintenance** domain.
@@ -102,10 +102,11 @@ predictive-maintenance-mcp/
 │   ├── machine_manuals/                 ← Equipment manuals (PDF/TXT)
 │   ├── bearing_catalogs/                ← Bearing geometry database
 │   └── cache/                           ← Auto-cached manual extractions
-├── skills/                              ← Copilot Skills (guided diagnostic workflows)
-│   ├── bearing-diagnosis/               ← 8-step bearing fault detection
-│   ├── quick-screening/                 ← Fast health screening
-│   └── report-generation/               ← Professional report orchestration
+├── plugin/                              ← Claude Code plugin (skills, agents, commands)
+│   └── skills/                          ← One SKILL.md per guided diagnostic workflow
+│       ├── bearing-diagnosis/           ← Bearing fault detection
+│       ├── quick-screening/             ← Fast health screening
+│       └── report-generation/           ← Professional report orchestration
 ├── models/                              ← Trained ML models (joblib)
 ├── reports/                             ← Generated HTML reports
 └── tests/                               ← Comprehensive test suite
@@ -119,8 +120,8 @@ module-level function, registered by reference:
 
 ```python
 # src/mcp_tools/analysis_tools.py
-async def analyze_fft(ctx, filename: str, sampling_rate: float | None = None, ...):
-    """FFT spectrum analysis with automatic peak detection."""
+async def analyze_fft(ctx, signal_id: str, max_frequency: float | None = None, ...):
+    """FFT spectrum analysis of a stored signal with automatic peak detection."""
     # ... performs actual signal processing
     # ... returns structured results
 
@@ -131,14 +132,14 @@ def register(mcp):
 **That's it.** A module-level Python function + one `mcp.tool()(fn)` line in
 `register()` = an LLM-accessible tool that is also directly importable in tests.
 
-### Resources vs Tools
+### Tools and Prompts
 
 | Concept | Purpose | Example | When to Use |
 |---------|---------|---------|-------------|
-| **Resource** | Read-only data access | `signal://list` | LLM needs to browse/read data |
 | **Tool** | Computation & side effects | `analyze_fft()` | LLM needs to compute something |
+| **Prompt** | Guided multi-step workflow | `diagnose_bearing` | LLM needs a scripted sequence of tool calls |
 
-Resources are like GET endpoints. Tools are like POST endpoints. The LLM uses Resources to gather context and Tools to take action.
+MCP also defines Resources (read-only data endpoints). This server registers none: signals enter through the `load_signal` tool, are listed with `list_signals`, and every analysis tool addresses them by the returned `signal_id`.
 
 ---
 
@@ -149,17 +150,17 @@ Resources are like GET endpoints. Tools are like POST endpoints. The LLM uses Re
 The best way to understand the server is to see it live:
 
 ```bash
-npx @modelcontextprotocol/inspector npx predictive-maintenance-mcp
+npx @modelcontextprotocol/inspector uvx predictive-maintenance-mcp
 ```
 
-Or from source:
+Or from source, with the virtual environment of Step 1 activated:
 
 ```bash
-npx @modelcontextprotocol/inspector uv run predictive-maintenance-mcp
+npx @modelcontextprotocol/inspector python -m predictive_maintenance_mcp
 ```
 
 This opens a web UI where you can:
-- Browse all registered Resources and Tools
+- Browse all registered Tools and Prompts
 - See each tool's parameters, types, and documentation
 - Call tools with test data and see the results
 - Understand exactly what the LLM sees
@@ -306,11 +307,11 @@ Claude will automatically discover and call your new tool.
 
 | Pattern | Where | What You'll Learn |
 |---------|-------|-------------------|
-| **Tool with auto-detection** | `analyze_fft()` | How to load metadata and infer parameters |
+| **Tool on a stored signal** | `analyze_fft()` | How a tool resolves a `signal_id` and the sampling rate declared at load time |
 | **Report generation** | `generate_fft_report()` | How to create interactive Plotly HTML reports |
 | **ML pipeline** | `train_anomaly_model()` | How to build scikit-learn pipelines as MCP tools |
 | **Caching** | `extract_manual_specs()` | How to cache expensive operations (PDF parsing) |
-| **Resource + Tool combo** | `signal://read` + `analyze_fft` | How Resources and Tools work together |
+| **Load, then analyze** | `load_signal()` + `analyze_fft()` | How the signal repository hands a `signal_id` to every analysis tool |
 
 ### Design Principles
 
@@ -318,7 +319,7 @@ Claude will automatically discover and call your new tool.
 
 2. **Tools are pure functions** — Each tool takes parameters, does computation, returns structured data. No side effects except file I/O (reports, models).
 
-3. **Metadata-driven** — Sampling rates, bearing frequencies, signal units are auto-detected from metadata JSON files. No hardcoded assumptions.
+3. **Declared, never guessed**: the sampling rate and the signal unit come from the companion `_metadata.json` or from the `load_signal` call. A missing unit yields a structured refusal with a remedy, not a default.
 
 4. **Fail gracefully** — Tools return meaningful error messages, not stack traces. The LLM can relay these to the user in natural language.
 
@@ -368,7 +369,7 @@ Browse all open issues: [GitHub Issues](https://github.com/LGDiMaggio/predictive
 
 ## What's Next?
 
-1. **Read the full examples**: [EXAMPLES.md](../EXAMPLES.md) — 7 complete workflows showing every tool
+1. **Read the full examples**: [EXAMPLES.md](../EXAMPLES.md), complete workflows showing every tool
 2. **Browse the server code**: `src/mcp_tools/` is well-documented
 3. **Pick an issue**: [Issues · good first issue](https://github.com/LGDiMaggio/predictive-maintenance-mcp/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
 4. **Read the contributing guide**: [CONTRIBUTING.md](../CONTRIBUTING.md)
