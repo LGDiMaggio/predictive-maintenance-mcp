@@ -116,21 +116,28 @@ predictive-maintenance-mcp/
 
 `src/server.py` creates the MCPServer instance and delegates registration to
 `src/mcp_tools/` (one module per ISO 13374 block). Each tool is a plain
-module-level function, registered by reference:
+module-level function, registered by reference behind `refusal_boundary`:
 
 ```python
 # src/mcp_tools/analysis_tools.py
+from ._utils import refusal_boundary
+
 async def analyze_fft(ctx, signal_id: str, max_frequency: float | None = None, ...):
     """FFT spectrum analysis of a stored signal with automatic peak detection."""
     # ... performs actual signal processing
     # ... returns structured results
 
 def register(mcp):
-    mcp.tool()(analyze_fft)
+    mcp.tool()(refusal_boundary(analyze_fft))
 ```
 
-**That's it.** A module-level Python function + one `mcp.tool()(fn)` line in
-`register()` = an LLM-accessible tool that is also directly importable in tests.
+**That's it.** A module-level Python function + one
+`mcp.tool()(refusal_boundary(fn))` line in `register()` = an LLM-accessible
+tool that is also directly importable in tests. The boundary re-raises the
+`ValueError`/`FileNotFoundError` refusals a tool raises as `ToolError`, the
+only type mcp 2.3+ forwards to the model, so the message reaches the model
+instead of stopping in the server log; `tests/test_error_contract.py` fails
+any registration that skips it.
 
 ### Tools and Prompts
 
@@ -184,7 +191,8 @@ Let's add a new tool: **thermographic analysis** (simplified example). This demo
 ### 4.1 — Write the Tool Function
 
 Add to the relevant `src/mcp_tools/*.py` module (e.g. `analysis_tools.py`)
-and register it in that module's `register()`:
+and register it in that module's `register()` as
+`mcp.tool()(refusal_boundary(analyze_temperature_trend))`:
 
 ```python
 def analyze_temperature_trend(

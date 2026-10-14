@@ -8,11 +8,17 @@ Two rails, one contract:
 
 Forbidden everywhere: dicts with an ``"error"`` key returned as success and
 JSON built by interpolating exception text into f-strings.
+
+Since mcp 2.3 only ``ToolError``/``ResourceError`` text reaches the model
+(issue #73), so every tool is registered behind ``refusal_boundary``; see the
+banner in ``mcp_tools/_utils.py``. ``TestRefusalsReachTheClient`` pins what
+the client actually receives.
 """
 
 import importlib
 import inspect
 import json
+import logging
 import re
 from pathlib import Path
 from unittest.mock import AsyncMock
@@ -20,7 +26,9 @@ from unittest.mock import AsyncMock
 import numpy as np
 import pandas as pd
 import pytest
+from mcp import Client
 from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 from pydantic import BaseModel
 
 from predictive_maintenance_mcp.mcp_tools import register_all
@@ -90,9 +98,12 @@ class TestModuleLevelTools:
 
     def test_every_tool_importable_by_name(self, mcp):
         for t in mcp._tool_manager._tools.values():
-            module = importlib.import_module(t.fn.__module__)
-            assert getattr(module, t.name) is t.fn, (
-                f"Tool '{t.name}' is not importable as " f"{t.fn.__module__}.{t.name}"
+            # Registration wraps the function in refusal_boundary (#73);
+            # unwrap to compare, as the prompt test does for validate_call.
+            fn = inspect.unwrap(t.fn)
+            module = importlib.import_module(fn.__module__)
+            assert getattr(module, t.name) is fn, (
+                f"Tool '{t.name}' is not importable as " f"{fn.__module__}.{t.name}"
             )
 
     def test_prompts_are_module_level(self, mcp):
@@ -218,7 +229,10 @@ def _payload_has_error_key(value) -> bool:
 
 
 class TestFailuresRaise:
-    """Known failure paths raise instead of returning error-shaped dicts."""
+    """Known failure paths raise a ``ToolError``, never an error-shaped dict.
+
+    ``ToolError`` is the type mcp >= 2.3 forwards to the model (#73).
+    """
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("tool_name", sorted(FAILURE_CASES))
@@ -232,8 +246,15 @@ class TestFailuresRaise:
             result = tool.fn(**kwargs)
             if inspect.isawaitable(result):
                 result = await result
-        except Exception:
-            return  # raised — correct rail for a failure
+        except ToolError:
+            return  # raised, and typed so mcp >= 2.3 forwards the text (#73)
+        except Exception as exc:
+            pytest.fail(
+                f"{tool_name} raised {type(exc).__name__}, not a ToolError: "
+                f"mcp >= 2.3 reports it to the model as the bare 'Error "
+                f"executing tool {tool_name}'. A refusal belongs behind "
+                f"refusal_boundary; a genuine crash needs its own fix."
+            )
 
         pytest.fail(
             f"{tool_name} returned {type(result).__name__} instead of "
@@ -406,6 +427,135 @@ class TestTypedNegativeOutcomes:
 
 
 # ---------------------------------------------------------------------------
+# Refusals as the client sees them (issue #73)
+# ---------------------------------------------------------------------------
+
+# The three calls from the issue, with the phrase each refusal must carry.
+REFUSAL_CASES = [
+    (
+        "analyze_statistics",
+        {"signal_id": "__not_loaded__"},
+        "not in the in-memory repository",
+    ),
+    ("load_signal", {"filepath": "__missing__.csv"}, "Signal file not found"),
+    ("read_manual_excerpt", {"file_name": "__missing__.pdf"}, "Manual not found"),
+]
+
+
+class TestRefusalsReachTheClient:
+    """The refusal text must reach the model, not only the server log.
+
+    ``Client(mode="legacy")`` drives the in-process server through the same
+    JSON-RPC request path as stdio (initialize handshake, then
+    ``_handle_call_tool``), so ``call_tool`` returns exactly the
+    ``CallToolResult`` the model reads. mcp 2.0.x appended the exception text
+    for every exception, so the client-level test is green there with or
+    without the boundary; ``test_registered_refusal_keeps_its_python_type``
+    is the version-independent guard.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("tool_name, arguments, phrase", REFUSAL_CASES)
+    async def test_refusal_text_is_in_the_tool_result(
+        self, mcp, sandbox_dirs, tool_name, arguments, phrase
+    ):
+        async with Client(mcp, mode="legacy") as client:
+            result = await client.call_tool(
+                tool_name, arguments, read_timeout_seconds=10
+            )
+
+        text = " ".join(c.text for c in result.content if c.type == "text")
+        assert result.is_error
+        assert phrase in text, (
+            f"{tool_name}: the model received {text!r}; the refusal the tool "
+            f"raised (containing {phrase!r}) never crossed the wire"
+        )
+
+    @pytest.mark.asyncio
+    async def test_registered_refusal_keeps_its_python_type(
+        self, tools, sandbox_dirs, mock_ctx
+    ):
+        """The boundary adds ``ToolError``; it does not replace the type the
+        tool raised, so ``except ValueError`` / ``FileNotFoundError`` in direct
+        callers and in this suite keep meaning what they meant."""
+        with pytest.raises(ToolError) as exc_info:
+            await tools["load_signal"].fn(ctx=mock_ctx, filepath="__missing__.csv")
+        assert isinstance(exc_info.value, FileNotFoundError)
+        assert "Signal file not found" in str(exc_info.value)
+
+        with pytest.raises(ToolError) as exc_info:
+            tools["analyze_statistics"].fn(signal_id="__not_loaded__")
+        assert isinstance(exc_info.value, ValueError)
+        assert "not in the in-memory repository" in str(exc_info.value)
+
+    def test_non_refusal_exception_is_not_converted(self, tools, monkeypatch):
+        """Only refusals cross the boundary as ``ToolError``: a crash keeps its
+        own type, so the SDK masks it and logs the traceback. This pins the
+        narrow except clauses; widening them to ``Exception`` turns it red."""
+        from predictive_maintenance_mcp.mcp_tools import analysis_tools
+
+        def crash(*_args, **_kwargs):
+            raise RuntimeError("internal detail")
+
+        monkeypatch.setattr(analysis_tools, "resolve_signal", crash)
+        with pytest.raises(RuntimeError) as exc_info:
+            tools["analyze_statistics"].fn(signal_id="any")
+        assert not isinstance(exc_info.value, ToolError)
+
+
+class TestConversionKeepsTheDiagnosticTrail:
+    """The boundary's own log line tells a library ``ValueError`` from a refusal.
+
+    mcp >= 2.3 logs every ``ToolError`` as one INFO line with no traceback,
+    so without this line a ``json.JSONDecodeError`` escaping a tool body
+    would reach the operator as text only, with no frame to locate it. Both
+    tests drive ``tool.fn`` directly, so they hold on mcp 2.0.x as well.
+    """
+
+    @staticmethod
+    def _boundary_records(package_caplog):
+        from predictive_maintenance_mcp.mcp_tools import _utils
+
+        return [r for r in package_caplog.records if r.name == _utils.logger.name]
+
+    def test_library_valueerror_is_logged_at_warning_with_its_origin(
+        self, tools, package_caplog, monkeypatch
+    ):
+        from predictive_maintenance_mcp import server
+        from predictive_maintenance_mcp.mcp_tools import analysis_tools
+
+        def corrupt_metadata(*_args, **_kwargs):
+            return json.loads("{not json")  # raised inside the stdlib, not here
+
+        monkeypatch.setattr(analysis_tools, "resolve_signal", corrupt_metadata)
+        package_caplog.set_level(logging.DEBUG, logger=server.PACKAGE_LOGGER)
+
+        with pytest.raises(ToolError) as exc_info:
+            tools["analyze_statistics"].fn(signal_id="any")
+        assert isinstance(exc_info.value, ValueError)  # type still preserved
+        assert isinstance(exc_info.value.__cause__, json.JSONDecodeError)
+
+        records = self._boundary_records(package_caplog)
+        assert [r.levelno for r in records] == [logging.WARNING]
+        message = records[0].getMessage()
+        assert "analyze_statistics" in message
+        assert "JSONDecodeError" in message
+        assert "decoder.py" in message  # the stdlib frame the operator needs
+
+    def test_project_refusal_is_logged_at_debug_only(self, tools, package_caplog):
+        from predictive_maintenance_mcp import server
+
+        package_caplog.set_level(logging.DEBUG, logger=server.PACKAGE_LOGGER)
+
+        with pytest.raises(ToolError):
+            tools["analyze_statistics"].fn(signal_id="__not_loaded__")
+
+        records = self._boundary_records(package_caplog)
+        assert [r.levelno for r in records] == [logging.DEBUG]
+        assert "in resolve_signal" in records[0].getMessage()
+
+
+# ---------------------------------------------------------------------------
 # Source-level guards (cheap tripwires for the audit's offender patterns)
 # ---------------------------------------------------------------------------
 
@@ -434,6 +584,33 @@ class TestSourceGuards:
         assert offenders == [], (
             f"JSON must never be built via f-string interpolation: " f"{offenders}"
         )
+
+    def test_every_registration_goes_through_the_refusal_boundary(self, mcp):
+        """A registration without ``refusal_boundary`` reintroduces #73 for
+        that one tool, silently: the suite calls ``tool.fn`` and never sees
+        what the SDK sends. Two tripwires: every ``.tool(`` line in the
+        source names the boundary, and every registered callable is a
+        wrapper around its module-level function."""
+        offenders = {}
+        for path in SRC_MCP_TOOLS.glob("*.py"):
+            lines = path.read_text(encoding="utf-8").splitlines()
+            hits = [
+                n
+                for n, line in enumerate(lines, 1)
+                if ".tool(" in line and "refusal_boundary(" not in line
+            ]
+            if hits:
+                offenders[path.name] = hits
+        assert (
+            offenders == {}
+        ), f"tools registered without refusal_boundary (file: lines): {offenders}"
+
+        bare = [
+            t.name
+            for t in mcp._tool_manager._tools.values()
+            if inspect.unwrap(t.fn) is t.fn
+        ]
+        assert bare == [], f"tools registered without a wrapper: {bare}"
 
     def test_no_error_key_dict_literals_returned(self):
         """No dict literal with an 'error' key anywhere in mcp_tools.

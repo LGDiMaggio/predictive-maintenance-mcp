@@ -250,7 +250,8 @@ class TestSurface:
     def test_four_module_level_async_tools_with_ctx_first(self, tools):
         for name in TOOL_NAMES:
             fn = tools[name]
-            assert getattr(asset_tools, name) is fn
+            # Registered behind refusal_boundary (#73): compare the unwrapped function.
+            assert getattr(asset_tools, name) is inspect.unwrap(fn)
             assert "<locals>" not in fn.__qualname__
             assert inspect.iscoroutinefunction(fn)
             assert list(inspect.signature(fn).parameters)[0] == "ctx"

@@ -75,6 +75,7 @@ from ..signal_processing.features import (
     segment_and_extract_features as _segment_and_extract_features,
 )
 from ._utils import (
+    refusal_boundary,
     resolve_signal,
     safe_resolve,
     resolve_model_paths,
@@ -1892,14 +1893,14 @@ async def diagnose_vibration(
 
 def register(mcp: MCPServer) -> None:
     """Register diagnostics, anomaly-detection, and documentation tools on *mcp*."""
-    mcp.tool()(assess_severity)
-    mcp.tool()(train_anomaly_model)
-    mcp.tool()(predict_anomalies)
-    mcp.tool()(list_machine_manuals)
-    mcp.tool()(extract_manual_specs)
-    mcp.tool()(calculate_bearing_characteristic_frequencies)
-    mcp.tool()(read_manual_excerpt)
-    mcp.tool()(search_bearing_catalog)
-    mcp.tool()(search_documentation)
-    mcp.tool()(check_bearing_faults)
-    mcp.tool()(diagnose_vibration)
+    mcp.tool()(refusal_boundary(assess_severity))
+    mcp.tool()(refusal_boundary(train_anomaly_model))
+    mcp.tool()(refusal_boundary(predict_anomalies))
+    mcp.tool()(refusal_boundary(list_machine_manuals))
+    mcp.tool()(refusal_boundary(extract_manual_specs))
+    mcp.tool()(refusal_boundary(calculate_bearing_characteristic_frequencies))
+    mcp.tool()(refusal_boundary(read_manual_excerpt))
+    mcp.tool()(refusal_boundary(search_bearing_catalog))
+    mcp.tool()(refusal_boundary(search_documentation))
+    mcp.tool()(refusal_boundary(check_bearing_faults))
+    mcp.tool()(refusal_boundary(diagnose_vibration))

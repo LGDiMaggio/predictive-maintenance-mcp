@@ -47,7 +47,7 @@ from ..report_generator import (
     timestamped_report_name,
 )
 from ..signal_processing.features import extract_time_domain_features
-from ._utils import resolve_model_paths, resolve_signal
+from ._utils import refusal_boundary, resolve_model_paths, resolve_signal
 
 # Canonical modular twin of the ISO evaluation tool (module-level function
 # since U6) — replaces the former runtime import from the deprecated monolith.
@@ -1221,12 +1221,12 @@ async def generate_diagnostic_report(
 
 def register(mcp: MCPServer) -> None:
     """Register report generation and visualization tools with the MCP server."""
-    mcp.tool()(generate_diagnostic_report)
-    mcp.tool()(generate_diagnostic_report_docx)
-    mcp.tool()(plot_signal)
-    mcp.tool()(generate_fft_report)
-    mcp.tool()(generate_envelope_report)
-    mcp.tool()(generate_iso_report)
-    mcp.tool()(list_html_reports)
-    mcp.tool()(generate_pca_visualization_report)
-    mcp.tool()(generate_feature_comparison_report)
+    mcp.tool()(refusal_boundary(generate_diagnostic_report))
+    mcp.tool()(refusal_boundary(generate_diagnostic_report_docx))
+    mcp.tool()(refusal_boundary(plot_signal))
+    mcp.tool()(refusal_boundary(generate_fft_report))
+    mcp.tool()(refusal_boundary(generate_envelope_report))
+    mcp.tool()(refusal_boundary(generate_iso_report))
+    mcp.tool()(refusal_boundary(list_html_reports))
+    mcp.tool()(refusal_boundary(generate_pca_visualization_report))
+    mcp.tool()(refusal_boundary(generate_feature_comparison_report))

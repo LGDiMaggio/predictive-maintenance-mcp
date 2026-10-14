@@ -146,6 +146,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `plugin/skills/`, inspector commands.
 
 ### Fixed
+- **Tool refusals reach the model again under mcp 2.3+.** Since mcp 2.3.0 the
+  SDK forwards only `ToolError`/`ResourceError` text; the plain `ValueError`/
+  `FileNotFoundError` the tools raise for an unknown `signal_id`, a missing
+  file or a missing manual arrived as the bare `Error executing tool <name>`,
+  with the explanation and the remedy visible only in the server log (#73).
+  Every tool is now registered behind a refusal boundary
+  (`mcp_tools._utils.refusal_boundary`) that re-raises those refusals as
+  `ToolError` subclasses which keep their Python type, so the message crosses
+  the wire (`Error executing tool load_signal: Signal file not found: ...`)
+  and the server logs the refusal at INFO without a traceback. Direct Python
+  callers still catch `ValueError`/`FileNotFoundError`. The boundary also
+  logs one line per converted refusal with the original type and the frame
+  that raised it: at DEBUG for the project's own refusals, at WARNING when a
+  library raised the `ValueError`, so a `json.JSONDecodeError` or a numpy
+  shape error escaping a tool body keeps a locatable trail now that the SDK
+  no longer logs its traceback. Any other exception type is a genuine crash
+  and keeps the SDK's masking and ERROR traceback. mcp 2.0.x, which appended
+  the text for every exception, behaves as before.
 - **`setup_claude.ps1` runs under Windows PowerShell 5.1 on any clone.**
   The script is ASCII-only, writes `PDM_PROJECT_DIR` into the Claude
   Desktop entry on every clone, saves `claude_desktop_config.json` as
