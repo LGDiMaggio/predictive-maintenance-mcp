@@ -30,7 +30,8 @@ artifact) and files are recognized by shape:
   strict xfails whose reason starts with ``audit-known-defect:`` become
   diagnostic-correctness findings; other xfails are ignored.
 * ``pip-list*.json`` (``pip list --format json``) next to a JUnit file: the
-  versions that leg installed.
+  versions that leg installed. A pip list with no JUnit beside it is a suite
+  leg that did not finish: it becomes an error leg and a problem (exit 2).
 * Any other JSON is listed as ignored (raw pip-audit output, for example).
 
 Upstream join
@@ -557,7 +558,31 @@ def collect_inputs(root: Path) -> Inputs:
             }
             inputs.runs.append(run)
             inputs.legs.append(Leg("suite", variant, run.status, installed, rel(path)))
-    inputs.ignored += [rel(p) for p in pip_lists if p.parent not in junit_dirs]
+
+    # A suite job records its installed versions even after a failed install
+    # or a crashed test run, so a pip list with no JUnit beside it is a leg
+    # that did not finish. It stays in the report as an error leg (its
+    # versions still count against upstream releases it installed) and makes
+    # the report fail closed, instead of dropping out of the verdict.
+    for path in pip_lists:
+        if path.parent in junit_dirs:
+            continue
+        directory = path.parent
+        variant = directory.name if directory != root else rel(path)
+        try:
+            installed = parse_pip_list(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, ValueError) as exc:
+            inputs.problems.append(_problem(rel(path), str(exc)))
+            installed = {}
+        inputs.problems.append(
+            _problem(
+                rel(path),
+                "suite leg produced no JUnit results: its install or test step "
+                "did not run to completion",
+            )
+        )
+        inputs.runs.append(CheckRun("suite", variant, "error", rel(path)))
+        inputs.legs.append(Leg("suite", variant, "error", installed, rel(path)))
     return inputs
 
 

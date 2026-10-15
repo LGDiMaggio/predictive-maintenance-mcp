@@ -1000,6 +1000,58 @@ class TestFailsClosed:
         code, _ = _run(tmp_path, res, expect="suite")
         assert code == 2
 
+    def test_leg_with_versions_but_no_junit_is_a_failed_leg(self, tmp_path):
+        """A suite job records its installed versions even when the install
+        or the test run failed, so a pip list without JUnit beside it is a leg
+        that did not finish: the report must show it and fail closed."""
+        res = tmp_path / "results"
+        _leg(res, "suite-newest-py3.12")
+        crashed = res / "suite-newest-py3.14"
+        crashed.mkdir(parents=True)
+        (crashed / "pip-list.json").write_text(
+            _pip_list(numpy="2.5.4", mcp="2.3.0"), encoding="utf-8"
+        )
+        code, out = _run(tmp_path, res, expect="suite")
+        assert code == 2
+        doc = _report_json(out)
+        assert any(
+            "suite-newest-py3.14" in p["source"] and "no JUnit" in p["problem"]
+            for p in doc["problems"]
+        )
+        assert "suite-newest-py3.14/pip-list.json" not in doc["ignored_inputs"]
+        assert "suite-newest-py3.14" in _md(out)
+
+    def test_leg_without_junit_makes_its_upstream_release_breaking(self):
+        """The versions of a leg that did not finish still count: a release it
+        installed is not shown harmless on the strength of the other legs."""
+        inputs = report.Inputs()
+        legs = [
+            report.Leg("suite", "suite-newest-py3.12", "pass", {"numpy": "2.5.4"}),
+            report.Leg("suite", "suite-newest-py3.14", "error", {"numpy": "2.5.4"}),
+        ]
+        inputs.legs.extend(legs)
+        resolved = report.resolve_upstream(_test_gated(), inputs.legs)
+        assert resolved.classification == "breaking-candidate"
+        assert resolved.evidence["failing_legs"] == ["suite/suite-newest-py3.14"]
+
+    def test_collected_orphan_pip_list_becomes_an_error_leg(self, tmp_path):
+        res = tmp_path / "results"
+        crashed = res / "suite-floors-py3.11"
+        crashed.mkdir(parents=True)
+        (crashed / "pip-list.json").write_text(
+            _pip_list(numpy="2.3.3"), encoding="utf-8"
+        )
+        inputs = report.collect_inputs(res)
+        assert [(leg.variant, leg.status) for leg in inputs.legs] == [
+            ("suite-floors-py3.11", "error")
+        ]
+        assert inputs.legs[0].installed == {"numpy": "2.3.3"}
+        assert [(run.check, run.variant, run.status) for run in inputs.runs] == [
+            ("suite", "suite-floors-py3.11", "error")
+        ]
+        assert inputs.ignored == []
+        assert len(inputs.problems) == 1
+
     def test_known_issues_at_the_limit_exit_2(self, tmp_path):
         res = tmp_path / "results"
         _write(res, "smoke/smoke.json", _result("smoke", "checkout"))
