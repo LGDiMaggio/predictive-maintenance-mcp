@@ -1,0 +1,13 @@
+[
+  {"name": "jsonschema", "version": "4.26.0"},
+  {"name": "mcp", "version": "2.3.0"},
+  {"name": "mcp-types", "version": "2.3.0"},
+  {"name": "numpy", "version": "2.5.4"},
+  {"name": "pandas", "version": "3.0.6"},
+  {"name": "pip", "version": "25.2"},
+  {"name": "predictive-maintenance-mcp", "version": "0.13.0"},
+  {"name": "pydantic", "version": "2.14.1"},
+  {"name": "pytest", "version": "8.4.2"},
+  {"name": "scikit_learn", "version": "1.9.1"},
+  {"name": "scipy", "version": "1.18.1"}
+]

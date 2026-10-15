@@ -1,0 +1,77 @@
+name: Audit finding
+description: File one issue candidate from the quality audit report.
+title: "[Audit] "
+labels: ["audit"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for a block from `issue-candidates.md`, which every audit run uploads with its report. Copy each field from the block, and keep the `pmm-audit:` marker in the title and in the fingerprint field: later audit runs use it to recognize this issue.
+  - type: input
+    id: fingerprint
+    attributes:
+      label: Audit fingerprint
+      description: "The marker from the candidate block. It must start with pmm-audit: followed by 12 hexadecimal characters. A block that groups several advisories for one package lists one marker per advisory, separated by spaces."
+      placeholder: pmm-audit:0123456789ab
+    validations:
+      required: true
+  - type: dropdown
+    id: category
+    attributes:
+      label: Category
+      options:
+        - regression
+        - install
+        - mcp-compat
+        - tool-contract
+        - doc-drift
+        - diagnostic-correctness
+        - security
+        - dependency
+    validations:
+      required: true
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - critical
+        - high
+        - medium
+        - low
+        - info
+    validations:
+      required: true
+  - type: input
+    id: check
+    attributes:
+      label: Check and variants
+      description: The audit check that reported the finding and the variants (matrix cells) where it appeared.
+      placeholder: "suite: suite-newest-py3.12, suite-floors-py3.11"
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: The evidence from the candidate block, unchanged. It is shown as plain text.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Commands that reproduce the finding locally.
+  - type: input
+    id: run-link
+    attributes:
+      label: Audit run
+      description: Link to the workflow run that produced the report, or "local run".
+  - type: checkboxes
+    id: duplicate-search
+    attributes:
+      label: Duplicate search
+      options:
+        - label: I searched existing issues, open and closed, for every pmm-audit marker in this form.
+          required: true

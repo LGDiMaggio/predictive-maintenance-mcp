@@ -457,3 +457,10 @@ def write_json(doc: Union[Result, Mapping[str, Any]], path: Union[str, Path]) ->
         handle.write(text)
     os.replace(part, target)
     return target
+
+
+#: Checks the weekly report requires at least one result for (``--expect``).
+EXPECTED_WEEKLY_CHECKS = ("suite", "package-smoke", "upstream", "security")
+
+#: ``gh issue list --limit``; a list this long may be truncated, so it fails.
+KNOWN_ISSUES_LIMIT = 1000
