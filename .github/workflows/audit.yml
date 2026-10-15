@@ -1,0 +1,302 @@
+# Weekly quality and compatibility audit.
+#
+# Reruns the test suite at the declared dependency floors and at the newest
+# in-range releases, installs the built wheel and sdist across operating
+# systems, compares the compatibility inventory with upstream release data,
+# and audits the dependencies for known vulnerabilities. The report job turns
+# every result into audit-report.json, audit-report.md and issue-candidates.md
+# for a human to triage.
+#
+# Nothing here writes to the repository or to the issue tracker, no step
+# calls an AI service, and the only token is the default read-only one
+# (pinned by tests/test_workflow_policy.py). No step uses continue-on-error
+# (pinned by tests/test_ci_gates.py): each check job carries its own red
+# status, and the report job's exit code carries the weekly verdict.
+name: Quality audit
+
+on:
+  schedule:
+    # Mondays 05:17 UTC; off the hour, when scheduled runs queue the longest.
+    - cron: "17 5 * * 1"
+  # Manual runs take no inputs: an input would add a shell-injection surface.
+  workflow_dispatch:
+  # A change to the audit itself runs the audit before it merges.
+  pull_request:
+    paths:
+      - ".github/workflows/audit.yml"
+      - ".github/dependabot.yml"
+      - "tools/audit/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  suite:
+    name: Suite ${{ matrix.leg }} / Python ${{ matrix.python }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Every runtime dependency at the lowest version pyproject.toml
+          # admits, through a generated constraints file.
+          - leg: floors
+            python: "3.11"
+          # Free resolution. "Newest" is per interpreter: some current
+          # releases need Python 3.12 or later, so the 3.11 leg gets the
+          # older lines that 3.11 users actually install.
+          - leg: newest
+            python: "3.11"
+          - leg: newest
+            python: "3.12"
+          - leg: newest
+            python: "3.14"
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python ${{ matrix.python }}
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Upgrade pip
+        run: python -m pip install --upgrade pip
+
+      # packaging is the floors helper's one import outside the standard
+      # library, and nothing else is installed yet.
+      - name: Install at the declared floors
+        if: matrix.leg == 'floors'
+        run: |
+          python -m pip install packaging
+          python -m tools.audit floors --output "$RUNNER_TEMP/floors.txt"
+          cat "$RUNNER_TEMP/floors.txt"
+          python -m pip install -c "$RUNNER_TEMP/floors.txt" -e ".[dev]"
+
+      - name: Install the newest in-range releases
+        if: matrix.leg == 'newest'
+        run: python -m pip install -e ".[dev]"
+
+      # The repository's default pytest options apply, so the coverage gate
+      # from pyproject.toml holds here exactly as on pull requests.
+      - name: Run the test suite
+        run: pytest --junitxml=audit-results/junit.xml
+
+      # The report resolves upstream findings against the versions each leg
+      # actually installed, so this runs after a failed install or suite too.
+      - name: Record the installed versions
+        if: always()
+        run: |
+          mkdir -p audit-results
+          python -m pip list --format json > audit-results/pip-list.json
+
+      - name: Upload the suite results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: suite-${{ matrix.leg }}-py${{ matrix.python }}
+          path: audit-results/
+
+  package-smoke:
+    name: Package smoke ${{ matrix.variant }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { variant: wheel-ubuntu-py3.11, os: ubuntu-latest, python: "3.11", artifact: wheel }
+          - { variant: wheel-ubuntu-py3.13, os: ubuntu-latest, python: "3.13", artifact: wheel }
+          - { variant: wheel-ubuntu-py3.14, os: ubuntu-latest, python: "3.14", artifact: wheel }
+          - { variant: wheel-windows-py3.12, os: windows-latest, python: "3.12", artifact: wheel }
+          - { variant: wheel-macos-py3.12, os: macos-latest, python: "3.12", artifact: wheel }
+          - { variant: sdist-ubuntu-py3.12, os: ubuntu-latest, python: "3.12", artifact: sdist }
+    defaults:
+      run:
+        # The same commands on all three operating systems.
+        shell: bash
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python ${{ matrix.python }}
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install build
+        run: python -m pip install build
+
+      - name: Build the sdist and the wheel
+        run: python -m build
+
+      # The installed versions are recorded inside the result itself: the
+      # fresh venv lives in a temporary directory the command removes.
+      - name: Install the ${{ matrix.artifact }} into a fresh venv and run the stdio smoke harness
+        run: |
+          python -m tools.audit package-smoke --dist dist \
+            --artifact ${{ matrix.artifact }} --variant ${{ matrix.variant }} \
+            --json-out audit-results/package-smoke.json
+
+      - name: Upload the package-smoke result
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: package-smoke-${{ matrix.variant }}
+          path: audit-results/
+
+  upstream:
+    name: Upstream releases
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install the project with its dev extras
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Compare the compatibility inventory with upstream release data
+        env:
+          # GitHub release lookups; the default token only raises the API
+          # rate limit and grants nothing beyond contents: read.
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python -m tools.audit upstream --json-out audit-results/upstream.json
+
+      - name: Upload the upstream result
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: upstream
+          path: audit-results/
+
+  security:
+    name: Vulnerability audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      # pip-audit is a CI-only tool, installed in this job and nowhere else.
+      # packaging is imported by the lock-reqs and security helpers.
+      - name: Install pip-audit
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pip-audit packaging
+
+      - name: Write the uv.lock pins as a requirements file
+        run: python -m tools.audit lock-reqs --output "$RUNNER_TEMP/lock-reqs.txt"
+
+      # pip-audit exits non-zero both when it finds a vulnerability and when
+      # it fails, so its exit code is logged and never trusted. Its JSON is
+      # the evidence, and the normalize step below is the gate: it fails
+      # closed when a file is missing or unparseable, or does not cover every
+      # declared dependency. Whether an advisory turns the week red is the
+      # report's decision, the only step that knows which ones an open issue
+      # already tracks.
+      - name: Audit the uv.lock pins
+        run: |
+          pip-audit -r "$RUNNER_TEMP/lock-reqs.txt" --no-deps --disable-pip \
+            -f json -o "$RUNNER_TEMP/lock-audit.json" \
+            || echo "pip-audit exited with status $?"
+
+      - name: Install the project into a fresh venv
+        run: |
+          python -m venv "$RUNNER_TEMP/fresh"
+          "$RUNNER_TEMP/fresh/bin/python" -m pip install --upgrade pip
+          "$RUNNER_TEMP/fresh/bin/python" -m pip install .
+
+      # --path audits the packages installed in the fresh venv, not the
+      # environment pip-audit itself runs in.
+      - name: Audit the fresh resolution
+        run: |
+          site_packages="$("$RUNNER_TEMP/fresh/bin/python" -c 'import sysconfig; print(sysconfig.get_path("purelib"))')"
+          pip-audit --path "$site_packages" -f json -o "$RUNNER_TEMP/fresh-audit.json" \
+            || echo "pip-audit exited with status $?"
+
+      # Runs even when an audit step above failed: the result then has
+      # status error and still carries whatever the other audit found.
+      - name: Normalize both audits into the security result
+        if: always()
+        run: |
+          python -m tools.audit security \
+            --lock "$RUNNER_TEMP/lock-audit.json" \
+            --fresh "$RUNNER_TEMP/fresh-audit.json" \
+            --json-out audit-results/security.json
+
+      - name: Upload the security result
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: security
+          path: audit-results/
+
+  report:
+    name: Audit report
+    needs: [suite, package-smoke, upstream, security]
+    # Runs after failed and skipped checks too: an expected check without a
+    # result fails the report, and every run leaves a report behind.
+    if: always()
+    runs-on: ubuntu-latest
+    # Job-level permissions replace the top-level block, so contents: read is
+    # repeated. issues: read lets the report match findings against existing
+    # issues; it cannot create, edit or comment on any.
+    permissions:
+      contents: read
+      issues: read
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      # Same artifact generation as the uploads above: download-artifact v8
+      # reads what upload-artifact v7 writes. Without a name, every artifact
+      # lands in its own subdirectory, and the report reads that directory
+      # name as the matrix variant.
+      - name: Download every check's results
+        uses: actions/download-artifact@v8
+        with:
+          path: audit-results
+
+      # The limit equals KNOWN_ISSUES_LIMIT in tools/audit/results.py: the
+      # report treats a list that long as possibly truncated and fails.
+      - name: Fetch the issues that carry an audit fingerprint
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue list --state all --search "pmm-audit in:body" --limit 1000 \
+            --json number,title,state,stateReason,body > "$RUNNER_TEMP/known-issues.json"
+
+      - name: Build the report
+        if: always()
+        run: |
+          python -m tools.audit report --results audit-results \
+            --known-issues "$RUNNER_TEMP/known-issues.json" \
+            --out audit-report \
+            --github-summary "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: audit-report
+          path: audit-report/
+          retention-days: 90

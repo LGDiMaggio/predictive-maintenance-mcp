@@ -1,4 +1,4 @@
-"""Every check in tests.yml must be able to turn CI red.
+"""Every check in every workflow must be able to turn CI red.
 
 ``continue-on-error: true`` makes a check decorative: the step runs, the log
 shows the failure in full, and the checkmark is green regardless. Nobody
@@ -10,23 +10,29 @@ This repo has now met that shape four times (three are written up in
 Two were literally this line: the mypy job, and the Black job that reported
 green over a tree where 70 of 91 files would have been reformatted.
 
+The guard started on ``tests.yml`` alone. It now sweeps every file under
+``.github/workflows``: the weekly audit's report job carries its verdict in
+its exit code, and a release smoke job that could not fail would publish an
+untested wheel, so a decorative step anywhere is the same defect.
+
 A guard against it is the same shape again. If :func:`non_blocking` quietly
 stopped finding anything -- a key renamed, a workflow it can no longer
-parse, a walk that skips steps -- it would report "everything blocks" on a
-workflow made entirely of ``continue-on-error``. So its failing paths are
-tested too, and none of that rests on the real file:
+parse, a walk that skips steps or files -- it would report "everything
+blocks" on a workflow made entirely of ``continue-on-error``. So its failing
+paths are tested too, and none of that rests on the real files:
 
-* :class:`TestTheExtractor` drives the pure function against synthetic
-  workflows that *do* carry the defect, at job level and at step level;
-* :func:`test_the_real_workflow_actually_parsed` establishes that the real
-  file was read into jobs and steps, before any "found nothing" result from
-  it is believed;
+* :class:`TestTheExtractor` drives the pure functions against synthetic
+  workflows that *do* carry the defect, at job level and at step level, in
+  ``tests.yml`` and in any other workflow file;
+* :func:`test_the_real_workflows_actually_parsed` establishes that every
+  real file was read into jobs and steps, before any "found nothing" result
+  from them is believed;
 * :func:`test_the_allowlist_has_no_stale_entries` stops the allowlist from
   outliving the thing it excuses.
 
-The workflow is read with a real YAML parser rather than by string matching
-for the same reason: a text window that stopped matching would also fail
-silently, in the passing direction.
+The workflows are read with a real YAML parser rather than by string
+matching for the same reason: a text window that stopped matching would also
+fail silently, in the passing direction.
 """
 
 from pathlib import Path
@@ -35,21 +41,25 @@ import pytest
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-WORKFLOW_PATH = REPO_ROOT / ".github" / "workflows" / "tests.yml"
+WORKFLOWS_DIR = REPO_ROOT / ".github" / "workflows"
+WORKFLOW_PATH = WORKFLOWS_DIR / "tests.yml"
+
+#: Workflow files this guard was written against; more are swept as added.
+KNOWN_WORKFLOWS = {"tests.yml", "publish.yml", "publish-mcp.yml", "audit.yml"}
 
 #: Marks a ``continue-on-error`` on the job itself rather than on one step.
 JOB_LEVEL = "<job>"
 
 # The only place a non-blocking check is legitimate here. Codecov's upload is
 # a call to a third-party service, not a check of this repo's code: an outage
-# or a rate limit there must not fail a PR. Everything else in this workflow
-# is a claim about the tree, and a claim about the tree has to be able to be
-# wrong.
-ALLOWED_NON_BLOCKING = {("test", "Upload coverage to Codecov")}
+# or a rate limit there must not fail a PR. Everything else in these
+# workflows is a claim about the tree, and a claim about the tree has to be
+# able to be wrong. Keys are (workflow file, job, step).
+ALLOWED_NON_BLOCKING = {("tests.yml", "test", "Upload coverage to Codecov")}
 
 
 def non_blocking(workflow):
-    """Locate every ``continue-on-error`` in a parsed workflow.
+    """Locate every ``continue-on-error`` in one parsed workflow.
 
     Returns ``(job_id, where)`` pairs, where *where* is the step's name or
     :data:`JOB_LEVEL`. Only a literal ``false`` counts as blocking -- an
@@ -67,9 +77,35 @@ def non_blocking(workflow):
     return found
 
 
+def non_blocking_in(workflows):
+    """:func:`non_blocking` over ``{file name: parsed workflow}``.
+
+    Returns ``(file name, job_id, where)`` triples, so the same job and step
+    names in two workflows stay distinct findings.
+    """
+    return {
+        (name, job_id, where)
+        for name, workflow in workflows.items()
+        for job_id, where in non_blocking(workflow)
+    }
+
+
+def workflow_files(directory=WORKFLOWS_DIR):
+    """Every workflow file; GitHub accepts both extensions."""
+    return sorted(p for p in directory.iterdir() if p.suffix in (".yml", ".yaml"))
+
+
 @pytest.fixture(scope="module")
-def workflow():
-    return yaml.safe_load(WORKFLOW_PATH.read_text(encoding="utf-8"))
+def workflows():
+    return {
+        path.name: yaml.safe_load(path.read_text(encoding="utf-8"))
+        for path in workflow_files()
+    }
+
+
+@pytest.fixture(scope="module")
+def workflow(workflows):
+    return workflows[WORKFLOW_PATH.name]
 
 
 def job_script(workflow, job_id):
@@ -130,6 +166,31 @@ jobs:
         continue-on-error: true
 """
 
+ANOTHER_WORKFLOW = """\
+on: workflow_dispatch
+jobs:
+  report:
+    continue-on-error: true
+    steps:
+      - name: Build the report
+        run: python -m tools.audit report
+  security:
+    steps:
+      - name: Normalize the audits
+        run: python -m tools.audit security
+        continue-on-error: true
+"""
+
+# Same job and step name as the allowlisted Codecov step, in another file.
+THE_ALLOWLISTED_STEP_ELSEWHERE = """\
+jobs:
+  test:
+    steps:
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        continue-on-error: true
+"""
+
 
 class TestTheExtractor:
     """The guard's own failing paths. Without these it can only pass."""
@@ -166,31 +227,65 @@ class TestTheExtractor:
             ("brand-new-job", "Something nobody has written yet")
         }
 
+    def test_another_workflow_file_is_swept_at_job_and_step_level(self):
+        """The flag outside tests.yml is the same defect."""
+        found = non_blocking_in(
+            {
+                "tests.yml": yaml.safe_load(EXPLICITLY_FALSE),
+                "audit.yml": yaml.safe_load(ANOTHER_WORKFLOW),
+            }
+        )
+        assert found == {
+            ("audit.yml", "report", JOB_LEVEL),
+            ("audit.yml", "security", "Normalize the audits"),
+        }
 
-def test_the_real_workflow_actually_parsed(workflow):
+    def test_the_allowlist_excuses_one_file_not_a_step_name(self):
+        """Copying the Codecov step's name into another workflow is not excused."""
+        found = non_blocking_in(
+            {"publish.yml": yaml.safe_load(THE_ALLOWLISTED_STEP_ELSEWHERE)}
+        )
+        assert found - ALLOWED_NON_BLOCKING == {
+            ("publish.yml", "test", "Upload coverage to Codecov")
+        }
+
+
+def test_the_real_workflows_actually_parsed(workflows):
     """Anchor for the rest: "found nothing" has to mean something.
 
     An empty or reshaped parse would make every assertion below pass
     vacuously -- the exact failure mode this module exists to prevent.
     """
-    jobs = workflow.get("jobs") or {}
+    missing_files = KNOWN_WORKFLOWS - set(workflows)
+    assert not missing_files, (
+        f"the workflow sweep no longer sees {sorted(missing_files)}; "
+        f"it found {sorted(workflows)} in {WORKFLOWS_DIR}"
+    )
+    for name, parsed in workflows.items():
+        jobs = (parsed or {}).get("jobs") or {}
+        assert jobs, f"{name} parsed with no jobs"
+        stepless = sorted(
+            job_id for job_id, job in jobs.items() if not job.get("steps")
+        )
+        assert not stepless, (
+            f"{name}: {stepless} parsed with no steps -- step-level flags "
+            f"would be invisible"
+        )
+    jobs = workflows[WORKFLOW_PATH.name]["jobs"]
     missing = {"test", "lint", "type-check", "format-check"} - set(jobs)
     assert not missing, (
         f"tests.yml no longer defines the jobs this guard was written against: "
         f"{sorted(missing)} absent from {sorted(jobs)}"
     )
-    assert all(
-        job.get("steps") for job in jobs.values()
-    ), "a job parsed with no steps -- step-level flags would be invisible"
 
 
-def test_no_check_is_non_blocking_outside_the_allowlist(workflow):
-    """The guard itself. Covers every job, including ones added later.
+def test_no_check_is_non_blocking_outside_the_allowlist(workflows):
+    """The guard itself. Covers every job of every workflow, including new ones.
 
-    Re-adding one line to the workflow switches a check off with every other
+    Re-adding one line to a workflow switches a check off with every other
     check still green, which is why this is asserted rather than trusted.
     """
-    unexpected = non_blocking(workflow) - ALLOWED_NON_BLOCKING
+    unexpected = non_blocking_in(workflows) - ALLOWED_NON_BLOCKING
     assert not unexpected, (
         f"these checks pass whatever they find, so they are decorative: "
         f"{sorted(unexpected)}. Remove the `continue-on-error`, or add it to "
@@ -198,9 +293,9 @@ def test_no_check_is_non_blocking_outside_the_allowlist(workflow):
     )
 
 
-def test_the_allowlist_has_no_stale_entries(workflow):
+def test_the_allowlist_has_no_stale_entries(workflows):
     """An excuse for a step that no longer exists excuses nothing."""
-    gone = ALLOWED_NON_BLOCKING - non_blocking(workflow)
+    gone = ALLOWED_NON_BLOCKING - non_blocking_in(workflows)
     assert not gone, f"ALLOWED_NON_BLOCKING outlived what it excused: {sorted(gone)}"
 
 
