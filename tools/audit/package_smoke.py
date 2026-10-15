@@ -456,7 +456,9 @@ def _install_and_smoke(
     """Steps 1-3 of the module docstring; failures land in ``steps.findings``."""
     kind = config.artifact
     try:
-        artifact = find_artifact(Path(config.dist), kind)
+        # Absolute, because pip runs in the work directory, not where a
+        # relative --dist (as CI passes it) was given.
+        artifact = find_artifact(Path(config.dist), kind).resolve()
     except ArtifactError as exc:
         steps.findings.append(
             _install_finding(

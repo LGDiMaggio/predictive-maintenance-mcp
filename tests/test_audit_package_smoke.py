@@ -419,6 +419,29 @@ class TestRunPackageSmoke:
             else:
                 assert cwd != package_smoke.REPO_ROOT
 
+    def test_a_relative_dist_still_names_the_artifact_from_the_install_cwd(
+        self, tmp_path, monkeypatch
+    ):
+        # CI passes `--dist dist` from the checkout, while pip runs in the work
+        # directory: a relative artifact path would point inside the work dir.
+        _touch(tmp_path / "dist" / WHEEL_NAME)
+        monkeypatch.chdir(tmp_path)
+        runner = FakeRunner(WINDOWS, harness_doc=_harness_doc("pass"))
+        config = package_smoke.PackageSmokeConfig(
+            dist=Path("dist"),
+            variant="pr-test",
+            work_dir=tmp_path / "work",
+            windows=WINDOWS,
+        )
+        result = package_smoke.run_package_smoke(config, runner=runner)
+        (install,) = [
+            (cmd, cwd) for step, cmd, cwd in runner.calls if step == "install"
+        ]
+        command, cwd = install
+        assert cwd != tmp_path
+        assert (cwd / command[-1]).is_file()
+        assert result.status == "pass"
+
     def test_a_harness_that_wrote_nothing_is_an_error(self, tmp_path):
         result = _run(
             tmp_path, FakeRunner(WINDOWS, harness_doc=None, harness_returncode=0)
