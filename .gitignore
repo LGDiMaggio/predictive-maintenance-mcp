@@ -49,6 +49,10 @@ htmlcov/
 .hypothesis/
 tests/data/
 
+# Quality audit output (python -m tools.audit, see docs/QUALITY_AUDITS.md):
+# results, reports and issue candidates are generated locally, never committed.
+.audit/
+
 # ML Models (generated during testing)
 models/*.pkl
 models/*.json

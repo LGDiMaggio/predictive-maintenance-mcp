@@ -108,6 +108,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   recorded in the ledger valid across restarts. `docker-compose.yml`
   sets `PMM_LEDGER_DIR=/app/ledger` on a named volume, since `./data` is
   mounted read-only.
+- **Weekly quality and compatibility audit.** A scheduled workflow
+  (`.github/workflows/audit.yml`, also runnable by hand) reruns the test
+  suite at the declared dependency floors and at the newest in-range
+  releases, installs the built wheel and sdist into fresh environments on
+  Linux, Windows and macOS, compares a compatibility inventory
+  (`tools/audit/compat_inventory.toml`) with upstream release data for the
+  MCP SDK, the MCP protocol, the packaging tools and the scientific stack,
+  and audits the locked and the freshly resolved dependencies for known
+  vulnerabilities. Every run uploads a structured report and a list of
+  de-duplicated issue candidates for a maintainer to triage; nothing is
+  filed automatically, the workflow holds a read-only token, and no step
+  calls an AI service. A new MCP SDK major is reported, never adopted. Each
+  check also runs locally through `python -m tools.audit`, and
+  `docs/QUALITY_AUDITS.md` describes what runs where, which failure
+  scenarios are covered and which are not, and how to triage and extend
+  the audits.
+- **Guard tests for the surfaces users touch.** A stdio smoke test starts
+  the server as a subprocess and checks both protocol handshake eras, the
+  tool list, the schemas, a diagnostic chain in a sandboxed project root,
+  and a refusal. Tool contracts are checked as a client lists them: every
+  input and output schema must be valid JSON Schema 2020-12, and output
+  schemas are frozen. Diagnostic invariants (signal units, sampling
+  frequency, FFT and envelope, bearing fault frequencies, severity,
+  provenance, invalid inputs) are checked against closed-form references,
+  with known violations recorded as strict expected failures. Install and
+  setup commands and the public documentation are checked against the code:
+  distribution name, extras, server flags and transports, modules, scripts,
+  environment variables, retired endpoint names and imports.
+- **"Audit finding" issue form and Dependabot configuration.** The form
+  matches the fields of the audit's issue candidates. Dependabot proposes
+  grouped weekly updates of the GitHub Actions in use; Python version
+  updates stay off, and MCP SDK major updates are ignored.
 
 ### Changed
 - **`diagnose_vibration`: `rpm`, `machine_group` and `support_type` are
@@ -144,6 +176,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   detection, usage troubleshooting), and `docs/QUICKSTART_DEVELOPER.md`
   matches v0.13.0: `analyze_fft` signature, tools and prompts only,
   `plugin/skills/`, inspector commands.
+- **CI tests the package users install.** Every pull request now builds the
+  wheel, installs it into a fresh virtual environment and runs the stdio
+  smoke test against the installed console script. A release runs the same
+  test on the built wheel before it is uploaded to TestPyPI and PyPI. The
+  test and publish workflows declare read-only token permissions (the
+  publish jobs keep only their trusted-publishing grant), and the Black
+  check also covers `tools/`.
 
 ### Fixed
 - **Tool refusals reach the model again under mcp 2.3+.** Since mcp 2.3.0 the

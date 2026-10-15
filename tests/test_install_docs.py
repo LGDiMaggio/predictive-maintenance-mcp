@@ -64,6 +64,7 @@ INSTALL_DOCS = (
     "docs/QUICKSTART_ENGINEER.md",
     "docs/DEPLOYMENT.md",
     "docs/OLLAMA_GUIDE.md",
+    "docs/QUALITY_AUDITS.md",
 )
 
 #: Configuration files that set environment variables for the server.

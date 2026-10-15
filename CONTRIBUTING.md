@@ -425,6 +425,9 @@ pytest -v
 pytest --cov=src --cov-report=term-missing
 ```
 
+Pull requests also build the wheel and smoke-test the installed package, and a weekly audit reruns the suite at the dependency floors and at the newest releases.
+[docs/QUALITY_AUDITS.md](docs/QUALITY_AUDITS.md) explains what runs where, how to run each check locally, and how to triage what the audit reports.
+
 ---
 
 ## Pull Request Process
