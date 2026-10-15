@@ -43,7 +43,6 @@ import asyncio
 import fnmatch
 import functools
 import importlib
-import importlib.util
 import json
 import re
 from pathlib import Path
@@ -51,7 +50,9 @@ from typing import Callable, Collection, Iterable, Mapping, NamedTuple, Optional
 
 import pytest
 
-from test_install_docs import fenced_blocks
+from test_documented_calls import CALL_RE
+from test_install_docs import Violation, fenced_blocks
+from test_surface_parity import OLD_TO_NEW
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PACKAGE = "predictive_maintenance_mcp"
@@ -157,21 +158,6 @@ ALLOWLIST: dict[tuple[str, str, str], str] = {
 }
 
 
-class Violation(NamedTuple):
-    """One finding. ``(file, rule, token)`` is its identity in the allowlist;
-    line and detail locate it for the reader of a failure."""
-
-    file: str
-    rule: str
-    token: str
-    line: int
-    detail: str
-
-    @property
-    def key(self) -> tuple[str, str, str]:
-        return (self.file, self.rule, self.token)
-
-
 class ImportStatement(NamedTuple):
     module: str
     names: tuple[str, ...]
@@ -215,15 +201,6 @@ def public_files() -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-def load_old_to_new() -> dict:
-    """``OLD_TO_NEW`` from the surface-parity test, imported, not copied."""
-    path = REPO_ROOT / "tests" / "test_surface_parity.py"
-    spec = importlib.util.spec_from_file_location("_doc_drift_surface_parity", path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module.OLD_TO_NEW
-
-
 def retired_names(old_to_new: Mapping[str, tuple]) -> frozenset[str]:
     """Old names whose destination is another name, or a drop (None)."""
     return frozenset(old for old, (new, _) in old_to_new.items() if new != old)
@@ -242,10 +219,15 @@ def _retired_pattern(name: str) -> str:
 
 
 @functools.lru_cache(maxsize=None)
-def _retired_regex(retired: frozenset[str]) -> re.Pattern:
-    ordered = sorted(retired, key=lambda n: (-len(n), n))
+def _retired_regex(retired: frozenset[str]) -> tuple[re.Pattern, tuple[str, ...]]:
+    """One alternation over every retired name, longest first, and that order.
+
+    Group ``n<i>`` matches ``ordered[i]``, so the order is returned with the
+    pattern rather than recomputed by the caller.
+    """
+    ordered = tuple(sorted(retired, key=lambda n: (-len(n), n)))
     groups = "|".join(f"(?P<n{i}>{_retired_pattern(n)})" for i, n in enumerate(ordered))
-    return re.compile(groups or r"(?!x)x")
+    return re.compile(groups or r"(?!x)x"), ordered
 
 
 def retired_name_violations(
@@ -256,9 +238,9 @@ def retired_name_violations(
     where: str = "",
 ) -> list[Violation]:
     """One violation per occurrence of a retired name, in text order."""
-    ordered = sorted(retired, key=lambda n: (-len(n), n))
+    regex, ordered = _retired_regex(frozenset(retired))
     violations = []
-    for match in _retired_regex(frozenset(retired)).finditer(text):
+    for match in regex.finditer(text):
         name = ordered[int(match.lastgroup[1:])]
         line = offset + text.count("\n", 0, match.start()) + 1
         violations.append(
@@ -435,18 +417,18 @@ def code_snippets(relative: str, text: str) -> list[Snippet]:
 # ---------------------------------------------------------------------------
 
 #: A snake_case identifier with at least one underscore: every registered
-#: endpoint has one, and prose words mostly do not.
+#: endpoint has one, and prose words mostly do not. A reference is one
+#: immediately followed by "(" (``CALL_RE``, shared with the golden-path doc
+#: guard, so "frequency (f_rot)" is prose) ...
 _IDENTIFIER = r"[a-z][a-z0-9]*(?:_[a-z0-9]+)+"
-#: Immediately followed by "(" (so "frequency (f_rot)" is prose) ...
-_CALL_RE = re.compile(rf"\b({_IDENTIFIER})\(")
-#: ... or alone inside backticks, optionally with an argument list.
+#: ... or one alone inside backticks, optionally with an argument list.
 _BACKTICK_RE = re.compile(rf"`({_IDENTIFIER})(?:\([^`]*\))?`")
 
 
 def instruction_references(text: str) -> list[tuple[str, int]]:
     """``(name, line)`` of every call-shaped or backticked identifier."""
     found: dict[int, str] = {}
-    for pattern in (_CALL_RE, _BACKTICK_RE):
+    for pattern in (CALL_RE, _BACKTICK_RE):
         for match in pattern.finditer(text):
             found[match.start(1)] = match.group(1)
     return [
@@ -501,7 +483,7 @@ def registered(server) -> frozenset[str]:
 
 @pytest.fixture(scope="module")
 def retired() -> frozenset[str]:
-    return retired_names(load_old_to_new())
+    return retired_names(OLD_TO_NEW)
 
 
 @pytest.fixture(scope="module")
@@ -769,7 +751,7 @@ class TestProjectImportResolution:
         assert self.check(code) == []
 
     def test_one_bad_name_among_good_ones_is_reported(self):
-        """Add: a phantom name next to real ones."""
+        """A phantom name imported next to real ones is reported."""
         code = (
             "from predictive_maintenance_mcp.signal_processing import (\n"
             "    compute_psd,\n"
@@ -793,7 +775,7 @@ class TestProjectImportResolution:
 
 class TestSnippets:
     def test_markdown_imports_are_read_from_fenced_blocks_only(self):
-        """Remove-the-marker: the same line in prose is not code."""
+        """An import line inside a fence is code; the same line in prose is not."""
         fenced = "Text\n\n```python\nfrom predictive_maintenance_mcp import x\n```\n"
         prose = "Text: from predictive_maintenance_mcp import x\n"
         assert [s.offset for s in code_snippets("a.md", fenced)] == [3]
@@ -869,7 +851,7 @@ class TestTutorialDefinedNames:
         ]
 
     def test_without_the_definition_the_import_is_reported(self):
-        """Remove-the-marker: drop the def and the import is drift again."""
+        """Without the document's own definition, the import is drift again."""
         text = self.TUTORIAL.replace("def analyze_temperature_trend", "def other")
         assert (
             "import",

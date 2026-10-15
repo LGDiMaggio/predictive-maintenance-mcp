@@ -7,10 +7,10 @@ and the existing audit issues, then writes ``audit-report.json``,
 
 What these tests pin, in the order a reviewer would ask about it:
 
-* de-duplication follows the table in the audit plan: one finding per
-  fingerprint across variants, ``duplicate-open`` / ``regression-of`` /
-  ``suppressed`` against existing issues, security findings never
-  suppressed, info or low harmless findings recorded only;
+* de-duplication follows the table in the report module's docstring: one
+  finding per fingerprint across variants, ``duplicate-open`` /
+  ``regression-of`` / ``suppressed`` against existing issues, security
+  findings never suppressed, info or low harmless findings recorded only;
 * the builder fails closed (exit 2) on every empty or unreadable input: no
   results, a missing expected check, malformed JSON, a JUnit file with no
   test cases, a known-issues list long enough to be truncated;
@@ -72,6 +72,9 @@ FP_DOCS = results.fingerprint(
 )
 
 FAILURE = '<failure message="AssertionError: boom">trace</failure>'
+
+#: The ``### <label>`` sections a candidate block renders, in order.
+CANDIDATE_LABELS = [label for _, label in report.CANDIDATE_FIELDS]
 
 
 # ---------------------------------------------------------------------------
@@ -175,6 +178,11 @@ def _mcp_review():
     )
 
 
+def _junit_sample():
+    """``junit_sample.xml``: failures, an error and audit tripwires."""
+    return (REPORT_FIXTURES / "junit_sample.xml").read_text(encoding="utf-8")
+
+
 def _junit(*cases):
     """JUnit text in pytest's shape from (classname, name, inner XML)."""
     body = "".join(
@@ -257,6 +265,9 @@ def _by_fp(doc):
     return {item["fingerprint"]: item for item in doc["findings"]}
 
 
+_FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
+
+
 def _blocks(candidates_md):
     """The candidate blocks of issue-candidates.md, split on real headings.
 
@@ -286,9 +297,6 @@ def _blocks(candidates_md):
 
 def _headings(block):
     return re.findall(r"(?m)^### (.+?)\s*$", block)
-
-
-_FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
 
 
 def _outside_fences(text):
@@ -339,8 +347,9 @@ def _fenced_bodies(text):
 
 class TestJUnit:
     def sample(self):
-        text = (REPORT_FIXTURES / "junit_sample.xml").read_text(encoding="utf-8")
-        return report.parse_junit(text, "suite-floors-py3.11", "floors/junit.xml")
+        return report.parse_junit(
+            _junit_sample(), "suite-floors-py3.11", "floors/junit.xml"
+        )
 
     def test_a_leg_with_failures_or_errors_fails_and_counts_its_cases(self):
         run = self.sample()
@@ -508,7 +517,7 @@ class TestPipList:
 
 
 # ---------------------------------------------------------------------------
-# Upstream join (KTD7)
+# Upstream join
 # ---------------------------------------------------------------------------
 
 
@@ -536,7 +545,7 @@ class TestUpstreamJoin:
         ]
         resolved = report.resolve_upstream(_test_gated(), legs)
         assert resolved.classification == "breaking-candidate"
-        # KTD11: a breaking-candidate carries the upstream major.minor.
+        # A breaking-candidate carries the upstream major.minor.
         assert resolved.subject == "numpy 2.5"
         assert resolved.fingerprint == results.fingerprint(
             "dependency", "upstream-minor", "numpy 2.5"
@@ -647,7 +656,7 @@ class TestUpstreamJoin:
         _leg(
             res,
             "suite-floors-py3.11",
-            (REPORT_FIXTURES / "junit_sample.xml").read_text(encoding="utf-8"),
+            _junit_sample(),
             (REPORT_FIXTURES / "pip_list_floors.json").read_text(encoding="utf-8"),
         )
         code, out = _run(tmp_path, res, expect="upstream,suite")
@@ -689,7 +698,7 @@ class TestDeduplication:
 
     def test_fixture_issues_decide_open_completed_and_not_planned(self, tmp_path):
         res = tmp_path / "results"
-        sample = (REPORT_FIXTURES / "junit_sample.xml").read_text(encoding="utf-8")
+        sample = _junit_sample()
         _leg(res, "suite-floors-py3.11", sample)
         _leg(res, "suite-newest-py3.12", sample)
         code, out = _run(tmp_path, res, known=REPORT_FIXTURES / "known_issues.json")
@@ -722,11 +731,7 @@ class TestDeduplication:
 
     def test_issue_text_never_reaches_the_outputs(self, tmp_path):
         res = tmp_path / "results"
-        _leg(
-            res,
-            "suite-floors-py3.11",
-            (REPORT_FIXTURES / "junit_sample.xml").read_text(encoding="utf-8"),
-        )
+        _leg(res, "suite-floors-py3.11", _junit_sample())
         summary = tmp_path / "summary.md"
         _run(
             tmp_path,
@@ -880,7 +885,7 @@ class TestSecurityVerdict:
         assert len(doc["candidates"]) == 3
         assert doc["counts"]["candidate_blocks"] == 2
 
-    def test_security_result_from_the_u6_normalizer(self, tmp_path):
+    def test_security_result_from_the_security_normalizer(self, tmp_path):
         built = security.build_result(
             FIXTURES / "pip_audit_lock.json",
             FIXTURES / "pip_audit_fresh.json",
@@ -1127,11 +1132,7 @@ class TestOutputs:
     def build(self, tmp_path):
         res = tmp_path / "results"
         _write(res, "smoke/smoke.json", _result("smoke", "checkout", [_finding()]))
-        _leg(
-            res,
-            "suite-floors-py3.11",
-            (REPORT_FIXTURES / "junit_sample.xml").read_text(encoding="utf-8"),
-        )
+        _leg(res, "suite-floors-py3.11", _junit_sample())
         return res
 
     def test_summary_has_the_per_check_table_and_candidate_count(self, tmp_path):
@@ -1250,7 +1251,7 @@ class TestTemplateParity:
     def test_the_real_template_matches_the_candidate_blocks(self, tmp_path):
         labels = _rendered_block_labels(tmp_path)
         assert report.template_parity(_template(), labels) == []
-        assert labels == [label for _, label in report.CANDIDATE_FIELDS]
+        assert labels == CANDIDATE_LABELS
 
     def test_dropdowns_equal_the_vocabularies(self):
         fields = {item.get("id"): item for item in _template()["body"]}
@@ -1260,8 +1261,7 @@ class TestTemplateParity:
     def test_a_missing_fingerprint_field_is_reported(self):
         template = _template()
         template["body"] = [i for i in template["body"] if i.get("id") != "fingerprint"]
-        labels = [label for _, label in report.CANDIDATE_FIELDS]
-        problems = report.template_parity(template, labels)
+        problems = report.template_parity(template, CANDIDATE_LABELS)
         assert any("fingerprint" in p for p in problems), problems
 
     def test_a_fingerprint_field_that_is_optional_is_reported(self):
@@ -1269,12 +1269,11 @@ class TestTemplateParity:
         for item in template["body"]:
             if item.get("id") == "fingerprint":
                 item["validations"] = {"required": False}
-        labels = [label for _, label in report.CANDIDATE_FIELDS]
-        assert any("required" in p for p in report.template_parity(template, labels))
+        problems = report.template_parity(template, CANDIDATE_LABELS)
+        assert any("required" in p for p in problems)
 
     @pytest.mark.parametrize("field_id", ["category", "severity"])
     def test_dropdown_drift_is_reported_both_ways(self, field_id):
-        labels = [label for _, label in report.CANDIDATE_FIELDS]
         vocabulary = (
             results.CATEGORIES if field_id == "category" else results.SEVERITIES
         )
@@ -1283,15 +1282,17 @@ class TestTemplateParity:
             for item in template["body"]:
                 if item.get("id") == field_id:
                     item["attributes"]["options"] = options
-            problems = report.template_parity(template, labels)
+            problems = report.template_parity(template, CANDIDATE_LABELS)
             assert any(field_id in p for p in problems), (options, problems)
 
     def test_fields_must_map_both_ways(self):
-        labels = [label for _, label in report.CANDIDATE_FIELDS]
-        extra_block_field = report.template_parity(_template(), labels + ["Notes"])
+        extra_block_field = report.template_parity(
+            _template(), CANDIDATE_LABELS + ["Notes"]
+        )
         assert any("Notes" in p for p in extra_block_field)
         missing_block_field = report.template_parity(
-            _template(), [label for label in labels if label != "Reproduction"]
+            _template(),
+            [label for label in CANDIDATE_LABELS if label != "Reproduction"],
         )
         assert any("Reproduction" in p for p in missing_block_field)
 

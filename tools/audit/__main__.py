@@ -16,9 +16,9 @@ Why the imports are lazy
 Checks run in different environments: the smoke harness inside a fresh wheel
 venv that has ``mcp`` but no dev tools, the upstream checker where
 ``packaging`` is installed. Importing every module up front would let one
-check's missing dependency (or a module a later change has not added yet)
-break all the others. So :data:`DISPATCH` names each module as a string, and
-only the selected subcommand's module is imported, at parse time.
+check's missing dependency break all the others. So :data:`DISPATCH` names
+each module as a string, and only the selected subcommand's module is
+imported, at parse time.
 
 Module convention: ``add_arguments(parser)`` and ``run(args) -> int``. A
 module serving two subcommands names its functions per subcommand (see the
@@ -53,16 +53,6 @@ class Entry:
 class SubcommandUnavailable(Exception):
     """The selected subcommand's module or functions could not be loaded."""
 
-
-SUBCOMMANDS = (
-    "smoke",
-    "package-smoke",
-    "upstream",
-    "floors",
-    "lock-reqs",
-    "security",
-    "report",
-)
 
 DISPATCH: dict[str, Entry] = {
     "smoke": Entry(
@@ -108,6 +98,9 @@ DISPATCH: dict[str, Entry] = {
         "aggregate results into the audit report and issue candidates",
     ),
 }
+
+#: Subcommand names, in the order ``--help`` lists them.
+SUBCOMMANDS = tuple(DISPATCH)
 
 
 def _load(command: str) -> tuple[Callable[[Any], None], Callable[[Any], int]]:

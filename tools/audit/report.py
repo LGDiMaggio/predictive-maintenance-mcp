@@ -28,19 +28,19 @@ artifact) and files are recognized by shape:
 * ``junit*.xml``: one suite leg, named after the directory holding it (the
   artifact name). Failures and errors become findings by test module;
   strict xfails whose reason starts with ``audit-known-defect:`` become
-  diagnostic-correctness findings (KTD10); other xfails are ignored.
+  diagnostic-correctness findings; other xfails are ignored.
 * ``pip-list*.json`` (``pip list --format json``) next to a JUnit file: the
   versions that leg installed.
 * Any other JSON is listed as ignored (raw pip-audit output, for example).
 
-Upstream join (KTD7)
---------------------
+Upstream join
+-------------
 The upstream checker emits ``test-gated`` findings unresolved. Each is
 resolved from the legs that installed one of its ``evidence.candidates``:
 ``harmless`` when all of them passed, ``breaking-candidate`` when any did
-not (the subject then gains the upstream ``major.minor``, KTD11), and
-``not-checked`` when none installed a candidate. mcp ``review`` findings get
-the same leg results attached as evidence.
+not (the subject then gains the upstream ``major.minor``, so each upstream
+line is reviewed once), and ``not-checked`` when none installed a candidate.
+mcp ``review`` findings get the same leg results attached as evidence.
 
 De-duplication
 --------------
@@ -81,8 +81,8 @@ import os
 import re
 import sys
 import xml.etree.ElementTree as ET
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Optional
 
@@ -120,6 +120,13 @@ KNOWN_DEFECT_PREFIX = "audit-known-defect:"
 TEST_FAILED_RULE = "test-failed"
 KNOWN_DEFECT_RULE = "known-defect"
 
+#: De-duplication decision kinds (see the module docstring).
+DUPLICATE_OPEN_KIND = "duplicate-open"
+RECORDED_KIND = "recorded"
+SUPPRESSED_KIND = "suppressed"
+REGRESSION_OF_KIND = "regression-of"
+NEW_KIND = "new"
+
 #: Test module -> finding category for failures; anything else is regression.
 MODULE_CATEGORIES = {
     "test_tool_contracts": "tool-contract",
@@ -132,7 +139,10 @@ MODULE_CATEGORIES = {
 MCP_PACKAGES = ("mcp", "mcp-types")
 
 MARKER_PREFIX = "pmm-audit:"
-_MARKER_RE = re.compile(r"pmm-audit:([0-9a-f]{%d})(?![0-9a-f])" % 12)
+_MARKER_RE = re.compile(
+    re.escape(MARKER_PREFIX)
+    + r"([0-9a-f]{%d})(?![0-9a-f])" % results.FINGERPRINT_LENGTH
+)
 
 ISSUE_TITLE_PREFIX = "[Audit] "
 
@@ -158,20 +168,9 @@ TITLE_LIMIT = 200
 _SEVERITY_RANK = {name: rank for rank, name in enumerate(results.SEVERITIES)}
 _CATEGORY_RANK = {name: rank for rank, name in enumerate(results.CATEGORIES)}
 _CHECK_RANK = {name: rank for rank, name in enumerate(results.CHECK_IDS)}
-#: When occurrences of one fingerprint disagree, the most cautious wins.
-_CLASSIFICATION_RANK = {
-    name: rank
-    for rank, name in enumerate(
-        (
-            "blocked-by-policy",
-            "breaking-candidate",
-            "not-checked",
-            "review",
-            "test-gated",
-            "harmless",
-        )
-    )
-}
+#: When occurrences of one fingerprint disagree, the most cautious wins
+#: (results.CLASSIFICATIONS lists them most cautious first).
+_CLASSIFICATION_RANK = {name: rank for rank, name in enumerate(results.CLASSIFICATIONS)}
 _ENV_COLUMNS = ("mcp", "mcp-types", "numpy", "scipy", "pandas", "pydantic")
 _GITHUB_ENV = (
     ("GITHUB_SERVER_URL", "server_url"),
@@ -228,11 +227,6 @@ class KnownIssue:
     state: str
     state_reason: Optional[str]
     fingerprints: frozenset[str]
-
-
-def _canonical(name: str) -> str:
-    """PEP 503 normalization of a distribution name."""
-    return re.sub(r"[-_.]+", "-", name).lower()
 
 
 def _one_line(text: str, limit: int = TITLE_LIMIT) -> str:
@@ -414,20 +408,10 @@ def parse_pip_list(text: str) -> dict[str, str]:
     Raises:
         ValueError: On anything but a non-empty list of name/version entries.
     """
-    try:
-        data = json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"pip list output is not JSON: {exc}") from None
-    if not isinstance(data, list) or not data:
-        raise ValueError("pip list reported no installed distributions")
-    versions = {}
-    for item in data:
-        name = item.get("name") if isinstance(item, Mapping) else None
-        version = item.get("version") if isinstance(item, Mapping) else None
-        if not isinstance(name, str) or not isinstance(version, str):
-            raise ValueError(f"pip list entry without a name and version: {item!r}")
-        versions[_canonical(name)] = version.strip()
-    return versions
+    return {
+        results.canonical_name(name): version.strip()
+        for name, version in results.parse_pip_list_json(text).items()
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -459,11 +443,10 @@ def _read_result(path: Path, source: str, inputs: Inputs) -> None:
     try:
         # The local-processing guard and the excerpt cap apply on the way in.
         doc = results.canonicalize(doc)
-        results.validate_result(doc)
+        findings = results.validate_result(doc)
         for key in ("facts", "environment"):
             if not isinstance(doc[key], Mapping):
                 raise ValueError(f"{key} must be an object")
-        findings = [Finding(**item) for item in doc["findings"]]
     except ValueError as exc:
         inputs.problems.append(_problem(source, f"invalid result: {exc}"))
         return
@@ -480,7 +463,7 @@ def _read_result(path: Path, source: str, inputs: Inputs) -> None:
     installed = doc["facts"].get("installed_versions")
     if doc["check"] == "package-smoke" and isinstance(installed, Mapping):
         versions = {
-            _canonical(name): version.strip()
+            results.canonical_name(name): version.strip()
             for name, version in installed.items()
             if isinstance(version, str)
         }
@@ -594,21 +577,12 @@ def _major_minor(version: str) -> str:
 
 def _rebuild(finding: Finding, **changes: Any) -> Finding:
     """A copy with ``changes``; the fingerprint follows the new fields."""
-    fields = {
-        "rule": finding.rule,
-        "category": finding.category,
-        "severity": finding.severity,
-        "subject": finding.subject,
-        "title": finding.title,
-        "evidence": finding.evidence,
-        "classification": finding.classification,
-    }
-    fields.update(changes)
-    return Finding(**fields)
+    return replace(finding, fingerprint="", **changes)
 
 
-def _higher(severity: str, floor: str) -> str:
-    return min(severity, floor, key=lambda name: _SEVERITY_RANK[name])
+def _most_severe(severities: Iterable[str]) -> str:
+    """The most severe of ``severities`` (the first, on a tie)."""
+    return min(severities, key=lambda name: _SEVERITY_RANK[name])
 
 
 def resolve_upstream(finding: Finding, legs: Sequence[Leg]) -> Finding:
@@ -629,7 +603,7 @@ def resolve_upstream(finding: Finding, legs: Sequence[Leg]) -> Finding:
     mcp_review = (
         finding.classification == "review"
         and isinstance(package, str)
-        and _canonical(package) in MCP_PACKAGES
+        and results.canonical_name(package) in MCP_PACKAGES
     )
     if finding.classification != "test-gated" and not mcp_review:
         return finding
@@ -645,11 +619,11 @@ def resolve_upstream(finding: Finding, legs: Sequence[Leg]) -> Finding:
         return _rebuild(
             finding,
             classification="not-checked",
-            severity=_higher(finding.severity, "medium"),
+            severity=_most_severe((finding.severity, "medium")),
             evidence=new_evidence,
         )
     wanted = {str(candidate).strip() for candidate in candidates}
-    name = _canonical(package)
+    name = results.canonical_name(package)
     rows = sorted(
         (
             {
@@ -674,7 +648,7 @@ def resolve_upstream(finding: Finding, legs: Sequence[Leg]) -> Finding:
         return _rebuild(
             finding,
             classification="not-checked",
-            severity=_higher(finding.severity, "medium"),
+            severity=_most_severe((finding.severity, "medium")),
             title=f"{package} {listed}: no suite or package-smoke leg installed it",
             evidence=new_evidence,
         )
@@ -695,7 +669,7 @@ def resolve_upstream(finding: Finding, legs: Sequence[Leg]) -> Finding:
     return _rebuild(
         finding,
         classification="breaking-candidate",
-        severity=_higher(finding.severity, "medium"),
+        severity=_most_severe((finding.severity, "medium")),
         subject=f"{package} {line}",
         title=_one_line(
             f"{package} {', '.join(versions)} is installed by legs that did not "
@@ -765,9 +739,14 @@ def parse_known_issues(
 
 
 def _decision(
-    kind: str, issue: Optional[int], candidate: bool, note: Optional[str] = None
+    kind: str,
+    issue: Optional[int],
+    candidate: bool,
+    note: Optional[str] = None,
+    label: Optional[str] = None,
 ) -> dict[str, Any]:
-    label = kind if issue is None else f"{kind} #{issue}"
+    if label is None:
+        label = kind if issue is None else f"{kind} #{issue}"
     return {
         "kind": kind,
         "issue": issue,
@@ -799,7 +778,7 @@ def decide(finding: Mapping[str, Any], issues: Sequence[KnownIssue]) -> dict[str
     if open_matches:
         number = open_matches[0].number
         return _decision(
-            "duplicate-open",
+            DUPLICATE_OPEN_KIND,
             number,
             False,
             f"tracked by open issue #{number}; add new evidence there by hand",
@@ -808,31 +787,31 @@ def decide(finding: Mapping[str, Any], issues: Sequence[KnownIssue]) -> dict[str
         finding["severity"] in ("info", "low")
         and finding.get("classification") == "harmless"
     ):
-        return _decision("recorded", None, False)
-    if matches:
-        latest = matches[0]
-        number = latest.number
-        if latest.state_reason == "NOT_PLANNED":
-            if finding["category"] == "security":
-                decision = _decision(
-                    "new",
-                    number,
-                    True,
-                    f"matches #{number}, closed as not planned; security "
-                    f"findings are never suppressed",
-                )
-                decision["label"] = f"new (see #{number}, closed as not planned)"
-                return decision
-            return _decision(
-                "suppressed", number, False, f"closed as not planned in #{number}"
-            )
+        return _decision(RECORDED_KIND, None, False)
+    if not matches:
+        return _decision(NEW_KIND, None, True)
+    # Every match is closed here; the newest one decides.
+    latest = matches[0]
+    number = latest.number
+    if latest.state_reason != "NOT_PLANNED":
         return _decision(
-            "regression-of",
+            REGRESSION_OF_KIND,
             number,
             True,
             f"matches #{number}, closed as completed: the problem is back",
         )
-    return _decision("new", None, True)
+    if finding["category"] == "security":
+        return _decision(
+            NEW_KIND,
+            number,
+            True,
+            f"matches #{number}, closed as not planned; security findings are "
+            f"never suppressed",
+            label=f"{NEW_KIND} (see #{number}, closed as not planned)",
+        )
+    return _decision(
+        SUPPRESSED_KIND, number, False, f"closed as not planned in #{number}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -840,13 +819,20 @@ def decide(finding: Mapping[str, Any], issues: Sequence[KnownIssue]) -> dict[str
 # ---------------------------------------------------------------------------
 
 
+def _check_order(check: str) -> int:
+    """Sort key: checks in ``results.CHECK_IDS`` order, unknown ones last."""
+    return _CHECK_RANK.get(check, 99)
+
+
+def _run_order(run_: CheckRun) -> tuple[int, str, str]:
+    """Sort key for check runs: by check, then variant, then source."""
+    return (_check_order(run_.check), run_.variant, run_.source)
+
+
 def _merge(runs: Sequence[CheckRun], legs: Sequence[Leg]) -> list[dict[str, Any]]:
     """One entry per fingerprint, listing every check and variant behind it."""
     occurrences: dict[str, list[tuple[Finding, CheckRun]]] = {}
-    ordered = sorted(
-        runs, key=lambda r: (_CHECK_RANK.get(r.check, 99), r.variant, r.source)
-    )
-    for run_ in ordered:
+    for run_ in sorted(runs, key=_run_order):
         for finding in run_.findings:
             if run_.check == "upstream":
                 finding = resolve_upstream(finding, legs)
@@ -854,10 +840,7 @@ def _merge(runs: Sequence[CheckRun], legs: Sequence[Leg]) -> list[dict[str, Any]
     merged = []
     for fingerprint, items in occurrences.items():
         first = items[0][0]
-        severity = min(
-            (finding.severity for finding, _ in items),
-            key=lambda name: _SEVERITY_RANK[name],
-        )
+        severity = _most_severe(finding.severity for finding, _ in items)
         classes = [f.classification for f, _ in items if f.classification is not None]
         classification = (
             min(classes, key=lambda name: _CLASSIFICATION_RANK.get(name, 99))
@@ -881,8 +864,7 @@ def _merge(runs: Sequence[CheckRun], legs: Sequence[Leg]) -> list[dict[str, Any]
                 "title": first.title,
                 "evidence": dict(first.evidence),
                 "checks": sorted(
-                    {row["check"] for row in reported_by},
-                    key=lambda c: _CHECK_RANK.get(c, 99),
+                    {row["check"] for row in reported_by}, key=_check_order
                 ),
                 "variants": sorted({row["variant"] for row in reported_by}),
                 "reported_by": reported_by,
@@ -970,9 +952,10 @@ def build_report(
     missing = [check for check in expect if check not in present]
     findings = _merge(inputs.runs, inputs.legs)
     matched: list[dict[str, Any]] = []
-    states = {issue.number: issue for issue in issues or ()}
+    known = issues or ()
+    states = {issue.number: issue for issue in known}
     for item in findings:
-        decision = decide(item, issues or ())
+        decision = decide(item, known)
         item["candidate"] = decision.pop("candidate")
         item["decision"] = decision
         if decision["issue"] is not None:
@@ -993,7 +976,7 @@ def build_report(
         for item in findings
         if item["category"] == "security"
         and item["evidence"].get("fixable_in_range") is True
-        and item["decision"]["kind"] != "duplicate-open"
+        and item["decision"]["kind"] != DUPLICATE_OPEN_KIND
     ]
     reasons = []
     if missing:
@@ -1006,9 +989,7 @@ def build_report(
             f"tracked by an open issue: {len(fixable)}"
         )
     exit_code = 2 if (missing or all_problems) else 1 if fixable else 0
-    ordered = sorted(
-        inputs.runs, key=lambda r: (_CHECK_RANK.get(r.check, 99), r.variant, r.source)
-    )
+    ordered = sorted(inputs.runs, key=_run_order)
     checks = [
         {
             "check": run_.check,
@@ -1046,9 +1027,9 @@ def build_report(
             "findings": len(findings),
             "candidates": len(candidates),
             "candidate_blocks": len(groups),
-            "already_tracked": kinds.count("duplicate-open"),
-            "suppressed": kinds.count("suppressed"),
-            "recorded_only": kinds.count("recorded"),
+            "already_tracked": kinds.count(DUPLICATE_OPEN_KIND),
+            "suppressed": kinds.count(SUPPRESSED_KIND),
+            "recorded_only": kinds.count(RECORDED_KIND),
         },
         "expected_checks": list(expect),
         "missing_checks": missing,
@@ -1058,7 +1039,7 @@ def build_report(
         "candidates": candidates,
         "known_issues": {
             "provided": issues is not None,
-            "count": len(issues or ()),
+            "count": len(known),
             "matched": matched,
         },
         "environment": [
@@ -1241,7 +1222,7 @@ def _finding_section(item: Mapping[str, Any]) -> list[str]:
     reported = "; ".join(
         f"{row['check']} ({_escape(row['variant'])})" for row in item["reported_by"]
     )
-    lines = [
+    return [
         f"#### {_code(item['title'])}",
         "",
         f"- Fingerprint: {_code(item['marker'])}; rule {_code(item['rule'])}; "
@@ -1260,7 +1241,6 @@ def _finding_section(item: Mapping[str, Any]) -> list[str]:
         _fence(_evidence_text(item["evidence"])),
         "",
     ]
-    return lines
 
 
 def _index_table(
@@ -1298,13 +1278,13 @@ def render_report(report: Mapping[str, Any]) -> str:
         for item in items:
             lines += _finding_section(item)
     lines += ["## Already tracked", ""]
-    tracked = [i for i in findings if i["decision"]["kind"] == "duplicate-open"]
+    tracked = [i for i in findings if i["decision"]["kind"] == DUPLICATE_OPEN_KIND]
     lines += (_index_table(tracked, report) if tracked else ["None."]) + [""]
     lines += ["## Suppressed (closed as not planned)", ""]
-    suppressed = [i for i in findings if i["decision"]["kind"] == "suppressed"]
+    suppressed = [i for i in findings if i["decision"]["kind"] == SUPPRESSED_KIND]
     lines += (_index_table(suppressed, report) if suppressed else ["None."]) + [""]
     lines += ["## Recorded only (info or low, harmless)", ""]
-    recorded = [i for i in findings if i["decision"]["kind"] == "recorded"]
+    recorded = [i for i in findings if i["decision"]["kind"] == RECORDED_KIND]
     lines += [f"- {_code(i['marker'])} {_code(i['title'])}" for i in recorded] or [
         "None."
     ]
@@ -1402,9 +1382,7 @@ def _block(
         f"{check}: {', '.join(sorted(variants))}"
         for check, variants in by_check.items()
     )
-    severity = min(
-        (item["severity"] for item in group), key=lambda name: _SEVERITY_RANK[name]
-    )
+    severity = _most_severe(item["severity"] for item in group)
 
     evidence_parts = []
     for item in group:
@@ -1593,13 +1571,6 @@ def _parse_expect(text: Optional[str]) -> list[str]:
     return expect
 
 
-def _write_text(path: Path, text: str) -> None:
-    part = path.with_name(path.name + ".part")
-    with open(part, "w", encoding="utf-8", newline="\n") as handle:
-        handle.write(text)
-    os.replace(part, path)
-
-
 def write_outputs(report: Mapping[str, Any], out: Path) -> list[str]:
     """Write the three outputs; return one message per output that failed."""
     errors = []
@@ -1609,8 +1580,14 @@ def write_outputs(report: Mapping[str, Any], out: Path) -> list[str]:
         return [f"cannot create {out}: {exc}"]
     writers = (
         (REPORT_JSON, lambda path: results.write_json(report, path)),
-        (REPORT_MD, lambda path: _write_text(path, render_report(report))),
-        (CANDIDATES_MD, lambda path: _write_text(path, render_candidates(report))),
+        (
+            REPORT_MD,
+            lambda path: results.write_text_atomic(render_report(report), path),
+        ),
+        (
+            CANDIDATES_MD,
+            lambda path: results.write_text_atomic(render_candidates(report), path),
+        ),
     )
     for name, write in writers:
         try:

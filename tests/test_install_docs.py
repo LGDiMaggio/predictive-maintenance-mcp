@@ -320,8 +320,8 @@ def _env_prefix(argv: tuple[str, ...]) -> tuple[list[str], tuple[str, ...]]:
     """Split leading ``NAME=value`` assignments off a command."""
     names = []
     index = 0
-    while index < len(argv) and _ASSIGNMENT_RE.match(argv[index]):
-        names.append(_ASSIGNMENT_RE.match(argv[index]).group(1))
+    while index < len(argv) and (assignment := _ASSIGNMENT_RE.match(argv[index])):
+        names.append(assignment.group(1))
         index += 1
     return names, argv[index:]
 
@@ -814,8 +814,8 @@ def _line_of(text: str, needle: str) -> int:
 def _object_keys_after(expression: str, anchor: re.Pattern) -> list[str]:
     """Keys of the JS object literals in the value that follows *anchor*.
 
-    Walks the value with a bracket depth count and stops at the comma or
-    brace that ends it, so ``env: cond ? { A: x } : { B: y }`` yields both
+    Walks the value with a stack of open brackets and stops at the comma or
+    bracket that ends it, so ``env: cond ? { A: x } : { B: y }`` yields both
     branches. A key is an identifier or quoted string directly after ``{``
     or ``,`` inside a brace, followed by ``:``: a ternary's ``:`` follows a
     value, never one of those, so it is not mistaken for a key.
@@ -823,25 +823,23 @@ def _object_keys_after(expression: str, anchor: re.Pattern) -> list[str]:
     keys = []
     for found in anchor.finditer(expression):
         index = found.end()
-        depth = 0
+        # One entry per open bracket, True for a brace.
         braces: list[bool] = []
         expect_key = False
         while index < len(expression):
             char = expression[index]
             if char in "([{":
                 braces.append(char == "{")
-                depth += 1
                 expect_key = char == "{"
             elif char in ")]}":
-                if depth == 0:
+                if not braces:
                     break
                 braces.pop()
-                depth -= 1
                 expect_key = False
-            elif char == "," and depth == 0:
-                break
             elif char == ",":
-                expect_key = bool(braces and braces[-1])
+                if not braces:
+                    break
+                expect_key = braces[-1]
             elif expect_key and not char.isspace():
                 key = re.match(
                     r"""(?:"([^"]+)"|'([^']+)'|([A-Za-z_$][\w$]*))\s*:""",
@@ -935,21 +933,42 @@ def _wrapper_key(call: ast.Call, wrapper: tuple[int, str]) -> Optional[ast.expr]
     return next((k.value for k in call.keywords if k.arg == parameter), None)
 
 
+def _key_via_wrappers(
+    node: ast.AST, wrappers: Mapping[str, tuple[int, str]]
+) -> Optional[ast.expr]:
+    """The key of an environment read at *node*, direct or through one of
+    *wrappers*; None when *node* reads nothing."""
+    key = _env_read_key(node)
+    if key is None and isinstance(node, ast.Call):
+        name = _called_name(node)
+        if name in wrappers:
+            key = _wrapper_key(node, wrappers[name])
+    return key
+
+
 def _parse_all(sources: Mapping[str, str]) -> list[ast.Module]:
+    """``{path: source}`` parsed, one module per file."""
     return [ast.parse(source, filename=path) for path, source in sources.items()]
 
 
-def env_wrappers(sources: Mapping[str, str]) -> dict[str, tuple[int, str]]:
+def env_wrappers(
+    sources: Mapping[str, str], *, trees: Optional[list[ast.Module]] = None
+) -> dict[str, tuple[int, str]]:
     """Functions that forward a parameter to an environment read.
 
     ``{function name: (argument position, parameter name)}``. Found to a
     fixed point, so a wrapper of a wrapper counts too. Keyed by bare name: a
     second function sharing a wrapper's name elsewhere would be trusted as
     one, which is the cost of not resolving imports here.
+
+    *trees*, when given, is :func:`_parse_all` of *sources*, already
+    parsed by the caller.
     """
+    if trees is None:
+        trees = _parse_all(sources)
     functions = [
         node
-        for tree in _parse_all(sources)
+        for tree in trees
         for node in ast.walk(tree)
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
     ]
@@ -964,11 +983,7 @@ def env_wrappers(sources: Mapping[str, str]) -> dict[str, tuple[int, str]]:
             if parameters[:1] in (["self"], ["cls"]):
                 parameters = parameters[1:]
             for node in ast.walk(function):
-                key = _env_read_key(node)
-                if key is None and isinstance(node, ast.Call):
-                    name = _called_name(node)
-                    if name in wrappers:
-                        key = _wrapper_key(node, wrappers[name])
+                key = _key_via_wrappers(node, wrappers)
                 if isinstance(key, ast.Name) and key.id in parameters:
                     wrappers[function.name] = (parameters.index(key.id), key.id)
                     changed = True
@@ -976,18 +991,26 @@ def env_wrappers(sources: Mapping[str, str]) -> dict[str, tuple[int, str]]:
     return wrappers
 
 
-def env_reads(sources: Mapping[str, str]) -> set[str]:
+def env_reads(
+    sources: Mapping[str, str],
+    *,
+    trees: Optional[list[ast.Module]] = None,
+    wrappers: Optional[Mapping[str, tuple[int, str]]] = None,
+) -> set[str]:
     """Every variable name read as a string literal, directly or through a
-    wrapper from :func:`env_wrappers`."""
-    wrappers = env_wrappers(sources)
+    wrapper from :func:`env_wrappers`.
+
+    *trees* and *wrappers*, when given, are :func:`_parse_all` and
+    :func:`env_wrappers` of *sources*, already computed by the caller.
+    """
+    if trees is None:
+        trees = _parse_all(sources)
+    if wrappers is None:
+        wrappers = env_wrappers(sources, trees=trees)
     names = set()
-    for tree in _parse_all(sources):
+    for tree in trees:
         for node in ast.walk(tree):
-            key = _env_read_key(node)
-            if key is None and isinstance(node, ast.Call):
-                name = _called_name(node)
-                if name in wrappers:
-                    key = _wrapper_key(node, wrappers[name])
+            key = _key_via_wrappers(node, wrappers)
             if isinstance(key, ast.Constant) and isinstance(key.value, str):
                 names.add(key.value)
     return names
@@ -1054,8 +1077,24 @@ def src_sources() -> dict[str, str]:
 
 
 @pytest.fixture(scope="module")
+def src_trees(src_sources) -> list[ast.Module]:
+    """``src/`` parsed once for every environment-read check below."""
+    return _parse_all(src_sources)
+
+
+@pytest.fixture(scope="module")
+def src_env_wrappers(src_sources, src_trees) -> dict[str, tuple[int, str]]:
+    return env_wrappers(src_sources, trees=src_trees)
+
+
+@pytest.fixture(scope="module")
+def src_env_reads(src_sources, src_trees, src_env_wrappers) -> set[str]:
+    return env_reads(src_sources, trees=src_trees, wrappers=src_env_wrappers)
+
+
+@pytest.fixture(scope="module")
 def all_violations(
-    doc_commands, pyproject, cli_options, src_sources
+    doc_commands, pyproject, cli_options, src_env_reads
 ) -> list[Violation]:
     project = pyproject["project"]
     (script,) = project["scripts"]
@@ -1074,7 +1113,7 @@ def all_violations(
         )
         + module_violations(doc_commands, module_is_runnable, load_audit_subcommands)
         + script_violations(doc_commands, lambda p: (REPO_ROOT / p).is_file())
-        + unread_env_violations(settings, env_reads(src_sources))
+        + unread_env_violations(settings, src_env_reads)
     )
 
 
@@ -1098,14 +1137,14 @@ def test_the_install_docs_actually_parsed(doc_commands):
 
 
 def test_the_real_parser_and_config_actually_parsed(
-    cli_options, src_sources, pyproject
+    cli_options, src_env_reads, src_env_wrappers, pyproject
 ):
     assert {"--transport", "-t", "--host", "--port"} <= set(cli_options)
     assert cli_options["--transport"].choices, "the transport lost its choices"
     assert "sse" in pyproject["project"]["optional-dependencies"]
-    reads = env_reads(src_sources)
-    assert {"PDM_PROJECT_DIR", "MCP_TRANSPORT", "MCP_HOST", "MCP_PORT"} <= reads, reads
-    assert "_env" in env_wrappers(src_sources)
+    expected_reads = {"PDM_PROJECT_DIR", "MCP_TRANSPORT", "MCP_HOST", "MCP_PORT"}
+    assert expected_reads <= src_env_reads, src_env_reads
+    assert "_env" in src_env_wrappers
     assert env_settings_from_smithery(_read(SMITHERY)), "smithery env not parsed"
     assert len(env_settings_from_dotenv(_read(DOTENV_EXAMPLE))) >= 5
     assert env_settings_from_compose(_read(COMPOSE)), "compose env not parsed"
@@ -1173,7 +1212,7 @@ class TestShellCommandExtraction:
         assert commands[0].line == 4
 
     def test_a_command_in_prose_is_not_a_command(self):
-        """Remove-the-marker: the same line outside a fence yields nothing."""
+        """The same command outside a fence yields nothing."""
         text = "Run pip install predictive-maintenance-mcp[nope] to begin.\n"
         assert shell_commands(text, "fixture.md") == []
 
@@ -1228,12 +1267,12 @@ class TestInstallTargets:
         ]
 
     def test_an_unknown_extra_next_to_valid_ones_is_reported(self):
-        """Add: one phantom value among real ones."""
+        """A phantom extra among declared ones is reported."""
         violations = self.check('pip install "predictive-maintenance-mcp[sse,nope]"')
         assert keys(violations) == [("extra", "nope")]
 
     def test_two_identical_lines_report_twice(self):
-        """Duplicate: each occurrence is its own finding."""
+        """Each occurrence is its own finding, at its own line."""
         violations = self.check(
             "pip install predictive-maintenance-mcp[nope]",
             "pip install predictive-maintenance-mcp[nope]",
@@ -1263,7 +1302,7 @@ class TestInstallTargets:
         assert self.check("pip install predictive_maintenance_mcp==0.13.0") == []
 
     def test_another_package_is_not_the_project(self):
-        """Relocate: the bad extra on a different package is not ours to judge."""
+        """An unknown extra on another package is not this project's to judge."""
         assert self.check("pip install --upgrade mcp[nope]", "pip install x") == []
 
     def test_a_non_install_pip_command_is_ignored(self):
@@ -1316,7 +1355,7 @@ class TestCliFlags:
         assert keys(violations) == [("cli-flag", f"--a{i}") for i in range(1, 6)]
 
     def test_the_name_as_an_install_target_is_not_an_invocation(self):
-        """Relocate: pip's own flags after the package name are pip's."""
+        """A flag after the package name in a pip install belongs to pip."""
         assert self.check("pip install predictive-maintenance-mcp --upgrade") == []
 
 
@@ -1353,7 +1392,8 @@ class TestModules:
         ]
 
     def test_audit_subcommands_are_only_loaded_when_needed(self):
-        """The real set lives in a module that may not exist yet."""
+        """The subcommand set is loaded only when a scanned doc contains a
+        ``python -m tools.audit`` command."""
 
         def explode():
             raise AssertionError("loaded without a tools.audit command")

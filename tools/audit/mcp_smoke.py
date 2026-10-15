@@ -72,7 +72,7 @@ import time
 from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, NamedTuple, Optional
+from typing import Any, BinaryIO, NamedTuple, Optional
 
 import anyio
 import anyio.lowlevel
@@ -90,6 +90,7 @@ __all__ = [
     "check_tool_schemas",
     "default_expected_version",
     "diff_inventory",
+    "list_all_tools",
     "load_inventory",
     "run",
     "run_smoke",
@@ -110,6 +111,12 @@ ERAS = ("legacy", "auto")
 
 #: Trees of the checkout a sandboxed run must never write into.
 CHECKOUT_TREES = ("data", "reports")
+
+#: Bounds on what one launch keeps of a misbehaving server's output. Evidence
+#: shows at most results.EXCERPT_LIMIT characters anyway; these only stop a
+#: server that floods stdout or stderr from filling the harness's memory.
+STDOUT_NOISE_LIMIT = 50
+STDERR_TAIL_BYTES = 65536
 
 #: The documented chain, on a short deterministic synthetic signal. The
 #: generator's bearing_fault signal repeats an impact every 0.1 s, so the
@@ -159,7 +166,7 @@ print(json.dumps({{
 
 
 # ---------------------------------------------------------------------------
-# Pure parts (imported by other audit units)
+# Pure parts (also imported by tests/test_tool_contracts.py)
 # ---------------------------------------------------------------------------
 
 
@@ -302,15 +309,18 @@ def default_expected_version() -> Optional[str]:
     Returns:
         The declared version, or None outside a source tree.
     """
-    init = REPO_ROOT / "src" / "__init__.py"
-    if init.is_file():
-        found = _read_version_assignment(init, "__version__")
-        if found:
-            return found
-    pyproject = REPO_ROOT / "pyproject.toml"
-    if pyproject.is_file():
-        return _read_version_assignment(pyproject, "version = ")
-    return None
+    try:
+        found = _read_version_assignment(
+            REPO_ROOT / "src" / "__init__.py", "__version__"
+        )
+    except FileNotFoundError:
+        found = None
+    if found:
+        return found
+    try:
+        return _read_version_assignment(REPO_ROOT / "pyproject.toml", "version = ")
+    except FileNotFoundError:
+        return None
 
 
 def default_server_cmd() -> list[str]:
@@ -320,6 +330,8 @@ def default_server_cmd() -> list[str]:
 
 def sdk_protocol_versions() -> dict[str, Any]:
     """The installed SDK's protocol-version constants, read defensively."""
+    # upstream.sdk_protocol_versions probes the same SDK constants for another
+    # purpose: new revisions to review, not this run's handshake evidence.
     try:
         module = importlib.import_module("mcp.types.version")
     except ImportError:
@@ -346,15 +358,7 @@ def _snapshot_checkout() -> Optional[dict[str, list[str]]]:
     listing: dict[str, list[str]] = {}
     for tree in CHECKOUT_TREES:
         base = REPO_ROOT / tree
-        listing[tree] = (
-            sorted(
-                path.relative_to(base).as_posix()
-                for path in base.rglob("*")
-                if path.is_file()
-            )
-            if base.is_dir()
-            else []
-        )
+        listing[tree] = _relative_files(base) if base.is_dir() else []
     return listing
 
 
@@ -516,6 +520,19 @@ def _relative_files(root: Path) -> list[str]:
     )
 
 
+def _read_tail(log: BinaryIO, limit: int = STDERR_TAIL_BYTES) -> str:
+    """The last ``limit`` bytes of ``log``, decoded like a text-mode read.
+
+    UTF-8 with replacement and universal newlines, as ``TextIOWrapper``
+    decodes them. A cut through a multi-byte character costs at most one
+    replacement character at the start.
+    """
+    size = log.seek(0, os.SEEK_END)
+    log.seek(max(0, size - limit))
+    text = log.read().decode("utf-8", errors="replace")
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
 # ---------------------------------------------------------------------------
 # One server launch
 # ---------------------------------------------------------------------------
@@ -548,6 +565,7 @@ class _Launch:
     detail: str = ""
     stderr: str = ""
     stdout_noise: list[str] = field(default_factory=list)
+    stdout_noise_dropped: int = 0  # lines past STDOUT_NOISE_LIMIT, counted only
     handshake_s: Optional[float] = None
     elapsed_s: float = 0.0
 
@@ -567,7 +585,10 @@ async def _launch(
     async def record_noise(message: Any) -> None:
         # Exception items are stdout lines the transport could not parse.
         if isinstance(message, Exception):
-            outcome.stdout_noise.append(str(message))
+            if len(outcome.stdout_noise) < STDOUT_NOISE_LIMIT:
+                outcome.stdout_noise.append(str(message))
+            else:
+                outcome.stdout_noise_dropped += 1
         await anyio.lowlevel.checkpoint()
 
     client_kwargs: dict[str, Any] = {"message_handler": record_noise}
@@ -575,6 +596,8 @@ async def _launch(
         client_kwargs["mode"] = "legacy"
     clock = _Deadline(config.timeout_request)
     started = time.perf_counter()
+    # The server writes to this file's descriptor and _read_tail reads the
+    # bytes back; text mode only because stdio_client types errlog as TextIO.
     with tempfile.TemporaryFile(mode="w+", encoding="utf-8", errors="replace") as log:
         try:
             with anyio.CancelScope() as scope:
@@ -591,8 +614,7 @@ async def _launch(
             outcome.problem = "session-error"
             outcome.detail = _describe(exc)
         outcome.phase = clock.phase
-        log.seek(0)
-        outcome.stderr = log.read()
+        outcome.stderr = _read_tail(log.buffer)
     outcome.elapsed_s = round(time.perf_counter() - started, 3)
     return outcome
 
@@ -617,6 +639,11 @@ def _record_launch_problems(
             era=era,
         )
     if outcome.stdout_noise:
+        noise = list(outcome.stdout_noise)
+        if outcome.stdout_noise_dropped:
+            noise.append(
+                f"[... {outcome.stdout_noise_dropped} more lines not kept ...]"
+            )
         run.add(
             _finding(
                 "stdout-not-json-rpc",
@@ -624,7 +651,7 @@ def _record_launch_problems(
                 "high",
                 f"{label} server stdout",
                 "The server wrote a line to stdout that is not JSON-RPC",
-                excerpt="\n".join(outcome.stdout_noise),
+                excerpt="\n".join(noise),
                 stderr=_stderr_tail(outcome.stderr) or None,
             ),
             gate="error",
@@ -637,7 +664,12 @@ def _record_launch_problems(
 # ---------------------------------------------------------------------------
 
 
-async def _list_all_tools(client: Client) -> list[Any]:
+async def list_all_tools(client: Client) -> list[Any]:
+    """Every tool ``tools/list`` returns, following ``next_cursor`` pages.
+
+    Raises:
+        RuntimeError: When the server still returns a cursor after 100 pages.
+    """
     tools: list[Any] = []
     cursor: Optional[str] = None
     for _ in range(100):
@@ -877,7 +909,7 @@ async def _run_era(
     async def body(client: Client, clock: _Deadline) -> None:
         _record_handshake(era, client, run)
         clock.start("tools/list")
-        _check_discovery(era, await _list_all_tools(client), expected, run)
+        _check_discovery(era, await list_all_tools(client), expected, run)
         if era == "legacy":
             await _run_chain(client, clock, root, run)
         await _check_refusal(era, client, clock, run)

@@ -35,13 +35,11 @@ matching for the same reason: a text window that stopped matching would also
 fail silently, in the passing direction.
 """
 
-from pathlib import Path
-
 import pytest
 import yaml
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-WORKFLOWS_DIR = REPO_ROOT / ".github" / "workflows"
+from _workflows import WORKFLOWS_DIR, load_workflows, step_label
+
 WORKFLOW_PATH = WORKFLOWS_DIR / "tests.yml"
 
 #: Workflow files this guard was written against; more are swept as added.
@@ -72,8 +70,7 @@ def non_blocking(workflow):
             found.add((job_id, JOB_LEVEL))
         for index, step in enumerate(job.get("steps") or []):
             if step.get("continue-on-error", False) is not False:
-                label = step.get("name") or step.get("uses") or f"step {index}"
-                found.add((job_id, label))
+                found.add((job_id, step_label(step, index)))
     return found
 
 
@@ -90,17 +87,9 @@ def non_blocking_in(workflows):
     }
 
 
-def workflow_files(directory=WORKFLOWS_DIR):
-    """Every workflow file; GitHub accepts both extensions."""
-    return sorted(p for p in directory.iterdir() if p.suffix in (".yml", ".yaml"))
-
-
 @pytest.fixture(scope="module")
 def workflows():
-    return {
-        path.name: yaml.safe_load(path.read_text(encoding="utf-8"))
-        for path in workflow_files()
-    }
+    return load_workflows()
 
 
 @pytest.fixture(scope="module")

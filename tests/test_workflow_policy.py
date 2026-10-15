@@ -41,16 +41,14 @@ from __future__ import annotations
 
 import fnmatch
 import re
-from pathlib import Path
 from typing import Any, Iterator, Optional
 
 import pytest
 import yaml
 
+from _workflows import REPO_ROOT, load_workflows, step_label
 from tools.audit import results
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-WORKFLOWS_DIR = REPO_ROOT / ".github" / "workflows"
 DEPENDABOT_PATH = REPO_ROOT / ".github" / "dependabot.yml"
 AUDIT_WORKFLOW = "audit.yml"
 
@@ -91,18 +89,6 @@ DEFAULT_TOKEN = "GITHUB_TOKEN"
 # ---------------------------------------------------------------------------
 
 
-def workflow_files(directory: Path = WORKFLOWS_DIR) -> list[Path]:
-    """Every workflow file; GitHub accepts both extensions."""
-    return sorted(p for p in directory.iterdir() if p.suffix in (".yml", ".yaml"))
-
-
-def load_workflows(directory: Path = WORKFLOWS_DIR) -> dict[str, Any]:
-    return {
-        path.name: yaml.safe_load(path.read_text(encoding="utf-8"))
-        for path in workflow_files(directory)
-    }
-
-
 def triggers(workflow: dict) -> dict:
     """The workflow's events as a mapping, whichever of the three forms it uses.
 
@@ -123,7 +109,7 @@ def _jobs(workflow: dict) -> dict:
 
 def _steps(job: dict) -> Iterator[tuple[str, dict]]:
     for index, step in enumerate(job.get("steps") or []):
-        yield step.get("name") or step.get("uses") or f"step {index}", step
+        yield step_label(step, index), step
 
 
 def _permission_blocks(workflow: dict) -> Iterator[tuple[str, Any]]:
@@ -482,7 +468,7 @@ def test_dependabot_never_proposes_an_mcp_major(dependabot):
 
 
 def test_the_audit_suite_matrix_covers_floors_and_newest(audit):
-    """KTD6: floors on 3.11, newest per interpreter on 3.11, 3.12 and 3.14."""
+    """The floors leg runs on 3.11 and newest legs run on 3.11, 3.12 and 3.14."""
     suite = _jobs(audit)["suite"]
     legs = {
         (str(leg.get("leg")), str(leg.get("python")))

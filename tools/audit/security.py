@@ -1,4 +1,4 @@
-"""Normalize pip-audit JSON into one ``security`` result (KTD8).
+"""Normalize pip-audit JSON into one ``security`` result.
 
 The weekly security job runs pip-audit twice: over the ``uv.lock`` pins
 (``lock-reqs`` output, ``--no-deps --disable-pip``) and over a fresh
@@ -11,7 +11,7 @@ a found vulnerability share non-zero codes; its JSON is read instead::
 Findings
 --------
 One finding per (package, advisory) across both audits, subject
-``<package> <advisory id>`` (KTD11), so each advisory has its own
+``<package> <advisory id>``, so each advisory has its own
 fingerprint and a later fix version or alias does not re-key it. Evidence
 records the audited versions, fix versions, aliases, which audit saw it, and
 ``fixable_in_range``: true when a fix version satisfies the package's
@@ -340,7 +340,7 @@ def build_result(
     audits: dict[str, list[Audited]] = {}
     inputs: dict[str, Any] = {}
     failed = False
-    for label, path in zip(AUDIT_LABELS, (Path(lock), Path(fresh))):
+    for label, path in (("lock", Path(lock)), ("fresh", Path(fresh))):
         try:
             audited = load_audit(path)
         except AuditInputError as exc:
@@ -361,9 +361,9 @@ def build_result(
             "skipped": sum(1 for dep in audited if dep.skip_reason is not None),
             "missing_declared": missing,
         }
-    advisories = _normalize(audits, declared)
-    findings.extend(advisories)
-    reported = [f for f in advisories if f.rule == "advisory"]
+    normalized = _normalize(audits, declared)
+    findings.extend(normalized)
+    reported = [f for f in normalized if f.rule == "advisory"]
     return results.Result(
         check="security",
         variant=variant,

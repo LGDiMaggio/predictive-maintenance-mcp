@@ -1,4 +1,4 @@
-"""Diagnostic invariants of the shipped tools (R6, KTD10).
+"""Diagnostic invariants of the shipped tools.
 
 Characterization tests that pin what the diagnostic chain must keep true,
 organized by invariant class: signal units, sampling-frequency assumptions,
@@ -17,7 +17,9 @@ Rules this module follows:
   ``tests/_golden_signals.py``. Every loaded id is cleared afterwards.
 - Nothing under ``src/`` is changed to make a test pass. An invariant the
   shipped code violates is a ``pytest.mark.xfail(strict=True, raises=...)``
-  tripwire whose reason starts with ``audit-known-defect:`` (KTD10). The
+  tripwire whose reason, built by :func:`known_defect`, starts with
+  ``audit-known-defect:`` so the weekly audit report lists it as a
+  diagnostic-correctness finding. The
   ``raises=`` class is the one the CURRENT defect produces: ``AssertionError``
   where the code returns a wrong result or accepts what it should refuse,
   the library's own exception where library text reaches the caller. When a
@@ -68,6 +70,7 @@ from predictive_maintenance_mcp.mcp_tools.diagnostics_tools import (
     check_bearing_faults,
 )
 from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
+from tools.audit.report import KNOWN_DEFECT_PREFIX
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SRC_DIR = (REPO_ROOT / "src").resolve()
@@ -92,6 +95,15 @@ CWRU_FTF_FACTOR_6205 = 0.39828
 # ---------------------------------------------------------------------------
 # Closed-form references and helpers
 # ---------------------------------------------------------------------------
+
+
+def known_defect(short_id: str, text: str) -> str:
+    """The xfail reason of a tripwire: ``audit-known-defect: <id>: <text>``.
+
+    The audit report reads ``<id>`` as the finding's subject (its stable
+    fingerprint) and ``<text>`` as its title.
+    """
+    return f"{KNOWN_DEFECT_PREFIX} {short_id}: {text}"
 
 
 def _sine(amplitude: float, freq_hz: float, fs: float = FS, seconds: float = 1.0):
@@ -346,9 +358,10 @@ class TestSamplingFrequency:
     @pytest.mark.xfail(
         strict=True,
         raises=AssertionError,
-        reason=(
-            "audit-known-defect: psd-nperseg-echo: compute_power_spectral_density "
-            "clamps nperseg to the signal length but echoes the requested value"
+        reason=known_defect(
+            "psd-nperseg-echo",
+            "compute_power_spectral_density clamps nperseg to the signal length "
+            "but echoes the requested value",
         ),
     )
     async def test_psd_echo_matches_the_segment_actually_used(self, load_csv, mock_ctx):
@@ -372,9 +385,10 @@ class TestSamplingFrequency:
     @pytest.mark.xfail(
         strict=True,
         raises=pydantic.ValidationError,
-        reason=(
-            "audit-known-defect: stft-result-schema: compute_spectrogram_stft always "
-            "fails STFTResult validation (energy_per_band band labels are strings)"
+        reason=known_defect(
+            "stft-result-schema",
+            "compute_spectrogram_stft always fails STFTResult validation "
+            "(energy_per_band band labels are strings)",
         ),
     )
     async def test_stft_frequency_axis_ends_at_nyquist(self, load_csv, mock_ctx):
@@ -568,9 +582,10 @@ class TestBearingFrequencies:
     @pytest.mark.xfail(
         strict=True,
         raises=AssertionError,
-        reason=(
-            "audit-known-defect: bearing-catalog-rpm-nonpositive: check_bearing_faults "
-            "catalog route accepts rpm <= 0 and reports the bearing healthy"
+        reason=known_defect(
+            "bearing-catalog-rpm-nonpositive",
+            "check_bearing_faults catalog route accepts rpm <= 0 and reports the "
+            "bearing healthy",
         ),
     )
     async def test_catalog_route_never_calls_a_zero_speed_bearing_healthy(
@@ -837,9 +852,10 @@ class TestInvalidInputs:
     @pytest.mark.xfail(
         strict=True,
         raises=AssertionError,
-        reason=(
-            "audit-known-defect: nan-sample-accepted: a CSV with one NaN sample "
-            "loads and ISO severity returns Zone D with rms_velocity_mm_s=nan"
+        reason=known_defect(
+            "nan-sample-accepted",
+            "a CSV with one NaN sample loads and ISO severity returns Zone D with "
+            "rms_velocity_mm_s=nan",
         ),
     )
     async def test_nan_sample_is_refused_or_yields_a_finite_severity(
@@ -864,9 +880,10 @@ class TestInvalidInputs:
     @pytest.mark.xfail(
         strict=True,
         raises=ValueError,
-        reason=(
-            "audit-known-defect: envelope-short-signal: analyze_envelope on a "
-            "20-sample signal surfaces scipy's padlen ValueError, not a project refusal"
+        reason=known_defect(
+            "envelope-short-signal",
+            "analyze_envelope on a 20-sample signal surfaces scipy's padlen "
+            "ValueError, not a project refusal",
         ),
     )
     async def test_envelope_on_a_too_short_signal_is_a_project_refusal(
@@ -880,9 +897,9 @@ class TestInvalidInputs:
     @pytest.mark.xfail(
         strict=True,
         raises=ValueError,
-        reason=(
-            "audit-known-defect: fft-max-frequency-below-first-bin: analyze_fft "
-            "surfaces numpy's empty-sequence argmax ValueError"
+        reason=known_defect(
+            "fft-max-frequency-below-first-bin",
+            "analyze_fft surfaces numpy's empty-sequence argmax ValueError",
         ),
     )
     async def test_fft_max_frequency_below_first_bin_is_a_project_refusal(
@@ -898,9 +915,9 @@ class TestInvalidInputs:
     @pytest.mark.xfail(
         strict=True,
         raises=AssertionError,
-        reason=(
-            "audit-known-defect: sampling-rate-inf-accepted: load_signal accepts "
-            "sampling_rate=inf and stores the signal"
+        reason=known_defect(
+            "sampling-rate-inf-accepted",
+            "load_signal accepts sampling_rate=inf and stores the signal",
         ),
     )
     async def test_infinite_sampling_rate_is_refused(self, load_csv):
@@ -918,9 +935,10 @@ class TestInvalidInputs:
     @pytest.mark.xfail(
         strict=True,
         raises=pydantic.ValidationError,
-        reason=(
-            "audit-known-defect: sampling-rate-nan-library-error: load_signal with "
-            "sampling_rate=nan surfaces a pydantic StoredSignalInfo error"
+        reason=known_defect(
+            "sampling-rate-nan-library-error",
+            "load_signal with sampling_rate=nan surfaces a pydantic StoredSignalInfo "
+            "error",
         ),
     )
     async def test_nan_sampling_rate_is_a_project_refusal(self, load_csv):

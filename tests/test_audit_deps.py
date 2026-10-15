@@ -1,6 +1,6 @@
-"""Guards for the dependency helpers and the vulnerability-audit normalizer.
+"""Guards for the dependency helpers (``floors`` and ``lock-reqs``).
 
-Three subcommands feed the weekly audit's dependency legs:
+Two subcommands feed the weekly audit's dependency legs:
 
 * ``floors`` turns the ``>=`` bounds of ``[project.dependencies]`` into a
   constraints file, so one suite leg runs on exactly the versions the project
@@ -11,15 +11,13 @@ Three subcommands feed the weekly audit's dependency legs:
   uv.lock is a universal lock, so one name can appear once per Python range;
   each pin carries its fork's markers so exactly one applies on any
   interpreter (pip-audit refuses duplicate names after marker evaluation).
-* ``security`` normalizes two pip-audit JSON files into one
-  ``pmm-audit-result/1`` result and fails closed: a missing, unparseable or
-  truncated audit is an error, never a quiet pass.
 
-Everything here is offline: fixtures live in ``tests/fixtures/audit``.
+The ``security`` normalizer that reads pip-audit's output is guarded in
+``tests/test_audit_security.py``. Everything here is offline: fixtures live
+in ``tests/fixtures/audit``.
 """
 
-import json
-import shutil
+import re
 import tomllib
 from pathlib import Path
 
@@ -28,14 +26,12 @@ from packaging.markers import Marker
 from packaging.requirements import Requirement
 
 from tools.audit import __main__ as audit_main
-from tools.audit import deps, results, security
+from tools.audit import deps
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = REPO_ROOT / "tests" / "fixtures" / "audit"
 PYPROJECT = REPO_ROOT / "pyproject.toml"
 LOCK_SAMPLE = FIXTURES / "uv_lock_sample.toml"
-AUDIT_LOCK = FIXTURES / "pip_audit_lock.json"
-AUDIT_FRESH = FIXTURES / "pip_audit_fresh.json"
 
 INTERPRETERS = ("3.11.9", "3.12.4", "3.13.1", "3.14.0", "3.15.0")
 
@@ -48,6 +44,19 @@ def _write_pyproject(tmp_path, dependencies):
         encoding="utf-8",
     )
     return path
+
+
+def _declared_floor(name):
+    """``name==<floor>`` from the ``>=`` bound as written in pyproject.toml.
+
+    Read with tomllib and a regex, independently of ``deps.floor_pins``, so
+    a wrong pin cannot supply its own expectation.
+    """
+    with open(PYPROJECT, "rb") as handle:
+        entries = tomllib.load(handle)["project"]["dependencies"]
+    (entry,) = [item for item in entries if Requirement(item).name == name]
+    (floor,) = re.findall(r">=\s*([^,;\s]+)", entry.split(";", 1)[0])
+    return f"{name}=={floor}"
 
 
 def _env(full_version):
@@ -65,11 +74,8 @@ class TestFloors:
         requirements = deps.read_declared(PYPROJECT)
         pins = deps.floor_pins(requirements)
 
-        assert "mcp==2.0.0" in pins
-        assert "numpy==2.3.3" in pins
-        assert "scipy==1.16.2" in pins
-        assert "pydantic==2.12.0" in pins
-        assert "pypdf==4.0" in pins
+        for name in ("mcp", "numpy", "scipy", "pydantic", "pypdf"):
+            assert _declared_floor(name) in pins
         assert len(pins) == len(requirements)
         assert not any("[" in pin or ";" in pin for pin in pins), pins
 
@@ -97,19 +103,19 @@ class TestFloors:
             assert name in message
         assert "numpy" not in message
 
-    def test_cli_writes_constraints_file(self, tmp_path, capsys):
+    def test_cli_writes_constraints_file(self, tmp_path):
         out = tmp_path / "constraints.txt"
         code = audit_main.main(
             ["floors", "--pyproject", str(PYPROJECT), "--output", str(out)]
         )
         assert code == 0
         lines = out.read_text(encoding="utf-8").splitlines()
-        assert "mcp==2.0.0" in lines and "numpy==2.3.3" in lines
+        assert _declared_floor("mcp") in lines and _declared_floor("numpy") in lines
 
     def test_cli_prints_to_stdout_without_output(self, capsys):
         code = audit_main.main(["floors", "--pyproject", str(PYPROJECT)])
         assert code == 0
-        assert "mcp==2.0.0" in capsys.readouterr().out.splitlines()
+        assert _declared_floor("mcp") in capsys.readouterr().out.splitlines()
 
     def test_cli_refuses_a_dependency_without_floor(self, tmp_path, capsys):
         path = _write_pyproject(tmp_path, ["numpy>=2.3.3", "no-floor-pkg<5"])
@@ -203,164 +209,3 @@ class TestLockReqs:
         code = audit_main.main(["lock-reqs", "--lock", str(empty)])
         assert code != 0
         assert "error" in capsys.readouterr().err
-
-
-# --------------------------------------------------------------------------
-# security
-# --------------------------------------------------------------------------
-
-
-def _security(tmp_path, lock=AUDIT_LOCK, fresh=AUDIT_FRESH, pyproject=PYPROJECT):
-    out = tmp_path / "security.json"
-    code = audit_main.main(
-        [
-            "security",
-            "--lock",
-            str(lock),
-            "--fresh",
-            str(fresh),
-            "--pyproject",
-            str(pyproject),
-            "--json-out",
-            str(out),
-        ]
-    )
-    doc = json.loads(out.read_text(encoding="utf-8"))
-    results.validate_result(doc)
-    return code, doc
-
-
-def _by_subject(doc):
-    return {item["subject"]: item for item in doc["findings"]}
-
-
-class TestSecurity:
-    def test_fixable_in_range_advisory_is_breaking_candidate(self, tmp_path):
-        code, doc = _security(tmp_path)
-        assert code == 0 and doc["status"] == "pass"
-        assert doc["check"] == "security"
-        finding = _by_subject(doc)["numpy GHSA-0000-test-nmpy"]
-        assert finding["category"] == "security"
-        assert finding["classification"] == "breaking-candidate"
-        assert finding["severity"] == "high"
-        assert finding["evidence"]["fixable_in_range"] is True
-        assert finding["evidence"]["fix_versions"] == ["2.3.4"]
-        assert finding["fingerprint"] == results.fingerprint(
-            "security", finding["rule"], "numpy GHSA-0000-test-nmpy"
-        )
-
-    def test_fix_only_above_the_cap_is_not_fixable_in_range(self, tmp_path):
-        _, doc = _security(tmp_path)
-        finding = _by_subject(doc)["mcp GHSA-0000-test-mcp3"]
-        assert finding["evidence"]["fixable_in_range"] is False
-        assert finding["classification"] == "review"
-
-    def test_no_fix_is_not_fixable_in_range(self, tmp_path):
-        _, doc = _security(tmp_path)
-        finding = _by_subject(doc)["pandas PYSEC-2099-1"]
-        assert finding["evidence"]["fixable_in_range"] is False
-        assert finding["classification"] == "review"
-        assert finding["evidence"]["aliases"] == ["GHSA-0000-test-pnds"]
-
-    def test_transitive_fix_counts_as_in_range(self, tmp_path):
-        _, doc = _security(tmp_path)
-        finding = _by_subject(doc)["urllib3 GHSA-0000-test-url3"]
-        assert finding["evidence"]["fixable_in_range"] is True
-        assert finding["evidence"]["declared"] is None
-        assert finding["classification"] == "breaking-candidate"
-
-    def test_advisory_seen_by_both_audits_is_one_finding(self, tmp_path):
-        _, doc = _security(tmp_path)
-        subjects = [item["subject"] for item in doc["findings"]]
-        assert subjects.count("urllib3 GHSA-0000-test-url3") == 1
-        evidence = _by_subject(doc)["urllib3 GHSA-0000-test-url3"]["evidence"]
-        assert evidence["seen_in"] == ["fresh", "lock"]
-        assert evidence["versions"] == {"fresh": "2.5.0", "lock": "2.5.0"}
-        assert evidence["aliases"] == ["CVE-2099-0002", "PYSEC-2099-2"]
-
-    def test_skipped_dependency_is_a_coverage_finding_except_the_project(
-        self, tmp_path
-    ):
-        _, doc = _security(tmp_path)
-        skipped = [f for f in doc["findings"] if f["rule"] == "audit-skipped"]
-        assert [f["subject"] for f in skipped] == ["odd-transitive"]
-        assert skipped[0]["classification"] == "review"
-
-    def test_long_description_is_truncated(self, tmp_path):
-        data = json.loads(AUDIT_LOCK.read_text(encoding="utf-8"))
-        data["dependencies"][1]["vulns"][0]["description"] = "x" * 20000
-        lock = tmp_path / "lock.json"
-        lock.write_text(json.dumps(data), encoding="utf-8")
-        _, doc = _security(tmp_path, lock=lock)
-        excerpt = _by_subject(doc)["numpy GHSA-0000-test-nmpy"]["evidence"]["excerpt"]
-        assert len(excerpt) < 20000
-        assert "truncated" in excerpt
-
-    def test_missing_declared_name_fails_closed(self, tmp_path):
-        data = json.loads(AUDIT_LOCK.read_text(encoding="utf-8"))
-        data["dependencies"] = [d for d in data["dependencies"] if d["name"] != "scipy"]
-        lock = tmp_path / "lock.json"
-        lock.write_text(json.dumps(data), encoding="utf-8")
-        code, doc = _security(tmp_path, lock=lock)
-        assert code == 2 and doc["status"] == "error"
-        coverage = [f for f in doc["findings"] if f["rule"] == "audit-coverage"]
-        assert coverage and coverage[0]["evidence"]["missing"] == ["scipy"]
-
-    def test_names_are_compared_after_pep503_normalization(self, tmp_path):
-        # The fresh fixture spells scikit-learn as "Scikit_Learn".
-        code, doc = _security(tmp_path)
-        assert code == 0
-        assert not [f for f in doc["findings"] if f["rule"] == "audit-coverage"]
-
-    def test_missing_file_fails_closed(self, tmp_path):
-        code, doc = _security(tmp_path, fresh=tmp_path / "absent.json")
-        assert code == 2 and doc["status"] == "error"
-        invalid = [f for f in doc["findings"] if f["rule"] == "audit-input-invalid"]
-        assert [f["subject"] for f in invalid] == ["pip-audit fresh"]
-        assert invalid[0]["classification"] == "not-checked"
-
-    @pytest.mark.parametrize(
-        "content",
-        ["{not json", "[]", '{"dependencies": "nope"}', '{"dependencies": [{}]}'],
-    )
-    def test_unparseable_file_fails_closed(self, tmp_path, content):
-        bad = tmp_path / "bad.json"
-        bad.write_text(content, encoding="utf-8")
-        code, doc = _security(tmp_path, lock=bad)
-        assert code == 2 and doc["status"] == "error"
-        assert any(f["rule"] == "audit-input-invalid" for f in doc["findings"])
-
-    def test_pure_normalizer_matches_cli(self, tmp_path):
-        requirements = deps.read_declared(PYPROJECT)
-        result = security.build_result(
-            AUDIT_LOCK, AUDIT_FRESH, requirements, variant="unit"
-        )
-        assert result.status == "pass"
-        assert result.check == "security"
-        assert result.facts["advisories"] == 4
-        assert result.facts["fixable_in_range"] == 2
-
-    def test_fixable_in_range_helper(self):
-        from packaging.specifiers import SpecifierSet
-
-        cap = SpecifierSet(">=2.0.0,<3.0.0")
-        assert security.fixable_in_range(["2.3.1"], cap) is True
-        assert security.fixable_in_range(["3.0.0"], cap) is False
-        assert security.fixable_in_range([], cap) is False
-        assert security.fixable_in_range(["not-a-version"], cap) is False
-        assert security.fixable_in_range(["0.1"], None) is True
-
-    def test_pyproject_copy_is_read_live(self, tmp_path):
-        # A declared dependency the audits never saw must fail the check:
-        # the declared names come from pyproject.toml, not a frozen list.
-        pyproject = tmp_path / "pyproject.toml"
-        shutil.copy(PYPROJECT, pyproject)
-        text = pyproject.read_text(encoding="utf-8")
-        pyproject.write_text(
-            text.replace('"scipy>=1.16.2",', '"scipy>=1.16.2",\n    "newdep>=1.0",'),
-            encoding="utf-8",
-        )
-        code, doc = _security(tmp_path, pyproject=pyproject)
-        assert code == 2
-        coverage = [f for f in doc["findings"] if f["rule"] == "audit-coverage"]
-        assert {tuple(f["evidence"]["missing"]) for f in coverage} == {("newdep",)}

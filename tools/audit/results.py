@@ -47,6 +47,7 @@ import json
 import math
 import os
 import platform
+import re
 import sys
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
@@ -61,7 +62,9 @@ __all__ = [
     "CLASSIFICATIONS",
     "DEFAULT_ENVIRONMENT_PACKAGES",
     "EXCERPT_LIMIT",
+    "EXPECTED_WEEKLY_CHECKS",
     "FINGERPRINT_LENGTH",
+    "KNOWN_ISSUES_LIMIT",
     "MAX_NUMERIC_ARRAY",
     "REPORT_SCHEMA",
     "RESULT_SCHEMA",
@@ -69,16 +72,19 @@ __all__ = [
     "STATUSES",
     "Finding",
     "Result",
+    "canonical_name",
     "canonicalize",
     "environment_snapshot",
     "exit_code_for",
     "fingerprint",
     "normalize_subject",
+    "parse_pip_list_json",
     "serialize",
     "truncate_evidence",
     "utc_now",
     "validate_result",
     "write_json",
+    "write_text_atomic",
 ]
 
 RESULT_SCHEMA = "pmm-audit-result/1"
@@ -101,15 +107,17 @@ CATEGORIES = (
 
 SEVERITIES = ("critical", "high", "medium", "low", "info")
 
-#: Upstream-change classes (normative table in the audit plan); optional on a
-#: finding. ``not-checked`` marks evidence that could not be collected.
+#: Upstream-change classes; optional on a finding. ``not-checked`` marks
+#: evidence that could not be collected. Listed most cautious first: when
+#: occurrences of one fingerprint disagree, the report builder keeps the one
+#: listed earliest, so this order is a caution rank.
 CLASSIFICATIONS = (
-    "harmless",
-    "test-gated",
-    "review",
-    "breaking-candidate",
     "blocked-by-policy",
+    "breaking-candidate",
     "not-checked",
+    "review",
+    "test-gated",
+    "harmless",
 )
 
 #: ``error`` means the check could not run, which is never a pass.
@@ -125,6 +133,12 @@ EXCERPT_LIMIT = 4000
 
 #: Longest numeric array a document may contain (see module docstring).
 MAX_NUMERIC_ARRAY = 64
+
+#: Checks the weekly report requires at least one result for (``--expect``).
+EXPECTED_WEEKLY_CHECKS = ("suite", "package-smoke", "upstream", "security")
+
+#: ``gh issue list --limit``; a list this long may be truncated, so it fails.
+KNOWN_ISSUES_LIMIT = 1000
 
 #: Distributions whose installed versions describe a check's environment.
 DEFAULT_ENVIRONMENT_PACKAGES = (
@@ -330,8 +344,12 @@ class Result:
         }
 
 
-def validate_result(doc: Mapping[str, Any]) -> None:
+def validate_result(doc: Mapping[str, Any]) -> list[Finding]:
     """Check a result document read back as plain JSON.
+
+    Returns:
+        The document's findings, as the :class:`Finding` objects built while
+        checking them.
 
     Raises:
         ValueError: On a wrong schema tag, a missing field, or a value outside
@@ -357,15 +375,17 @@ def validate_result(doc: Mapping[str, Any]) -> None:
     _require(doc["status"], STATUSES, "status")
     if not isinstance(doc["findings"], list):
         raise ValueError("findings must be a list")
+    findings = []
     for index, item in enumerate(doc["findings"]):
         try:
-            Finding(**item)
+            findings.append(Finding(**item))
         except TypeError as exc:
             raise ValueError(
                 f"findings[{index}] has unexpected fields: {exc}"
             ) from None
         except ValueError as exc:
             raise ValueError(f"findings[{index}]: {exc}") from None
+    return findings
 
 
 def _is_number(value: Any) -> bool:
@@ -452,6 +472,20 @@ def write_json(doc: Union[Result, Mapping[str, Any]], path: Union[str, Path]) ->
     target = Path(path)
     text = serialize(doc)
     target.parent.mkdir(parents=True, exist_ok=True)
+    return write_text_atomic(text, target)
+
+
+def write_text_atomic(text: str, path: Union[str, Path]) -> Path:
+    """Write ``text`` to ``path`` with ``\\n`` line endings, atomically.
+
+    The text goes to ``<path>.part`` first and replaces ``path`` only once
+    fully written, so a reader never sees a torn file. The parent directory
+    must already exist.
+
+    Returns:
+        The path written.
+    """
+    target = Path(path)
     part = target.with_name(target.name + ".part")
     with open(part, "w", encoding="utf-8", newline="\n") as handle:
         handle.write(text)
@@ -459,8 +493,34 @@ def write_json(doc: Union[Result, Mapping[str, Any]], path: Union[str, Path]) ->
     return target
 
 
-#: Checks the weekly report requires at least one result for (``--expect``).
-EXPECTED_WEEKLY_CHECKS = ("suite", "package-smoke", "upstream", "security")
+def canonical_name(name: str) -> str:
+    """PEP 503 normalization of a distribution name (``Scikit_Learn`` becomes
+    ``scikit-learn``)."""
+    return re.sub(r"[-_.]+", "-", name).lower()
 
-#: ``gh issue list --limit``; a list this long may be truncated, so it fails.
-KNOWN_ISSUES_LIMIT = 1000
+
+def parse_pip_list_json(text: str) -> dict[str, str]:
+    """Reduce ``pip list --format json`` output to ``{name: version}``.
+
+    Names are kept as pip printed them; a repeated name keeps its last
+    version.
+
+    Raises:
+        ValueError: On output that is not a non-empty list of entries that
+            each carry a name and a version. An empty listing is refused
+            rather than read as "nothing to report".
+    """
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"pip list output is not JSON: {exc}") from None
+    if not isinstance(data, list) or not data:
+        raise ValueError("pip list reported no installed distributions")
+    versions: dict[str, str] = {}
+    for item in data:
+        name = item.get("name") if isinstance(item, Mapping) else None
+        version = item.get("version") if isinstance(item, Mapping) else None
+        if not isinstance(name, str) or not isinstance(version, str):
+            raise ValueError(f"pip list entry without a name and version: {item!r}")
+        versions[name] = version
+    return versions

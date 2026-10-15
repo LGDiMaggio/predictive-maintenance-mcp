@@ -49,9 +49,9 @@ would otherwise miss):
                write_fixture()"
 
 Fixture history:
-- Continuous quality audit U2 (2026-10-15): initial snapshot. 38 tools,
-  every one with an outputSchema. Generated under mcp 2.0.0 and pydantic
-  2.12.0 (uv.lock); identical under mcp 2.3.0 and pydantic 2.14.1.
+- Initial snapshot (2026-10-15): 38 tools, every one with an outputSchema.
+  Generated under mcp 2.0.0 and pydantic 2.12.0 (uv.lock); identical under
+  mcp 2.3.0 and pydantic 2.14.1.
 """
 
 from __future__ import annotations
@@ -68,7 +68,12 @@ from mcp import Client
 from mcp.server.mcpserver import MCPServer
 
 from predictive_maintenance_mcp.mcp_tools import register_all
-from tools.audit.mcp_smoke import check_tool_schemas, diff_inventory, load_inventory
+from tools.audit.mcp_smoke import (
+    check_tool_schemas,
+    diff_inventory,
+    list_all_tools,
+    load_inventory,
+)
 
 FIXTURES = Path(__file__).parent / "fixtures"
 FIXTURE = FIXTURES / "tool_output_schemas.json"
@@ -216,19 +221,11 @@ def build_server() -> MCPServer:
 
 
 async def _list_pages(mcp: MCPServer) -> list[dict[str, Any]]:
-    tools: list[dict[str, Any]] = []
     async with Client(mcp, mode="legacy") as client:
-        cursor = None
-        for _ in range(100):
-            page = await client.list_tools(cursor=cursor)
-            tools.extend(
-                tool.model_dump(mode="json", by_alias=True, exclude_none=True)
-                for tool in page.tools
-            )
-            cursor = page.next_cursor
-            if not cursor:
-                return tools
-    raise RuntimeError("tools/list kept returning a next cursor after 100 pages")
+        tools = await list_all_tools(client)
+    return [
+        tool.model_dump(mode="json", by_alias=True, exclude_none=True) for tool in tools
+    ]
 
 
 def list_public_tools(mcp: MCPServer) -> list[dict[str, Any]]:

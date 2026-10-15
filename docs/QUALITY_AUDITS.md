@@ -41,7 +41,7 @@ The guard tests that run in every pull request:
 - `tests/test_install_docs.py`: every shell command in the install and setup documents, including this page.
 - `tests/test_doc_drift.py`: retired endpoint names and unresolvable project imports in public documentation, notebooks and examples, and the identifiers named in the server instructions.
 - `tests/test_workflow_policy.py` and `tests/test_ci_gates.py`: workflow token permissions, secrets, the weekly audit's expected artifacts, the Dependabot rules, and that no check is made non-blocking.
-- `tests/test_audit_package_smoke.py`, `tests/test_audit_deps.py`, `tests/test_audit_upstream.py` and `tests/test_audit_report.py`: the audit tooling itself, offline, on recorded fixtures.
+- `tests/test_audit_results.py`, `tests/test_audit_package_smoke.py`, `tests/test_audit_deps.py`, `tests/test_audit_security.py`, `tests/test_audit_upstream.py` and `tests/test_audit_report.py`: the audit tooling itself (the result contract, the CLI, and each check), offline, on recorded fixtures.
 
 The weekly workflow holds a read-only token (the report job adds `issues: read` to match findings against existing issues), uses no secret other than the default token, and contains no AI step.
 Nothing in it writes to the repository or the issue tracker.

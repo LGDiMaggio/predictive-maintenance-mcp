@@ -2,10 +2,10 @@
 
 ``python -m tools.audit upstream`` reads ``compat_inventory.toml`` (what a
 maintainer has reviewed), fetches release data for each component, and
-classifies every difference with the normative table of the audit plan
-(KTD7). It writes one ``pmm-audit-result/1`` result with ``check="upstream"``
-and never edits ``pyproject.toml`` or ``uv.lock``: a human reviews, then
-bumps the inventory's ``reviewed`` field by hand.
+classifies every difference with the table below. It writes one
+``pmm-audit-result/1`` result with ``check="upstream"`` and never edits
+``pyproject.toml`` or ``uv.lock``: a human reviews, then bumps the
+inventory's ``reviewed`` field by hand.
 
 Component kinds
 ---------------
@@ -52,10 +52,9 @@ new patch              test-gated               test-gated           (harmless)
 * Latest equal to reviewed is no finding; the component's facts record
   ``outcome: harmless``.
 
-Subjects (KTD11): ``review``, ``breaking-candidate`` and
-``blocked-by-policy`` findings carry the upstream ``major.minor`` (``mcp
-2.4``), so each new minor is reviewed once; ``test-gated`` subjects are the
-bare package name.
+Subjects: ``review``, ``breaking-candidate`` and ``blocked-by-policy``
+findings carry the upstream ``major.minor`` (``mcp 2.4``), so each new minor
+is reviewed once; ``test-gated`` subjects are the bare package name.
 
 Failure handling
 ----------------
@@ -74,6 +73,7 @@ import json
 import os
 import re
 import urllib.request
+from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
@@ -513,6 +513,11 @@ _STEP_TITLES = {
 }
 
 
+def _outcome_label(findings: Sequence[results.Finding]) -> str:
+    """The ``outcome`` fact of a component that was checked."""
+    return "findings" if findings else "harmless"
+
+
 def _not_checked(component: Component, url: str, error: str) -> results.Finding:
     return results.Finding(
         rule="not-checked",
@@ -693,7 +698,7 @@ def classify_pypi(
         "declared": declared_text,
         "latest": base_evidence["latest"],
         "latest_prerelease": str(max(prereleases)) if prereleases else None,
-        "outcome": "findings" if findings else "harmless",
+        "outcome": _outcome_label(findings),
     }
     if harmless_steps:
         facts["harmless"] = harmless_steps
@@ -740,6 +745,8 @@ class ProtocolProbe:
 
 def sdk_protocol_versions() -> ProtocolProbe:
     """Read the installed SDK's protocol revisions without ever raising."""
+    # mcp_smoke.sdk_protocol_versions probes the same SDK constants for another
+    # purpose: a run's handshake evidence, not new revisions to review.
     try:
         sdk_version: Optional[str] = metadata.version("mcp")
     except metadata.PackageNotFoundError:
@@ -816,7 +823,7 @@ def classify_protocol(component: Component, probe: ProtocolProbe) -> Outcome:
         "known": list(probe.versions),
         "new": new,
         "dropped": dropped,
-        "outcome": "findings" if findings else "harmless",
+        "outcome": _outcome_label(findings),
     }
     return Outcome(findings, facts)
 
@@ -856,6 +863,10 @@ def classify_github(component: Component, payload: Any) -> Outcome:
     reviewed = str(component.reviewed)
     newest = published[0] if published else None
     newest_final = next((r for r in published if not _is_candidate(r)), None)
+
+    def evidence(tag: str) -> dict[str, Any]:
+        return {"repo": component.repo, "tag": tag, "reviewed": reviewed}
+
     findings = []
     if newest is not None and _is_candidate(newest) and newest["tag_name"] != reviewed:
         tag = newest["tag_name"]
@@ -866,7 +877,7 @@ def classify_github(component: Component, payload: Any) -> Outcome:
                 severity="low",
                 subject=f"{component.id} {_tag_line(tag)}",
                 title=f"{component.repo} published release candidate {tag}",
-                evidence={"repo": component.repo, "tag": tag, "reviewed": reviewed},
+                evidence=evidence(tag),
                 classification="review",
             )
         )
@@ -883,7 +894,7 @@ def classify_github(component: Component, payload: Any) -> Outcome:
                         f"{component.repo} released {tag}; the floating ref picks "
                         f"it up (reviewed {reviewed})"
                     ),
-                    evidence={"repo": component.repo, "tag": tag, "reviewed": reviewed},
+                    evidence=evidence(tag),
                     classification="harmless",
                 )
             )
@@ -895,7 +906,7 @@ def classify_github(component: Component, payload: Any) -> Outcome:
                     severity="medium",
                     subject=f"{component.id} {_tag_line(tag)}",
                     title=f"{component.repo} released {tag} (reviewed {reviewed})",
-                    evidence={"repo": component.repo, "tag": tag, "reviewed": reviewed},
+                    evidence=evidence(tag),
                     classification="review",
                 )
             )
@@ -906,7 +917,7 @@ def classify_github(component: Component, payload: Any) -> Outcome:
         "newest": newest["tag_name"] if newest else None,
         "newest_final": newest_final["tag_name"] if newest_final else None,
         "floating": component.floating,
-        "outcome": "findings" if findings else "harmless",
+        "outcome": _outcome_label(findings),
     }
     return Outcome(findings, facts)
 
@@ -942,7 +953,7 @@ def classify_manual(component: Component, today: date) -> Outcome:
         "kind": component.kind,
         "reviewed_on": component.reviewed_on.isoformat(),
         "review_due": due.isoformat() if due else None,
-        "outcome": "findings" if findings else "harmless",
+        "outcome": _outcome_label(findings),
     }
     return Outcome(findings, facts)
 
@@ -1082,15 +1093,16 @@ def check_upstream(
         else:
             outcome = classify_manual(component, today)
         outcome.findings.extend(check_deprecations(component, today))
-        if outcome.findings and outcome.facts.get("outcome") == "harmless":
-            outcome.facts["outcome"] = "findings"
+        # Deprecations are found after classification, so a component the
+        # classifier called harmless is relabelled once they are in.
+        if outcome.facts.get("outcome") == "harmless":
+            outcome.facts["outcome"] = _outcome_label(outcome.findings)
         findings.extend(outcome.findings)
         component_facts[component.id] = outcome.facts
 
-    classifications: dict[str, int] = {}
-    for finding in findings:
-        key = finding.classification or "unclassified"
-        classifications[key] = classifications.get(key, 0) + 1
+    classifications = Counter(
+        finding.classification or "unclassified" for finding in findings
+    )
     status = "error" if classifications.get("not-checked") else "pass"
     return results.Result(
         check="upstream",

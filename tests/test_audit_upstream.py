@@ -3,7 +3,7 @@
 ``python -m tools.audit upstream`` compares ``tools/audit/compat_inventory.toml``
 (what a maintainer has reviewed) with official release data (PyPI JSON,
 GitHub releases, the installed SDK's protocol constants) and classifies each
-difference with the normative table in the audit plan (KTD7):
+difference with the table in the ``tools/audit/upstream.py`` docstring:
 harmless, test-gated, review, breaking-candidate or blocked-by-policy.
 
 The checker takes an injected fetcher, so nothing here touches the network.
@@ -613,8 +613,9 @@ class TestCheckUpstream:
         out = results.write_json(result, tmp_path / "upstream.json")
         results.validate_result(json.loads(out.read_text(encoding="utf-8")))
 
-    def test_recorded_snapshot_matches_planning_research(self):
-        """mcp 2.3.0 reviewed, pandas 3 and plotly 7 reachable, numpy split."""
+    def test_recorded_snapshot_classification(self):
+        """The payloads recorded on 2026-10-15: mcp 2.3.0 reviewed, pandas 3 and
+        plotly 7 reachable, numpy split."""
         components = _real_inventory()
         responses = _steady_responses(components)
         for name in ("mcp", "numpy", "pandas", "plotly"):

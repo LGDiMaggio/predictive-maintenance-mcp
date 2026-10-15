@@ -5,7 +5,7 @@ edits ``pyproject.toml`` or ``uv.lock`` (the audit reports, a human upgrades).
 
 floors
 ------
-The floors suite leg (KTD6) installs every runtime dependency at the lowest
+The floors suite leg installs every runtime dependency at the lowest
 version ``[project.dependencies]`` admits, through a constraints file::
 
     python -m tools.audit floors --output floors.txt
@@ -19,7 +19,7 @@ leg resolve the newest release while still being reported as "floors".
 lock-reqs
 ---------
 pip-audit cannot read ``uv.lock``, so the security job audits a requirements
-file of its pins (KTD8, ``pip-audit -r ... --no-deps --disable-pip``). Only
+file of its pins (``pip-audit -r ... --no-deps --disable-pip``). Only
 registry-sourced packages are emitted: the project itself and any editable,
 path, directory, git or virtual source have no PyPI advisory data to query.
 

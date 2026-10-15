@@ -22,7 +22,7 @@ What one run does
 3. Runs the harness with the VENV's interpreter, in ``--installed`` mode,
    with the venv as the expected install prefix. The harness process runs
    from the repository root so ``tools`` is importable; the server it launches
-   runs in its own temporary project root (KTD5). Every other step runs in the
+   runs in its own temporary project root. Every other step runs in the
    temporary work directory, so the checkout's own egg-info metadata (left by
    ``python -m build``) can never be read as the installed version.
 4. Writes one ``package-smoke`` result embedding the harness's status, facts
@@ -82,6 +82,11 @@ ARTIFACT_PATTERNS = {"wheel": "*.whl", "sdist": "*.tar.gz"}
 #: CI runner until the job limit. The harness has its own per-phase timeouts.
 STEP_TIMEOUT = 1800.0
 HARNESS_TIMEOUT = 3600.0
+
+#: Severities whose evidence excerpt the CLI prints under the summary. Every
+#: install-step failure is ``high``, and these are the findings a reader of a
+#: red CI log needs the output of; lower severities are observations.
+ECHOED_EXCERPT_SEVERITIES = ("critical", "high")
 
 PathLike = Union[str, Path]
 Runner = Callable[[Sequence[str], Path, float], "subprocess.CompletedProcess[str]"]
@@ -213,24 +218,7 @@ def installed_versions(pip_list_json: str) -> dict[str, str]:
             each carry a name and a version. An empty listing is refused
             rather than read as "nothing to report".
     """
-    try:
-        data = json.loads(pip_list_json)
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"pip list output is not JSON: {exc}") from None
-    if not isinstance(data, list) or not data:
-        raise ValueError("pip list reported no installed distributions")
-    versions: dict[str, str] = {}
-    for item in data:
-        name = item.get("name") if isinstance(item, Mapping) else None
-        version = item.get("version") if isinstance(item, Mapping) else None
-        if not isinstance(name, str) or not isinstance(version, str):
-            raise ValueError(f"pip list entry without a name and version: {item!r}")
-        versions[name] = version
-    return versions
-
-
-def _canonical(name: str) -> str:
-    return name.lower().replace("_", "-").replace(".", "-")
+    return results.parse_pip_list_json(pip_list_json)
 
 
 # ---------------------------------------------------------------------------
@@ -357,11 +345,11 @@ def _read_harness(
     """The harness result, or why there is none to trust."""
     if proc is None:
         return None, f"the harness did not run to completion: {problem}"
-    if not path.is_file():
-        return None, f"the harness exited {proc.returncode} without writing a result"
     try:
         doc = json.loads(path.read_text(encoding="utf-8"))
         results.validate_result(doc)
+    except FileNotFoundError:
+        return None, f"the harness exited {proc.returncode} without writing a result"
     except (OSError, ValueError) as exc:
         return None, f"the harness result is unreadable: {exc}"
     if doc["check"] != "smoke":
@@ -384,10 +372,12 @@ def _environment(
     else:
         environment = results.environment_snapshot(packages=())
     if installed:
-        lookup = {_canonical(name): version for name, version in installed.items()}
+        lookup = {
+            results.canonical_name(name): version for name, version in installed.items()
+        }
         packages = dict(environment.get("packages") or {})
         for name in results.DEFAULT_ENVIRONMENT_PACKAGES:
-            packages[name] = lookup.get(_canonical(name))
+            packages[name] = lookup.get(results.canonical_name(name))
         environment["packages"] = packages
     return environment
 
@@ -632,6 +622,6 @@ def run(args: argparse.Namespace) -> int:
     for finding in result.findings:
         print(f"  [{finding.severity}] {finding.rule}: {finding.title}")
         excerpt = finding.evidence.get("excerpt")
-        if excerpt and finding.severity in ("critical", "high"):
+        if excerpt and finding.severity in ECHOED_EXCERPT_SEVERITIES:
             print("    " + "\n    ".join(str(excerpt).splitlines()))
     return result.exit_code

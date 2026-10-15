@@ -31,10 +31,10 @@
 # exactly one `role = "runtime"` entry and every runtime entry names a
 # declared dependency (tests/test_audit_upstream.py checks both directions).
 #
-# Seeded on 2026-10-15 from the planning research. For the scientific stack
-# `reviewed` is the uv.lock pin, the version the project was developed and
-# locked against; newer lines (numpy 2.4/2.5, pandas 3, plotly 7, ...) are
-# reported until a maintainer reviews them.
+# Seeded on 2026-10-15 from PyPI and GitHub release data and the uv.lock
+# pins. For the scientific stack `reviewed` is the uv.lock pin, the version
+# the project was developed and locked against; newer lines (numpy 2.4/2.5,
+# pandas 3, plotly 7, ...) are reported until a maintainer reviews them.
 
 schema = "pmm-compat-inventory/1"
 
@@ -359,7 +359,7 @@ reviewed_on = 2026-10-15
 review_interval_days = 90
 note = """\
 Action versions are tracked by Dependabot (github-actions ecosystem, weekly, \
-grouped), not by this checker. At planning time tests.yml pinned \
+grouped), not by this checker. On 2026-10-15 tests.yml pinned \
 checkout@v4, setup-python@v5 and codecov-action@v4, which run on node20, past \
 GitHub's 2026-09-23 removal date; the current majors are v7."""
 
