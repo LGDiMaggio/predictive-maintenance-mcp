@@ -1,0 +1,201 @@
+{
+  "_recorded": "https://pypi.org/pypi/mcp/json on 2026-10-15; trimmed to a release window and to the distinct (requires_python, yanked) pairs of each release's files",
+  "info": {
+    "name": "mcp",
+    "version": "2.3.0"
+  },
+  "releases": {
+    "1.20.0": [
+      {
+        "requires_python": ">=3.10",
+        "yanked": false
+      }
+    ],
+    "1.21.0": [
+      {
+        "requires_python": ">=3.10",
+        "yanked": false
+      }
+    ],
+    "1.21.1": [
+      {
+        "requires_python": ">=3.10",
+        "yanked": false
+      }
+    ],
+    "1.21.2": [
+      {
+        "requires_python": ">=3.10",
+        "yanked": false
+      }
+    ],
+    "1.22.0": [
+      {
+        "requires_python": ">=3.10",
+        "yanked": false
+      }
+    ],
+    "1.23.0": [
+      {
+        "requires_python": ">=3.10",
+        "yanked": false
+      }
+    ],
+    "1.23.1": [
+      {
+        "requires_python": ">=3.10",
+        "yanked": false
+      }
+    ],
+    "1.23.2": [
+      {
+        "requires_python": ">=3.10",
+        "yanked": false
+      }
+    ],
+    "1.23.3": [
+      {
+        "requires_python": ">=3.10",
+        "yanked": false
+      }
+    ],
+    "1.24.0": [
+      {
+        "requires_python": ">=3.10",
+        "yanked": false
+      }
+    ],
+    "1.25.0": [
+      {
+        "requires_python": ">=3.10",
+        "yanked": false
+      }
+    ],
+    "1.26.0": [
+      {
+        "requires_python": ">=3.10",
+        "yanked": false
+      }
+    ],
+    "1.27.0": [
+      {
+        "requires_python": ">=3.10",
+        "yanked": false
+      }
+    ],
+    "1.27.1": [
+      {
+        "requires_python": ">=3.10",
+        "yanked": false
+      }
+    ],
+    "1.27.2": [
+      {
+        "requires_python": ">=3.10",
+        "yanked": false
+      }
+    ],
+    "1.28.0": [
+      {
+        "requires_python": ">=3.10",
+        "yanked": false
+      }
+    ],
+    "1.28.1": [
+      {
+        "requires_python": ">=3.10",
+        "yanked": false
+      }
+    ],
+    "1.29.0": [
+      {
+        "requires_python": ">=3.10",
+        "yanked": false
+      }
+    ],
+    "1.29.1": [
+      {
+        "requires_python": ">=3.10",
+        "yanked": false
+      }
+    ],
+    "1.30.0": [
+      {
+        "requires_python": ">=3.10",
+        "yanked": false
+      }
+    ],
+    "2.0.0a1": [
+      {
+        "requires_python": ">=3.10",
+        "yanked": false
+      }
+    ],
+    "2.0.0a2": [
+      {
+        "requires_python": ">=3.10",
+        "yanked": false
+      }
+    ],
+    "2.0.0a3": [
+      {
+        "requires_python": ">=3.10",
+        "yanked": false
+      }
+    ],
+    "2.0.0b1": [
+      {
+        "requires_python": ">=3.10",
+        "yanked": false
+      }
+    ],
+    "2.0.0b2": [
+      {
+        "requires_python": ">=3.10",
+        "yanked": false
+      }
+    ],
+    "2.0.0rc1": [
+      {
+        "requires_python": ">=3.10",
+        "yanked": false
+      }
+    ],
+    "2.0.0": [
+      {
+        "requires_python": ">=3.10",
+        "yanked": false
+      }
+    ],
+    "2.0.1": [
+      {
+        "requires_python": ">=3.10",
+        "yanked": false
+      }
+    ],
+    "2.1.0": [
+      {
+        "requires_python": ">=3.10",
+        "yanked": false
+      }
+    ],
+    "2.1.1": [
+      {
+        "requires_python": ">=3.10",
+        "yanked": false
+      }
+    ],
+    "2.2.0": [
+      {
+        "requires_python": ">=3.10",
+        "yanked": false
+      }
+    ],
+    "2.3.0": [
+      {
+        "requires_python": ">=3.10",
+        "yanked": false
+      }
+    ]
+  }
+}

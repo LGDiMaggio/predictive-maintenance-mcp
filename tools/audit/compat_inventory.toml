@@ -1,0 +1,367 @@
+# Compatibility inventory: what a maintainer has reviewed upstream.
+#
+# Read by `python -m tools.audit upstream` (tools/audit/upstream.py). Every
+# week it compares this file with official release data and classifies each
+# difference as harmless, test-gated, review, breaking-candidate or
+# blocked-by-policy. The checker never edits this file, pyproject.toml or
+# uv.lock. After reviewing a finding, a human bumps `reviewed` and
+# `reviewed_on` here, in the same PR that adapts the code if any.
+#
+# Fields (closed set: an unknown key is an error)
+#   id                    unique name; subject of manual and not-checked findings
+#   kind                  pypi | sdk-protocol | github-release | manual
+#   source                human-readable upstream page
+#   reviewed              newest upstream version, revision list or release tag
+#                         checked against this project (notes read, suite green)
+#   reviewed_on           date of that review
+#   review_interval_days  manual entries: review again after this many days
+#   floating              github-release: our reference floats, so a newer
+#                         release is recorded as harmless instead of review
+#   note                  policy note for whoever reviews the finding
+#   category              result category of its findings (default dependency)
+#   deprecations          [{id, due, note, url}]: review within 120 days of due
+#   details               free-form facts (manual entries)
+#   pypi only             package; rules = library | mcp-sdk | build-tool;
+#                         role = runtime | test | tooling; interpreters;
+#                         lockstep (packages released in lock-step)
+#   github-release only   repo = "owner/name"
+#
+# Declared ranges are never copied here: the checker reads them live from
+# [project.dependencies] in pyproject.toml. Every runtime dependency has
+# exactly one `role = "runtime"` entry and every runtime entry names a
+# declared dependency (tests/test_audit_upstream.py checks both directions).
+#
+# Seeded on 2026-10-15 from the planning research. For the scientific stack
+# `reviewed` is the uv.lock pin, the version the project was developed and
+# locked against; newer lines (numpy 2.4/2.5, pandas 3, plotly 7, ...) are
+# reported until a maintainer reviews them.
+
+schema = "pmm-compat-inventory/1"
+
+[defaults]
+# "Latest" is computed per interpreter: the weekly newest-suite legs run on
+# these, and 3.11 is the requires-python floor that installer and Docker
+# users get.
+interpreters = ["3.11", "3.12", "3.14"]
+
+# ---------------------------------------------------------------- Python ---
+
+[[component]]
+id = "python"
+kind = "manual"
+source = "https://devguide.python.org/versions/"
+reviewed = ["3.11", "3.12", "3.13", "3.14"]
+reviewed_on = 2026-10-15
+review_interval_days = 90
+note = """\
+Tested: 3.11 and 3.12 on the 3-OS PR matrix, 3.14 in the weekly newest suite. \
+Smoke-only: 3.13 (weekly package-smoke). Untested: 3.15 (released 2026-10-09). \
+numpy 2.5 and scipy 1.18 already require 3.12, so 3.11 users stay on older \
+lines that stop receiving fixes."""
+deprecations = [
+    { id = "python-3.11-eol", due = 2027-10-01, note = "Python 3.11 reaches end of life in 2027-10: decide whether to raise requires-python.", url = "https://devguide.python.org/versions/" },
+]
+
+[component.details]
+tested = ["3.11", "3.12", "3.14"]
+smoke_only = ["3.13"]
+untested = ["3.15"]
+
+# ------------------------------------------------------------------- MCP ---
+
+[[component]]
+id = "mcp"
+kind = "pypi"
+package = "mcp"
+rules = "mcp-sdk"
+role = "runtime"
+category = "mcp-compat"
+lockstep = ["mcp-types"]
+source = "https://pypi.org/project/mcp/"
+reviewed = "2.3.0"
+reviewed_on = 2026-10-15
+note = """\
+mcp and mcp-types are released in lock-step. The declared range caps <3: a 3.x \
+final or pre-release is blocked by policy (never auto-upgrade to a new MCP \
+major); read its migration guide instead. SDK minors may change behavior by \
+the SDK's own VERSIONING.md (message wording is excluded from the promise), \
+so each new 2.Y minor is a review and each 2.Y.Z patch is test-gated. The \
+refusal-forwarding change (ToolError text forwarded, other exceptions masked \
+as UnexpectedToolError) landed in 2.1.0, not 2.3; uv.lock still pins 2.0.0. \
+1.x maintenance releases are another line and are ignored."""
+
+[[component]]
+id = "mcp-protocol"
+kind = "sdk-protocol"
+category = "mcp-compat"
+source = "https://modelcontextprotocol.io/specification/versioning"
+reviewed = ["2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25", "2026-07-28"]
+reviewed_on = 2026-10-15
+note = """\
+Revisions the installed SDK knows (mcp.types.version.KNOWN_PROTOCOL_VERSIONS); \
+run the check in the newest resolution to see what an upgrade brings. The \
+handshake era (initialize) ends at 2025-11-25, which desktop hosts negotiate \
+today; the modern era (stateless, server/discover) starts at 2026-07-28, the \
+SDK 2.x default. The stdio smoke harness exercises both."""
+
+[component.details]
+handshake_era = ["2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25"]
+modern_era = ["2026-07-28"]
+latest_handshake = "2025-11-25"
+
+[[component]]
+id = "mcp-spec"
+kind = "github-release"
+repo = "modelcontextprotocol/modelcontextprotocol"
+category = "mcp-compat"
+source = "https://github.com/modelcontextprotocol/modelcontextprotocol/releases"
+reviewed = "2026-07-28"
+reviewed_on = 2026-10-15
+note = """\
+A new dated non-RC release is a new protocol revision: read its changelog and \
+the deprecated-features registry (Roots, Sampling, Logging removable from \
+2027-07-28). An -RC tag is an early warning."""
+
+[[component]]
+id = "transports"
+kind = "manual"
+category = "mcp-compat"
+source = "https://modelcontextprotocol.io/specification/2026-07-28/basic/transports"
+reviewed = ["stdio", "streamable-http", "sse"]
+reviewed_on = 2026-10-15
+review_interval_days = 90
+note = """\
+The server accepts --transport stdio, streamable-http and sse. Only stdio is \
+exercised at runtime (stdio smoke harness). HTTP+SSE is deprecated by the \
+spec (SEP-2596; removable three months after SEP-2596 reaches Final): check \
+SEP-2596's status at each review."""
+
+[component.details]
+tested = ["stdio"]
+untested_at_runtime = ["streamable-http", "sse"]
+deprecated = ["sse"]
+
+[[component]]
+id = "server-json-schema"
+kind = "manual"
+source = "https://github.com/modelcontextprotocol/static/tree/main/schemas"
+reviewed = "2025-12-11"
+reviewed_on = 2026-10-15
+review_interval_days = 90
+note = """\
+server.json declares the 2025-12-11 schema, still the latest dated one. The \
+registry validates every dated schema, so an older one stays valid; look for \
+a newer dated folder and its changelog."""
+
+[[component]]
+id = "mcp-registry"
+kind = "github-release"
+repo = "modelcontextprotocol/registry"
+floating = true
+source = "https://github.com/modelcontextprotocol/registry/releases"
+reviewed = "v1.8.1"
+reviewed_on = 2026-10-15
+note = """\
+publish-mcp.yml downloads mcp-publisher from releases/latest (unpinned, so \
+the reference floats). v1.7.6 bound the GitHub OIDC exchange to a \
+per-deployment audience: an old binary fails with "invalid audience". When \
+a release mentions auth, OIDC or audience, read it before the next \
+registry publish."""
+
+# ------------------------------------------------------ Scientific stack ---
+
+[[component]]
+id = "numpy"
+kind = "pypi"
+package = "numpy"
+rules = "library"
+role = "runtime"
+source = "https://pypi.org/project/numpy/"
+reviewed = "2.3.3"
+reviewed_on = 2026-10-15
+note = """\
+2.5.x requires Python >=3.12, so the 3.11 leg stays on 2.4.x. 2.5.0 removed \
+row_stack, recfromtxt and np.finfo(None), made linalg.eig always complex and \
+changed Generator.binomial samples; numpy.fft is unchanged. Minors expire \
+deprecations: the newest suite decides."""
+
+[[component]]
+id = "scipy"
+kind = "pypi"
+package = "scipy"
+rules = "library"
+role = "runtime"
+source = "https://pypi.org/project/scipy/"
+reviewed = "1.16.2"
+reviewed_on = 2026-10-15
+note = """\
+1.18.x requires Python >=3.12, so the 3.11 leg stays on 1.17.x. 1.18.0 moved \
+scipy.fft from pocketfft to ducc0 (expect last-bit differences between legs: \
+golden values need tolerances) and lfilter_zi now raises on leading zeros \
+in a. 1.17.0 deprecated scipy.odr (removal 1.19)."""
+
+[[component]]
+id = "pandas"
+kind = "pypi"
+package = "pandas"
+rules = "library"
+role = "runtime"
+source = "https://pypi.org/project/pandas/"
+reviewed = "2.3.3"
+reviewed_on = 2026-10-15
+note = """\
+pandas 3 is reachable from the unbounded floor: Copy-on-Write is always on, \
+to_numpy() of a Series or single-dtype frame is read-only (in-place edits \
+raise), the default string dtype is str, and read_csv dropped \
+delim_whitespace, date_parser and infer_datetime_format."""
+
+[[component]]
+id = "scikit-learn"
+kind = "pypi"
+package = "scikit-learn"
+rules = "library"
+role = "runtime"
+source = "https://pypi.org/project/scikit-learn/"
+reviewed = "1.7.2"
+reviewed_on = 2026-10-15
+note = """\
+Model persistence across versions is unsupported: a stored model trained on \
+another version raises InconsistentVersionWarning and may need retraining. \
+1.9 adds narwhals as a dependency."""
+
+[[component]]
+id = "pydantic"
+kind = "pypi"
+package = "pydantic"
+rules = "library"
+role = "runtime"
+source = "https://pypi.org/project/pydantic/"
+reviewed = "2.12.0"
+reviewed_on = 2026-10-15
+note = """\
+Minors can change generated JSON Schema text (2.14 changed how defaults are \
+encoded), which reaches tools/list input schemas; the frozen output-schema \
+fixture catches it."""
+
+[[component]]
+id = "plotly"
+kind = "pypi"
+package = "plotly"
+rules = "library"
+role = "runtime"
+source = "https://pypi.org/project/plotly/"
+reviewed = "6.3.1"
+reviewed_on = 2026-10-15
+note = """\
+plotly 7 is reachable from the unbounded floor: it bundles plotly.js 4.0, \
+removes deprecated figure factories and Kaleido < 1.0 support, and to_html() \
+now emits a doctype (HTML reports embed its output)."""
+
+[[component]]
+id = "pypdf"
+kind = "pypi"
+package = "pypdf"
+rules = "library"
+role = "runtime"
+source = "https://pypi.org/project/pypdf/"
+reviewed = "6.15.0"
+reviewed_on = 2026-10-15
+note = "Frequent minors; the floor (4.0) is far below the locked line."
+
+[[component]]
+id = "jsonschema"
+kind = "pypi"
+package = "jsonschema"
+rules = "library"
+role = "test"
+source = "https://pypi.org/project/jsonschema/"
+reviewed = "4.25.1"
+reviewed_on = 2026-10-15
+note = """\
+Test-time transitive (installed through mcp): the stdio smoke harness and \
+the tool-contract guards validate schemas as JSON Schema 2020-12 with it."""
+
+# ------------------------------------------------- Packaging and release ---
+
+[[component]]
+id = "setuptools"
+kind = "pypi"
+package = "setuptools"
+rules = "build-tool"
+role = "tooling"
+source = "https://setuptools.pypa.io/en/latest/history.html"
+reviewed = "84.0.0"
+reviewed_on = 2026-10-15
+note = """\
+Build isolation always fetches the newest setuptools; the weekly \
+package-smoke builds with it. 82 removed pkg_resources, 83 requires \
+Python >=3.10."""
+deprecations = [
+    { id = "license-table", due = 2027-02-18, note = "project.license as a TOML table ({ text = ... }) is deprecated (PEP 639). After the due date setuptools warns 'overdue' and raises only with SETUPTOOLS_ENFORCE_DEPRECATION=true. An SPDX string needs build-system setuptools>=77 and must not be combined with License :: classifiers.", url = "https://github.com/pypa/setuptools/blob/v84.0.0/setuptools/config/_apply_pyprojecttoml.py" },
+]
+
+[[component]]
+id = "build"
+kind = "pypi"
+package = "build"
+rules = "build-tool"
+role = "tooling"
+source = "https://build.pypa.io/en/stable/changelog.html"
+reviewed = "1.6.1"
+reviewed_on = 2026-10-15
+note = "Builds the wheel and sdist in publish.yml and the package-smoke legs."
+
+[[component]]
+id = "pip"
+kind = "pypi"
+package = "pip"
+rules = "build-tool"
+role = "tooling"
+source = "https://pip.pypa.io/en/stable/news/"
+reviewed = "26.2.1"
+reviewed_on = 2026-10-15
+note = """\
+Installs the floors leg through a constraints file. Since 26.2, constraints \
+(including PIP_CONSTRAINT) no longer reach isolated build environments \
+(use --build-constraint)."""
+
+[[component]]
+id = "uv"
+kind = "pypi"
+package = "uv"
+rules = "build-tool"
+role = "tooling"
+source = "https://github.com/astral-sh/uv/releases"
+reviewed = "0.13.1"
+reviewed_on = 2026-10-15
+note = """\
+uv's minor is its breaking step (0.x). uv.lock schema version 1 (revision 2) \
+is public API and only bumped in a minor; Dependabot runs uv 0.11 and cannot \
+read a higher schema version, so check the lock schema when uv's minor moves."""
+
+[[component]]
+id = "pypi-publish-action"
+kind = "github-release"
+repo = "pypa/gh-action-pypi-publish"
+floating = true
+source = "https://github.com/pypa/gh-action-pypi-publish/releases"
+reviewed = "v1.14.2"
+reviewed_on = 2026-10-15
+note = """\
+publish.yml uses the floating release/v1 branch, so a new v1 release is \
+picked up at the next release. A new major (v2) needs a deliberate bump."""
+
+[[component]]
+id = "github-actions"
+kind = "manual"
+source = "https://github.com/LGDiMaggio/predictive-maintenance-mcp/blob/main/.github/dependabot.yml"
+reviewed_on = 2026-10-15
+review_interval_days = 90
+note = """\
+Action versions are tracked by Dependabot (github-actions ecosystem, weekly, \
+grouped), not by this checker. At planning time tests.yml pinned \
+checkout@v4, setup-python@v5 and codecov-action@v4, which run on node20, past \
+GitHub's 2026-09-23 removal date; the current majors are v7."""
+
+[component.details]
+current_majors = { "actions/checkout" = "v7", "actions/setup-python" = "v7", "actions/upload-artifact" = "v7", "codecov/codecov-action" = "v7" }

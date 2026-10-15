@@ -1,0 +1,58 @@
+{
+  "dependencies": [
+    {
+      "name": "mcp",
+      "version": "2.0.0",
+      "vulns": [
+        {
+          "id": "GHSA-0000-test-mcp3",
+          "fix_versions": ["3.0.0"],
+          "aliases": ["CVE-2099-0001"],
+          "description": "Synthetic advisory: fixed only in the next major, outside the declared <3.0.0 cap."
+        }
+      ]
+    },
+    {
+      "name": "numpy",
+      "version": "2.3.3",
+      "vulns": [
+        {
+          "id": "GHSA-0000-test-nmpy",
+          "fix_versions": ["2.3.4"],
+          "aliases": [],
+          "description": "Synthetic advisory: fixed by a patch inside the declared >=2.3.3 range."
+        }
+      ]
+    },
+    {
+      "name": "pandas",
+      "version": "2.3.3",
+      "vulns": [
+        {
+          "id": "PYSEC-2099-1",
+          "fix_versions": [],
+          "aliases": ["GHSA-0000-test-pnds"],
+          "description": "Synthetic advisory with no fix released."
+        }
+      ]
+    },
+    {"name": "plotly", "version": "6.3.1", "vulns": []},
+    {"name": "pydantic", "version": "2.12.0", "vulns": []},
+    {"name": "pypdf", "version": "6.15.0", "vulns": []},
+    {"name": "scikit-learn", "version": "1.7.2", "vulns": []},
+    {"name": "scipy", "version": "1.16.2", "vulns": []},
+    {
+      "name": "urllib3",
+      "version": "2.5.0",
+      "vulns": [
+        {
+          "id": "GHSA-0000-test-url3",
+          "fix_versions": ["2.6.0"],
+          "aliases": ["CVE-2099-0002"],
+          "description": "Synthetic advisory on a transitive dependency."
+        }
+      ]
+    }
+  ],
+  "fixes": []
+}

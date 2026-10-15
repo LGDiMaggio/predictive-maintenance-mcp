@@ -1,0 +1,33 @@
+{
+  "dependencies": [
+    {"name": "mcp", "version": "2.3.0", "vulns": []},
+    {"name": "numpy", "version": "2.5.4", "vulns": []},
+    {"name": "pandas", "version": "3.0.6", "vulns": []},
+    {"name": "plotly", "version": "7.1.0", "vulns": []},
+    {"name": "pydantic", "version": "2.14.1", "vulns": []},
+    {"name": "pypdf", "version": "6.20.1", "vulns": []},
+    {"name": "Scikit_Learn", "version": "1.9.1", "vulns": []},
+    {"name": "scipy", "version": "1.18.1", "vulns": []},
+    {
+      "name": "urllib3",
+      "version": "2.5.0",
+      "vulns": [
+        {
+          "id": "GHSA-0000-test-url3",
+          "fix_versions": ["2.6.0"],
+          "aliases": ["CVE-2099-0002", "PYSEC-2099-2"],
+          "description": "Synthetic advisory on a transitive dependency."
+        }
+      ]
+    },
+    {
+      "name": "odd-transitive",
+      "skip_reason": "Dependency not found on PyPI and could not be audited: odd-transitive (0.0.1)"
+    },
+    {
+      "name": "predictive-maintenance-mcp",
+      "skip_reason": "Dependency not found on PyPI and could not be audited: predictive-maintenance-mcp (0.13.0)"
+    }
+  ],
+  "fixes": []
+}
