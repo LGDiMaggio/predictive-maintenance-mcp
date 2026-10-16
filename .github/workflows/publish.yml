@@ -49,8 +49,9 @@ jobs:
         with:
           python-version: "3.11"
 
-      # Same major as the upload above and the download in the publish jobs:
-      # the three move together.
+      # The same artifact generation as the upload above and the downloads in
+      # the publish jobs: download-artifact v8 reads what upload-artifact v7
+      # writes (the weekly audit runs the same pair), so the four move together.
       - name: Download build artifacts
         uses: actions/download-artifact@v8
         with:
