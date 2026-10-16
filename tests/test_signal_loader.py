@@ -3,6 +3,7 @@ Tests for the Signal Loader module.
 
 Covers:
 - Multi-format signal loading: CSV, NPY, MAT, WAV, Parquet
+- Blank-row scan for .csv/.txt files (check_text_blank_rows)
 - Raw binary decoding (.bin/.raw/.dat) via load_raw_binary
 - Segment extraction with seed reproducibility
 - Segment boundary conditions
@@ -20,7 +21,9 @@ import pandas as pd
 
 from conftest import write_raw_file
 from predictive_maintenance_mcp.config import get_max_signal_size
+from predictive_maintenance_mcp.signal_acquisition import loaders
 from predictive_maintenance_mcp.signal_acquisition.loaders import (
+    check_text_blank_rows,
     load_signal_data,
     load_raw_binary,
     extract_segment,
@@ -29,9 +32,11 @@ from predictive_maintenance_mcp.signal_acquisition.loaders import (
     DATA_DIR,
     RAW_EXTENSIONS,
     RAW_PARAM_DEFAULTS,
+    RAW_SAMPLES_REMEDY,
     SELF_DESCRIBING_EXTENSIONS,
     SUPPORTED_EXTENSIONS,
 )
+from predictive_maintenance_mcp.signal_validation import BAD_SAMPLE_REMEDY
 
 # ── load_signal_data ───────────────────────────────────────────────────────
 
@@ -151,6 +156,79 @@ class TestLoadSignalData:
         signal = load_signal_data("real_train/baseline_1.csv")
         assert signal is not None
         assert len(signal) > 1000
+
+
+# ── check_text_blank_rows ──────────────────────────────────────────────────
+
+
+class TestCheckTextBlankRows:
+    """An empty or whitespace-only line between two data lines is a missing
+    sample; blank lines before the first and after the last data line are
+    not. Every case also runs with tiny read sizes, so line breaks and blank
+    lines that straddle two reads are judged the same way."""
+
+    @pytest.fixture(autouse=True, params=[None, 1, 2, 3], ids=lambda n: f"read-{n}")
+    def read_size(self, request, monkeypatch):
+        if request.param is not None:
+            monkeypatch.setattr(loaders, "_SCAN_CHUNK_BYTES", request.param)
+
+    @pytest.mark.parametrize(
+        "content, line",
+        [
+            (b"1\n2\n\n3\n", 3),
+            (b"1\n   \n3\n", 2),
+            (b"1\r\n2\r\n\r\n3\r\n", 3),
+            (b"1\r2\r\r3\r", 3),
+            (b"1\r\r\n\r\r\n2\r\r\n", 2),
+            (b"1,2\n\n3,4\n", 2),
+            (b"\n1\n\n2\n", 3),
+        ],
+        ids=[
+            "lf",
+            "whitespace-only",
+            "crlf",
+            "cr-only",
+            "csv-module-crcrlf",
+            "multi-column",
+            "after-leading-blank",
+        ],
+    )
+    def test_internal_blank_line_refused_naming_line(self, tmp_path, content, line):
+        f = tmp_path / "pump.csv"
+        f.write_bytes(content)
+        with pytest.raises(ValueError) as exc:
+            check_text_blank_rows(f)
+        msg = str(exc.value)
+        assert "'pump.csv'" in msg
+        assert f"at line {line} between data lines" in msg
+        assert "missing sample" in msg
+        assert BAD_SAMPLE_REMEDY in msg
+
+    @pytest.mark.parametrize(
+        "content",
+        [
+            b"1\n2\n3\n\n\n",
+            b"1\n2\n3\n   \n",
+            b"\n1\n2\n",
+            b"1\r\n2\r\n3\r\n",
+            b"1\r\r\n2\r\r\n3\r\r\n",
+            b"",
+            b"accel m/s\xb2\n1\n2\n",
+        ],
+        ids=[
+            "trailing-blank",
+            "trailing-whitespace",
+            "leading-blank",
+            "crlf",
+            "csv-module-crcrlf",
+            "empty-file",
+            "cp1252-non-ascii",
+        ],
+    )
+    def test_file_without_internal_blank_passes(self, tmp_path, content):
+        f = tmp_path / "pump.txt"
+        f.write_bytes(content)
+        assert check_text_blank_rows(f) is None
 
 
 # ── extract_segment ────────────────────────────────────────────────────────
@@ -550,6 +628,32 @@ class TestLoadRawBinaryRefusals:
         assert "3 non-finite" in msg
         assert "byte_order" in msg or "endian" in msg.lower()
         assert "sample_format" in msg
+
+    def test_three_nan_float32_refused_with_first_index_and_declaration(self, tmp_path):
+        """The decoder's refusal comes from the shared validator: it keeps
+        the count and the remedy naming the declared sample_format and
+        byte_order values, and adds the first 0-based sample index."""
+        f = tmp_path / "three_nan.bin"
+        write_raw_file(f, [1.0, np.nan, 2.0, np.nan, np.nan, 3.0], "<f4")
+        with pytest.raises(ValueError) as exc:
+            load_raw_binary(f, sample_format="float32")
+        msg = str(exc.value)
+        assert "3 non-finite" in msg
+        assert "out of 6" in msg
+        assert "first at sample index 1" in msg
+        assert "sample_format 'float32'" in msg
+        assert "byte_order 'little'" in msg
+        # A correctly declared file can still hold NaN: the remedy must not
+        # stop at "re-check the declaration".
+        assert BAD_SAMPLE_REMEDY in msg
+
+    def test_raw_samples_remedy_names_the_raw_declaration(self):
+        """The remedy the store and the ledger give for non-finite samples
+        decoded from a raw file names every declared parameter that can
+        produce them, and keeps the bad-sample guidance."""
+        for parameter in ("sample_format", "byte_order", "scale_factor"):
+            assert parameter in RAW_SAMPLES_REMEDY
+        assert BAD_SAMPLE_REMEDY in RAW_SAMPLES_REMEDY
 
     def test_nonfinite_check_applies_to_selected_channel_only(self, tmp_path):
         """A NaN confined to channel 1 must not block loading channel 0."""

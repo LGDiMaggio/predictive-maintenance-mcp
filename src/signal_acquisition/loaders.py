@@ -4,20 +4,23 @@ Signal loading and segmentation utilities.
 Funzioni pure senza dipendenze da MCP o dal filesystem globale:
 - load_signal_data: carica un file segnale in qualsiasi formato supportato
 - load_raw_binary: decodifica file binari raw headerless (.bin/.raw/.dat)
+- check_text_blank_rows: refuses a .csv/.txt file with an empty line between
+  two data lines (a missing sample); its callers run it before decoding
 - extract_segment: estrae un segmento casuale/deterministico da un segnale
 - get_metadata_path / get_metadata_path_from_dir: derivano il path del file metadata
 
 Queste funzioni sono testabili in isolamento senza avviare il server MCP.
 
 Error contract: the historical functions in this module return ``Optional``
-(``None`` on failure). ``load_raw_binary`` deliberately deviates and RAISES
-typed errors ("problem — remedy" ``ValueError``s, plus a bare
-``FileNotFoundError``): the caller must be able to relay exactly which
-declared parameter contradicts the file, which a bare ``None`` cannot
-express. See its docstring.
+(``None`` on failure). ``load_raw_binary`` and ``check_text_blank_rows``
+deliberately deviate and RAISE typed errors ("problem — remedy"
+``ValueError``s, plus a bare ``FileNotFoundError`` from the raw decoder): the
+caller must be able to relay exactly what is wrong with the file, which a
+bare ``None`` cannot express. See their docstrings.
 """
 
 import logging
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -26,6 +29,7 @@ import pandas as pd
 
 from ..config import DATA_DIR, get_max_signal_size
 from ..path_safety import safe_resolve
+from ..signal_validation import BAD_SAMPLE_REMEDY, validate_finite_samples
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +75,32 @@ RAW_PARAM_DEFAULTS: dict[str, object] = {
     "header_offset": 0,
     "scale_factor": None,
 }
+
+#: Remedy for non-finite samples decoded from a raw file, for the callers
+#: that validate after :func:`load_raw_binary`. The decoder already refuses a
+#: non-finite float payload before scaling, so what is left is a declaration
+#: that does not fit the file, most often the scale_factor.
+RAW_SAMPLES_REMEDY = (
+    "re-check the raw declaration: a sample_format or byte_order that does "
+    "not match how the file was written, or a scale_factor that is NaN, "
+    "infinite or large enough to overflow, decodes to non-finite samples; if "
+    "the declaration is right, " + BAD_SAMPLE_REMEDY
+)
+
+# Blank-row scan (check_text_blank_rows). A run of \r followed by \n is ONE
+# line break (Python's csv module on Windows writes \r\r\n), and a lone \n or
+# \r is one break each. A chunk whose every \r sits right before a \n is
+# scanned as is, with \r\n read as one break; any other chunk is first
+# normalized so that every break is a single \n.
+_LINE_BREAK = re.compile(rb"\r*\n|\r")
+# Any byte that is not ASCII whitespace makes its line a data line.
+_DATA_BYTE = re.compile(rb"[^ \t\r\n\x0b\x0c]")
+# A whole blank line: its opening break, whitespace, its closing break.
+_BLANK_LINE = re.compile(rb"\n[ \t\x0b\x0c]*\r?\n")
+# The rest of a line that began blank in the previous chunk, up to its break.
+_BLANK_LINE_REST = re.compile(rb"[ \t\x0b\x0c]*\r?\n")
+# Read size of the scan: memory stays bounded whatever the file size.
+_SCAN_CHUNK_BYTES = 1 << 20
 
 
 def load_signal_data(filename: str) -> Optional[np.ndarray]:
@@ -166,6 +196,104 @@ def load_self_describing(path: Path) -> Optional[np.ndarray]:
         return df.iloc[:, 0].values.astype(np.float64)
 
     return None
+
+
+def check_text_blank_rows(path: Path) -> None:
+    r"""Refuse a text signal file that has an empty line between data lines.
+
+    The CSV reader skips blank lines, so an empty or whitespace-only line in
+    the middle of a ``.csv``/``.txt`` capture would silently drop a sample
+    and shift every later sample in time. This scan refuses the file at the
+    first such line instead. Blank lines before the first data line and
+    after the last one (a leading empty line, trailing newlines) pass.
+
+    The file is read in binary, in fixed-size chunks, so the scan never
+    raises a decoding error (a cp1252 header, for example) and its memory
+    stays bounded whatever the file size. A line is blank when it is empty
+    or holds only ASCII whitespace. A run of ``\r`` immediately followed by
+    ``\n`` ends ONE line (Python's ``csv`` module on Windows writes
+    ``\r\r\n``); a lone ``\n`` or ``\r`` ends one line each.
+
+    This is a separate call, not part of :func:`load_self_describing`,
+    because the signal store's main route swallows every exception raised
+    inside that decoder. The signal store and the asset ledger call it on
+    ``.csv`` and ``.txt`` files before decoding them.
+
+    Args:
+        path: Resolved filesystem path of a ``.csv`` or ``.txt`` file.
+
+    Raises:
+        ValueError: If an empty or whitespace-only line has a data line both
+            before and after it; the message names the file and the 1-based
+            line number.
+        OSError: If the file cannot be opened or read.
+    """
+    seen_data = False  # a data line has started
+    blank_line: Optional[int] = None  # first blank line after the first data line
+    line_is_blank = False  # the line in progress holds only whitespace so far
+    breaks = 0  # line breaks before ``pos``, all chunks included
+    carry = b""
+    with path.open("rb") as fh:
+        while True:
+            chunk = fh.read(_SCAN_CHUNK_BYTES)
+            if chunk:
+                # A trailing run of \r may end in a \n that the next read brings.
+                data = carry + chunk
+                body = data.rstrip(b"\r")
+                carry = data[len(body) :]
+            else:
+                body, carry = carry, b""
+            carriage_returns = body.count(b"\r")
+            if carriage_returns and carriage_returns != body.count(b"\r\n"):
+                # Not plain \r\n breaks: make every break a single \n. Two
+                # plain replaces cover \r\n and \r\r\n (a regex substitution
+                # per line costs ~10x more). A \r still right before a \n
+                # means a longer run, so the regex takes the chunk; with
+                # none, every \r left is a lone break.
+                body = body.replace(b"\r\n", b"\n").replace(b"\r\n", b"\n")
+                if b"\r\n" in body:
+                    body = _LINE_BREAK.sub(b"\n", body)
+                else:
+                    body = body.replace(b"\r", b"\n")
+
+            pos = 0
+            if not seen_data:
+                first = _DATA_BYTE.search(body)
+                if first is None:
+                    breaks += body.count(b"\n")
+                else:
+                    breaks += body.count(b"\n", 0, first.start())
+                    pos = first.start()
+                    seen_data = True
+
+            if seen_data and blank_line is None:
+                start = pos
+                blank = _BLANK_LINE_REST.match(body, pos) if line_is_blank else None
+                if blank is None:
+                    blank = _BLANK_LINE.search(body, pos)
+                    if blank is not None:
+                        start = blank.start() + 1
+                if blank is not None:
+                    blank_line = breaks + body.count(b"\n", pos, start) + 1
+                    pos = blank.end()
+                else:
+                    breaks += body.count(b"\n", pos)
+                    last_break = body.rfind(b"\n", pos)
+                    if last_break >= 0:
+                        rest = _DATA_BYTE.search(body, last_break + 1)
+                        line_is_blank = rest is None
+                    elif _DATA_BYTE.search(body, pos) is not None:
+                        line_is_blank = False
+
+            # Only a data line AFTER the blank line makes it a missing sample.
+            if blank_line is not None and _DATA_BYTE.search(body, pos) is not None:
+                raise ValueError(
+                    f"File '{path.name}' has an empty line at line {blank_line} "
+                    f"between data lines, which is a missing sample — "
+                    f"{BAD_SAMPLE_REMEDY}."
+                )
+            if not chunk:
+                return
 
 
 def load_raw_binary(
@@ -299,16 +427,20 @@ def load_raw_binary(
     if n_channels > 1:
         data = data[channel_index::n_channels]
 
+    # Before scaling, on the float payload only (integer counts are always
+    # finite): here a NaN or infinity means the declaration does not fit the
+    # bytes. Callers check again after decoding, with RAW_SAMPLES_REMEDY.
     if dtype.kind == "f":
-        nonfinite = data.size - int(np.count_nonzero(np.isfinite(data)))
-        if nonfinite:
-            raise ValueError(
-                f"Decoded payload contains {nonfinite} non-finite sample(s) "
-                f"(NaN/Inf) out of {data.size} — the declared sample_format "
-                f"'{sample_format}' or byte_order '{byte_order}' probably "
-                f"does not match how the file was written; re-check the "
-                f"declaration."
-            )
+        validate_finite_samples(
+            data,
+            source="Decoded payload",
+            remedy=(
+                f"the declared sample_format '{sample_format}' or byte_order "
+                f"'{byte_order}' probably does not match how the file was "
+                f"written; re-check the declaration, and if it is right, "
+                + BAD_SAMPLE_REMEDY
+            ),
+        )
 
     result: np.ndarray
     if scale_factor is not None:
