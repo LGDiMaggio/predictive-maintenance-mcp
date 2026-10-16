@@ -1364,6 +1364,96 @@ class TestReprocessStaleSnapshots:
         assert "sample_format" in entry["reason"]
         assert len(payloads(store, EVENT_HEALTH_SNAPSHOT_COMPUTED)) == 1
 
+    def record_unloadable(
+        self, store: LedgerStore, data_dir: Path, path: Path, values: np.ndarray, **kw
+    ) -> None:
+        """Record *path* (already written, bytes the store would now refuse)
+        with the clean *values* on the old lineage, so it is stale."""
+        info = make_info(path, values, acquired_at=acquired(1), **kw)
+        [outcome] = record(
+            store, data_dir, [info], {info["signal_id"]: values}, policy=OLD_POLICY
+        )
+        assert outcome["ledger_status"] == "recorded"
+        assert outcome["snapshot_status"] == "complete"
+
+    def assert_refused_on_reread(
+        self, store: LedgerStore, data_dir: Path, location: str
+    ) -> str:
+        result = reprocess(store, data_dir)
+        assert (
+            result["stale"],
+            result["reprocessed"],
+            result["not_reprocessable"],
+        ) == (
+            1,
+            0,
+            1,
+        )
+        entry = result["results"][0]
+        assert entry["outcome"] == "not_reprocessable"
+        assert entry["location_used"] == location
+        assert entry["snapshot_id"] is None
+        assert entry["reason"].startswith("snapshot not computed:")
+        assert location in entry["reason"]
+        # Only the snapshot computed at load time; nothing appended.
+        assert len(payloads(store, EVENT_HEALTH_SNAPSHOT_COMPUTED)) == 1
+        return entry["reason"]
+
+    def test_csv_with_an_internal_blank_line_is_not_reprocessable(
+        self, store, data_dir
+    ):
+        """The CSV reader skips the empty line, which drops a sample and
+        shifts every later one: the re-read refuses it and names the line."""
+        declare_point(store)
+        values = noise(1, 5000)
+        path = data_dir / "m01.csv"
+        write_signal(path, values)
+        lines = path.read_bytes().split(b"\n")
+        path.write_bytes(b"\n".join(lines[:10] + [b""] + lines[10:]))
+        self.record_unloadable(store, data_dir, path, values)
+
+        reason = self.assert_refused_on_reread(store, data_dir, "m01.csv")
+        assert "empty line at line 11" in reason
+
+    def test_npy_with_a_nan_is_not_reprocessable(self, store, data_dir):
+        declare_point(store)
+        values = noise(1, 5000)
+        corrupt = values.copy()
+        corrupt[42] = np.nan
+        path = data_dir / "m01.npy"
+        np.save(path, corrupt)
+        self.record_unloadable(store, data_dir, path, values)
+
+        reason = self.assert_refused_on_reread(store, data_dir, "m01.npy")
+        assert "1 non-finite sample(s)" in reason
+        assert "out of 5000" in reason
+        assert "sample index 42" in reason
+
+    def test_raw_file_decoding_to_infinity_names_the_raw_declaration(
+        self, store, data_dir
+    ):
+        """A scale_factor large enough to overflow one sample: the remedy
+        points at the recorded raw declaration, not only at the capture."""
+        declare_point(store)
+        values = noise(1, 5000)
+        values[42] = 10.0  # 10 x 1e308 overflows float64; |noise| < 1 does not
+        path = data_dir / "m01.bin"
+        written = write_raw_file(path, values).astype(np.float64)
+        raw = {
+            "sample_format": "float32",
+            "byte_order": "little",
+            "n_channels": 1,
+            "channel_index": 0,
+            "header_offset": 0,
+            "scale_factor": 1e308,
+        }
+        self.record_unloadable(store, data_dir, path, written, raw_format=raw)
+
+        reason = self.assert_refused_on_reread(store, data_dir, "m01.bin")
+        assert "1 non-finite sample(s)" in reason
+        assert "sample index 42" in reason
+        assert "scale_factor" in reason
+
     def test_collapsed_duplicates_are_reprocessed_too(self, store, data_dir):
         """Two exports of one capture (other bytes, same acquisition slot):
         the slot collapse keeps the latest recorded, but the point

@@ -1299,6 +1299,23 @@ class TestErrorPathsBecomeMissing:
         with pytest.raises(ValueError, match=message):
             compute_health_snapshot(signal, fs, declaration=declaration(), point=None)
 
+    def test_infinite_fs_raises(self):
+        """``not inf > 0`` is False, so a bare comparison let infinity in."""
+        with pytest.raises(ValueError, match="fs > 0"):
+            compute_health_snapshot(
+                np.arange(10.0), np.inf, declaration=declaration(), point=None
+            )
+
+    def test_non_finite_signal_message_counts_and_locates(self):
+        """The shared validator's message: how many, out of how many, where."""
+        signal = np.array([1.0, np.nan, 2.0, np.inf, 3.0])
+        with pytest.raises(ValueError) as excinfo:
+            compute_health_snapshot(signal, FS, declaration=declaration(), point=None)
+        message = str(excinfo.value)
+        assert "2 non-finite sample(s)" in message
+        assert "out of 5" in message
+        assert "sample index 1" in message
+
     def test_malformed_declaration_raises_not_missing(self, signals):
         with pytest.raises(ValueError, match="direction"):
             snap(signals["golden_iso"], declaration(direction="sideways"), None)
