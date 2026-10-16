@@ -849,15 +849,6 @@ class TestInvalidInputs:
         assert result.zone == "A"
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(
-        strict=True,
-        raises=AssertionError,
-        reason=known_defect(
-            "nan-sample-accepted",
-            "a CSV with one NaN sample loads and ISO severity returns Zone D with "
-            "rms_velocity_mm_s=nan",
-        ),
-    )
     async def test_nan_sample_is_refused_or_yields_a_finite_severity(
         self, load_csv, mock_ctx
     ):
@@ -875,6 +866,8 @@ class TestInvalidInputs:
                 f"NaN sample accepted: zone {result.zone} with "
                 f"rms_velocity_mm_s={result.rms_velocity_mm_s}"
             )
+        else:
+            assert "1 non-finite" in str(refusal)
 
     @pytest.mark.asyncio
     @pytest.mark.xfail(

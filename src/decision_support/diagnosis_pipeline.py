@@ -29,6 +29,7 @@ from ..signal_processing.features import (
     extract_time_domain_features as _extract_time_domain_features,
 )
 from ..signal_acquisition.repository import VALID_SIGNAL_UNITS, normalize_signal_unit
+from ..signal_validation import validate_finite_samples, validate_sampling_rate
 from ..diagnostics.bearing_analyzer import check_all_bearing_faults
 from ..diagnostics.iso20816 import assess_severity_with_axis
 
@@ -205,7 +206,9 @@ def diagnose_vibration(
     ``iso_severity`` block becomes a structured refusal
     (``status: "refused"`` + ``reason`` + ``remedy``) while the spectral,
     bearing, and anomaly blocks still run. Units are never guessed from
-    signal amplitude.
+    signal amplitude. Corrupt input is the exception: a NaN or infinite
+    sample, or a non-finite or non-positive fs, invalidates every block, so
+    the whole call raises before any block is computed.
 
     Args:
         signal: 1D vibration signal.
@@ -229,7 +232,9 @@ def diagnose_vibration(
 
     Raises:
         ValueError: If signal_unit is provided but is not a recognized unit
-            (caller misuse — distinct from the honest "undeclared" refusal).
+            (caller misuse — distinct from the honest "undeclared" refusal),
+            if fs is not a positive finite number, or if any sample is NaN
+            or infinite.
     """
     # Validate a provided unit up front; None stays None (undeclared).
     declared_unit: Optional[str] = None
@@ -242,6 +247,16 @@ def diagnose_vibration(
                 f"'mm/s'/'m/s' for velocity), or omit it to get a structured "
                 f"ISO refusal instead of a verdict."
             )
+
+    # Corrupt input is refused here, not per block: the blocks below catch
+    # the bearing ValueError and turn the ISO one into a refused block, so
+    # without this check a NaN sample would still yield a "diagnosis".
+    validate_sampling_rate(
+        fs,
+        name="fs",
+        remedy="pass the sampling frequency the signal was acquired at, in Hz",
+    )
+    signal = validate_finite_samples(signal, source="signal")
 
     # 1. FFT
     fft_summary = _compute_fft_summary(signal, fs)
