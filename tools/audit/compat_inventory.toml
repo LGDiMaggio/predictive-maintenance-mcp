@@ -87,7 +87,7 @@ major); read its migration guide instead. SDK minors may change behavior by \
 the SDK's own VERSIONING.md (message wording is excluded from the promise), \
 so each new 2.Y minor is a review and each 2.Y.Z patch is test-gated. The \
 refusal-forwarding change (ToolError text forwarded, other exceptions masked \
-as UnexpectedToolError) landed in 2.1.0, not 2.3; uv.lock still pins 2.0.0. \
+as UnexpectedToolError) landed in 2.1.0, not 2.3. \
 1.x maintenance releases are another line and are ignored."""
 
 [[component]]
