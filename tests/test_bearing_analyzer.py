@@ -11,6 +11,7 @@ from predictive_maintenance_mcp.diagnostics.bearing_catalog import (
 from predictive_maintenance_mcp.diagnostics.bearing_analyzer import (
     check_bearing_fault_peak,
     check_all_bearing_faults,
+    check_frequency_set,
     lookup_bearing_and_compute,
 )
 
@@ -155,6 +156,60 @@ class TestCheckAllBearingFaults:
             signal=signal, fs=fs, bearing_id="6205", rpm=1500
         )
         assert len(result["fault_checks"]) == 4
+
+
+class TestNonFiniteInputRefused:
+    """Issue #82: no bearing verdict from corrupt input on a direct call.
+
+    Before the guard a signal with one NaN sample matched no fault frequency,
+    so the bearing checks returned "Bearing appears healthy"; a zero, NaN or
+    infinite fs failed with an unrelated filter-design message.
+    """
+
+    FS = 12000
+
+    def _nan_signal(self) -> np.ndarray:
+        t = np.arange(self.FS) / self.FS
+        signal = np.sin(2 * np.pi * 50 * t)
+        signal[100] = np.nan
+        return signal
+
+    def test_peak_check_nan_sample_is_refused(self):
+        with pytest.raises(ValueError, match="non-finite"):
+            check_bearing_fault_peak(
+                signal=self._nan_signal(),
+                fs=self.FS,
+                expected_freq=107.36,
+                fault_type="BPFO",
+                bearing_id="6205",
+            )
+
+    @pytest.mark.parametrize("bad_fs", [0, np.nan, np.inf], ids=["zero", "nan", "inf"])
+    def test_peak_check_bad_sampling_rate_is_refused(self, bad_fs):
+        signal = np.sin(2 * np.pi * 50 * np.arange(self.FS) / self.FS)
+        with pytest.raises(ValueError, match="fs must be positive"):
+            check_bearing_fault_peak(
+                signal=signal,
+                fs=bad_fs,
+                expected_freq=107.36,
+                fault_type="BPFO",
+                bearing_id="6205",
+            )
+
+    def test_all_faults_nan_sample_is_refused_not_healthy(self):
+        with pytest.raises(ValueError, match="non-finite"):
+            check_all_bearing_faults(
+                signal=self._nan_signal(), fs=self.FS, bearing_id="6205", rpm=1797
+            )
+
+    def test_frequency_set_nan_sample_is_refused_not_healthy(self):
+        with pytest.raises(ValueError, match="non-finite"):
+            check_frequency_set(
+                signal=self._nan_signal(),
+                fs=self.FS,
+                frequencies={"BPFO": 107.36},
+                rpm=1797,
+            )
 
 
 class TestLookupBearingAndCompute:

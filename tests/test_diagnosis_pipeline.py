@@ -219,6 +219,41 @@ class TestISOSeverityRefusal:
         assert result["iso_severity"]["status"] == "assessed"
 
 
+class TestNonFiniteInputRefused:
+    """Issue #82: the pure pipeline refuses corrupt input outright.
+
+    Before the guard a NaN sample produced a full diagnosis: the bearing block
+    read "healthy" and the ISO block came back as Zone D with a NaN RMS. No
+    block is valid on corrupt input, so the whole call raises instead of
+    degrading block by block.
+    """
+
+    def test_nan_sample_with_bearing_raises(self, faulty_signal):
+        signal, fs = faulty_signal
+        signal = signal.copy()
+        signal[100] = np.nan
+        with pytest.raises(ValueError, match="non-finite"):
+            diagnose_vibration(
+                signal,
+                fs,
+                rpm=1797,
+                bearing_id="6205",
+                signal_unit="g",
+                anomaly_model_name="nonexistent_model_issue82",
+            )
+
+    def test_infinite_sampling_rate_raises(self, healthy_signal):
+        signal, _ = healthy_signal
+        with pytest.raises(ValueError, match="fs must be positive"):
+            diagnose_vibration(
+                signal,
+                np.inf,
+                rpm=1500,
+                signal_unit="g",
+                anomaly_model_name="nonexistent_model_issue82",
+            )
+
+
 class TestFFTSummary:
     def test_fft_summary_structure(self, healthy_signal):
         signal, fs = healthy_signal

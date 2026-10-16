@@ -214,6 +214,74 @@ class TestGenerateTestSignal:
         finally:
             repo.clear_all()
 
+    # R7: a bad input is refused before any file is written. A zero or
+    # negative rate (or duration) used to write an empty CSV that the loader
+    # then refused, NaN and infinity escaped as int-conversion errors, and a
+    # NaN noise_level wrote and loaded an all-NaN signal.
+
+    @staticmethod
+    def _files(root: Path) -> list[str]:
+        """Everything under *root*, so an orphan CSV or companion shows up."""
+        return sorted(p.relative_to(root).as_posix() for p in root.rglob("*"))
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("rate", [0.0, -1.0, float("nan"), float("inf")])
+    async def test_bad_sampling_rate_refused_before_any_write(
+        self, mcp, sandbox_data_dir, clean_repo, rate
+    ):
+        tools = {t.name: t.fn for t in mcp._tool_manager._tools.values()}
+        with pytest.raises(ValueError, match="sampling rate must be positive") as exc:
+            await tools["generate_test_signal"](
+                signal_type="normal", duration=0.2, sampling_rate=rate
+            )
+        assert "sampling_rate" in str(exc.value)
+        assert self._files(sandbox_data_dir) == []
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("duration", [0.0, float("nan"), float("inf")])
+    async def test_bad_duration_refused_before_any_write(
+        self, mcp, sandbox_data_dir, clean_repo, duration
+    ):
+        tools = {t.name: t.fn for t in mcp._tool_manager._tools.values()}
+        with pytest.raises(ValueError, match="duration must be positive"):
+            await tools["generate_test_signal"](
+                signal_type="normal", duration=duration, sampling_rate=5000.0
+            )
+        assert self._files(sandbox_data_dir) == []
+
+    @pytest.mark.asyncio
+    async def test_nan_noise_level_refused_before_any_write(
+        self, mcp, sandbox_data_dir, clean_repo
+    ):
+        tools = {t.name: t.fn for t in mcp._tool_manager._tools.values()}
+        with pytest.raises(ValueError, match="1000 non-finite") as exc:
+            await tools["generate_test_signal"](
+                signal_type="normal",
+                duration=0.2,
+                sampling_rate=5000.0,
+                noise_level=float("nan"),
+            )
+        assert "noise_level" in str(exc.value)
+        assert self._files(sandbox_data_dir) == []
+
+    @pytest.mark.asyncio
+    async def test_valid_call_writes_csv_and_companion_and_loads(
+        self, mcp, sandbox_data_dir, clean_repo
+    ):
+        """The same listing the refusals check does see a valid call's files."""
+        tools = {t.name: t.fn for t in mcp._tool_manager._tools.values()}
+        result = await tools["generate_test_signal"](
+            signal_type="normal", duration=0.2, sampling_rate=5000.0, random_seed=1
+        )
+        stem = Path(result.filepath).stem
+        assert self._files(sandbox_data_dir) == [
+            f"{stem}.csv",
+            f"{stem}_metadata.json",
+        ]
+        samples = clean_repo.get_signal(result.signal_id)
+        assert len(samples) == 1000
+        assert np.isfinite(samples).all()
+
 
 class TestSignalRepository:
     """Tests for load_signal, list_signals(memory), get_signal_info, clear_signals."""
@@ -1201,4 +1269,18 @@ class TestLoadSignalLedger:
             signal_type="normal", duration=0.2, sampling_rate=5000.0, ctx=mock_ctx
         )
         assert result.measurement is None
+        assert not ledger_dir.exists()
+
+    @pytest.mark.asyncio
+    async def test_load_refused_for_nan_samples_records_nothing(
+        self, ledger_tools, sandbox_data_dir, ledger_dir, mock_ctx, clean_repo
+    ):
+        """R6: the store refuses the file before the ledger sees it, so no
+        measurement is recorded for a capture that was never loaded."""
+        values = _noise(1)
+        values[100] = np.nan
+        _place(sandbox_data_dir, "m01.csv", values, _companion(_identity()))
+        with pytest.raises(ValueError, match="non-finite"):
+            await ledger_tools["load_signal"](ctx=mock_ctx, filepath="m01.csv")
+        assert repo_module.get_repository().signal_count == 0
         assert not ledger_dir.exists()

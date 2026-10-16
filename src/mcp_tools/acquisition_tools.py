@@ -32,6 +32,11 @@ from ..config import DATA_DIR, get_ledger_dir
 from ..signal_acquisition.loaders import SUPPORTED_EXTENSIONS
 from ..signal_acquisition.repository import SignalRepository, get_repository
 from ..models import StoredSignalInfo
+from ..signal_validation import (
+    validate_finite_samples,
+    validate_positive_finite,
+    validate_sampling_rate,
+)
 from ._utils import refusal_boundary
 
 logger = logging.getLogger(__name__)
@@ -165,7 +170,25 @@ async def generate_test_signal(
     Returns:
         StoredSignalInfo of the auto-loaded signal (signal_id, declared
         sampling_rate and unit 'g').
+
+    Raises:
+        ValueError: If sampling_rate or duration is not a finite number
+            above zero, or if the synthesized samples are not all finite
+            (a non-finite noise_level). Nothing is written in either case.
     """
+    # Checked before synthesis: a zero or negative value would write an empty
+    # CSV that the loader then refuses, and NaN or infinity would fail in the
+    # sample-count conversion with a message that names neither parameter.
+    sampling_rate = validate_sampling_rate(
+        sampling_rate, source="the sampling_rate parameter"
+    )
+    duration = validate_positive_finite(
+        duration,
+        name="duration",
+        source="the duration parameter",
+        remedy="pass the signal length in seconds as a positive number",
+    )
+
     logger.info(f"Generating {signal_type} test signal...")
 
     rng = np.random.default_rng(random_seed)
@@ -213,7 +236,11 @@ async def generate_test_signal(
 
     # Add noise
     noise = rng.standard_normal(len(t)) * noise_level
-    signal_data = signal_clean + noise
+    signal_data = validate_finite_samples(
+        signal_clean + noise,
+        source="The synthesized test signal",
+        remedy="pass a finite noise_level (the additive white-noise amplitude)",
+    )
 
     # Save the signal with a timestamped filename (consecutive runs never
     # overwrite each other) plus companion metadata so the loaded entry

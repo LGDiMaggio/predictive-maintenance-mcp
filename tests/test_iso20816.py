@@ -349,6 +349,34 @@ class TestInvalidParameters:
             assess_severity_raw(np.random.randn(10000), fs=10000, machine_group=3)
 
 
+class TestNonFiniteInputRefused:
+    """Issue #82: a direct Python call never gets a zone from corrupt input.
+
+    Before the guard a single NaN or infinite sample came back as Zone D with
+    ``rms_velocity_mm_s=nan``, and a NaN, infinite or zero fs failed with an
+    unrelated message (the Nyquist guard or scipy's filter design).
+    """
+
+    @pytest.mark.parametrize("bad_sample", [np.nan, np.inf], ids=["nan", "inf"])
+    def test_non_finite_sample_is_refused(self, bad_sample):
+        signal = make_velocity_signal(2.0)
+        signal[100] = bad_sample
+        with pytest.raises(ValueError, match="non-finite"):
+            assess_severity_raw(signal, fs=10000, signal_unit="mm/s")
+
+    @pytest.mark.parametrize("bad_fs", [np.nan, np.inf, 0], ids=["nan", "inf", "zero"])
+    def test_bad_sampling_rate_is_refused_by_the_rate_validator(self, bad_fs):
+        signal = make_velocity_signal(2.0)
+        with pytest.raises(ValueError, match="fs must be positive"):
+            assess_severity_raw(signal, fs=bad_fs, signal_unit="mm/s")
+
+    def test_with_axis_nan_sample_is_refused(self):
+        signal = make_velocity_signal(2.0)
+        signal[100] = np.nan
+        with pytest.raises(ValueError, match="non-finite"):
+            assess_severity_with_axis(signal, fs=10000, signal_unit="mm/s")
+
+
 class TestResultStructure:
     def test_result_keys(self):
         signal = make_velocity_signal(1.0)

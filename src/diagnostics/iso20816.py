@@ -26,6 +26,8 @@ from typing import Literal, Optional
 import numpy as np
 from scipy.signal import butter, sosfiltfilt
 
+from ..signal_validation import validate_signal_and_fs
+
 #: Provenance note attached to every assessment result.
 THRESHOLD_PROVENANCE = (
     "Zone boundaries from ISO 10816-3:2009 (four-zone A-D scheme). "
@@ -308,15 +310,23 @@ def assess_severity_raw(
 
     Raises:
         ValueError: If the machine group/support combination is invalid,
-            if the sampling rate cannot cover the full 10-1000 Hz ISO band
-            (0.95 x Nyquist < 1000 Hz, i.e. fs < ~2106 Hz), or if the
-            declared machine power is below 15 kW (out of ISO scope).
+            if the declared machine power is below 15 kW (out of ISO scope),
+            if fs is not a positive finite number, if any sample is NaN or
+            infinite, or if the sampling rate cannot cover the full
+            10-1000 Hz ISO band (0.95 x Nyquist < 1000 Hz, i.e.
+            fs < ~2106 Hz).
     """
     support_type = str(support_type).lower()
     # Validate group/support before any signal processing.
     get_zone_boundaries(machine_group, support_type)
 
     check_power_scope(machine_power_kw)
+
+    # Refuse corrupt input before the band check and the unit conversion: a
+    # NaN or infinite fs slips past the Nyquist comparison below (every
+    # comparison with NaN is False), and one bad sample turns the RMS into
+    # NaN, which the zone ladder would report as Zone D.
+    signal = validate_signal_and_fs(signal, fs)
 
     nyquist = fs / 2.0
     # Full ISO-band coverage requires the USABLE upper edge (the bandpass
@@ -419,6 +429,10 @@ def assess_severity_with_axis(
     Returns:
         Dict with zone, severity, RMS velocity, boundaries, real frequency
         band, and threshold provenance.
+
+    Raises:
+        ValueError: As :func:`assess_severity_raw`, including non-finite
+            samples and a non-finite or non-positive fs.
     """
     result = assess_severity_raw(
         signal=signal,

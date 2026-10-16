@@ -287,7 +287,10 @@ A wrong declaration does not silently produce wrong analysis — the loader vali
 
 Other loud failures:
 
-- A float payload that decodes to NaN/Inf samples is refused as a likely `byte_order` or `sample_format` mismatch.
+- A float payload that decodes to NaN/Inf samples is refused as a likely `byte_order` or `sample_format` mismatch; if the declaration is right, the capture itself holds bad samples. A `scale_factor` that turns valid counts into NaN or infinity is refused the same way after decoding.
+- Any signal file whose samples include NaN, infinity or a value that is not a number (a header row, a marker token such as `ERR`) is refused with the count and the first sample index. Missing samples are never filled in: re-export, re-acquire, or cut the capture at the source.
+- A `.csv` or `.txt` file with an empty or whitespace-only line between two data lines is refused, naming the line, because the reader would otherwise drop that sample and shift every later one in time. Blank lines before the first data line and after the last one are fine.
+- A `sampling_rate` that is not a finite number above zero is refused, whether it is passed to `load_signal` or read from the companion; leave it out (or set it to `null`) to load the file with the rate undeclared.
 - A file larger than the `PMM_MAX_SIGNAL_SIZE` cap (bytes, default 500 MB) is refused before a single byte is read, with the environment-variable remedy named in the message.
 - Declaring raw parameters for a self-describing format is refused as a contradiction — the declared-never-guessed policy cuts both ways.
 

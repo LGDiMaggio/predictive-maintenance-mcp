@@ -90,7 +90,7 @@ data/ledger/
 
 Four event types (`measurement_point_declared`, `measurement_recorded`, `health_snapshot_computed`, `baseline_declared`) share one envelope with a content-derived `event_id`, so a retried write is absorbed as a duplicate. Files are only appended to, never rewritten; a tolerant binary reader reports every integrity problem instead of failing. The ledger holds indicators, declarations and file references (location, SHA-256, size), never waveforms.
 
-**Dependency direction**: `mcp_tools` → `asset_ledger` → `signal_acquisition` → `config`, `path_safety`. The ledger package also calls the pure engines of `signal_processing`, `diagnostics` and `prognostics`; it never imports the signal repository, `models.py` or MCP, and the ledger directory is resolved at the tool boundary (`config.get_ledger_dir()`) and passed by argument.
+**Dependency direction**: `mcp_tools` → `asset_ledger` → `signal_acquisition` → `config`, `path_safety`, `signal_validation`. The ledger package also calls the pure engines of `signal_processing`, `diagnostics` and `prognostics`; it never imports the signal repository, `models.py` or MCP, and the ledger directory is resolved at the tool boundary (`config.get_ledger_dir()`) and passed by argument.
 
 ### Block 5: Prognostics (`prognostics/`) — Implemented
 
@@ -146,6 +146,7 @@ src/
 ├── config.py                          # Path resolution (DATA_DIR, etc.)
 ├── models.py                          # Pydantic v2 response models
 ├── path_safety.py                     # Path containment helpers
+├── signal_validation.py               # Finite-sample and sampling-rate checks
 │
 ├── mcp_tools/                         # MCP tool layer (one module per block family)
 │   ├── __init__.py                    #   register_all(mcp)

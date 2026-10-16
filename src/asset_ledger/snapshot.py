@@ -29,10 +29,10 @@ support, power, unit, raw format, sampling rate, direction): correcting the
 rpm in the companion yields a new snapshot, re-declaring the point with a
 different note does not.
 
-Pure module: numpy, the signal-processing and diagnostics engines and the
-measurement vocabularies only. No repository, no ``models.py``, no MCP, no
-file I/O, no randomness, no wall clock (the platform provenance is
-overridable for tests).
+Pure module: numpy, the signal-processing and diagnostics engines, the
+measurement vocabularies and the shared signal validator only. No
+repository, no ``models.py``, no MCP, no file I/O, no randomness, no wall
+clock (the platform provenance is overridable for tests).
 """
 
 import hashlib
@@ -57,6 +57,7 @@ from ..signal_processing.spectral import (
     resolve_envelope_band,
     select_leading_segment,
 )
+from ..signal_validation import validate_finite_samples, validate_sampling_rate
 
 __all__ = [
     "ALGORITHM_VERSION",
@@ -643,8 +644,9 @@ def compute_health_snapshot(
             }
 
     Raises:
-        ValueError: If the signal (shape, length, NaN/Inf samples) or *fs*
-            is unusable, the policy is out of range, or a declared value is
+        ValueError: If the signal is unusable (shape, length, a NaN,
+            infinite or non-numeric sample), *fs* is not a finite number
+            above zero, the policy is out of range, or a declared value is
             malformed (see :func:`resolve_context`). These are caller bugs;
             a context that is merely incomplete never raises.
     """
@@ -654,13 +656,9 @@ def compute_health_snapshot(
             f"compute_health_snapshot needs a 1-D signal of at least 3 samples, "
             f"got shape {signal.shape}."
         )
-    if not np.all(np.isfinite(signal)):
-        raise ValueError(
-            "compute_health_snapshot needs a finite signal: NaN or Inf samples "
-            "found — decode or scale the file correctly and re-load it."
-        )
-    if not fs > 0:
-        raise ValueError(f"compute_health_snapshot needs fs > 0 Hz, got {fs!r}.")
+    signal = validate_finite_samples(signal, source="compute_health_snapshot signal")
+    # Checked, not converted: the numbers are computed at fs exactly as given.
+    validate_sampling_rate(fs, name="fs")
     resolved_policy = SnapshotPolicy() if policy is None else policy
     params = policy_params(resolved_policy)
     context = resolve_context(declaration, point)

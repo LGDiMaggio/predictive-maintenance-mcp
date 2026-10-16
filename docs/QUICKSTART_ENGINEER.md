@@ -20,7 +20,7 @@ The server reads a signal file and the companion metadata file next to it. Three
 
 ### The signal file
 
-- One channel per file: a CSV with a single column of acceleration or velocity samples and **no header row**. A header row is loaded as text and the analysis fails later; a time column in first position is analysed as if it were the signal.
+- One channel per file: a CSV with a single column of acceleration or velocity samples and **no header row**. A header row is refused when the file is loaded, naming the first value that is not a number; a time column in first position is analysed as if it were the signal.
 - Formats: CSV, TXT, MAT, WAV, NPY, Parquet, and raw binary (`.bin`, `.raw`, `.dat`) with the decode parameters declared in the companion, see the [Adapter Guide](ADAPTER_GUIDE.md#supported-formats).
 - Where: a folder of yours under `data/signals/` (for example `data/signals/pump_p101/`), or an absolute path given in the prompt. Keep your files out of `real_train/` and `real_test/`: those folders hold the labelled samples that the anomaly workflows treat as references.
 

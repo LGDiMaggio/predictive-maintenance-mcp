@@ -22,13 +22,21 @@ import numpy as np
 
 from ..config import DATA_DIR
 from ..path_safety import safe_resolve
+from ..signal_validation import (
+    BAD_SAMPLE_REMEDY,
+    validate_finite_samples,
+    validate_sampling_rate,
+)
 from .loaders import (
     RAW_EXTENSIONS,
     RAW_PARAM_DEFAULTS,
+    RAW_SAMPLES_REMEDY,
     SELF_DESCRIBING_EXTENSIONS,
     SUPPORTED_EXTENSIONS,
+    TEXT_EXTENSIONS,
     VALID_BYTE_ORDERS,
     VALID_SAMPLE_FORMATS,
+    check_text_blank_rows,
     get_metadata_path_from_dir,
     load_raw_binary,
     load_signal_data,
@@ -36,6 +44,12 @@ from .loaders import (
 from .measurement import MEASUREMENT_KEY, build_measurement_identity
 
 logger = logging.getLogger(__name__)
+
+#: Remedy for an explicitly passed sampling rate that is refused (single
+#: load or a batch's broadcast rate).
+_EXPLICIT_RATE_REMEDY = (
+    "pass a sampling_rate > 0 (Hz) or omit it to use the companion _metadata.json"
+)
 
 #: Canonical signal-unit vocabulary. ISO severity verdicts require one of
 #: these to be DECLARED (never guessed from signal amplitude).
@@ -65,6 +79,35 @@ def normalize_signal_unit(unit: Optional[str]) -> Optional[str]:
     u = str(unit).strip().lower()
     u = _UNIT_ALIASES.get(u, u)
     return u if u in VALID_SIGNAL_UNITS else None
+
+
+def _refuse_internal_blank_rows(path: Path) -> None:
+    """Scan a text file the decoder is about to read for internal blank lines.
+
+    Called on the exact path a route decodes, behind the decoders' own
+    suffix test, so a file is scanned exactly when it is read as text. On
+    both routes the scan and the decoder see the same path and suffix: on a
+    case-insensitive filesystem a case-variant name resolves to the on-disk
+    name on Windows but keeps its given case on macOS, and either way both
+    test the same suffix. A name containment refuses is never read. The
+    scan raises outside the loaders' exception-to-None wrappers, so its
+    refusal reaches the caller. An unreadable file is refused as a read
+    error rather than decoded without the scan.
+
+    Raises:
+        ValueError: If the file has an empty line between data lines, or
+            cannot be read.
+    """
+    if path.suffix not in TEXT_EXTENSIONS:
+        return
+    try:
+        check_text_blank_rows(path)
+    except OSError as exc:
+        raise ValueError(
+            f"Unable to load signal from {path.name} — read error "
+            f"({exc.strerror or type(exc).__name__}); check that the file is "
+            f"readable and not in use."
+        ) from None
 
 
 #: The six raw-binary decode parameters threaded from load_signal to the
@@ -192,10 +235,16 @@ class SignalRepository:
                 not one of the valid units, if signal_id collides with
                 an existing entry and overwrite is False, if a required
                 raw declaration is missing, if raw parameters are
-                declared for a self-describing format, or if the
+                declared for a self-describing format, if the
                 companion's ``"measurement"`` object is invalid (one
                 message listing every problem; see
-                :mod:`.measurement`).
+                :mod:`.measurement`), if the effective sampling rate (the
+                explicit one, else the companion's) is not a finite number
+                above zero, if a ``.csv``/``.txt`` file has an empty line
+                between data lines, or if any decoded sample is NaN,
+                infinite or not a number. Every refusal happens before the
+                store changes, so a refused ``overwrite=True`` keeps the
+                previous entry.
         """
         declared_unit = self._validate_unit(signal_unit)
         explicit_raw = _explicit_raw_params(
@@ -259,9 +308,13 @@ class SignalRepository:
             One StoredSignalInfo-compatible dict per file, in input order.
 
         Raises:
-            ValueError: Empty list, invalid unit, missing files, duplicate
-                or colliding signal_ids, or an invalid/missing raw
-                declaration — raised BEFORE any signal is stored.
+            ValueError: Empty list, invalid unit, a broadcast sampling_rate
+                that is not a finite number above zero, missing files,
+                duplicate or colliding signal_ids, an invalid/missing raw
+                declaration, or any file refused by the per-file checks of
+                :meth:`load_signal` (invalid companion rate, internal blank
+                line, non-finite or non-numeric samples) — raised BEFORE
+                any signal is stored.
         """
         if not filepaths:
             raise ValueError(
@@ -270,6 +323,14 @@ class SignalRepository:
                 "files on disk)."
             )
         declared_unit = self._validate_unit(signal_unit)
+        # The broadcast rate applies to every file: refuse it once, before
+        # any path is checked or any file is read.
+        if sampling_rate is not None:
+            validate_sampling_rate(
+                sampling_rate,
+                source="the sampling_rate parameter, applied to every file in the batch",
+                remedy=_EXPLICIT_RATE_REMEDY,
+            )
         explicit_raw = _explicit_raw_params(
             sample_format=sample_format,
             byte_order=byte_order,
@@ -665,6 +726,11 @@ class SignalRepository:
     ) -> dict:
         """Resolve path/id, read the array and metadata — no store mutation.
 
+        The checks run in cost order, all before the caller inserts anything:
+        the explicit rate, then the companion rate when it is the effective
+        source, then the blank-row scan of a text file, then the array read,
+        then the sample check.
+
         Args:
             filepath: Filename relative to DATA_DIR, or absolute path.
             signal_id: Caller-chosen id, or None to derive the default.
@@ -672,16 +738,24 @@ class SignalRepository:
             declared_unit: Already-normalized declared unit, or None.
             raw_declared: Explicitly declared raw decode parameters (see
                 :func:`_explicit_raw_params`); None means none declared.
+
+        Raises:
+            FileNotFoundError: If the file does not exist.
+            ValueError: If the effective sampling rate is not a finite
+                number above zero, a ``.csv``/``.txt`` file has an empty
+                line between data lines, the file cannot be decoded, or a
+                decoded sample is NaN, infinite or not a number (plus the
+                raw-declaration and companion refusals of
+                :meth:`load_signal`).
         """
-        # Reject a caller-supplied non-positive rate before doing any I/O:
-        # a stored 0/negative rate breaks downstream fftfreq(N, 1/rate) with
-        # a ZeroDivisionError. (Metadata-derived rates are backstopped by the
-        # StoredSignalInfo schema and resolve_signal.)
-        if sampling_rate is not None and sampling_rate <= 0:
-            raise ValueError(
-                f"sampling rate must be positive, got {sampling_rate} — "
-                f"pass a sampling_rate > 0 (Hz) or omit it to use the "
-                f"companion _metadata.json."
+        # Refuse an invalid explicit rate before any I/O. A comparison such
+        # as ``rate <= 0`` lets NaN and infinity through, and a stored bad
+        # rate breaks fftfreq(N, 1/rate) or the stored duration downstream.
+        if sampling_rate is not None:
+            validate_sampling_rate(
+                sampling_rate,
+                source="the sampling_rate parameter",
+                remedy=_EXPLICIT_RATE_REMEDY,
             )
 
         fp = Path(filepath)
@@ -697,6 +771,21 @@ class SignalRepository:
         if raw_declared is None:
             raw_declared = {}
         meta = self._read_metadata(fp)
+        # The companion rate counts only when no explicit rate overrides it
+        # (the explicit > companion precedence of _merged_raw_params). It is
+        # checked before the raw declaration and before any decoding; an
+        # absent or null rate stays undeclared.
+        if sampling_rate is None and meta.get("sampling_rate") is not None:
+            companion = self._companion_filename(fp)
+            validate_sampling_rate(
+                meta["sampling_rate"],
+                source=f"companion {companion}",
+                remedy=(
+                    f'correct "sampling_rate" in {companion} to the sampling '
+                    f"frequency in Hz, or pass sampling_rate=... (Hz) "
+                    f"explicitly, which takes precedence over the companion"
+                ),
+            )
         raw_params = self._merged_raw_params(fp, raw_declared)
         if raw_params is not None:
             effective_sr = (
@@ -732,12 +821,20 @@ class SignalRepository:
                 channel_index=int(effective_channel),
             )
 
+        # _load_array also scans a text file for internal blank lines first.
         data = self._load_array(fp, raw_params)
         if data is None:
             raise ValueError(
                 f"Unable to load signal from {filepath} — unsupported "
                 f"format or read error."
             )
+        # A NaN, infinite or non-numeric sample is refused, never repaired.
+        # A text column comes back parsed to float64 when every token parses.
+        data = validate_finite_samples(
+            data,
+            source=f"File '{filepath}'",
+            remedy=RAW_SAMPLES_REMEDY if raw_params is not None else BAD_SAMPLE_REMEDY,
+        )
 
         # Companion metadata precedence: explicitly declared parameter >
         # companion _metadata.json > None (undeclared).
@@ -755,7 +852,6 @@ class SignalRepository:
         # stay writeable and even accidental writes through it could slip
         # past the frozen view. This is not a hard boundary against a caller
         # that deliberately re-enables writes on the base.
-        data = np.asarray(data)
         if not data.flags.owndata:
             data = data.copy()
         data.setflags(write=False)
@@ -870,24 +966,38 @@ class SignalRepository:
         OUTSIDE any try/except-return-None shell: the decoder's typed
         "problem — remedy" errors (and the safe_resolve containment error
         on the DATA_DIR route) must reach the caller intact, never be
-        swallowed into None.
+        swallowed into None. The blank-row scan of a text file runs here
+        for the same reason, on the very path each route then decodes.
 
         Args:
             fp: Already-resolved absolute path.
             raw_params: EFFECTIVE raw decode parameters for a raw binary
                 file, or None for self-describing formats.
+
+        Raises:
+            ValueError: From the raw decoder or containment, or if a text
+                file has an empty line between data lines or cannot be read.
         """
         try:
             rel = fp.relative_to(DATA_DIR)
         except ValueError:
             if raw_params is not None:
                 return load_raw_binary(fp, **raw_params)
+            _refuse_internal_blank_rows(fp)
             return self._load_direct(fp)
         if raw_params is not None:
             # Same safe_resolve containment as load_signal_data applies
             # to DATA_DIR-relative names.
             resolved = safe_resolve(DATA_DIR, str(rel))
             return load_raw_binary(resolved, **raw_params)
+        try:
+            resolved = safe_resolve(DATA_DIR, str(rel))
+        except ValueError:
+            # Containment refuses the name: load_signal_data returns None
+            # and the caller reports it. The file is never read.
+            resolved = None
+        if resolved is not None and resolved.exists():
+            _refuse_internal_blank_rows(resolved)
         return load_signal_data(str(rel))
 
     def _remove_entry(self, signal_id: str) -> None:
@@ -974,7 +1084,7 @@ class SignalRepository:
         try:
             if filepath.suffix == ".npy":
                 return np.load(filepath)
-            elif filepath.suffix in (".csv", ".txt"):
+            elif filepath.suffix in TEXT_EXTENSIONS:
                 import pandas as pd
 
                 df = pd.read_csv(filepath, header=None)

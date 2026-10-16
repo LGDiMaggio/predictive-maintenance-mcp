@@ -7,7 +7,7 @@ locally as one JSONL file per asset under ``config.get_ledger_dir()``.
 Nothing here leaves the machine.
 
 Dependency direction: ``mcp_tools -> asset_ledger -> signal_acquisition ->
-{config, path_safety}``. No module of this package imports
+{config, path_safety, signal_validation}``. No module of this package imports
 ``signal_acquisition.repository``, ``models`` or anything MCP; the
 measurement contract it builds on lives in
 ``signal_acquisition.measurement``. The store, snapshot, comparability,

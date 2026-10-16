@@ -67,9 +67,11 @@ the data directory, contained by ``safe_resolve``; absolute ones as
 recorded), its content hash is verified against the ledger before a single
 sample is decoded, and the location used is reported. A file missing
 everywhere or changed is a per-measurement ``not_reprocessable`` with the
-reason; the old snapshot is never touched. Only derived events are
-appended, each deduplicated by its deterministic ``snapshot_id``, so a
-repeated call is idempotent.
+reason, and so is a file the signal store would refuse (an empty line
+between data lines, a NaN, infinite or non-numeric sample); the old
+snapshot is never touched. Only derived events are appended, each
+deduplicated by its deterministic ``snapshot_id``, so a repeated call is
+idempotent.
 
 Declarations and queries (behind the four ledger tools):
 
@@ -108,7 +110,13 @@ import numpy as np
 
 from ..diagnostics.bearing_catalog import lookup_bearing
 from ..path_safety import safe_resolve
-from ..signal_acquisition.loaders import load_raw_binary, load_self_describing
+from ..signal_acquisition.loaders import (
+    RAW_SAMPLES_REMEDY,
+    TEXT_EXTENSIONS,
+    check_text_blank_rows,
+    load_raw_binary,
+    load_self_describing,
+)
 from ..signal_acquisition.measurement import (
     MEASUREMENT_DECLARATION_KEYS,
     UNIT_FAMILIES,
@@ -117,6 +125,7 @@ from ..signal_acquisition.measurement import (
     validate_free_text,
     validate_ledger_id,
 )
+from ..signal_validation import validate_finite_samples
 from .assessment import (
     MAX_LISTED_ITEMS,
     MIN_REFERENCE_MEASUREMENTS,
@@ -1328,11 +1337,20 @@ def _locate_file(
 def _decode(path: Path, declaration: Mapping[str, Any]) -> np.ndarray:
     """Decode the verified file with the recorded declaration.
 
+    The re-read refuses what the signal store refuses at load time (an empty
+    line between two data lines of a ``.csv``/``.txt`` file; a NaN,
+    infinite or non-numeric sample), because a file recorded before the
+    store refused it, or decoded with a declaration that does not fit it,
+    must not become a snapshot.
+
     Raises:
         ValueError: A raw declaration without ``sample_format``, a decoder
-            refusal, or an unsupported / unreadable self-describing file.
+            refusal, an unsupported / unreadable self-describing file, an
+            empty line between data lines, or a NaN, infinite or non-numeric
+            decoded sample.
         OSError: From the decoders.
     """
+    source = f"Recorded file '{path.name}'"
     raw_format = declaration.get("raw_format")
     if isinstance(raw_format, dict):
         kwargs = {
@@ -1346,14 +1364,18 @@ def _decode(path: Path, declaration: Mapping[str, Any]) -> np.ndarray:
                 "recorded raw_format declares no sample_format; re-load the file "
                 "with the raw declaration (the new declaration supersedes this one)"
             )
-        return load_raw_binary(path, **kwargs)
+        return validate_finite_samples(
+            load_raw_binary(path, **kwargs), source=source, remedy=RAW_SAMPLES_REMEDY
+        )
+    if path.suffix in TEXT_EXTENSIONS:
+        check_text_blank_rows(path)
     data = load_self_describing(path)
     if data is None:
         raise ValueError(
             f"unsupported or empty self-describing file {path.suffix!r}; re-load "
             f"the file as CSV, NPY or raw float32 with a companion"
         )
-    return np.asarray(data, dtype=np.float64)
+    return np.asarray(validate_finite_samples(data, source=source), dtype=np.float64)
 
 
 def reprocess_stale_snapshots(

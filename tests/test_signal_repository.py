@@ -1,11 +1,15 @@
 """Tests for SignalRepository (in-memory LRU cache)."""
 
 import json
+import math
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import pytest
 
 from conftest import write_raw_file
+from predictive_maintenance_mcp.signal_acquisition.loaders import TEXT_EXTENSIONS
 from predictive_maintenance_mcp.signal_acquisition.repository import (
     SignalRepository,
     VALID_SIGNAL_UNITS,
@@ -980,30 +984,371 @@ class TestRawErrorContract:
         assert "remainder" in msg
 
 
-class TestResolveSignalSamplingRate:
-    """F10: resolve_signal refuses a stored non-positive sampling rate.
+# ---------------------------------------------------------------------------
+# Issue #82: the store refuses non-finite input before any change
+# ---------------------------------------------------------------------------
 
-    A metadata-derived rate of 0 bypasses load_signal's explicit-param check
-    (that guard only covers the sampling_rate argument), so it lands in the
-    store and exercises resolve_signal's own guard / the StoredSignalInfo
-    schema backstop. Either rejection surfaces as a ValueError (pydantic's
-    ValidationError also subclasses ValueError).
+
+@pytest.fixture(params=["inside_data_dir", "outside_data_dir"])
+def place(request, data_dir, tmp_path):
+    """Write a signal file on one of the two read routes; return its load path.
+
+    Inside DATA_DIR the repository reads through ``load_signal_data``; an
+    absolute path outside it goes through ``_load_direct``. Both wrap the
+    decoder in an exception-to-None shell, so every check must run outside
+    them and hold on both.
+    """
+    outside = tmp_path / "outside"
+    outside.mkdir()
+
+    def _place(name: str, content: bytes) -> str:
+        if request.param == "inside_data_dir":
+            (data_dir / name).write_bytes(content)
+            return name
+        (outside / name).write_bytes(content)
+        return str(outside / name)
+
+    return _place
+
+
+def _write_companion_text(signal_path: Path, body: str) -> Path:
+    """Write ``<stem>_metadata.json`` verbatim (JSON's NaN/Infinity included)."""
+    companion = signal_path.parent / f"{signal_path.stem}_metadata.json"
+    companion.write_text(body, encoding="utf-8")
+    return companion
+
+
+class TestBlankRowsRefused:
+    """R4/AE1: an internal blank line is a missing sample; trailing ones are not."""
+
+    @pytest.mark.parametrize("suffix", [".csv", ".txt"])
+    def test_internal_blank_line_refused_naming_the_line(self, repo, place, suffix):
+        path = place(f"gap{suffix}", b"1\n2\n\n3\n")
+        with pytest.raises(ValueError, match="line 3"):
+            repo.load_signal(path)
+        assert repo.signal_count == 0
+
+    def test_trailing_blank_lines_still_load(self, repo, place):
+        path = place("tail.csv", b"1\n2\n3\n\n\n")
+        info = repo.load_signal(path)
+        assert info["num_samples"] == 3
+
+    def test_case_variant_name_is_scanned_when_read_as_text(self, repo, data_dir):
+        """A case-variant name is decoded as text only after the scan.
+
+        On a case-insensitive filesystem 'GAP.CSV' opens 'gap.csv'. Windows
+        resolves the name to the on-disk 'gap.csv', so the file is read as
+        text and the scan must report the blank line. macOS keeps the given
+        case, so the suffix stays '.CSV', which no decoder reads as text, and
+        the load is refused as an unsupported format. Either way nothing is
+        stored and nothing is decoded as text without the scan.
+        """
+        (data_dir / "gap.csv").write_bytes(b"1\n2\n\n3\n")
+        variant = data_dir / "GAP.CSV"
+        if not variant.exists():
+            pytest.skip("case-sensitive filesystem: the variant name is another file")
+        if variant.resolve().suffix in TEXT_EXTENSIONS:
+            expected = "line 3"
+        else:
+            expected = "unsupported format"
+        with pytest.raises(ValueError, match=expected):
+            repo.load_signal("GAP.CSV")
+        assert repo.signal_count == 0
+
+    def test_upper_case_suffix_is_refused_unread_on_every_platform(self, repo, place):
+        """A file whose on-disk suffix is '.CSV' is read as text by no
+        decoder on either route, so it is refused rather than decoded
+        without the scan.
+
+        This is the macOS outcome of the case-variant test above, on a name
+        every platform resolves the same way. If upper-case suffixes are ever
+        read as text, the scan must read them too, and this test must then
+        expect the blank-line refusal ('line 3').
+        """
+        path = place("UPPER.CSV", b"1\n2\n\n3\n")
+        with pytest.raises(ValueError, match="unsupported format"):
+            repo.load_signal(path)
+        assert repo.signal_count == 0
+
+    def test_unreadable_text_file_is_refused_not_scanned_open(self, repo, data_dir):
+        """A path the scan cannot read (here a directory) is refused, never
+        decoded without the scan."""
+        (data_dir / "dir.csv").mkdir()
+        with pytest.raises(ValueError, match="Unable to load signal"):
+            repo.load_signal("dir.csv")
+        assert repo.signal_count == 0
+
+    def test_traversal_name_is_not_read_before_containment(self, repo, data_dir):
+        """A name that escapes DATA_DIR is refused by containment; the scan
+        must not read the outside file first and report its line numbers."""
+        outside = data_dir.parent.parent / "leak.csv"
+        outside.write_bytes(b"1\n2\n\n3\n")
+        with pytest.raises(ValueError) as exc:
+            repo.load_signal("../../leak.csv")
+        assert "Unable to load signal" in str(exc.value)
+        assert "line 3" not in str(exc.value)
+        assert repo.signal_count == 0
+
+
+class TestNonFiniteSamplesRefused:
+    """R1/R2: NaN, infinite and non-numeric samples are refused at load."""
+
+    @pytest.mark.parametrize(
+        "name, content, index",
+        [
+            ("nan_token.csv", b"1.0\nnan\n3.0\n", 1),
+            ("empty_cell.csv", b"1.0,10\n,20\n3.0,30\n", 1),
+            ("nan.txt", b"1.0\n2.0\nNaN\n", 2),
+        ],
+    )
+    def test_text_with_missing_or_nan_sample_refused(
+        self, repo, place, name, content, index
+    ):
+        path = place(name, content)
+        with pytest.raises(ValueError) as exc:
+            repo.load_signal(path)
+        msg = str(exc.value)
+        assert "1 non-finite sample(s)" in msg
+        assert f"first at sample index {index}" in msg
+        assert repo.signal_count == 0
+
+    @pytest.mark.parametrize("bad", [np.nan, np.inf])
+    def test_npy_with_one_non_finite_sample_refused(self, repo, tmp_path, bad):
+        values = np.zeros(100)
+        values[7] = bad
+        path = tmp_path / "one_bad.npy"
+        np.save(path, values)
+        with pytest.raises(ValueError) as exc:
+            repo.load_signal(str(path))
+        msg = str(exc.value)
+        assert "1 non-finite sample(s) (NaN or infinity) out of 100" in msg
+        assert "first at sample index 7" in msg
+        assert "one_bad.npy" in msg
+        assert repo.signal_count == 0
+
+    def test_mat_with_nan_refused(self, repo, tmp_path):
+        from scipy.io import savemat
+
+        values = np.ones(50)
+        values[3] = np.nan
+        path = tmp_path / "nan_mat.mat"
+        savemat(str(path), {"vibration": values})
+        with pytest.raises(ValueError, match="1 non-finite sample"):
+            repo.load_signal(str(path))
+        assert repo.signal_count == 0
+
+    def test_float32_wav_with_nan_refused(self, repo, data_dir):
+        from scipy.io import wavfile
+
+        values = np.zeros(64, dtype=np.float32)
+        values[5] = np.nan
+        wavfile.write(str(data_dir / "nan.wav"), 8000, values)
+        with pytest.raises(ValueError, match="1 non-finite sample"):
+            repo.load_signal("nan.wav")
+        assert repo.signal_count == 0
+
+    def test_parquet_with_nan_refused(self, repo, data_dir):
+        pytest.importorskip("pyarrow")
+        pd.DataFrame({"x": [1.0, np.nan, 3.0]}).to_parquet(data_dir / "nan.parquet")
+        with pytest.raises(ValueError, match="1 non-finite sample"):
+            repo.load_signal("nan.parquet")
+        assert repo.signal_count == 0
+
+    def test_raw_nan_scale_factor_refused_naming_scale_factor(self, repo, data_dir):
+        write_raw_file(data_dir / "counts.bin", np.arange(16), dtype="<i2")
+        _write_companion_text(
+            data_dir / "counts.bin",
+            '{"sampling_rate": 1000, "sample_format": "int16", "scale_factor": NaN}',
+        )
+        with pytest.raises(ValueError) as exc:
+            repo.load_signal("counts.bin")
+        msg = str(exc.value)
+        assert "16 non-finite sample(s)" in msg
+        assert "scale_factor" in msg
+        assert repo.signal_count == 0
+
+    def test_header_row_refused_as_non_numeric(self, repo, tmp_path):
+        path = tmp_path / "with_header.csv"
+        path.write_bytes(b"amplitude\n1.0\n2.0\n3.0\n")
+        # pytest.raises(ValueError) does not catch a TypeError: the refusal
+        # must be the project's, never an unconverted library error.
+        with pytest.raises(ValueError) as exc:
+            repo.load_signal(str(path))
+        msg = str(exc.value)
+        assert "1 non-numeric sample(s)" in msg
+        assert "first at sample index 0" in msg
+        assert repo.signal_count == 0
+
+    def test_marker_token_refused_as_non_numeric(self, repo, tmp_path):
+        path = tmp_path / "marker.csv"
+        path.write_bytes(b"1.0\n2.0\nERR\n4.0\n")
+        with pytest.raises(ValueError) as exc:
+            repo.load_signal(str(path))
+        msg = str(exc.value)
+        assert "1 non-numeric sample(s)" in msg
+        assert "first at sample index 2" in msg
+        assert "'ERR'" in msg
+        assert repo.signal_count == 0
+
+
+class TestExplicitSamplingRateRefused:
+    """R3: the explicit and the broadcast rate are refused before any read."""
+
+    @pytest.mark.parametrize("bad", [math.nan, math.inf, -math.inf, 0, -5, "abc"])
+    def test_invalid_explicit_rate_refused_before_the_file_is_read(
+        self, repo, tmp_path, bad
+    ):
+        # The file does not exist: a FileNotFoundError (not a ValueError)
+        # would mean the rate was checked only after touching the disk.
+        with pytest.raises(ValueError, match="sampling rate must be positive") as exc:
+            repo.load_signal(str(tmp_path / "never_read.csv"), sampling_rate=bad)
+        assert "sampling_rate" in str(exc.value)
+        assert repo.signal_count == 0
+
+    def test_batch_broadcast_inf_rate_refused_before_any_file_is_read(
+        self, repo, data_dir
+    ):
+        with pytest.raises(ValueError, match="sampling rate must be positive") as exc:
+            repo.load_signals(["absent_a.csv", "absent_b.csv"], sampling_rate=math.inf)
+        assert "not found" not in str(exc.value)
+        assert repo.signal_count == 0
+
+
+class TestCompanionSamplingRate:
+    """R3/AE2: the companion rate is refused when it is the effective source.
+
+    Replaces the old resolve_signal test: a companion rate of 0 used to land
+    in the store and be caught only at analysis time.
     """
 
-    def test_zero_metadata_rate_rejected_by_resolve_signal(self, tmp_path):
-        from predictive_maintenance_mcp.mcp_tools._utils import resolve_signal
+    @staticmethod
+    def _csv(tmp_path) -> Path:
+        path = tmp_path / "comp_rate.csv"
+        pd.DataFrame(np.random.default_rng(0).standard_normal(500)).to_csv(
+            path, index=False, header=False
+        )
+        return path
 
-        signal = np.random.randn(500)
-        csv_path = tmp_path / "zero_rate.csv"
-        pd.DataFrame(signal).to_csv(csv_path, index=False, header=False)
-        with open(tmp_path / "zero_rate_metadata.json", "w") as f:
-            json.dump({"sampling_rate": 0, "signal_unit": "g"}, f)
+    @pytest.mark.parametrize("bad", ["NaN", "Infinity", "0", "-1", '"10000"', "true"])
+    def test_invalid_companion_rate_refused_at_load(self, repo, tmp_path, bad):
+        path = self._csv(tmp_path)
+        _write_companion_text(path, f'{{"sampling_rate": {bad}, "signal_unit": "g"}}')
+        with pytest.raises(ValueError) as exc:
+            repo.load_signal(str(path))
+        msg = str(exc.value)
+        assert "sampling rate must be positive" in msg
+        assert "comp_rate_metadata.json" in msg  # the source
+        assert "sampling_rate=" in msg  # the explicit-parameter alternative
+        assert repo.signal_count == 0
+
+    def test_null_companion_rate_stays_undeclared(self, repo, tmp_path):
+        path = self._csv(tmp_path)
+        _write_companion_text(path, '{"sampling_rate": null, "signal_unit": "g"}')
+        info = repo.load_signal(str(path))
+        assert info["sampling_rate"] is None
+        assert info["duration_s"] is None
+
+    def test_explicit_rate_wins_over_a_nan_companion_rate(self, repo, tmp_path):
+        path = self._csv(tmp_path)
+        _write_companion_text(path, '{"sampling_rate": NaN, "signal_unit": "g"}')
+        info = repo.load_signal(str(path), sampling_rate=10000)
+        assert info["sampling_rate"] == 10000
+        assert info["duration_s"] == pytest.approx(0.05)
+
+    def test_raw_nan_companion_rate_refused_before_decoding(self, repo, data_dir):
+        # 7 bytes do not fit float32 frames: decoding first would surface the
+        # decoder's "remainder" message instead of the rate refusal.
+        (data_dir / "nan_rate.bin").write_bytes(b"\x00" * 7)
+        _write_companion_text(
+            data_dir / "nan_rate.bin",
+            '{"sampling_rate": NaN, "sample_format": "float32"}',
+        )
+        with pytest.raises(ValueError) as exc:
+            repo.load_signal("nan_rate.bin")
+        msg = str(exc.value)
+        assert "sampling rate must be positive" in msg
+        assert "nan_rate_metadata.json" in msg
+        assert "remainder" not in msg
+        assert repo.signal_count == 0
+
+
+class TestRefusedLoadLeavesStoreUnchanged:
+    """R5: validation runs before any store mutation (single, overwrite, batch)."""
+
+    @staticmethod
+    def _snapshot(repo, signal_id):
+        return np.array(repo.get_signal(signal_id)), repo.get_signal_info(signal_id)
+
+    def test_refused_overwrite_from_nan_file_keeps_previous_entry(
+        self, repo, signal_file, tmp_path
+    ):
+        """Covers AE3."""
+        repo.load_signal(str(signal_file), signal_id="pump")
+        before_array, before_info = self._snapshot(repo, "pump")
+        bad = tmp_path / "pump_nan.csv"
+        bad.write_bytes(b"1.0\nnan\n3.0\n")
+        with pytest.raises(ValueError, match="non-finite"):
+            repo.load_signal(str(bad), signal_id="pump", overwrite=True)
+        after_array, after_info = self._snapshot(repo, "pump")
+        assert np.array_equal(after_array, before_array)
+        assert after_info == before_info
+        assert repo.signal_count == 1
+
+    def test_refused_overwrite_from_string_companion_rate_keeps_previous_entry(
+        self, repo, signal_file, tmp_path
+    ):
+        repo.load_signal(str(signal_file), signal_id="pump")
+        before_array, before_info = self._snapshot(repo, "pump")
+        other = tmp_path / "pump_str.csv"
+        pd.DataFrame(np.ones(300)).to_csv(other, index=False, header=False)
+        _write_companion_text(other, '{"sampling_rate": "10000"}')
+        with pytest.raises(ValueError, match="pump_str_metadata.json"):
+            repo.load_signal(str(other), signal_id="pump", overwrite=True)
+        after_array, after_info = self._snapshot(repo, "pump")
+        assert np.array_equal(after_array, before_array)
+        assert after_info == before_info
+
+    def test_batch_with_a_nan_file_stores_none_of_its_files(self, repo, data_dir):
+        """Covers AE4."""
+        for name in ("good_a.csv", "good_b.csv"):
+            pd.DataFrame(np.random.default_rng(0).standard_normal(100)).to_csv(
+                data_dir / name, index=False, header=False
+            )
+        (data_dir / "bad_c.csv").write_bytes(b"1.0\n2.0\nnan\n")
+        with pytest.raises(ValueError) as exc:
+            repo.load_signals(
+                ["good_a.csv", "good_b.csv", "bad_c.csv"], sampling_rate=1000
+            )
+        assert "bad_c.csv" in str(exc.value)
+        assert repo.list_signals() == []
+
+    def test_batch_with_a_nan_companion_rate_stores_nothing(self, repo, data_dir):
+        for name in ("rate_a.csv", "rate_b.csv", "rate_c.csv"):
+            pd.DataFrame(np.random.default_rng(0).standard_normal(100)).to_csv(
+                data_dir / name, index=False, header=False
+            )
+            _write_companion_text(data_dir / name, '{"sampling_rate": 1000}')
+        _write_companion_text(data_dir / "rate_b.csv", '{"sampling_rate": NaN}')
+        with pytest.raises(ValueError, match="rate_b_metadata.json"):
+            repo.load_signals(["rate_a.csv", "rate_b.csv", "rate_c.csv"])
+        assert repo.list_signals() == []
+
+    @pytest.mark.asyncio
+    async def test_list_signals_still_works_after_a_refused_nan_rate_load(
+        self, signal_file, npy_file
+    ):
+        from predictive_maintenance_mcp.mcp_tools.acquisition_tools import (
+            list_signals,
+        )
 
         repo = get_repository()
         repo.clear_all()
         try:
-            repo.load_signal(str(csv_path), signal_id="zero_rate")
-            with pytest.raises(ValueError):
-                resolve_signal("zero_rate")
+            repo.load_signal(str(npy_file), signal_id="kept")
+            with pytest.raises(ValueError, match="sampling rate must be positive"):
+                repo.load_signal(str(signal_file), sampling_rate=math.nan)
+            assert [s["signal_id"] for s in repo.list_signals()] == ["kept"]
+            listed = await list_signals(scope="memory")
+            assert [s["signal_id"] for s in listed["signals"]] == ["kept"]
         finally:
             repo.clear_all()
