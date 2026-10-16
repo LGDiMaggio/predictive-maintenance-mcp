@@ -11,11 +11,15 @@ What these tests pin, in the order a reviewer would ask about it:
   finding per fingerprint across variants, ``duplicate-open`` /
   ``regression-of`` / ``suppressed`` against existing issues, security
   findings never suppressed, info or low harmless findings recorded only;
+* only issues a maintainer accepted (``report.ACCEPTED_LABEL``) track or
+  suppress a finding, and issues closed as duplicates are skipped;
 * the builder fails closed (exit 2) on every empty or unreadable input: no
-  results, a missing expected check, malformed JSON, a JUnit file with no
-  test cases, a known-issues list long enough to be truncated;
-* the weekly verdict (exit 1) is a fixable advisory that no open issue
-  tracks;
+  results, a missing expected check or matrix leg, a check that errored,
+  malformed JSON, a JUnit file with no test cases, a known-issues list long
+  enough to be truncated;
+* the weekly verdict (exit 1) is a failed check, or a present advisory with a
+  fix within the declared range, tracked or not: tracking only stops a
+  duplicate candidate;
 * test-gated upstream findings are resolved from the legs that installed
   the candidate version;
 * text from issues and test output cannot shape the rendered Markdown, and
@@ -220,13 +224,19 @@ def _write(root, relative, result):
     return results.write_json(result, root / relative)
 
 
-def _issue(number, fp, state="OPEN", reason=None):
+def _issue(number, fp, state="OPEN", reason=None, accepted=True):
+    """One issue in ``gh issue list --json`` shape; ``accepted`` adds the
+    maintainer's acceptance label next to the label the issue form applies."""
+    labels = [{"name": "audit"}]
+    if accepted:
+        labels.append({"name": report.ACCEPTED_LABEL})
     return {
         "number": number,
         "title": f"[Audit] something (pmm-audit:{fp})",
         "state": state,
         "stateReason": reason,
         "body": "Filed from the audit report.",
+        "labels": labels,
     }
 
 
@@ -623,7 +633,11 @@ class TestUpstreamJoin:
             "suite-newest-py3.12",
             "wheel-ubuntu-py3.12",
         ]
-        assert code == 0
+        # The failed package-smoke leg fails the verdict as well as its job.
+        assert code == 1
+        assert _report_json(out)["verdict"]["failed_checks"] == [
+            "package-smoke (wheel-ubuntu-py3.12)"
+        ]
 
     def test_harmless_resolution_is_recorded_only(self, tmp_path):
         res = tmp_path / "results"
@@ -664,7 +678,8 @@ class TestUpstreamJoin:
         # numpy 2.5.4 was installed only by the passing newest leg.
         assert by_subject["numpy"]["classification"] == "harmless"
         assert by_subject["pandas 3.0"]["classification"] == "breaking-candidate"
-        assert code == 0
+        # The floors leg runs junit_sample.xml, which has failures.
+        assert code == 1
 
 
 # ---------------------------------------------------------------------------
@@ -707,8 +722,13 @@ class TestDeduplication:
         assert decisions[FP_NAN]["label"] == "duplicate-open #41"
         assert decisions[FP_CONTRACT]["label"] == "regression-of #38"
         assert decisions[FP_LEDGER]["label"] == "suppressed #35"
+        # #44 (open) and #39 (closed as not planned) quote these markers, but
+        # no maintainer accepted them: they neither track nor suppress.
         assert decisions[FP_DOCS]["label"] == "new"
+        assert "#44" in decisions[FP_DOCS]["note"]
+        assert report.ACCEPTED_LABEL in decisions[FP_DOCS]["note"]
         assert decisions[FP_INF]["label"] == "new"
+        assert "#39" in decisions[FP_INF]["note"]
         assert set(doc["candidates"]) == {FP_CONTRACT, FP_DOCS, FP_INF}
 
         candidates = _md(out, "issue-candidates.md")
@@ -727,7 +747,8 @@ class TestDeduplication:
             "suite-floors-py3.11",
             "suite-newest-py3.12",
         ]
-        assert code == 0
+        # Both legs run junit_sample.xml, which has failures.
+        assert code == 1
 
     def test_issue_text_never_reaches_the_outputs(self, tmp_path):
         res = tmp_path / "results"
@@ -786,6 +807,90 @@ class TestDeduplication:
         )
         assert decision["label"] == "duplicate-open #9"
 
+    def _decide(self, *issues, category="tool-contract"):
+        return report.decide(
+            {
+                "fingerprint": _finding().fingerprint,
+                "category": category,
+                "severity": "high",
+                "classification": None,
+            },
+            report.parse_known_issues(json.dumps(list(issues))),
+        )
+
+    def test_an_unaccepted_open_issue_does_not_track_the_finding(self):
+        """Anyone can open an issue quoting a marker; only a maintainer's
+        label makes it the tracker."""
+        fp = _finding().fingerprint
+        decision = self._decide(_issue(7, fp, accepted=False))
+        assert decision["kind"] == "new" and decision["candidate"]
+        assert decision["issue"] is None
+        assert "#7" in decision["note"]
+
+    def test_an_issue_its_author_closed_as_not_planned_does_not_suppress(self):
+        fp = _finding().fingerprint
+        decision = self._decide(_issue(7, fp, "CLOSED", "NOT_PLANNED", accepted=False))
+        assert decision["kind"] == "new" and decision["candidate"]
+
+    def test_an_accepted_issue_wins_over_unaccepted_ones(self):
+        fp = _finding().fingerprint
+        decision = self._decide(
+            _issue(9, fp, accepted=False), _issue(4, fp), _issue(12, fp, accepted=False)
+        )
+        assert decision["label"] == "duplicate-open #4"
+
+    def test_the_acceptance_label_is_case_insensitive_like_github(self):
+        fp = _finding().fingerprint
+        issue = _issue(4, fp, accepted=False)
+        issue["labels"].append({"name": report.ACCEPTED_LABEL.upper()})
+        assert self._decide(issue)["label"] == "duplicate-open #4"
+
+    def test_an_issue_without_labels_is_not_accepted(self):
+        fp = _finding().fingerprint
+        issue = _issue(4, fp)
+        del issue["labels"]
+        assert self._decide(issue)["kind"] == "new"
+
+    def test_an_issue_closed_as_duplicate_is_not_a_regression(self):
+        """A duplicate points at the issue that tracks the finding; it is not
+        evidence that the problem was fixed and came back."""
+        fp = _finding().fingerprint
+        assert self._decide(_issue(7, fp, "CLOSED", "DUPLICATE"))["kind"] == "new"
+        decision = self._decide(
+            _issue(7, fp, "CLOSED", "DUPLICATE"), _issue(3, fp, "CLOSED", "COMPLETED")
+        )
+        assert decision["label"] == "regression-of #3"
+
+    def test_a_recorded_only_finding_stays_recorded_despite_an_unaccepted_mention(
+        self,
+    ):
+        harmless = _finding(severity="low", classification="harmless")
+        decision = report.decide(
+            {
+                "fingerprint": harmless.fingerprint,
+                "category": harmless.category,
+                "severity": "low",
+                "classification": "harmless",
+            },
+            report.parse_known_issues(
+                json.dumps([_issue(7, harmless.fingerprint, accepted=False)])
+            ),
+        )
+        assert decision["kind"] == "recorded" and not decision["candidate"]
+
+    def test_the_unaccepted_note_names_at_most_five_issues(self):
+        fp = _finding().fingerprint
+        issues = [_issue(n, fp, accepted=False) for n in range(1, 8)]
+        note = self._decide(*issues)["note"]
+        assert "#1, #2, #3, #4, #5 and 2 more" in note
+        assert "#6" not in note
+
+    @pytest.mark.parametrize("labels", ['"audit-accepted"', '[{"name": 1}]', '[["x"]]'])
+    def test_malformed_labels_are_refused(self, labels):
+        text = f'[{{"number": 1, "state": "OPEN", "labels": {labels}}}]'
+        with pytest.raises(ValueError, match="label"):
+            report.parse_known_issues(text)
+
     def test_a_marker_must_be_the_whole_fingerprint(self):
         fp = _finding().fingerprint
         issues = report.parse_known_issues(
@@ -823,17 +928,69 @@ class TestSecurityVerdict:
         assert doc["verdict"]["exit_code"] == 1
         assert advisory.fingerprint in _md(out, "issue-candidates.md")
 
-    def test_fixable_advisory_tracked_by_an_open_issue_exits_0(self, tmp_path):
+    def test_a_tracked_fixable_advisory_stays_unresolved_and_red(self, tmp_path):
+        """Tracking stops a duplicate issue; it does not resolve the
+        vulnerability, which stays in the verdict and the table."""
         res = tmp_path / "results"
         advisory = _advisory("pyjwt", "PYSEC-2026-4140")
-        self.write(res, advisory, _advisory("pypdf", "PYSEC-2026-3910", fixable=False))
+        no_fix = _advisory("pypdf", "PYSEC-2026-3910", fixable=False)
+        self.write(res, advisory, no_fix)
         code, out = _run(
             tmp_path, res, expect="security", known=[_issue(12, advisory.fingerprint)]
         )
-        assert code == 0
-        assert _by_fp(_report_json(out))[advisory.fingerprint]["decision"]["label"] == (
-            "duplicate-open #12"
+        assert code == 1
+        doc = _report_json(out)
+        item = _by_fp(doc)[advisory.fingerprint]
+        assert item["decision"]["label"] == "duplicate-open #12"
+        assert not item["candidate"]
+        assert advisory.fingerprint not in _md(out, "issue-candidates.md")
+        verdict = doc["verdict"]
+        assert verdict["unresolved_fixable_advisories"] == [advisory.fingerprint]
+        assert verdict["tracked_unresolved_advisories"] == [advisory.fingerprint]
+        assert "1 tracked by an accepted open issue" in " ".join(verdict["reasons"])
+        rows = {row["fingerprint"]: row for row in doc["vulnerabilities"]}
+        assert rows[advisory.fingerprint]["tracked_by"] == 12
+        assert rows[advisory.fingerprint]["fixable"] is True
+        # A present advisory without a fix in range is listed, never dropped.
+        assert rows[no_fix.fingerprint]["fixable"] is False
+        table = _md(out).split("## Vulnerabilities", 1)[1].split("\n## ", 1)[0]
+        assert "#12 (open, accepted); still unresolved" in table
+        assert "untracked" in table
+
+    def test_an_unaccepted_issue_does_not_count_as_tracking(self, tmp_path):
+        res = tmp_path / "results"
+        advisory = _advisory("pyjwt", "PYSEC-2026-4140")
+        self.write(res, advisory)
+        code, out = _run(
+            tmp_path,
+            res,
+            expect="security",
+            known=[_issue(12, advisory.fingerprint, accepted=False)],
         )
+        assert code == 1
+        doc = _report_json(out)
+        assert doc["verdict"]["tracked_unresolved_advisories"] == []
+        assert advisory.fingerprint in _md(out, "issue-candidates.md")
+
+    def test_malformed_advisory_evidence_is_listed_without_crashing(self, tmp_path):
+        res = tmp_path / "results"
+        advisory = _advisory("pyjwt", "PYSEC-2026-4140")
+        advisory.evidence["versions"] = ["2.13.0"]
+        advisory.evidence["fix_versions"] = "2.14.0"
+        self.write(res, advisory)
+        code, out = _run(tmp_path, res, expect="security")
+        assert code == 1
+        (row,) = _report_json(out)["vulnerabilities"]
+        assert row["versions"] == {} and row["fix_versions"] == []
+
+    def test_no_advisory_means_no_vulnerability_verdict(self, tmp_path):
+        res = tmp_path / "results"
+        self.write(res, _advisory("pypdf", "PYSEC-2026-3910", fixable=False))
+        code, out = _run(tmp_path, res, expect="security")
+        assert code == 0
+        doc = _report_json(out)
+        assert doc["verdict"]["unresolved_fixable_advisories"] == []
+        assert doc["counts"]["advisories"] == 1
 
     def test_closed_completed_does_not_silence_a_fixable_advisory(self, tmp_path):
         res = tmp_path / "results"
@@ -1110,6 +1267,127 @@ class TestFailsClosed:
         code, _ = _run(tmp_path, res, expect="smoke,nonsense")
         assert code == 2
 
+    @pytest.mark.parametrize("expect", ["smoke:", "nonsense:checkout"])
+    def test_a_leg_expectation_needs_a_known_check_and_a_variant(
+        self, tmp_path, expect
+    ):
+        res = tmp_path / "results"
+        _write(res, "smoke/smoke.json", _result("smoke", "checkout"))
+        code, _ = _run(tmp_path, res, expect=expect)
+        assert code == 2
+
+    def test_a_check_that_errored_makes_the_report_incomplete(self, tmp_path):
+        """A security result whose pip-audit input could not be read has
+        status error and maybe no advisory at all: that is not a green week."""
+        res = tmp_path / "results"
+        _write(
+            res,
+            "security/security.json",
+            _result("security", "pip-audit", status="error"),
+        )
+        code, out = _run(tmp_path, res, expect="security")
+        assert code == 2
+        doc = _report_json(out)
+        assert doc["verdict"]["status"] == "incomplete"
+        assert doc["verdict"]["errored_checks"] == ["security (pip-audit)"]
+        assert "did not complete" in _md(out)
+
+    def test_a_failed_smoke_run_makes_the_report_red(self, tmp_path):
+        res = tmp_path / "results"
+        _write(res, "smoke/smoke.json", _result("smoke", "checkout", status="fail"))
+        code, out = _run(tmp_path, res, expect="smoke")
+        assert code == 1
+        assert _report_json(out)["verdict"]["failed_checks"] == ["smoke (checkout)"]
+
+    def _leg_with_exit(self, res, code, junit=PASSING_JUNIT):
+        leg = _leg(res, "suite-newest-py3.12", junit)
+        (leg / "pytest-exit-code.txt").write_text(f"{code}\n", encoding="utf-8")
+        return leg
+
+    def test_a_leg_failed_only_by_pytest_exit_status_is_failed(self, tmp_path):
+        """Every test passed but pytest exited 1 (the coverage gate): the
+        JUnit file alone would read as a pass."""
+        res = tmp_path / "results"
+        self._leg_with_exit(res, 1)
+        code, out = _run(tmp_path, res, expect="suite")
+        assert code == 1
+        doc = _report_json(out)
+        assert doc["checks"][0]["status"] == "fail"
+        (finding,) = doc["findings"]
+        assert finding["rule"] == "pytest-exit"
+        assert finding["evidence"]["exit_code"] == 1
+
+    def test_a_zero_exit_status_keeps_the_leg_passing(self, tmp_path):
+        res = tmp_path / "results"
+        self._leg_with_exit(res, 0)
+        code, out = _run(tmp_path, res, expect="suite")
+        assert code == 0
+        assert _report_json(out)["findings"] == []
+
+    def test_test_failures_explain_a_non_zero_status_by_themselves(self, tmp_path):
+        res = tmp_path / "results"
+        failing = _junit(("tests.test_ledger", "test_append", FAILURE))
+        self._leg_with_exit(res, 1, failing)
+        _, out = _run(tmp_path, res, expect="suite")
+        rules = {f["rule"] for f in _report_json(out)["findings"]}
+        assert rules == {"test-failed"}
+
+    def test_an_unreadable_exit_status_is_a_problem(self, tmp_path):
+        res = tmp_path / "results"
+        self._leg_with_exit(res, "not-a-number")
+        code, out = _run(tmp_path, res, expect="suite")
+        assert code == 2
+        assert any("exit code" in p["problem"] for p in _report_json(out)["problems"])
+
+    def test_a_hostile_variant_cannot_shape_the_verdict_or_stderr(
+        self, tmp_path, capsys
+    ):
+        res = tmp_path / "results"
+        variant = "x](https://evil.invalid) <img src=x>\n::warning::injected"
+        _write(res, "smoke/smoke.json", _result("smoke", variant, status="error"))
+        _run(tmp_path, res, expect="smoke")
+        out = tmp_path / "out"
+        verdict = next(
+            line for line in _md(out).splitlines() if line.startswith("Verdict:")
+        )
+        # Escaped markup renders as text; only unescaped markup is a defect.
+        assert re.search(r"(?<!\\)<img", verdict) is None
+        assert re.search(r"(?<!\\)\]\(", verdict) is None
+        assert "\n" not in verdict
+        stderr = capsys.readouterr().err
+        assert not any(line.startswith("::") for line in stderr.splitlines())
+
+    def test_a_matrix_leg_without_a_result_is_missing(self, tmp_path):
+        """Other legs of the same check do not stand in for one that uploaded
+        nothing (a job that failed before its upload step)."""
+        res = tmp_path / "results"
+        _leg(res, "suite-newest-py3.12")
+        code, out = _run(
+            tmp_path,
+            res,
+            expect="suite:suite-newest-py3.12,suite:suite-newest-py3.14",
+        )
+        assert code == 2
+        doc = _report_json(out)
+        assert doc["missing_checks"] == ["suite:suite-newest-py3.14"]
+        row = next(r for r in doc["checks"] if r["status"] == "missing")
+        assert (row["check"], row["variant"]) == ("suite", "suite-newest-py3.14")
+
+    def test_every_expected_leg_present_passes(self, tmp_path):
+        res = tmp_path / "results"
+        _leg(res, "suite-newest-py3.12")
+        _write(
+            res,
+            "package-smoke-wheel/package-smoke.json",
+            _result("package-smoke", "wheel-ubuntu-py3.11"),
+        )
+        code, _ = _run(
+            tmp_path,
+            res,
+            expect="suite:suite-newest-py3.12,package-smoke:wheel-ubuntu-py3.11",
+        )
+        assert code == 0
+
 
 # ---------------------------------------------------------------------------
 # Local-processing guard and untrusted text
@@ -1209,9 +1487,12 @@ class TestOutputs:
         assert appended.startswith("previous step output\n")
         assert f"Issue candidates: {len(doc['candidates'])}" in appended
         assert "| Check | Variant | Status |" in appended
+        assert "## Vulnerabilities" in appended
         # The summary is not the candidate bodies.
         assert "### Reproduction" not in appended
-        assert code == 0
+        # The suite leg runs junit_sample.xml, which has failures.
+        assert code == 1
+        assert "Failed checks: 1." in appended
 
     def test_report_json_carries_run_metadata_from_the_environment(
         self, tmp_path, monkeypatch

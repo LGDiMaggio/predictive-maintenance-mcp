@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Use this form for a block from `issue-candidates.md`, which every audit run uploads with its report. Copy each field from the block, and keep the `pmm-audit:` marker in the title and in the fingerprint field: later audit runs use it to recognize this issue.
+        Use this form for a block from `issue-candidates.md`, which every audit run uploads with its report. Copy each field from the block, and keep the `pmm-audit:` marker in the title and in the fingerprint field: later audit runs use it to recognize this issue once a maintainer has accepted it with the `audit-accepted` label.
   - type: input
     id: fingerprint
     attributes:

@@ -26,9 +26,18 @@ So these rules are asserted, not trusted:
    ``mcp-types`` in every Python ecosystem entry (never auto-upgrade to a
    new MCP major).
 
-One contract between ``audit.yml`` and the report builder is pinned too: the
-``gh issue list --limit`` equals ``KNOWN_ISSUES_LIMIT``, the size at which
-the builder treats the known-issue list as possibly truncated.
+Contracts between ``audit.yml`` and the report builder are pinned too:
+
+9. the ``gh issue list --limit`` equals ``KNOWN_ISSUES_LIMIT``, the size at
+   which the builder treats the known-issue list as possibly truncated;
+10. every known-issue fetch filters on a label and asks for ``labels``, one
+    of them on the report's ``ACCEPTED_LABEL``, and no issue form applies
+    that label, so an issue anyone can open never tracks a finding until a
+    maintainer labels it;
+11. the report step expects one result per matrix leg (``check:variant``),
+    and exactly the legs the matrices declare, so a leg that uploaded nothing
+    is reported missing;
+12. every audit job sets ``timeout-minutes``.
 
 Each rule is a pure function over parsed YAML with red-path tests against
 synthetic documents that carry the defect, following ``tests/test_ci_gates.py``:
@@ -47,9 +56,10 @@ import pytest
 import yaml
 
 from _workflows import REPO_ROOT, load_workflows, step_label
-from tools.audit import results
+from tools.audit import report, results
 
 DEPENDABOT_PATH = REPO_ROOT / ".github" / "dependabot.yml"
+ISSUE_TEMPLATE_DIR = REPO_ROOT / ".github" / "ISSUE_TEMPLATE"
 AUDIT_WORKFLOW = "audit.yml"
 
 #: Marks a permissions block on the workflow rather than on one job.
@@ -329,6 +339,116 @@ def known_issue_fetch_limits(workflow: dict) -> list[Optional[int]]:
     return limits
 
 
+GH_ISSUE_LIST_LABEL = re.compile(r"--label[\s=]+['\"]?([^\s'\"]+)")
+GH_ISSUE_LIST_JSON = re.compile(r"--json[\s=]+['\"]?([^\s'\"]+)")
+
+
+def known_issue_trust_gaps(workflow: dict, label: str) -> list[str]:
+    """Rule 10, workflow half: known-issue fetches the report cannot judge.
+
+    The report decides acceptance from each issue's labels, so every
+    ``gh issue list`` must ask for ``labels``. Every fetch must filter on a
+    label (a plain list query: no unfiltered or search fetch), and one of them
+    on ``label``, the acceptance label.
+    """
+    gaps = []
+    accepted_fetches = 0
+    for job_id, job in _jobs(workflow).items():
+        for step_name, step in _steps(job):
+            script = re.sub(r"\\\r?\n", " ", str(step.get("run", "")))
+            for line in script.splitlines():
+                for command in line.split("gh issue list")[1:]:
+                    where = f"{job_id}/{step_name}"
+                    labels = GH_ISSUE_LIST_LABEL.findall(command)
+                    if not labels:
+                        gaps.append(f"{where}: no --label filter")
+                    accepted_fetches += label in labels
+                    fields = GH_ISSUE_LIST_JSON.search(command)
+                    if not fields or "labels" not in fields.group(1).split(","):
+                        gaps.append(f"{where}: --json without labels")
+    if not accepted_fetches:
+        gaps.append(f"no fetch filters on --label {label}")
+    return gaps
+
+
+def template_labels(text: str, suffix: str) -> list[str]:
+    """Labels an issue template applies: a form's ``labels`` key, or the
+    front matter of a Markdown template (a list or a comma-separated string)."""
+    if suffix == ".md":
+        match = re.match(r"\A---\r?\n(.*?)\r?\n---", text, re.DOTALL)
+        doc = yaml.safe_load(match.group(1)) if match else None
+    else:
+        doc = yaml.safe_load(text)
+    labels = doc.get("labels") if isinstance(doc, dict) else None
+    if isinstance(labels, str):
+        labels = [part.strip() for part in labels.split(",")]
+    return [str(item) for item in labels or [] if str(item).strip()]
+
+
+def templates_applying(templates: dict[str, list[str]], label: str) -> list[str]:
+    """Rule 10, template half: templates whose labels include ``label``."""
+    return sorted(
+        name
+        for name, labels in templates.items()
+        if any(item.casefold() == label.casefold() for item in labels)
+    )
+
+
+MATRIX_VALUE = re.compile(r"\$\{\{\s*matrix\.([A-Za-z0-9_-]+)\s*\}\}")
+
+
+def _render_matrix(template: str, leg: dict) -> str:
+    return MATRIX_VALUE.sub(lambda m: str(leg.get(m.group(1), m.group(0))), template)
+
+
+def expected_results_gaps(workflow: dict) -> list[str]:
+    """Rule 11: differences between the report's ``--expect`` and the legs.
+
+    Suite legs are named after their uploaded artifact (the directory the
+    report reads); package-smoke legs after the ``--variant`` they record.
+    """
+    jobs = _jobs(workflow)
+    wanted = {"upstream", "security"}
+    suite = jobs.get("suite") or {}
+    artifact = next(
+        (
+            str((step.get("with") or {}).get("name", ""))
+            for _, step in _steps(suite)
+            if str(step.get("uses", "")).startswith("actions/upload-artifact@")
+        ),
+        "",
+    )
+    for leg in (suite.get("strategy") or {}).get("matrix", {}).get("include") or []:
+        wanted.add(f"suite:{_render_matrix(artifact, leg)}")
+    smoke = jobs.get("package-smoke") or {}
+    for leg in (smoke.get("strategy") or {}).get("matrix", {}).get("include") or []:
+        wanted.add(f"package-smoke:{leg.get('variant')}")
+    report_steps = [
+        step
+        for _, step in _steps(jobs.get("report") or {})
+        if "tools.audit report" in str(step.get("run", ""))
+    ]
+    if len(report_steps) != 1:
+        return [f"expected one report step, found {len(report_steps)}"]
+    (step,) = report_steps
+    if '--expect "$EXPECTED_RESULTS"' not in str(step.get("run", "")):
+        return ['the report step does not pass --expect "$EXPECTED_RESULTS"']
+    raw = str((step.get("env") or {}).get("EXPECTED_RESULTS", ""))
+    given = {part.strip() for part in raw.split(",") if part.strip()}
+    gaps = [f"not expected: {entry}" for entry in sorted(wanted - given)]
+    gaps += [f"expected but no such leg: {entry}" for entry in sorted(given - wanted)]
+    return gaps
+
+
+def jobs_without_timeout(workflow: dict) -> list[str]:
+    """Rule 12: jobs that would run for GitHub's six-hour default."""
+    return sorted(
+        job_id
+        for job_id, job in _jobs(workflow).items()
+        if not job.get("timeout-minutes")
+    )
+
+
 def _ignores_majors(rule: Any, distribution: str) -> bool:
     """True when one ``ignore`` entry stops major updates of ``distribution``.
 
@@ -460,7 +580,31 @@ def test_every_expected_weekly_check_uploads_an_artifact(audit):
 
 
 def test_the_known_issue_fetch_uses_the_report_builder_limit(audit):
-    assert known_issue_fetch_limits(audit) == [results.KNOWN_ISSUES_LIMIT]
+    limits = known_issue_fetch_limits(audit)
+    assert limits and set(limits) == {results.KNOWN_ISSUES_LIMIT}, limits
+
+
+def test_the_known_issue_fetch_reads_only_accepted_issues(audit):
+    assert known_issue_trust_gaps(audit, report.ACCEPTED_LABEL) == []
+
+
+def test_no_issue_template_applies_the_acceptance_label():
+    templates = {
+        path.name: template_labels(path.read_text(encoding="utf-8"), path.suffix)
+        for path in sorted(ISSUE_TEMPLATE_DIR.iterdir())
+        if path.suffix in (".md", ".yml", ".yaml")
+    }
+    # Anchor: the audit form's own label is read, so "none apply it" is real.
+    assert templates["audit_finding.yml"] == ["audit"]
+    assert templates_applying(templates, report.ACCEPTED_LABEL) == []
+
+
+def test_the_report_expects_every_matrix_leg(audit):
+    assert expected_results_gaps(audit) == []
+
+
+def test_every_audit_job_has_a_timeout(audit):
+    assert jobs_without_timeout(audit) == []
 
 
 def test_dependabot_never_proposes_an_mcp_major(dependabot):
@@ -487,6 +631,10 @@ def test_the_audit_suite_matrix_covers_floors_and_newest(audit):
     assert "python -m tools.audit floors" in script
     assert "pip install -c" in script
     assert "--junitxml" in script
+    # A leg that fails only on the coverage gate leaves a clean JUnit file;
+    # the report reads pytest's recorded exit status to see it.
+    assert "pytest-exit-code.txt" in script
+    assert fnmatch.fnmatch("pytest-exit-code.txt", report.PYTEST_EXIT_PATTERN)
 
 
 # ---------------------------------------------------------------------------
@@ -963,6 +1111,135 @@ class TestKnownIssueFetchLimits:
     def test_a_missing_or_smaller_limit_is_read_per_command(self):
         """The default (30) and a limit that drifted both differ from the constant."""
         assert known_issue_fetch_limits(_doc(ISSUE_FETCHES)) == [None, 500]
+
+
+TRUSTED_FETCH = """\
+on: workflow_dispatch
+jobs:
+  report:
+    steps:
+      - name: fetch
+        run: |
+          gh issue list --state all --label audit-accepted --limit 1000 \\
+            --json number,title,state,stateReason,body,labels > a.json
+"""
+
+
+class TestKnownIssueTrust:
+    def test_a_label_filtered_fetch_with_labels_passes(self):
+        assert known_issue_trust_gaps(_doc(TRUSTED_FETCH), "audit-accepted") == []
+
+    def test_an_unfiltered_fetch_and_one_without_labels_are_reported(self):
+        """The fetches of ISSUE_FETCHES read every issue, without labels."""
+        gaps = known_issue_trust_gaps(_doc(ISSUE_FETCHES), "audit-accepted")
+        assert gaps == [
+            "report/step 0: no --label filter",
+            "report/step 0: --json without labels",
+            "report/step 0: no --label filter",
+            "report/step 0: --json without labels",
+            "no fetch filters on --label audit-accepted",
+        ]
+
+    def test_a_search_fetch_is_reported(self):
+        doc = _doc(
+            TRUSTED_FETCH.replace("--label audit-accepted", '--search "pmm-audit"')
+        )
+        assert known_issue_trust_gaps(doc, "audit-accepted") == [
+            "report/fetch: no --label filter",
+            "no fetch filters on --label audit-accepted",
+        ]
+
+    def test_a_second_fetch_of_another_label_is_allowed_beside_the_accepted_one(self):
+        second = (
+            "          gh issue list --state all --label audit --limit 1000 \\\n"
+            "            --json number,title,state,stateReason,body,labels > b.json\n"
+        )
+        doc = _doc(TRUSTED_FETCH + second)
+        assert known_issue_trust_gaps(doc, "audit-accepted") == []
+        only_form = _doc(TRUSTED_FETCH.replace("audit-accepted", "audit"))
+        assert known_issue_trust_gaps(only_form, "audit-accepted") == [
+            "no fetch filters on --label audit-accepted"
+        ]
+
+    def test_a_form_or_front_matter_applying_the_label_is_reported(self):
+        form = template_labels('name: x\nlabels: ["audit", "Audit-Accepted"]\n', ".yml")
+        markdown = template_labels(
+            "---\nname: x\nlabels: bug, audit-accepted\n---\nbody\n", ".md"
+        )
+        plain = template_labels("---\nname: x\nlabels: bug\n---\n", ".md")
+        templates = {"form.yml": form, "bug.md": markdown, "plain.md": plain}
+        assert templates_applying(templates, "audit-accepted") == ["bug.md", "form.yml"]
+
+    def test_a_markdown_template_without_front_matter_applies_nothing(self):
+        assert template_labels("labels: audit-accepted\n", ".md") == []
+
+
+EXPECT_WORKFLOW = """\
+on: workflow_dispatch
+jobs:
+  suite:
+    strategy:
+      matrix:
+        include:
+          - {leg: floors, python: "3.11"}
+          - {leg: newest, python: "3.12"}
+    steps:
+      - uses: actions/upload-artifact@v7
+        with:
+          name: suite-${{ matrix.leg }}-py${{ matrix.python }}
+  package-smoke:
+    strategy:
+      matrix:
+        include:
+          - {variant: wheel-ubuntu-py3.11}
+          - {variant: sdist-ubuntu-py3.12}
+  report:
+    steps:
+      - env:
+          EXPECTED_RESULTS: >-
+            suite:suite-floors-py3.11,
+            suite:suite-newest-py3.12,
+            package-smoke:wheel-ubuntu-py3.11,
+            package-smoke:sdist-ubuntu-py3.12,
+            upstream,
+            security
+        run: python -m tools.audit report --expect "$EXPECTED_RESULTS"
+"""
+
+
+class TestExpectedResults:
+    def test_every_leg_expected_passes(self):
+        assert expected_results_gaps(_doc(EXPECT_WORKFLOW)) == []
+
+    def test_a_leg_added_to_a_matrix_but_not_expected_is_reported(self):
+        doc = _doc(
+            EXPECT_WORKFLOW.replace(
+                '- {leg: newest, python: "3.12"}',
+                '- {leg: newest, python: "3.12"}\n          - {leg: newest, python: "3.14"}',
+            )
+        )
+        assert expected_results_gaps(doc) == ["not expected: suite:suite-newest-py3.14"]
+
+    def test_a_stale_expectation_is_reported(self):
+        doc = _doc(EXPECT_WORKFLOW.replace("- {variant: sdist-ubuntu-py3.12}", ""))
+        assert expected_results_gaps(doc) == [
+            "expected but no such leg: package-smoke:sdist-ubuntu-py3.12"
+        ]
+
+    def test_a_report_step_without_the_expectation_is_reported(self):
+        doc = _doc(EXPECT_WORKFLOW.replace(' --expect "$EXPECTED_RESULTS"', ""))
+        assert expected_results_gaps(doc) == [
+            'the report step does not pass --expect "$EXPECTED_RESULTS"'
+        ]
+
+
+class TestTimeouts:
+    def test_a_job_without_a_timeout_is_reported(self):
+        doc = _doc(
+            "on: workflow_dispatch\njobs:\n  a:\n    timeout-minutes: 5\n"
+            "    steps: [{run: x}]\n  b:\n    steps: [{run: x}]\n"
+        )
+        assert jobs_without_timeout(doc) == ["b"]
 
 
 def _dependabot(*entries: str) -> dict:

@@ -331,6 +331,7 @@ class Result:
         return exit_code_for(self.status)
 
     def to_dict(self) -> dict[str, Any]:
+        """Plain-JSON form of the ``pmm-audit-result/1`` document."""
         return {
             "schema": self.schema,
             "check": self.check,

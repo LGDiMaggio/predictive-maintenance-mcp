@@ -32,6 +32,9 @@ artifact) and files are recognized by shape:
 * ``pip-list*.json`` (``pip list --format json``) next to a JUnit file: the
   versions that leg installed. A pip list with no JUnit beside it is a suite
   leg that did not finish: it becomes an error leg and a problem (exit 2).
+* ``pytest-exit-code*.txt`` next to a JUnit file: pytest's exit status. A
+  non-zero status with no failed test (the coverage gate, a session error)
+  fails the leg with a ``pytest-exit`` finding.
 * Any other JSON is listed as ignored (raw pip-audit output, for example).
 
 Upstream join
@@ -47,8 +50,15 @@ De-duplication
 --------------
 Findings merge by fingerprint across results and variants. Against existing
 issues (``--known-issues``, ``gh issue list --json
-number,title,state,stateReason,body``), an issue matches when its title or
-body holds ``pmm-audit:<fingerprint>``:
+number,title,state,stateReason,body,labels``), an issue matches when its
+title or body holds ``pmm-audit:<fingerprint>`` and a maintainer has
+accepted it by adding the :data:`ACCEPTED_LABEL` label. Anyone can open an
+issue and quote a marker, and an author can close their own issue as not
+planned, so an issue without that label never tracks or suppresses a
+finding: the finding stays a candidate, with a note naming the issue. Only
+users with triage access can add a label, and no issue form applies this one.
+Issues closed as duplicates are skipped (the issue they duplicate carries the
+marker if it tracks the finding). Among accepted matches:
 
 * an open match: ``duplicate-open #N``, not a candidate;
 * severity info or low with classification harmless: recorded only;
@@ -61,16 +71,27 @@ Issue titles and bodies are written by anyone with a GitHub account, so they
 are used for marker matching only and never rendered: the outputs show an
 issue's number, state and the matched fingerprint.
 
+Vulnerabilities and tracking
+----------------------------
+Tracking decides whether a finding is proposed again as an issue candidate;
+it never decides whether a vulnerability is resolved. Every security
+advisory in the results is listed under ``vulnerabilities`` with its
+tracking issue, if any. An advisory with a fix installable within the
+declared range keeps the verdict red while it is present, tracked or not.
+
 Verdict and exit codes
 ----------------------
 2 after writing whatever it can, when evidence is missing: the results
-directory is missing or empty, an expected check has no result (``--expect``,
-default :data:`results.EXPECTED_WEEKLY_CHECKS`), a file is unreadable or
-malformed, a JUnit file has no test cases, or the known-issues list reaches
-:data:`results.KNOWN_ISSUES_LIMIT` (it may be truncated). 1 after writing all
-three outputs, when a security finding is fixable within the declared range
-and no open issue tracks it. 0 otherwise. Suite or smoke failures do not
-fail this step: their own jobs are already red.
+directory is missing or empty, an expected check or matrix leg has no result
+(``--expect``: check ids or ``check:variant`` entries, default
+:data:`results.EXPECTED_WEEKLY_CHECKS`), a check result has status
+``error``, a file is unreadable or malformed, a JUnit file has no test cases,
+or the known-issues list reaches :data:`results.KNOWN_ISSUES_LIMIT` (it may be
+truncated). 1 after writing all three outputs, when a check result has
+status ``fail`` (a failed suite leg or smoke run) or a security advisory with
+a fix within the declared range is present. 0 otherwise. The verdict repeats
+what the check jobs already show, so the report alone says whether the week
+passed.
 """
 
 from __future__ import annotations
@@ -91,6 +112,7 @@ from tools.audit import results
 from tools.audit.results import Finding
 
 __all__ = [
+    "ACCEPTED_LABEL",
     "CANDIDATE_FIELDS",
     "KNOWN_DEFECT_PREFIX",
     "MODULE_CATEGORIES",
@@ -118,6 +140,9 @@ REPORT_MD = "audit-report.md"
 CANDIDATES_MD = "issue-candidates.md"
 
 KNOWN_DEFECT_PREFIX = "audit-known-defect:"
+
+#: pytest's exit status, written by the suite job next to its JUnit file.
+PYTEST_EXIT_PATTERN = "pytest-exit-code*.txt"
 TEST_FAILED_RULE = "test-failed"
 KNOWN_DEFECT_RULE = "known-defect"
 
@@ -146,6 +171,12 @@ _MARKER_RE = re.compile(
 )
 
 ISSUE_TITLE_PREFIX = "[Audit] "
+
+#: The label a maintainer adds to an issue to accept it as the tracker of the
+#: fingerprints it carries (see the module docstring). The weekly workflow
+#: fetches only issues with this label, and tests/test_workflow_policy.py
+#: keeps it out of every issue form.
+ACCEPTED_LABEL = "audit-accepted"
 
 #: (issue form field id, label) in the order a candidate block renders them.
 #: The issue form ``.github/ISSUE_TEMPLATE/audit_finding.yml`` declares the
@@ -228,6 +259,7 @@ class KnownIssue:
     state: str
     state_reason: Optional[str]
     fingerprints: frozenset[str]
+    accepted: bool = False
 
 
 def _one_line(text: str, limit: int = TITLE_LIMIT) -> str:
@@ -480,6 +512,43 @@ def _read_result(path: Path, source: str, inputs: Inputs) -> None:
             )
 
 
+def _leg_exit_code(paths: Sequence[Path], rel: Any, inputs: Inputs) -> Optional[int]:
+    """pytest's exit status recorded in a leg directory, or None.
+
+    None also when the leg recorded none (a local run); an unreadable or
+    duplicated record is a problem.
+    """
+    if not paths:
+        return None
+    if len(paths) > 1:
+        inputs.problems.append(
+            _problem(rel(paths[0].parent), "several pytest exit-code files in one leg")
+        )
+        return None
+    try:
+        text = paths[0].read_text(encoding="utf-8").strip()
+        return int(text)
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
+        inputs.problems.append(
+            _problem(rel(paths[0]), f"unreadable pytest exit code: {exc}")
+        )
+        return None
+
+
+def _pytest_exit_finding(code: int, source: str) -> Finding:
+    return Finding(
+        rule="pytest-exit",
+        category="regression",
+        severity="high",
+        subject="pytest exit status",
+        title=(
+            f"pytest exited with status {code} although no test failed: the "
+            f"coverage gate or a session-level error failed the run"
+        ),
+        evidence={"exit_code": code, "junit": source},
+    )
+
+
 def collect_inputs(root: Path) -> Inputs:
     """Read every recognized file under ``root`` (see the module docstring).
 
@@ -504,6 +573,9 @@ def collect_inputs(root: Path) -> Inputs:
 
     junit = [p for p in files if fnmatch.fnmatch(p.name.lower(), "junit*.xml")]
     pip_lists = [p for p in files if fnmatch.fnmatch(p.name.lower(), "pip-list*.json")]
+    exit_files = [
+        p for p in files if fnmatch.fnmatch(p.name.lower(), PYTEST_EXIT_PATTERN)
+    ]
     other_json = [
         p for p in files if p.suffix.lower() == ".json" and p not in pip_lists
     ]
@@ -537,6 +609,9 @@ def collect_inputs(root: Path) -> Inputs:
                 installed = parse_pip_list(lists_here[0].read_text(encoding="utf-8"))
             except (OSError, UnicodeDecodeError, ValueError) as exc:
                 inputs.problems.append(_problem(rel(lists_here[0]), str(exc)))
+        exit_code = _leg_exit_code(
+            [p for p in exit_files if p.parent == directory], rel, inputs
+        )
         for path in files_here:
             variant = (
                 directory.name
@@ -548,6 +623,11 @@ def collect_inputs(root: Path) -> Inputs:
             except (OSError, UnicodeDecodeError, ValueError) as exc:
                 inputs.problems.append(_problem(rel(path), str(exc)))
                 continue
+            if exit_code and run.status == "pass":
+                # Every test passed, yet pytest failed the run: the coverage
+                # gate or a session-level error, which JUnit does not record.
+                run.status = "fail"
+                run.findings.append(_pytest_exit_finding(exit_code, rel(path)))
             run.environment = {
                 "python": None,
                 "platform": None,
@@ -709,13 +789,34 @@ def resolve_upstream(finding: Finding, legs: Sequence[Leg]) -> Finding:
 # ---------------------------------------------------------------------------
 
 
+def _label_names(value: Any, where: str) -> set[str]:
+    """Casefolded names from gh's ``labels`` (objects with ``name``, or strings).
+
+    A missing ``labels`` key reads as no labels, so an issue fetched without
+    them is never accepted.
+    """
+    if value is None:
+        return set()
+    if not isinstance(value, list):
+        raise ValueError(f"{where} labels is not a list")
+    names = set()
+    for label in value:
+        name = label.get("name") if isinstance(label, Mapping) else label
+        if not isinstance(name, str):
+            raise ValueError(f"{where} has a label without a string name")
+        names.add(name.casefold())
+    return names
+
+
 def parse_known_issues(
     text: str, limit: int = results.KNOWN_ISSUES_LIMIT
 ) -> list[KnownIssue]:
-    """Read ``gh issue list --json number,title,state,stateReason,body``.
+    """Read ``gh issue list --json number,title,state,stateReason,body,labels``.
 
     Titles and bodies are scanned for ``pmm-audit:<fingerprint>`` markers and
-    then dropped: nothing else of them is kept.
+    then dropped: nothing else of them is kept. An issue is accepted when its
+    labels include :data:`ACCEPTED_LABEL` (GitHub label names are
+    case-insensitive).
 
     Raises:
         ValueError: On a malformed list, or one whose length reaches
@@ -752,12 +853,14 @@ def parse_known_issues(
             if value is not None and not isinstance(value, str):
                 raise ValueError(f"{where} {key} is not a string")
             texts.append(value or "")
+        labels = _label_names(item.get("labels"), where)
         issues.append(
             KnownIssue(
                 number=number,
                 state=state,
                 state_reason=reason.upper() if reason else None,
                 fingerprints=frozenset(_MARKER_RE.findall("\n".join(texts))),
+                accepted=ACCEPTED_LABEL.casefold() in labels,
             )
         )
     return issues
@@ -787,18 +890,41 @@ def decide(finding: Mapping[str, Any], issues: Sequence[KnownIssue]) -> dict[str
     Args:
         finding: Needs ``fingerprint``, ``category``, ``severity`` and
             ``classification``.
-        issues: Existing issues; with several matches, an open one wins,
-            then the highest-numbered (newest) closed one.
+        issues: Existing issues. Only accepted ones decide; issues closed as
+            duplicates are skipped. With several accepted matches, an open one
+            wins, then the highest-numbered (newest) closed one.
 
     Returns:
         ``{"kind", "issue", "label", "note", "candidate"}``.
     """
     fingerprint = finding["fingerprint"]
+    mentions = [
+        issue
+        for issue in issues
+        if fingerprint in issue.fingerprints and issue.state_reason != "DUPLICATE"
+    ]
     matches = sorted(
-        (issue for issue in issues if fingerprint in issue.fingerprints),
+        (issue for issue in mentions if issue.accepted),
         key=lambda issue: issue.number,
         reverse=True,
     )
+    unaccepted = sorted(issue.number for issue in mentions if not issue.accepted)
+    if not matches and unaccepted:
+        numbers = ", ".join(f"#{number}" for number in unaccepted[:5])
+        if len(unaccepted) > 5:
+            numbers += f" and {len(unaccepted) - 5} more"
+        # Recorded-only findings never become candidates, so they need no note.
+        if not (
+            finding["severity"] in ("info", "low")
+            and finding.get("classification") == "harmless"
+        ):
+            return _decision(
+                NEW_KIND,
+                None,
+                True,
+                f"mentioned by {numbers}, which no maintainer has accepted "
+                f"(label {ACCEPTED_LABEL}); it does not track this finding",
+            )
     open_matches = [issue for issue in matches if issue.state == "OPEN"]
     if open_matches:
         number = open_matches[0].number
@@ -852,6 +978,11 @@ def _check_order(check: str) -> int:
 def _run_order(run_: CheckRun) -> tuple[int, str, str]:
     """Sort key for check runs: by check, then variant, then source."""
     return (_check_order(run_.check), run_.variant, run_.source)
+
+
+def _run_label(run_: CheckRun) -> str:
+    """``check (variant)`` with the variant on one bounded line."""
+    return f"{run_.check} ({_one_line(run_.variant, 120)})"
 
 
 def _merge(runs: Sequence[CheckRun], legs: Sequence[Leg]) -> list[dict[str, Any]]:
@@ -914,6 +1045,51 @@ def _is_advisory(item: Mapping[str, Any]) -> bool:
     )
 
 
+def _vulnerabilities(findings: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Every advisory present, with its fix status and its tracking issue.
+
+    An advisory in the results is unresolved by definition; ``tracked_by``
+    names the accepted open issue that tracks it and changes nothing else.
+    """
+
+    def strings(value: Any) -> list[str]:
+        if not isinstance(value, list):
+            return []
+        return [str(part) for part in value]
+
+    rows = []
+    for item in findings:
+        if not _is_advisory(item):
+            continue
+        evidence, decision = item["evidence"], item["decision"]
+        versions = evidence.get("versions")
+        advisory = evidence.get("advisory")
+        rows.append(
+            {
+                "fingerprint": item["fingerprint"],
+                "marker": item["marker"],
+                "package": evidence["package"],
+                "advisory": advisory if isinstance(advisory, str) else None,
+                "versions": (
+                    {str(k): str(v) for k, v in versions.items()}
+                    if isinstance(versions, Mapping)
+                    else {}
+                ),
+                "fix_versions": strings(evidence.get("fix_versions")),
+                "seen_in": strings(evidence.get("seen_in")),
+                "fix_in_declared_range": evidence.get("fix_in_declared_range"),
+                "fix_reachable": evidence.get("fix_reachable"),
+                "fixable": evidence.get("fixable_in_range") is True,
+                "tracked_by": (
+                    decision["issue"]
+                    if decision["kind"] == DUPLICATE_OPEN_KIND
+                    else None
+                ),
+            }
+        )
+    return rows
+
+
 def candidate_groups(
     findings: Sequence[Mapping[str, Any]],
 ) -> list[list[dict[str, Any]]]:
@@ -967,14 +1143,29 @@ def build_report(
 
     Args:
         inputs: What :func:`collect_inputs` read.
-        expect: Check ids that must have at least one result.
+        expect: Check ids that must have at least one result, or
+            ``check:variant`` entries for one matrix leg each.
         issues: Existing issues, or None when none were provided.
         problems: Problems found outside the results directory.
         environ: Environment for the run metadata (``GITHUB_*``).
     """
     all_problems = [dict(p) for p in (*inputs.problems, *problems)]
     present = {run_.check for run_ in inputs.runs}
-    missing = [check for check in expect if check not in present]
+    present_legs = {(run_.check, run_.variant) for run_ in inputs.runs}
+    missing = [
+        entry
+        for entry in expect
+        if (
+            tuple(entry.split(":", 1)) not in present_legs
+            if ":" in entry
+            else entry not in present
+        )
+    ]
+    ordered = sorted(inputs.runs, key=_run_order)
+    # Variants come from result files and artifact names: one line, bounded,
+    # before they reach the verdict text, the Markdown and stderr.
+    errored = [_run_label(r) for r in ordered if r.status == "error"]
+    failed = [_run_label(r) for r in ordered if r.status == "fail"]
     findings = _merge(inputs.runs, inputs.legs)
     matched: list[dict[str, Any]] = []
     known = issues or ()
@@ -996,25 +1187,34 @@ def build_report(
     groups = candidate_groups(findings)
     candidates = [item["fingerprint"] for group in groups for item in group]
     kinds = [item["decision"]["kind"] for item in findings]
-    fixable = [
-        item["fingerprint"]
-        for item in findings
-        if item["category"] == "security"
-        and item["evidence"].get("fixable_in_range") is True
-        and item["decision"]["kind"] != DUPLICATE_OPEN_KIND
+    vulnerabilities = _vulnerabilities(findings)
+    # Tracking prevents a duplicate issue; it does not resolve anything.
+    unresolved = [row["fingerprint"] for row in vulnerabilities if row["fixable"]]
+    tracked = [
+        row["fingerprint"]
+        for row in vulnerabilities
+        if row["fixable"] and row["tracked_by"] is not None
     ]
     reasons = []
     if missing:
-        reasons.append(f"expected checks without a result: {', '.join(missing)}")
+        reasons.append(f"expected results missing: {', '.join(missing)}")
+    if errored:
+        reasons.append(f"checks that did not complete: {', '.join(errored)}")
     if all_problems:
         reasons.append(f"input problems: {len(all_problems)}")
-    if fixable:
+    if failed:
+        reasons.append(f"failed checks: {', '.join(failed)}")
+    if unresolved:
         reasons.append(
-            f"security advisories fixable within the declared range and not "
-            f"tracked by an open issue: {len(fixable)}"
+            f"security advisories with a fix within the declared range are "
+            f"still present: {len(unresolved)} ({len(tracked)} tracked by an "
+            f"accepted open issue)"
         )
-    exit_code = 2 if (missing or all_problems) else 1 if fixable else 0
-    ordered = sorted(inputs.runs, key=_run_order)
+    exit_code = (
+        2
+        if (missing or errored or all_problems)
+        else 1 if (failed or unresolved) else 0
+    )
     checks = [
         {
             "check": run_.check,
@@ -1028,13 +1228,13 @@ def build_report(
     ]
     checks += [
         {
-            "check": check,
-            "variant": None,
+            "check": entry.split(":", 1)[0],
+            "variant": entry.split(":", 1)[1] if ":" in entry else None,
             "status": "missing",
             "source": None,
             "findings": 0,
         }
-        for check in missing
+        for entry in missing
     ]
     return {
         "schema": results.REPORT_SCHEMA,
@@ -1043,13 +1243,20 @@ def build_report(
             "status": {0: "green", 1: "red", 2: "incomplete"}[exit_code],
             "exit_code": exit_code,
             "reasons": reasons,
-            "fixable_untracked_advisories": fixable,
+            "failed_checks": failed,
+            "errored_checks": errored,
+            "unresolved_fixable_advisories": unresolved,
+            "tracked_unresolved_advisories": tracked,
         },
         "counts": {
             "check_results": len(inputs.runs),
             "missing_checks": len(missing),
+            "failed_checks": len(failed),
+            "errored_checks": len(errored),
             "problems": len(all_problems),
             "findings": len(findings),
+            "advisories": len(vulnerabilities),
+            "unresolved_fixable_advisories": len(unresolved),
             "candidates": len(candidates),
             "candidate_blocks": len(groups),
             "already_tracked": kinds.count(DUPLICATE_OPEN_KIND),
@@ -1060,6 +1267,7 @@ def build_report(
         "missing_checks": missing,
         "problems": all_problems,
         "checks": checks,
+        "vulnerabilities": vulnerabilities,
         "findings": findings,
         "candidates": candidates,
         "known_issues": {
@@ -1148,7 +1356,12 @@ def _summary_line(report: Mapping[str, Any]) -> str:
     return (
         f"Audit {verdict['status']} (exit {verdict['exit_code']}). "
         f"Check results: {counts['check_results']}. "
-        f"Missing checks: {counts['missing_checks']}. "
+        f"Missing results: {counts['missing_checks']}. "
+        f"Failed checks: {counts['failed_checks']}. "
+        f"Errored checks: {counts['errored_checks']}. "
+        f"Unresolved advisories with a fix in range: "
+        f"{counts['unresolved_fixable_advisories']} "
+        f"(tracked: {len(verdict['tracked_unresolved_advisories'])}). "
         f"Findings: {counts['findings']}. "
         f"Issue candidates: {counts['candidates']} "
         f"(paste blocks: {counts['candidate_blocks']}). "
@@ -1184,6 +1397,43 @@ def _tests_cell(tests: Optional[Mapping[str, int]]) -> str:
     )
 
 
+def _vulnerability_lines(rows: Sequence[Mapping[str, Any]]) -> list[str]:
+    """The vulnerabilities table: fix status and tracking side by side."""
+    lines = ["", "## Vulnerabilities", ""]
+    if not rows:
+        return lines + ["No security advisory in this run."]
+    lines += [
+        "Every advisory listed is present in an audited environment. Tracking "
+        "only stops a duplicate issue; a tracked advisory is still unresolved.",
+        "",
+        "| Package | Advisory | Installed | Fix versions | Fix within declared "
+        "range | Tracking |",
+        "|---|---|---|---|---|---|",
+    ]
+    for row in rows:
+        installed = ", ".join(
+            f"{version} ({label})" for label, version in sorted(row["versions"].items())
+        )
+        if row["fixable"]:
+            fixable = "yes"
+        elif row["fix_in_declared_range"] and row["fix_reachable"] is False:
+            fixable = "no: the newest allowed resolution is still affected"
+        else:
+            fixable = "no"
+        tracking = (
+            f"#{row['tracked_by']} (open, accepted); still unresolved"
+            if row["tracked_by"] is not None
+            else "untracked"
+        )
+        lines.append(
+            f"| {_cell(row['package'])} | {_cell(row['advisory'] or '?')} | "
+            f"{_cell(installed or '?')} | "
+            f"{_cell(', '.join(row['fix_versions']) or 'none')} | {fixable} | "
+            f"{tracking} |"
+        )
+    return lines
+
+
 def render_summary(report: Mapping[str, Any]) -> str:
     """Summary line, verdict, per-check table, problems and candidate index."""
     verdict = report["verdict"]
@@ -1193,7 +1443,11 @@ def render_summary(report: Mapping[str, Any]) -> str:
         _summary_line(report),
         "",
         f"Verdict: **{verdict['status']}** (exit {verdict['exit_code']})"
-        + (": " + "; ".join(verdict["reasons"]) if verdict["reasons"] else "")
+        + (
+            ": " + "; ".join(_escape(reason) for reason in verdict["reasons"])
+            if verdict["reasons"]
+            else ""
+        )
         + ".",
         "",
         _run_line(report),
@@ -1220,6 +1474,7 @@ def render_summary(report: Mapping[str, Any]) -> str:
             f"- {_code(p['source'])}: {_code(p['problem'], 600)}"
             for p in report["problems"]
         ]
+    lines += _vulnerability_lines(report["vulnerabilities"])
     lines += ["", "## Issue candidates", ""]
     by_fp = {item["fingerprint"]: item for item in report["findings"]}
     if report["candidates"]:
@@ -1302,7 +1557,7 @@ def render_report(report: Mapping[str, Any]) -> str:
         lines += [f"### {category} ({len(items)})", ""]
         for item in items:
             lines += _finding_section(item)
-    lines += ["## Already tracked", ""]
+    lines += ["## Already tracked (open issues a maintainer accepted)", ""]
     tracked = [i for i in findings if i["decision"]["kind"] == DUPLICATE_OPEN_KIND]
     lines += (_index_table(tracked, report) if tracked else ["None."]) + [""]
     lines += ["## Suppressed (closed as not planned)", ""]
@@ -1586,10 +1841,16 @@ def _parse_expect(text: Optional[str]) -> list[str]:
         part = part.strip()
         if part and part not in expect:
             expect.append(part)
-    unknown = [check for check in expect if check not in results.CHECK_IDS]
+    unknown = [
+        entry
+        for entry in expect
+        if entry.split(":", 1)[0] not in results.CHECK_IDS
+        or (":" in entry and not entry.split(":", 1)[1])
+    ]
     if unknown:
         raise ValueError(
-            f"--expect names unknown checks {unknown}; known: {list(results.CHECK_IDS)}"
+            f"--expect names unknown checks or empty variants {unknown}; known "
+            f"checks: {list(results.CHECK_IDS)}"
         )
     if not expect:
         raise ValueError("--expect names no check")
@@ -1633,7 +1894,8 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--expect",
         default=None,
-        help="comma-separated check ids that must have a result (default: "
+        help="comma-separated check ids, or check:variant for one matrix leg, "
+        "that must have a result (default: "
         f"{','.join(results.EXPECTED_WEEKLY_CHECKS)})",
     )
     parser.add_argument(
@@ -1641,7 +1903,8 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         type=Path,
         default=None,
         help="output of gh issue list --state all --json "
-        "number,title,state,stateReason,body",
+        f"number,title,state,stateReason,body,labels; only issues labelled "
+        f"{ACCEPTED_LABEL} track findings",
     )
     parser.add_argument(
         "--out",
@@ -1681,8 +1944,10 @@ def run(args: argparse.Namespace) -> int:
             errors.append(f"could not append to {args.github_summary}: {exc}")
     for problem in report["problems"]:
         print(f"error: {problem['source']}: {problem['problem']}", file=sys.stderr)
-    for check in report["missing_checks"]:
-        print(f"error: expected check {check!r} produced no result", file=sys.stderr)
+    for entry in report["missing_checks"]:
+        print(f"error: expected result {entry!r} is missing", file=sys.stderr)
+    for check in report["verdict"]["errored_checks"]:
+        print(f"error: check {check} did not complete", file=sys.stderr)
     for error in errors:
         print(f"error: {error}", file=sys.stderr)
     print(_summary_line(report))

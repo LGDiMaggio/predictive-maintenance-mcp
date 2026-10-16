@@ -295,3 +295,22 @@ def test_the_type_check_job_still_runs_the_mypy_gate(workflow):
 
 def test_the_format_check_job_still_runs_black(workflow):
     assert "black --check" in job_script(workflow, "format-check")
+
+
+def test_the_pull_request_package_smoke_job_still_installs_the_wheel(workflow):
+    assert "python -m tools.audit package-smoke" in job_script(
+        workflow, "package-smoke"
+    )
+
+
+def test_no_release_upload_runs_before_the_wheel_is_smoke_tested(workflows):
+    """The TestPyPI upload waits for the smoke job, and PyPI waits for TestPyPI,
+    so a wheel that does not install and start never reaches either index."""
+    publish = workflows["publish.yml"]
+    assert "python -m tools.audit package-smoke" in job_script(publish, "smoke")
+    needs = publish["jobs"]["publish-testpypi"].get("needs") or []
+    assert "smoke" in ([needs] if isinstance(needs, str) else needs)
+    pypi_needs = publish["jobs"]["publish-pypi"].get("needs") or []
+    assert "publish-testpypi" in (
+        [pypi_needs] if isinstance(pypi_needs, str) else pypi_needs
+    )

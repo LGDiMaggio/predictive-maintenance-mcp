@@ -119,7 +119,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   vulnerabilities. Every run uploads a structured report and a list of
   de-duplicated issue candidates for a maintainer to triage; nothing is
   filed automatically, the workflow holds a read-only token, and no step
-  calls an AI service. A new MCP SDK major is reported, never adopted. Each
+  calls an AI service. An issue tracks a finding only once a maintainer
+  labels it `audit-accepted`, and a tracked vulnerability stays listed as
+  unresolved, and keeps the weekly verdict red, until it is gone. A new MCP
+  SDK major is reported, never adopted. Each
   check also runs locally through `python -m tools.audit`, and
   `docs/QUALITY_AUDITS.md` describes what runs where, which failure
   scenarios are covered and which are not, and how to triage and extend

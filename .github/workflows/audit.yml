@@ -11,7 +11,8 @@
 # calls an AI service, and the only token is the default read-only one
 # (pinned by tests/test_workflow_policy.py). No step uses continue-on-error
 # (pinned by tests/test_ci_gates.py): each check job carries its own red
-# status, and the report job's exit code carries the weekly verdict.
+# status, and the report job's exit code carries the weekly verdict, which
+# repeats every check's status and adds the vulnerability verdict.
 name: Quality audit
 
 on:
@@ -20,11 +21,12 @@ on:
     - cron: "17 5 * * 1"
   # Manual runs take no inputs: an input would add a shell-injection surface.
   workflow_dispatch:
-  # A change to the audit itself runs the audit before it merges.
+  # A change to the audit itself runs the audit before it merges. Dependabot's
+  # configuration is pinned by tests/test_workflow_policy.py on every pull
+  # request, so it does not trigger this run.
   pull_request:
     paths:
       - ".github/workflows/audit.yml"
-      - ".github/dependabot.yml"
       - "tools/audit/**"
 
 permissions:
@@ -38,6 +40,9 @@ jobs:
   suite:
     name: Suite ${{ matrix.leg }} / Python ${{ matrix.python }}
     runs-on: ubuntu-latest
+    # Every job has a timeout (pinned by tests/test_workflow_policy.py): a hung
+    # step would otherwise hold a runner for GitHub's six-hour default.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -82,9 +87,17 @@ jobs:
         run: python -m pip install -e ".[dev]"
 
       # The repository's default pytest options apply, so the coverage gate
-      # from pyproject.toml holds here exactly as on pull requests.
+      # from pyproject.toml holds here exactly as on pull requests. pytest's
+      # exit status is recorded next to the JUnit file: a run whose tests all
+      # passed can still fail on the coverage gate, which JUnit does not show.
       - name: Run the test suite
-        run: pytest --junitxml=audit-results/junit.xml
+        run: |
+          set +e
+          pytest --junitxml=audit-results/junit.xml
+          status=$?
+          mkdir -p audit-results
+          echo "$status" > audit-results/pytest-exit-code.txt
+          exit "$status"
 
       # The report resolves upstream findings against the versions each leg
       # actually installed, so this runs after a failed install or suite too.
@@ -104,6 +117,7 @@ jobs:
   package-smoke:
     name: Package smoke ${{ matrix.variant }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -151,6 +165,7 @@ jobs:
   upstream:
     name: Upstream releases
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
       - uses: actions/checkout@v7
@@ -182,6 +197,7 @@ jobs:
   security:
     name: Vulnerability audit
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v7
@@ -204,10 +220,9 @@ jobs:
       # pip-audit exits non-zero both when it finds a vulnerability and when
       # it fails, so its exit code is logged and never trusted. Its JSON is
       # the evidence, and the normalize step below is the gate: it fails
-      # closed when a file is missing or unparseable, or does not cover every
+      # closed when a file is missing or unparseable, or does not audit every
       # declared dependency. Whether an advisory turns the week red is the
-      # report's decision, the only step that knows which ones an open issue
-      # already tracks.
+      # report's decision.
       - name: Audit the uv.lock pins
         run: |
           pip-audit -r "$RUNNER_TEMP/lock-reqs.txt" --no-deps --disable-pip \
@@ -252,6 +267,7 @@ jobs:
     # result fails the report, and every run leaves a report behind.
     if: always()
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     # Job-level permissions replace the top-level block, so contents: read is
     # repeated. issues: read lets the report match findings against existing
     # issues; it cannot create, edit or comment on any.
@@ -276,19 +292,48 @@ jobs:
         with:
           path: audit-results
 
-      # The limit equals KNOWN_ISSUES_LIMIT in tools/audit/results.py: the
-      # report treats a list that long as possibly truncated and fails.
-      - name: Fetch the issues that carry an audit fingerprint
+      # Only issues a maintainer accepted with the audit-accepted label (the
+      # report's ACCEPTED_LABEL) can track a finding: anyone can open an issue
+      # that quotes a marker. The report reads each issue's labels and
+      # decides. The issues filed through the form (label audit) are fetched
+      # too, so a finding quoted only by an issue nobody accepted yet carries
+      # a note naming it. Label filters are plain list queries, not searches,
+      # so a new issue is seen at once. Each limit equals KNOWN_ISSUES_LIMIT
+      # in tools/audit/results.py: the report treats a merged list that long
+      # as possibly truncated and fails.
+      - name: Fetch the accepted and the form-filed audit issues
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh issue list --state all --search "pmm-audit in:body" --limit 1000 \
-            --json number,title,state,stateReason,body > "$RUNNER_TEMP/known-issues.json"
+          gh issue list --state all --label audit-accepted --limit 1000 \
+            --json number,title,state,stateReason,body,labels > "$RUNNER_TEMP/accepted.json"
+          gh issue list --state all --label audit --limit 1000 \
+            --json number,title,state,stateReason,body,labels > "$RUNNER_TEMP/form.json"
+          jq -s 'add | unique_by(.number)' "$RUNNER_TEMP/accepted.json" "$RUNNER_TEMP/form.json" \
+            > "$RUNNER_TEMP/known-issues.json"
 
       - name: Build the report
         if: always()
+        env:
+          # One entry per matrix leg above (pinned by
+          # tests/test_workflow_policy.py), so a leg that uploaded nothing is
+          # reported missing instead of disappearing from the verdict.
+          EXPECTED_RESULTS: >-
+            suite:suite-floors-py3.11,
+            suite:suite-newest-py3.11,
+            suite:suite-newest-py3.12,
+            suite:suite-newest-py3.14,
+            package-smoke:wheel-ubuntu-py3.11,
+            package-smoke:wheel-ubuntu-py3.13,
+            package-smoke:wheel-ubuntu-py3.14,
+            package-smoke:wheel-windows-py3.12,
+            package-smoke:wheel-macos-py3.12,
+            package-smoke:sdist-ubuntu-py3.12,
+            upstream,
+            security
         run: |
           python -m tools.audit report --results audit-results \
+            --expect "$EXPECTED_RESULTS" \
             --known-issues "$RUNNER_TEMP/known-issues.json" \
             --out audit-report \
             --github-summary "$GITHUB_STEP_SUMMARY"

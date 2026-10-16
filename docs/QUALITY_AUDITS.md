@@ -26,11 +26,11 @@ This page explains what runs where, which failure scenarios are covered and whic
 | | `tests.yml`, jobs `lint`, `type-check`, `format-check` | flake8 syntax and undefined-name errors, mypy against the frozen baseline, Black over `src`, `tests`, `benchmarks` and `tools` |
 | | `tests.yml`, job `package-smoke` (Ubuntu, Python 3.11) | Builds the wheel, installs it into a fresh virtual environment outside the checkout, and runs the stdio smoke harness against the installed console script |
 | Release tag `v*` | `publish.yml`, job `smoke` | The same harness on the exact wheel the build job produced; the TestPyPI and PyPI uploads wait for it |
-| Weekly (Mondays 05:17 UTC), manual (Run workflow), and pull requests that change `.github/workflows/audit.yml`, `.github/dependabot.yml` or `tools/audit/` | `audit.yml`, job `suite` | The full test suite at the declared dependency floors (Python 3.11) and at the newest in-range releases (Python 3.11, 3.12 and 3.14) |
+| Weekly (Mondays 05:17 UTC), manual (Run workflow), and pull requests that change `.github/workflows/audit.yml` or `tools/audit/` | `audit.yml`, job `suite` | The full test suite at the declared dependency floors (Python 3.11) and at the newest in-range releases (Python 3.11, 3.12 and 3.14) |
 | | `audit.yml`, job `package-smoke` | The wheel on Ubuntu (Python 3.11, 3.13, 3.14), Windows (3.12) and macOS (3.12), and the sdist on Ubuntu (3.12) |
 | | `audit.yml`, job `upstream` | The compatibility inventory against PyPI release data, GitHub releases, and the protocol revisions the installed MCP SDK knows |
 | | `audit.yml`, job `security` | pip-audit over the `uv.lock` pins and over a fresh resolution of the project |
-| | `audit.yml`, job `report` | Runs after every other job, also when they fail; writes the report and the issue candidates and sets the weekly verdict |
+| | `audit.yml`, job `report` | Runs after every other job, also when they fail; writes the report and the issue candidates and sets the weekly verdict, which repeats every check's status and adds the vulnerability verdict |
 | Weekly | Dependabot | Grouped version-update pull requests for GitHub Actions; Python security-update pull requests once enabled in the repository settings (see [Maintenance](#maintenance)) |
 
 The guard tests that run in every pull request:
@@ -40,7 +40,7 @@ The guard tests that run in every pull request:
 - `tests/test_diagnostic_invariants.py`: diagnostic invariants checked against closed-form references, with known violations recorded as strict expected failures.
 - `tests/test_install_docs.py`: every shell command in the install and setup documents, including this page.
 - `tests/test_doc_drift.py`: retired endpoint names and unresolvable project imports in public documentation, notebooks and examples, and the identifiers named in the server instructions.
-- `tests/test_workflow_policy.py` and `tests/test_ci_gates.py`: workflow token permissions, secrets, the weekly audit's expected artifacts, the Dependabot rules, and that no check is made non-blocking.
+- `tests/test_workflow_policy.py` and `tests/test_ci_gates.py`: workflow token permissions, secrets, the weekly audit's expected artifacts and matrix legs, the accepted-issue fetch, job timeouts, the Dependabot rules, the release smoke gate, and that no check is made non-blocking.
 - `tests/test_audit_results.py`, `tests/test_audit_package_smoke.py`, `tests/test_audit_deps.py`, `tests/test_audit_security.py`, `tests/test_audit_upstream.py` and `tests/test_audit_report.py`: the audit tooling itself (the result contract, the CLI, and each check), offline, on recorded fixtures.
 
 The weekly workflow holds a read-only token (the report job adds `issues: read` to match findings against existing issues), uses no secret other than the default token, and contains no AI step.
@@ -60,8 +60,10 @@ Nothing in it writes to the repository or the issue tracker.
 - Declared dependency floors that no longer install or no longer pass the suite.
 - Breakage caused by upstream releases published between pushes: the weekly newest-resolution suite and package-smoke legs.
 - New MCP SDK minors and majors, new protocol revisions and specification releases, new majors of the scientific stack reachable within the declared ranges, interpreter support splits, and packaging deprecations with a due date: the weekly upstream check.
-- Known vulnerabilities in the locked dependencies and in a freshly resolved install: the weekly security check, which also fails when an audit does not cover every declared dependency.
-- A workflow gaining a write scope or `write-all`, the weekly audit gaining a secret or an AI provider key, a check made non-blocking with `continue-on-error`, or Dependabot losing its rule against MCP SDK major updates.
+- Known vulnerabilities in the locked dependencies and in a freshly resolved install: the weekly security check, which also fails when pip-audit did not check every declared dependency. A tracked vulnerability stays unresolved in the report until it is gone.
+- A matrix leg that produced no result, or a check that could not run to completion: the report is incomplete instead of green.
+- An issue opened or closed by someone outside the project hiding a finding: only issues a maintainer accepted with the `audit-accepted` label track or suppress findings.
+- A workflow gaining a write scope or `write-all`, the weekly audit gaining a secret or an AI provider key, a check made non-blocking with `continue-on-error`, a release upload no longer waiting for the smoke test, or Dependabot losing its rule against MCP SDK major updates.
 
 ### Not covered
 
@@ -165,7 +167,8 @@ python -m tools.audit security --lock .audit/pip-audit/lock.json --fresh .audit/
 ```
 
 On Windows the fresh environment's interpreter is `.audit/fresh/Scripts/python.exe`.
-pip-audit's exit code is not meaningful here (a finding and a failure share non-zero codes); `security` reads its JSON instead and exits 2 when a file is missing, unparseable, or does not cover every declared dependency.
+pip-audit's exit code is not meaningful here (a finding and a failure share non-zero codes); `security` reads its JSON instead and exits 2 when a file is missing, unparseable, or does not audit every declared dependency (a declared dependency pip-audit skipped counts as not audited).
+An advisory counts as fixable within the declared range only when a fix version is listed, the declared range admits it, and the fresh resolution does not still carry the advisory: when the newest releases the constraints allow are still affected, refreshing the lock cannot fix it.
 Raw pip-audit output stays outside `.audit/results/`: the report reads only the normalized `security` result.
 
 ### Building a report
@@ -175,14 +178,15 @@ python -m tools.audit report --results .audit/results --expect smoke,upstream --
 ```
 
 `--results` is searched recursively.
-`--expect` lists, comma-separated, the checks that must have produced a result; when one is missing the report is incomplete and exits 2.
-Its default is the weekly set (`suite,package-smoke,upstream,security`), which a local run rarely produces in full, so name the checks you actually ran.
+`--expect` lists, comma-separated, the results that must be present: a check id (at least one result of that check), or `check:variant` for one matrix leg. When one is missing the report is incomplete and exits 2.
+Its default is the weekly set of checks (`suite,package-smoke,upstream,security`), which a local run rarely produces in full, so name the checks you actually ran.
 Check ids are `smoke`, `package-smoke`, `upstream`, `security` and `suite`.
+The weekly workflow names every matrix leg (for example `suite:suite-floors-py3.11` and `package-smoke:wheel-windows-py3.12`), so a leg that failed before uploading its result is reported missing instead of disappearing.
 
-To de-duplicate against existing issues, as the weekly run does, fetch them with the GitHub CLI and pass the file:
+To de-duplicate against existing issues, fetch the issues a maintainer accepted and pass the file (the weekly run also fetches the form-filed issues, to name those nobody accepted yet):
 
 ```bash
-gh issue list --state all --search "pmm-audit in:body" --limit 1000 --json number,title,state,stateReason,body > .audit/known-issues.json
+gh issue list --state all --label audit-accepted --limit 1000 --json number,title,state,stateReason,body,labels > .audit/known-issues.json
 python -m tools.audit report --results .audit/results --expect smoke,upstream --known-issues .audit/known-issues.json --out .audit/report
 ```
 
@@ -193,22 +197,26 @@ The weekly run decides them; do not file them from a local run.
 
 The report step writes three files:
 
-- `audit-report.json`: the complete report (schema `pmm-audit-report/1`): run metadata, the per-check status table, every finding with its de-duplication decision, the candidate list and the verdict. This is the file to analyze further.
-- `audit-report.md`: the same content for reading: a summary line, the verdict, a per-check table, the candidate index, findings by category, already tracked, suppressed, recorded only, and the environment of each check.
+- `audit-report.json`: the complete report (schema `pmm-audit-report/1`): run metadata, the per-check status table, every vulnerability with its fix and tracking status, every finding with its de-duplication decision, the candidate list and the verdict. This is the file to analyze further.
+- `audit-report.md`: the same content for reading: a summary line, the verdict, a per-check table, the vulnerabilities table, the candidate index, findings by category, already tracked, suppressed, recorded only, and the environment of each check.
 - `issue-candidates.md`: one ready-to-paste block per candidate, with a title and a body whose sections match the "Audit finding" issue form.
 
 The per-check table has one row per result: check, variant (the matrix cell), status, number of findings, test counts for suite legs, and the source file.
-A status is `pass`, `fail`, `error` (the check could not run) or `missing` (an expected check produced no result).
+A status is `pass`, `fail`, `error` (the check could not run to completion) or `missing` (an expected check or matrix leg produced no result).
+A suite leg whose tests all passed but whose pytest run failed (the coverage gate, a session error) is `fail`, with a `pytest-exit` finding: the suite job records pytest's exit status next to its JUnit file.
+
+The vulnerabilities table lists every advisory found in the lock pins or the fresh install: the installed versions, the fix versions, whether a fix is installable within the declared range, and the accepted open issue that tracks it, if any.
+Tracking and resolution are separate: a tracked advisory is not proposed as a new issue candidate, but it stays in the table as unresolved, and in the verdict, until it no longer appears.
 
 The exit code of `report`, also shown as the verdict:
 
 | Exit code | Verdict | Meaning |
 |---|---|---|
-| 0 | green | All expected evidence is present and no untracked fixable advisory was found |
-| 1 | red | A vulnerability has a fix within the declared dependency range and no open issue tracks it |
-| 2 | incomplete | Evidence is missing or malformed: an expected check without a result, an empty or missing results directory, an unreadable file, a JUnit file without test cases, or a known-issues list that may be truncated |
+| 0 | green | All expected evidence is present, every check passed, and no advisory with a fix within the declared range is present |
+| 1 | red | A check failed (a suite leg or a smoke run), or an advisory with a fix within the declared dependency range is present, whether or not an issue tracks it |
+| 2 | incomplete | Evidence is missing or malformed: an expected check or matrix leg without a result, a check that could not run to completion, an empty or missing results directory, an unreadable file, a JUnit file without test cases, or a known-issues list that may be truncated |
 
-Suite and smoke failures do not change the report's exit code, because their own jobs are already red.
+The verdict repeats every check's status, so the report alone says whether the week passed.
 
 In CI, open the run of the "Quality audit" workflow: the report's Markdown summary is on the run's summary page, and the three files are in the `audit-report` artifact, kept for 90 days.
 Each check job also uploads its raw results (`suite-<leg>-py<version>`, `package-smoke-<variant>`, `upstream`, `security`).
@@ -227,23 +235,33 @@ Two exceptions are intentional:
 - A security finding's subject is the package name plus the advisory id, so each advisory has its own fingerprint, and a later fix version or alias does not change it.
 
 The marker `pmm-audit:<fingerprint>` appears in each candidate's title and body.
-Later runs recognize an issue by this marker in its title or body; the weekly run searches issue bodies, so the marker must stay in the body.
+Later runs recognize an issue by this marker in its title or body, once a maintainer has accepted the issue.
+
+### Accepted issues
+
+Anyone with a GitHub account can open an issue and quote a marker, and an issue's author can close it as not planned.
+So an issue counts for de-duplication only after a maintainer accepts it by adding the `audit-accepted` label: only users with triage access can add labels, and no issue form applies this one (a policy test pins both the label filter in the workflow and its absence from every form).
+The weekly run fetches the issues with this label and the issues filed through the form (label `audit`), and the report decides from each issue's labels.
+An issue without the acceptance label never tracks or suppresses a finding: the finding stays a candidate, with a note naming the issue, so a maintainer can accept that issue instead of filing a new one.
+After acceptance, an issue's author can still edit its title and body, adding markers included.
+The effect is limited to hiding other non-security candidates, since security findings are never suppressed and tracking never changes the vulnerability verdict; review an accepted issue's markers when its body changes.
 
 ### De-duplication
 
 Findings with the same fingerprint are merged within a run, listing every check and variant that reported them.
-Each merged finding is then compared with existing issues:
+Each merged finding is then compared with the accepted issues; issues closed as duplicates are skipped, because the issue they duplicate carries the marker if it tracks the finding:
 
 | Situation | Decision | In `issue-candidates.md` |
 |---|---|---|
-| An open issue carries the marker | already tracked (`duplicate-open #N`); add new evidence to that issue by hand | No, listed under "Already tracked" |
+| An accepted open issue carries the marker | already tracked (`duplicate-open #N`); add new evidence to that issue by hand. A tracked vulnerability stays unresolved in the vulnerabilities table and the verdict | No, listed under "Already tracked" |
 | Severity info or low, and classified harmless | recorded only | No |
-| The newest matching issue was closed as not planned | suppressed (`suppressed #N`) | No, listed under "Suppressed" |
+| The newest accepted matching issue was closed as not planned | suppressed (`suppressed #N`) | No, listed under "Suppressed" |
 | The same, for a security finding | never suppressed; annotated with the issue number | Yes |
-| The newest matching issue was closed for another reason (normally as completed) | regression (`regression-of #N`) | Yes, referencing the issue |
+| The newest accepted matching issue was closed for another reason (normally as completed) | regression (`regression-of #N`) | Yes, referencing the issue |
+| Only issues no maintainer accepted carry the marker | new, with a note naming them | Yes |
 | No matching issue | new | Yes |
 
-When several issues match, an open one wins, then the newest closed one.
+When several accepted issues match, an open one wins, then the newest closed one.
 Security advisories for the same package share one candidate block, with one marker per advisory.
 Issue titles and bodies are used for marker matching only and are never copied into the report.
 
@@ -252,17 +270,20 @@ Issue titles and bodies are used for marker matching only and are never copied i
 Nothing is filed automatically.
 For each candidate you decide to file:
 
-1. Search existing issues, open and closed, for every `pmm-audit:` marker in the block.
+1. Search existing issues, open and closed, for every `pmm-audit:` marker in the block. If an issue someone else opened already carries the markers, accept it (step 4) instead of filing a new one.
 2. Open a new issue with the "Audit finding" form and copy the title and each field from the block, keeping every marker unchanged in the title and in the fingerprint field.
 3. Add what the block cannot know: whether the finding is real, its impact, and a proposed next step.
+4. Add the `audit-accepted` label. Until then, later runs keep proposing the finding.
 
-A candidate that is not a real problem can be filed and closed as not planned, so later runs suppress it (security advisories excepted).
+A candidate that is not a real problem can be filed, accepted and closed as not planned, so later runs suppress it (security advisories excepted).
+The author of an issue can close it too; if an accepted issue is closed in a way you do not agree with, reopen it, or remove the label so it no longer counts.
 
 ### A weekly run that stays red
 
-The report keeps the weekly run red while a vulnerability with a fix inside the declared dependency range is not tracked by an open issue.
-It stops doing so once an open issue carries the advisory's marker, or once the advisory no longer appears (for example after the lock is updated past it).
-Check jobs carry their own red status: a failed suite or smoke leg, an upstream source that could not be read, or a security normalization error.
+The report keeps the weekly run red while a check fails or a vulnerability with a fix inside the declared dependency range is present, tracked or not.
+An accepted open issue stops the advisory from being proposed again; it does not turn the run green.
+The run turns green once the advisory no longer appears (for example after the lock is updated past it), or once no fix is installable within the declared range any more.
+A check that could not run to completion (an upstream source that could not be read, a security normalization error, a leg without a result) makes the report incomplete (exit 2).
 
 ## Compatibility policy
 
@@ -275,7 +296,7 @@ The upstream check classifies each difference between the reviewed and the lates
 
 - `harmless`: nothing to do, for example a test-gated release whose suite and package-smoke legs all passed.
 - `test-gated`: decided by tests, for example a new minor of a scientific library or a new MCP SDK patch. The report resolves it from the legs that installed that version: harmless when all passed, breaking-candidate when any failed, not-checked when none installed it.
-- `review`: needs a human reading, for example a new MCP SDK minor (with the leg results attached as evidence), a new protocol revision, a newer release dropping a supported Python version, a deprecation due within 120 days, or a manual entry past its review interval.
+- `review`: needs a human reading, for example a new MCP SDK minor (with the leg results attached as evidence), a new major of a packaging tool (no audit leg records their versions, so tests cannot decide it), a new protocol revision, a newer release dropping a supported Python version, a deprecation due within 120 days, or a manual entry past its review interval.
 - `breaking-candidate`: likely to break, for example a new major of a library reachable within the declared range.
 - `blocked-by-policy`: a release outside the declared range, for example a new MCP SDK major.
 - `not-checked`: the evidence could not be collected, for example because release data could not be fetched or no leg installed the release.
@@ -373,4 +394,5 @@ Tasks:
 - **Review the inventory.** When a review finding has been handled, update `reviewed` and `reviewed_on` in `tools/audit/compat_inventory.toml`. Manual entries (Python versions, transports, the registry `server.json` schema, the GitHub Actions in use) come back as review findings when their `review_interval_days` has passed, and deprecations come back within 120 days of their due date.
 - **Repository settings the audit depends on but cannot change:**
   - Create the `audit` label. The "Audit finding" form applies it to new issues.
+  - Create the `audit-accepted` label, and apply it only to issues a maintainer has accepted as the tracker of their markers. Until it exists, no issue counts as tracking a finding and every finding stays a candidate.
   - Enable Dependabot alerts and Dependabot security updates (repository settings, code security). Until both are enabled, the weekly pip-audit is the only Python vulnerability signal; Dependabot version updates cover GitHub Actions only.
