@@ -9,6 +9,7 @@ import pandas as pd
 import pytest
 
 from conftest import write_raw_file
+from predictive_maintenance_mcp.signal_acquisition.loaders import TEXT_EXTENSIONS
 from predictive_maintenance_mcp.signal_acquisition.repository import (
     SignalRepository,
     VALID_SIGNAL_UNITS,
@@ -1032,14 +1033,41 @@ class TestBlankRowsRefused:
         info = repo.load_signal(path)
         assert info["num_samples"] == 3
 
-    def test_case_variant_name_is_scanned_like_the_file_it_reads(self, repo, data_dir):
-        """On a case-insensitive filesystem 'GAP.CSV' reads 'gap.csv' as text,
-        so it must be scanned like it."""
+    def test_case_variant_name_is_scanned_when_read_as_text(self, repo, data_dir):
+        """A case-variant name is decoded as text only after the scan.
+
+        On a case-insensitive filesystem 'GAP.CSV' opens 'gap.csv'. Windows
+        resolves the name to the on-disk 'gap.csv', so the file is read as
+        text and the scan must report the blank line. macOS keeps the given
+        case, so the suffix stays '.CSV', which no decoder reads as text, and
+        the load is refused as an unsupported format. Either way nothing is
+        stored and nothing is decoded as text without the scan.
+        """
         (data_dir / "gap.csv").write_bytes(b"1\n2\n\n3\n")
-        if not (data_dir / "GAP.CSV").exists():
+        variant = data_dir / "GAP.CSV"
+        if not variant.exists():
             pytest.skip("case-sensitive filesystem: the variant name is another file")
-        with pytest.raises(ValueError, match="line 3"):
+        if variant.resolve().suffix in TEXT_EXTENSIONS:
+            expected = "line 3"
+        else:
+            expected = "unsupported format"
+        with pytest.raises(ValueError, match=expected):
             repo.load_signal("GAP.CSV")
+        assert repo.signal_count == 0
+
+    def test_upper_case_suffix_is_refused_unread_on_every_platform(self, repo, place):
+        """A file whose on-disk suffix is '.CSV' is read as text by no
+        decoder on either route, so it is refused rather than decoded
+        without the scan.
+
+        This is the macOS outcome of the case-variant test above, on a name
+        every platform resolves the same way. If upper-case suffixes are ever
+        read as text, the scan must read them too, and this test must then
+        expect the blank-line refusal ('line 3').
+        """
+        path = place("UPPER.CSV", b"1\n2\n\n3\n")
+        with pytest.raises(ValueError, match="unsupported format"):
+            repo.load_signal(path)
         assert repo.signal_count == 0
 
     def test_unreadable_text_file_is_refused_not_scanned_open(self, repo, data_dir):

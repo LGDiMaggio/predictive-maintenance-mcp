@@ -85,9 +85,11 @@ def _refuse_internal_blank_rows(path: Path) -> None:
     """Scan a text file the decoder is about to read for internal blank lines.
 
     Called on the exact path a route decodes, behind the decoders' own
-    suffix test, so a file is scanned exactly when it is read as text: a
-    case-variant name on a case-insensitive filesystem has already resolved
-    to the on-disk suffix, and a name containment refuses is never read. The
+    suffix test, so a file is scanned exactly when it is read as text. On
+    both routes the scan and the decoder see the same path and suffix: on a
+    case-insensitive filesystem a case-variant name resolves to the on-disk
+    name on Windows but keeps its given case on macOS, and either way both
+    test the same suffix. A name containment refuses is never read. The
     scan raises outside the loaders' exception-to-None wrappers, so its
     refusal reaches the caller. An unreadable file is refused as a read
     error rather than decoded without the scan.
