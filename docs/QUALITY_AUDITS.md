@@ -35,7 +35,7 @@ This page explains what runs where, which failure scenarios are covered and whic
 
 The guard tests that run in every pull request:
 
-- `tests/test_audit_mcp_smoke.py`: the stdio smoke harness against the checkout in both handshake eras, plus the harness's own failure paths (a server that dies, corrupts stdout, or never answers).
+- `tests/test_audit_mcp_smoke.py`: the stdio smoke harness against the checkout in both handshake eras, plus one failing case per harness rule (a server that dies, corrupts stdout or never answers; a broken refusal, chain step or artifact; a write into the checkout; an unexpected tool or invalid schema; an unexpected protocol version; a wrong install location or version), each proven to fail when its rule is disabled.
 - `tests/test_tool_contracts.py`: the tool list as a client sees it, JSON Schema 2020-12 validity of every input and output schema, and output schemas frozen in `tests/fixtures/tool_output_schemas.json`.
 - `tests/test_diagnostic_invariants.py`: diagnostic invariants checked against closed-form references, with known violations recorded as strict expected failures.
 - `tests/test_install_docs.py`: every shell command in the install and setup documents, including this page.
