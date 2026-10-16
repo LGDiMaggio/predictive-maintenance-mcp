@@ -188,6 +188,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   check also covers `tools/`.
 
 ### Fixed
+- **Non-finite, missing and non-numeric samples are refused instead of
+  analyzed (#82).** One NaN sample in a CSV loaded silently and then gave
+  ISO 20816-3 Zone D with `rms_velocity_mm_s=nan` and, in the same
+  diagnosis, "Bearing appears healthy". Loading now refuses, before the
+  signal store changes (single loads, batches and overwrites alike):
+  - samples that are NaN or infinite, with their count, the total and the
+    first sample index;
+  - columns that are not numeric (a header row, a marker token such as
+    `ERR`), naming the first offending value;
+  - an empty or whitespace-only line between two data lines of a `.csv` or
+    `.txt` file, naming the line (blank lines before the first and after
+    the last data line still load);
+  - a sampling rate that is not a finite number above zero, whether passed
+    as `sampling_rate` or read from the companion `_metadata.json` (a
+    `null` or absent rate still means "undeclared").
+
+  The refusal says to re-export, re-acquire or cut the capture at the
+  source; filling or interpolating samples is not offered as a fix. Files
+  of these kinds that loaded before are now refused. `generate_test_signal`
+  refuses an invalid rate, duration or noise level before writing any
+  file. `assess_severity_raw`, `check_bearing_fault_peak` and the
+  `diagnose_vibration` pipeline refuse the same input when called directly
+  from Python, and `compute_health_snapshot` also refuses an infinite or
+  boolean `fs`. Asset ledger re-processing applies the same checks: a
+  measurement recorded earlier from a CSV with an internal blank line is
+  not revisited automatically, and a later re-processing run reports it
+  as not reprocessable. Tool signatures and output schemas are unchanged.
 - **Tool refusals reach the model again under mcp 2.3+.** Since mcp 2.3.0 the
   SDK forwards only `ToolError`/`ResourceError` text; the plain `ValueError`/
   `FileNotFoundError` the tools raise for an unknown `signal_id`, a missing
