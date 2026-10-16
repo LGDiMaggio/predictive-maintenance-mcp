@@ -31,10 +31,14 @@ Classification (rules per ``rules`` value)
 =====================  =======================  ===================  ============
 step over reviewed     library                  mcp-sdk              build-tool
 =====================  =======================  ===================  ============
-new major              breaking-candidate       breaking-candidate   test-gated
+new major              breaking-candidate       breaking-candidate   review
 new minor              test-gated               review               (harmless)
 new patch              test-gated               test-gated           (harmless)
 =====================  =======================  ===================  ============
+
+* A build-tool major is ``review``, not ``test-gated``: no audit leg records
+  the versions of setuptools, build or uv, so a test-gated finding could only
+  ever resolve to ``not-checked``.
 
 * For a ``0.x`` version the minor is the breaking step (uv's policy and
   SemVer section 4), so 0.13 -> 0.14 counts as a new major.
@@ -497,7 +501,7 @@ _RULE_TABLE: dict[str, dict[str, Optional[tuple[str, str, bool]]]] = {
         "patch": ("test-gated", "low", False),
     },
     "build-tool": {
-        "major": ("test-gated", "low", False),
+        "major": ("review", "low", True),
         "minor": None,
         "patch": None,
     },
@@ -506,7 +510,7 @@ _RULE_TABLE: dict[str, dict[str, Optional[tuple[str, str, bool]]]] = {
 _STEP_TITLES = {
     "breaking-candidate": "{pkg} {versions} is a new major over reviewed "
     "{reviewed}{reachable}",
-    "review": "{pkg} {versions} is a new minor over reviewed {reviewed}: "
+    "review": "{pkg} {versions} is a new {step} over reviewed {reviewed}: "
     "review its behavior changes",
     "test-gated": "{pkg} {versions} is newer than reviewed {reviewed} "
     "({step}): the newest suite and package-smoke legs decide",
@@ -964,10 +968,12 @@ def classify_manual(component: Component, today: date) -> Outcome:
 
 
 def pypi_url(package: str) -> str:
+    """PyPI's JSON API document for ``package`` (name normalized)."""
     return f"https://pypi.org/pypi/{canonicalize_name(package)}/json"
 
 
 def github_releases_url(repo: str) -> str:
+    """GitHub REST API URL for the newest releases of ``owner/name``."""
     return f"{GITHUB_API}repos/{repo}/releases?per_page={GITHUB_RELEASES_PER_PAGE}"
 
 

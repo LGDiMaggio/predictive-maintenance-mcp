@@ -321,11 +321,16 @@ class TestBuildToolClassification:
         assert outcome.findings == []
         assert outcome.facts["outcome"] == "harmless"
 
-    def test_new_major_is_test_gated(self):
+    def test_new_major_is_a_review_keyed_on_its_line(self):
+        """No audit leg records build-tool versions, so a test-gated finding
+        could only resolve to not-checked. The subject carries the upstream
+        major.minor, like every review finding."""
         payload = _pypi("setuptools", {"84.0.0": ">=3.10", "85.0.0": ">=3.10"})
         (finding,) = upstream.classify_pypi(self._tool(), payload, None).findings
-        assert finding.classification == "test-gated"
-        assert finding.subject == "setuptools"
+        assert finding.classification == "review"
+        assert finding.severity == "low"
+        assert finding.subject == "setuptools 85.0"
+        assert "is a new major over reviewed 84.0.0" in finding.title
 
     def test_zero_major_minor_counts_as_major(self):
         tool = self._tool(id="uv", package="uv", reviewed="0.13.1")
@@ -333,7 +338,8 @@ class TestBuildToolClassification:
         assert upstream.classify_pypi(tool, patch, None).findings == []
         minor = _pypi("uv", {"0.13.1": ">=3.8", "0.14.0": ">=3.8"})
         (finding,) = upstream.classify_pypi(tool, minor, None).findings
-        assert finding.classification == "test-gated"
+        assert finding.classification == "review"
+        assert finding.subject == "uv 0.14"
 
     def test_deprecation_due_within_120_days_is_low_review(self):
         tool = self._tool(
