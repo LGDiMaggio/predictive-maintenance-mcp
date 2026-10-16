@@ -1,0 +1,74 @@
+# Synthetic uv.lock (schema version 1) for tests/test_audit_deps.py.
+# Shapes copied from the real uv.lock: registry, editable and virtual sources,
+# plus path and git sources uv writes for local wheels and VCS dependencies,
+# and one package forked across Python ranges the way sphinx is today.
+version = 1
+revision = 2
+requires-python = ">=3.11"
+resolution-markers = [
+    "python_full_version >= '3.15'",
+    "python_full_version == '3.14.*'",
+    "python_full_version == '3.13.*'",
+    "python_full_version == '3.12.*'",
+    "python_full_version < '3.12'",
+]
+
+[[package]]
+name = "alpha"
+version = "1.0.0"
+source = { registry = "https://pypi.org/simple" }
+
+[[package]]
+name = "beta-pkg"
+version = "2.5.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "alpha" },
+]
+
+[[package]]
+name = "predictive-maintenance-mcp"
+version = "0.13.0"
+source = { editable = "." }
+dependencies = [
+    { name = "alpha" },
+]
+
+[[package]]
+name = "local-helper"
+version = "0.1.0"
+source = { editable = "vendor/local-helper" }
+
+[[package]]
+name = "path-dep"
+version = "0.2.0"
+source = { path = "wheels/path_dep-0.2.0-py3-none-any.whl" }
+
+[[package]]
+name = "git-dep"
+version = "0.3.0"
+source = { git = "https://github.com/example/git-dep?rev=0123abc#0123abc" }
+
+[[package]]
+name = "workspace-root"
+version = "0.0.0"
+source = { virtual = "." }
+
+[[package]]
+name = "sphinx"
+version = "9.0.4"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version < '3.12'",
+]
+
+[[package]]
+name = "sphinx"
+version = "9.1.0"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.15'",
+    "python_full_version == '3.14.*'",
+    "python_full_version == '3.13.*'",
+    "python_full_version == '3.12.*'",
+]

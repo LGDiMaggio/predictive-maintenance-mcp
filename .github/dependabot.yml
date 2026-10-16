@@ -1,0 +1,37 @@
+# Dependency monitoring.
+#
+# GitHub Actions: weekly version updates, grouped into one pull request.
+#
+# Python (uv.lock): version updates are off (open-pull-requests-limit: 0).
+# Version drift is reported by the weekly audit's upstream check instead, so
+# no dependency is ever upgraded automatically. Security updates arrive only
+# once Dependabot alerts and Dependabot security updates are enabled in the
+# repository settings; no configuration file can enable them. mcp and
+# mcp-types majors are ignored: a new MCP SDK major is a reviewed migration,
+# never a bot update (pinned by tests/test_workflow_policy.py).
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+
+  - package-ecosystem: uv
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    ignore:
+      - dependency-name: mcp
+        update-types: ["version-update:semver-major"]
+      - dependency-name: mcp-types
+        update-types: ["version-update:semver-major"]
+    groups:
+      python-security:
+        applies-to: security-updates
+        patterns:
+          - "*"

@@ -5,6 +5,11 @@ on:
     tags:
       - "v*"
 
+# The publish jobs set their own job-level permissions (id-token only, for
+# trusted publishing); every other job gets read access to the repository.
+permissions:
+  contents: read
+
 jobs:
   build:
     name: Build distribution
@@ -29,9 +34,35 @@ jobs:
           name: dist
           path: dist/
 
+  # Tests the exact bytes the build job uploaded. It runs in its own job so no
+  # runtime dependency ever executes where the published artifact is built.
+  smoke:
+    name: Smoke-test the built wheel
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      # Same major as the upload above and the download in the publish jobs:
+      # the three move together.
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Install the wheel into a fresh venv and run the stdio smoke harness
+        run: python -m tools.audit package-smoke --dist dist --artifact wheel --variant release-py3.11
+
   publish-testpypi:
     name: Publish to TestPyPI
-    needs: build
+    needs: [build, smoke]
     runs-on: ubuntu-latest
     environment:
       name: testpypi

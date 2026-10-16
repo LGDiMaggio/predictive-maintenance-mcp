@@ -1,0 +1,108 @@
+{
+  "check": "upstream",
+  "environment": {
+    "implementation": "CPython",
+    "packages": {
+      "jsonschema": "4.25.1",
+      "mcp": "2.0.0",
+      "mcp-types": "2.0.0",
+      "numpy": "2.3.3",
+      "pandas": "2.3.3",
+      "plotly": "6.3.1",
+      "predictive-maintenance-mcp": "0.13.0",
+      "pydantic": "2.12.0",
+      "scikit-learn": "1.7.2",
+      "scipy": "1.16.2"
+    },
+    "platform": "win32-amd64",
+    "python": "3.11.9"
+  },
+  "facts": {
+    "today": "2026-10-15"
+  },
+  "findings": [
+    {
+      "category": "dependency",
+      "classification": "test-gated",
+      "evidence": {
+        "candidates": [
+          "2.4.6",
+          "2.5.4"
+        ],
+        "declared": ">=2.3.3",
+        "interpreters": [
+          "3.11",
+          "3.12",
+          "3.14"
+        ],
+        "latest": {
+          "3.11": "2.4.6",
+          "3.12": "2.5.4",
+          "3.14": "2.5.4"
+        },
+        "package": "numpy",
+        "reviewed": "2.3.3"
+      },
+      "fingerprint": "ff1aa40b13c2",
+      "rule": "upstream-minor",
+      "severity": "low",
+      "subject": "numpy",
+      "title": "numpy 2.4.6, 2.5.4 is newer than reviewed 2.3.3 (minor): the newest suite and package-smoke legs decide"
+    },
+    {
+      "category": "dependency",
+      "classification": "review",
+      "evidence": {
+        "declared": ">=2.3.3",
+        "excluded_interpreters": [
+          "3.11"
+        ],
+        "latest": {
+          "3.11": "2.4.6",
+          "3.12": "2.5.4",
+          "3.14": "2.5.4"
+        },
+        "package": "numpy",
+        "requires_python": ">=3.12",
+        "reviewed": "2.3.3"
+      },
+      "fingerprint": "507cd3482b0b",
+      "rule": "matrix-split",
+      "severity": "info",
+      "subject": "numpy 2.5",
+      "title": "numpy 2.5.4 requires Python >=3.12; on 3.11 the resolver stays on an older line"
+    },
+    {
+      "category": "dependency",
+      "classification": "breaking-candidate",
+      "evidence": {
+        "candidates": [
+          "3.0.6"
+        ],
+        "declared": ">=2.3.3",
+        "interpreters": [
+          "3.11",
+          "3.12",
+          "3.14"
+        ],
+        "latest": {
+          "3.11": "3.0.6",
+          "3.12": "3.0.6",
+          "3.14": "3.0.6"
+        },
+        "package": "pandas",
+        "reviewed": "2.3.3"
+      },
+      "fingerprint": "c11fd528cf20",
+      "rule": "upstream-major",
+      "severity": "medium",
+      "subject": "pandas 3.0",
+      "title": "pandas 3.0.6 is a new major over reviewed 2.3.3, reachable within the declared range >=2.3.3"
+    }
+  ],
+  "finished_at": "2026-10-15T18:32:07Z",
+  "schema": "pmm-audit-result/1",
+  "started_at": "2026-10-15T18:32:03Z",
+  "status": "pass",
+  "variant": "upstream"
+}

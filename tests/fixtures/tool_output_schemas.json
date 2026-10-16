@@ -1,0 +1,3240 @@
+{
+  "analyze_envelope": {
+    "$defs": {
+      "SpectralPeak": {
+        "description": "A single peak in the frequency spectrum.",
+        "properties": {
+          "frequency_hz": {
+            "description": "Peak frequency in Hz",
+            "title": "Frequency Hz",
+            "type": "number"
+          },
+          "magnitude": {
+            "description": "Peak magnitude (linear)",
+            "title": "Magnitude",
+            "type": "number"
+          },
+          "magnitude_db": {
+            "description": "Peak magnitude in dB (relative to max)",
+            "title": "Magnitude Db",
+            "type": "number"
+          },
+          "note": {
+            "default": "",
+            "description": "Optional annotation (e.g. harmonic label)",
+            "title": "Note",
+            "type": "string"
+          }
+        },
+        "required": [
+          "frequency_hz",
+          "magnitude",
+          "magnitude_db"
+        ],
+        "title": "SpectralPeak",
+        "type": "object"
+      }
+    },
+    "description": "Unified envelope-spectrum analysis result (U9 merge).\n\nCompact summary: top peaks + the band ACTUALLY used \u2014 no full arrays.\nThe envelope FFT is computed after mean subtraction + Hann window\n(audit 2.8 fix), so low-frequency (FTF-zone) peaks are not buried by\nDC leakage.",
+    "properties": {
+      "diagnosis": {
+        "description": "Peak listing and comparison guidance. No reference bearing frequencies are assumed \u2014 compare against frequencies computed for the actual bearing and shaft speed.",
+        "title": "Diagnosis",
+        "type": "string"
+      },
+      "filter_band": {
+        "description": "Bandpass filter band (Hz) actually used \u2014 echoed from the request",
+        "maxItems": 2,
+        "minItems": 2,
+        "prefixItems": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "number"
+          }
+        ],
+        "title": "Filter Band",
+        "type": "array"
+      },
+      "num_samples": {
+        "description": "Number of samples analyzed (envelope length)",
+        "title": "Num Samples",
+        "type": "integer"
+      },
+      "sampling_rate": {
+        "description": "Sampling rate (Hz)",
+        "title": "Sampling Rate",
+        "type": "number"
+      },
+      "signal_id": {
+        "description": "Signal identifier used",
+        "title": "Signal Id",
+        "type": "string"
+      },
+      "top_peaks": {
+        "description": "Top peaks in the envelope spectrum, sorted by frequency",
+        "items": {
+          "$ref": "#/$defs/SpectralPeak"
+        },
+        "title": "Top Peaks",
+        "type": "array"
+      }
+    },
+    "required": [
+      "signal_id",
+      "num_samples",
+      "sampling_rate",
+      "filter_band",
+      "top_peaks",
+      "diagnosis"
+    ],
+    "title": "EnvelopeResult",
+    "type": "object"
+  },
+  "analyze_fft": {
+    "$defs": {
+      "SpectralPeak": {
+        "description": "A single peak in the frequency spectrum.",
+        "properties": {
+          "frequency_hz": {
+            "description": "Peak frequency in Hz",
+            "title": "Frequency Hz",
+            "type": "number"
+          },
+          "magnitude": {
+            "description": "Peak magnitude (linear)",
+            "title": "Magnitude",
+            "type": "number"
+          },
+          "magnitude_db": {
+            "description": "Peak magnitude in dB (relative to max)",
+            "title": "Magnitude Db",
+            "type": "number"
+          },
+          "note": {
+            "default": "",
+            "description": "Optional annotation (e.g. harmonic label)",
+            "title": "Note",
+            "type": "string"
+          }
+        },
+        "required": [
+          "frequency_hz",
+          "magnitude",
+          "magnitude_db"
+        ],
+        "title": "SpectralPeak",
+        "type": "object"
+      }
+    },
+    "description": "FFT analysis result \u2014 compact summary (top peaks + stats, no full arrays).\n\nFull-length arrays are never returned to the LLM to avoid context overflow.\nUse generate_fft_report() for visual inspection.",
+    "properties": {
+      "freq_range_hz": {
+        "description": "[min_freq, max_freq] of the spectrum",
+        "items": {
+          "type": "number"
+        },
+        "title": "Freq Range Hz",
+        "type": "array"
+      },
+      "frequency_resolution": {
+        "description": "Frequency resolution (Hz)",
+        "title": "Frequency Resolution",
+        "type": "number"
+      },
+      "num_samples": {
+        "description": "Number of analyzed samples",
+        "title": "Num Samples",
+        "type": "integer"
+      },
+      "peak_frequency": {
+        "description": "Dominant peak frequency (Hz)",
+        "title": "Peak Frequency",
+        "type": "number"
+      },
+      "peak_magnitude": {
+        "description": "Dominant peak magnitude",
+        "title": "Peak Magnitude",
+        "type": "number"
+      },
+      "rms_spectral": {
+        "description": "RMS of the magnitude spectrum",
+        "title": "Rms Spectral",
+        "type": "number"
+      },
+      "sampling_rate": {
+        "description": "Sampling frequency (Hz)",
+        "title": "Sampling Rate",
+        "type": "number"
+      },
+      "top_peaks": {
+        "description": "Top spectral peaks sorted by magnitude",
+        "items": {
+          "$ref": "#/$defs/SpectralPeak"
+        },
+        "title": "Top Peaks",
+        "type": "array"
+      },
+      "total_bins": {
+        "description": "Total number of FFT bins computed",
+        "title": "Total Bins",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "top_peaks",
+      "peak_frequency",
+      "peak_magnitude",
+      "rms_spectral",
+      "total_bins",
+      "freq_range_hz",
+      "sampling_rate",
+      "num_samples",
+      "frequency_resolution"
+    ],
+    "title": "FFTResult",
+    "type": "object"
+  },
+  "analyze_signal_trend": {
+    "description": "Within-recording feature trend \u2014 screening only, NOT a prognosis.\n\nSegments a single recording (seconds of data) and fits a trend on the\nper-segment feature values. Use it to screen whether a recording is\nstationary. It cannot estimate Remaining Useful Life: for RUL, collect\nrepeated measurements over days/weeks and pass them to estimate_rul.",
+    "properties": {
+      "analysis_scope": {
+        "description": "Always 'within_recording_screening': this trend spans seconds of one recording, not the machine's life",
+        "title": "Analysis Scope",
+        "type": "string"
+      },
+      "baseline_segments": {
+        "description": "Number of leading segments used as the baseline window. Onset is only searched AFTER this window; degradation starting inside the baseline cannot be detected by this method.",
+        "title": "Baseline Segments",
+        "type": "integer"
+      },
+      "feature_name": {
+        "description": "Feature analyzed",
+        "title": "Feature Name",
+        "type": "string"
+      },
+      "feature_series": {
+        "description": "Per-segment feature values (evenly subsampled to at most 50 points). One recording yields ONE point for estimate_rul (e.g. the recording's overall feature value) \u2014 accumulate recordings over time to build its input series.",
+        "items": {
+          "type": "number"
+        },
+        "title": "Feature Series",
+        "type": "array"
+      },
+      "intercept": {
+        "description": "Trend intercept",
+        "title": "Intercept",
+        "type": "number"
+      },
+      "num_segments": {
+        "description": "Number of segments analyzed",
+        "title": "Num Segments",
+        "type": "integer"
+      },
+      "onset_detected": {
+        "description": "Whether a degradation onset was detected after the baseline window (first value exceeding baseline mean + onset_threshold_sigma * std)",
+        "title": "Onset Detected",
+        "type": "boolean"
+      },
+      "onset_segment_index": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Segment index where degradation starts (always >= baseline_segments); None when no onset detected",
+        "title": "Onset Segment Index"
+      },
+      "onset_threshold_sigma": {
+        "description": "Baseline standard deviations used as the onset trigger",
+        "title": "Onset Threshold Sigma",
+        "type": "number"
+      },
+      "onset_time_s": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Center time (s) of the onset segment within the recording",
+        "title": "Onset Time S"
+      },
+      "p_value": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Two-sided p-value of the slope (None when not computable)",
+        "title": "P Value"
+      },
+      "r_squared": {
+        "description": "R-squared goodness of fit of the linear trend",
+        "title": "R Squared",
+        "type": "number"
+      },
+      "segment_times_s": {
+        "description": "Segment center times in seconds for feature_series (same subsampling)",
+        "items": {
+          "type": "number"
+        },
+        "title": "Segment Times S",
+        "type": "array"
+      },
+      "series_truncated": {
+        "description": "True when feature_series was subsampled to the 50-point cap",
+        "title": "Series Truncated",
+        "type": "boolean"
+      },
+      "slope": {
+        "description": "Trend slope in feature units per second (within the recording)",
+        "title": "Slope",
+        "type": "number"
+      },
+      "trend_direction": {
+        "description": "increasing, decreasing, or stable \u2014 based on the slope significance test (p < 0.05), not on an R-squared cutoff",
+        "title": "Trend Direction",
+        "type": "string"
+      }
+    },
+    "required": [
+      "feature_name",
+      "slope",
+      "intercept",
+      "r_squared",
+      "trend_direction",
+      "num_segments",
+      "analysis_scope",
+      "feature_series",
+      "segment_times_s",
+      "series_truncated",
+      "onset_detected",
+      "onset_threshold_sigma",
+      "baseline_segments"
+    ],
+    "title": "TrendAnalysisResult",
+    "type": "object"
+  },
+  "analyze_statistics": {
+    "description": "Statistical analysis result of the signal.\n\nValues are in the signal's native unit. The unit is reported only when\nDECLARED (companion ``_metadata.json`` or ``load_signal(signal_unit=...)``)\n\u2014 it is never guessed from signal amplitude.",
+    "properties": {
+      "crest_factor": {
+        "description": "Crest Factor (Peak/RMS)",
+        "title": "Crest Factor",
+        "type": "number"
+      },
+      "kurtosis": {
+        "description": "Kurtosis (measure of impulsiveness)",
+        "title": "Kurtosis",
+        "type": "number"
+      },
+      "mean": {
+        "description": "Mean value",
+        "title": "Mean",
+        "type": "number"
+      },
+      "peak": {
+        "description": "Peak value",
+        "title": "Peak",
+        "type": "number"
+      },
+      "peak_to_peak": {
+        "description": "Peak-to-peak value",
+        "title": "Peak To Peak",
+        "type": "number"
+      },
+      "rms": {
+        "description": "Root Mean Square (effective value)",
+        "title": "Rms",
+        "type": "number"
+      },
+      "signal_unit": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Declared signal unit ('g', 'm/s2', 'mm/s', 'm/s') from companion metadata \u2014 never guessed from amplitude. None when not declared.",
+        "title": "Signal Unit"
+      },
+      "skewness": {
+        "description": "Skewness (asymmetry)",
+        "title": "Skewness",
+        "type": "number"
+      },
+      "std_dev": {
+        "description": "Standard deviation",
+        "title": "Std Dev",
+        "type": "number"
+      },
+      "unit_note": {
+        "description": "Unit declaration status and how to declare the unit for ISO severity assessment",
+        "title": "Unit Note",
+        "type": "string"
+      }
+    },
+    "required": [
+      "rms",
+      "peak_to_peak",
+      "peak",
+      "crest_factor",
+      "kurtosis",
+      "skewness",
+      "mean",
+      "std_dev",
+      "unit_note"
+    ],
+    "title": "StatisticalResult",
+    "type": "object"
+  },
+  "assess_asset_change": {
+    "description": "Outcome of ``assess_asset_change``: the change of one measurement point\nagainst its reference, or a typed reason why it cannot be assessed.\n\n``status`` discriminates: 'assessed' fills reference, lineage, observed,\nderived, assessed, comparability and suggested_verification;\n'not_found' names the known assets and points with a suggestion;\n'insufficient_history' reports available versus required with a remedy;\n'processing_not_homogeneous' reports the snapshot lineages and the\nre-processing remedy. The reference is a declared baseline only when\none was declared (health_declared True); otherwise it is the automatic\nwindow of the first comparable acquisitions, a relative comparison\nwhose health is not declared.",
+    "properties": {
+      "assessed": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "The verdict: classification ('no_change', 'isolated_episode', 'unconfirmed_single_acquisition', 'persistent_change'), direction ('increase' or 'decrease'), sudden, criterion, indicators_driving, onset_measurement_id, onset_acquired_at, onset_coincides_with (qualifications of the onset acquisition) and evidence per bearing label; None unless assessed",
+        "title": "Assessed"
+      },
+      "asset_id": {
+        "description": "The assessed asset (ledger id)",
+        "title": "Asset Id",
+        "type": "string"
+      },
+      "available": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Usable acquisition slots available ('insufficient_history')",
+        "title": "Available"
+      },
+      "comparability": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Comparability of the point's acquisitions: counts per grade, qualifications (code, count, detail), excluded measurements with reasons and collapsed duplicates; None for a miss",
+        "title": "Comparability"
+      },
+      "current_processing_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "The current processing lineage ('processing_not_homogeneous')",
+        "title": "Current Processing Id"
+      },
+      "derived": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Derived comparisons: deltas per indicator against the reference mean, exceedance_runs, drift regressions, iso_change (change against 25 percent of the ISO 20816-3 B/C boundary when group and support are known) and per_indicator classifications with their criterion; None unless assessed",
+        "title": "Derived"
+      },
+      "evaluated_slots": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Evaluated slots, reference plus post-reference ('processing_not_homogeneous')",
+        "title": "Evaluated Slots"
+      },
+      "known_assets": {
+        "description": "Asset ids the ledger directory lists (for a miss); else empty",
+        "items": {
+          "type": "string"
+        },
+        "title": "Known Assets",
+        "type": "array"
+      },
+      "known_points": {
+        "description": "Points of a known asset when the point is unknown; else empty",
+        "items": {
+          "type": "string"
+        },
+        "title": "Known Points",
+        "type": "array"
+      },
+      "lineage": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Processing lineage the assessment used: processing_id, algorithm_version, covered slots, candidates per lineage, current_processing_id, is_current, missing_for_current, stale_context; None unless assessed",
+        "title": "Lineage"
+      },
+      "lineages": {
+        "anyOf": [
+          {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Covered evaluated slots per processing lineage ('processing_not_homogeneous')",
+        "title": "Lineages"
+      },
+      "measurement_point_id": {
+        "description": "The assessed point (ledger id)",
+        "title": "Measurement Point Id",
+        "type": "string"
+      },
+      "message": {
+        "description": "One-paragraph summary of the outcome",
+        "title": "Message",
+        "type": "string"
+      },
+      "missing_for_current": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Evaluated slots without a snapshot on the current lineage ('processing_not_homogeneous')",
+        "title": "Missing For Current"
+      },
+      "observed": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Observed values: reference_statistics per indicator (mean, std, n, band, unit), latest values, latest_measurement_id, latest_acquired_at, evidence_presence per bearing label over the last K acquisitions, indicators_unavailable with reasons, acquisitions_assessed, slots_assessed, measurement_ids_assessed; None unless assessed",
+        "title": "Observed"
+      },
+      "reference": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "The reference used: kind ('automatic_window' or 'declared_baseline'), health_declared (True only for a declared baseline), message (cites declared_by, declared_at and note of a baseline verbatim), measurement_ids, count, acquired_from, acquired_to, provisional, statistics_quality ('relative_only', 'provisional', 'full'), qualification_codes of the reference slots, outside_window, baseline, withdrawn_baseline, excluded_inside_span; None for a miss",
+        "title": "Reference"
+      },
+      "remedy": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Concrete action for 'insufficient_history' or 'processing_not_homogeneous' (the exact re-processing call); None otherwise",
+        "title": "Remedy"
+      },
+      "reprocess": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Outcome of the re-processing run before the assessment when reprocess=True: processing_id, stale, reprocessed, not_reprocessable, up_to_date, remaining, results per attempted measurement, next_call (the exact call to continue, or None) and message; None when reprocess was False",
+        "title": "Reprocess"
+      },
+      "required": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Slots required ('insufficient_history')",
+        "title": "Required"
+      },
+      "status": {
+        "description": "Outcome discriminator (see the class description)",
+        "enum": [
+          "assessed",
+          "not_found",
+          "insufficient_history",
+          "processing_not_homogeneous"
+        ],
+        "title": "Status",
+        "type": "string"
+      },
+      "suggested_verification": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "At most ONE verification sentence the evidence calls for; None when no verification is needed or the point was not assessed",
+        "title": "Suggested Verification"
+      },
+      "suggestion": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Concrete next step on 'not_found'; None otherwise",
+        "title": "Suggestion"
+      }
+    },
+    "required": [
+      "status",
+      "asset_id",
+      "measurement_point_id",
+      "known_assets",
+      "known_points",
+      "message"
+    ],
+    "title": "AssetChangeAssessment",
+    "type": "object"
+  },
+  "assess_severity": {
+    "description": "Unified severity assessment result (U9 merge \u2014 ``assess_severity``).\n\nZone boundaries from ISO 10816-3:2009 unless user-defined custom\nthresholds were supplied (see ``threshold_provenance``). Covers both\ninput routes: a stored signal (``signal_id`` set) or a direct broadband\nRMS velocity reading (``signal_id`` None). Alert fields\n(``alert_level``, ``exceeded_threshold``) are derived from the zone.",
+    "properties": {
+      "alert_level": {
+        "anyOf": [
+          {
+            "enum": [
+              "none",
+              "warning",
+              "alarm",
+              "danger"
+            ],
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Alert level derived from the zone: A=none, B=warning, C=alarm, D=danger (filled automatically)",
+        "title": "Alert Level"
+      },
+      "axis": {
+        "default": "vertical",
+        "description": "Measurement axis (informational)",
+        "title": "Axis",
+        "type": "string"
+      },
+      "boundaries": {
+        "additionalProperties": {
+          "type": "number"
+        },
+        "description": "Zone boundaries {AB, BC, CD} in mm/s (ISO or custom)",
+        "title": "Boundaries",
+        "type": "object"
+      },
+      "color_code": {
+        "description": "green, yellow, orange, or red",
+        "title": "Color Code",
+        "type": "string"
+      },
+      "exceeded_threshold": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "The boundary (mm/s) exceeded by the reading (None in zone A; filled automatically from zone + boundaries)",
+        "title": "Exceeded Threshold"
+      },
+      "frequency_range": {
+        "description": "Actual evaluation band used (may be narrower than the ISO nominal 10-1000 Hz when fs limits it); 'not applicable' for direct RMS readings",
+        "title": "Frequency Range",
+        "type": "string"
+      },
+      "machine_group": {
+        "description": "ISO 20816-3 machine group: 1 (large, >300 kW) or 2 (medium, 15-300 kW)",
+        "title": "Machine Group",
+        "type": "integer"
+      },
+      "machine_power_kw": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Declared rated machine power in kW, when provided. Values below 15 kW are refused as out of ISO 20816-3 scope.",
+        "title": "Machine Power Kw"
+      },
+      "operating_speed_rpm": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Operating speed in RPM, when provided (selects the band's lower edge)",
+        "title": "Operating Speed Rpm"
+      },
+      "original_unit": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Original signal unit before conversion",
+        "title": "Original Unit"
+      },
+      "rms_velocity_mm_s": {
+        "description": "RMS velocity in mm/s",
+        "title": "Rms Velocity Mm S",
+        "type": "number"
+      },
+      "severity_level": {
+        "description": "Good, Acceptable, Unsatisfactory, or Unacceptable",
+        "title": "Severity Level",
+        "type": "string"
+      },
+      "signal_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Signal identifier used (None for a direct rms_velocity_mm_s reading)",
+        "title": "Signal Id"
+      },
+      "status": {
+        "const": "assessed",
+        "default": "assessed",
+        "description": "Always 'assessed' \u2014 discriminates from a refused result",
+        "title": "Status",
+        "type": "string"
+      },
+      "support_type": {
+        "description": "Support type: 'rigid' or 'flexible'",
+        "title": "Support Type",
+        "type": "string"
+      },
+      "threshold_provenance": {
+        "description": "Provenance of the zone boundary values (ISO edition note, or custom-threshold note)",
+        "title": "Threshold Provenance",
+        "type": "string"
+      },
+      "unit_conversion_performed": {
+        "description": "Whether acceleration-to-velocity conversion was done",
+        "title": "Unit Conversion Performed",
+        "type": "boolean"
+      },
+      "zone": {
+        "description": "ISO zone: A, B, C, or D",
+        "title": "Zone",
+        "type": "string"
+      },
+      "zone_description": {
+        "description": "Zone description",
+        "title": "Zone Description",
+        "type": "string"
+      }
+    },
+    "required": [
+      "rms_velocity_mm_s",
+      "machine_group",
+      "support_type",
+      "zone",
+      "zone_description",
+      "severity_level",
+      "color_code",
+      "boundaries",
+      "frequency_range",
+      "unit_conversion_performed",
+      "threshold_provenance"
+    ],
+    "title": "VibrationSeverityResult",
+    "type": "object"
+  },
+  "calculate_bearing_characteristic_frequencies": {
+    "additionalProperties": {
+      "type": "number"
+    },
+    "title": "calculate_bearing_characteristic_frequenciesDictOutput",
+    "type": "object"
+  },
+  "check_bearing_faults": {
+    "$defs": {
+      "BearingFaultCheckResult": {
+        "description": "Result of checking for a specific expected fault frequency.",
+        "properties": {
+          "bearing_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Bearing designation (None for arbitrary-frequency checks)",
+            "title": "Bearing Id"
+          },
+          "detected": {
+            "description": "Whether a peak was detected within tolerance",
+            "title": "Detected",
+            "type": "boolean"
+          },
+          "detected_frequency_hz": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Actual peak frequency",
+            "title": "Detected Frequency Hz"
+          },
+          "deviation_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Deviation from expected (%)",
+            "title": "Deviation Pct"
+          },
+          "evidence_strength": {
+            "description": "Strength of the spectral evidence for this fault: 'high' (fundamental + >=2 harmonics), 'moderate' (fundamental, weaker harmonics), 'low' (harmonics only), or 'none'. Derived from detected peaks \u2014 not a probability.",
+            "title": "Evidence Strength",
+            "type": "string"
+          },
+          "expected_frequency_hz": {
+            "description": "Expected fault frequency",
+            "title": "Expected Frequency Hz",
+            "type": "number"
+          },
+          "fault_type": {
+            "description": "Checked label: BPFO, BPFI, BSF, FTF, or an arbitrary user-provided label (e.g. 'GMF')",
+            "title": "Fault Type",
+            "type": "string"
+          },
+          "fault_type_canonical": {
+            "anyOf": [
+              {
+                "enum": [
+                  "outer_race",
+                  "inner_race",
+                  "ball",
+                  "cage"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Canonical fault vocabulary for the standard acronyms (BPFO=outer_race, BPFI=inner_race, BSF=ball, FTF=cage); None for arbitrary labels",
+            "title": "Fault Type Canonical"
+          },
+          "harmonics_detected": {
+            "default": [],
+            "description": "Harmonics found",
+            "items": {
+              "additionalProperties": {
+                "type": "number"
+              },
+              "type": "object"
+            },
+            "title": "Harmonics Detected",
+            "type": "array"
+          },
+          "magnitude": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Magnitude at detected frequency",
+            "title": "Magnitude"
+          },
+          "signal_id": {
+            "description": "Signal identifier used",
+            "title": "Signal Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "signal_id",
+          "fault_type",
+          "expected_frequency_hz",
+          "detected",
+          "evidence_strength"
+        ],
+        "title": "BearingFaultCheckResult",
+        "type": "object"
+      }
+    },
+    "description": "Summary of all expected-frequency checks for one bearing/machine.",
+    "properties": {
+      "bearing_frequencies": {
+        "additionalProperties": {
+          "type": "number"
+        },
+        "description": "Expected frequencies checked (Hz), plus shaft_freq_hz",
+        "title": "Bearing Frequencies",
+        "type": "object"
+      },
+      "bearing_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Bearing designation (catalog route); None for the explicit-frequencies and explicit-geometry routes",
+        "title": "Bearing Id"
+      },
+      "fault_checks": {
+        "description": "Results for each checked frequency",
+        "items": {
+          "$ref": "#/$defs/BearingFaultCheckResult"
+        },
+        "title": "Fault Checks",
+        "type": "array"
+      },
+      "most_likely_fault": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Most likely fault label if any",
+        "title": "Most Likely Fault"
+      },
+      "most_likely_fault_canonical": {
+        "anyOf": [
+          {
+            "enum": [
+              "outer_race",
+              "inner_race",
+              "ball",
+              "cage"
+            ],
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Canonical form of most_likely_fault (None for arbitrary labels)",
+        "title": "Most Likely Fault Canonical"
+      },
+      "overall_assessment": {
+        "description": "Summary assessment text",
+        "title": "Overall Assessment",
+        "type": "string"
+      },
+      "rpm": {
+        "description": "Shaft speed (RPM)",
+        "title": "Rpm",
+        "type": "number"
+      },
+      "shaft_frequency_hz": {
+        "description": "Shaft frequency (Hz)",
+        "title": "Shaft Frequency Hz",
+        "type": "number"
+      },
+      "signal_id": {
+        "description": "Signal identifier used",
+        "title": "Signal Id",
+        "type": "string"
+      },
+      "source": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Provenance of the expected frequencies: the catalog entry's source citation (bearing_id route), or a note for user-provided geometry/frequencies",
+        "title": "Source"
+      }
+    },
+    "required": [
+      "signal_id",
+      "rpm",
+      "shaft_frequency_hz",
+      "bearing_frequencies",
+      "fault_checks",
+      "overall_assessment"
+    ],
+    "title": "BearingFaultsSummary",
+    "type": "object"
+  },
+  "clear_signals": {
+    "additionalProperties": true,
+    "title": "clear_signalsDictOutput",
+    "type": "object"
+  },
+  "compute_power_spectral_density": {
+    "$defs": {
+      "SpectralPeak": {
+        "description": "A single peak in the frequency spectrum.",
+        "properties": {
+          "frequency_hz": {
+            "description": "Peak frequency in Hz",
+            "title": "Frequency Hz",
+            "type": "number"
+          },
+          "magnitude": {
+            "description": "Peak magnitude (linear)",
+            "title": "Magnitude",
+            "type": "number"
+          },
+          "magnitude_db": {
+            "description": "Peak magnitude in dB (relative to max)",
+            "title": "Magnitude Db",
+            "type": "number"
+          },
+          "note": {
+            "default": "",
+            "description": "Optional annotation (e.g. harmonic label)",
+            "title": "Note",
+            "type": "string"
+          }
+        },
+        "required": [
+          "frequency_hz",
+          "magnitude",
+          "magnitude_db"
+        ],
+        "title": "SpectralPeak",
+        "type": "object"
+      }
+    },
+    "description": "Power Spectral Density (Welch method) result.",
+    "properties": {
+      "freq_range_hz": {
+        "description": "[min_freq, max_freq]",
+        "items": {
+          "type": "number"
+        },
+        "title": "Freq Range Hz",
+        "type": "array"
+      },
+      "frequency_resolution": {
+        "description": "Frequency resolution (Hz)",
+        "title": "Frequency Resolution",
+        "type": "number"
+      },
+      "noverlap": {
+        "description": "Overlap between segments",
+        "title": "Noverlap",
+        "type": "integer"
+      },
+      "nperseg": {
+        "description": "Samples per segment",
+        "title": "Nperseg",
+        "type": "integer"
+      },
+      "num_samples": {
+        "description": "Number of samples analyzed",
+        "title": "Num Samples",
+        "type": "integer"
+      },
+      "sampling_rate": {
+        "description": "Sampling rate (Hz)",
+        "title": "Sampling Rate",
+        "type": "number"
+      },
+      "signal_id": {
+        "description": "Signal identifier used",
+        "title": "Signal Id",
+        "type": "string"
+      },
+      "top_peaks": {
+        "description": "Top spectral peaks by power",
+        "items": {
+          "$ref": "#/$defs/SpectralPeak"
+        },
+        "title": "Top Peaks",
+        "type": "array"
+      },
+      "total_power": {
+        "description": "Total integrated power",
+        "title": "Total Power",
+        "type": "number"
+      },
+      "window": {
+        "description": "Window function used",
+        "title": "Window",
+        "type": "string"
+      }
+    },
+    "required": [
+      "signal_id",
+      "num_samples",
+      "sampling_rate",
+      "nperseg",
+      "noverlap",
+      "window",
+      "top_peaks",
+      "total_power",
+      "freq_range_hz",
+      "frequency_resolution"
+    ],
+    "title": "PSDResult",
+    "type": "object"
+  },
+  "compute_spectrogram_stft": {
+    "description": "STFT Spectrogram result \u2014 summary only, no full 2D arrays.",
+    "properties": {
+      "energy_per_band": {
+        "description": "Energy in predefined frequency bands",
+        "items": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "type": "object"
+        },
+        "title": "Energy Per Band",
+        "type": "array"
+      },
+      "freq_range_hz": {
+        "description": "[min_freq, max_freq]",
+        "items": {
+          "type": "number"
+        },
+        "title": "Freq Range Hz",
+        "type": "array"
+      },
+      "max_power_freq_hz": {
+        "description": "Frequency with maximum power",
+        "title": "Max Power Freq Hz",
+        "type": "number"
+      },
+      "max_power_time_s": {
+        "description": "Time of maximum power",
+        "title": "Max Power Time S",
+        "type": "number"
+      },
+      "noverlap": {
+        "description": "Overlap between segments",
+        "title": "Noverlap",
+        "type": "integer"
+      },
+      "nperseg": {
+        "description": "Samples per segment",
+        "title": "Nperseg",
+        "type": "integer"
+      },
+      "num_freq_bins": {
+        "description": "Number of frequency bins",
+        "title": "Num Freq Bins",
+        "type": "integer"
+      },
+      "num_samples": {
+        "description": "Number of samples analyzed",
+        "title": "Num Samples",
+        "type": "integer"
+      },
+      "num_time_bins": {
+        "description": "Number of time bins",
+        "title": "Num Time Bins",
+        "type": "integer"
+      },
+      "sampling_rate": {
+        "description": "Sampling rate (Hz)",
+        "title": "Sampling Rate",
+        "type": "number"
+      },
+      "signal_id": {
+        "description": "Signal identifier used",
+        "title": "Signal Id",
+        "type": "string"
+      },
+      "time_range_s": {
+        "description": "[start_time, end_time]",
+        "items": {
+          "type": "number"
+        },
+        "title": "Time Range S",
+        "type": "array"
+      },
+      "window": {
+        "description": "Window function used",
+        "title": "Window",
+        "type": "string"
+      }
+    },
+    "required": [
+      "signal_id",
+      "num_samples",
+      "sampling_rate",
+      "nperseg",
+      "noverlap",
+      "window",
+      "num_time_bins",
+      "num_freq_bins",
+      "freq_range_hz",
+      "time_range_s",
+      "max_power_freq_hz",
+      "max_power_time_s",
+      "energy_per_band"
+    ],
+    "title": "STFTResult",
+    "type": "object"
+  },
+  "declare_healthy_baseline": {
+    "description": "Outcome of ``declare_healthy_baseline``.\n\nA declared baseline is the only reference the assessment reports as\nhealth_declared; it is attributed to the declarer named in\n``declared_by`` (a user-supplied string), never to the server. An empty\nmeasurement list withdraws the active baseline, and later assessments\nfall back to the automatic window while naming the withdrawal.",
+    "properties": {
+      "asset_id": {
+        "description": "Asset the point belongs to (ledger id)",
+        "title": "Asset Id",
+        "type": "string"
+      },
+      "baseline_id": {
+        "description": "Deterministic id of this baseline declaration (hash of the point, the sorted measurement ids and the declaration instant)",
+        "title": "Baseline Id",
+        "type": "string"
+      },
+      "declared_at": {
+        "description": "Declaration instant (ISO 8601, UTC)",
+        "title": "Declared At",
+        "type": "string"
+      },
+      "declared_by": {
+        "description": "Who declared the baseline, as given by the caller; quoted verbatim in every assessment that uses it",
+        "title": "Declared By",
+        "type": "string"
+      },
+      "event_id": {
+        "description": "Id of the appended ledger event",
+        "title": "Event Id",
+        "type": "string"
+      },
+      "measurement_ids": {
+        "description": "Members of the baseline in acquisition order; empty for a withdrawal",
+        "items": {
+          "type": "string"
+        },
+        "title": "Measurement Ids",
+        "type": "array"
+      },
+      "measurement_point_id": {
+        "description": "The point (ledger id)",
+        "title": "Measurement Point Id",
+        "type": "string"
+      },
+      "members": {
+        "description": "One entry per member: measurement_id, declaration_version of the measurement and point_declaration_version it was validated against (a later re-declaration excludes the member at query time with a qualification, never silently)",
+        "items": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "title": "Members",
+        "type": "array"
+      },
+      "message": {
+        "description": "One-paragraph summary of the outcome",
+        "title": "Message",
+        "type": "string"
+      },
+      "note": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Free-text note of the declarer, as given; None when absent",
+        "title": "Note"
+      },
+      "superseded_baseline_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Id of the baseline that was active before this call; None when the point had none",
+        "title": "Superseded Baseline Id"
+      },
+      "withdrawn": {
+        "description": "True when this call withdrew the active baseline (empty list)",
+        "title": "Withdrawn",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "asset_id",
+      "measurement_point_id",
+      "baseline_id",
+      "measurement_ids",
+      "members",
+      "declared_by",
+      "declared_at",
+      "withdrawn",
+      "event_id",
+      "message"
+    ],
+    "title": "BaselineDeclarationResult",
+    "type": "object"
+  },
+  "declare_measurement_point": {
+    "description": "Outcome of ``declare_measurement_point``.\n\nThe declaration is versioned per point in the local append-only asset\nledger. A re-declaration identical to the current version appends\nnothing and reports the current version; a different one appends the\nnext version and names the keys that changed. The count of recorded\nmeasurements whose snapshot no longer matches the declared context is\nreported with the exact re-processing call, never applied silently.",
+    "properties": {
+      "appended": {
+        "description": "True when a new declaration version was appended to the ledger; False when the declaration equals the current version",
+        "title": "Appended",
+        "type": "boolean"
+      },
+      "asset_id": {
+        "description": "Asset the point belongs to (ledger id)",
+        "title": "Asset Id",
+        "type": "string"
+      },
+      "bearing_in_catalog": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Whether the declared bearing_id is in the verified bearing catalog (a bearing outside it leaves the bearing block of every snapshot missing); None when no bearing_id is declared",
+        "title": "Bearing In Catalog"
+      },
+      "changed": {
+        "description": "Declared keys whose value differs from the previous version (every key declared with a value for version 1; empty when nothing was appended)",
+        "items": {
+          "type": "string"
+        },
+        "title": "Changed",
+        "type": "array"
+      },
+      "declaration": {
+        "additionalProperties": true,
+        "description": "The point declaration as recorded in the ledger: measurement_point_id, declaration_version, bearing_id, fault_orders, machine_group, support_type, machine_power_kw, expected_signal_unit, expected_sensor_id, expected_direction, nominal_rpm (the design speed of the point, distinct from the observed rpm of a measurement), declared_by, note, changed",
+        "title": "Declaration",
+        "type": "object"
+      },
+      "declaration_version": {
+        "description": "Version of the point's declaration after this call (1-based, per point); unchanged when nothing was appended",
+        "title": "Declaration Version",
+        "type": "integer"
+      },
+      "event_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Id of the appended ledger event; None when nothing was appended",
+        "title": "Event Id"
+      },
+      "measurement_point_id": {
+        "description": "The declared point (ledger id)",
+        "title": "Measurement Point Id",
+        "type": "string"
+      },
+      "measurements_with_stale_context": {
+        "description": "Recorded measurements of the point that lack a health snapshot computed with the current declared context and the current processing lineage; their existing snapshots are kept",
+        "title": "Measurements With Stale Context",
+        "type": "integer"
+      },
+      "message": {
+        "description": "One-paragraph summary of the outcome",
+        "title": "Message",
+        "type": "string"
+      },
+      "previous_version": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Version this declaration supersedes; None for a first declaration",
+        "title": "Previous Version"
+      },
+      "remedy": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "The exact assess_asset_change(..., reprocess=True) call that recomputes the stale snapshots (bounded per call); None when nothing is stale",
+        "title": "Remedy"
+      }
+    },
+    "required": [
+      "asset_id",
+      "measurement_point_id",
+      "declaration_version",
+      "appended",
+      "changed",
+      "measurements_with_stale_context",
+      "declaration",
+      "message"
+    ],
+    "title": "MeasurementPointDeclarationResult",
+    "type": "object"
+  },
+  "diagnose_vibration": {
+    "$defs": {
+      "BearingFaultCheckResult": {
+        "description": "Result of checking for a specific expected fault frequency.",
+        "properties": {
+          "bearing_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Bearing designation (None for arbitrary-frequency checks)",
+            "title": "Bearing Id"
+          },
+          "detected": {
+            "description": "Whether a peak was detected within tolerance",
+            "title": "Detected",
+            "type": "boolean"
+          },
+          "detected_frequency_hz": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Actual peak frequency",
+            "title": "Detected Frequency Hz"
+          },
+          "deviation_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Deviation from expected (%)",
+            "title": "Deviation Pct"
+          },
+          "evidence_strength": {
+            "description": "Strength of the spectral evidence for this fault: 'high' (fundamental + >=2 harmonics), 'moderate' (fundamental, weaker harmonics), 'low' (harmonics only), or 'none'. Derived from detected peaks \u2014 not a probability.",
+            "title": "Evidence Strength",
+            "type": "string"
+          },
+          "expected_frequency_hz": {
+            "description": "Expected fault frequency",
+            "title": "Expected Frequency Hz",
+            "type": "number"
+          },
+          "fault_type": {
+            "description": "Checked label: BPFO, BPFI, BSF, FTF, or an arbitrary user-provided label (e.g. 'GMF')",
+            "title": "Fault Type",
+            "type": "string"
+          },
+          "fault_type_canonical": {
+            "anyOf": [
+              {
+                "enum": [
+                  "outer_race",
+                  "inner_race",
+                  "ball",
+                  "cage"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Canonical fault vocabulary for the standard acronyms (BPFO=outer_race, BPFI=inner_race, BSF=ball, FTF=cage); None for arbitrary labels",
+            "title": "Fault Type Canonical"
+          },
+          "harmonics_detected": {
+            "default": [],
+            "description": "Harmonics found",
+            "items": {
+              "additionalProperties": {
+                "type": "number"
+              },
+              "type": "object"
+            },
+            "title": "Harmonics Detected",
+            "type": "array"
+          },
+          "magnitude": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Magnitude at detected frequency",
+            "title": "Magnitude"
+          },
+          "signal_id": {
+            "description": "Signal identifier used",
+            "title": "Signal Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "signal_id",
+          "fault_type",
+          "expected_frequency_hz",
+          "detected",
+          "evidence_strength"
+        ],
+        "title": "BearingFaultCheckResult",
+        "type": "object"
+      },
+      "BearingFaultsSummary": {
+        "description": "Summary of all expected-frequency checks for one bearing/machine.",
+        "properties": {
+          "bearing_frequencies": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "description": "Expected frequencies checked (Hz), plus shaft_freq_hz",
+            "title": "Bearing Frequencies",
+            "type": "object"
+          },
+          "bearing_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Bearing designation (catalog route); None for the explicit-frequencies and explicit-geometry routes",
+            "title": "Bearing Id"
+          },
+          "fault_checks": {
+            "description": "Results for each checked frequency",
+            "items": {
+              "$ref": "#/$defs/BearingFaultCheckResult"
+            },
+            "title": "Fault Checks",
+            "type": "array"
+          },
+          "most_likely_fault": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Most likely fault label if any",
+            "title": "Most Likely Fault"
+          },
+          "most_likely_fault_canonical": {
+            "anyOf": [
+              {
+                "enum": [
+                  "outer_race",
+                  "inner_race",
+                  "ball",
+                  "cage"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Canonical form of most_likely_fault (None for arbitrary labels)",
+            "title": "Most Likely Fault Canonical"
+          },
+          "overall_assessment": {
+            "description": "Summary assessment text",
+            "title": "Overall Assessment",
+            "type": "string"
+          },
+          "rpm": {
+            "description": "Shaft speed (RPM)",
+            "title": "Rpm",
+            "type": "number"
+          },
+          "shaft_frequency_hz": {
+            "description": "Shaft frequency (Hz)",
+            "title": "Shaft Frequency Hz",
+            "type": "number"
+          },
+          "signal_id": {
+            "description": "Signal identifier used",
+            "title": "Signal Id",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Provenance of the expected frequencies: the catalog entry's source citation (bearing_id route), or a note for user-provided geometry/frequencies",
+            "title": "Source"
+          }
+        },
+        "required": [
+          "signal_id",
+          "rpm",
+          "shaft_frequency_hz",
+          "bearing_frequencies",
+          "fault_checks",
+          "overall_assessment"
+        ],
+        "title": "BearingFaultsSummary",
+        "type": "object"
+      },
+      "ISOSeverityRefusal": {
+        "description": "Structured refusal of an ISO severity verdict.\n\nReturned in place of a severity assessment when the verdict cannot be\nproduced honestly (undeclared signal unit, sampling rate too low for the\nISO evaluation band, machine out of scope). The refusal is part of the\nSCHEMA \u2014 not prose in a log message \u2014 so LLM clients cannot lose it.",
+        "properties": {
+          "reason": {
+            "description": "Why the ISO severity verdict was refused",
+            "title": "Reason",
+            "type": "string"
+          },
+          "remedy": {
+            "description": "Concrete action to obtain a verdict, e.g. re-load with load_signal(signal_unit=...) or re-acquire at a higher sampling rate",
+            "title": "Remedy",
+            "type": "string"
+          },
+          "signal_id": {
+            "default": "",
+            "description": "Signal identifier used",
+            "title": "Signal Id",
+            "type": "string"
+          },
+          "status": {
+            "const": "refused",
+            "default": "refused",
+            "description": "Always 'refused' \u2014 discriminates from an assessed result",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason",
+          "remedy"
+        ],
+        "title": "ISOSeverityRefusal",
+        "type": "object"
+      },
+      "VibrationSeverityResult": {
+        "description": "Unified severity assessment result (U9 merge \u2014 ``assess_severity``).\n\nZone boundaries from ISO 10816-3:2009 unless user-defined custom\nthresholds were supplied (see ``threshold_provenance``). Covers both\ninput routes: a stored signal (``signal_id`` set) or a direct broadband\nRMS velocity reading (``signal_id`` None). Alert fields\n(``alert_level``, ``exceeded_threshold``) are derived from the zone.",
+        "properties": {
+          "alert_level": {
+            "anyOf": [
+              {
+                "enum": [
+                  "none",
+                  "warning",
+                  "alarm",
+                  "danger"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Alert level derived from the zone: A=none, B=warning, C=alarm, D=danger (filled automatically)",
+            "title": "Alert Level"
+          },
+          "axis": {
+            "default": "vertical",
+            "description": "Measurement axis (informational)",
+            "title": "Axis",
+            "type": "string"
+          },
+          "boundaries": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "description": "Zone boundaries {AB, BC, CD} in mm/s (ISO or custom)",
+            "title": "Boundaries",
+            "type": "object"
+          },
+          "color_code": {
+            "description": "green, yellow, orange, or red",
+            "title": "Color Code",
+            "type": "string"
+          },
+          "exceeded_threshold": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The boundary (mm/s) exceeded by the reading (None in zone A; filled automatically from zone + boundaries)",
+            "title": "Exceeded Threshold"
+          },
+          "frequency_range": {
+            "description": "Actual evaluation band used (may be narrower than the ISO nominal 10-1000 Hz when fs limits it); 'not applicable' for direct RMS readings",
+            "title": "Frequency Range",
+            "type": "string"
+          },
+          "machine_group": {
+            "description": "ISO 20816-3 machine group: 1 (large, >300 kW) or 2 (medium, 15-300 kW)",
+            "title": "Machine Group",
+            "type": "integer"
+          },
+          "machine_power_kw": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Declared rated machine power in kW, when provided. Values below 15 kW are refused as out of ISO 20816-3 scope.",
+            "title": "Machine Power Kw"
+          },
+          "operating_speed_rpm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Operating speed in RPM, when provided (selects the band's lower edge)",
+            "title": "Operating Speed Rpm"
+          },
+          "original_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Original signal unit before conversion",
+            "title": "Original Unit"
+          },
+          "rms_velocity_mm_s": {
+            "description": "RMS velocity in mm/s",
+            "title": "Rms Velocity Mm S",
+            "type": "number"
+          },
+          "severity_level": {
+            "description": "Good, Acceptable, Unsatisfactory, or Unacceptable",
+            "title": "Severity Level",
+            "type": "string"
+          },
+          "signal_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Signal identifier used (None for a direct rms_velocity_mm_s reading)",
+            "title": "Signal Id"
+          },
+          "status": {
+            "const": "assessed",
+            "default": "assessed",
+            "description": "Always 'assessed' \u2014 discriminates from a refused result",
+            "title": "Status",
+            "type": "string"
+          },
+          "support_type": {
+            "description": "Support type: 'rigid' or 'flexible'",
+            "title": "Support Type",
+            "type": "string"
+          },
+          "threshold_provenance": {
+            "description": "Provenance of the zone boundary values (ISO edition note, or custom-threshold note)",
+            "title": "Threshold Provenance",
+            "type": "string"
+          },
+          "unit_conversion_performed": {
+            "description": "Whether acceleration-to-velocity conversion was done",
+            "title": "Unit Conversion Performed",
+            "type": "boolean"
+          },
+          "zone": {
+            "description": "ISO zone: A, B, C, or D",
+            "title": "Zone",
+            "type": "string"
+          },
+          "zone_description": {
+            "description": "Zone description",
+            "title": "Zone Description",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rms_velocity_mm_s",
+          "machine_group",
+          "support_type",
+          "zone",
+          "zone_description",
+          "severity_level",
+          "color_code",
+          "boundaries",
+          "frequency_range",
+          "unit_conversion_performed",
+          "threshold_provenance"
+        ],
+        "title": "VibrationSeverityResult",
+        "type": "object"
+      }
+    },
+    "description": "Full integrated diagnosis pipeline result.",
+    "properties": {
+      "anomaly_detection": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Anomaly detection results (health, ratio, score)",
+        "title": "Anomaly Detection"
+      },
+      "bearing_faults": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/BearingFaultsSummary"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Bearing fault results"
+      },
+      "bearing_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Bearing used (if any)",
+        "title": "Bearing Id"
+      },
+      "evidence_strength": {
+        "description": "Strength of corroborating fault evidence: 'none', 'weak', 'moderate', or 'strong'. Derived from the number and quality of independent findings (bearing fault frequency matches, shaft signatures, anomaly detection, ISO severity) \u2014 NOT from severity alone and NOT a probability. 'none' means no fault evidence was found (machine appears healthy).",
+        "title": "Evidence Strength",
+        "type": "string"
+      },
+      "fft_summary": {
+        "additionalProperties": true,
+        "description": "FFT key findings",
+        "title": "Fft Summary",
+        "type": "object"
+      },
+      "iso_severity": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/VibrationSeverityResult"
+          },
+          {
+            "$ref": "#/$defs/ISOSeverityRefusal"
+          }
+        ],
+        "description": "ISO severity assessment, or a structured refusal (status='refused' with reason + remedy) when the verdict cannot be produced honestly \u2014 e.g. undeclared signal unit or Nyquist below the ISO evaluation band. The other diagnosis blocks (spectral, bearing, anomaly) still run.",
+        "title": "Iso Severity"
+      },
+      "machine_group": {
+        "description": "ISO 20816-3 machine group used for severity: 1 (large) or 2 (medium)",
+        "title": "Machine Group",
+        "type": "integer"
+      },
+      "overall_diagnosis": {
+        "description": "Combined diagnostic text",
+        "title": "Overall Diagnosis",
+        "type": "string"
+      },
+      "parameter_sources": {
+        "anyOf": [
+          {
+            "additionalProperties": {
+              "enum": [
+                "explicit",
+                "measurement",
+                "point",
+                "default",
+                "not_supported_fault_orders",
+                "none"
+              ],
+              "type": "string"
+            },
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Origin of each diagnostic parameter, keyed rpm, bearing_id, machine_group and support_type. Precedence: 'explicit' (passed to the call) > 'measurement' (the rpm declared in the companion's \"measurement\" object) > 'point' (the current declaration of the measurement point in the asset ledger: nominal_rpm, bearing_id, machine_group, support_type) > 'default' (the historical machine_group=2 / support_type='rigid'; rpm has no default and is refused instead). bearing_id only: 'none' (no bearing from any source, bearing block skipped) or 'not_supported_fault_orders' (the point declares fault_orders without a bearing_id: the bearing block was not computed because frequency sets are not supported by diagnose_vibration in this stage; use check_bearing_faults(frequencies=...)).",
+        "title": "Parameter Sources"
+      },
+      "psd_summary": {
+        "additionalProperties": true,
+        "description": "PSD key findings",
+        "title": "Psd Summary",
+        "type": "object"
+      },
+      "recommendations": {
+        "description": "Recommended actions",
+        "items": {
+          "type": "string"
+        },
+        "title": "Recommendations",
+        "type": "array"
+      },
+      "rpm": {
+        "description": "Machine speed (RPM)",
+        "title": "Rpm",
+        "type": "number"
+      },
+      "signal_id": {
+        "description": "Signal identifier used",
+        "title": "Signal Id",
+        "type": "string"
+      },
+      "stft_summary": {
+        "additionalProperties": true,
+        "description": "STFT key findings",
+        "title": "Stft Summary",
+        "type": "object"
+      },
+      "support_type": {
+        "description": "Support type used for severity: 'rigid' or 'flexible'",
+        "title": "Support Type",
+        "type": "string"
+      }
+    },
+    "required": [
+      "signal_id",
+      "rpm",
+      "machine_group",
+      "support_type",
+      "fft_summary",
+      "psd_summary",
+      "stft_summary",
+      "iso_severity",
+      "overall_diagnosis",
+      "evidence_strength",
+      "recommendations"
+    ],
+    "title": "DiagnosisResult",
+    "type": "object"
+  },
+  "estimate_rul": {
+    "description": "Remaining Useful Life estimate from repeated measurements over time.\n\nRUL is only physically meaningful when fitted on a degradation trend\nacross multiple measurements of the same machine (days/weeks/months).\n``fit_r_squared`` describes how well the degradation curve fits the\nobserved series; it is NOT a probability that the estimate is correct.\nExtrapolation beyond the observation horizon is inherently uncertain.",
+    "properties": {
+      "current_value": {
+        "description": "Most recent measured indicator value",
+        "title": "Current Value",
+        "type": "number"
+      },
+      "estimated_rate": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Estimated degradation rate in feature units per time_unit (linear/kalman)",
+        "title": "Estimated Rate"
+      },
+      "failure_threshold": {
+        "description": "Indicator value considered as failure",
+        "title": "Failure Threshold",
+        "type": "number"
+      },
+      "feature_name": {
+        "description": "Degradation indicator tracked (e.g. 'rms')",
+        "title": "Feature Name",
+        "type": "string"
+      },
+      "fit_r_squared": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "R-squared of the fitted degradation curve on the observed data. Goodness of fit only \u2014 NOT a confidence or probability. None for the kalman method.",
+        "title": "Fit R Squared"
+      },
+      "message": {
+        "description": "Human-readable explanation of the outcome and its caveats",
+        "title": "Message",
+        "type": "string"
+      },
+      "method": {
+        "description": "Estimation method used: linear, exponential, or kalman",
+        "title": "Method",
+        "type": "string"
+      },
+      "num_measurements": {
+        "description": "Number of measurements in the series",
+        "title": "Num Measurements",
+        "type": "integer"
+      },
+      "observation_horizon": {
+        "description": "Time span covered by the measurement series (last minus first timestamp), in time_unit. RUL estimates far beyond this horizon are extrapolations with low reliability.",
+        "title": "Observation Horizon",
+        "type": "number"
+      },
+      "precision_heuristic": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Heuristic in [0,1]: 1 - rul_std/rul, clipped (kalman only). This is a heuristic, NOT a statistical confidence \u2014 do not present it as a probability of correctness.",
+        "title": "Precision Heuristic"
+      },
+      "rul": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Estimated remaining useful life in time_unit (only when status='estimated')",
+        "title": "Rul"
+      },
+      "rul_interval_95": {
+        "anyOf": [
+          {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "[lower, upper] approximate 95% interval from the delta-method variance (kalman only). Coverage not validated \u2014 treat as an order-of-magnitude band.",
+        "title": "Rul Interval 95"
+      },
+      "status": {
+        "description": "'estimated' (RUL computed), 'no_degradation_trend' (no statistically significant trend toward the threshold \u2014 healthy outcome, no RUL number), or 'threshold_already_exceeded' (last measurement is at/above the failure threshold).",
+        "enum": [
+          "estimated",
+          "no_degradation_trend",
+          "threshold_already_exceeded"
+        ],
+        "title": "Status",
+        "type": "string"
+      },
+      "time_unit": {
+        "description": "Unit of timestamps, observation_horizon, and rul",
+        "title": "Time Unit",
+        "type": "string"
+      },
+      "trend_p_value": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Two-sided p-value of the series' linear slope (None when not computable). The trend gate requires p < 0.05.",
+        "title": "Trend P Value"
+      }
+    },
+    "required": [
+      "status",
+      "method",
+      "feature_name",
+      "num_measurements",
+      "observation_horizon",
+      "time_unit",
+      "failure_threshold",
+      "current_value",
+      "message"
+    ],
+    "title": "RULEstimationResult",
+    "type": "object"
+  },
+  "extract_features_from_signal": {
+    "description": "Result of time-domain feature extraction from signal segments.",
+    "properties": {
+      "feature_names": {
+        "description": "Names of extracted features",
+        "items": {
+          "type": "string"
+        },
+        "title": "Feature Names",
+        "type": "array"
+      },
+      "features_preview": {
+        "description": "First 5 segments features (preview)",
+        "items": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "type": "object"
+        },
+        "title": "Features Preview",
+        "type": "array"
+      },
+      "features_shape": {
+        "description": "Shape of feature matrix [num_segments, num_features]",
+        "items": {
+          "type": "integer"
+        },
+        "title": "Features Shape",
+        "type": "array"
+      },
+      "num_segments": {
+        "description": "Number of segments extracted",
+        "title": "Num Segments",
+        "type": "integer"
+      },
+      "overlap_ratio": {
+        "description": "Overlap ratio between segments",
+        "title": "Overlap Ratio",
+        "type": "number"
+      },
+      "segment_duration_s": {
+        "description": "Duration of each segment in seconds",
+        "title": "Segment Duration S",
+        "type": "number"
+      },
+      "segment_length_samples": {
+        "description": "Samples per segment",
+        "title": "Segment Length Samples",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "num_segments",
+      "segment_length_samples",
+      "segment_duration_s",
+      "overlap_ratio",
+      "features_shape",
+      "feature_names",
+      "features_preview"
+    ],
+    "title": "FeatureExtractionResult",
+    "type": "object"
+  },
+  "extract_manual_specs": {
+    "additionalProperties": true,
+    "title": "extract_manual_specsDictOutput",
+    "type": "object"
+  },
+  "generate_diagnostic_report": {
+    "additionalProperties": true,
+    "title": "generate_diagnostic_reportDictOutput",
+    "type": "object"
+  },
+  "generate_diagnostic_report_docx": {
+    "additionalProperties": true,
+    "title": "generate_diagnostic_report_docxDictOutput",
+    "type": "object"
+  },
+  "generate_envelope_report": {
+    "additionalProperties": true,
+    "title": "generate_envelope_reportDictOutput",
+    "type": "object"
+  },
+  "generate_feature_comparison_report": {
+    "additionalProperties": true,
+    "title": "generate_feature_comparison_reportDictOutput",
+    "type": "object"
+  },
+  "generate_fft_report": {
+    "additionalProperties": true,
+    "title": "generate_fft_reportDictOutput",
+    "type": "object"
+  },
+  "generate_iso_report": {
+    "additionalProperties": true,
+    "title": "generate_iso_reportDictOutput",
+    "type": "object"
+  },
+  "generate_maintenance_recommendations": {
+    "properties": {
+      "result": {
+        "title": "Result",
+        "type": "string"
+      }
+    },
+    "required": [
+      "result"
+    ],
+    "title": "generate_maintenance_recommendationsOutput",
+    "type": "object"
+  },
+  "generate_pca_visualization_report": {
+    "additionalProperties": true,
+    "title": "generate_pca_visualization_reportDictOutput",
+    "type": "object"
+  },
+  "generate_test_signal": {
+    "description": "Metadata for a signal stored in the SignalRepository.",
+    "properties": {
+      "companion_warning": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Set when a companion _metadata.json exists but could not be used (not valid JSON, or not a JSON object): names the file and the case, and the signal was loaded exactly as if it had no companion. None when the companion was read fine or is absent.",
+        "title": "Companion Warning"
+      },
+      "duration_s": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Duration in seconds",
+        "title": "Duration S"
+      },
+      "filepath": {
+        "description": "Original file path",
+        "title": "Filepath",
+        "type": "string"
+      },
+      "load_timestamp": {
+        "description": "ISO 8601 timestamp when signal was loaded",
+        "title": "Load Timestamp",
+        "type": "string"
+      },
+      "measurement": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Normalized measurement identity declared in the companion's \"measurement\" object: asset_id, measurement_point_id, acquired_at (ISO 8601 normalized to UTC), timezone_declared, timestamp_suspect, rpm, load, operating_state, sensor_id, direction, declared_by, measurement_id (first 16 hex of the SHA-256 of the file bytes plus the channel index), channel_index, content_sha256 (full digest of the file bytes) and size_bytes (file size). This block is AUTHORITATIVE over the verbatim object kept in source_metadata. None when the companion declares no measurement object (the file behaves exactly as before). The value RETURNED BY load_signal carries, in addition, the outcome of the asset-ledger registration: ledger_status ('recorded' | 'already_recorded' | 'superseded' | 'not_recorded'), reason (None, or why the status or the snapshot is not nominal), changed (keys that differ from the previous declaration of the same measurement, 'location' when the file moved), reattributed_from (asset the measurement was recorded under by mistake, or None), declaration_version, snapshot_status ('complete' | 'partial' | 'failed' | 'skipped'), snapshot_id, processing_id (the snapshot lineage), comparability ({grade, qualifications} against the current declaration of the measurement point, informational, never stored) and missing ({block: {reason, remedy}} of the snapshot blocks the declared context could not support). get_signal_info and list_signals show the identity only.",
+        "title": "Measurement"
+      },
+      "num_samples": {
+        "description": "Number of samples",
+        "title": "Num Samples",
+        "type": "integer"
+      },
+      "raw_format": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "EFFECTIVE raw-binary decode parameters (sample_format, byte_order, n_channels, channel_index, header_offset, scale_factor) after the explicit > companion > default merge \u2014 recorded as provenance so get_signal_info can answer 'how was this file decoded'. None for self-describing formats.",
+        "title": "Raw Format"
+      },
+      "sampling_rate": {
+        "anyOf": [
+          {
+            "exclusiveMinimum": 0,
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Sampling rate in Hz (must be positive when set)",
+        "title": "Sampling Rate"
+      },
+      "shape": {
+        "description": "Shape of the signal array",
+        "items": {
+          "type": "integer"
+        },
+        "title": "Shape",
+        "type": "array"
+      },
+      "signal_id": {
+        "description": "Unique identifier for the stored signal",
+        "title": "Signal Id",
+        "type": "string"
+      },
+      "signal_unit": {
+        "anyOf": [
+          {
+            "enum": [
+              "g",
+              "m/s2",
+              "mm/s",
+              "m/s"
+            ],
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "DECLARED signal unit \u2014 from load_signal(signal_unit=...) or the companion _metadata.json ('signal_unit' field). Never guessed. None means undeclared: ISO severity verdicts will be refused until the unit is declared.",
+        "title": "Signal Unit"
+      },
+      "size_bytes": {
+        "description": "Approximate memory size in bytes",
+        "title": "Size Bytes",
+        "type": "integer"
+      },
+      "source_metadata": {
+        "additionalProperties": true,
+        "description": "Complete companion _metadata.json of the source file (rpm/shaft_speed, reference frequencies, ...). Empty when the file has no companion metadata.",
+        "title": "Source Metadata",
+        "type": "object"
+      }
+    },
+    "required": [
+      "signal_id",
+      "filepath",
+      "load_timestamp",
+      "shape",
+      "num_samples",
+      "size_bytes"
+    ],
+    "title": "StoredSignalInfo",
+    "type": "object"
+  },
+  "get_asset_history": {
+    "description": "Outcome of ``get_asset_history``: the index of the assets, the history\nof one asset, or a typed miss.\n\n``status`` discriminates the three shapes: 'index' (no asset_id given:\n``assets`` lists at most the configured number of assets, ``truncated``\nsays whether more exist), 'found' (``asset`` holds the history read from\nthat ledger alone) and 'not_found' (an unknown asset or point, with the\nknown ids and a suggestion; never an exception).",
+    "properties": {
+      "asset": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "History of the asset (status 'found' only): summary, measurements newest first (measurement_id, measurement_point_id, acquired_at, signal_id, location, declaration_version, rpm, direction, sensor_id, lineages, snapshot_count, indicators preview from the latest snapshot, comparability grade and codes against the point), measurement_count, truncated, point_declarations and baselines (current plus history per point), reattributed, integrity, event_count, ledger_bytes",
+        "title": "Asset"
+      },
+      "assets": {
+        "description": "Index entries (status 'index' only, else empty): asset_id, points (measurement_point_id, measurement_count, first_acquired_at, last_acquired_at, latest_lineage, baseline_declared, declaration_version), point_count, measurement_count, first_acquired_at, last_acquired_at, reattributed_count, event_count, ledger_bytes, integrity (counters)",
+        "items": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "title": "Assets",
+        "type": "array"
+      },
+      "known_assets": {
+        "description": "Asset ids the ledger directory lists (the listed ones for the index, every id for a miss; empty for a found asset, whose ledger is the only one read)",
+        "items": {
+          "type": "string"
+        },
+        "title": "Known Assets",
+        "type": "array"
+      },
+      "known_points": {
+        "description": "Points of the asset (declared or named by its measurements) when the asset is known; empty otherwise",
+        "items": {
+          "type": "string"
+        },
+        "title": "Known Points",
+        "type": "array"
+      },
+      "message": {
+        "description": "One-paragraph summary of the outcome",
+        "title": "Message",
+        "type": "string"
+      },
+      "status": {
+        "description": "'index', 'found' or 'not_found' (see the class description)",
+        "enum": [
+          "index",
+          "found",
+          "not_found"
+        ],
+        "title": "Status",
+        "type": "string"
+      },
+      "suggestion": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Concrete next step on a miss; None otherwise",
+        "title": "Suggestion"
+      },
+      "truncated": {
+        "description": "True when the index holds fewer assets than exist, or the history fewer measurements than max_measurements would have to cover",
+        "title": "Truncated",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "status",
+      "assets",
+      "known_assets",
+      "known_points",
+      "truncated",
+      "message"
+    ],
+    "title": "AssetHistoryResult",
+    "type": "object"
+  },
+  "get_signal_info": {
+    "description": "Metadata for a signal stored in the SignalRepository.",
+    "properties": {
+      "companion_warning": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Set when a companion _metadata.json exists but could not be used (not valid JSON, or not a JSON object): names the file and the case, and the signal was loaded exactly as if it had no companion. None when the companion was read fine or is absent.",
+        "title": "Companion Warning"
+      },
+      "duration_s": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Duration in seconds",
+        "title": "Duration S"
+      },
+      "filepath": {
+        "description": "Original file path",
+        "title": "Filepath",
+        "type": "string"
+      },
+      "load_timestamp": {
+        "description": "ISO 8601 timestamp when signal was loaded",
+        "title": "Load Timestamp",
+        "type": "string"
+      },
+      "measurement": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Normalized measurement identity declared in the companion's \"measurement\" object: asset_id, measurement_point_id, acquired_at (ISO 8601 normalized to UTC), timezone_declared, timestamp_suspect, rpm, load, operating_state, sensor_id, direction, declared_by, measurement_id (first 16 hex of the SHA-256 of the file bytes plus the channel index), channel_index, content_sha256 (full digest of the file bytes) and size_bytes (file size). This block is AUTHORITATIVE over the verbatim object kept in source_metadata. None when the companion declares no measurement object (the file behaves exactly as before). The value RETURNED BY load_signal carries, in addition, the outcome of the asset-ledger registration: ledger_status ('recorded' | 'already_recorded' | 'superseded' | 'not_recorded'), reason (None, or why the status or the snapshot is not nominal), changed (keys that differ from the previous declaration of the same measurement, 'location' when the file moved), reattributed_from (asset the measurement was recorded under by mistake, or None), declaration_version, snapshot_status ('complete' | 'partial' | 'failed' | 'skipped'), snapshot_id, processing_id (the snapshot lineage), comparability ({grade, qualifications} against the current declaration of the measurement point, informational, never stored) and missing ({block: {reason, remedy}} of the snapshot blocks the declared context could not support). get_signal_info and list_signals show the identity only.",
+        "title": "Measurement"
+      },
+      "num_samples": {
+        "description": "Number of samples",
+        "title": "Num Samples",
+        "type": "integer"
+      },
+      "raw_format": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "EFFECTIVE raw-binary decode parameters (sample_format, byte_order, n_channels, channel_index, header_offset, scale_factor) after the explicit > companion > default merge \u2014 recorded as provenance so get_signal_info can answer 'how was this file decoded'. None for self-describing formats.",
+        "title": "Raw Format"
+      },
+      "sampling_rate": {
+        "anyOf": [
+          {
+            "exclusiveMinimum": 0,
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Sampling rate in Hz (must be positive when set)",
+        "title": "Sampling Rate"
+      },
+      "shape": {
+        "description": "Shape of the signal array",
+        "items": {
+          "type": "integer"
+        },
+        "title": "Shape",
+        "type": "array"
+      },
+      "signal_id": {
+        "description": "Unique identifier for the stored signal",
+        "title": "Signal Id",
+        "type": "string"
+      },
+      "signal_unit": {
+        "anyOf": [
+          {
+            "enum": [
+              "g",
+              "m/s2",
+              "mm/s",
+              "m/s"
+            ],
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "DECLARED signal unit \u2014 from load_signal(signal_unit=...) or the companion _metadata.json ('signal_unit' field). Never guessed. None means undeclared: ISO severity verdicts will be refused until the unit is declared.",
+        "title": "Signal Unit"
+      },
+      "size_bytes": {
+        "description": "Approximate memory size in bytes",
+        "title": "Size Bytes",
+        "type": "integer"
+      },
+      "source_metadata": {
+        "additionalProperties": true,
+        "description": "Complete companion _metadata.json of the source file (rpm/shaft_speed, reference frequencies, ...). Empty when the file has no companion metadata.",
+        "title": "Source Metadata",
+        "type": "object"
+      }
+    },
+    "required": [
+      "signal_id",
+      "filepath",
+      "load_timestamp",
+      "shape",
+      "num_samples",
+      "size_bytes"
+    ],
+    "title": "StoredSignalInfo",
+    "type": "object"
+  },
+  "list_html_reports": {
+    "properties": {
+      "result": {
+        "anyOf": [
+          {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": true,
+            "type": "object"
+          }
+        ],
+        "title": "Result"
+      }
+    },
+    "required": [
+      "result"
+    ],
+    "title": "list_html_reportsOutput",
+    "type": "object"
+  },
+  "list_machine_manuals": {
+    "properties": {
+      "result": {
+        "items": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "title": "Result",
+        "type": "array"
+      }
+    },
+    "required": [
+      "result"
+    ],
+    "title": "list_machine_manualsOutput",
+    "type": "object"
+  },
+  "list_signals": {
+    "additionalProperties": true,
+    "title": "list_signalsDictOutput",
+    "type": "object"
+  },
+  "load_signal": {
+    "$defs": {
+      "StoredSignalInfo": {
+        "description": "Metadata for a signal stored in the SignalRepository.",
+        "properties": {
+          "companion_warning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Set when a companion _metadata.json exists but could not be used (not valid JSON, or not a JSON object): names the file and the case, and the signal was loaded exactly as if it had no companion. None when the companion was read fine or is absent.",
+            "title": "Companion Warning"
+          },
+          "duration_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Duration in seconds",
+            "title": "Duration S"
+          },
+          "filepath": {
+            "description": "Original file path",
+            "title": "Filepath",
+            "type": "string"
+          },
+          "load_timestamp": {
+            "description": "ISO 8601 timestamp when signal was loaded",
+            "title": "Load Timestamp",
+            "type": "string"
+          },
+          "measurement": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Normalized measurement identity declared in the companion's \"measurement\" object: asset_id, measurement_point_id, acquired_at (ISO 8601 normalized to UTC), timezone_declared, timestamp_suspect, rpm, load, operating_state, sensor_id, direction, declared_by, measurement_id (first 16 hex of the SHA-256 of the file bytes plus the channel index), channel_index, content_sha256 (full digest of the file bytes) and size_bytes (file size). This block is AUTHORITATIVE over the verbatim object kept in source_metadata. None when the companion declares no measurement object (the file behaves exactly as before). The value RETURNED BY load_signal carries, in addition, the outcome of the asset-ledger registration: ledger_status ('recorded' | 'already_recorded' | 'superseded' | 'not_recorded'), reason (None, or why the status or the snapshot is not nominal), changed (keys that differ from the previous declaration of the same measurement, 'location' when the file moved), reattributed_from (asset the measurement was recorded under by mistake, or None), declaration_version, snapshot_status ('complete' | 'partial' | 'failed' | 'skipped'), snapshot_id, processing_id (the snapshot lineage), comparability ({grade, qualifications} against the current declaration of the measurement point, informational, never stored) and missing ({block: {reason, remedy}} of the snapshot blocks the declared context could not support). get_signal_info and list_signals show the identity only.",
+            "title": "Measurement"
+          },
+          "num_samples": {
+            "description": "Number of samples",
+            "title": "Num Samples",
+            "type": "integer"
+          },
+          "raw_format": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "EFFECTIVE raw-binary decode parameters (sample_format, byte_order, n_channels, channel_index, header_offset, scale_factor) after the explicit > companion > default merge \u2014 recorded as provenance so get_signal_info can answer 'how was this file decoded'. None for self-describing formats.",
+            "title": "Raw Format"
+          },
+          "sampling_rate": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Sampling rate in Hz (must be positive when set)",
+            "title": "Sampling Rate"
+          },
+          "shape": {
+            "description": "Shape of the signal array",
+            "items": {
+              "type": "integer"
+            },
+            "title": "Shape",
+            "type": "array"
+          },
+          "signal_id": {
+            "description": "Unique identifier for the stored signal",
+            "title": "Signal Id",
+            "type": "string"
+          },
+          "signal_unit": {
+            "anyOf": [
+              {
+                "enum": [
+                  "g",
+                  "m/s2",
+                  "mm/s",
+                  "m/s"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "DECLARED signal unit \u2014 from load_signal(signal_unit=...) or the companion _metadata.json ('signal_unit' field). Never guessed. None means undeclared: ISO severity verdicts will be refused until the unit is declared.",
+            "title": "Signal Unit"
+          },
+          "size_bytes": {
+            "description": "Approximate memory size in bytes",
+            "title": "Size Bytes",
+            "type": "integer"
+          },
+          "source_metadata": {
+            "additionalProperties": true,
+            "description": "Complete companion _metadata.json of the source file (rpm/shaft_speed, reference frequencies, ...). Empty when the file has no companion metadata.",
+            "title": "Source Metadata",
+            "type": "object"
+          }
+        },
+        "required": [
+          "signal_id",
+          "filepath",
+          "load_timestamp",
+          "shape",
+          "num_samples",
+          "size_bytes"
+        ],
+        "title": "StoredSignalInfo",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "result": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/StoredSignalInfo"
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/StoredSignalInfo"
+            },
+            "type": "array"
+          }
+        ],
+        "title": "Result"
+      }
+    },
+    "required": [
+      "result"
+    ],
+    "title": "load_signalOutput",
+    "type": "object"
+  },
+  "plot_signal": {
+    "properties": {
+      "result": {
+        "title": "Result",
+        "type": "string"
+      }
+    },
+    "required": [
+      "result"
+    ],
+    "title": "plot_signalOutput",
+    "type": "object"
+  },
+  "predict_anomalies": {
+    "description": "Result of anomaly detection prediction on new data.\n\nBounded output by design: counts, score percentiles, and the worst\nsegments only \u2014 never per-segment arrays (a 6M-sample signal would\ndump tens of thousands of entries into the chat context).",
+    "properties": {
+      "anomaly_count": {
+        "description": "Number of anomalies detected",
+        "title": "Anomaly Count",
+        "type": "integer"
+      },
+      "anomaly_ratio": {
+        "description": "Ratio of anomalies (0-1)",
+        "title": "Anomaly Ratio",
+        "type": "number"
+      },
+      "model_name": {
+        "description": "Name of the trained model used",
+        "title": "Model Name",
+        "type": "string"
+      },
+      "num_segments": {
+        "description": "Number of segments analyzed",
+        "title": "Num Segments",
+        "type": "integer"
+      },
+      "overall_health": {
+        "description": "Overall health status: 'Healthy', 'Suspicious', 'Faulty' (thresholded on anomaly_ratio: <0.1, <0.3, >=0.3)",
+        "title": "Overall Health",
+        "type": "string"
+      },
+      "score_percentiles": {
+        "anyOf": [
+          {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Percentiles (p5/p25/p50/p75/p95) of the model decision scores; negative = anomalous side. None when the model exposes no decision_function.",
+        "title": "Score Percentiles"
+      },
+      "segment_duration_s": {
+        "description": "Segment length in seconds (from the model's training metadata)",
+        "title": "Segment Duration S",
+        "type": "number"
+      },
+      "worst_segments": {
+        "default": [],
+        "description": "Up to 10 most anomalous segments, each with segment_index, start_time_s, and score (when available) \u2014 enough to locate the worst regions without dumping per-segment arrays.",
+        "items": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "type": "object"
+        },
+        "title": "Worst Segments",
+        "type": "array"
+      }
+    },
+    "required": [
+      "model_name",
+      "num_segments",
+      "anomaly_count",
+      "anomaly_ratio",
+      "segment_duration_s",
+      "overall_health"
+    ],
+    "title": "AnomalyPredictionResult",
+    "type": "object"
+  },
+  "read_manual_excerpt": {
+    "properties": {
+      "result": {
+        "title": "Result",
+        "type": "string"
+      }
+    },
+    "required": [
+      "result"
+    ],
+    "title": "read_manual_excerptOutput",
+    "type": "object"
+  },
+  "search_bearing_catalog": {
+    "$defs": {
+      "BearingCatalogMiss": {
+        "description": "Typed 'not in catalog' result for a bearing catalog lookup.\n\nA missing catalog entry is a legitimate negative outcome, not a tool\nfailure \u2014 the catalog is intentionally small (verified geometry only),\nso the miss is expressed in the SCHEMA (status + suggestion) instead of\nan ad-hoc dict with an 'error' key. No geometry is ever invented.",
+        "properties": {
+          "bearing_id": {
+            "description": "The bearing designation that was searched for",
+            "title": "Bearing Id",
+            "type": "string"
+          },
+          "catalog_contains": {
+            "description": "Designations actually present in the verified catalog",
+            "items": {
+              "type": "string"
+            },
+            "title": "Catalog Contains",
+            "type": "array"
+          },
+          "status": {
+            "const": "not_found",
+            "default": "not_found",
+            "description": "Always 'not_found' \u2014 discriminates from a catalog hit",
+            "title": "Status",
+            "type": "string"
+          },
+          "suggestion": {
+            "description": "Concrete next step to obtain the bearing geometry",
+            "title": "Suggestion",
+            "type": "string"
+          }
+        },
+        "required": [
+          "bearing_id",
+          "suggestion",
+          "catalog_contains"
+        ],
+        "title": "BearingCatalogMiss",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "result": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "$ref": "#/$defs/BearingCatalogMiss"
+          }
+        ],
+        "title": "Result"
+      }
+    },
+    "required": [
+      "result"
+    ],
+    "title": "search_bearing_catalogOutput",
+    "type": "object"
+  },
+  "search_documentation": {
+    "additionalProperties": true,
+    "title": "search_documentationDictOutput",
+    "type": "object"
+  },
+  "train_anomaly_model": {
+    "description": "Result of anomaly detection model training.",
+    "properties": {
+      "model_name": {
+        "description": "Name under which the model was saved \u2014 pass this to predict_anomalies(model_name=...)",
+        "title": "Model Name",
+        "type": "string"
+      },
+      "model_params": {
+        "additionalProperties": true,
+        "description": "Best model hyperparameters",
+        "title": "Model Params",
+        "type": "object"
+      },
+      "model_path": {
+        "description": "Path to saved model file (.pkl)",
+        "title": "Model Path",
+        "type": "string"
+      },
+      "model_type": {
+        "description": "Type of model: 'OneClassSVM' or 'LocalOutlierFactor'",
+        "title": "Model Type",
+        "type": "string"
+      },
+      "num_features_original": {
+        "description": "Number of original features",
+        "title": "Num Features Original",
+        "type": "integer"
+      },
+      "num_features_pca": {
+        "description": "Number of PCA components (features after dimensionality reduction)",
+        "title": "Num Features Pca",
+        "type": "integer"
+      },
+      "num_training_samples": {
+        "description": "Number of healthy samples used for training",
+        "title": "Num Training Samples",
+        "type": "integer"
+      },
+      "pca_path": {
+        "description": "Path to saved PCA file (.pkl)",
+        "title": "Pca Path",
+        "type": "string"
+      },
+      "scaler_path": {
+        "description": "Path to saved scaler file (.pkl)",
+        "title": "Scaler Path",
+        "type": "string"
+      },
+      "validation_accuracy": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Overall balanced accuracy on healthy + fault validation data",
+        "title": "Validation Accuracy"
+      },
+      "validation_details": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Validation details with healthy and fault metrics",
+        "title": "Validation Details"
+      },
+      "validation_metrics": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Detailed validation metrics (healthy/fault accuracy breakdown)",
+        "title": "Validation Metrics"
+      },
+      "variance_explained": {
+        "description": "Cumulative variance explained by PCA components",
+        "title": "Variance Explained",
+        "type": "number"
+      }
+    },
+    "required": [
+      "model_name",
+      "model_type",
+      "num_training_samples",
+      "num_features_original",
+      "num_features_pca",
+      "variance_explained",
+      "model_params",
+      "model_path",
+      "scaler_path",
+      "pca_path"
+    ],
+    "title": "AnomalyModelResult",
+    "type": "object"
+  }
+}

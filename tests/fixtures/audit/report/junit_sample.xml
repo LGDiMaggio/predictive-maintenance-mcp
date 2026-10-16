@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="1" failures="3" skipped="4" tests="10" time="2.345" timestamp="2026-10-15T20:32:44.547067+02:00"><testcase classname="tests.test_tool_contracts" name="test_output_schema_frozen[analyze_fft]" time="0.012"><failure message="AssertionError: analyze_fft output schema differs from the frozen fixture&#10;assert {'a': 1} == {'a': 2}">tool = 'analyze_fft'
+
+    def test_output_schema_frozen(tool):
+&gt;       assert current[tool] == frozen[tool], f"{tool} output schema differs from the frozen fixture"
+E       AssertionError: analyze_fft output schema differs from the frozen fixture
+
+tests/test_tool_contracts.py:88: AssertionError</failure></testcase><testcase classname="tests.test_tool_contracts" name="test_output_schema_frozen[analyze_envelope]" time="0.011"><failure message="AssertionError: analyze_envelope output schema differs from the frozen fixture&#10;assert {'b': 1} == {'b': 2}">tool = 'analyze_envelope'
+
+    def test_output_schema_frozen(tool):
+&gt;       assert current[tool] == frozen[tool], f"{tool} output schema differs from the frozen fixture"
+E       AssertionError: analyze_envelope output schema differs from the frozen fixture
+
+tests/test_tool_contracts.py:88: AssertionError</failure></testcase><testcase classname="tests.test_tool_contracts" name="test_output_schema_frozen[assess_severity]" time="0.010" /><testcase classname="tests.test_install_docs" name="test_extras_named_in_docs_exist" time="0.004"><failure message="AssertionError: README.md names the extra [gpu], which pyproject.toml does not declare">    def test_extras_named_in_docs_exist():
+&gt;       assert not violations, violations
+E       AssertionError: README.md names the extra [gpu], which pyproject.toml does not declare
+
+tests/test_install_docs.py:41: AssertionError</failure></testcase><testcase classname="tests.test_ledger.TestAppend" name="test_append_is_atomic" time="0.000"><error message="failed on setup with &quot;PermissionError: [Errno 13] Permission denied&quot;">    @pytest.fixture
+    def ledger_dir(tmp_path):
+&gt;       os.chmod(tmp_path, 0)
+E       PermissionError: [Errno 13] Permission denied
+
+tests/test_ledger.py:22: PermissionError</error></testcase><testcase classname="tests.test_diagnostic_invariants.TestInvalidInputs" name="test_nan_sample_is_refused" time="0.002"><skipped type="pytest.xfail" message="audit-known-defect: nan-sample-accepted: a CSV with one NaN sample loads and ISO severity returns Zone D with rms_velocity_mm_s=nan" /></testcase><testcase classname="tests.test_diagnostic_invariants.TestInvalidInputs" name="test_sampling_rate_inf_is_refused" time="0.002"><skipped type="pytest.xfail" message="audit-known-defect: sampling-rate-inf-accepted: load_signal accepts sampling_rate=inf and stores the signal" /></testcase><testcase classname="tests.test_fft_analysis" name="test_plain_expected_failure" time="0.001"><skipped type="pytest.xfail" message="rounding differs on old numpy" /></testcase><testcase classname="tests.test_doc_drift" name="test_notebook_cells_resolve" time="0.000"><skipped type="pytest.skip" message="nbformat is not installed">tests/test_doc_drift.py:120: nbformat is not installed</skipped></testcase><testcase classname="tests.test_diagnostic_invariants.TestFFT" name="test_parseval" time="0.030" /></testsuite></testsuites>

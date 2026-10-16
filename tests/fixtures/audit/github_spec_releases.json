@@ -1,0 +1,74 @@
+[
+  {
+    "tag_name": "2026-07-28",
+    "name": "2026-07-28",
+    "draft": false,
+    "prerelease": false,
+    "published_at": "2026-07-28T16:47:49Z",
+    "created_at": "2026-07-28T16:44:35Z"
+  },
+  {
+    "tag_name": "2026-07-28-RC",
+    "name": "2026-07-28 RC",
+    "draft": false,
+    "prerelease": true,
+    "published_at": "2026-05-29T12:51:22Z",
+    "created_at": "2026-05-29T12:49:07Z"
+  },
+  {
+    "tag_name": "2025-11-25",
+    "name": "2025-11-25",
+    "draft": false,
+    "prerelease": false,
+    "published_at": "2025-11-25T21:17:42Z",
+    "created_at": "2025-11-25T21:14:08Z"
+  },
+  {
+    "tag_name": "2025-11-25-RC",
+    "name": "2025-11-25-RC",
+    "draft": false,
+    "prerelease": true,
+    "published_at": "2025-11-15T06:06:55Z",
+    "created_at": "2025-11-15T00:13:55Z"
+  },
+  {
+    "tag_name": "2025-06-18",
+    "name": "2025-06-18",
+    "draft": false,
+    "prerelease": false,
+    "published_at": "2025-06-18T20:09:59Z",
+    "created_at": "2025-06-18T20:07:38Z"
+  },
+  {
+    "tag_name": "2025-03-26",
+    "name": "2025-03-26",
+    "draft": false,
+    "prerelease": false,
+    "published_at": "2025-03-26T14:28:27Z",
+    "created_at": "2025-03-26T14:25:05Z"
+  },
+  {
+    "tag_name": "2024-11-05-final",
+    "name": "2024-11-05-final",
+    "draft": false,
+    "prerelease": false,
+    "published_at": "2025-03-26T13:53:30Z",
+    "created_at": "2025-03-26T13:14:14Z"
+  },
+  {
+    "tag_name": "2024-11-05",
+    "name": "2024-11-05",
+    "draft": false,
+    "prerelease": false,
+    "published_at": "2025-01-17T20:37:02Z",
+    "created_at": "2025-01-17T20:35:31Z"
+  },
+  {
+    "tag_name": "2024-10-07",
+    "name": "2024-10-07",
+    "draft": false,
+    "prerelease": false,
+    "published_at": "2024-11-06T10:59:21Z",
+    "created_at": "2024-11-06T10:58:55Z"
+  }
+]
