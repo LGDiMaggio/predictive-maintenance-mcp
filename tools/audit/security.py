@@ -13,24 +13,38 @@ Findings
 One finding per (package, advisory) across both audits, subject
 ``<package> <advisory id>``, so each advisory has its own
 fingerprint and a later fix version or alias does not re-key it. Evidence
-records the audited versions, fix versions, aliases, which audit saw it, and
-``fixable_in_range``: true when a fix version satisfies the package's
-declared range in ``[project.dependencies]``. A transitive package has no
-declared range, so any fix counts (the lock can move to it without touching
-``pyproject.toml``). A fixable advisory is ``breaking-candidate`` (high),
-anything else ``review``. A dependency pip-audit skipped is a coverage
-finding; the project itself is always skipped (it is not on PyPI under the
-audited version), so it is left out.
+records the audited versions, fix versions, aliases, which audit saw it,
+``fix_in_declared_range`` (a listed fix satisfies the declared range),
+``fix_reachable`` and ``fixable_in_range``.
+
+``fix_reachable`` reads the fresh resolution, which installs the newest
+releases every declared range and every dependency's own constraints allow:
+
+* true when the fresh resolution installs the package without this
+  advisory, under its id or any alias (refreshing the lock reaches an
+  unaffected version);
+* false when the fresh resolution still has it (no release the current
+  constraints admit fixes it, whatever ``fix_versions`` lists);
+* None when the fresh resolution does not install the package (a
+  platform-specific dependency on another platform) or was not read.
+
+``fixable_in_range`` is true when a fix version exists, satisfies the
+package's declared range in ``[project.dependencies]`` (a transitive package
+has no declared range, so any fix version counts), and ``fix_reachable`` is
+not false. A fixable advisory is ``breaking-candidate`` (high), anything else
+``review``. The project itself is always skipped by pip-audit (it is not on
+PyPI under the audited version), so it is left out; another package
+pip-audit skipped is an ``audit-skipped`` finding, unless it is declared.
 
 Fail closed
 -----------
 Status ``error`` (exit 2) when an input file is missing or unparseable, or
-when an audit's names, after PEP 503 normalization, miss any declared
-dependency: an empty or truncated audit must never read as "no
+when an audit, after PEP 503 normalization, does not audit every declared
+dependency: a declared dependency that is absent or that pip-audit skipped
+was not checked, and an empty or truncated audit must never read as "no
 vulnerabilities". The result is still written, with whatever the other file
 showed, so the report has evidence. Otherwise the status is ``pass`` even
-with advisories: the weekly verdict belongs to the report builder, the only
-step that knows which advisories an open issue already tracks.
+with advisories: the weekly verdict belongs to the report builder.
 """
 
 from __future__ import annotations
@@ -165,7 +179,9 @@ def load_audit(path: Union[str, Path]) -> list[Audited]:
 
 
 def fixable_in_range(
-    fix_versions: Sequence[str], declared: Optional[SpecifierSet]
+    fix_versions: Sequence[str],
+    declared: Optional[SpecifierSet],
+    fix_reachable: Optional[bool] = None,
 ) -> bool:
     """Whether some fix version is installable within the declared range.
 
@@ -173,7 +189,11 @@ def fixable_in_range(
         fix_versions: pip-audit's ``fix_versions`` for one advisory.
         declared: The package's specifier from ``[project.dependencies]``, or
             None for a transitive package (any fix is then in range).
+        fix_reachable: What the fresh resolution showed (see the module
+            docstring); False overrides the fix versions.
     """
+    if fix_reachable is False:
+        return False
     valid = []
     for text in fix_versions:
         try:
@@ -199,7 +219,15 @@ def _input_error(label: str, path: Path, error: str) -> results.Finding:
     )
 
 
-def _coverage_error(label: str, missing: list[str]) -> results.Finding:
+def _coverage_error(
+    label: str, missing: list[str], skipped: Mapping[str, str]
+) -> results.Finding:
+    """Declared dependencies the ``label`` audit did not check.
+
+    Args:
+        missing: Every declared name not audited, skipped ones included.
+        skipped: pip-audit's skip reason for the declared names it skipped.
+    """
     return results.Finding(
         rule="audit-coverage",
         category="security",
@@ -209,7 +237,13 @@ def _coverage_error(label: str, missing: list[str]) -> results.Finding:
             f"The {label} pip-audit output does not cover declared "
             f"dependencies: {', '.join(missing)}"
         ),
-        evidence={"missing": missing},
+        evidence={
+            "missing": missing,
+            "skipped": {
+                name: results.truncate_evidence(reason)
+                for name, reason in sorted(skipped.items())
+            },
+        },
         classification="not-checked",
     )
 
@@ -253,16 +287,50 @@ def _normalize(
                 entry["seen_in"].add(label)
                 entry["description"] = entry["description"] or vuln.description
 
+    fresh = audits.get("fresh")
+    fresh_installed: set[str] = set()
+    # Advisory ids and aliases the fresh audit reported, per package: the two
+    # audits may name one vulnerability differently (PYSEC in one, GHSA in
+    # the other), so reachability matches on either.
+    fresh_ids: dict[str, set[str]] = {}
+    for dep in fresh or ():
+        if dep.skip_reason is None:
+            name = canonicalize_name(dep.name)
+            fresh_installed.add(name)
+            ids = fresh_ids.setdefault(name, set())
+            for vuln in dep.vulns:
+                ids.add(vuln.id)
+                ids.update(vuln.aliases)
     findings = []
     for (name, advisory), entry in sorted(advisories.items()):
         spec = declared.get(name)
         fixes = sorted(entry["fix_versions"], key=_version_sort_key)
-        fixable = fixable_in_range(fixes, spec)
+        known_as = {advisory, *entry["aliases"]}
+        reachable = (
+            not (known_as & fresh_ids.get(name, set()))
+            if name in fresh_installed
+            else None
+        )
+        fixable = fixable_in_range(fixes, spec, reachable)
+        # Whether the declared range admits a listed fix at all: it decides
+        # which explanation a non-fixable advisory gets.
+        fix_in_range = fixable_in_range(fixes, spec)
         affected = ", ".join(sorted(set(entry["versions"].values()))) or "?"
         if fixable:
             title = (
                 f"{name} {affected} is affected by {advisory}; a fix "
                 f"({', '.join(fixes)}) is installable within the declared range"
+            )
+        elif fix_in_range:
+            title = (
+                f"{name} {affected} is affected by {advisory}; fixes exist "
+                f"({', '.join(fixes)}), but the newest resolution the declared "
+                f"ranges allow is still affected"
+            )
+        elif not fixes and reachable:
+            title = (
+                f"{name} {affected} is affected by {advisory}; no fix version is "
+                f"listed, and the fresh resolution installs a release without it"
             )
         else:
             title = (
@@ -284,6 +352,8 @@ def _normalize(
                     "aliases": sorted(entry["aliases"]),
                     "seen_in": sorted(entry["seen_in"]),
                     "declared": str(spec) if spec is not None else None,
+                    "fix_in_declared_range": fix_in_range,
+                    "fix_reachable": reachable,
                     "fixable_in_range": fixable,
                     "excerpt": results.truncate_evidence(entry["description"]),
                 },
@@ -291,6 +361,10 @@ def _normalize(
             )
         )
     for name, entry in sorted(skipped.items()):
+        # A skipped declared dependency is a coverage error (build_result),
+        # not a finding of its own.
+        if name in declared:
+            continue
         reasons = " | ".join(
             f"{label}: {reason}" for label, reason in sorted(entry["reasons"].items())
         )
@@ -298,7 +372,7 @@ def _normalize(
             results.Finding(
                 rule="audit-skipped",
                 category="security",
-                severity="medium" if name in declared else "low",
+                severity="low",
                 subject=name,
                 title=f"pip-audit skipped {name}: its advisories were not checked",
                 evidence={
@@ -349,10 +423,19 @@ def build_result(
             failed = True
             continue
         audits[label] = audited
-        names = {canonicalize_name(dep.name) for dep in audited}
+        # A skipped dependency was not checked, so it does not count as covered.
+        names = {
+            canonicalize_name(dep.name) for dep in audited if dep.skip_reason is None
+        }
         missing = sorted(set(declared) - names)
         if missing:
-            findings.append(_coverage_error(label, missing))
+            skipped = {
+                canonicalize_name(dep.name): dep.skip_reason
+                for dep in audited
+                if dep.skip_reason is not None
+                and canonicalize_name(dep.name) in missing
+            }
+            findings.append(_coverage_error(label, missing, skipped))
             failed = True
         inputs[label] = {
             "path": str(path),
