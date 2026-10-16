@@ -1270,3 +1270,17 @@ class TestLoadSignalLedger:
         )
         assert result.measurement is None
         assert not ledger_dir.exists()
+
+    @pytest.mark.asyncio
+    async def test_load_refused_for_nan_samples_records_nothing(
+        self, ledger_tools, sandbox_data_dir, ledger_dir, mock_ctx, clean_repo
+    ):
+        """R6: the store refuses the file before the ledger sees it, so no
+        measurement is recorded for a capture that was never loaded."""
+        values = _noise(1)
+        values[100] = np.nan
+        _place(sandbox_data_dir, "m01.csv", values, _companion(_identity()))
+        with pytest.raises(ValueError, match="non-finite"):
+            await ledger_tools["load_signal"](ctx=mock_ctx, filepath="m01.csv")
+        assert repo_module.get_repository().signal_count == 0
+        assert not ledger_dir.exists()

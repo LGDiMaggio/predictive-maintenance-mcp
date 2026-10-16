@@ -905,14 +905,6 @@ class TestInvalidInputs:
         )
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(
-        strict=True,
-        raises=AssertionError,
-        reason=known_defect(
-            "sampling-rate-inf-accepted",
-            "load_signal accepts sampling_rate=inf and stores the signal",
-        ),
-    )
     async def test_infinite_sampling_rate_is_refused(self, load_csv):
         info, refusal = await _outcome(
             load_csv("inv_fs_inf", _sine(0.1, 50.0), fs=math.inf)
@@ -922,19 +914,15 @@ class TestInvalidInputs:
             f"sampling_rate=inf accepted: stored sampling_rate={info.sampling_rate}, "
             f"duration_s={info.duration_s}"
         )
+        assert "sampling rate must be positive" in str(refusal)
         assert "inv_fs_inf" not in _loaded_ids()
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(
-        strict=True,
-        raises=pydantic.ValidationError,
-        reason=known_defect(
-            "sampling-rate-nan-library-error",
-            "load_signal with sampling_rate=nan surfaces a pydantic StoredSignalInfo "
-            "error",
-        ),
-    )
     async def test_nan_sampling_rate_is_a_project_refusal(self, load_csv):
-        await _outcome(load_csv("inv_fs_nan", _sine(0.1, 50.0), fs=math.nan))
+        _, refusal = await _outcome(
+            load_csv("inv_fs_nan", _sine(0.1, 50.0), fs=math.nan)
+        )
 
+        assert refusal is not None
+        assert "sampling rate must be positive" in str(refusal)
         assert "inv_fs_nan" not in _loaded_ids()
