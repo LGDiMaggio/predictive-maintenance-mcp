@@ -52,6 +52,10 @@ class TestValidateSamplingRate:
         with pytest.raises(ValueError, match="not a number"):
             validate_sampling_rate(value)
 
+    def test_integer_too_large_for_a_float_is_refused_as_a_value_error(self):
+        with pytest.raises(ValueError, match="sampling rate must be positive"):
+            validate_sampling_rate(10**400)
+
     def test_name_shapes_the_message(self):
         with pytest.raises(ValueError, match=r"fs > 0"):
             validate_sampling_rate(math.inf, name="fs")
@@ -175,6 +179,10 @@ class TestValidateFiniteSamples:
 
         assert result.dtype == np.float64
         np.testing.assert_array_equal(result, [1.0, 2.0])
+
+    def test_number_too_large_for_a_float_is_refused_as_non_finite(self):
+        with pytest.raises(ValueError, match=r"1 non-finite.*index 1"):
+            validate_finite_samples(np.array([1.0, 10**400], dtype=object))
 
     def test_text_nan_token_is_refused_as_non_finite(self):
         with pytest.raises(ValueError, match="1 non-finite"):

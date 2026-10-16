@@ -29,7 +29,7 @@ from ..signal_processing.features import (
     extract_time_domain_features as _extract_time_domain_features,
 )
 from ..signal_acquisition.repository import VALID_SIGNAL_UNITS, normalize_signal_unit
-from ..signal_validation import validate_finite_samples, validate_sampling_rate
+from ..signal_validation import validate_signal_and_fs
 from ..diagnostics.bearing_analyzer import check_all_bearing_faults
 from ..diagnostics.iso20816 import assess_severity_with_axis
 
@@ -251,12 +251,7 @@ def diagnose_vibration(
     # Corrupt input is refused here, not per block: the blocks below catch
     # the bearing ValueError and turn the ISO one into a refused block, so
     # without this check a NaN sample would still yield a "diagnosis".
-    validate_sampling_rate(
-        fs,
-        name="fs",
-        remedy="pass the sampling frequency the signal was acquired at, in Hz",
-    )
-    signal = validate_finite_samples(signal, source="signal")
+    signal = validate_signal_and_fs(signal, fs)
 
     # 1. FFT
     fft_summary = _compute_fft_summary(signal, fs)

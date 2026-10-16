@@ -32,7 +32,9 @@ import numpy as np
 __all__ = [
     "BAD_SAMPLE_REMEDY",
     "validate_finite_samples",
+    "validate_positive_finite",
     "validate_sampling_rate",
+    "validate_signal_and_fs",
 ]
 
 #: Remedy for a capture with missing, non-finite or non-numeric samples. It
@@ -46,6 +48,54 @@ BAD_SAMPLE_REMEDY = (
 
 _DEFAULT_RATE_REMEDY = "declare the sampling frequency in Hz as a positive number"
 
+#: Remedy the direct-call diagnostic boundaries give a Python caller for fs.
+_DIRECT_CALL_FS_REMEDY = "pass the sampling frequency the signal was acquired at, in Hz"
+
+
+def validate_positive_finite(
+    value: Any,
+    *,
+    name: str,
+    source: str = "",
+    remedy: str,
+) -> float:
+    """Return *value* as a float when it is a finite real number above zero.
+
+    Args:
+        value: The declared quantity. Booleans are refused even though Python
+            treats them as integers.
+        name: What the quantity is called in the caller's vocabulary; it
+            appears as ``"<name> must be positive"`` and ``"<name> > 0"``.
+        source: Where the value came from (a parameter or a companion file),
+            appended to the message when given.
+        remedy: What the caller should do instead.
+
+    Returns:
+        The value as a Python float.
+
+    Raises:
+        ValueError: If the value is not a real number, is NaN or infinite
+            (an integer too large for a float counts as infinite), or is zero
+            or negative.
+    """
+    where = f" (from {source})" if source else ""
+    if isinstance(value, (bool, np.bool_)) or not isinstance(value, numbers.Real):
+        raise ValueError(
+            f"{name} must be positive and finite ({name} > 0), got {value!r} "
+            f"of type {type(value).__name__}, which is not a number{where} — "
+            f"{remedy}."
+        )
+    try:
+        number = float(value)
+    except OverflowError:
+        number = math.inf
+    if not math.isfinite(number) or number <= 0:
+        raise ValueError(
+            f"{name} must be positive and finite ({name} > 0), got "
+            f"{value!r}{where} — {remedy}."
+        )
+    return number
+
 
 def validate_sampling_rate(
     value: Any,
@@ -54,16 +104,16 @@ def validate_sampling_rate(
     source: str = "",
     remedy: str = _DEFAULT_RATE_REMEDY,
 ) -> float:
-    """Return *value* as a float when it is a finite real number above zero.
+    """Return *value* as a float when it is a valid sampling rate.
+
+    The rate-specific defaults of :func:`validate_positive_finite`.
 
     Args:
-        value: The declared rate. Booleans are refused even though Python
-            treats them as integers.
+        value: The declared rate.
         name: What the rate is called in the caller's vocabulary (for
-            example ``"fs"``); it appears as ``"<name> must be positive"``
-            and ``"<name> > 0"``.
-        source: Where the value came from (a parameter or a companion file),
-            appended to the message when given.
+            example ``"fs"``).
+        source: Where the value came from, appended to the message when
+            given.
         remedy: What the caller should do instead.
 
     Returns:
@@ -73,20 +123,29 @@ def validate_sampling_rate(
         ValueError: If the rate is not a real number, is NaN or infinite, or
             is zero or negative.
     """
-    where = f" (from {source})" if source else ""
-    if isinstance(value, (bool, np.bool_)) or not isinstance(value, numbers.Real):
-        raise ValueError(
-            f"{name} must be positive and finite ({name} > 0), got {value!r} "
-            f"of type {type(value).__name__}, which is not a number{where} — "
-            f"{remedy}."
-        )
-    rate = float(value)
-    if not math.isfinite(rate) or rate <= 0:
-        raise ValueError(
-            f"{name} must be positive and finite ({name} > 0), got "
-            f"{value!r}{where} — {remedy}."
-        )
-    return rate
+    return validate_positive_finite(value, name=name, source=source, remedy=remedy)
+
+
+def validate_signal_and_fs(signal: Any, fs: Any) -> np.ndarray:
+    """The check of a diagnostic function that takes an array from Python.
+
+    Used by the three direct-call boundaries (ISO severity, the bearing
+    fault peak check and the diagnosis pipeline), which refuse before
+    computing anything: the sampling rate first, then the samples.
+
+    Args:
+        signal: The samples the caller passed.
+        fs: The sampling frequency the caller passed, in Hz.
+
+    Returns:
+        The validated samples (see :func:`validate_finite_samples`).
+
+    Raises:
+        ValueError: If *fs* is not a finite number above zero, or a sample
+            is NaN, infinite or not a number.
+    """
+    validate_sampling_rate(fs, name="fs", remedy=_DIRECT_CALL_FS_REMEDY)
+    return validate_finite_samples(signal, source="signal")
 
 
 def validate_finite_samples(
@@ -128,7 +187,7 @@ def validate_finite_samples(
         arr = _parse_text_samples(arr, source=source, remedy=remedy)
     elif kind not in "fc":
         raise ValueError(
-            f"{source} holds {arr.dtype} values, which are not samples — " f"{remedy}."
+            f"{source} holds {arr.dtype} values, which are not samples — {remedy}."
         )
 
     finite = np.isfinite(arr)
@@ -146,17 +205,23 @@ def _parse_text_samples(arr: np.ndarray, *, source: str, remedy: str) -> np.ndar
     """Parse a text or object array into float64, refusing what does not parse."""
     flat = arr.ravel()
     parsed = np.empty(flat.size, dtype=np.float64)
-    bad: list[int] = []
+    bad_count = 0
+    first_bad = -1
     for i, item in enumerate(flat):
         try:
             parsed[i] = float(item)
+        except OverflowError:
+            # A number too large for a float: refused below as non-finite.
+            parsed[i] = math.inf
         except (TypeError, ValueError):
-            bad.append(i)
-    if bad:
+            if bad_count == 0:
+                first_bad = i
+            bad_count += 1
+    if bad_count:
         raise ValueError(
-            f"{source} contains {len(bad)} non-numeric sample(s) out of "
-            f"{flat.size}; first at {_position(bad[0], arr.shape)}, value "
-            f"{flat[bad[0]]!r} (a header row or a marker token) — {remedy}."
+            f"{source} contains {bad_count} non-numeric sample(s) out of "
+            f"{flat.size}; first at {_position(first_bad, arr.shape)}, value "
+            f"{flat[first_bad]!r} (a header row or a marker token) — {remedy}."
         )
     return parsed.reshape(arr.shape)
 

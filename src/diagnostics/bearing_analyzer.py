@@ -14,7 +14,7 @@ import numpy as np
 
 from .bearing_catalog import compute_fault_frequencies, lookup_bearing
 from ..signal_processing.spectral import compute_envelope_spectrum
-from ..signal_validation import validate_finite_samples, validate_sampling_rate
+from ..signal_validation import validate_signal_and_fs
 
 logger = logging.getLogger(__name__)
 
@@ -65,12 +65,7 @@ def check_bearing_fault_peak(
     # Every bearing verdict passes through here, so corrupt input is refused
     # before the envelope: a NaN envelope matches no fault frequency and the
     # summary would read "Bearing appears healthy".
-    validate_sampling_rate(
-        fs,
-        name="fs",
-        remedy="pass the sampling frequency the signal was acquired at, in Hz",
-    )
-    signal = validate_finite_samples(signal, source="signal")
+    signal = validate_signal_and_fs(signal, fs)
 
     env = compute_envelope_spectrum(
         signal, fs, frequency_range=envelope_freq_range, num_peaks=50

@@ -39,7 +39,11 @@ RAW_EXTENSIONS = frozenset({".bin", ".raw", ".dat"})
 
 #: Formats whose header/structure declares how to decode them — no raw
 #: declaration is needed (or allowed) for these.
-SELF_DESCRIBING_EXTENSIONS = [".csv", ".txt", ".npy", ".mat", ".wav", ".parquet"]
+#: Text formats read by the CSV decoder, and so the ones the blank-row scan
+#: (:func:`check_text_blank_rows`) covers. Compared case-sensitively.
+TEXT_EXTENSIONS = (".csv", ".txt")
+
+SELF_DESCRIBING_EXTENSIONS = [*TEXT_EXTENSIONS, ".npy", ".mat", ".wav", ".parquet"]
 
 #: Everything list_signals(scope='disk') surfaces. Composed from the two
 #: classes above so a future raw extension can never be raw-eligible but
@@ -163,7 +167,7 @@ def load_self_describing(path: Path) -> Optional[np.ndarray]:
     if path.suffix == ".npy":
         return np.load(path)
 
-    if path.suffix in (".csv", ".txt"):
+    if path.suffix in TEXT_EXTENSIONS:
         df = pd.read_csv(path, header=None)
         return df.iloc[:, 0].values
 
@@ -243,8 +247,7 @@ def check_text_blank_rows(path: Path) -> None:
                 carry = data[len(body) :]
             else:
                 body, carry = carry, b""
-            carriage_returns = body.count(b"\r")
-            if carriage_returns and carriage_returns != body.count(b"\r\n"):
+            if b"\r" in body and body.count(b"\r") != body.count(b"\r\n"):
                 # Not plain \r\n breaks: make every break a single \n. Two
                 # plain replaces cover \r\n and \r\r\n (a regex substitution
                 # per line costs ~10x more). A \r still right before a \n

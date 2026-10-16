@@ -32,7 +32,11 @@ from ..config import DATA_DIR, get_ledger_dir
 from ..signal_acquisition.loaders import SUPPORTED_EXTENSIONS
 from ..signal_acquisition.repository import SignalRepository, get_repository
 from ..models import StoredSignalInfo
-from ..signal_validation import validate_finite_samples, validate_sampling_rate
+from ..signal_validation import (
+    validate_finite_samples,
+    validate_positive_finite,
+    validate_sampling_rate,
+)
 from ._utils import refusal_boundary
 
 logger = logging.getLogger(__name__)
@@ -178,7 +182,7 @@ async def generate_test_signal(
     sampling_rate = validate_sampling_rate(
         sampling_rate, source="the sampling_rate parameter"
     )
-    duration = validate_sampling_rate(
+    duration = validate_positive_finite(
         duration,
         name="duration",
         source="the duration parameter",

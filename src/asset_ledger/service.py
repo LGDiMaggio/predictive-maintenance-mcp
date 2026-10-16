@@ -112,6 +112,7 @@ from ..diagnostics.bearing_catalog import lookup_bearing
 from ..path_safety import safe_resolve
 from ..signal_acquisition.loaders import (
     RAW_SAMPLES_REMEDY,
+    TEXT_EXTENSIONS,
     check_text_blank_rows,
     load_raw_binary,
     load_self_describing,
@@ -1366,7 +1367,7 @@ def _decode(path: Path, declaration: Mapping[str, Any]) -> np.ndarray:
         return validate_finite_samples(
             load_raw_binary(path, **kwargs), source=source, remedy=RAW_SAMPLES_REMEDY
         )
-    if path.suffix in (".csv", ".txt"):
+    if path.suffix in TEXT_EXTENSIONS:
         check_text_blank_rows(path)
     data = load_self_describing(path)
     if data is None:

@@ -1101,7 +1101,7 @@ class TestNonFiniteSamplesRefused:
         write_raw_file(data_dir / "counts.bin", np.arange(16), dtype="<i2")
         _write_companion_text(
             data_dir / "counts.bin",
-            '{"sampling_rate": 1000, "sample_format": "int16", ' '"scale_factor": NaN}',
+            '{"sampling_rate": 1000, "sample_format": "int16", "scale_factor": NaN}',
         )
         with pytest.raises(ValueError) as exc:
             repo.load_signal("counts.bin")

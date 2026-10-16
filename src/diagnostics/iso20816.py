@@ -26,7 +26,7 @@ from typing import Literal, Optional
 import numpy as np
 from scipy.signal import butter, sosfiltfilt
 
-from ..signal_validation import validate_finite_samples, validate_sampling_rate
+from ..signal_validation import validate_signal_and_fs
 
 #: Provenance note attached to every assessment result.
 THRESHOLD_PROVENANCE = (
@@ -326,12 +326,7 @@ def assess_severity_raw(
     # NaN or infinite fs slips past the Nyquist comparison below (every
     # comparison with NaN is False), and one bad sample turns the RMS into
     # NaN, which the zone ladder would report as Zone D.
-    validate_sampling_rate(
-        fs,
-        name="fs",
-        remedy="pass the sampling frequency the signal was acquired at, in Hz",
-    )
-    signal = validate_finite_samples(signal, source="signal")
+    signal = validate_signal_and_fs(signal, fs)
 
     nyquist = fs / 2.0
     # Full ISO-band coverage requires the USABLE upper edge (the bandpass

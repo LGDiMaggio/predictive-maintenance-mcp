@@ -33,6 +33,7 @@ from .loaders import (
     RAW_SAMPLES_REMEDY,
     SELF_DESCRIBING_EXTENSIONS,
     SUPPORTED_EXTENSIONS,
+    TEXT_EXTENSIONS,
     VALID_BYTE_ORDERS,
     VALID_SAMPLE_FORMATS,
     check_text_blank_rows,
@@ -49,10 +50,6 @@ logger = logging.getLogger(__name__)
 _EXPLICIT_RATE_REMEDY = (
     "pass a sampling_rate > 0 (Hz) or omit it to use the companion _metadata.json"
 )
-
-#: Suffixes the CSV decoder reads, and so the ones the blank-row scan covers.
-#: Case-sensitive, like the dispatch in ``loaders.load_self_describing``.
-_TEXT_SUFFIXES = (".csv", ".txt")
 
 #: Canonical signal-unit vocabulary. ISO severity verdicts require one of
 #: these to be DECLARED (never guessed from signal amplitude).
@@ -799,7 +796,7 @@ class SignalRepository:
         # would skip, shifting every later sample. Scanned here, outside the
         # loaders' exception-to-None wrappers, so the refusal survives on
         # both routes (inside DATA_DIR and outside it).
-        if fp.suffix in _TEXT_SUFFIXES:
+        if fp.suffix in TEXT_EXTENSIONS:
             try:
                 check_text_blank_rows(fp)
             except OSError:
@@ -1055,7 +1052,7 @@ class SignalRepository:
         try:
             if filepath.suffix == ".npy":
                 return np.load(filepath)
-            elif filepath.suffix in (".csv", ".txt"):
+            elif filepath.suffix in TEXT_EXTENSIONS:
                 import pandas as pd
 
                 df = pd.read_csv(filepath, header=None)
