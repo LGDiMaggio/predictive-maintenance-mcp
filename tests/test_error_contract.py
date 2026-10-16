@@ -146,7 +146,7 @@ class TestModuleLevelTools:
 
 # Curated obviously-wrong inputs per tool. Tools omitted here either have no
 # reachable failure path without heavy side effects (list_signals,
-# generate_test_signal, search_documentation/RAG,
+# search_documentation/RAG,
 # calculate_bearing_characteristic_frequencies) or express their negative
 # outcome as a typed result by design (search_bearing_catalog, clear_signals),
 # which is covered separately below.
@@ -157,6 +157,7 @@ FAILURE_CASES = {
     "extract_features_from_signal": {"signal_id": "__not_loaded__"},
     "compute_power_spectral_density": {"signal_id": "__not_loaded__"},
     "compute_spectrogram_stft": {"signal_id": "__not_loaded__"},
+    "generate_test_signal": {"sampling_rate": 0.0},
     "train_anomaly_model": {
         "healthy_signal_ids": ["x"],
         "model_name": "../evil",
@@ -439,6 +440,11 @@ REFUSAL_CASES = [
     ),
     ("load_signal", {"filepath": "__missing__.csv"}, "Signal file not found"),
     ("read_manual_excerpt", {"file_name": "__missing__.pdf"}, "Manual not found"),
+    (
+        "generate_test_signal",
+        {"sampling_rate": 0.0},
+        "sampling rate must be positive",
+    ),
 ]
 
 

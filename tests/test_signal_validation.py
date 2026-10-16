@@ -174,6 +174,24 @@ class TestValidateFiniteSamples:
         assert "index 2" in message
         assert "'ERR'" in message
 
+    def test_several_text_tokens_report_the_count_and_the_first(self):
+        data = np.array(["a", "1", "b"], dtype=object)
+
+        with pytest.raises(ValueError) as excinfo:
+            validate_finite_samples(data)
+
+        message = str(excinfo.value)
+        assert "2 non-numeric" in message
+        assert "out of 3" in message
+        assert "index 0" in message
+        assert "'a'" in message
+
+    def test_dates_are_not_samples(self):
+        data = np.array(["2026-01-01", "2026-01-02"], dtype="datetime64[ns]")
+
+        with pytest.raises(ValueError, match="holds datetime64"):
+            validate_finite_samples(data)
+
     def test_text_values_that_all_parse_are_returned_as_float(self):
         result = validate_finite_samples(np.array(["1.0", "2.0"], dtype=object))
 

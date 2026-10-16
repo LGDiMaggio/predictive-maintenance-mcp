@@ -37,12 +37,13 @@ logger = logging.getLogger(__name__)
 # explicit declaration of sample_format/byte_order/... to be loadable).
 RAW_EXTENSIONS = frozenset({".bin", ".raw", ".dat"})
 
-#: Formats whose header/structure declares how to decode them — no raw
-#: declaration is needed (or allowed) for these.
 #: Text formats read by the CSV decoder, and so the ones the blank-row scan
-#: (:func:`check_text_blank_rows`) covers. Compared case-sensitively.
+#: (:func:`check_text_blank_rows`) covers. Compared case-sensitively against
+#: the path the decoder actually reads.
 TEXT_EXTENSIONS = (".csv", ".txt")
 
+#: Formats whose header/structure declares how to decode them — no raw
+#: declaration is needed (or allowed) for these.
 SELF_DESCRIBING_EXTENSIONS = [*TEXT_EXTENSIONS, ".npy", ".mat", ".wav", ".parquet"]
 
 #: Everything list_signals(scope='disk') surfaces. Composed from the two

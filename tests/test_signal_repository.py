@@ -1032,6 +1032,35 @@ class TestBlankRowsRefused:
         info = repo.load_signal(path)
         assert info["num_samples"] == 3
 
+    def test_case_variant_name_is_scanned_like_the_file_it_reads(self, repo, data_dir):
+        """On a case-insensitive filesystem 'GAP.CSV' reads 'gap.csv' as text,
+        so it must be scanned like it."""
+        (data_dir / "gap.csv").write_bytes(b"1\n2\n\n3\n")
+        if not (data_dir / "GAP.CSV").exists():
+            pytest.skip("case-sensitive filesystem: the variant name is another file")
+        with pytest.raises(ValueError, match="line 3"):
+            repo.load_signal("GAP.CSV")
+        assert repo.signal_count == 0
+
+    def test_unreadable_text_file_is_refused_not_scanned_open(self, repo, data_dir):
+        """A path the scan cannot read (here a directory) is refused, never
+        decoded without the scan."""
+        (data_dir / "dir.csv").mkdir()
+        with pytest.raises(ValueError, match="Unable to load signal"):
+            repo.load_signal("dir.csv")
+        assert repo.signal_count == 0
+
+    def test_traversal_name_is_not_read_before_containment(self, repo, data_dir):
+        """A name that escapes DATA_DIR is refused by containment; the scan
+        must not read the outside file first and report its line numbers."""
+        outside = data_dir.parent.parent / "leak.csv"
+        outside.write_bytes(b"1\n2\n\n3\n")
+        with pytest.raises(ValueError) as exc:
+            repo.load_signal("../../leak.csv")
+        assert "Unable to load signal" in str(exc.value)
+        assert "line 3" not in str(exc.value)
+        assert repo.signal_count == 0
+
 
 class TestNonFiniteSamplesRefused:
     """R1/R2: NaN, infinite and non-numeric samples are refused at load."""
@@ -1167,7 +1196,9 @@ class TestCompanionSamplingRate:
     @staticmethod
     def _csv(tmp_path) -> Path:
         path = tmp_path / "comp_rate.csv"
-        pd.DataFrame(np.random.randn(500)).to_csv(path, index=False, header=False)
+        pd.DataFrame(np.random.default_rng(0).standard_normal(500)).to_csv(
+            path, index=False, header=False
+        )
         return path
 
     @pytest.mark.parametrize("bad", ["NaN", "Infinity", "0", "-1", '"10000"', "true"])
@@ -1252,7 +1283,7 @@ class TestRefusedLoadLeavesStoreUnchanged:
     def test_batch_with_a_nan_file_stores_none_of_its_files(self, repo, data_dir):
         """Covers AE4."""
         for name in ("good_a.csv", "good_b.csv"):
-            pd.DataFrame(np.random.randn(100)).to_csv(
+            pd.DataFrame(np.random.default_rng(0).standard_normal(100)).to_csv(
                 data_dir / name, index=False, header=False
             )
         (data_dir / "bad_c.csv").write_bytes(b"1.0\n2.0\nnan\n")
@@ -1265,7 +1296,7 @@ class TestRefusedLoadLeavesStoreUnchanged:
 
     def test_batch_with_a_nan_companion_rate_stores_nothing(self, repo, data_dir):
         for name in ("rate_a.csv", "rate_b.csv", "rate_c.csv"):
-            pd.DataFrame(np.random.randn(100)).to_csv(
+            pd.DataFrame(np.random.default_rng(0).standard_normal(100)).to_csv(
                 data_dir / name, index=False, header=False
             )
             _write_companion_text(data_dir / name, '{"sampling_rate": 1000}')

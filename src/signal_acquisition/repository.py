@@ -81,6 +81,33 @@ def normalize_signal_unit(unit: Optional[str]) -> Optional[str]:
     return u if u in VALID_SIGNAL_UNITS else None
 
 
+def _refuse_internal_blank_rows(path: Path) -> None:
+    """Scan a text file the decoder is about to read for internal blank lines.
+
+    Called on the exact path a route decodes, behind the decoders' own
+    suffix test, so a file is scanned exactly when it is read as text: a
+    case-variant name on a case-insensitive filesystem has already resolved
+    to the on-disk suffix, and a name containment refuses is never read. The
+    scan raises outside the loaders' exception-to-None wrappers, so its
+    refusal reaches the caller. An unreadable file is refused as a read
+    error rather than decoded without the scan.
+
+    Raises:
+        ValueError: If the file has an empty line between data lines, or
+            cannot be read.
+    """
+    if path.suffix not in TEXT_EXTENSIONS:
+        return
+    try:
+        check_text_blank_rows(path)
+    except OSError as exc:
+        raise ValueError(
+            f"Unable to load signal from {path.name} — read error "
+            f"({exc.strerror or type(exc).__name__}); check that the file is "
+            f"readable and not in use."
+        ) from None
+
+
 #: The six raw-binary decode parameters threaded from load_signal to the
 #: decoder, in canonical order (also the ``raw_format`` provenance key
 #: order): required ``sample_format`` first, then the optional parameters in
@@ -792,18 +819,7 @@ class SignalRepository:
                 channel_index=int(effective_channel),
             )
 
-        # An internal blank line is a missing sample that the CSV reader
-        # would skip, shifting every later sample. Scanned here, outside the
-        # loaders' exception-to-None wrappers, so the refusal survives on
-        # both routes (inside DATA_DIR and outside it).
-        if fp.suffix in TEXT_EXTENSIONS:
-            try:
-                check_text_blank_rows(fp)
-            except OSError:
-                # An unreadable file is the decoder's to refuse, with its
-                # existing "Unable to load signal" message just below.
-                pass
-
+        # _load_array also scans a text file for internal blank lines first.
         data = self._load_array(fp, raw_params)
         if data is None:
             raise ValueError(
@@ -948,24 +964,38 @@ class SignalRepository:
         OUTSIDE any try/except-return-None shell: the decoder's typed
         "problem — remedy" errors (and the safe_resolve containment error
         on the DATA_DIR route) must reach the caller intact, never be
-        swallowed into None.
+        swallowed into None. The blank-row scan of a text file runs here
+        for the same reason, on the very path each route then decodes.
 
         Args:
             fp: Already-resolved absolute path.
             raw_params: EFFECTIVE raw decode parameters for a raw binary
                 file, or None for self-describing formats.
+
+        Raises:
+            ValueError: From the raw decoder or containment, or if a text
+                file has an empty line between data lines or cannot be read.
         """
         try:
             rel = fp.relative_to(DATA_DIR)
         except ValueError:
             if raw_params is not None:
                 return load_raw_binary(fp, **raw_params)
+            _refuse_internal_blank_rows(fp)
             return self._load_direct(fp)
         if raw_params is not None:
             # Same safe_resolve containment as load_signal_data applies
             # to DATA_DIR-relative names.
             resolved = safe_resolve(DATA_DIR, str(rel))
             return load_raw_binary(resolved, **raw_params)
+        try:
+            resolved = safe_resolve(DATA_DIR, str(rel))
+        except ValueError:
+            # Containment refuses the name: load_signal_data returns None
+            # and the caller reports it. The file is never read.
+            resolved = None
+        if resolved is not None and resolved.exists():
+            _refuse_internal_blank_rows(resolved)
         return load_signal_data(str(rel))
 
     def _remove_entry(self, signal_id: str) -> None:

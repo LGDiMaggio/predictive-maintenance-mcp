@@ -1,11 +1,13 @@
 """Canonical finiteness checks for vibration samples and sampling rates.
 
-The single source of truth for "is this signal fit to analyze": every place
-that lets an array or a sampling rate into the system calls these two
-validators instead of rolling its own comparison. That covers the signal
-store's loads, the asset ledger's re-reads, the raw-binary decoder, the ledger
-snapshot, test-signal generation, and the public diagnostic entry points that
-accept arrays directly from Python.
+The single source of truth for "is this signal fit to analyze" at the input
+boundaries: the signal store's loads, the asset ledger's re-reads, the
+raw-binary decoder, the ledger snapshot, test-signal generation, and the three
+public diagnostic entry points that accept arrays directly from Python
+(ISO severity, the bearing fault peak check and the diagnosis pipeline) call
+the validators below instead of rolling their own comparison. Lower-level
+numeric transforms such as ``signal_processing.spectral`` sit behind those
+boundaries and keep their own simple ``fs > 0`` guard.
 
 A comparison such as ``fs <= 0`` or ``not fs > 0`` is not enough: every
 comparison with NaN is False, so ``nan <= 0`` lets NaN through, and
@@ -14,7 +16,7 @@ confident verdicts (a NaN RMS falls through the ISO 20816-3 zone ladder to
 Zone D; an all-NaN envelope matches no fault frequency and reads as a healthy
 bearing).
 
-Both validators raise a plain ``ValueError`` whose message states the problem
+The validators raise a plain ``ValueError`` whose message states the problem
 and the remedy, from this module (project code), so the MCP refusal boundary
 forwards the text verbatim and direct Python callers can catch ``ValueError``.
 They never repair input: a missing or corrupt sample is refused, not filled.
