@@ -42,6 +42,10 @@ jobs:
       if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
       continue-on-error: true
       with:
+        # Codecov refuses tokenless uploads from this repository's own
+        # branches; the token is a repository secret (empty until it is
+        # created, and on Dependabot pull requests, which get no secrets).
+        token: ${{ secrets.CODECOV_TOKEN }}
         files: ./coverage.xml
         flags: unittests
         name: codecov-umbrella
