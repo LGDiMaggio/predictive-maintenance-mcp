@@ -18,7 +18,6 @@ the refusal across the whole registered surface at once:
 """
 
 import inspect
-import io
 import json
 import math
 from unittest.mock import AsyncMock
@@ -136,18 +135,57 @@ def _jsonrpc_lines(arguments_json: str) -> str:
     return "\n".join([json.dumps(initialize), json.dumps(initialized), call]) + "\n"
 
 
+class _Stdout:
+    """Collects the server's JSON-RPC replies and signals the tools/call one."""
+
+    def __init__(self) -> None:
+        self.replies: list[dict] = []
+        self.call_replied = anyio.Event()
+
+    async def write(self, text: str) -> None:
+        for line in text.splitlines():
+            if line:
+                reply = json.loads(line)
+                self.replies.append(reply)
+                if reply.get("id") == 2:
+                    self.call_replied.set()
+
+    async def flush(self) -> None:
+        pass
+
+
+class _Stdin:
+    """Yields the request lines, then stays open until the call is answered.
+
+    The SDK cancels in-flight requests when stdin reaches end-of-file, so a
+    stdin that ended right after the request would race the tool's reply.
+    """
+
+    def __init__(self, lines: str, until: anyio.Event) -> None:
+        self._lines = lines.splitlines(keepends=True)
+        self._until = until
+
+    def __aiter__(self):
+        return self._read()
+
+    async def _read(self):
+        for line in self._lines:
+            yield line
+        await self._until.wait()
+
+
 async def _serve(server: MCPServer, lines: str) -> dict:
     """Run the server over in-memory stdio and return the tools/call response."""
-    out = io.StringIO()
+    stdout = _Stdout()
     with anyio.fail_after(60):
-        async with stdio_server(
-            anyio.wrap_file(io.StringIO(lines)), anyio.wrap_file(out)
-        ) as (read, write):
+        async with stdio_server(_Stdin(lines, stdout.call_replied), stdout) as (
+            read,
+            write,
+        ):
             await server._lowlevel_server.run(
                 read, write, server._lowlevel_server.create_initialization_options()
             )
-    responses = [json.loads(line) for line in out.getvalue().splitlines() if line]
-    return next(r for r in responses if r.get("id") == 2)
+    return next(r for r in stdout.replies if r.get("id") == 2)
 
 
 class TestOverTheWire:
