@@ -146,7 +146,7 @@ src/
 ├── config.py                          # Path resolution (DATA_DIR, etc.)
 ├── models.py                          # Pydantic v2 response models
 ├── path_safety.py                     # Path containment helpers
-├── signal_validation.py               # Finite-sample and sampling-rate checks
+├── signal_validation.py               # Sample, sampling-rate, shaft-speed and expected-frequency checks
 │
 ├── mcp_tools/                         # MCP tool layer (one module per block family)
 │   ├── __init__.py                    #   register_all(mcp)
