@@ -26,7 +26,7 @@ from typing import Literal, Optional
 import numpy as np
 from scipy.signal import butter, sosfiltfilt
 
-from ..signal_validation import validate_signal_and_fs
+from ..signal_validation import validate_rpm, validate_signal_and_fs
 
 #: Provenance note attached to every assessment result.
 THRESHOLD_PROVENANCE = (
@@ -298,7 +298,8 @@ def assess_severity_raw(
         support_type: 'rigid' or 'flexible'.
         signal_unit: 'g', 'm/s²', 'mm/s', or 'm/s'.
         operating_speed_rpm: Operating speed for frequency range selection
-            (2 Hz lower edge below 600 RPM, 10 Hz otherwise).
+            (2 Hz lower edge below 600 RPM, 10 Hz otherwise). ``None`` means
+            unknown (10 Hz); a given speed must be positive and finite.
         machine_power_kw: Rated machine power, if known. Values below the
             15 kW ISO 20816-3 scope floor are refused; ``None`` means
             "unknown" and is not refused (the scope limit stays documented).
@@ -312,7 +313,8 @@ def assess_severity_raw(
         ValueError: If the machine group/support combination is invalid,
             if the declared machine power is below 15 kW (out of ISO scope),
             if fs is not a positive finite number, if any sample is NaN or
-            infinite, or if the sampling rate cannot cover the full
+            infinite, if a given operating speed is not a positive finite
+            number, or if the sampling rate cannot cover the full
             10-1000 Hz ISO band (0.95 x Nyquist < 1000 Hz, i.e.
             fs < ~2106 Hz).
     """
@@ -327,6 +329,10 @@ def assess_severity_raw(
     # comparison with NaN is False), and one bad sample turns the RMS into
     # NaN, which the zone ladder would report as Zone D.
     signal = validate_signal_and_fs(signal, fs)
+    # The speed only picks the band's lower edge, so a bad one used to pick
+    # it silently (2 Hz for 0 or a negative speed, 10 Hz for NaN).
+    if operating_speed_rpm is not None:
+        validate_rpm(operating_speed_rpm, optional=True)
 
     nyquist = fs / 2.0
     # Full ISO-band coverage requires the USABLE upper edge (the bandpass

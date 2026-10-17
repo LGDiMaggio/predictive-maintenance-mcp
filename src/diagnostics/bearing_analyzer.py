@@ -15,7 +15,7 @@ import numpy as np
 from .bearing_catalog import compute_fault_frequencies, lookup_bearing
 from ..signal_processing.spectral import compute_envelope_spectrum
 from ..signal_validation import (
-    InvalidInputError,
+    validate_expected_frequencies,
     validate_expected_frequency,
     validate_rpm,
     validate_signal_and_fs,
@@ -320,17 +320,7 @@ def check_frequency_set(
             "frequencies is empty — pass at least one {label: hz} entry, "
             "e.g. {'BPFO': 107.4} or {'GMF': 350.0}."
         )
-    bad = {}
-    for label, freq in frequencies.items():
-        try:
-            validate_expected_frequency(freq, label=label)
-        except InvalidInputError:
-            bad[label] = freq
-    if bad:
-        raise InvalidInputError(
-            f"frequencies contains non-positive or non-finite values: {bad} — "
-            f"every expected frequency must be a finite number > 0 Hz."
-        )
+    validate_expected_frequencies(frequencies)
 
     checks = [
         check_bearing_fault_peak(

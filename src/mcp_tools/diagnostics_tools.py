@@ -235,7 +235,8 @@ async def assess_severity(
             below 15 kW are refused (out of ISO scope); None means
             unknown and is not refused.
         rpm: Operating speed in RPM (signal route only: selects the 2 Hz
-            band lower edge below 600 RPM).
+            band lower edge below 600 RPM). Omit it when unknown; a given
+            value must be positive and finite on both routes.
 
     Returns:
         VibrationSeverityResult (status='assessed') with zone, severity,
@@ -245,8 +246,9 @@ async def assess_severity(
     Raises:
         ValueError: On route misuse (both/neither inputs), undeclared
             signal unit, missing sampling rate, Nyquist below the ISO
-            band, declared power below 15 kW, negative RMS, or invalid
-            custom thresholds.
+            band, declared power below 15 kW, negative RMS, invalid
+            custom thresholds, or a given rpm that is not a positive finite
+            number.
     """
     if (signal_id is None) == (rms_velocity_mm_s is None):
         raise ValueError(
@@ -261,6 +263,11 @@ async def assess_severity(
     check_power_scope(machine_power_kw)
 
     custom = _validate_custom_thresholds(thresholds) if thresholds is not None else None
+
+    # Both routes: the direct-RMS route only echoes the speed, but an echoed
+    # speed must be one the caller could have measured.
+    if rpm is not None:
+        validate_rpm(rpm, source="the rpm parameter", optional=True)
 
     if signal_id is not None:
         # --- Stored-signal route (former evaluate_iso_20816 /

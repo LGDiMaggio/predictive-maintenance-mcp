@@ -19,6 +19,7 @@ import pytest
 from predictive_maintenance_mcp.signal_validation import (
     BAD_SAMPLE_REMEDY,
     InvalidInputError,
+    validate_expected_frequencies,
     validate_expected_frequency,
     validate_finite_samples,
     validate_rpm,
@@ -323,6 +324,29 @@ class TestValidateExpectedFrequency:
             validate_expected_frequency(math.nan, label="FTF")
 
         assert _raised_in_src(excinfo.value)
+
+
+class TestValidateExpectedFrequencies:
+    def test_valid_mapping_passes(self):
+        validate_expected_frequencies({"BPFO": 107.36, "GMF": 800})
+
+    def test_every_bad_label_is_listed_in_one_message(self):
+        with pytest.raises(ValueError) as excinfo:
+            validate_expected_frequencies(
+                {"BPFO": 107.4, "BPFI": math.nan, "BSF": -1.0}, name="bearing_freqs"
+            )
+
+        message = str(excinfo.value)
+        assert message.startswith("bearing_freqs contains non-positive or non-finite")
+        listed = message.split(":", 1)[1].split("—")[0]
+        assert "BPFI" in listed
+        assert "BSF" in listed
+        assert "BPFO" not in listed
+
+    @pytest.mark.parametrize("value", [0.0, math.inf, True, "107.4", None])
+    def test_each_unusable_value_is_refused(self, value):
+        with pytest.raises(InvalidInputError, match="non-positive"):
+            validate_expected_frequencies({"X": value})
 
 
 # ---------------------------------------------------------------------------

@@ -377,6 +377,44 @@ class TestNonFiniteInputRefused:
             assess_severity_with_axis(signal, fs=10000, signal_unit="mm/s")
 
 
+class TestOperatingSpeedRefused:
+    """Issue #83: the operating speed only selects the band's lower edge,
+    yet an invalid one chose it silently (2 Hz for 0 or a negative speed,
+    10 Hz for NaN). A given speed must be positive and finite; an omitted
+    one keeps the 10 Hz edge used for an unknown speed."""
+
+    @pytest.mark.parametrize(
+        "rpm", [np.nan, -1.0, 0.0, np.inf], ids=["nan", "negative", "zero", "inf"]
+    )
+    def test_invalid_speed_is_refused(self, rpm):
+        signal = make_velocity_signal(2.0)
+        with pytest.raises(ValueError, match="rpm must be positive and finite"):
+            assess_severity_raw(
+                signal, fs=10000, signal_unit="mm/s", operating_speed_rpm=rpm
+            )
+
+    def test_with_axis_refuses_an_invalid_speed(self):
+        signal = make_velocity_signal(2.0)
+        with pytest.raises(ValueError, match="rpm must be positive and finite"):
+            assess_severity_with_axis(
+                signal, fs=10000, signal_unit="mm/s", operating_speed_rpm=np.nan
+            )
+
+    def test_omitted_speed_keeps_the_10_hz_edge(self):
+        signal = make_velocity_signal(2.0)
+        result = assess_severity_raw(signal, fs=10000, signal_unit="mm/s")
+        assert "10-1000 Hz" in result["frequency_range"]
+        assert result["operating_speed_rpm"] is None
+
+    def test_corrupt_signal_is_reported_before_the_speed(self):
+        signal = make_velocity_signal(2.0)
+        signal[100] = np.nan
+        with pytest.raises(ValueError, match="non-finite"):
+            assess_severity_raw(
+                signal, fs=10000, signal_unit="mm/s", operating_speed_rpm=np.nan
+            )
+
+
 class TestResultStructure:
     def test_result_keys(self):
         signal = make_velocity_signal(1.0)

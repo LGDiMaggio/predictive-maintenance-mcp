@@ -407,6 +407,48 @@ class TestAssessSeverityExtended:
         assert "2-1000" in result.frequency_range
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "rpm",
+        [0.0, -5.0, float("nan"), float("inf")],
+        ids=["zero", "negative", "nan", "inf"],
+    )
+    @pytest.mark.parametrize(
+        "route",
+        [{"signal_id": "iso_test"}, {"rms_velocity_mm_s": 3.0}],
+        ids=["signal", "direct-rms"],
+    )
+    async def test_invalid_operating_speed_is_refused_on_both_routes(
+        self, tools, repo, mock_ctx, route, rpm
+    ):
+        """Issue #83: a given speed must be positive and finite; on the
+        direct-RMS route it is only echoed, but an echoed speed must be real.
+        The refusal says the parameter can be omitted."""
+        with pytest.raises(ValueError) as exc_info:
+            await tools["assess_severity"](ctx=mock_ctx, rpm=rpm, **route)
+
+        msg = str(exc_info.value)
+        assert "rpm must be positive and finite" in msg
+        assert "the rpm parameter" in msg
+        assert "omit rpm" in msg
+
+    @pytest.mark.asyncio
+    async def test_omitted_operating_speed_is_unchanged(self, tools, repo, mock_ctx):
+        signal_route = await tools["assess_severity"](
+            ctx=mock_ctx, signal_id="iso_test"
+        )
+        rms_route = await tools["assess_severity"](ctx=mock_ctx, rms_velocity_mm_s=3.0)
+        assert signal_route.operating_speed_rpm is None
+        assert "10-1000" in signal_route.frequency_range
+        assert rms_route.operating_speed_rpm is None
+
+    @pytest.mark.asyncio
+    async def test_route_misuse_is_reported_before_the_speed(
+        self, tools, repo, mock_ctx
+    ):
+        with pytest.raises(ValueError, match="exactly one of signal_id"):
+            await tools["assess_severity"](ctx=mock_ctx, rpm=0.0)
+
+    @pytest.mark.asyncio
     async def test_stored_signal_without_rate_raises(
         self, tools, data_dir, repo, mock_ctx
     ):

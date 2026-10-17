@@ -33,6 +33,7 @@ adding a dependency edge.
 
 import math
 import numbers
+from collections.abc import Mapping
 from typing import Any
 
 import numpy as np
@@ -40,6 +41,7 @@ import numpy as np
 __all__ = [
     "BAD_SAMPLE_REMEDY",
     "InvalidInputError",
+    "validate_expected_frequencies",
     "validate_expected_frequency",
     "validate_finite_samples",
     "validate_positive_finite",
@@ -219,6 +221,35 @@ def validate_expected_frequency(
         source=source,
         remedy=f"{remedy} (frequencies are in Hz)",
     )
+
+
+def validate_expected_frequencies(
+    frequencies: Mapping[str, Any], *, name: str = "frequencies"
+) -> None:
+    """Refuse a {label: Hz} mapping holding any unusable expected frequency.
+
+    Every offending label is listed in one message, so a caller fixes them
+    all in one round trip.
+
+    Args:
+        frequencies: Expected frequencies in Hz, keyed by label.
+        name: What the mapping is called in the caller's vocabulary (the
+            parameter name), named at the start of the message.
+
+    Raises:
+        InvalidInputError: If any value is not a positive finite number.
+    """
+    bad = {}
+    for label, value in frequencies.items():
+        try:
+            validate_expected_frequency(value, label=label)
+        except InvalidInputError:
+            bad[label] = value
+    if bad:
+        raise InvalidInputError(
+            f"{name} contains non-positive or non-finite values: {bad} — every "
+            f"expected frequency must be a finite number > 0 Hz."
+        )
 
 
 def validate_signal_and_fs(signal: Any, fs: Any) -> np.ndarray:
