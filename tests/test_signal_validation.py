@@ -276,6 +276,7 @@ class TestValidateRpm:
 
         message = str(excinfo.value)
         assert "measured shaft speed" in message
+        assert "do not estimate" in message
         assert "omit" not in message
 
     def test_optional_remedy_says_the_speed_can_be_omitted(self):
@@ -284,6 +285,7 @@ class TestValidateRpm:
 
         message = str(excinfo.value)
         assert "measured shaft speed" in message
+        assert "do not estimate" in message
         assert "omit rpm" in message
 
     def test_source_appears_in_the_message(self):

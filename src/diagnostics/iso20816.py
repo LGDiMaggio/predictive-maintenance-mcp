@@ -329,8 +329,6 @@ def assess_severity_raw(
     # comparison with NaN is False), and one bad sample turns the RMS into
     # NaN, which the zone ladder would report as Zone D.
     signal = validate_signal_and_fs(signal, fs)
-    # The speed only picks the band's lower edge, so a bad one used to pick
-    # it silently (2 Hz for 0 or a negative speed, 10 Hz for NaN).
     if operating_speed_rpm is not None:
         validate_rpm(operating_speed_rpm, optional=True)
 

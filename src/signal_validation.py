@@ -88,7 +88,6 @@ _OPTIONAL_RPM_REMEDY = (
     "when it is unknown; do not estimate one"
 )
 
-#: Remedy for an expected fault frequency.
 _EXPECTED_FREQUENCY_REMEDY = "pass each expected frequency in Hz as a number above zero"
 
 
@@ -195,7 +194,6 @@ def validate_expected_frequency(
     value: Any,
     *,
     label: str,
-    source: str = "",
     remedy: str = _EXPECTED_FREQUENCY_REMEDY,
 ) -> float:
     """Return *value* as a float when it is a usable expected fault frequency.
@@ -204,8 +202,6 @@ def validate_expected_frequency(
         value: The expected frequency in Hz.
         label: The frequency's label (``"BPFO"``, ``"GMF"``, ...), named in
             the message.
-        source: Where the value came from, appended to the message when
-            given.
         remedy: What the caller should do instead.
 
     Returns:
@@ -218,7 +214,6 @@ def validate_expected_frequency(
     return validate_positive_finite(
         value,
         name=f"expected {label} frequency",
-        source=source,
         remedy=f"{remedy} (frequencies are in Hz)",
     )
 

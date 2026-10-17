@@ -333,8 +333,6 @@ async def generate_fft_report(
             signal_id is not loaded, or if the stored signal has no
             sampling rate.
     """
-    # Before the spectrum is computed: a 0 or NaN speed used to drop the
-    # harmonic labels without a word.
     if rpm is not None:
         validate_rpm(rpm, source="the rpm parameter", optional=True)
 
@@ -413,8 +411,6 @@ async def generate_envelope_report(
         ...     bearing_freqs={"BPFO": 107.36, "BPFI": 162.19, "BSF": 70.58, "FTF": 11.93}
         ... )
     """
-    # A reference frequency that is zero, negative or not finite used to be
-    # skipped without a word (no marker for that label in the report).
     if bearing_freqs is not None:
         validate_expected_frequencies(bearing_freqs, name="bearing_freqs")
 
