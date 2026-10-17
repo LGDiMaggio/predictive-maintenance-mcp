@@ -146,11 +146,16 @@ class TestModuleLevelTools:
 
 # Curated obviously-wrong inputs per tool. Tools omitted here either have no
 # reachable failure path without heavy side effects (list_signals,
-# search_documentation/RAG,
-# calculate_bearing_characteristic_frequencies) or express their negative
-# outcome as a typed result by design (search_bearing_catalog, clear_signals),
-# which is covered separately below.
+# search_documentation/RAG) or express their negative outcome as a typed
+# result by design (search_bearing_catalog, clear_signals), which is covered
+# separately below.
 FAILURE_CASES = {
+    "calculate_bearing_characteristic_frequencies": {
+        "num_balls": 9,
+        "ball_diameter_mm": 7.94,
+        "pitch_diameter_mm": 39.04,
+        "rpm": 0.0,
+    },
     "analyze_fft": {"signal_id": "__not_loaded__"},
     "analyze_envelope": {"signal_id": "__not_loaded__"},
     "analyze_statistics": {"signal_id": "__not_loaded__"},
@@ -444,6 +449,11 @@ REFUSAL_CASES = [
         "generate_test_signal",
         {"sampling_rate": 0.0},
         "sampling rate must be positive",
+    ),
+    (
+        "check_bearing_faults",
+        {"signal_id": "__not_loaded__", "bearing_id": "6205", "rpm": 0.0},
+        "rpm must be positive and finite",
     ),
 ]
 
