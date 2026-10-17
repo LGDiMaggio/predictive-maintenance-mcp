@@ -47,6 +47,7 @@ from ..report_generator import (
     timestamped_report_name,
 )
 from ..signal_processing.features import extract_time_domain_features
+from ..signal_validation import validate_rpm
 from ._utils import refusal_boundary, resolve_model_paths, resolve_signal
 
 # Canonical modular twin of the ISO evaluation tool (module-level function
@@ -1130,7 +1131,7 @@ async def generate_diagnostic_report(
 
     Args:
         signal_id: ID of the stored signal (from load_signal).
-        rpm: Machine operating speed in RPM.
+        rpm: Machine operating speed in RPM, positive and finite.
         bearing_id: Bearing designation for characteristic-frequency
             matching. Omitted means the matching section states why it was
             not attempted rather than disappearing.
@@ -1152,8 +1153,10 @@ async def generate_diagnostic_report(
         ``evidence_strength``, and ``provenance``.
 
     Raises:
-        ValueError: If a signal id is not loaded, has no sampling rate, or an
-            unsupported format is requested.
+        ValueError: If an unsupported format is requested, if rpm is not a
+            positive finite number, if a signal id is not loaded or has no
+            sampling rate, or if the bearing check refuses an expected
+            frequency computed from rpm.
     """
     requested = [fmt.lower() for fmt in (formats or ["html"])]
     unsupported = [fmt for fmt in requested if fmt not in _SUPPORTED_FORMATS]
@@ -1162,6 +1165,8 @@ async def generate_diagnostic_report(
             f"Unsupported report format(s) {unsupported} — choose from "
             f"{list(_SUPPORTED_FORMATS)}."
         )
+    # One rpm feeds both diagnoses: refused before either one runs.
+    validate_rpm(rpm, source="the rpm parameter")
 
     signal_data, info = resolve_signal(signal_id)
     logger.info(f"Diagnosing '{signal_id}' at {rpm} RPM")

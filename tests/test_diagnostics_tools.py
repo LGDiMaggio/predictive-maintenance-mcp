@@ -581,6 +581,90 @@ class TestBearingToolsExtended:
             assert old not in tools
 
 
+#: The tool-entry refusal names the parameter the caller passed.
+TOOL_RPM_REFUSAL = r"rpm must be positive and finite.*the rpm parameter"
+GEOMETRY_6205 = {"num_balls": 9, "ball_diameter_mm": 7.94, "pitch_diameter_mm": 39.04}
+
+
+class TestShaftSpeedRefusedAtBearingTools:
+    """Issue #83: the bearing tools refuse a speed that is not positive and
+    finite at entry, in the caller's vocabulary, after the route checks and
+    before any signal or catalog lookup."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "route",
+        [
+            {"bearing_id": "6205"},
+            {"frequencies": {"GMF": 800.0}},
+            GEOMETRY_6205,
+        ],
+        ids=["catalog", "frequencies", "geometry"],
+    )
+    @pytest.mark.parametrize(
+        "rpm", [0.0, float("nan"), float("inf")], ids=["zero", "nan", "inf"]
+    )
+    async def test_every_route_refuses_the_speed(
+        self, tools, repo, mock_ctx, route, rpm
+    ):
+        with pytest.raises(ValueError, match=TOOL_RPM_REFUSAL):
+            await tools["check_bearing_faults"](
+                ctx=mock_ctx, signal_id="normal", rpm=rpm, **route
+            )
+
+    @pytest.mark.asyncio
+    async def test_frequencies_route_with_a_valid_speed_is_unchanged(
+        self, tools, repo, mock_ctx
+    ):
+        result = await tools["check_bearing_faults"](
+            ctx=mock_ctx, signal_id="normal", frequencies={"GMF": 800.0}, rpm=1500.0
+        )
+        assert result.rpm == 1500.0
+        assert result.shaft_frequency_hz == pytest.approx(25.0)
+        assert [c.fault_type for c in result.fault_checks] == ["GMF"]
+
+    @pytest.mark.asyncio
+    async def test_route_shape_is_reported_before_the_speed(
+        self, tools, repo, mock_ctx
+    ):
+        with pytest.raises(ValueError, match="Incomplete bearing geometry"):
+            await tools["check_bearing_faults"](
+                ctx=mock_ctx, signal_id="normal", rpm=0.0, num_balls=9
+            )
+        with pytest.raises(ValueError, match="exactly ONE"):
+            await tools["check_bearing_faults"](
+                ctx=mock_ctx, signal_id="normal", rpm=0.0
+            )
+
+    @pytest.mark.asyncio
+    async def test_speed_is_reported_before_an_unloaded_signal(
+        self, tools, repo, mock_ctx
+    ):
+        with pytest.raises(ValueError, match=TOOL_RPM_REFUSAL):
+            await tools["check_bearing_faults"](
+                ctx=mock_ctx, signal_id="__not_loaded__", rpm=0.0, bearing_id="6205"
+            )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("rpm", [0.0, float("nan")], ids=["zero", "nan"])
+    async def test_calculator_refuses_the_speed(self, tools, rpm):
+        with pytest.raises(ValueError, match=TOOL_RPM_REFUSAL):
+            await tools["calculate_bearing_characteristic_frequencies"](
+                rpm=rpm, **GEOMETRY_6205
+            )
+
+    @pytest.mark.asyncio
+    async def test_calculator_default_and_valid_speed_are_unchanged(self, tools):
+        default = await tools["calculate_bearing_characteristic_frequencies"](
+            **GEOMETRY_6205
+        )
+        explicit = await tools["calculate_bearing_characteristic_frequencies"](
+            rpm=1797, **GEOMETRY_6205
+        )
+        assert default["shaft_freq_hz"] == pytest.approx(25.0)
+        assert explicit["BPFO"] == pytest.approx(107.36, abs=0.01)
+
+
 # ---------------------------------------------------------------------------
 # Extended anomaly detection tests
 # ---------------------------------------------------------------------------
@@ -1487,6 +1571,73 @@ class TestDiagnoseVibrationPointContext:
         assert "frequencies=" in remedies[0]
         expected_bpfo_hz = round(3.585 * 1500 / 60.0, 2)
         assert f"'BPFO': {expected_bpfo_hz}" in remedies[0]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("rpm", [0.0, float("nan")], ids=["zero", "nan"])
+    async def test_invalid_explicit_rpm_is_refused_not_replaced_by_the_declared_one(
+        self, tools, data_dir, repo, mock_ctx, rpm
+    ):
+        """Issue #83: an explicit speed that is not positive and finite is
+        refused even though the measurement declares a valid one; it is never
+        swapped for the declared speed."""
+        _write_identified_signal(data_dir, "m_bad_rpm", rpm=1500)
+        repo.load_signal("m_bad_rpm.csv")
+        _declare_point()
+
+        with pytest.raises(ValueError) as exc_info:
+            await tools["diagnose_vibration"](
+                ctx=mock_ctx, signal_id="m_bad_rpm", rpm=rpm
+            )
+
+        msg = str(exc_info.value)
+        assert "rpm must be positive and finite" in msg
+        assert "omit rpm" in msg
+
+    @pytest.mark.asyncio
+    async def test_invalid_explicit_rpm_is_not_relabelled_as_declared_context(
+        self, tools, data_dir, repo, mock_ctx
+    ):
+        """A bad explicit speed and a malformed point declaration: the speed
+        the caller passed is reported, not the declared-context problem."""
+        _write_identified_signal(data_dir, "m_both_bad")
+        repo.load_signal("m_both_bad.csv")
+        _declare_point(nominal_rpm=-5.0)
+
+        with pytest.raises(ValueError) as exc_info:
+            await tools["diagnose_vibration"](
+                ctx=mock_ctx, signal_id="m_both_bad", rpm=float("nan")
+            )
+
+        msg = str(exc_info.value)
+        assert "rpm must be positive and finite" in msg
+        assert "declared context" not in msg
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("rpm", [0.0, float("nan")], ids=["zero", "nan"])
+    async def test_fault_orders_point_with_invalid_rpm_is_refused(
+        self, tools, data_dir, repo, mock_ctx, rpm
+    ):
+        """The fault-orders recommendation would otherwise be built from the
+        bad speed (a check_bearing_faults call with 0 Hz frequencies)."""
+        _write_identified_signal(data_dir, "m_orders_bad", rpm=1500)
+        repo.load_signal("m_orders_bad.csv")
+        _declare_point(bearing_id=None, fault_orders={"BPFO": 3.585})
+
+        with pytest.raises(ValueError, match="rpm must be positive and finite"):
+            await tools["diagnose_vibration"](
+                ctx=mock_ctx, signal_id="m_orders_bad", rpm=rpm
+            )
+
+    @pytest.mark.asyncio
+    async def test_tiny_rpm_with_a_catalog_bearing_is_refused(
+        self, tools, repo, mock_ctx
+    ):
+        """0.5 rpm rounds the 6205's FTF to 0.0 Hz: refused, not a diagnosis
+        without its bearing section."""
+        with pytest.raises(ValueError, match="expected FTF frequency must be positive"):
+            await tools["diagnose_vibration"](
+                ctx=mock_ctx, signal_id="normal", rpm=0.5, bearing_id="6205"
+            )
 
     @pytest.mark.asyncio
     async def test_unreadable_ledger_counts_as_no_point_context(

@@ -74,6 +74,7 @@ from ..signal_processing.features import (
     extract_time_domain_features,
     segment_and_extract_features as _segment_and_extract_features,
 )
+from ..signal_validation import validate_rpm
 from ._utils import (
     refusal_boundary,
     resolve_signal,
@@ -1098,11 +1099,15 @@ async def calculate_bearing_characteristic_frequencies(
         ball_diameter_mm: Ball/roller diameter (Bd) in mm
         pitch_diameter_mm: Pitch circle diameter (Pd) in mm
         contact_angle_deg: Contact angle (alpha) in degrees
-        rpm: Shaft rotation speed in RPM
+        rpm: Shaft rotation speed in RPM, positive and finite
         ctx: MCP context. Unused — see this module's docstring on logging.
 
     Returns:
         Dictionary with BPFO, BPFI, BSF, FTF in Hz.
+
+    Raises:
+        ValueError: If rpm is not a positive finite number (a zero speed
+            would return an all-zero table).
 
     Example:
         >>> # 6205 geometry (CWRU Bearing Data Center) at 1797 RPM
@@ -1113,6 +1118,7 @@ async def calculate_bearing_characteristic_frequencies(
         >>> round(freqs['BPFO'], 2)
         107.36
     """
+    validate_rpm(rpm, source="the rpm parameter")
     logger.info(f"Calculating bearing frequencies for {num_balls} balls at {rpm} RPM")
 
     freqs = calculate_bearing_frequencies(
@@ -1345,9 +1351,11 @@ async def check_bearing_faults(
     Args:
         ctx: MCP context. Unused — see this module's docstring on logging.
         signal_id: ID of the stored signal.
-        rpm: Shaft speed in RPM.
+        rpm: Shaft speed in RPM, positive and finite (the measured speed;
+            never estimated).
         bearing_id: Bearing designation (e.g. '6205', 'SKF 6205-2RS').
-        frequencies: Explicit expected frequencies {label: hz}, all > 0.
+        frequencies: Explicit expected frequencies {label: hz}, all positive
+            and finite.
         num_balls: Number of rolling elements (explicit-geometry route).
         ball_diameter_mm: Ball/roller diameter Bd in mm.
         pitch_diameter_mm: Pitch circle diameter Pd in mm.
@@ -1360,10 +1368,11 @@ async def check_bearing_faults(
         provenance of the expected frequencies (`source`).
 
     Raises:
-        ValueError: If the signal is not loaded / has no sampling rate, if
-            not exactly one route is given, if the geometry is incomplete,
-            if the bearing is not in the catalog, or if frequencies is
-            empty / non-positive.
+        ValueError: If not exactly one route is given, if the geometry is
+            incomplete, if rpm is not a positive finite number, if the
+            signal is not loaded / has no sampling rate, if the bearing is
+            not in the catalog, or if frequencies is empty or holds a
+            non-positive or non-finite value.
     """
     geometry_given = [
         p is not None for p in (num_balls, ball_diameter_mm, pitch_diameter_mm)
@@ -1390,6 +1399,10 @@ async def check_bearing_faults(
             f"the explicit-geometry route needs num_balls, "
             f"ball_diameter_mm, and pitch_diameter_mm together."
         )
+    # Before any lookup and before the geometry route derives frequencies
+    # from it: the caller is told about the speed it passed, not about
+    # all-zero frequencies it never typed.
+    validate_rpm(rpm, source="the rpm parameter")
 
     signal_data, info = resolve_signal(signal_id)
     fs = info.sampling_rate
@@ -1758,8 +1771,10 @@ async def diagnose_vibration(
     Args:
         ctx: MCP context. Unused — see this module's docstring on logging.
         signal_id: ID of the stored signal.
-        rpm: Machine operating speed in RPM. Optional: the measurement's
-            declared rpm, then the point's nominal_rpm.
+        rpm: Machine operating speed in RPM, positive and finite. Optional:
+            the measurement's declared rpm, then the point's nominal_rpm. An
+            explicit value that is zero, negative or not a finite number is
+            refused, never replaced by a declared speed.
         bearing_id: Bearing designation for fault detection. Optional: the
             point's declared bearing_id.
         machine_group: 1 (large, >300 kW) or 2 (medium, 15-300 kW).
@@ -1768,11 +1783,18 @@ async def diagnose_vibration(
             declaration, then 'rigid'.
 
     Raises:
-        ValueError: If the stored signal has no sampling rate, if no rpm
-            can be resolved from the call, the measurement or the point
-            (the message names the three remedies), or if the point's
-            declaration carries a malformed value.
+        ValueError: If an explicit rpm is not a positive finite number, if
+            the stored signal has no sampling rate, if no rpm can be resolved
+            from the call, the measurement or the point (the message names
+            the three remedies), if the point's declaration carries a
+            malformed value, or if the bearing check refuses an expected
+            frequency computed from rpm.
     """
+    # Before any lookup, and outside the declared-context wrapper below, so
+    # the caller is told about the speed it passed.
+    if rpm is not None:
+        validate_rpm(rpm, source="the rpm parameter", optional=True)
+
     signal_data, info = resolve_signal(signal_id)
     fs = info.sampling_rate
 

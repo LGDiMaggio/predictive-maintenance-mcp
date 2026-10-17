@@ -29,7 +29,11 @@ from ..signal_processing.features import (
     extract_time_domain_features as _extract_time_domain_features,
 )
 from ..signal_acquisition.repository import VALID_SIGNAL_UNITS, normalize_signal_unit
-from ..signal_validation import validate_signal_and_fs
+from ..signal_validation import (
+    InvalidInputError,
+    validate_rpm,
+    validate_signal_and_fs,
+)
 from ..diagnostics.bearing_analyzer import check_all_bearing_faults
 from ..diagnostics.iso20816 import assess_severity_with_axis
 
@@ -207,13 +211,17 @@ def diagnose_vibration(
     (``status: "refused"`` + ``reason`` + ``remedy``) while the spectral,
     bearing, and anomaly blocks still run. Units are never guessed from
     signal amplitude. Corrupt input is the exception: a NaN or infinite
-    sample, or a non-finite or non-positive fs, invalidates every block, so
-    the whole call raises before any block is computed.
+    sample, a non-finite or non-positive fs, or a shaft speed that is not a
+    positive finite number invalidates every block, so the whole call raises
+    before any block is computed. A refusal of the caller's own input that
+    arises inside the bearing check (a fault frequency that rounds to zero
+    at a fraction of 1 rpm) is raised too, never turned into a skipped
+    bearing block.
 
     Args:
         signal: 1D vibration signal.
         fs: Sampling frequency (Hz).
-        rpm: Machine operating speed (RPM).
+        rpm: Machine operating speed (RPM), positive and finite.
         signal_id: Signal identifier for result labeling.
         bearing_id: Bearing designation for fault detection (optional).
         machine_group: ISO 20816-3 machine group — 1 (large, >300 kW) or
@@ -233,8 +241,9 @@ def diagnose_vibration(
     Raises:
         ValueError: If signal_unit is provided but is not a recognized unit
             (caller misuse — distinct from the honest "undeclared" refusal),
-            if fs is not a positive finite number, or if any sample is NaN
-            or infinite.
+            if fs or rpm is not a positive finite number, if any sample is
+            NaN or infinite, or if the bearing check refuses an expected
+            frequency computed from rpm.
     """
     # Validate a provided unit up front; None stays None (undeclared).
     declared_unit: Optional[str] = None
@@ -250,8 +259,11 @@ def diagnose_vibration(
 
     # Corrupt input is refused here, not per block: the blocks below catch
     # the bearing ValueError and turn the ISO one into a refused block, so
-    # without this check a NaN sample would still yield a "diagnosis".
+    # without this check a NaN sample would still yield a "diagnosis". The
+    # speed is checked unconditionally: without a bearing or a declared unit
+    # no block looks at it, yet the synthesis still reads its 1x/2x lines.
     signal = validate_signal_and_fs(signal, fs)
+    validate_rpm(rpm)
 
     # 1. FFT
     fft_summary = _compute_fft_summary(signal, fs)
@@ -284,6 +296,10 @@ def diagnose_vibration(
                 rpm=rpm,
                 signal_id=signal_id,
             )
+        except InvalidInputError:
+            # The caller's own input is unusable (a computed fault frequency
+            # rounds to zero at a fraction of 1 rpm): refuse, never skip.
+            raise
         except ValueError as e:
             logger.warning(f"Bearing analysis skipped: {e}")
             bearing_faults = None

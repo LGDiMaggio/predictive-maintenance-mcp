@@ -917,6 +917,45 @@ class TestGenerateDiagnosticReport:
             )
 
     @pytest.mark.asyncio
+    async def test_invalid_rpm_is_refused_before_either_diagnosis(
+        self, tools, repo, data_dir, reports_dir, mock_ctx
+    ):
+        """Issue #83: one rpm feeds both diagnoses, so it is refused up front
+        and no report is written."""
+        _load_extra_signal(repo, data_dir, "report_baseline.csv")
+        with pytest.raises(
+            ValueError, match=r"rpm must be positive and finite.*the rpm parameter"
+        ):
+            await tools["generate_diagnostic_report"](
+                signal_id="report_test",
+                rpm=-1.0,
+                baseline_signal_id="report_baseline",
+                ctx=mock_ctx,
+            )
+        assert list(reports_dir.iterdir()) == []
+
+    @pytest.mark.asyncio
+    async def test_unsupported_format_is_still_reported_before_the_rpm(
+        self, tools, repo, reports_dir, mock_ctx
+    ):
+        with pytest.raises(ValueError, match="Unsupported report format"):
+            await tools["generate_diagnostic_report"](
+                signal_id="report_test", rpm=-1.0, formats=["docx"], ctx=mock_ctx
+            )
+
+    @pytest.mark.asyncio
+    async def test_tiny_rpm_with_a_catalog_bearing_writes_no_report(
+        self, tools, repo, reports_dir, mock_ctx
+    ):
+        """0.5 rpm rounds the 6205's FTF to 0.0 Hz: refused instead of a
+        report whose bearing section says no designation was supplied."""
+        with pytest.raises(ValueError, match="expected FTF frequency must be positive"):
+            await tools["generate_diagnostic_report"](
+                signal_id="report_test", rpm=0.5, bearing_id="6205", ctx=mock_ctx
+            )
+        assert list(reports_dir.iterdir()) == []
+
+    @pytest.mark.asyncio
     async def test_no_confidence_field_reaches_the_caller(
         self, tools, repo, reports_dir, mock_ctx
     ):
