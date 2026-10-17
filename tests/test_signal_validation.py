@@ -1,11 +1,12 @@
-"""Shared finiteness checks for vibration samples and sampling rates.
+"""Shared finiteness checks for samples, sampling rates, shaft speeds and
+expected fault frequencies.
 
 ``signal_validation`` is the one implementation the signal store, the asset
-ledger, the raw decoder and the public diagnostic entry points call (issue
-#82). These tests pin what every caller relies on: which inputs are refused,
-what the refusal says (count, total, first index, the caller's source and
-remedy), and that the refusal is a plain ``ValueError`` raised from project
-code, so the refusal boundary forwards it verbatim.
+ledger, the raw decoder and the public diagnostic entry points call (issues
+#82 and #83). These tests pin what every caller relies on: which inputs are
+refused, what the refusal says (count, total, first index, the caller's source
+and remedy), and that the refusal is an ``InvalidInputError`` (a ``ValueError``)
+raised from project code, so the refusal boundary forwards it verbatim.
 """
 
 import math
@@ -17,8 +18,12 @@ import pytest
 
 from predictive_maintenance_mcp.signal_validation import (
     BAD_SAMPLE_REMEDY,
+    InvalidInputError,
+    validate_expected_frequency,
     validate_finite_samples,
+    validate_rpm,
     validate_sampling_rate,
+    validate_signal_and_fs,
 )
 
 SRC_DIR = (Path(__file__).resolve().parent.parent / "src").resolve()
@@ -235,3 +240,124 @@ class TestValidateFiniteSamples:
             validate_finite_samples(data)
 
         assert _raised_in_src(excinfo.value)
+
+
+# ---------------------------------------------------------------------------
+# Shaft speed
+# ---------------------------------------------------------------------------
+
+
+class TestValidateRpm:
+    @pytest.mark.parametrize(
+        "value", [1797, 1797.0, np.float64(1797), np.int64(1797), 0.5]
+    )
+    def test_positive_finite_speeds_are_returned_as_float(self, value):
+        result = validate_rpm(value)
+
+        assert result == float(value)
+        assert type(result) is float
+
+    @pytest.mark.parametrize(
+        "value", [0.0, -1.0, -1797, math.nan, math.inf, -math.inf, 10**400]
+    )
+    def test_non_positive_or_non_finite_speeds_are_refused(self, value):
+        with pytest.raises(ValueError, match=r"rpm must be positive and finite"):
+            validate_rpm(value)
+
+    @pytest.mark.parametrize("value", [True, np.bool_(True), "1500", None])
+    def test_values_that_are_not_numbers_are_refused(self, value):
+        with pytest.raises(ValueError, match="not a number"):
+            validate_rpm(value)
+
+    def test_required_remedy_asks_for_the_measured_speed(self):
+        with pytest.raises(ValueError) as excinfo:
+            validate_rpm(0.0)
+
+        message = str(excinfo.value)
+        assert "measured shaft speed" in message
+        assert "omit" not in message
+
+    def test_optional_remedy_says_the_speed_can_be_omitted(self):
+        with pytest.raises(ValueError) as excinfo:
+            validate_rpm(0.0, optional=True)
+
+        message = str(excinfo.value)
+        assert "measured shaft speed" in message
+        assert "omit rpm" in message
+
+    def test_source_appears_in_the_message(self):
+        with pytest.raises(ValueError, match=r"from the rpm parameter"):
+            validate_rpm(math.nan, source="the rpm parameter")
+
+    def test_refusal_is_raised_from_project_code(self):
+        with pytest.raises(ValueError) as excinfo:
+            validate_rpm(math.inf)
+
+        assert _raised_in_src(excinfo.value)
+
+
+# ---------------------------------------------------------------------------
+# Expected fault frequency
+# ---------------------------------------------------------------------------
+
+
+class TestValidateExpectedFrequency:
+    @pytest.mark.parametrize("value", [107.36, 162, np.float64(70.58)])
+    def test_positive_finite_frequencies_are_returned_as_float(self, value):
+        result = validate_expected_frequency(value, label="BPFO")
+
+        assert result == float(value)
+        assert type(result) is float
+
+    @pytest.mark.parametrize("value", [0.0, -5, math.nan, math.inf, True, "107"])
+    def test_unusable_frequencies_are_refused_naming_the_label(self, value):
+        with pytest.raises(ValueError) as excinfo:
+            validate_expected_frequency(value, label="BPFI")
+
+        message = str(excinfo.value)
+        assert "expected BPFI frequency must be positive and finite" in message
+        assert "Hz" in message
+
+    def test_refusal_is_raised_from_project_code(self):
+        with pytest.raises(ValueError) as excinfo:
+            validate_expected_frequency(math.nan, label="FTF")
+
+        assert _raised_in_src(excinfo.value)
+
+
+# ---------------------------------------------------------------------------
+# Refusal type
+# ---------------------------------------------------------------------------
+
+
+class TestRefusalType:
+    """Every refusal of the module is an InvalidInputError, which is a
+    ValueError: existing handlers and the refusal boundary see a ValueError,
+    and a pipeline can tell a validator refusal from other ValueErrors."""
+
+    @pytest.mark.parametrize(
+        "call",
+        [
+            lambda: validate_finite_samples([np.nan]),
+            lambda: validate_finite_samples(np.array(["x"], dtype=object)),
+            lambda: validate_finite_samples(np.array(["2026-01-01"], dtype="M8[ns]")),
+            lambda: validate_sampling_rate(0),
+            lambda: validate_signal_and_fs([1.0, 2.0], math.nan),
+            lambda: validate_rpm(-1.0),
+            lambda: validate_expected_frequency(0.0, label="BPFO"),
+        ],
+        ids=[
+            "non-finite sample",
+            "non-numeric sample",
+            "non-sample dtype",
+            "sampling rate",
+            "fs",
+            "rpm",
+            "expected frequency",
+        ],
+    )
+    def test_every_refusal_is_an_invalid_input_error(self, call):
+        with pytest.raises(InvalidInputError) as excinfo:
+            call()
+
+        assert isinstance(excinfo.value, ValueError)

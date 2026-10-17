@@ -1,25 +1,31 @@
-"""Canonical finiteness checks for vibration samples and sampling rates.
+"""Canonical finiteness checks for samples, sampling rates, shaft speeds and
+expected fault frequencies.
 
-The single source of truth for "is this signal fit to analyze" at the input
+The single source of truth for "is this input fit to analyze" at the input
 boundaries: the signal store's loads, the asset ledger's re-reads, the
-raw-binary decoder, the ledger snapshot, test-signal generation, and the three
-public diagnostic entry points that accept arrays directly from Python
-(ISO severity, the bearing fault peak check and the diagnosis pipeline) call
-the validators below instead of rolling their own comparison. Lower-level
-numeric transforms such as ``signal_processing.spectral`` sit behind those
-boundaries and keep their own simple ``fs > 0`` guard.
+raw-binary decoder, the ledger snapshot, test-signal generation, the MCP tools
+that take a shaft speed, and the public diagnostic entry points that accept
+arrays or speeds directly from Python (ISO severity, the bearing checks and
+the diagnosis pipeline) call the validators below instead of rolling their own
+comparison. Lower-level numeric transforms such as
+``signal_processing.spectral`` sit behind those boundaries and keep their own
+simple ``fs > 0`` guard.
 
 A comparison such as ``fs <= 0`` or ``not fs > 0`` is not enough: every
 comparison with NaN is False, so ``nan <= 0`` lets NaN through, and
 ``not inf > 0`` lets infinity through. Non-finite input then turns into
 confident verdicts (a NaN RMS falls through the ISO 20816-3 zone ladder to
-Zone D; an all-NaN envelope matches no fault frequency and reads as a healthy
-bearing).
+Zone D; an all-NaN envelope, or a fault frequency computed from a zero or NaN
+shaft speed, matches no peak and reads as a healthy bearing; an infinite one
+matches every peak and reads as a fault).
 
-The validators raise a plain ``ValueError`` whose message states the problem
-and the remedy, from this module (project code), so the MCP refusal boundary
-forwards the text verbatim and direct Python callers can catch ``ValueError``.
-They never repair input: a missing or corrupt sample is refused, not filled.
+The validators raise :class:`InvalidInputError`, a ``ValueError`` whose
+message states the problem and the remedy, from this module (project code),
+so the MCP refusal boundary forwards the text verbatim and direct Python
+callers can catch ``ValueError``. A pipeline that degrades a callee's
+``ValueError`` into a skipped block re-raises this subclass instead. The
+validators never repair input: a missing or corrupt sample is refused, not
+filled, and an invalid shaft speed is refused, not defaulted.
 
 Numpy and the standard library only, so every layer can import it without
 adding a dependency edge.
@@ -33,11 +39,26 @@ import numpy as np
 
 __all__ = [
     "BAD_SAMPLE_REMEDY",
+    "InvalidInputError",
+    "validate_expected_frequency",
     "validate_finite_samples",
     "validate_positive_finite",
+    "validate_rpm",
     "validate_sampling_rate",
     "validate_signal_and_fs",
 ]
+
+
+class InvalidInputError(ValueError):
+    """A refusal by the shared validators: the input is unusable as given.
+
+    A ``ValueError``, so every existing handler and the MCP refusal boundary
+    treat it exactly as before. It exists so that a pipeline which turns a
+    callee's ``ValueError`` into a skipped analysis (the diagnosis pipeline's
+    bearing block) can re-raise a refusal of the caller's own input instead
+    of hiding it.
+    """
+
 
 #: Remedy for a capture with missing, non-finite or non-numeric samples. It
 #: reaches an assistant that acts on tool output, so it says what is NOT a fix.
@@ -52,6 +73,21 @@ _DEFAULT_RATE_REMEDY = "declare the sampling frequency in Hz as a positive numbe
 
 #: Remedy the direct-call diagnostic boundaries give a Python caller for fs.
 _DIRECT_CALL_FS_REMEDY = "pass the sampling frequency the signal was acquired at, in Hz"
+
+#: Remedies for a shaft speed. A speed is never estimated: the fault
+#: frequencies and the ISO band are computed from it, so a guessed one yields
+#: a verdict about a machine that does not exist.
+_RPM_REMEDY = (
+    "pass the measured shaft speed in revolutions per minute; do not estimate "
+    "one, and ask for it when it is unknown"
+)
+_OPTIONAL_RPM_REMEDY = (
+    "pass the measured shaft speed in revolutions per minute, or omit rpm "
+    "when it is unknown; do not estimate one"
+)
+
+#: Remedy for an expected fault frequency.
+_EXPECTED_FREQUENCY_REMEDY = "pass each expected frequency in Hz as a number above zero"
 
 
 def validate_positive_finite(
@@ -76,13 +112,13 @@ def validate_positive_finite(
         The value as a Python float.
 
     Raises:
-        ValueError: If the value is not a real number, is NaN or infinite
-            (an integer too large for a float counts as infinite), or is zero
-            or negative.
+        InvalidInputError: If the value is not a real number, is NaN or
+            infinite (an integer too large for a float counts as infinite),
+            or is zero or negative.
     """
     where = f" (from {source})" if source else ""
     if isinstance(value, (bool, np.bool_)) or not isinstance(value, numbers.Real):
-        raise ValueError(
+        raise InvalidInputError(
             f"{name} must be positive and finite ({name} > 0), got {value!r} "
             f"of type {type(value).__name__}, which is not a number{where} — "
             f"{remedy}."
@@ -92,7 +128,7 @@ def validate_positive_finite(
     except OverflowError:
         number = math.inf
     if not math.isfinite(number) or number <= 0:
-        raise ValueError(
+        raise InvalidInputError(
             f"{name} must be positive and finite ({name} > 0), got "
             f"{value!r}{where} — {remedy}."
         )
@@ -122,10 +158,67 @@ def validate_sampling_rate(
         The rate as a Python float.
 
     Raises:
-        ValueError: If the rate is not a real number, is NaN or infinite, or
-            is zero or negative.
+        InvalidInputError: If the rate is not a real number, is NaN or
+            infinite, or is zero or negative.
     """
     return validate_positive_finite(value, name=name, source=source, remedy=remedy)
+
+
+def validate_rpm(value: Any, *, source: str = "", optional: bool = False) -> float:
+    """Return *value* as a float when it is a usable shaft speed.
+
+    The message names the quantity ``rpm``, the word every MCP tool uses for
+    it, whatever the parameter is called in the function that checks it.
+
+    Args:
+        value: The shaft speed in revolutions per minute.
+        source: Where the value came from, appended to the message when
+            given (for example ``"the rpm parameter"``).
+        optional: True when the caller may omit the speed altogether; the
+            remedy then says so. Validate only a speed that was given: an
+            omitted optional speed is ``None`` and must not reach this check.
+
+    Returns:
+        The speed as a Python float.
+
+    Raises:
+        InvalidInputError: If the speed is not a real number, is NaN or
+            infinite, or is zero or negative.
+    """
+    remedy = _OPTIONAL_RPM_REMEDY if optional else _RPM_REMEDY
+    return validate_positive_finite(value, name="rpm", source=source, remedy=remedy)
+
+
+def validate_expected_frequency(
+    value: Any,
+    *,
+    label: str,
+    source: str = "",
+    remedy: str = _EXPECTED_FREQUENCY_REMEDY,
+) -> float:
+    """Return *value* as a float when it is a usable expected fault frequency.
+
+    Args:
+        value: The expected frequency in Hz.
+        label: The frequency's label (``"BPFO"``, ``"GMF"``, ...), named in
+            the message.
+        source: Where the value came from, appended to the message when
+            given.
+        remedy: What the caller should do instead.
+
+    Returns:
+        The frequency as a Python float.
+
+    Raises:
+        InvalidInputError: If the frequency is not a real number, is NaN or
+            infinite, or is zero or negative.
+    """
+    return validate_positive_finite(
+        value,
+        name=f"expected {label} frequency",
+        source=source,
+        remedy=f"{remedy} (frequencies are in Hz)",
+    )
 
 
 def validate_signal_and_fs(signal: Any, fs: Any) -> np.ndarray:
@@ -143,8 +236,8 @@ def validate_signal_and_fs(signal: Any, fs: Any) -> np.ndarray:
         The validated samples (see :func:`validate_finite_samples`).
 
     Raises:
-        ValueError: If *fs* is not a finite number above zero, or a sample
-            is NaN, infinite or not a number.
+        InvalidInputError: If *fs* is not a finite number above zero, or a
+            sample is NaN, infinite or not a number.
     """
     validate_sampling_rate(fs, name="fs", remedy=_DIRECT_CALL_FS_REMEDY)
     return validate_finite_samples(signal, source="signal")
@@ -177,8 +270,8 @@ def validate_finite_samples(
         numeric array, otherwise the float64 array parsed from text.
 
     Raises:
-        ValueError: If any sample is NaN, infinite or not a number; the
-            message gives the count, the total and the first offending
+        InvalidInputError: If any sample is NaN, infinite or not a number;
+            the message gives the count, the total and the first offending
             0-based index (flat index plus shape for multi-dimensional data).
     """
     arr = np.asarray(data)
@@ -188,7 +281,7 @@ def validate_finite_samples(
     if kind in "OSU":
         arr = _parse_text_samples(arr, source=source, remedy=remedy)
     elif kind not in "fc":
-        raise ValueError(
+        raise InvalidInputError(
             f"{source} holds {arr.dtype} values, which are not samples — {remedy}."
         )
 
@@ -196,7 +289,7 @@ def validate_finite_samples(
     if finite.all():
         return arr
     bad = np.flatnonzero(~finite)
-    raise ValueError(
+    raise InvalidInputError(
         f"{source} contains {bad.size} non-finite sample(s) (NaN or infinity) "
         f"out of {arr.size}; first at {_position(int(bad[0]), arr.shape)} — "
         f"{remedy}."
@@ -220,7 +313,7 @@ def _parse_text_samples(arr: np.ndarray, *, source: str, remedy: str) -> np.ndar
                 first_bad = i
             bad_count += 1
     if bad_count:
-        raise ValueError(
+        raise InvalidInputError(
             f"{source} contains {bad_count} non-numeric sample(s) out of "
             f"{flat.size}; first at {_position(first_bad, arr.shape)}, value "
             f"{flat[first_bad]!r} (a header row or a marker token) — {remedy}."
