@@ -14,9 +14,23 @@ import numpy as np
 
 from .bearing_catalog import compute_fault_frequencies, lookup_bearing
 from ..signal_processing.spectral import compute_envelope_spectrum
-from ..signal_validation import validate_signal_and_fs
+from ..signal_validation import (
+    InvalidInputError,
+    validate_expected_frequency,
+    validate_rpm,
+    validate_signal_and_fs,
+)
 
 logger = logging.getLogger(__name__)
+
+#: Remedy for an expected frequency the peak check cannot use. On the catalog
+#: route the frequency is computed, so a valid speed can still round it to
+#: zero (a fraction of 1 rpm) and the remedy points back at the speed.
+_PEAK_FREQUENCY_REMEDY = (
+    "pass an expected frequency in Hz above zero; when it is computed from the "
+    "shaft speed and the bearing geometry, check that rpm is the measured speed "
+    "in revolutions per minute and that the geometry is right"
+)
 
 #: Canonical fault vocabulary: acronym -> canonical fault type. Arbitrary
 #: labels (e.g. "GMF" for a gear-mesh check) have no canonical mapping.
@@ -59,13 +73,18 @@ def check_bearing_fault_peak(
         Dict compatible with BearingFaultCheckResult.
 
     Raises:
-        ValueError: If fs is not a positive finite number or any sample is
-            NaN or infinite.
+        ValueError: If fs is not a positive finite number, any sample is
+            NaN or infinite, or ``expected_freq`` is not a positive finite
+            number.
     """
     # Every bearing verdict passes through here, so corrupt input is refused
-    # before the envelope: a NaN envelope matches no fault frequency and the
-    # summary would read "Bearing appears healthy".
+    # before the envelope: a NaN envelope, or a zero, negative or NaN expected
+    # frequency, matches no peak and the summary would read "Bearing appears
+    # healthy"; an infinite expected frequency matches every peak.
     signal = validate_signal_and_fs(signal, fs)
+    validate_expected_frequency(
+        expected_freq, label=fault_type, remedy=_PEAK_FREQUENCY_REMEDY
+    )
 
     env = compute_envelope_spectrum(
         signal, fs, frequency_range=envelope_freq_range, num_peaks=50
@@ -163,10 +182,15 @@ def check_all_bearing_faults(
         Dict compatible with BearingFaultsSummary.
 
     Raises:
-        ValueError: If bearing not found in catalog, or if
-            :func:`check_bearing_fault_peak` refuses the signal or fs
-            (non-finite samples, a non-finite or non-positive fs).
+        ValueError: If rpm is not a positive finite number, if the bearing
+            is not found in the catalog, or if :func:`check_bearing_fault_peak`
+            refuses the signal, fs or a computed frequency (non-finite
+            samples, a non-finite or non-positive fs, a frequency that rounds
+            to zero at a fraction of 1 rpm).
     """
+    # Before the catalog lookup, so the speed is reported even for an
+    # unknown designation.
+    validate_rpm(rpm)
     freq_data = compute_fault_frequencies(bearing_id, rpm)
     if freq_data is None:
         raise ValueError(
@@ -268,8 +292,10 @@ def check_frequency_set(
     Args:
         signal: 1D vibration signal.
         fs: Sampling frequency (Hz).
-        frequencies: {label: expected frequency in Hz}, all values > 0.
-        rpm: Shaft speed in RPM (echoed; shaft frequency = rpm/60).
+        frequencies: {label: expected frequency in Hz}, all values positive
+            and finite.
+        rpm: Shaft speed in RPM (echoed; shaft frequency = rpm/60), positive
+            and finite.
         signal_id: Signal identifier (for result labeling).
         tolerance_pct: Frequency tolerance in percent.
         envelope_freq_range: Bandpass filter range for envelope. ``None``
@@ -282,20 +308,28 @@ def check_frequency_set(
         Dict compatible with BearingFaultsSummary (bearing_id/source None).
 
     Raises:
-        ValueError: If frequencies is empty or contains non-positive values,
-            or if :func:`check_bearing_fault_peak` refuses the signal or fs
-            (non-finite samples, a non-finite or non-positive fs).
+        ValueError: If rpm is not a positive finite number, if frequencies
+            is empty or contains a value that is not a positive finite number
+            (every such label is listed), or if :func:`check_bearing_fault_peak`
+            refuses the signal or fs (non-finite samples, a non-finite or
+            non-positive fs).
     """
+    validate_rpm(rpm)
     if not frequencies:
         raise ValueError(
             "frequencies is empty — pass at least one {label: hz} entry, "
             "e.g. {'BPFO': 107.4} or {'GMF': 350.0}."
         )
-    bad = {k: v for k, v in frequencies.items() if not v or v <= 0}
+    bad = {}
+    for label, freq in frequencies.items():
+        try:
+            validate_expected_frequency(freq, label=label)
+        except InvalidInputError:
+            bad[label] = freq
     if bad:
-        raise ValueError(
-            f"frequencies contains non-positive values: {bad} — every "
-            f"expected frequency must be > 0 Hz."
+        raise InvalidInputError(
+            f"frequencies contains non-positive or non-finite values: {bad} — "
+            f"every expected frequency must be a finite number > 0 Hz."
         )
 
     checks = [

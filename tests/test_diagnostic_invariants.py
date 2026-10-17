@@ -574,25 +574,24 @@ class TestBearingFrequencies:
             )
         )
 
+        # The speed is refused, not the all-zero frequencies derived from it
+        # (issue #83): the caller is told which value it supplied is wrong.
         assert result is None
-        assert "must be > 0 Hz" in str(refusal)
+        assert "rpm must be positive and finite" in str(refusal)
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("rpm", [0.0, -1797.0])
-    @pytest.mark.xfail(
-        strict=True,
-        raises=AssertionError,
-        reason=known_defect(
-            "bearing-catalog-rpm-nonpositive",
-            "check_bearing_faults catalog route accepts rpm <= 0 and reports the "
-            "bearing healthy",
-        ),
+    @pytest.mark.parametrize(
+        "rpm",
+        [0.0, -1797.0, math.nan, math.inf, -math.inf],
+        ids=["zero", "negative", "nan", "inf", "-inf"],
     )
     async def test_catalog_route_never_calls_a_zero_speed_bearing_healthy(
         self, load_csv, mock_ctx, rpm
     ):
-        """With no positive shaft speed there are no defect frequencies to
-        look for: refuse, or at least never conclude 'healthy'."""
+        """With no positive finite shaft speed there are no defect frequencies
+        to look for: the call is refused by project code, naming the speed.
+        Before issue #83 a zero, negative or NaN speed read 'healthy' and an
+        infinite one read as a fault."""
         await load_csv("inv_brg_cat0", _sine(0.1, 50.0))
 
         result, refusal = await _outcome(
@@ -601,11 +600,11 @@ class TestBearingFrequencies:
             )
         )
 
-        if refusal is None:
-            assert "healthy" not in result.overall_assessment.lower(), (
-                f"rpm={rpm} accepted: expected frequencies "
-                f"{result.bearing_frequencies}, verdict {result.overall_assessment!r}"
-            )
+        assert result is None, (
+            f"rpm={rpm} accepted: expected frequencies "
+            f"{result.bearing_frequencies}, verdict {result.overall_assessment!r}"
+        )
+        assert "rpm must be positive and finite" in str(refusal)
 
 
 # ===========================================================================

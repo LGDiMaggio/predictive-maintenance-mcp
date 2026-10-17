@@ -212,6 +212,129 @@ class TestNonFiniteInputRefused:
             )
 
 
+RPM_PHRASE = "rpm must be positive and finite"
+BAD_SPEEDS = [0.0, -1797.0, np.nan, np.inf, -np.inf]
+BAD_SPEED_IDS = ["zero", "negative", "nan", "inf", "-inf"]
+
+
+class TestInvalidShaftSpeedRefused:
+    """Issue #83: no bearing verdict from a speed that is not positive and
+    finite, nor from an expected frequency that is not.
+
+    Before the guard a zero, negative or NaN speed gave 0 Hz, negative or
+    NaN fault frequencies that matched no peak, so the verdict read "Bearing
+    appears healthy"; an infinite one matched every peak and read as a fault.
+    """
+
+    FS = 12000
+
+    def _signal(self) -> np.ndarray:
+        t = np.arange(self.FS) / self.FS
+        return np.sin(2 * np.pi * 50 * t) + 0.01 * np.random.default_rng(
+            0
+        ).standard_normal(self.FS)
+
+    @pytest.mark.parametrize("rpm", BAD_SPEEDS, ids=BAD_SPEED_IDS)
+    def test_catalog_check_refuses_the_speed(self, rpm):
+        with pytest.raises(ValueError, match=RPM_PHRASE):
+            check_all_bearing_faults(
+                signal=self._signal(), fs=self.FS, bearing_id="6205", rpm=rpm
+            )
+
+    def test_speed_is_refused_before_the_catalog_lookup(self):
+        with pytest.raises(ValueError, match=RPM_PHRASE):
+            check_all_bearing_faults(
+                signal=self._signal(), fs=self.FS, bearing_id="FAKE_999", rpm=0.0
+            )
+
+    def test_lookup_and_compute_refuses_the_speed(self):
+        with pytest.raises(ValueError, match=RPM_PHRASE):
+            lookup_bearing_and_compute(
+                signal=self._signal(), fs=self.FS, bearing_type="6205", rpm=np.nan
+            )
+
+    def test_tiny_speed_is_refused_where_a_frequency_rounds_to_zero(self):
+        """0.5 rpm is positive and finite, but the 6205's FTF rounds to 0.0 Hz:
+        the expected-frequency backstop refuses it instead of reading healthy."""
+        with pytest.raises(ValueError, match="expected FTF frequency must be positive"):
+            check_all_bearing_faults(
+                signal=self._signal(), fs=self.FS, bearing_id="6205", rpm=0.5
+            )
+
+    @pytest.mark.parametrize("rpm", BAD_SPEEDS, ids=BAD_SPEED_IDS)
+    def test_frequency_set_refuses_the_speed_it_echoes(self, rpm):
+        with pytest.raises(ValueError, match=RPM_PHRASE):
+            check_frequency_set(
+                signal=self._signal(), fs=self.FS, frequencies={"GMF": 800.0}, rpm=rpm
+            )
+
+    def test_frequency_set_refuses_every_bad_label_in_one_message(self):
+        with pytest.raises(ValueError) as excinfo:
+            check_frequency_set(
+                signal=self._signal(),
+                fs=self.FS,
+                frequencies={"BPFO": 107.4, "BPFI": np.nan, "BSF": -1.0},
+                rpm=1797,
+            )
+
+        message = str(excinfo.value)
+        assert "non-positive or non-finite" in message
+        assert "BPFI" in message
+        assert "BSF" in message
+        assert "BPFO" not in message.split(":", 1)[1].split("—")[0]
+
+    @pytest.mark.parametrize(
+        "frequencies",
+        [{"GMF": -10.0}, {"X": np.inf}, {"BPFO": True}, {"BPFO": "107.4"}],
+        ids=["negative", "inf", "bool", "string"],
+    )
+    def test_frequency_set_refuses_unusable_values(self, frequencies):
+        with pytest.raises(ValueError, match="non-positive"):
+            check_frequency_set(
+                signal=self._signal(), fs=self.FS, frequencies=frequencies, rpm=1797
+            )
+
+    def test_nan_geometry_frequencies_are_refused_not_healthy(self):
+        from predictive_maintenance_mcp.document_reader import (
+            calculate_bearing_frequencies,
+        )
+
+        freqs = calculate_bearing_frequencies(
+            num_balls=9,
+            ball_diameter_mm=np.nan,
+            pitch_diameter_mm=39.04,
+            shaft_speed_rpm=1797,
+        )
+        with pytest.raises(ValueError, match="non-finite"):
+            check_frequency_set(
+                signal=self._signal(),
+                fs=self.FS,
+                frequencies={k: freqs[k] for k in ("BPFO", "BPFI", "BSF", "FTF")},
+                rpm=1797,
+            )
+
+    @pytest.mark.parametrize("expected", [0.0, -5.0, np.nan, np.inf])
+    def test_peak_check_refuses_the_expected_frequency(self, expected):
+        with pytest.raises(
+            ValueError, match="expected BPFO frequency must be positive"
+        ):
+            check_bearing_fault_peak(
+                signal=self._signal(),
+                fs=self.FS,
+                expected_freq=expected,
+                fault_type="BPFO",
+                bearing_id="6205",
+            )
+
+    def test_valid_speed_echo_keeps_the_callers_value(self):
+        result = check_all_bearing_faults(
+            signal=self._signal(), fs=self.FS, bearing_id="6205", rpm=1797
+        )
+
+        assert result["rpm"] == 1797
+        assert type(result["rpm"]) is int
+
+
 class TestLookupBearingAndCompute:
     def test_end_to_end(self):
         fs = 10000
