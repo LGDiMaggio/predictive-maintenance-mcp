@@ -216,7 +216,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `diagnose_vibration` pipeline are called from Python, where a speed or a
   frequency given as a bool or a string is refused too. Speeds declared in
   the companion file or on a measurement point were already validated and
-  are unchanged. Tool signatures and output schemas are unchanged.
+  are unchanged. A health snapshot of a measurement declared at a fraction
+  of 1 rpm lists its bearing block under `missing`, with a remedy that names
+  the declared speed, instead of a bearing check against a 0 Hz FTF. Tool
+  signatures and output schemas are unchanged.
 - **Non-finite, missing and non-numeric samples are refused instead of
   analyzed (#82).** One NaN sample in a CSV loaded silently and then gave
   ISO 20816-3 Zone D with `rms_velocity_mm_s=nan` and, in the same

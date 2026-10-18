@@ -74,7 +74,7 @@ from ..signal_processing.features import (
     extract_time_domain_features,
     segment_and_extract_features as _segment_and_extract_features,
 )
-from ..signal_validation import validate_rpm
+from ..signal_validation import validate_expected_frequencies, validate_rpm
 from ._utils import (
     refusal_boundary,
     resolve_signal,
@@ -1455,10 +1455,16 @@ async def check_bearing_faults(
             contact_angle_deg=contact_angle_deg,
             shaft_speed_rpm=rpm,
         )
+        computed = {k: freqs[k] for k in ("BPFO", "BPFI", "BSF", "FTF")}
+        # A NaN geometry yields NaN frequencies: the refusal names what the
+        # caller passed, not a frequencies argument it never typed.
+        validate_expected_frequencies(
+            computed, name="the frequency set computed from this geometry and rpm"
+        )
         result = _check_frequency_set(
             signal=signal_data,
             fs=fs,
-            frequencies={k: freqs[k] for k in ("BPFO", "BPFI", "BSF", "FTF")},
+            frequencies=computed,
             rpm=rpm,
             signal_id=signal_id,
             tolerance_pct=tolerance_pct,

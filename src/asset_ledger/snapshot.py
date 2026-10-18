@@ -57,7 +57,11 @@ from ..signal_processing.spectral import (
     resolve_envelope_band,
     select_leading_segment,
 )
-from ..signal_validation import validate_finite_samples, validate_sampling_rate
+from ..signal_validation import (
+    InvalidInputError,
+    validate_finite_samples,
+    validate_sampling_rate,
+)
 
 __all__ = [
     "ALGORITHM_VERSION",
@@ -524,6 +528,9 @@ def _bearing_block(
 
     Raises:
         ValueError: From the analyzers (empty or non-positive frequencies).
+            An expected frequency they refuse as not positive and finite
+            (one rounded to 0.0 Hz at a fraction of 1 rpm) is an
+            ``InvalidInputError``.
     """
     frequencies: Mapping[str, float] = targets["frequencies"]
     if targets["source"] == "catalog":
@@ -750,6 +757,16 @@ def compute_health_snapshot(
             try:
                 bearing = _bearing_block(
                     signal, fs, rpm, targets, band, resolved_policy
+                )
+            except InvalidInputError as exc:
+                # A computed fault frequency the analyzers refuse: the
+                # declared speed is as likely the cause as the bearing.
+                missing["bearing"] = _missing(
+                    str(exc),
+                    "check that the declared rpm (the companion's rpm or the "
+                    "point's nominal_rpm) is the measured shaft speed in "
+                    "revolutions per minute and that bearing_id or fault_orders "
+                    "is right, then re-process",
                 )
             except ValueError as exc:
                 missing["bearing"] = _missing(

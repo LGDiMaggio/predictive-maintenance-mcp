@@ -212,9 +212,7 @@ def validate_expected_frequency(
             infinite, or is zero or negative.
     """
     return validate_positive_finite(
-        value,
-        name=f"expected {label} frequency",
-        remedy=f"{remedy} (frequencies are in Hz)",
+        value, name=f"expected {label} frequency", remedy=remedy
     )
 
 

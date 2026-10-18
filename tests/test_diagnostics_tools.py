@@ -679,6 +679,27 @@ class TestShaftSpeedRefusedAtBearingTools:
             )
 
     @pytest.mark.asyncio
+    async def test_geometry_route_names_the_computed_frequencies(
+        self, tools, repo, mock_ctx
+    ):
+        """A NaN geometry is refused in terms of what the caller passed."""
+        with pytest.raises(ValueError) as excinfo:
+            await tools["check_bearing_faults"](
+                ctx=mock_ctx,
+                signal_id="normal",
+                rpm=1797.0,
+                num_balls=9,
+                ball_diameter_mm=float("nan"),
+                pitch_diameter_mm=39.04,
+            )
+        message = str(excinfo.value)
+        assert message.startswith(
+            "the frequency set computed from this geometry and rpm contains "
+            "non-positive or non-finite values"
+        )
+        assert "'FTF': nan" in message
+
+    @pytest.mark.asyncio
     async def test_speed_is_reported_before_an_unloaded_signal(
         self, tools, repo, mock_ctx
     ):

@@ -321,6 +321,12 @@ class TestValidateExpectedFrequency:
         assert "expected BPFI frequency must be positive and finite" in message
         assert "Hz" in message
 
+    def test_a_caller_remedy_is_used_as_given(self):
+        with pytest.raises(ValueError) as excinfo:
+            validate_expected_frequency(0.0, label="FTF", remedy="check the speed")
+
+        assert str(excinfo.value).endswith("— check the speed.")
+
     def test_refusal_is_raised_from_project_code(self):
         with pytest.raises(ValueError) as excinfo:
             validate_expected_frequency(math.nan, label="FTF")

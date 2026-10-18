@@ -1260,6 +1260,19 @@ class TestErrorPathsBecomeMissing:
         assert one["bearing"] is None
         assert "NOPE-999" in one["missing"]["bearing"]["reason"]
 
+    def test_fault_frequency_rounded_to_zero_points_at_the_declared_speed(
+        self, signals
+    ):
+        """Issue #83: at 0.5 rpm the catalog FTF rounds to 0.0 Hz. The
+        analyzers refuse it, and the snapshot records why instead of a
+        bearing block whose FTF check could never match."""
+        one = snap(signals["golden_bearing"], declaration(rpm=0.5), point())
+        assert one["bearing"] is None
+        entry = one["missing"]["bearing"]
+        assert "expected FTF frequency must be positive and finite" in entry["reason"]
+        assert "declared rpm" in entry["remedy"]
+        assert "bearing_id or fault_orders" in entry["remedy"]
+
     def test_envelope_band_unusable_at_a_very_low_fs(self, signals):
         one = snap(signals["golden_bearing"][:1000], declaration(), point(), fs=1000.0)
         assert one["bearing"] is None
