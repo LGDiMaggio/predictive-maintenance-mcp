@@ -1260,18 +1260,34 @@ class TestErrorPathsBecomeMissing:
         assert one["bearing"] is None
         assert "NOPE-999" in one["missing"]["bearing"]["reason"]
 
-    def test_fault_frequency_rounded_to_zero_points_at_the_declared_speed(
+    def test_fault_frequency_rounded_to_zero_points_at_the_companion_speed(
         self, signals
     ):
         """Issue #83: at 0.5 rpm the catalog FTF rounds to 0.0 Hz. The
         analyzers refuse it, and the snapshot records why instead of a
-        bearing block whose FTF check could never match."""
+        bearing block whose FTF check could never match. Re-processing reuses
+        the recorded declaration, so a companion speed is fixed by re-loading.
+        """
         one = snap(signals["golden_bearing"], declaration(rpm=0.5), point())
         assert one["bearing"] is None
         entry = one["missing"]["bearing"]
         assert "expected FTF frequency must be positive and finite" in entry["reason"]
-        assert "declared rpm" in entry["remedy"]
+        assert '"rpm" in the "measurement" object' in entry["remedy"]
+        assert "re-load the file" in entry["remedy"]
         assert "bearing_id or fault_orders" in entry["remedy"]
+
+    def test_fault_frequency_rounded_to_zero_points_at_the_nominal_rpm(self, signals):
+        one = snap(
+            signals["golden_bearing"],
+            declaration(rpm=None),
+            point(nominal_rpm=0.5),
+        )
+        assert one["bearing"] is None
+        entry = one["missing"]["bearing"]
+        assert "expected FTF frequency must be positive and finite" in entry["reason"]
+        assert "nominal_rpm" in entry["remedy"]
+        assert "declare_measurement_point and re-process" in entry["remedy"]
+        assert "re-load" not in entry["remedy"]
 
     def test_envelope_band_unusable_at_a_very_low_fs(self, signals):
         one = snap(signals["golden_bearing"][:1000], declaration(), point(), fs=1000.0)

@@ -1456,8 +1456,9 @@ async def check_bearing_faults(
             shaft_speed_rpm=rpm,
         )
         computed = {k: freqs[k] for k in ("BPFO", "BPFI", "BSF", "FTF")}
-        # A NaN geometry yields NaN frequencies: the refusal names what the
-        # caller passed, not a frequencies argument it never typed.
+        # A NaN geometry gives NaN frequencies, and a fraction of 1 rpm rounds
+        # FTF to 0.0 Hz: the refusal names what the caller passed, not a
+        # frequencies argument it never typed.
         validate_expected_frequencies(
             computed, name="the frequency set computed from this geometry and rpm"
         )

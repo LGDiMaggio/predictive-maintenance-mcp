@@ -118,6 +118,23 @@ _RPM_REMEDY = (
     "declare_measurement_point and re-process"
 )
 
+#: Remedy for a computed fault frequency the analyzers refuse, keyed by where
+#: the shaft speed came from. Re-processing reuses the recorded declaration,
+#: so a speed from the companion is corrected only by re-loading the file.
+_FAULT_FREQUENCY_REMEDY = {
+    "measurement": (
+        'check that "rpm" in the "measurement" object of the companion is the '
+        "measured shaft speed in revolutions per minute and re-load the file, "
+        "and that the point's bearing_id or fault_orders is right "
+        "(declare_measurement_point)"
+    ),
+    "point": (
+        "check that the point's nominal_rpm is the measured shaft speed in "
+        "revolutions per minute and that its bearing_id or fault_orders is "
+        "right, then re-declare it via declare_measurement_point and re-process"
+    ),
+}
+
 
 class SnapshotPolicy(NamedTuple):
     """Parameters that DEFINE the snapshot algorithm (the lineage key).
@@ -762,11 +779,7 @@ def compute_health_snapshot(
                 # A computed fault frequency the analyzers refuse: the
                 # declared speed is as likely the cause as the bearing.
                 missing["bearing"] = _missing(
-                    str(exc),
-                    "check that the declared rpm (the companion's rpm or the "
-                    "point's nominal_rpm) is the measured shaft speed in "
-                    "revolutions per minute and that bearing_id or fault_orders "
-                    "is right, then re-process",
+                    str(exc), _FAULT_FREQUENCY_REMEDY[context["rpm_source"]]
                 )
             except ValueError as exc:
                 missing["bearing"] = _missing(
