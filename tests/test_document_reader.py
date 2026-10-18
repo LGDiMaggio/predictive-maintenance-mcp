@@ -107,6 +107,22 @@ class TestBearingFrequencies:
         )
         assert freqs["BPFI"] / freqs["BPFO"] > 1.0
 
+    @pytest.mark.parametrize(
+        "rpm",
+        [0.0, -1500.0, math.nan, math.inf],
+        ids=["zero", "negative", "nan", "inf"],
+    )
+    def test_invalid_shaft_speed_is_refused(self, rpm):
+        """Issue #83: a speed that is not positive and finite gives no table
+        (0 Hz, negative or NaN frequencies would read as a healthy bearing)."""
+        with pytest.raises(ValueError, match="rpm must be positive and finite"):
+            calculate_bearing_frequencies(
+                num_balls=9,
+                ball_diameter_mm=7.94,
+                pitch_diameter_mm=39.04,
+                shaft_speed_rpm=rpm,
+            )
+
     def test_input_parameters_returned(self):
         """Verify input parameters are echoed in result dict."""
         freqs = calculate_bearing_frequencies(

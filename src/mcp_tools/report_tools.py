@@ -47,6 +47,7 @@ from ..report_generator import (
     timestamped_report_name,
 )
 from ..signal_processing.features import extract_time_domain_features
+from ..signal_validation import validate_expected_frequencies, validate_rpm
 from ._utils import refusal_boundary, resolve_model_paths, resolve_signal
 
 # Canonical modular twin of the ISO evaluation tool (module-level function
@@ -320,16 +321,21 @@ async def generate_fft_report(
         max_freq: Maximum frequency to display (Hz). Default 5000 Hz
         num_peaks: Number of peaks to detect and label. Default 15
         rpm: Optional shaft speed in RPM — peaks at integer multiples
-            of rpm/60 Hz are labeled as 1x/2x/... harmonics.
+            of rpm/60 Hz are labeled as 1x/2x/... harmonics. Omit it when
+            unknown; a given value must be positive and finite.
         ctx: MCP context. Unused — see this module's docstring on logging.
 
     Returns:
         Dictionary with file path, metadata, and summary (NO HTML content)
 
     Raises:
-        ValueError: If the signal_id is not loaded, or the stored signal
-            has no sampling rate.
+        ValueError: If a given rpm is not a positive finite number, if the
+            signal_id is not loaded, or if the stored signal has no
+            sampling rate.
     """
+    if rpm is not None:
+        validate_rpm(rpm, source="the rpm parameter", optional=True)
+
     logger.info(f"Generating FFT report for '{signal_id}'...")
 
     signal_data, info = resolve_signal(signal_id)
@@ -385,15 +391,17 @@ async def generate_envelope_report(
             above Nyquist is rejected, never clamped.
         max_freq: Max envelope spectrum frequency to display. Default 500 Hz
         num_peaks: Number of peaks to detect. Default 15
-        bearing_freqs: Optional dict with BPFO, BPFI, BSF, FTF
+        bearing_freqs: Optional dict with BPFO, BPFI, BSF, FTF in Hz, each
+            positive and finite
         ctx: MCP context. Unused — see this module's docstring on logging.
 
     Returns:
         Dictionary with file path, metadata, and summary (NO HTML content)
 
     Raises:
-        ValueError: If the signal_id is not loaded, or the stored signal
-            has no sampling rate.
+        ValueError: If bearing_freqs holds a value that is not a positive
+            finite number (every such label is listed), if the signal_id is
+            not loaded, or if the stored signal has no sampling rate.
 
     Example:
         >>> # Bearing frequencies computed for YOUR bearing/rpm (here: 6205
@@ -403,6 +411,9 @@ async def generate_envelope_report(
         ...     bearing_freqs={"BPFO": 107.36, "BPFI": 162.19, "BSF": 70.58, "FTF": 11.93}
         ... )
     """
+    if bearing_freqs is not None:
+        validate_expected_frequencies(bearing_freqs, name="bearing_freqs")
+
     logger.info(f"Generating envelope analysis report for '{signal_id}'...")
 
     signal_data, info = resolve_signal(signal_id)
@@ -499,15 +510,17 @@ async def generate_iso_report(
         machine_group: 1 (large, >300 kW) or 2 (medium, 15-300 kW)
         support_type: 'rigid' or 'flexible'
         rpm: Operating speed in RPM (optional; selects the ISO band's
-            lower edge below 600 RPM)
+            lower edge below 600 RPM). Omit it when unknown; a given value
+            must be positive and finite.
         ctx: MCP context. Unused — see this module's docstring on logging.
 
     Returns:
         Dictionary with file path, metadata, and summary (NO HTML content)
 
     Raises:
-        ValueError: If the signal_id is not loaded, or the stored signal
-            has no sampling rate or no declared unit.
+        ValueError: If a given rpm is not a positive finite number, if the
+            signal_id is not loaded, or if the stored signal has no sampling
+            rate or no declared unit.
     """
     logger.info(f"Generating ISO 20816-3 report for '{signal_id}'...")
 
@@ -1130,7 +1143,7 @@ async def generate_diagnostic_report(
 
     Args:
         signal_id: ID of the stored signal (from load_signal).
-        rpm: Machine operating speed in RPM.
+        rpm: Machine operating speed in RPM, positive and finite.
         bearing_id: Bearing designation for characteristic-frequency
             matching. Omitted means the matching section states why it was
             not attempted rather than disappearing.
@@ -1152,8 +1165,10 @@ async def generate_diagnostic_report(
         ``evidence_strength``, and ``provenance``.
 
     Raises:
-        ValueError: If a signal id is not loaded, has no sampling rate, or an
-            unsupported format is requested.
+        ValueError: If an unsupported format is requested, if rpm is not a
+            positive finite number, if a signal id is not loaded or has no
+            sampling rate, or if the bearing check refuses an expected
+            frequency computed from rpm.
     """
     requested = [fmt.lower() for fmt in (formats or ["html"])]
     unsupported = [fmt for fmt in requested if fmt not in _SUPPORTED_FORMATS]
@@ -1162,6 +1177,8 @@ async def generate_diagnostic_report(
             f"Unsupported report format(s) {unsupported} — choose from "
             f"{list(_SUPPORTED_FORMATS)}."
         )
+    # One rpm feeds both diagnoses: refused before either one runs.
+    validate_rpm(rpm, source="the rpm parameter")
 
     signal_data, info = resolve_signal(signal_id)
     logger.info(f"Diagnosing '{signal_id}' at {rpm} RPM")

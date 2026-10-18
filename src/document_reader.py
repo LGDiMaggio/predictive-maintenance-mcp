@@ -47,6 +47,7 @@ except ImportError:
 import math
 
 from .config import RESOURCES_DIR, CACHE_DIR
+from .signal_validation import validate_rpm
 
 logger = logging.getLogger(__name__)
 
@@ -167,6 +168,11 @@ def calculate_bearing_frequencies(
     Returns:
         Dictionary with BPFO, BPFI, BSF, FTF in Hz
 
+    Raises:
+        ValueError: If ``shaft_speed_rpm`` is not a positive finite number
+            (a zero, negative or NaN speed would give fault frequencies that
+            match no peak, an infinite one frequencies that match every peak).
+
     Example:
         >>> # Bearing geometry is sourced from the catalog (the authoritative
         >>> # source), never hardcoded — see lookup_bearing_in_catalog.
@@ -180,6 +186,10 @@ def calculate_bearing_frequencies(
         ... )
         >>> freqs["BPFO"]  # ~3.585x shaft speed for a 6205
     """
+    # The one place a speed becomes fault frequencies (catalog, geometry and
+    # calculator routes alike), so an invalid speed is refused here.
+    validate_rpm(shaft_speed_rpm)
+
     # Convert to radians
     alpha = math.radians(contact_angle_deg)
 

@@ -57,7 +57,11 @@ from ..signal_processing.spectral import (
     resolve_envelope_band,
     select_leading_segment,
 )
-from ..signal_validation import validate_finite_samples, validate_sampling_rate
+from ..signal_validation import (
+    InvalidInputError,
+    validate_finite_samples,
+    validate_sampling_rate,
+)
 
 __all__ = [
     "ALGORITHM_VERSION",
@@ -113,6 +117,23 @@ _RPM_REMEDY = (
     "file, or declare nominal_rpm for the measurement point via "
     "declare_measurement_point and re-process"
 )
+
+#: Remedy for a computed fault frequency the analyzers refuse, keyed by where
+#: the shaft speed came from. Re-processing reuses the recorded declaration,
+#: so a speed from the companion is corrected only by re-loading the file.
+_FAULT_FREQUENCY_REMEDY = {
+    "measurement": (
+        'check that "rpm" in the "measurement" object of the companion is the '
+        "measured shaft speed in revolutions per minute and re-load the file, "
+        "and that the point's bearing_id or fault_orders is right "
+        "(declare_measurement_point)"
+    ),
+    "point": (
+        "check that the point's nominal_rpm is the measured shaft speed in "
+        "revolutions per minute and that its bearing_id or fault_orders is "
+        "right, then re-declare it via declare_measurement_point and re-process"
+    ),
+}
 
 
 class SnapshotPolicy(NamedTuple):
@@ -524,6 +545,9 @@ def _bearing_block(
 
     Raises:
         ValueError: From the analyzers (empty or non-positive frequencies).
+            An expected frequency they refuse as not positive and finite
+            (one rounded to 0.0 Hz at a fraction of 1 rpm) is an
+            ``InvalidInputError``.
     """
     frequencies: Mapping[str, float] = targets["frequencies"]
     if targets["source"] == "catalog":
@@ -750,6 +774,12 @@ def compute_health_snapshot(
             try:
                 bearing = _bearing_block(
                     signal, fs, rpm, targets, band, resolved_policy
+                )
+            except InvalidInputError as exc:
+                # A computed fault frequency the analyzers refuse: the
+                # declared speed is as likely the cause as the bearing.
+                missing["bearing"] = _missing(
+                    str(exc), _FAULT_FREQUENCY_REMEDY[context["rpm_source"]]
                 )
             except ValueError as exc:
                 missing["bearing"] = _missing(

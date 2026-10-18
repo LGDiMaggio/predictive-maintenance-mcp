@@ -390,6 +390,28 @@ class TestGenerateFFTReport:
             await tools["generate_fft_report"](signal_id="does_not_exist")
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("rpm", [0.0, float("nan")], ids=["zero", "nan"])
+    async def test_fft_report_invalid_rpm_is_refused_before_any_report(
+        self, tools, repo, reports_dir, rpm
+    ):
+        """Issue #83: a 0 or NaN rpm used to drop the harmonic labels without
+        a word; it is refused, and no report file is written."""
+        with pytest.raises(ValueError) as exc_info:
+            await tools["generate_fft_report"](signal_id="report_test", rpm=rpm)
+
+        msg = str(exc_info.value)
+        assert "rpm must be positive and finite" in msg
+        assert "omit rpm" in msg
+        assert list(reports_dir.iterdir()) == []
+
+    @pytest.mark.asyncio
+    async def test_fft_report_without_rpm_has_no_rotation_frequency(
+        self, tools, repo, reports_dir
+    ):
+        result = await tools["generate_fft_report"](signal_id="report_test")
+        assert result["metadata"]["rotation_freq"] is None
+
+    @pytest.mark.asyncio
     async def test_fft_report_with_ctx(
         self, tools, repo, reports_dir, mock_ctx, package_caplog
     ):
@@ -472,6 +494,27 @@ class TestGenerateEnvelopeReport:
         assert "file_path" in result
 
     @pytest.mark.asyncio
+    async def test_envelope_report_refuses_bad_bearing_freqs_before_any_report(
+        self, tools, repo, reports_dir
+    ):
+        """Issue #83: a NaN, zero or negative reference frequency was skipped
+        without a word (no marker for that label); it is refused, naming every
+        bad label, and no report file is written."""
+        with pytest.raises(ValueError) as exc_info:
+            await tools["generate_envelope_report"](
+                signal_id="report_test",
+                filter_low=100.0,
+                filter_high=4000.0,
+                bearing_freqs={"BPFO": 107.4, "BPFI": float("nan"), "BSF": 0.0},
+            )
+
+        msg = str(exc_info.value)
+        assert msg.startswith("bearing_freqs contains non-positive or non-finite")
+        assert "BPFI" in msg
+        assert "BSF" in msg
+        assert list(reports_dir.iterdir()) == []
+
+    @pytest.mark.asyncio
     async def test_envelope_report_signal_without_rate(
         self, tools, data_dir, repo, reports_dir
     ):
@@ -547,6 +590,18 @@ class TestGenerateISOReport:
         repo.load_signal("no_unit_iso.csv", sampling_rate=10000)
         with pytest.raises(ValueError, match="unit not declared"):
             await tools["generate_iso_report"](signal_id="no_unit_iso")
+
+    @pytest.mark.asyncio
+    async def test_iso_report_invalid_rpm_is_refused_through_assess_severity(
+        self, tools, repo, reports_dir, mock_ctx
+    ):
+        """Issue #83: the ISO report delegates to assess_severity and inherits
+        its rpm refusal; no report file is written."""
+        with pytest.raises(ValueError, match="rpm must be positive and finite"):
+            await tools["generate_iso_report"](
+                signal_id="report_test", rpm=0.0, ctx=mock_ctx
+            )
+        assert list(reports_dir.iterdir()) == []
 
 
 # ---------------------------------------------------------------------------
@@ -915,6 +970,45 @@ class TestGenerateDiagnosticReport:
             await tools["generate_diagnostic_report"](
                 signal_id="report_test", rpm=1500.0, formats=["docx"], ctx=mock_ctx
             )
+
+    @pytest.mark.asyncio
+    async def test_invalid_rpm_is_refused_before_either_diagnosis(
+        self, tools, repo, data_dir, reports_dir, mock_ctx
+    ):
+        """Issue #83: one rpm feeds both diagnoses, so it is refused up front
+        and no report is written."""
+        _load_extra_signal(repo, data_dir, "report_baseline.csv")
+        with pytest.raises(
+            ValueError, match=r"rpm must be positive and finite.*the rpm parameter"
+        ):
+            await tools["generate_diagnostic_report"](
+                signal_id="report_test",
+                rpm=-1.0,
+                baseline_signal_id="report_baseline",
+                ctx=mock_ctx,
+            )
+        assert list(reports_dir.iterdir()) == []
+
+    @pytest.mark.asyncio
+    async def test_unsupported_format_is_still_reported_before_the_rpm(
+        self, tools, repo, reports_dir, mock_ctx
+    ):
+        with pytest.raises(ValueError, match="Unsupported report format"):
+            await tools["generate_diagnostic_report"](
+                signal_id="report_test", rpm=-1.0, formats=["docx"], ctx=mock_ctx
+            )
+
+    @pytest.mark.asyncio
+    async def test_tiny_rpm_with_a_catalog_bearing_writes_no_report(
+        self, tools, repo, reports_dir, mock_ctx
+    ):
+        """0.5 rpm rounds the 6205's FTF to 0.0 Hz: refused instead of a
+        report whose bearing section says no designation was supplied."""
+        with pytest.raises(ValueError, match="expected FTF frequency must be positive"):
+            await tools["generate_diagnostic_report"](
+                signal_id="report_test", rpm=0.5, bearing_id="6205", ctx=mock_ctx
+            )
+        assert list(reports_dir.iterdir()) == []
 
     @pytest.mark.asyncio
     async def test_no_confidence_field_reaches_the_caller(

@@ -254,6 +254,71 @@ class TestNonFiniteInputRefused:
             )
 
 
+RPM_PHRASE = "rpm must be positive and finite"
+
+
+class TestInvalidShaftSpeedRefused:
+    """Issue #83: the pipeline refuses a shaft speed that is not positive and
+    finite whatever else the call declares.
+
+    Before the guard every combination below completed: the bearing block
+    read "healthy" (or a fault, for inf) or was skipped, and the ISO block
+    picked a band from the bad speed or was refused with a sampling-rate
+    remedy. Without a bearing or a declared unit nothing else looks at the
+    speed, so the pipeline's own check is the only guard.
+    """
+
+    @pytest.mark.parametrize(
+        "rpm", [np.nan, 0.0, -5.0, np.inf], ids=["nan", "zero", "negative", "inf"]
+    )
+    @pytest.mark.parametrize(
+        "bearing_id", ["6205", None], ids=["bearing", "no-bearing"]
+    )
+    @pytest.mark.parametrize("signal_unit", ["g", None], ids=["unit", "no-unit"])
+    def test_invalid_speed_is_refused(
+        self, faulty_signal, rpm, bearing_id, signal_unit
+    ):
+        signal, fs = faulty_signal
+        with pytest.raises(ValueError, match=RPM_PHRASE):
+            diagnose_vibration(
+                signal,
+                fs,
+                rpm=rpm,
+                bearing_id=bearing_id,
+                signal_unit=signal_unit,
+                anomaly_model_name="nonexistent_model_issue83",
+            )
+
+    def test_speed_is_refused_before_the_catalog_miss_skip(self, healthy_signal):
+        signal, fs = healthy_signal
+        with pytest.raises(ValueError, match=RPM_PHRASE):
+            diagnose_vibration(
+                signal,
+                fs,
+                rpm=0.0,
+                bearing_id="NONEXISTENT_999",
+                signal_unit="g",
+                anomaly_model_name="nonexistent_model_issue83",
+            )
+
+    def test_tiny_speed_refusal_is_not_turned_into_a_skipped_bearing_block(
+        self, faulty_signal
+    ):
+        """0.5 rpm passes the speed check but rounds the 6205's FTF to 0.0 Hz;
+        the bearing check refuses it and the pipeline re-raises the refusal
+        instead of reporting a diagnosis without its bearing section."""
+        signal, fs = faulty_signal
+        with pytest.raises(ValueError, match="expected FTF frequency must be positive"):
+            diagnose_vibration(
+                signal,
+                fs,
+                rpm=0.5,
+                bearing_id="6205",
+                signal_unit="g",
+                anomaly_model_name="nonexistent_model_issue83",
+            )
+
+
 class TestFFTSummary:
     def test_fft_summary_structure(self, healthy_signal):
         signal, fs = healthy_signal

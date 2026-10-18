@@ -188,6 +188,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   check also covers `tools/`.
 
 ### Fixed
+- **A shaft speed that is not a positive finite number is refused instead
+  of analyzed (#83).** A zero, negative or NaN `rpm` gave fault frequencies
+  of 0 Hz, below zero or NaN, so the bearing check reported "Bearing appears
+  healthy" for a bearing it never examined; an infinite `rpm` matched every
+  envelope peak and reported a fault. Every tool that takes `rpm` now
+  refuses such a value with a message that asks for the measured speed:
+  `check_bearing_faults` (catalog, frequencies and geometry routes),
+  `calculate_bearing_characteristic_frequencies`, `diagnose_vibration`,
+  `generate_diagnostic_report`, `assess_severity`, `generate_iso_report` and
+  `generate_fft_report`. An omitted optional `rpm` behaves as before. Also
+  refused:
+  - an expected fault frequency that is not a positive finite number, in the
+    `frequencies` of `check_bearing_faults` and the `bearing_freqs` of
+    `generate_envelope_report`, with every bad label listed;
+  - a diagnosis at a fraction of 1 rpm, where a computed fault frequency
+    rounds to 0 Hz; it used to return a diagnosis without its bearing
+    section.
+
+  Calls that worked before and are now refused: a placeholder `rpm=0` on the
+  explicit-frequencies route, in `assess_severity` (where it selected the
+  2 Hz band), in `generate_fft_report` (where it dropped the harmonic
+  labels) and in `calculate_bearing_characteristic_frequencies` (an all-zero
+  table). The same checks apply when `check_all_bearing_faults`,
+  `check_frequency_set`, `check_bearing_fault_peak`,
+  `calculate_bearing_frequencies`, `assess_severity_raw` and the
+  `diagnose_vibration` pipeline are called from Python, where a speed or a
+  frequency given as a bool or a string is refused too. Speeds declared in
+  the companion file or on a measurement point were already validated and
+  are unchanged. A health snapshot whose catalog bearing gives a fault
+  frequency that rounds to 0 Hz (a 6205 below about 0.75 rpm) lists its
+  bearing block under `missing`, with a remedy that names the declared
+  speed, instead of a bearing check against a 0 Hz FTF. Tool signatures and
+  output schemas are unchanged.
 - **Non-finite, missing and non-numeric samples are refused instead of
   analyzed (#82).** One NaN sample in a CSV loaded silently and then gave
   ISO 20816-3 Zone D with `rms_velocity_mm_s=nan` and, in the same
