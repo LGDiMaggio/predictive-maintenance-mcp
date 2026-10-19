@@ -115,9 +115,11 @@ __all__ = [
     "MIN_USABLE_SLOTS",
     "MAX_LISTED_ITEMS",
     "AssessmentParams",
+    "ReprocessCoupling",
     "validate_params",
     "collect_point_slots",
     "current_snapshot_id_of",
+    "reprocess_call",
     "assess_change",
 ]
 
@@ -1373,11 +1375,63 @@ def _not_found(
     }
 
 
-def _reprocess_call(asset_id: str, point_id: str) -> str:
-    return (
-        f"assess_asset_change(asset_id={asset_id!r}, "
-        f"measurement_point_id={point_id!r}, reprocess=True)"
-    )
+#: The parameters of ``assess_asset_change`` a re-processing call repeats
+#: when the caller gave a value other than the default, in signature order.
+_REPEATED_PARAMS: tuple[str, ...] = (
+    "acquired_since",
+    "acquired_until",
+    "last_k",
+    "reference_measurements",
+)
+
+
+def reprocess_call(
+    asset_id: str,
+    measurement_point_id: str,
+    *,
+    params: Optional[AssessmentParams] = None,
+    cursor: Optional[str] = None,
+) -> str:
+    """The exact ``assess_asset_change(..., reprocess=True)`` call to name.
+
+    The one builder of every re-processing call the ledger tools name (the
+    reprocess block's ``next_call``, the stale-evidence clause, the
+    ``processing_not_homogeneous`` remedy and the point declaration's
+    remedy). It repeats the caller's non-default ``acquired_since``,
+    ``acquired_until``, ``last_k`` and ``reference_measurements``, which
+    decide the priority order and the assessment, and the continuation
+    token when one is given.
+    """
+    defaults = AssessmentParams()
+    chosen = defaults if params is None else params
+    arguments = [
+        f"asset_id={asset_id!r}",
+        f"measurement_point_id={measurement_point_id!r}",
+    ]
+    for name in _REPEATED_PARAMS:
+        value = getattr(chosen, name)
+        if value != getattr(defaults, name):
+            arguments.append(f"{name}={value!r}")
+    arguments.append("reprocess=True")
+    if cursor is not None:
+        arguments.append(f"reprocess_cursor={cursor!r}")
+    return f"assess_asset_change({', '.join(arguments)})"
+
+
+class ReprocessCoupling(NamedTuple):
+    """What a re-processing run in the same call tells the assessment.
+
+    Attributes:
+        blocked: Every measurement the sequence found not reprocessable so
+            far (in this call or an earlier one), with its reason code, or
+            None for an earlier failure whose code the response does not
+            detail.
+        next_call: The reprocess block's ``next_call`` (None when the
+            sequence is complete or exhausted).
+    """
+
+    blocked: dict[str, Optional[str]]
+    next_call: Optional[str]
 
 
 #: The caveat of every stale-evidence clause that names the re-processing
@@ -1687,7 +1741,7 @@ def assess_change(
             "missing_for_current": missing_for_current,
             "current_processing_id": current_processing,
             "remedy": (
-                f"call {_reprocess_call(asset_id, measurement_point_id)} to "
+                f"call {reprocess_call(asset_id, measurement_point_id, params=params)} to "
                 f"re-process the missing snapshots with the current lineage "
                 f"(idempotent, limited per call; repeat until remaining is 0)"
             ),
@@ -1961,7 +2015,7 @@ def assess_change(
                 current=current_processing,
                 missing=missing_for_current,
                 actionable=actionable,
-                call=_reprocess_call(asset_id, measurement_point_id),
+                call=reprocess_call(asset_id, measurement_point_id, params=params),
             )
             + ". "
             + message
