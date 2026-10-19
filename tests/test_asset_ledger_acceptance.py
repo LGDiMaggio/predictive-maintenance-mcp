@@ -34,6 +34,7 @@ Scenes and the expectations they cover
   run twice with canonical payloads compared (determinism).
 """
 
+import ast
 import asyncio
 import copy
 import hashlib
@@ -48,6 +49,7 @@ from unittest.mock import AsyncMock
 
 import numpy as np
 import pytest
+from mcp import Client
 from mcp.server.mcpserver import MCPServer
 
 from _synthetic_sequence import (
@@ -70,6 +72,9 @@ from _synthetic_sequence import (
     synthesize_measurement,
 )
 from conftest import patch_data_dir, write_raw_file
+from test_asset_tools import assert_runtime_wording
+from test_documented_calls import extract_calls, split_top_level_args
+from predictive_maintenance_mcp.asset_ledger import service as ledger_service
 from predictive_maintenance_mcp.asset_ledger import snapshot as snapshot_module
 from predictive_maintenance_mcp.asset_ledger.service import MAX_REPROCESS_PER_CALL
 from predictive_maintenance_mcp.asset_ledger.snapshot import processing_id, snapshot_id
@@ -1278,3 +1283,252 @@ async def test_the_same_scene_twice_gives_identical_canonical_payloads(
     # The assessment itself is pure: it carries no volatile key at all, so
     # its raw canonical form is identical too.
     assert canonical_json(first[0]) == canonical_json(second[0])
+
+
+# ---------------------------------------------------------------------------
+# Re-processing sequences followed end to end through the MCP client
+# ---------------------------------------------------------------------------
+
+#: Sampling rate of the noise measurements of the follower scenes.
+FOLLOWER_FS = 10_000
+
+
+def _follower_files(directory: Path, count: int) -> list[str]:
+    """*count* weekly noise measurements of the point with their companions."""
+    names: list[str] = []
+    for index in range(1, count + 1):
+        name = f"follow_m{index:02d}.csv"
+        values = 0.1 * np.random.default_rng(7000 + index).standard_normal(FOLLOWER_FS)
+        with (directory / name).open("w", encoding="ascii", newline="\n") as handle:
+            np.savetxt(handle, values, fmt="%.8f")
+        companion = {
+            "measurement": {
+                "asset_id": ASSET_ID,
+                "measurement_point_id": POINT_ID,
+                "acquired_at": acquired_at(index),
+                "rpm": NOMINAL_RPM,
+                "direction": DIRECTION,
+                "sensor_id": SENSOR_ID,
+            },
+            "sampling_rate": FOLLOWER_FS,
+            "signal_unit": SIGNAL_UNIT,
+        }
+        (directory / f"follow_m{index:02d}_metadata.json").write_text(
+            json.dumps(companion), encoding="utf-8"
+        )
+        names.append(name)
+    return names
+
+
+def _same_size_change(path: Path) -> None:
+    lines = path.read_bytes().splitlines(keepends=True)
+    path.write_bytes(b"".join(reversed(lines)))
+
+
+def _named_reprocessing_calls(structured: dict[str, Any]) -> list[str]:
+    """Every distinct assess_asset_change call a response names: in its
+    message, its remedy, or its reprocess block's next_call."""
+    block = structured.get("reprocess") or {}
+    texts = [structured.get("message") or "", structured.get("remedy") or ""]
+    texts.append(block.get("next_call") or "")
+    texts.append(block.get("message") or "")
+    return sorted(
+        {
+            f"{name}({args})"
+            for text in texts
+            for name, args, _ in extract_calls(text)
+            if name == "assess_asset_change"
+        }
+    )
+
+
+def _call_arguments(call: str) -> dict[str, Any]:
+    [(_, args, _)] = extract_calls(call)
+    arguments: dict[str, Any] = {}
+    for segment in split_top_level_args(args):
+        key, value = segment.split("=", 1)
+        arguments[key.strip()] = ast.literal_eval(value.strip())
+    return arguments
+
+
+async def _follow(
+    client: Client,
+    arguments: dict[str, Any],
+    *,
+    cap: int,
+    drop_first_token: bool = False,
+) -> list[dict[str, Any]]:
+    """An agent that makes every re-processing call a response names, until
+    one names none; each response names at most one."""
+    responses: list[dict[str, Any]] = []
+    dropped = not drop_first_token
+    while True:
+        result = await client.call_tool(
+            "assess_asset_change", arguments, read_timeout_seconds=120
+        )
+        assert not result.is_error, result.content
+        structured = result.structured_content
+        responses.append(structured)
+        assert_runtime_wording(
+            structured.get("message"),
+            structured.get("remedy"),
+            (structured.get("reprocess") or {}).get("message"),
+        )
+        calls = _named_reprocessing_calls(structured)
+        assert len(calls) <= 1, calls
+        if not calls:
+            return responses
+        assert len(responses) < cap, structured["message"]
+        arguments = _call_arguments(calls[0])
+        if not dropped and "reprocess_cursor" in arguments:
+            del arguments["reprocess_cursor"]
+            dropped = True
+
+
+@pytest.fixture
+def ledger_server() -> MCPServer:
+    server = MCPServer("test-reprocess-follower")
+    acquisition_tools.register(server)
+    asset_tools.register(server)
+    return server
+
+
+PLAIN = {"asset_id": ASSET_ID, "measurement_point_id": POINT_ID}
+
+
+class TestReprocessFollower:
+    """An agent following every named call reaches an end in each scene."""
+
+    async def redeclared(self, tools, ctx, directory: Path, count: int) -> list[str]:
+        await _declare_point(tools, ctx)
+        infos = await tools["load_signal"](
+            ctx=ctx, filepath=_follower_files(directory, count)
+        )
+        await _declare_point(tools, ctx, machine_group=1)
+        return [info.measurement["measurement_id"] for info in infos]
+
+    @pytest.mark.asyncio
+    async def test_ae1_ae7_s1_end_to_end(
+        self, tools, ctx, sandbox_data_dir, clean_repo, ledger_server
+    ):
+        ids = await self.redeclared(tools, ctx, sandbox_data_dir, 20)
+        for index in range(1, 13):
+            (sandbox_data_dir / f"follow_m{index:02d}.csv").unlink()
+        events = len(LedgerStore(get_ledger_dir()).read(ASSET_ID).events)
+        async with Client(ledger_server, mode="legacy") as client:
+            responses = await _follow(
+                client, {**PLAIN, "reference_measurements": 12}, cap=3
+            )
+            assert len(responses) == 2  # the plain assessment, then one call
+            final = responses[-1]
+            block = final["reprocess"]
+            assert block["sequence_state"] == "exhausted"
+            assert block["reprocessed"] == 8
+            [needs] = block["needs_action"]
+            assert needs["reason_code"] == "file_missing"
+            assert needs["measurement_ids"] == ids[:12]
+            assert _named_reprocessing_calls(final) == []
+            assert final["message"].startswith("12 of the 20 evaluated acquisition")
+            appended = len(LedgerStore(get_ledger_dir()).read(ASSET_ID).events)
+            assert appended == events + 8
+
+            # At the fixed point, repeating the call appends nothing and
+            # returns an identical response.
+            repeated = [
+                await client.call_tool(
+                    "assess_asset_change",
+                    {**PLAIN, "reference_measurements": 12, "reprocess": True},
+                    read_timeout_seconds=120,
+                )
+                for _ in range(2)
+            ]
+            assert repeated[0].structured_content == repeated[1].structured_content
+            assert repeated[0].structured_content["reprocess"]["reprocessed"] == 0
+
+            # Macro check: a plain assessment names the call again (it reads
+            # only the ledger), and the new sequence ends in one call.
+            macro = await _follow(
+                client, {**PLAIN, "reference_measurements": 12}, cap=3
+            )
+            assert len(macro) == 2
+            assert macro[-1]["reprocess"]["needs_action"] == block["needs_action"]
+        assert len(LedgerStore(get_ledger_dir()).read(ASSET_ID).events) == appended
+
+    @pytest.mark.asyncio
+    async def test_ae10_s2_end_to_end_with_a_dropped_token(
+        self, tools, ctx, sandbox_data_dir, clean_repo, ledger_server
+    ):
+        ids = await self.redeclared(tools, ctx, sandbox_data_dir, 15)
+        for index in range(1, 16):
+            _same_size_change(sandbox_data_dir / f"follow_m{index:02d}.csv")
+        events = len(LedgerStore(get_ledger_dir()).read(ASSET_ID).events)
+        async with Client(ledger_server, mode="legacy") as client:
+            responses = await _follow(
+                client, {**PLAIN, "reprocess": True}, cap=4, drop_first_token=True
+            )
+            # Call 1, its token dropped (a new sequence: the same ten again),
+            # then the call it names with the token, which ends it.
+            assert len(responses) == 3
+            assert responses[1]["reprocess"]["results"] == (
+                responses[0]["reprocess"]["results"]
+            )
+            final = responses[-1]["reprocess"]
+            assert final["sequence_state"] == "exhausted"
+            assert final["not_reprocessable"] + final["earlier_in_sequence"] == 15
+            listed = {e["measurement_id"] for e in final["results"]} | {
+                e["measurement_id"] for e in final["earlier_failures"]
+            }
+            assert listed == set(ids)
+
+            macro = await _follow(client, PLAIN, cap=4)
+            assert len(macro) == 1 + 2  # ceil(15 / 10) calls after the entry
+            assert macro[-1]["reprocess"]["needs_action"] == final["needs_action"]
+        assert len(LedgerStore(get_ledger_dir()).read(ASSET_ID).events) == events
+
+    @pytest.mark.asyncio
+    async def test_ae13_a_b_a_names_no_call_and_appends_nothing(
+        self, tools, ctx, sandbox_data_dir, clean_repo, ledger_server
+    ):
+        await self.redeclared(tools, ctx, sandbox_data_dir, 11)
+        async with Client(ledger_server, mode="legacy") as client:
+            reprocessed = await _follow(client, {**PLAIN, "reprocess": True}, cap=3)
+            assert reprocessed[-1]["reprocess"]["sequence_state"] == "complete"
+            await _declare_point(tools, ctx)  # A again
+            events = len(LedgerStore(get_ledger_dir()).read(ASSET_ID).events)
+            plain = await _follow(client, PLAIN, cap=2)
+            assert len(plain) == 1
+            once = await _follow(client, {**PLAIN, "reprocess": True}, cap=2)
+            assert once[-1]["reprocess"]["stale"] == 0
+            assert once[-1]["reprocess"]["sequence_state"] == "complete"
+        assert len(LedgerStore(get_ledger_dir()).read(ASSET_ID).events) == events
+
+    @pytest.mark.asyncio
+    async def test_ae12_a_permission_error_end_to_end(
+        self, tools, ctx, sandbox_data_dir, clean_repo, ledger_server, monkeypatch
+    ):
+        ids = await self.redeclared(tools, ctx, sandbox_data_dir, 12)
+        real_os = ledger_service.os
+        real_stat = real_os.stat
+
+        class OsProxy:
+            def __getattr__(self, name):
+                return getattr(real_os, name)
+
+            @staticmethod
+            def stat(path, *args, **kwargs):
+                if Path(path).name == "follow_m03.csv":
+                    raise PermissionError(13, "Permission denied")
+                return real_stat(path, *args, **kwargs)
+
+        monkeypatch.setattr(ledger_service, "os", OsProxy())
+        async with Client(ledger_server, mode="legacy") as client:
+            responses = await _follow(client, {**PLAIN, "reprocess": True}, cap=3)
+        final = responses[-1]["reprocess"]
+        assert final["sequence_state"] == "exhausted"
+        codes = {
+            e["measurement_id"]: e["reason_code"]
+            for r in responses
+            for e in r["reprocess"]["results"]
+            if e["outcome"] == "not_reprocessable"
+        }
+        assert codes == {ids[2]: "file_inaccessible"}
