@@ -1120,9 +1120,10 @@ class TestAssessAssetChange:
         )
         assert "recomputes" not in result.message
         assert result.suggested_verification == (
-            "Treat this classification as provisional and confirm it once every "
-            "evaluated acquisition is assessed from a snapshot computed under "
-            "the current declaration."
+            "Treat this classification as provisional: before relying on it, "
+            "check the lineage assessed and whether the snapshots of the "
+            "evaluated acquisitions were computed under their current "
+            "declarations."
         )
 
     @pytest.mark.asyncio

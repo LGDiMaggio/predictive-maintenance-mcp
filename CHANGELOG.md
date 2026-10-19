@@ -67,13 +67,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   significant drift ending outside),
   with the criterion stated in the response; bearing evidence is counted
   over the last K acquisitions; snapshots are compared only within one
-  processing lineage, and each acquisition is scored from the snapshot
-  computed under the current declarations of the measurement and of its
-  point, so restoring an earlier declaration reuses the snapshots already
-  computed under it on the lineage assessed; a result partly scored from
-  snapshots of a previous declaration opens by saying how many and names
-  re-processing, as an attempt, when an evaluated acquisition lacks the
-  snapshot of its current declarations on the current lineage;
+  processing lineage, which must hold a snapshot of every evaluated
+  acquisition, and on it each evaluated acquisition is scored from the
+  snapshot computed under the current declarations of the measurement and
+  of its point when one exists, so restoring an earlier declaration reuses
+  the snapshots already computed under it; a result partly scored from
+  snapshots of a previous declaration opens by saying how many, is marked
+  provisional, and names re-processing, as an attempt, when an evaluated
+  acquisition lacks the snapshot of its current declarations on the
+  current lineage;
   non-comparable acquisitions are listed, never dropped silently; at most
   one suggested verification and no list of recommendations.
 - **Four ledger tools** (34 to 38 tools, 41 endpoints):

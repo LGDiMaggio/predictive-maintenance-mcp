@@ -1390,11 +1390,12 @@ _REPROCESS_CAVEAT = (
 )
 
 #: The one verification an assessment scored partly from stale snapshots
-#: calls for, whatever its classification.
+#: calls for, whatever its classification. It names what to check, not a
+#: remedy: re-processing may not be able to write the missing snapshots.
 _STALE_EVIDENCE_VERIFICATION = (
-    "Treat this classification as provisional and confirm it once every "
-    "evaluated acquisition is assessed from a snapshot computed under the "
-    "current declaration."
+    "Treat this classification as provisional: before relying on it, check "
+    "the lineage assessed and whether the snapshots of the evaluated "
+    "acquisitions were computed under their current declarations."
 )
 
 

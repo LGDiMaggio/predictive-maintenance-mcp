@@ -449,21 +449,27 @@ async def assess_asset_change(
     file hash, and the reprocess block names the exact next call while
     measurements remain. Old snapshots are never deleted.
 
-    Each acquisition is scored from the snapshot its current declaration
-    and the point's current declaration produce on the lineage assessed, so
-    restoring an earlier declaration reuses the snapshots already computed
-    under it; an acquisition without one (loaded while another declaration
-    was active, or recorded before a lineage update) is scored from the
-    latest snapshot of that lineage and counts in lineage stale_context.
+    The lineage assessed holds a snapshot of every evaluated acquisition
+    (when no lineage does, the status is processing_not_homogeneous, as
+    above, and nothing is classified). On it, each evaluated acquisition is
+    scored from the snapshot its current declaration and the point's
+    current declaration produce, so restoring an earlier declaration
+    reuses the snapshots already computed under it. An acquisition whose
+    current declarations never produced a snapshot on that lineage (for
+    example one loaded while another declaration was active) is scored
+    from its latest snapshot there and counts in lineage stale_context.
     When stale_context is above 0, that many evaluated acquisitions were
     scored from snapshots computed under a previous declaration: the
-    message opens by saying so, the classification is provisional, and the
-    re-processing call is named when an evaluated acquisition lacks the
-    snapshot of its current declarations on the current lineage, as an
-    attempt (a measurement it cannot re-process keeps its previous
-    snapshot). A declared baseline compares
-    each member's declaration version, so a member re-loaded with another
-    declaration is superseded even when the original one is restored.
+    message opens by saying so, the classification is provisional, and
+    suggested_verification asks to check the lineage assessed and whether
+    the snapshots match the current declarations. The re-processing call
+    is named when an evaluated acquisition lacks the snapshot of its
+    current declarations on the current lineage, the test re-processing
+    uses to select measurements; the call is an attempt, and a measurement
+    it cannot re-process keeps its previous snapshot. A declared baseline
+    compares each member's declaration version, so a member re-loaded with
+    another declaration is superseded even when the original one is
+    restored.
 
     Args:
         ctx: MCP context. Unused, see this module's docstring on logging.
