@@ -40,7 +40,18 @@ Vocabulary of the assessment
       evaluated set (reference plus the post-reference slots inside the
       requested window). The most recent lineage that covers EVERY slot is
       used; none covering all is ``processing_not_homogeneous`` with the
-      counts and the re-processing remedy, never a trend with holes.
+      counts and the re-processing remedy, never a trend with holes. The
+      lineage says how the numbers were computed; under which declaration
+      they were computed is the interpretation, chosen separately.
+    * **Interpretation**: inside the chosen lineage, the snapshot the
+      current declarations of the measurement and of its point produce
+      (``current_snapshot_id_of``), wherever the ledger recorded it.
+      Restoring an earlier declaration appends nothing, because that
+      snapshot already exists, so the lineage's latest snapshot is not
+      necessarily this one. Without it, the latest one stands in and the
+      slot counts in ``stale_context``: the message then opens with that
+      count and names re-processing only when it can write something for
+      the evaluated slots (it writes the current lineage only).
     * **Band**: per amplitude indicator, mean +/- max(3 sigma, 25% of the
       mean) of the reference in the unit expected by the point (the floor
       implements note 3 of ISO 20816-3, 6.3 and protects a sigma near
@@ -530,7 +541,9 @@ def _baseline_members(
 
     A member must still be a measurement of the point with the declaration
     version the baseline recorded (else ``baseline_member_superseded``) and
-    usable (else ``baseline_member_non_comparable``).
+    usable (else ``baseline_member_non_comparable``). The check compares
+    declaration versions, not their content: a member re-loaded with another
+    declaration and then with the validated one again is superseded.
     """
     by_id = {slot["measurement_id"]: slot for slot in slots}
     recorded_versions: dict[str, Any] = {}

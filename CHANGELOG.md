@@ -67,9 +67,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   significant drift ending outside),
   with the criterion stated in the response; bearing evidence is counted
   over the last K acquisitions; snapshots are compared only within one
-  processing lineage; non-comparable acquisitions are listed, never
-  dropped silently; at most one suggested verification and no list of
-  recommendations.
+  processing lineage, and each acquisition is scored from the snapshot
+  computed under the current declarations of the measurement and of its
+  point, so restoring an earlier declaration reuses its snapshots; a
+  result partly scored from snapshots of a previous declaration opens by
+  saying how many and names re-processing only when it can compute them;
+  non-comparable acquisitions are listed, never dropped silently; at most
+  one suggested verification and no list of recommendations.
 - **Four ledger tools** (34 to 38 tools, 41 endpoints):
   `declare_measurement_point` (versioned context of a point: bearing or
   fault orders, nominal speed, ISO 20816-3 group and support, expected

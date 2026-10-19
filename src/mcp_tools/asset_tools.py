@@ -281,12 +281,15 @@ async def get_asset_history(
     asset_id: that asset's history read from its ledger alone, the last
     max_measurements measurements newest first (identity, acquired_at,
     signal_id, file location, declaration version, lineages, a preview of
-    the indicators of the latest snapshot, comparability grade and codes
-    against the point), the point declarations and baselines with their
+    the indicators of the last snapshot recorded, comparability grade and
+    codes against the point), the point declarations and baselines with their
     history, the measurements re-attributed to another asset, and the
     integrity block. measurement_point_id restricts the history to one
     point and needs asset_id. An unknown asset or point is a typed
-    'not_found' naming the known ids, not an exception.
+    'not_found' naming the known ids, not an exception. After a declaration
+    was changed and restored, the preview can still show the snapshot of
+    the declaration in between; assess_asset_change scores the snapshot of
+    the current declarations.
 
     Args:
         ctx: MCP context. Unused, see this module's docstring on logging.
@@ -445,6 +448,16 @@ async def assess_asset_change(
     members first, then the most recent), verified against the recorded
     file hash, and the reprocess block names the exact next call while
     measurements remain. Old snapshots are never deleted.
+
+    Each acquisition is scored from the snapshot its current declaration
+    and the point's current declaration produce, so restoring an earlier
+    declaration needs no re-processing. When lineage stale_context is above
+    0, that many evaluated acquisitions were scored from snapshots computed
+    under a previous declaration: the message opens by saying so, the
+    classification is provisional, and the re-processing call is named only
+    when it can compute something for them. A declared baseline compares
+    each member's declaration version, so a member re-loaded with another
+    declaration is superseded even when the original one is restored.
 
     Args:
         ctx: MCP context. Unused, see this module's docstring on logging.
