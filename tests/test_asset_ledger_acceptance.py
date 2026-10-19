@@ -290,13 +290,15 @@ def _write_extra_unit_measurement(directory: Path) -> Path:
 # ---------------------------------------------------------------------------
 
 
-async def _declare_point(tools, ctx) -> MeasurementPointDeclarationResult:
+async def _declare_point(
+    tools, ctx, machine_group: int = 2
+) -> MeasurementPointDeclarationResult:
     return await tools["declare_measurement_point"](
         ctx=ctx,
         asset_id=ASSET_ID,
         measurement_point_id=POINT_ID,
         bearing_id=BEARING_ID,
-        machine_group=2,
+        machine_group=machine_group,
         support_type="rigid",
         expected_signal_unit=SIGNAL_UNIT,
         expected_direction=DIRECTION,
@@ -1023,6 +1025,55 @@ async def test_ae5_an_older_lineage_is_never_mixed_and_reprocessing_moves_on(
     assert third.reprocess["stale"] == 0 and third.reprocess["reprocessed"] == 0
     assert "nothing to reprocess" in third.reprocess["message"]
     assert _snapshot_lineage_counts(ASSET_ID) == counts
+
+
+@pytest.mark.asyncio
+async def test_older_lineage_recorded_later_after_a_revert(
+    tools, ctx, sequence_data_dir, sequence
+):
+    """Covers AE7. M01..M11 loaded under A, re-processed under B, then
+    copied under an older lineage (recorded later, so it is the one
+    assessed); the mm/s measurement loaded under B; A declared again. The
+    current lineage already holds A's snapshot of every evaluated slot, so
+    the message says re-processing has nothing to write for them and names
+    no call, while the same response's reprocess block re-processes the
+    non-comparable measurement it can still reach."""
+    current = processing_id()
+    await _declare_point(tools, ctx)
+    early = await _load(tools, ctx, sequence, range(1, 12))
+    ids = [info.measurement["measurement_id"] for info in early]
+    await _declare_point(tools, ctx, machine_group=1)
+    for _ in range(2):
+        await _assess(tools, ctx, reprocess=True)
+    extra = _write_extra_unit_measurement(sequence_data_dir)
+    extra_info = await tools["load_signal"](ctx=ctx, filepath=extra.name)
+    extra_id = extra_info.measurement["measurement_id"]
+    assert _inject_older_lineage(ids, INJECTED_LINEAGE) == 11
+    restored = await _declare_point(tools, ctx)
+    assert restored.declaration_version == 3
+    assert restored.measurements_with_stale_context == 1
+
+    result = await _assess(tools, ctx, reprocess=True)
+    block = result.reprocess
+    assert (block["stale"], block["reprocessed"]) == (1, 1)
+    assert [r["measurement_id"] for r in block["results"]] == [extra_id]
+    assert extra_id in [e["measurement_id"] for e in result.comparability["excluded"]]
+
+    lineage = result.lineage
+    assert lineage["processing_id"] == INJECTED_LINEAGE
+    assert lineage["missing_for_current"] == 0
+    assert lineage["stale_context"] == 11
+    assert result.message.startswith(
+        "11 of the 11 evaluated acquisition slots were scored from snapshots "
+        "computed under a previous declaration of the point or the "
+        "measurement, so this verdict does not reflect the current "
+        f"declaration yet; every evaluated slot already has a snapshot of the "
+        f"current lineage {current}, but lineage {INJECTED_LINEAGE} was "
+        "recorded later and is the one assessed, so re-processing has nothing "
+        f"to write on lineage {current} for the evaluated slots. "
+    )
+    assert REPROCESS_CALL not in result.message
+    _assert_well_formed(result)
 
 
 # ---------------------------------------------------------------------------

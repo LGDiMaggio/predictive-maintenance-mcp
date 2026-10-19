@@ -1069,6 +1069,86 @@ class TestAssessAssetChange:
         assert _event_types().count(EVENT_HEALTH_SNAPSHOT_COMPUTED) == 30
         assert _event_types().count(EVENT_MEASUREMENT_RECORDED) == 15
 
+    @pytest.mark.asyncio
+    async def test_revert_with_a_missing_file_keeps_both_blocks_consistent(
+        self, tools, ctx, sandbox
+    ):
+        """Covers AE5. Ten loads under A, re-processed under B; an eleventh
+        loaded under B only, its file then removed; A declared again. The
+        reverted slots are scored from A's snapshots, the eleventh stays
+        stale, and the message names the call only as an attempt that may
+        leave a measurement on its previous snapshot, as the reprocess block
+        in the same response reports."""
+        await _declare_point(tools, ctx)
+        await _load_measurements(tools, ctx, sandbox, 10)
+        await _declare_point(tools, ctx, machine_group=1)
+        first = await tools["assess_asset_change"](
+            ctx=ctx, asset_id=ASSET, measurement_point_id=POINT, reprocess=True
+        )
+        assert first.reprocess["reprocessed"] == 10
+        name = _place(sandbox, "late_m11.csv", _noise(777), _companion(index=11))
+        late = await tools["load_signal"](ctx=ctx, filepath=name)
+        late_id = late.measurement["measurement_id"]
+        (sandbox / name).unlink()
+        restored = await _declare_point(tools, ctx)
+        assert restored.declaration_version == 3
+        assert restored.measurements_with_stale_context == 1
+
+        result = await tools["assess_asset_change"](
+            ctx=ctx, asset_id=ASSET, measurement_point_id=POINT, reprocess=True
+        )
+        block = result.reprocess
+        assert (block["stale"], block["reprocessed"]) == (1, 0)
+        assert block["not_reprocessable"] == 1
+        assert block["next_call"] is None
+        assert block["results"][0]["measurement_id"] == late_id
+        assert "file not found" in block["results"][0]["reason"]
+
+        assert result.status == "assessed"
+        assert result.lineage["is_current"] is True
+        assert result.lineage["stale_context"] == 1
+        assert result.observed["latest_measurement_id"] == late_id
+        assert result.message.startswith(
+            "1 of the 11 evaluated acquisition slots was scored from snapshots "
+            "computed under a previous declaration of the point or the "
+            "measurement, so this verdict does not reflect the current "
+            "declaration yet; assess_asset_change(asset_id='P-101', "
+            "measurement_point_id='motor_de_h', reprocess=True) attempts to "
+            "recompute them in bounded batches across the point's stale "
+            "measurements, and a measurement it cannot re-process keeps its "
+            "previous snapshot (the reprocess block gives the reason). "
+        )
+        assert "recomputes" not in result.message
+        assert result.suggested_verification == (
+            "Treat this classification as provisional and confirm it once every "
+            "evaluated acquisition is assessed from a snapshot computed under "
+            "the current declaration."
+        )
+
+    @pytest.mark.asyncio
+    async def test_reverted_point_assessments_are_repeatable(self, tools, ctx, sandbox):
+        """After A, B (re-processed), A: two calls give the same structured
+        content, name no call and append nothing."""
+        await _declare_point(tools, ctx)
+        await _load_measurements(tools, ctx, sandbox, 11)
+        await _declare_point(tools, ctx, machine_group=1)
+        for _ in range(2):
+            await tools["assess_asset_change"](
+                ctx=ctx, asset_id=ASSET, measurement_point_id=POINT, reprocess=True
+            )
+        await _declare_point(tools, ctx)
+        before = len(_events())
+        first = await tools["assess_asset_change"](
+            ctx=ctx, asset_id=ASSET, measurement_point_id=POINT
+        )
+        second = await tools["assess_asset_change"](
+            ctx=ctx, asset_id=ASSET, measurement_point_id=POINT
+        )
+        assert first.model_dump() == second.model_dump()
+        assert first.lineage["stale_context"] == 0
+        assert "reprocess=True" not in first.message
+        assert len(_events()) == before
+
 
 # ---------------------------------------------------------------------------
 # Closed-oracle refusals on every tool
