@@ -1596,6 +1596,20 @@ class TestStaleEvidence:
         )
         assert result["suggested_verification"] == STALE_VERIFICATION
 
+    def test_unresolvable_declaration_counts_toward_the_remedy_only(self):
+        """Re-processing treats a declaration it cannot resolve as stale (it
+        then reports it), so the remedy counts it among the snapshots to
+        compute, while the stale count, which cannot judge it, does not."""
+        events = series_events(STABLE)
+        events.append(measurement_event(11, rpm="1800"))
+        events.append(snapshot_event(11, rms=1.0))
+        events.append(point_event(2, machine_group=1, recorded_at=REDECLARED_AT))
+        result = assess(view_of(events))
+        assert result["lineage"]["stale_context"] == 10
+        assert result["message"].startswith(
+            stale_opening(10, 11) + older_lineage_clause(11, 11, 11) + ". "
+        )
+
     def test_current_lineage_names_the_call_with_its_caveat(self):
         """Covers AE4: a slot first loaded while B was declared is the only
         stale one; its classification is no_change, which alone would call
