@@ -450,12 +450,18 @@ async def assess_asset_change(
     measurements remain. Old snapshots are never deleted.
 
     Each acquisition is scored from the snapshot its current declaration
-    and the point's current declaration produce, so restoring an earlier
-    declaration needs no re-processing. When lineage stale_context is above
-    0, that many evaluated acquisitions were scored from snapshots computed
-    under a previous declaration: the message opens by saying so, the
-    classification is provisional, and the re-processing call is named only
-    when it can compute something for them. A declared baseline compares
+    and the point's current declaration produce on the lineage assessed, so
+    restoring an earlier declaration reuses the snapshots already computed
+    under it; an acquisition without one (loaded while another declaration
+    was active, or recorded before a lineage update) is scored from the
+    latest snapshot of that lineage and counts in lineage stale_context.
+    When stale_context is above 0, that many evaluated acquisitions were
+    scored from snapshots computed under a previous declaration: the
+    message opens by saying so, the classification is provisional, and the
+    re-processing call is named when an evaluated acquisition lacks the
+    snapshot of its current declarations on the current lineage, as an
+    attempt (a measurement it cannot re-process keeps its previous
+    snapshot). A declared baseline compares
     each member's declaration version, so a member re-loaded with another
     declaration is superseded even when the original one is restored.
 
