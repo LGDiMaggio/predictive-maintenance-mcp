@@ -1179,6 +1179,7 @@ STOP_RULE_PARTS = {
 #: them lists in full.
 START_CONDITIONS = (
     "including the call a message, a remedy or a declaration names",
+    "no sequence of the point has ended in",
     "after the user took an action",
     "after a load or a declaration changed the point",
     "once after an environment fix",

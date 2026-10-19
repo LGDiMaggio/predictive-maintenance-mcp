@@ -2078,14 +2078,15 @@ class TestReprocessCoupling:
 
 
 def older_lineage_partly_current_events(
-    rate_missing: bool = False,
+    rate_missing_from: int = 11,
 ) -> list[dict[str, Any]]:
     """Ten slots on an older lineage, every one stale there, the first five
-    also current on the current lineage; the last five lack it."""
+    also current on the current lineage; the last five lack it. The slots
+    from *rate_missing_from* on declare no sampling rate."""
     events = [point_event()]
     for index, value in enumerate(STABLE, start=1):
         measurement = measurement_event(
-            index, sampling_rate=None if rate_missing and index > 5 else 10000.0
+            index, sampling_rate=None if index >= rate_missing_from else 10000.0
         )
         events.append(measurement)
         events.append(snapshot_event(index, rms=value, processing=LINEAGE_A))
@@ -2127,7 +2128,7 @@ class TestBlockedSlotsOnAnOlderLineage:
     def test_the_view_checks_found_them_and_the_block_did_not_reach_them(self):
         """With reprocess=True, a slot the view checks block but the call never
         reached is not in the block: the clause gives its action itself."""
-        events = older_lineage_partly_current_events(rate_missing=True)
+        events = older_lineage_partly_current_events(rate_missing_from=6)
         for coupling in (None, ReprocessCoupling(blocked={}, next_call=None)):
             result = assess(view_of(events), reprocess=coupling)
             assert result["message"].startswith(
@@ -2138,6 +2139,53 @@ class TestBlockedSlotsOnAnOlderLineage:
                 "rate, then re-load the file with load_signal and a companion that "
                 "declares it (the same bytes keep the same measurement_id)). "
             )
+
+    def test_a_block_that_did_not_reach_every_slot_gives_every_action(self):
+        """Slots the block found and slots the view checks block that the
+        call never reached: the clause gives each action itself, the
+        earlier failures it cannot detail included."""
+        events = older_lineage_partly_current_events(rate_missing_from=9)
+        found = ReprocessCoupling(
+            blocked={mid(6): "file_missing", mid(7): None}, next_call=None
+        )
+        result = assess(view_of(events), reprocess=found)
+        assert result["message"].startswith(
+            stale_opening(10, 10)
+            + older_lineage_missing_clause()
+            + blocked_clause(
+                4,
+                "2 need a declared sampling rate, 1 needs the file restored or "
+                "located, 1 was found not reprocessable by an earlier call of this "
+                "sequence",
+            )
+            + " (for a declared sampling rate, ask the user for the sampling rate, "
+            "then re-load the file with load_signal and a companion that declares "
+            "it (the same bytes keep the same measurement_id); for the file "
+            f"restored or located, {RESTORE_ACTION}; for those found by an earlier "
+            "call, the responses of the calls that found them give the reason and "
+            "the action, or one new sequence lists them again). "
+        )
+
+    def test_an_inline_action_of_a_baseline_member_keeps_it_in_the_baseline(self):
+        """The member form of an action goes to the code whose slots include a
+        member of the declared baseline, and only to it."""
+        clause = assessment._blocked_clause(
+            {"file_missing": [mid(1), mid(2)], "no_valid_sampling_rate": [mid(3)]},
+            CURRENT_LINEAGE,
+            listed=False,
+            members=frozenset({mid(1)}),
+        )
+        assert clause == blocked_clause(
+            3, "1 needs a declared sampling rate, 2 need the file restored or located"
+        ) + (
+            " (for a declared sampling rate, ask the user for the sampling rate, "
+            "then re-load the file with load_signal and a companion that declares "
+            "it (the same bytes keep the same measurement_id); for the file "
+            "restored or located, restore the file at one of its recorded "
+            "locations, the only action that keeps it in the declared baseline; "
+            "loading it from anywhere else records a new declaration version and "
+            "removes it from the baseline until the baseline is declared again)"
+        )
 
     def test_the_named_call_repeats_acquired_until(self):
         params = AssessmentParams(

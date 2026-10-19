@@ -1691,10 +1691,24 @@ def _blocked_counts(blocked: _BlockedByCode) -> str:
     return ", ".join(parts)
 
 
-def _blocked_clause(blocked: _BlockedByCode, current: str, *, listed: bool) -> str:
+#: What the stale clause says of earlier failures it does not detail.
+_EARLIER_NOT_DETAILED = (
+    "the responses of the calls that found them give the reason and the "
+    "action, or one new sequence lists them again"
+)
+
+
+def _blocked_clause(
+    blocked: _BlockedByCode,
+    current: str,
+    *,
+    listed: bool,
+    members: frozenset[str] = frozenset(),
+) -> str:
     """The clause of the stale-evidence sentence that counts the evaluated
     slots re-processing cannot act on until an action is taken. It carries
-    no path: locations stay in the reprocess block."""
+    no path: locations stay in the reprocess block, and so does the data
+    directory check of a missing file at a relative location."""
     if not blocked:
         return ""
     total = sum(len(ids) for ids in blocked.values())
@@ -1705,12 +1719,18 @@ def _blocked_clause(blocked: _BlockedByCode, current: str, *, listed: bool) -> s
     )
     if listed:
         return text + " (the reprocess block reports them)"
-    actions = "; ".join(
-        f"for {_BLOCKED_NEEDS[code]}, {reprocess_action(code)}"
-        for code in _ordered_codes(blocked)
-        if code is not None
-    )
-    return f"{text} ({actions})"
+    actions: list[str] = []
+    for code in _ordered_codes(blocked):
+        if code is None:
+            actions.append(
+                f"for those found by an earlier call, {_EARLIER_NOT_DETAILED}"
+            )
+            continue
+        member = any(m in members for m in blocked[code])
+        actions.append(
+            f"for {_BLOCKED_NEEDS[code]}, {reprocess_action(code, member=member)}"
+        )
+    return f"{text} ({'; '.join(actions)})"
 
 
 def _remedy_actions(blocked: _BlockedByCode, members: frozenset[str]) -> str:
@@ -1724,9 +1744,7 @@ def _remedy_actions(blocked: _BlockedByCode, members: frozenset[str]) -> str:
         if code is None:
             parts.append(
                 f"{len(ids)} found not reprocessable by an earlier call of this "
-                f"sequence ({shown}): the responses of the calls that found them "
-                f"give the reason and the action, or one new sequence lists them "
-                f"again"
+                f"sequence ({shown}): {_EARLIER_NOT_DETAILED}"
             )
             continue
         verb = "needs" if len(ids) == 1 else "need"
@@ -1746,6 +1764,7 @@ def _stale_evidence(
     call: Optional[str],
     blocked: _BlockedByCode,
     listed: bool,
+    members: frozenset[str],
 ) -> str:
     """The sentence (without its period) that opens the message when
     *stale* of the *covered* evaluated slots were scored from snapshots
@@ -1755,7 +1774,9 @@ def _stale_evidence(
     slots lack the current interpretation's snapshot on the *current*
     lineage, the one re-processing writes, and re-processing can act on
     them; the *blocked* ones are counted by what they need, and *listed*
-    says the reprocess block of the same response lists them. When the
+    says the reprocess block of the same response lists them (otherwise
+    the clause gives their actions, for the declared-baseline *members*
+    included). When the
     *chosen* lineage is another one, it says that re-processing does not
     touch the chosen lineage's snapshots, and when the assessment moves to
     the current lineage.
@@ -1768,7 +1789,7 @@ def _stale_evidence(
         f"or the measurement, so this verdict does not reflect the current "
         f"declaration yet"
     )
-    tail = _blocked_clause(blocked, current, listed=listed)
+    tail = _blocked_clause(blocked, current, listed=listed, members=members)
     if chosen == current:
         if named:
             text += f"; {call} attempts to recompute them {_REPROCESS_CAVEAT}"
@@ -2344,6 +2365,7 @@ def assess_change(
                     for ids in stale_blocked.values()
                     for m in ids
                 ),
+                members=_baseline_ids(view, measurement_point_id),
             )
             + ". "
             + message
