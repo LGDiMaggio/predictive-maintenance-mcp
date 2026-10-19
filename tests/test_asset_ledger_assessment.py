@@ -35,7 +35,7 @@ from typing import Any, Optional, Sequence
 
 import pytest
 
-from predictive_maintenance_mcp.asset_ledger import assessment
+from predictive_maintenance_mcp.asset_ledger import assessment, service
 from predictive_maintenance_mcp.asset_ledger.assessment import (
     AMPLITUDE_INDICATORS,
     ASSESSMENT_STATUSES,
@@ -1600,14 +1600,30 @@ class TestStaleEvidence:
         """Re-processing treats a declaration it cannot resolve as stale (it
         then reports it), so the remedy counts it among the snapshots to
         compute, while the stale count, which cannot judge it, does not."""
-        events = series_events(STABLE)
-        events.append(measurement_event(11, rpm="1800"))
-        events.append(snapshot_event(11, rms=1.0))
-        events.append(point_event(2, machine_group=1, recorded_at=REDECLARED_AT))
-        result = assess(view_of(events))
-        assert result["lineage"]["stale_context"] == 10
+        events = unresolvable_declaration_events()
+        point = events[0]
+        older = [
+            b_snapshot(measurement, point, value, context_digest="ctx")
+            for measurement, value in zip(
+                of_type(events, EVENT_MEASUREMENT_RECORDED), STABLE
+            )
+        ]
+        older.append(snapshot_event(11, rms=1.0))
+        result = assess(view_of(events + older))
+        lineage = result["lineage"]
+        assert (
+            lineage["processing_id"],
+            lineage["stale_context"],
+            lineage["missing_for_current"],
+        ) == (LINEAGE_A, 10, 0)
         assert result["message"].startswith(
-            stale_opening(10, 11) + older_lineage_clause(11, 11, 11) + ". "
+            stale_opening(10, 11)
+            + recorded_later_clause()
+            + f"; {REPROCESS_CALL} attempts to recompute the 1 {CURRENT_LINEAGE} "
+            f"snapshot(s) computed under a previous declaration {REPROCESS_CAVEAT}, "
+            f"and the assessment moves to {CURRENT_LINEAGE} as soon as "
+            f"re-processing appends a {CURRENT_LINEAGE} snapshot to one of the "
+            "evaluated slots. "
         )
 
     def test_current_lineage_names_the_call_with_its_caveat(self):
@@ -1759,14 +1775,103 @@ class TestStaleEvidence:
         )
 
 
+def partly_recomputed_events() -> list[dict[str, Any]]:
+    """Every slot on the older lineage, the first five also on the current
+    one."""
+    events = series_events(STABLE)
+    point = events[0]
+    measurements = of_type(events, EVENT_MEASUREMENT_RECORDED)
+    return events + [
+        b_snapshot(measurement, point, value, processing=CURRENT_LINEAGE)
+        for measurement, value in zip(measurements[:5], STABLE)
+    ]
+
+
+def partly_reprocessed_under_b_events() -> list[dict[str, Any]]:
+    """Point B still declared, re-processing stopped after six of the ten
+    measurements."""
+    events, under_b = revert_events(
+        STABLE, [2.0] * 10, restore=False, processing=CURRENT_LINEAGE
+    )
+    return without(events, under_b[:4])
+
+
+def unresolvable_declaration_events() -> list[dict[str, Any]]:
+    """Ten current slots on the current lineage and one whose declaration
+    cannot be resolved."""
+    events = series_events(STABLE, processing=CURRENT_LINEAGE)
+    events.append(measurement_event(11, rpm="1800"))
+    events.append(snapshot_event(11, rms=1.0, processing=CURRENT_LINEAGE))
+    return events
+
+
+class TestStalenessAgreesWithReprocessing:
+    """The re-processing call is named when the assessment finds a slot
+    lacking its current snapshot on the current lineage; re-processing
+    attempts the measurements its own staleness test selects. Both tests
+    must agree, or the call is named with nothing to attempt, or withheld
+    while re-processing has work."""
+
+    @pytest.mark.parametrize(
+        ("build", "lacking"),
+        [
+            (lambda: series_events(STABLE), 10),
+            (partly_recomputed_events, 5),
+            (
+                lambda: revert_events(STABLE, [2.0] * 10, processing=CURRENT_LINEAGE)[
+                    0
+                ],
+                0,
+            ),
+            (partly_reprocessed_under_b_events, 4),
+            (unresolvable_declaration_events, 1),
+        ],
+        ids=[
+            "older_lineage_only",
+            "partly_on_the_current_lineage",
+            "restored_declaration",
+            "partly_reprocessed_redeclaration",
+            "unresolvable_declaration",
+        ],
+    )
+    def test_each_slot_gets_the_same_answer(self, build, lacking):
+        view = view_of(build())
+        staged = collect_point_slots(view, POINT)
+        point = staged["point"]
+        answers = {
+            slot["measurement_id"]: (
+                assessment._lacks_current_snapshot(slot, point, CURRENT_LINEAGE),
+                service._snapshot_is_current(
+                    view,
+                    slot["measurement_id"],
+                    slot["declaration"],
+                    point,
+                    CURRENT_LINEAGE,
+                ),
+            )
+            for slot in staged["slots"]
+        }
+        assert all(lacks is not current for lacks, current in answers.values())
+        assert sum(lacks for lacks, _ in answers.values()) == lacking
+
+
 # ---------------------------------------------------------------------------
 # Contract: determinism, serialization, purity
 # ---------------------------------------------------------------------------
 
-#: Canonical payloads of views no revert touched, recorded before the
-#: snapshot selection inside a lineage changed: those views must keep their
-#: payloads byte for byte.
+#: Payloads of views no revert touched, recorded before the snapshot
+#: selection inside a lineage changed. Shape, strings, integers, bools and
+#: Nones must match exactly; floats within a tolerance far below any
+#: algorithmic drift and above the ulp differences numpy and scipy may show
+#: across the CI matrix.
 PAYLOAD_GOLDEN = Path(__file__).parent / "fixtures" / "assessment_payload_golden.json"
+#: From the repo root, with the checkout's interpreter (``import conftest``
+#: pins the import to THIS tree, also inside a git worktree).
+PAYLOAD_RECIPE = (
+    "python -c \"import sys; sys.path.insert(0, 'tests'); import conftest; "
+    "from test_asset_ledger_assessment import write_payload_golden; "
+    'write_payload_golden()"'
+)
 
 
 def golden_views() -> dict[str, list[dict[str, Any]]]:
@@ -1782,11 +1887,8 @@ def golden_views() -> dict[str, list[dict[str, Any]]]:
 
 
 def write_payload_golden(path: Path = PAYLOAD_GOLDEN) -> None:
-    """Regenerate the payload golden, only when an output change is intended::
-
-    python -c "from tests.test_asset_ledger_assessment import \\
-        write_payload_golden; write_payload_golden()"
-    """
+    """Regenerate the payload golden ON PURPOSE only (never to make a red
+    test green), with ``PAYLOAD_RECIPE``."""
     payloads = {
         name: json.loads(canonical_json(assess(view_of(events))))
         for name, events in golden_views().items()
@@ -1796,15 +1898,43 @@ def write_payload_golden(path: Path = PAYLOAD_GOLDEN) -> None:
     )
 
 
+def assert_matches_golden(new: Any, old: Any, path: str) -> None:
+    """Recursive comparison of two decoded payloads, floats via
+    ``pytest.approx`` and everything else exactly."""
+    hint = f"(regenerate on purpose with {PAYLOAD_RECIPE} if the change is intended)"
+    if isinstance(old, dict):
+        assert isinstance(new, dict), f"{path}: expected an object {hint}"
+        assert set(new) == set(old), (
+            f"{path}: keys {sorted(set(new) ^ set(old))} differ from the golden "
+            f"shape {hint}"
+        )
+        for key, old_value in old.items():
+            assert_matches_golden(new[key], old_value, f"{path}.{key}")
+    elif isinstance(old, list):
+        assert isinstance(new, list), f"{path}: expected a list {hint}"
+        assert len(new) == len(
+            old
+        ), f"{path}: length {len(new)} != golden {len(old)} {hint}"
+        for index, (new_item, old_item) in enumerate(zip(new, old)):
+            assert_matches_golden(new_item, old_item, f"{path}[{index}]")
+    elif isinstance(old, float):
+        assert isinstance(new, float) and new == pytest.approx(
+            old, rel=1e-9, abs=1e-12
+        ), f"{path}: {new!r} != golden {old!r} {hint}"
+    else:
+        assert (
+            type(new) is type(old) and new == old
+        ), f"{path}: {new!r} != golden {old!r} {hint}"
+
+
 class TestContract:
     def test_views_without_a_revert_keep_their_payloads(self):
         golden = json.loads(PAYLOAD_GOLDEN.read_text(encoding="utf-8"))
         views = golden_views()
         assert set(golden) == set(views)
         for name, events in views.items():
-            assert canonical_json(assess(view_of(events))) == canonical_json(
-                golden[name]
-            ), name
+            payload = json.loads(canonical_json(assess(view_of(events))))
+            assert_matches_golden(payload, golden[name], name)
 
     def test_same_view_gives_the_same_canonical_payload(self):
         values = STABLE + [SPIKE] + STABLE[:9] + RAMP
