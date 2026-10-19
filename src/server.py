@@ -307,6 +307,9 @@ mcp = MCPServer(
       observed, derived and assessed as returned, with the classification
       and its criterion; suggest at most the one verification carried by
       suggested_verification, never a list of actions
+    - When lineage stale_context is above 0, say that the classification
+      rests on snapshots computed under a previous declaration and is
+      provisional
     - When a load or a history reports a missing snapshot block, ask the
       user for the point context named in its remedy
       (declare_measurement_point) instead of calling diagnose_vibration

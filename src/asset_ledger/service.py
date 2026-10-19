@@ -50,7 +50,8 @@ of the same file appends the missing snapshot and nothing else.
 Re-processing (:func:`reprocess_stale_snapshots`, behind
 ``assess_asset_change(..., reprocess=True)``): a measurement of the point is
 STALE when its view holds no snapshot with the current ``processing_id``
-AND the ``context_digest`` of the current point declaration. Up to
+AND the ``context_digest`` the current declarations of the measurement and
+of its point resolve to. Up to
 ``MAX_REPROCESS_PER_CALL`` stale measurements are re-processed per call, in
 the order members of the active reference (declared baseline or the first N
 slots), then the last K slots newest first, then the rest newest first
@@ -58,9 +59,10 @@ slots), then the last K slots newest first, then the rest newest first
 reference and the last K slots carry the current lineage within two calls
 whatever the length of the history and every measurement the point
 declaration counts as stale is reached (the assessment moves onto the
-current lineage once EVERY evaluated slot carries it; until then it uses
-the older lineage that still covers the whole set, or reports
-``processing_not_homogeneous`` when none does). The file is searched in
+current lineage once every evaluated slot carries it and no other lineage
+covering them was recorded later; until then it uses the older lineage
+that still covers the whole set, or reports ``processing_not_homogeneous``
+when none does). The file is searched in
 every location ever declared for the measurement, most recent first
 (relative locations under
 the data directory, contained by ``safe_resolve``; absolute ones as
@@ -2370,6 +2372,13 @@ def asset_index(store: LedgerStore, *, max_assets: int) -> dict[str, Any]:
 def _measurement_entry(
     view: Mapping[str, Any], measurement_id: str, current: Mapping[str, Any]
 ) -> dict[str, Any]:
+    """One measurement of the history listing.
+
+    The indicator preview comes from the last snapshot recorded for the
+    measurement, whatever its lineage or context. After a restored
+    declaration that can differ from the snapshot ``assess_change`` scores,
+    which is the one the current declarations produce.
+    """
     declaration = _declaration_of(current)
     file_info = current.get("file")
     slot = (view.get("measurements") or {}).get(measurement_id) or {}
@@ -2445,7 +2454,9 @@ def asset_history(
         carries ``{measurement_id, measurement_point_id, acquired_at,
         signal_id, location, declaration_version, rpm, direction,
         sensor_id, lineages, snapshot_count, indicators (rms, peak,
-        crest_factor, kurtosis, unit from the latest snapshot, or None),
+        crest_factor, kurtosis, unit from the last snapshot recorded, which
+        after a restored declaration may not be the one the assessment
+        scores; or None),
         comparability (grade and codes against the point)}``; the
         declarations and baselines map each selected point to ``{current,
         history, history_truncated}``.

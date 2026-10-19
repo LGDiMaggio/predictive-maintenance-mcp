@@ -1635,3 +1635,157 @@ class TestReprocessStaleSnapshots:
 
         assert pkg.reprocess_stale_snapshots is reprocess_stale_snapshots
         assert pkg.MAX_REPROCESS_PER_CALL is MAX_REPROCESS_PER_CALL
+
+
+# ---------------------------------------------------------------------------
+# A declaration changed and changed back, end to end
+# ---------------------------------------------------------------------------
+
+
+def declare(
+    store: LedgerStore, machine_group: int, support_type: str = "rigid"
+) -> dict[str, Any]:
+    """The point's declaration through the service, varying the ISO context."""
+    return declare_measurement_point(
+        store=store,
+        asset_id=ASSET,
+        measurement_point_id=POINT,
+        bearing_id="6205",
+        machine_group=machine_group,
+        support_type=support_type,
+        expected_signal_unit="g",
+        expected_direction="horizontal",
+        nominal_rpm=1800.0,
+        declared_by="test",
+    )
+
+
+def assess_point(store: LedgerStore) -> dict[str, Any]:
+    return assess_change(store.read_view(ASSET), ASSET, POINT)
+
+
+def sequence_infos(
+    data_dir: Path, count: int
+) -> tuple[list[dict[str, Any]], dict[str, np.ndarray]]:
+    """The infos and arrays ``load_sequence`` records, for a re-load."""
+    infos: list[dict[str, Any]] = []
+    arrays: dict[str, np.ndarray] = {}
+    for index in range(1, count + 1):
+        values = noise(index, 5000)
+        info = make_info(
+            data_dir / f"m{index:02d}.csv", values, acquired_at=acquired(index)
+        )
+        infos.append(info)
+        arrays[info["signal_id"]] = values
+    return infos, arrays
+
+
+class TestRestoredDeclaration:
+    """A, B, then A again through the real service: the snapshots A
+    produced are already recorded, so nothing is appended, and the
+    assessment, the point declaration and re-processing agree that nothing
+    is stale."""
+
+    def test_point_revert_reuses_the_recorded_snapshots(self, store, data_dir, root):
+        """A, B (re-processed), then A: nothing is stale or written."""
+        declare(store, 2)
+        load_sequence(store, data_dir, 11, policy=None)
+        assert declare(store, 1)["measurements_with_stale_context"] == 11
+        assert reprocess(store, data_dir, limit=11)["reprocessed"] == 11
+        restored = declare(store, 2)
+        assert restored["declaration_version"] == 3
+        assert restored["measurements_with_stale_context"] == 0
+        assert restored["remedy"] is None
+
+        ledger = root / f"{ASSET}{store_module.LEDGER_SUFFIX}"
+        before = ledger.read_bytes()
+        result = assess_point(store)
+        again = reprocess(store, data_dir)
+        assert (again["stale"], again["reprocessed"]) == (0, 0)
+        assert "nothing to reprocess" in again["message"]
+        assert ledger.read_bytes() == before
+
+        assert result["status"] == "assessed"
+        assert result["lineage"]["is_current"] is True
+        assert result["lineage"]["stale_context"] == 0
+        assert result["derived"]["iso_change"]["machine_group"] == 2
+        assert REPROCESS_CALL not in result["message"]
+        assert store_module.canonical_json(result) == store_module.canonical_json(
+            assess_point(store)
+        )
+
+    def test_reload_under_b_then_revert(self, store, data_dir):
+        """Re-loading unchanged files while B is declared
+        appends B's snapshots at load time, with no re-processing call."""
+        declare(store, 2)
+        infos, arrays = sequence_infos(data_dir, 11)
+        record(store, data_dir, infos, arrays)
+        declare(store, 1)
+        before = len(payloads(store, EVENT_HEALTH_SNAPSHOT_COMPUTED))
+        reloaded = record(store, data_dir, infos, arrays)
+        assert {o["ledger_status"] for o in reloaded} == {"already_recorded"}
+        assert len(payloads(store, EVENT_HEALTH_SNAPSHOT_COMPUTED)) == before + 11
+        declare(store, 2)
+        result = assess_point(store)
+        assert result["lineage"]["stale_context"] == 0
+        assert result["derived"]["iso_change"]["machine_group"] == 2
+
+    def test_measurement_revert_reuses_the_recorded_snapshot(self, store, data_dir):
+        """The latest measurement re-loaded with rpm 1500, then
+        with 1800 again; the third load appends no snapshot and its
+        snapshot_id is the one whose values the assessment uses."""
+        declare(store, 2)
+        load_sequence(store, data_dir, 10, policy=None)
+        values = noise(11, 5000)
+        path = data_dir / "m11.csv"
+        first = record_one(
+            store, data_dir, make_info(path, values, acquired_at=acquired(11)), values
+        )
+        changed = record_one(
+            store,
+            data_dir,
+            make_info(path, values, acquired_at=acquired(11), rpm=1500),
+            values,
+        )
+        assert changed["ledger_status"] == "superseded"
+        assert changed["snapshot_id"] != first["snapshot_id"]
+        restored = record_one(
+            store, data_dir, make_info(path, values, acquired_at=acquired(11)), values
+        )
+        assert restored["ledger_status"] == "superseded"
+        assert restored["snapshot_id"] == first["snapshot_id"]
+        appended = {
+            e["event_type"]
+            for e in events_of(store)
+            if e["event_id"] in set(restored["event_ids"])
+        }
+        assert appended == {EVENT_MEASUREMENT_RECORDED}
+
+        by_id = {
+            p["snapshot_id"]: p for p in payloads(store, EVENT_HEALTH_SNAPSHOT_COMPUTED)
+        }
+        one_x_a = by_id[first["snapshot_id"]]["one_x"]["amplitude"]
+        one_x_b = by_id[changed["snapshot_id"]]["one_x"]["amplitude"]
+        assert one_x_a != pytest.approx(one_x_b)
+        result = assess_point(store)
+        assert result["lineage"]["stale_context"] == 0
+        assert result["observed"]["latest_measurement_id"] == first["measurement_id"]
+        assert result["observed"]["latest"]["one_x"] == pytest.approx(one_x_a)
+
+    def test_every_surface_agrees_on_what_is_stale(self, store, data_dir):
+        """After each declaration of A, B, A, C, with re-processing only after
+        B: the point declaration's stale count is the assessment's, and the
+        assessment names the re-processing call exactly when that count is
+        above zero."""
+        declare(store, 2)
+        load_sequence(store, data_dir, 11, policy=None)
+        steps = ((2, "rigid", False), (1, "rigid", True), (2, "rigid", False))
+        for group, support, reprocess_after in steps + ((2, "flexible", False),):
+            declared = declare(store, group, support)
+            result = assess_point(store)
+            stale = result["lineage"]["stale_context"]
+            assert declared["measurements_with_stale_context"] == stale
+            assert (REPROCESS_CALL in result["message"]) == (stale > 0)
+            if reprocess_after:
+                reprocess(store, data_dir, limit=11)
+        assert stale == 11

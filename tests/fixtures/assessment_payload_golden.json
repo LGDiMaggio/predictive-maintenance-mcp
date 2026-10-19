@@ -1,0 +1,2507 @@
+{
+  "declared_baseline": {
+    "assessed": {
+      "classification": "no_change",
+      "criterion": "latest acquisition inside the band (mean +/- max(3 sigma, 25%)) of every amplitude indicator and no bearing evidence persistence",
+      "direction": null,
+      "evidence": {
+        "BPFI": {
+          "classification": "no_change",
+          "consecutive": 0,
+          "criterion": "no bearing evidence in the last 5 acquisitions",
+          "k": 5,
+          "persistent": false,
+          "present_in_last_k": 0
+        },
+        "BPFO": {
+          "classification": "no_change",
+          "consecutive": 0,
+          "criterion": "no bearing evidence in the last 5 acquisitions",
+          "k": 5,
+          "persistent": false,
+          "present_in_last_k": 0
+        },
+        "BSF": {
+          "classification": "no_change",
+          "consecutive": 0,
+          "criterion": "no bearing evidence in the last 5 acquisitions",
+          "k": 5,
+          "persistent": false,
+          "present_in_last_k": 0
+        },
+        "FTF": {
+          "classification": "no_change",
+          "consecutive": 0,
+          "criterion": "no bearing evidence in the last 5 acquisitions",
+          "k": 5,
+          "persistent": false,
+          "present_in_last_k": 0
+        }
+      },
+      "indicators_driving": [],
+      "onset_acquired_at": null,
+      "onset_coincides_with": [],
+      "onset_measurement_id": null,
+      "sudden": false
+    },
+    "asset_id": "P-101",
+    "comparability": {
+      "collapsed_duplicates": [],
+      "collapsed_truncated": false,
+      "comparable": 30,
+      "excluded": [],
+      "excluded_truncated": false,
+      "non_comparable": 0,
+      "qualifications": [],
+      "qualified": 0
+    },
+    "derived": {
+      "deltas": {
+        "crest_factor": {
+          "delta_pct": 0.0,
+          "exceeds": null,
+          "latest": 2.5,
+          "mean": 2.5,
+          "side": null
+        },
+        "envelope_BPFI": {
+          "delta_pct": 0.0,
+          "exceeds": false,
+          "latest": 0.4,
+          "mean": 0.4,
+          "side": null
+        },
+        "envelope_BPFO": {
+          "delta_pct": 0.0,
+          "exceeds": false,
+          "latest": 0.5,
+          "mean": 0.5,
+          "side": null
+        },
+        "envelope_BSF": {
+          "delta_pct": 0.0,
+          "exceeds": false,
+          "latest": 0.4,
+          "mean": 0.4,
+          "side": null
+        },
+        "envelope_FTF": {
+          "delta_pct": 0.0,
+          "exceeds": false,
+          "latest": 0.4,
+          "mean": 0.4,
+          "side": null
+        },
+        "iso_velocity": {
+          "delta_pct": 1.0000000000000009,
+          "exceeds": false,
+          "latest": 0.303,
+          "mean": 0.3,
+          "side": null
+        },
+        "kurtosis": {
+          "delta_pct": 0.0,
+          "exceeds": null,
+          "latest": -0.2,
+          "mean": -0.2,
+          "side": null
+        },
+        "one_x": {
+          "delta_pct": 1.0000000000000009,
+          "exceeds": false,
+          "latest": 0.101,
+          "mean": 0.1,
+          "side": null
+        },
+        "peak": {
+          "delta_pct": 0.9999999999999963,
+          "exceeds": false,
+          "latest": 2.525,
+          "mean": 2.5,
+          "side": null
+        },
+        "rms": {
+          "delta_pct": 1.0000000000000009,
+          "exceeds": false,
+          "latest": 1.01,
+          "mean": 1.0,
+          "side": null
+        }
+      },
+      "drift": {
+        "envelope_BPFI": {
+          "n": 5,
+          "p_value": null,
+          "r_squared": 0.0,
+          "significant": false,
+          "slope": 0.0,
+          "trend_direction": "stable"
+        },
+        "envelope_BPFO": {
+          "n": 5,
+          "p_value": null,
+          "r_squared": 0.0,
+          "significant": false,
+          "slope": 0.0,
+          "trend_direction": "stable"
+        },
+        "envelope_BSF": {
+          "n": 5,
+          "p_value": null,
+          "r_squared": 0.0,
+          "significant": false,
+          "slope": 0.0,
+          "trend_direction": "stable"
+        },
+        "envelope_FTF": {
+          "n": 5,
+          "p_value": null,
+          "r_squared": 0.0,
+          "significant": false,
+          "slope": 0.0,
+          "trend_direction": "stable"
+        },
+        "iso_velocity": {
+          "n": 5,
+          "p_value": 0.7608203755145108,
+          "r_squared": 0.03571428571428572,
+          "significant": false,
+          "slope": 0.0003000000000000003,
+          "trend_direction": "stable"
+        },
+        "one_x": {
+          "n": 5,
+          "p_value": 0.7608203755145108,
+          "r_squared": 0.03571428571428572,
+          "significant": false,
+          "slope": 0.0001000000000000001,
+          "trend_direction": "stable"
+        },
+        "peak": {
+          "n": 5,
+          "p_value": 0.7608203755145106,
+          "r_squared": 0.03571428571428573,
+          "significant": false,
+          "slope": 0.0024999999999999914,
+          "trend_direction": "stable"
+        },
+        "rms": {
+          "n": 5,
+          "p_value": 0.7608203755145108,
+          "r_squared": 0.03571428571428572,
+          "significant": false,
+          "slope": 0.0010000000000000009,
+          "trend_direction": "stable"
+        }
+      },
+      "exceedance_runs": {
+        "envelope_BPFI": [
+          false,
+          false,
+          false,
+          false,
+          false
+        ],
+        "envelope_BPFO": [
+          false,
+          false,
+          false,
+          false,
+          false
+        ],
+        "envelope_BSF": [
+          false,
+          false,
+          false,
+          false,
+          false
+        ],
+        "envelope_FTF": [
+          false,
+          false,
+          false,
+          false,
+          false
+        ],
+        "iso_velocity": [
+          false,
+          false,
+          false,
+          false,
+          false
+        ],
+        "one_x": [
+          false,
+          false,
+          false,
+          false,
+          false
+        ],
+        "peak": [
+          false,
+          false,
+          false,
+          false,
+          false
+        ],
+        "rms": [
+          false,
+          false,
+          false,
+          false,
+          false
+        ]
+      },
+      "iso_change": {
+        "boundary_bc_mm_s": 2.8,
+        "delta_mm_s": 0.0030000000000000027,
+        "exceeded": false,
+        "fraction": 0.25,
+        "machine_group": 2,
+        "support_type": "rigid",
+        "threshold_mm_s": 0.7
+      },
+      "per_indicator": {
+        "envelope_BPFI": {
+          "classification": "no_change",
+          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%))",
+          "direction": null,
+          "rules": {
+            "consecutive": false,
+            "consecutive_run": 0,
+            "drift": false,
+            "intermittent": false,
+            "intermittent_count": 0,
+            "intermittent_window": 5
+          },
+          "sudden": false
+        },
+        "envelope_BPFO": {
+          "classification": "no_change",
+          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%))",
+          "direction": null,
+          "rules": {
+            "consecutive": false,
+            "consecutive_run": 0,
+            "drift": false,
+            "intermittent": false,
+            "intermittent_count": 0,
+            "intermittent_window": 5
+          },
+          "sudden": false
+        },
+        "envelope_BSF": {
+          "classification": "no_change",
+          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%))",
+          "direction": null,
+          "rules": {
+            "consecutive": false,
+            "consecutive_run": 0,
+            "drift": false,
+            "intermittent": false,
+            "intermittent_count": 0,
+            "intermittent_window": 5
+          },
+          "sudden": false
+        },
+        "envelope_FTF": {
+          "classification": "no_change",
+          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%))",
+          "direction": null,
+          "rules": {
+            "consecutive": false,
+            "consecutive_run": 0,
+            "drift": false,
+            "intermittent": false,
+            "intermittent_count": 0,
+            "intermittent_window": 5
+          },
+          "sudden": false
+        },
+        "iso_velocity": {
+          "classification": "no_change",
+          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%))",
+          "direction": null,
+          "rules": {
+            "consecutive": false,
+            "consecutive_run": 0,
+            "drift": false,
+            "intermittent": false,
+            "intermittent_count": 0,
+            "intermittent_window": 5
+          },
+          "sudden": false
+        },
+        "one_x": {
+          "classification": "no_change",
+          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%))",
+          "direction": null,
+          "rules": {
+            "consecutive": false,
+            "consecutive_run": 0,
+            "drift": false,
+            "intermittent": false,
+            "intermittent_count": 0,
+            "intermittent_window": 5
+          },
+          "sudden": false
+        },
+        "peak": {
+          "classification": "no_change",
+          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%))",
+          "direction": null,
+          "rules": {
+            "consecutive": false,
+            "consecutive_run": 0,
+            "drift": false,
+            "intermittent": false,
+            "intermittent_count": 0,
+            "intermittent_window": 5
+          },
+          "sudden": false
+        },
+        "rms": {
+          "classification": "no_change",
+          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%))",
+          "direction": null,
+          "rules": {
+            "consecutive": false,
+            "consecutive_run": 0,
+            "drift": false,
+            "intermittent": false,
+            "intermittent_count": 0,
+            "intermittent_window": 5
+          },
+          "sudden": false
+        }
+      }
+    },
+    "lineage": {
+      "algorithm_version": 1,
+      "candidates": {
+        "health_snapshot/1+aaaaaaaaaaaaaaaa": 30
+      },
+      "covered": 30,
+      "current_processing_id": "health_snapshot/1+09700c336464a0ff",
+      "is_current": false,
+      "missing_for_current": 30,
+      "processing_id": "health_snapshot/1+aaaaaaaaaaaaaaaa",
+      "stale_context": 0
+    },
+    "measurement_point_id": "motor_de_h",
+    "message": "no change at motor_de_h of P-101 over 25 post-reference acquisition(s): latest acquisition inside the band (mean +/- max(3 sigma, 25%)) of every amplitude indicator and no bearing evidence persistence. Reference: declared healthy baseline (declared by L. Rossi on 2026-03-01T00:00:00+00:00). Lineage health_snapshot/1+aaaaaaaaaaaaaaaa.",
+    "observed": {
+      "acquisitions_assessed": 25,
+      "evidence_presence": {
+        "BPFI": {
+          "k": 5,
+          "latest_evidence_strength": "none",
+          "presence": [
+            false,
+            false,
+            false,
+            false,
+            false
+          ],
+          "present_in_last_k": 0
+        },
+        "BPFO": {
+          "k": 5,
+          "latest_evidence_strength": "none",
+          "presence": [
+            false,
+            false,
+            false,
+            false,
+            false
+          ],
+          "present_in_last_k": 0
+        },
+        "BSF": {
+          "k": 5,
+          "latest_evidence_strength": "none",
+          "presence": [
+            false,
+            false,
+            false,
+            false,
+            false
+          ],
+          "present_in_last_k": 0
+        },
+        "FTF": {
+          "k": 5,
+          "latest_evidence_strength": "none",
+          "presence": [
+            false,
+            false,
+            false,
+            false,
+            false
+          ],
+          "present_in_last_k": 0
+        }
+      },
+      "indicators_unavailable": {},
+      "latest": {
+        "crest_factor": 2.5,
+        "envelope_BPFI": 0.4,
+        "envelope_BPFO": 0.5,
+        "envelope_BSF": 0.4,
+        "envelope_FTF": 0.4,
+        "iso_velocity": 0.303,
+        "kurtosis": -0.2,
+        "one_x": 0.101,
+        "peak": 2.525,
+        "rms": 1.01
+      },
+      "latest_acquired_at": "2026-07-27T09:00:00+01:00",
+      "latest_measurement_id": "000000000000001e",
+      "measurement_ids_assessed": [
+        {
+          "acquired_at": "2026-06-29T09:00:00+01:00",
+          "grade": "comparable",
+          "location": "seq_m26.csv",
+          "measurement_id": "000000000000001a",
+          "signal_id": "sig_000000000000001a"
+        },
+        {
+          "acquired_at": "2026-07-06T09:00:00+01:00",
+          "grade": "comparable",
+          "location": "seq_m27.csv",
+          "measurement_id": "000000000000001b",
+          "signal_id": "sig_000000000000001b"
+        },
+        {
+          "acquired_at": "2026-07-13T09:00:00+01:00",
+          "grade": "comparable",
+          "location": "seq_m28.csv",
+          "measurement_id": "000000000000001c",
+          "signal_id": "sig_000000000000001c"
+        },
+        {
+          "acquired_at": "2026-07-20T09:00:00+01:00",
+          "grade": "comparable",
+          "location": "seq_m29.csv",
+          "measurement_id": "000000000000001d",
+          "signal_id": "sig_000000000000001d"
+        },
+        {
+          "acquired_at": "2026-07-27T09:00:00+01:00",
+          "grade": "comparable",
+          "location": "seq_m30.csv",
+          "measurement_id": "000000000000001e",
+          "signal_id": "sig_000000000000001e"
+        }
+      ],
+      "reference_statistics": {
+        "crest_factor": {
+          "band": {
+            "basis": "25% of the mean",
+            "degenerate": false,
+            "half_width": 0.625,
+            "high": 3.125,
+            "low": 1.875
+          },
+          "mean": 2.5,
+          "n": 5,
+          "std": 0.0,
+          "unit": null
+        },
+        "envelope_BPFI": {
+          "band": {
+            "basis": "25% of the mean",
+            "degenerate": false,
+            "half_width": 0.1,
+            "high": 0.5,
+            "low": 0.30000000000000004
+          },
+          "mean": 0.4,
+          "n": 5,
+          "std": 0.0,
+          "unit": "g"
+        },
+        "envelope_BPFO": {
+          "band": {
+            "basis": "25% of the mean",
+            "degenerate": false,
+            "half_width": 0.125,
+            "high": 0.625,
+            "low": 0.375
+          },
+          "mean": 0.5,
+          "n": 5,
+          "std": 0.0,
+          "unit": "g"
+        },
+        "envelope_BSF": {
+          "band": {
+            "basis": "25% of the mean",
+            "degenerate": false,
+            "half_width": 0.1,
+            "high": 0.5,
+            "low": 0.30000000000000004
+          },
+          "mean": 0.4,
+          "n": 5,
+          "std": 0.0,
+          "unit": "g"
+        },
+        "envelope_FTF": {
+          "band": {
+            "basis": "25% of the mean",
+            "degenerate": false,
+            "half_width": 0.1,
+            "high": 0.5,
+            "low": 0.30000000000000004
+          },
+          "mean": 0.4,
+          "n": 5,
+          "std": 0.0,
+          "unit": "g"
+        },
+        "iso_velocity": {
+          "band": {
+            "basis": "25% of the mean",
+            "degenerate": false,
+            "half_width": 0.075,
+            "high": 0.375,
+            "low": 0.22499999999999998
+          },
+          "mean": 0.3,
+          "n": 5,
+          "std": 0.004743416490252573,
+          "unit": "mm/s"
+        },
+        "kurtosis": {
+          "band": {
+            "basis": "25% of the mean",
+            "degenerate": false,
+            "half_width": 0.05,
+            "high": -0.15000000000000002,
+            "low": -0.25
+          },
+          "mean": -0.2,
+          "n": 5,
+          "std": 0.0,
+          "unit": null
+        },
+        "one_x": {
+          "band": {
+            "basis": "25% of the mean",
+            "degenerate": false,
+            "half_width": 0.025,
+            "high": 0.125,
+            "low": 0.07500000000000001
+          },
+          "mean": 0.1,
+          "n": 5,
+          "std": 0.0015811388300841912,
+          "unit": "g"
+        },
+        "peak": {
+          "band": {
+            "basis": "25% of the mean",
+            "degenerate": false,
+            "half_width": 0.625,
+            "high": 3.125,
+            "low": 1.875
+          },
+          "mean": 2.5,
+          "n": 5,
+          "std": 0.0395284707521046,
+          "unit": "g"
+        },
+        "rms": {
+          "band": {
+            "basis": "25% of the mean",
+            "degenerate": false,
+            "half_width": 0.25,
+            "high": 1.25,
+            "low": 0.75
+          },
+          "mean": 1.0,
+          "n": 5,
+          "std": 0.01581138830084191,
+          "unit": "g"
+        }
+      },
+      "slots_assessed": 30
+    },
+    "reference": {
+      "acquired_from": "2026-01-05T09:00:00+01:00",
+      "acquired_to": "2026-02-02T09:00:00+01:00",
+      "baseline": {
+        "baseline_id": "848615bcbaa7bc5c",
+        "declared_at": "2026-03-01T00:00:00+00:00",
+        "declared_by": "L. Rossi",
+        "excluded": [],
+        "members_declared": 5,
+        "members_used": 5,
+        "note": null
+      },
+      "count": 5,
+      "excluded_inside_span": [],
+      "health_declared": true,
+      "kind": "declared_baseline",
+      "measurement_ids": [
+        "0000000000000001",
+        "0000000000000002",
+        "0000000000000003",
+        "0000000000000004",
+        "0000000000000005"
+      ],
+      "message": "declared healthy baseline (declared by L. Rossi on 2026-03-01T00:00:00+00:00)",
+      "outside_window": false,
+      "provisional": false,
+      "qualification_codes": {},
+      "statistics_quality": "relative_only",
+      "withdrawn_baseline": null
+    },
+    "status": "assessed",
+    "suggested_verification": null
+  },
+  "ramp_with_rpm_gaps": {
+    "assessed": {
+      "classification": "persistent_change",
+      "criterion": "rms: 7 consecutive acquisitions outside the band (mean +/- max(3 sigma, 25%)); peak: 7 consecutive acquisitions outside the band (mean +/- max(3 sigma, 25%)); one_x: 7 consecutive acquisitions outside the band (mean +/- max(3 sigma, 25%)); iso_velocity: 7 consecutive acquisitions outside the band (mean +/- max(3 sigma, 25%))",
+      "direction": "increase",
+      "evidence": {
+        "BPFI": {
+          "classification": "no_change",
+          "consecutive": 0,
+          "criterion": "no bearing evidence in the last 5 acquisitions",
+          "k": 5,
+          "persistent": false,
+          "present_in_last_k": 0
+        },
+        "BPFO": {
+          "classification": "no_change",
+          "consecutive": 0,
+          "criterion": "no bearing evidence in the last 5 acquisitions",
+          "k": 5,
+          "persistent": false,
+          "present_in_last_k": 0
+        },
+        "BSF": {
+          "classification": "no_change",
+          "consecutive": 0,
+          "criterion": "no bearing evidence in the last 5 acquisitions",
+          "k": 5,
+          "persistent": false,
+          "present_in_last_k": 0
+        },
+        "FTF": {
+          "classification": "no_change",
+          "consecutive": 0,
+          "criterion": "no bearing evidence in the last 5 acquisitions",
+          "k": 5,
+          "persistent": false,
+          "present_in_last_k": 0
+        }
+      },
+      "indicators_driving": [
+        "rms",
+        "peak",
+        "one_x",
+        "iso_velocity"
+      ],
+      "onset_acquired_at": "2026-06-15T09:00:00+01:00",
+      "onset_coincides_with": [],
+      "onset_measurement_id": "0000000000000018",
+      "sudden": true
+    },
+    "asset_id": "P-101",
+    "comparability": {
+      "collapsed_duplicates": [],
+      "collapsed_truncated": false,
+      "comparable": 28,
+      "excluded": [],
+      "excluded_truncated": false,
+      "non_comparable": 0,
+      "qualifications": [
+        {
+          "code": "rpm_not_declared",
+          "count": 2,
+          "detail": "rpm not declared: trend assumes constant regime (declare rpm in the companion to grade speed deviations)"
+        }
+      ],
+      "qualified": 2
+    },
+    "derived": {
+      "deltas": {
+        "crest_factor": {
+          "delta_pct": 0.0,
+          "exceeds": null,
+          "latest": 2.5,
+          "mean": 2.5,
+          "side": null
+        },
+        "envelope_BPFI": {
+          "delta_pct": 0.0,
+          "exceeds": false,
+          "latest": 0.4,
+          "mean": 0.4,
+          "side": null
+        },
+        "envelope_BPFO": {
+          "delta_pct": 0.0,
+          "exceeds": false,
+          "latest": 0.5,
+          "mean": 0.5,
+          "side": null
+        },
+        "envelope_BSF": {
+          "delta_pct": 0.0,
+          "exceeds": false,
+          "latest": 0.4,
+          "mean": 0.4,
+          "side": null
+        },
+        "envelope_FTF": {
+          "delta_pct": 0.0,
+          "exceeds": false,
+          "latest": 0.4,
+          "mean": 0.4,
+          "side": null
+        },
+        "iso_velocity": {
+          "delta_pct": 59.840159840159856,
+          "exceeds": true,
+          "latest": 0.48,
+          "mean": 0.30029999999999996,
+          "side": "above"
+        },
+        "kurtosis": {
+          "delta_pct": 0.0,
+          "exceeds": null,
+          "latest": -0.2,
+          "mean": -0.2,
+          "side": null
+        },
+        "one_x": {
+          "delta_pct": 59.840159840159856,
+          "exceeds": true,
+          "latest": 0.16000000000000003,
+          "mean": 0.10010000000000001,
+          "side": "above"
+        },
+        "peak": {
+          "delta_pct": 59.84015984015984,
+          "exceeds": true,
+          "latest": 4.0,
+          "mean": 2.5025,
+          "side": "above"
+        },
+        "rms": {
+          "delta_pct": 59.84015984015987,
+          "exceeds": true,
+          "latest": 1.6,
+          "mean": 1.001,
+          "side": "above"
+        }
+      },
+      "drift": {
+        "envelope_BPFI": {
+          "n": 5,
+          "p_value": null,
+          "r_squared": 0.0,
+          "significant": false,
+          "slope": 0.0,
+          "trend_direction": "stable"
+        },
+        "envelope_BPFO": {
+          "n": 5,
+          "p_value": null,
+          "r_squared": 0.0,
+          "significant": false,
+          "slope": 0.0,
+          "trend_direction": "stable"
+        },
+        "envelope_BSF": {
+          "n": 5,
+          "p_value": null,
+          "r_squared": 0.0,
+          "significant": false,
+          "slope": 0.0,
+          "trend_direction": "stable"
+        },
+        "envelope_FTF": {
+          "n": 5,
+          "p_value": null,
+          "r_squared": 0.0,
+          "significant": false,
+          "slope": 0.0,
+          "trend_direction": "stable"
+        },
+        "iso_velocity": {
+          "n": 5,
+          "p_value": 1.2004217548761408e-30,
+          "r_squared": 1.0,
+          "significant": true,
+          "slope": 0.016666666666666663,
+          "trend_direction": "increasing"
+        },
+        "one_x": {
+          "n": 5,
+          "p_value": 1.4044551538035188e-24,
+          "r_squared": 0.9999999999999998,
+          "significant": true,
+          "slope": 0.005555555555555564,
+          "trend_direction": "increasing"
+        },
+        "peak": {
+          "n": 5,
+          "p_value": 1.2004217548761408e-30,
+          "r_squared": 1.0,
+          "significant": true,
+          "slope": 0.13888888888888884,
+          "trend_direction": "increasing"
+        },
+        "rms": {
+          "n": 5,
+          "p_value": 1.2004217548761408e-30,
+          "r_squared": 1.0,
+          "significant": true,
+          "slope": 0.05555555555555558,
+          "trend_direction": "increasing"
+        }
+      },
+      "exceedance_runs": {
+        "envelope_BPFI": [
+          false,
+          false,
+          false,
+          false,
+          false
+        ],
+        "envelope_BPFO": [
+          false,
+          false,
+          false,
+          false,
+          false
+        ],
+        "envelope_BSF": [
+          false,
+          false,
+          false,
+          false,
+          false
+        ],
+        "envelope_FTF": [
+          false,
+          false,
+          false,
+          false,
+          false
+        ],
+        "iso_velocity": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "one_x": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "peak": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "rms": [
+          true,
+          true,
+          true,
+          true,
+          true
+        ]
+      },
+      "iso_change": {
+        "boundary_bc_mm_s": 2.8,
+        "delta_mm_s": 0.17970000000000003,
+        "exceeded": false,
+        "fraction": 0.25,
+        "machine_group": 2,
+        "support_type": "rigid",
+        "threshold_mm_s": 0.7
+      },
+      "per_indicator": {
+        "envelope_BPFI": {
+          "classification": "no_change",
+          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%))",
+          "direction": null,
+          "rules": {
+            "consecutive": false,
+            "consecutive_run": 0,
+            "drift": false,
+            "intermittent": false,
+            "intermittent_count": 0,
+            "intermittent_window": 5
+          },
+          "sudden": false
+        },
+        "envelope_BPFO": {
+          "classification": "no_change",
+          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%))",
+          "direction": null,
+          "rules": {
+            "consecutive": false,
+            "consecutive_run": 0,
+            "drift": false,
+            "intermittent": false,
+            "intermittent_count": 0,
+            "intermittent_window": 5
+          },
+          "sudden": false
+        },
+        "envelope_BSF": {
+          "classification": "no_change",
+          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%))",
+          "direction": null,
+          "rules": {
+            "consecutive": false,
+            "consecutive_run": 0,
+            "drift": false,
+            "intermittent": false,
+            "intermittent_count": 0,
+            "intermittent_window": 5
+          },
+          "sudden": false
+        },
+        "envelope_FTF": {
+          "classification": "no_change",
+          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%))",
+          "direction": null,
+          "rules": {
+            "consecutive": false,
+            "consecutive_run": 0,
+            "drift": false,
+            "intermittent": false,
+            "intermittent_count": 0,
+            "intermittent_window": 5
+          },
+          "sudden": false
+        },
+        "iso_velocity": {
+          "classification": "persistent_change",
+          "criterion": "7 consecutive acquisitions outside the band (mean +/- max(3 sigma, 25%))",
+          "direction": "increase",
+          "rules": {
+            "consecutive": true,
+            "consecutive_run": 7,
+            "drift": true,
+            "intermittent": true,
+            "intermittent_count": 5,
+            "intermittent_window": 5
+          },
+          "sudden": true
+        },
+        "one_x": {
+          "classification": "persistent_change",
+          "criterion": "7 consecutive acquisitions outside the band (mean +/- max(3 sigma, 25%))",
+          "direction": "increase",
+          "rules": {
+            "consecutive": true,
+            "consecutive_run": 7,
+            "drift": true,
+            "intermittent": true,
+            "intermittent_count": 5,
+            "intermittent_window": 5
+          },
+          "sudden": true
+        },
+        "peak": {
+          "classification": "persistent_change",
+          "criterion": "7 consecutive acquisitions outside the band (mean +/- max(3 sigma, 25%))",
+          "direction": "increase",
+          "rules": {
+            "consecutive": true,
+            "consecutive_run": 7,
+            "drift": true,
+            "intermittent": true,
+            "intermittent_count": 5,
+            "intermittent_window": 5
+          },
+          "sudden": true
+        },
+        "rms": {
+          "classification": "persistent_change",
+          "criterion": "7 consecutive acquisitions outside the band (mean +/- max(3 sigma, 25%))",
+          "direction": "increase",
+          "rules": {
+            "consecutive": true,
+            "consecutive_run": 7,
+            "drift": true,
+            "intermittent": true,
+            "intermittent_count": 5,
+            "intermittent_window": 5
+          },
+          "sudden": true
+        }
+      }
+    },
+    "lineage": {
+      "algorithm_version": 1,
+      "candidates": {
+        "health_snapshot/1+aaaaaaaaaaaaaaaa": 30
+      },
+      "covered": 30,
+      "current_processing_id": "health_snapshot/1+09700c336464a0ff",
+      "is_current": false,
+      "missing_for_current": 30,
+      "processing_id": "health_snapshot/1+aaaaaaaaaaaaaaaa",
+      "stale_context": 0
+    },
+    "measurement_point_id": "motor_de_h",
+    "message": "persistent change (increase) at motor_de_h of P-101 over 20 post-reference acquisition(s): rms: 7 consecutive acquisitions outside the band (mean +/- max(3 sigma, 25%)); peak: 7 consecutive acquisitions outside the band (mean +/- max(3 sigma, 25%)); one_x: 7 consecutive acquisitions outside the band (mean +/- max(3 sigma, 25%)); iso_velocity: 7 consecutive acquisitions outside the band (mean +/- max(3 sigma, 25%)). Reference: health of the reference measurements not declared; relative comparison against the first 10 acquisition slot(s) of the point; qualified slots inside the reference: rpm_not_declared (2). Lineage health_snapshot/1+aaaaaaaaaaaaaaaa.",
+    "observed": {
+      "acquisitions_assessed": 20,
+      "evidence_presence": {
+        "BPFI": {
+          "k": 5,
+          "latest_evidence_strength": "none",
+          "presence": [
+            false,
+            false,
+            false,
+            false,
+            false
+          ],
+          "present_in_last_k": 0
+        },
+        "BPFO": {
+          "k": 5,
+          "latest_evidence_strength": "none",
+          "presence": [
+            false,
+            false,
+            false,
+            false,
+            false
+          ],
+          "present_in_last_k": 0
+        },
+        "BSF": {
+          "k": 5,
+          "latest_evidence_strength": "none",
+          "presence": [
+            false,
+            false,
+            false,
+            false,
+            false
+          ],
+          "present_in_last_k": 0
+        },
+        "FTF": {
+          "k": 5,
+          "latest_evidence_strength": "none",
+          "presence": [
+            false,
+            false,
+            false,
+            false,
+            false
+          ],
+          "present_in_last_k": 0
+        }
+      },
+      "indicators_unavailable": {},
+      "latest": {
+        "crest_factor": 2.5,
+        "envelope_BPFI": 0.4,
+        "envelope_BPFO": 0.5,
+        "envelope_BSF": 0.4,
+        "envelope_FTF": 0.4,
+        "iso_velocity": 0.48,
+        "kurtosis": -0.2,
+        "one_x": 0.16000000000000003,
+        "peak": 4.0,
+        "rms": 1.6
+      },
+      "latest_acquired_at": "2026-07-27T09:00:00+01:00",
+      "latest_measurement_id": "000000000000001e",
+      "measurement_ids_assessed": [
+        {
+          "acquired_at": "2026-06-29T09:00:00+01:00",
+          "grade": "comparable",
+          "location": "seq_m26.csv",
+          "measurement_id": "000000000000001a",
+          "signal_id": "sig_000000000000001a"
+        },
+        {
+          "acquired_at": "2026-07-06T09:00:00+01:00",
+          "grade": "comparable",
+          "location": "seq_m27.csv",
+          "measurement_id": "000000000000001b",
+          "signal_id": "sig_000000000000001b"
+        },
+        {
+          "acquired_at": "2026-07-13T09:00:00+01:00",
+          "grade": "comparable",
+          "location": "seq_m28.csv",
+          "measurement_id": "000000000000001c",
+          "signal_id": "sig_000000000000001c"
+        },
+        {
+          "acquired_at": "2026-07-20T09:00:00+01:00",
+          "grade": "comparable",
+          "location": "seq_m29.csv",
+          "measurement_id": "000000000000001d",
+          "signal_id": "sig_000000000000001d"
+        },
+        {
+          "acquired_at": "2026-07-27T09:00:00+01:00",
+          "grade": "comparable",
+          "location": "seq_m30.csv",
+          "measurement_id": "000000000000001e",
+          "signal_id": "sig_000000000000001e"
+        }
+      ],
+      "reference_statistics": {
+        "crest_factor": {
+          "band": {
+            "basis": "25% of the mean",
+            "degenerate": false,
+            "half_width": 0.625,
+            "high": 3.125,
+            "low": 1.875
+          },
+          "mean": 2.5,
+          "n": 10,
+          "std": 0.0,
+          "unit": null
+        },
+        "envelope_BPFI": {
+          "band": {
+            "basis": "25% of the mean",
+            "degenerate": false,
+            "half_width": 0.1,
+            "high": 0.5,
+            "low": 0.30000000000000004
+          },
+          "mean": 0.4,
+          "n": 10,
+          "std": 0.0,
+          "unit": "g"
+        },
+        "envelope_BPFO": {
+          "band": {
+            "basis": "25% of the mean",
+            "degenerate": false,
+            "half_width": 0.125,
+            "high": 0.625,
+            "low": 0.375
+          },
+          "mean": 0.5,
+          "n": 10,
+          "std": 0.0,
+          "unit": "g"
+        },
+        "envelope_BSF": {
+          "band": {
+            "basis": "25% of the mean",
+            "degenerate": false,
+            "half_width": 0.1,
+            "high": 0.5,
+            "low": 0.30000000000000004
+          },
+          "mean": 0.4,
+          "n": 10,
+          "std": 0.0,
+          "unit": "g"
+        },
+        "envelope_FTF": {
+          "band": {
+            "basis": "25% of the mean",
+            "degenerate": false,
+            "half_width": 0.1,
+            "high": 0.5,
+            "low": 0.30000000000000004
+          },
+          "mean": 0.4,
+          "n": 10,
+          "std": 0.0,
+          "unit": "g"
+        },
+        "iso_velocity": {
+          "band": {
+            "basis": "25% of the mean",
+            "degenerate": false,
+            "half_width": 0.07507499999999999,
+            "high": 0.37537499999999996,
+            "low": 0.22522499999999995
+          },
+          "mean": 0.30029999999999996,
+          "n": 10,
+          "std": 0.003591656999213597,
+          "unit": "mm/s"
+        },
+        "kurtosis": {
+          "band": {
+            "basis": "25% of the mean",
+            "degenerate": false,
+            "half_width": 0.05,
+            "high": -0.15000000000000002,
+            "low": -0.25
+          },
+          "mean": -0.2,
+          "n": 10,
+          "std": 0.0,
+          "unit": null
+        },
+        "one_x": {
+          "band": {
+            "basis": "25% of the mean",
+            "degenerate": false,
+            "half_width": 0.025025000000000002,
+            "high": 0.12512500000000001,
+            "low": 0.075075
+          },
+          "mean": 0.10010000000000001,
+          "n": 10,
+          "std": 0.0011972189997378657,
+          "unit": "g"
+        },
+        "peak": {
+          "band": {
+            "basis": "25% of the mean",
+            "degenerate": false,
+            "half_width": 0.625625,
+            "high": 3.128125,
+            "low": 1.876875
+          },
+          "mean": 2.5025,
+          "n": 10,
+          "std": 0.029930474993446515,
+          "unit": "g"
+        },
+        "rms": {
+          "band": {
+            "basis": "25% of the mean",
+            "degenerate": false,
+            "half_width": 0.25025,
+            "high": 1.2512499999999998,
+            "low": 0.7507499999999999
+          },
+          "mean": 1.001,
+          "n": 10,
+          "std": 0.011972189997378656,
+          "unit": "g"
+        }
+      },
+      "slots_assessed": 30
+    },
+    "reference": {
+      "acquired_from": "2026-01-05T09:00:00+01:00",
+      "acquired_to": "2026-03-09T09:00:00+01:00",
+      "baseline": null,
+      "count": 10,
+      "excluded_inside_span": [],
+      "health_declared": false,
+      "kind": "automatic_window",
+      "measurement_ids": [
+        "0000000000000001",
+        "0000000000000002",
+        "0000000000000003",
+        "0000000000000004",
+        "0000000000000005",
+        "0000000000000006",
+        "0000000000000007",
+        "0000000000000008",
+        "0000000000000009",
+        "000000000000000a"
+      ],
+      "message": "health of the reference measurements not declared; relative comparison against the first 10 acquisition slot(s) of the point; qualified slots inside the reference: rpm_not_declared (2)",
+      "outside_window": false,
+      "provisional": false,
+      "qualification_codes": {
+        "rpm_not_declared": 2
+      },
+      "statistics_quality": "full",
+      "withdrawn_baseline": null
+    },
+    "status": "assessed",
+    "suggested_verification": "Compare the spectrum of the latest measurement with a reference measurement (diagnose_vibration) to characterize the change."
+  },
+  "spike": {
+    "assessed": {
+      "classification": "unconfirmed_single_acquisition",
+      "criterion": "rms: latest acquisition outside the band (mean +/- max(3 sigma, 25%)) without persistence: 1 consecutive, 1 of last 1 on the same side, drift not computable; peak: latest acquisition outside the band (mean +/- max(3 sigma, 25%)) without persistence: 1 consecutive, 1 of last 1 on the same side, drift not computable; one_x: latest acquisition outside the band (mean +/- max(3 sigma, 25%)) without persistence: 1 consecutive, 1 of last 1 on the same side, drift not computable; iso_velocity: latest acquisition outside the band (mean +/- max(3 sigma, 25%)) without persistence: 1 consecutive, 1 of last 1 on the same side, drift not computable",
+      "direction": "increase",
+      "evidence": {
+        "BPFI": {
+          "classification": "no_change",
+          "consecutive": 0,
+          "criterion": "no bearing evidence in the last 1 acquisitions",
+          "k": 1,
+          "persistent": false,
+          "present_in_last_k": 0
+        },
+        "BPFO": {
+          "classification": "no_change",
+          "consecutive": 0,
+          "criterion": "no bearing evidence in the last 1 acquisitions",
+          "k": 1,
+          "persistent": false,
+          "present_in_last_k": 0
+        },
+        "BSF": {
+          "classification": "no_change",
+          "consecutive": 0,
+          "criterion": "no bearing evidence in the last 1 acquisitions",
+          "k": 1,
+          "persistent": false,
+          "present_in_last_k": 0
+        },
+        "FTF": {
+          "classification": "no_change",
+          "consecutive": 0,
+          "criterion": "no bearing evidence in the last 1 acquisitions",
+          "k": 1,
+          "persistent": false,
+          "present_in_last_k": 0
+        }
+      },
+      "indicators_driving": [
+        "rms",
+        "peak",
+        "one_x",
+        "iso_velocity"
+      ],
+      "onset_acquired_at": "2026-03-16T09:00:00+01:00",
+      "onset_coincides_with": [],
+      "onset_measurement_id": "000000000000000b",
+      "sudden": true
+    },
+    "asset_id": "P-101",
+    "comparability": {
+      "collapsed_duplicates": [],
+      "collapsed_truncated": false,
+      "comparable": 11,
+      "excluded": [],
+      "excluded_truncated": false,
+      "non_comparable": 0,
+      "qualifications": [],
+      "qualified": 0
+    },
+    "derived": {
+      "deltas": {
+        "crest_factor": {
+          "delta_pct": 0.0,
+          "exceeds": null,
+          "latest": 2.5,
+          "mean": 2.5,
+          "side": null
+        },
+        "envelope_BPFI": {
+          "delta_pct": 0.0,
+          "exceeds": false,
+          "latest": 0.4,
+          "mean": 0.4,
+          "side": null
+        },
+        "envelope_BPFO": {
+          "delta_pct": 0.0,
+          "exceeds": false,
+          "latest": 0.5,
+          "mean": 0.5,
+          "side": null
+        },
+        "envelope_BSF": {
+          "delta_pct": 0.0,
+          "exceeds": false,
+          "latest": 0.4,
+          "mean": 0.4,
+          "side": null
+        },
+        "envelope_FTF": {
+          "delta_pct": 0.0,
+          "exceeds": false,
+          "latest": 0.4,
+          "mean": 0.4,
+          "side": null
+        },
+        "iso_velocity": {
+          "delta_pct": 79.82017982017986,
+          "exceeds": true,
+          "latest": 0.54,
+          "mean": 0.30029999999999996,
+          "side": "above"
+        },
+        "kurtosis": {
+          "delta_pct": 0.0,
+          "exceeds": null,
+          "latest": -0.2,
+          "mean": -0.2,
+          "side": null
+        },
+        "one_x": {
+          "delta_pct": 79.82017982017983,
+          "exceeds": true,
+          "latest": 0.18000000000000002,
+          "mean": 0.10010000000000001,
+          "side": "above"
+        },
+        "peak": {
+          "delta_pct": 79.82017982017983,
+          "exceeds": true,
+          "latest": 4.5,
+          "mean": 2.5025,
+          "side": "above"
+        },
+        "rms": {
+          "delta_pct": 79.82017982017985,
+          "exceeds": true,
+          "latest": 1.8,
+          "mean": 1.001,
+          "side": "above"
+        }
+      },
+      "drift": {
+        "envelope_BPFI": {
+          "n": 1,
+          "p_value": null,
+          "r_squared": 0.0,
+          "significant": false,
+          "slope": 0.0,
+          "trend_direction": "stable"
+        },
+        "envelope_BPFO": {
+          "n": 1,
+          "p_value": null,
+          "r_squared": 0.0,
+          "significant": false,
+          "slope": 0.0,
+          "trend_direction": "stable"
+        },
+        "envelope_BSF": {
+          "n": 1,
+          "p_value": null,
+          "r_squared": 0.0,
+          "significant": false,
+          "slope": 0.0,
+          "trend_direction": "stable"
+        },
+        "envelope_FTF": {
+          "n": 1,
+          "p_value": null,
+          "r_squared": 0.0,
+          "significant": false,
+          "slope": 0.0,
+          "trend_direction": "stable"
+        },
+        "iso_velocity": {
+          "n": 1,
+          "p_value": null,
+          "r_squared": 0.0,
+          "significant": false,
+          "slope": 0.0,
+          "trend_direction": "stable"
+        },
+        "one_x": {
+          "n": 1,
+          "p_value": null,
+          "r_squared": 0.0,
+          "significant": false,
+          "slope": 0.0,
+          "trend_direction": "stable"
+        },
+        "peak": {
+          "n": 1,
+          "p_value": null,
+          "r_squared": 0.0,
+          "significant": false,
+          "slope": 0.0,
+          "trend_direction": "stable"
+        },
+        "rms": {
+          "n": 1,
+          "p_value": null,
+          "r_squared": 0.0,
+          "significant": false,
+          "slope": 0.0,
+          "trend_direction": "stable"
+        }
+      },
+      "exceedance_runs": {
+        "envelope_BPFI": [
+          false
+        ],
+        "envelope_BPFO": [
+          false
+        ],
+        "envelope_BSF": [
+          false
+        ],
+        "envelope_FTF": [
+          false
+        ],
+        "iso_velocity": [
+          true
+        ],
+        "one_x": [
+          true
+        ],
+        "peak": [
+          true
+        ],
+        "rms": [
+          true
+        ]
+      },
+      "iso_change": {
+        "boundary_bc_mm_s": 2.8,
+        "delta_mm_s": 0.23970000000000008,
+        "exceeded": false,
+        "fraction": 0.25,
+        "machine_group": 2,
+        "support_type": "rigid",
+        "threshold_mm_s": 0.7
+      },
+      "per_indicator": {
+        "envelope_BPFI": {
+          "classification": "no_change",
+          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%))",
+          "direction": null,
+          "rules": {
+            "consecutive": false,
+            "consecutive_run": 0,
+            "drift": false,
+            "intermittent": false,
+            "intermittent_count": 0,
+            "intermittent_window": 1
+          },
+          "sudden": false
+        },
+        "envelope_BPFO": {
+          "classification": "no_change",
+          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%))",
+          "direction": null,
+          "rules": {
+            "consecutive": false,
+            "consecutive_run": 0,
+            "drift": false,
+            "intermittent": false,
+            "intermittent_count": 0,
+            "intermittent_window": 1
+          },
+          "sudden": false
+        },
+        "envelope_BSF": {
+          "classification": "no_change",
+          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%))",
+          "direction": null,
+          "rules": {
+            "consecutive": false,
+            "consecutive_run": 0,
+            "drift": false,
+            "intermittent": false,
+            "intermittent_count": 0,
+            "intermittent_window": 1
+          },
+          "sudden": false
+        },
+        "envelope_FTF": {
+          "classification": "no_change",
+          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%))",
+          "direction": null,
+          "rules": {
+            "consecutive": false,
+            "consecutive_run": 0,
+            "drift": false,
+            "intermittent": false,
+            "intermittent_count": 0,
+            "intermittent_window": 1
+          },
+          "sudden": false
+        },
+        "iso_velocity": {
+          "classification": "unconfirmed_single_acquisition",
+          "criterion": "latest acquisition outside the band (mean +/- max(3 sigma, 25%)) without persistence: 1 consecutive, 1 of last 1 on the same side, drift not computable",
+          "direction": "increase",
+          "rules": {
+            "consecutive": false,
+            "consecutive_run": 1,
+            "drift": false,
+            "intermittent": false,
+            "intermittent_count": 1,
+            "intermittent_window": 1
+          },
+          "sudden": true
+        },
+        "one_x": {
+          "classification": "unconfirmed_single_acquisition",
+          "criterion": "latest acquisition outside the band (mean +/- max(3 sigma, 25%)) without persistence: 1 consecutive, 1 of last 1 on the same side, drift not computable",
+          "direction": "increase",
+          "rules": {
+            "consecutive": false,
+            "consecutive_run": 1,
+            "drift": false,
+            "intermittent": false,
+            "intermittent_count": 1,
+            "intermittent_window": 1
+          },
+          "sudden": true
+        },
+        "peak": {
+          "classification": "unconfirmed_single_acquisition",
+          "criterion": "latest acquisition outside the band (mean +/- max(3 sigma, 25%)) without persistence: 1 consecutive, 1 of last 1 on the same side, drift not computable",
+          "direction": "increase",
+          "rules": {
+            "consecutive": false,
+            "consecutive_run": 1,
+            "drift": false,
+            "intermittent": false,
+            "intermittent_count": 1,
+            "intermittent_window": 1
+          },
+          "sudden": true
+        },
+        "rms": {
+          "classification": "unconfirmed_single_acquisition",
+          "criterion": "latest acquisition outside the band (mean +/- max(3 sigma, 25%)) without persistence: 1 consecutive, 1 of last 1 on the same side, drift not computable",
+          "direction": "increase",
+          "rules": {
+            "consecutive": false,
+            "consecutive_run": 1,
+            "drift": false,
+            "intermittent": false,
+            "intermittent_count": 1,
+            "intermittent_window": 1
+          },
+          "sudden": true
+        }
+      }
+    },
+    "lineage": {
+      "algorithm_version": 1,
+      "candidates": {
+        "health_snapshot/1+aaaaaaaaaaaaaaaa": 11
+      },
+      "covered": 11,
+      "current_processing_id": "health_snapshot/1+09700c336464a0ff",
+      "is_current": false,
+      "missing_for_current": 11,
+      "processing_id": "health_snapshot/1+aaaaaaaaaaaaaaaa",
+      "stale_context": 0
+    },
+    "measurement_point_id": "motor_de_h",
+    "message": "unconfirmed single acquisition (increase) at motor_de_h of P-101 over 1 post-reference acquisition(s): rms: latest acquisition outside the band (mean +/- max(3 sigma, 25%)) without persistence: 1 consecutive, 1 of last 1 on the same side, drift not computable; peak: latest acquisition outside the band (mean +/- max(3 sigma, 25%)) without persistence: 1 consecutive, 1 of last 1 on the same side, drift not computable; one_x: latest acquisition outside the band (mean +/- max(3 sigma, 25%)) without persistence: 1 consecutive, 1 of last 1 on the same side, drift not computable; iso_velocity: latest acquisition outside the band (mean +/- max(3 sigma, 25%)) without persistence: 1 consecutive, 1 of last 1 on the same side, drift not computable. Reference: health of the reference measurements not declared; relative comparison against the first 10 acquisition slot(s) of the point. Lineage health_snapshot/1+aaaaaaaaaaaaaaaa.",
+    "observed": {
+      "acquisitions_assessed": 1,
+      "evidence_presence": {
+        "BPFI": {
+          "k": 1,
+          "latest_evidence_strength": "none",
+          "presence": [
+            false
+          ],
+          "present_in_last_k": 0
+        },
+        "BPFO": {
+          "k": 1,
+          "latest_evidence_strength": "none",
+          "presence": [
+            false
+          ],
+          "present_in_last_k": 0
+        },
+        "BSF": {
+          "k": 1,
+          "latest_evidence_strength": "none",
+          "presence": [
+            false
+          ],
+          "present_in_last_k": 0
+        },
+        "FTF": {
+          "k": 1,
+          "latest_evidence_strength": "none",
+          "presence": [
+            false
+          ],
+          "present_in_last_k": 0
+        }
+      },
+      "indicators_unavailable": {},
+      "latest": {
+        "crest_factor": 2.5,
+        "envelope_BPFI": 0.4,
+        "envelope_BPFO": 0.5,
+        "envelope_BSF": 0.4,
+        "envelope_FTF": 0.4,
+        "iso_velocity": 0.54,
+        "kurtosis": -0.2,
+        "one_x": 0.18000000000000002,
+        "peak": 4.5,
+        "rms": 1.8
+      },
+      "latest_acquired_at": "2026-03-16T09:00:00+01:00",
+      "latest_measurement_id": "000000000000000b",
+      "measurement_ids_assessed": [
+        {
+          "acquired_at": "2026-03-16T09:00:00+01:00",
+          "grade": "comparable",
+          "location": "seq_m11.csv",
+          "measurement_id": "000000000000000b",
+          "signal_id": "sig_000000000000000b"
+        }
+      ],
+      "reference_statistics": {
+        "crest_factor": {
+          "band": {
+            "basis": "25% of the mean",
+            "degenerate": false,
+            "half_width": 0.625,
+            "high": 3.125,
+            "low": 1.875
+          },
+          "mean": 2.5,
+          "n": 10,
+          "std": 0.0,
+          "unit": null
+        },
+        "envelope_BPFI": {
+          "band": {
+            "basis": "25% of the mean",
+            "degenerate": false,
+            "half_width": 0.1,
+            "high": 0.5,
+            "low": 0.30000000000000004
+          },
+          "mean": 0.4,
+          "n": 10,
+          "std": 0.0,
+          "unit": "g"
+        },
+        "envelope_BPFO": {
+          "band": {
+            "basis": "25% of the mean",
+            "degenerate": false,
+            "half_width": 0.125,
+            "high": 0.625,
+            "low": 0.375
+          },
+          "mean": 0.5,
+          "n": 10,
+          "std": 0.0,
+          "unit": "g"
+        },
+        "envelope_BSF": {
+          "band": {
+            "basis": "25% of the mean",
+            "degenerate": false,
+            "half_width": 0.1,
+            "high": 0.5,
+            "low": 0.30000000000000004
+          },
+          "mean": 0.4,
+          "n": 10,
+          "std": 0.0,
+          "unit": "g"
+        },
+        "envelope_FTF": {
+          "band": {
+            "basis": "25% of the mean",
+            "degenerate": false,
+            "half_width": 0.1,
+            "high": 0.5,
+            "low": 0.30000000000000004
+          },
+          "mean": 0.4,
+          "n": 10,
+          "std": 0.0,
+          "unit": "g"
+        },
+        "iso_velocity": {
+          "band": {
+            "basis": "25% of the mean",
+            "degenerate": false,
+            "half_width": 0.07507499999999999,
+            "high": 0.37537499999999996,
+            "low": 0.22522499999999995
+          },
+          "mean": 0.30029999999999996,
+          "n": 10,
+          "std": 0.003591656999213597,
+          "unit": "mm/s"
+        },
+        "kurtosis": {
+          "band": {
+            "basis": "25% of the mean",
+            "degenerate": false,
+            "half_width": 0.05,
+            "high": -0.15000000000000002,
+            "low": -0.25
+          },
+          "mean": -0.2,
+          "n": 10,
+          "std": 0.0,
+          "unit": null
+        },
+        "one_x": {
+          "band": {
+            "basis": "25% of the mean",
+            "degenerate": false,
+            "half_width": 0.025025000000000002,
+            "high": 0.12512500000000001,
+            "low": 0.075075
+          },
+          "mean": 0.10010000000000001,
+          "n": 10,
+          "std": 0.0011972189997378657,
+          "unit": "g"
+        },
+        "peak": {
+          "band": {
+            "basis": "25% of the mean",
+            "degenerate": false,
+            "half_width": 0.625625,
+            "high": 3.128125,
+            "low": 1.876875
+          },
+          "mean": 2.5025,
+          "n": 10,
+          "std": 0.029930474993446515,
+          "unit": "g"
+        },
+        "rms": {
+          "band": {
+            "basis": "25% of the mean",
+            "degenerate": false,
+            "half_width": 0.25025,
+            "high": 1.2512499999999998,
+            "low": 0.7507499999999999
+          },
+          "mean": 1.001,
+          "n": 10,
+          "std": 0.011972189997378656,
+          "unit": "g"
+        }
+      },
+      "slots_assessed": 11
+    },
+    "reference": {
+      "acquired_from": "2026-01-05T09:00:00+01:00",
+      "acquired_to": "2026-03-09T09:00:00+01:00",
+      "baseline": null,
+      "count": 10,
+      "excluded_inside_span": [],
+      "health_declared": false,
+      "kind": "automatic_window",
+      "measurement_ids": [
+        "0000000000000001",
+        "0000000000000002",
+        "0000000000000003",
+        "0000000000000004",
+        "0000000000000005",
+        "0000000000000006",
+        "0000000000000007",
+        "0000000000000008",
+        "0000000000000009",
+        "000000000000000a"
+      ],
+      "message": "health of the reference measurements not declared; relative comparison against the first 10 acquisition slot(s) of the point",
+      "outside_window": false,
+      "provisional": false,
+      "qualification_codes": {},
+      "statistics_quality": "full",
+      "withdrawn_baseline": null
+    },
+    "status": "assessed",
+    "suggested_verification": "Repeat the measurement in the same operating conditions."
+  },
+  "stable": {
+    "assessed": {
+      "classification": "no_change",
+      "criterion": "latest acquisition inside the band (mean +/- max(3 sigma, 25%)) of every amplitude indicator and no bearing evidence persistence",
+      "direction": null,
+      "evidence": {
+        "BPFI": {
+          "classification": "no_change",
+          "consecutive": 0,
+          "criterion": "no bearing evidence in the last 1 acquisitions",
+          "k": 1,
+          "persistent": false,
+          "present_in_last_k": 0
+        },
+        "BPFO": {
+          "classification": "no_change",
+          "consecutive": 0,
+          "criterion": "no bearing evidence in the last 1 acquisitions",
+          "k": 1,
+          "persistent": false,
+          "present_in_last_k": 0
+        },
+        "BSF": {
+          "classification": "no_change",
+          "consecutive": 0,
+          "criterion": "no bearing evidence in the last 1 acquisitions",
+          "k": 1,
+          "persistent": false,
+          "present_in_last_k": 0
+        },
+        "FTF": {
+          "classification": "no_change",
+          "consecutive": 0,
+          "criterion": "no bearing evidence in the last 1 acquisitions",
+          "k": 1,
+          "persistent": false,
+          "present_in_last_k": 0
+        }
+      },
+      "indicators_driving": [],
+      "onset_acquired_at": null,
+      "onset_coincides_with": [],
+      "onset_measurement_id": null,
+      "sudden": false
+    },
+    "asset_id": "P-101",
+    "comparability": {
+      "collapsed_duplicates": [],
+      "collapsed_truncated": false,
+      "comparable": 11,
+      "excluded": [],
+      "excluded_truncated": false,
+      "non_comparable": 0,
+      "qualifications": [],
+      "qualified": 0
+    },
+    "derived": {
+      "deltas": {
+        "crest_factor": {
+          "delta_pct": 0.0,
+          "exceeds": null,
+          "latest": 2.5,
+          "mean": 2.5,
+          "side": null
+        },
+        "envelope_BPFI": {
+          "delta_pct": 0.0,
+          "exceeds": false,
+          "latest": 0.4,
+          "mean": 0.4,
+          "side": null
+        },
+        "envelope_BPFO": {
+          "delta_pct": 0.0,
+          "exceeds": false,
+          "latest": 0.5,
+          "mean": 0.5,
+          "side": null
+        },
+        "envelope_BSF": {
+          "delta_pct": 0.0,
+          "exceeds": false,
+          "latest": 0.4,
+          "mean": 0.4,
+          "side": null
+        },
+        "envelope_FTF": {
+          "delta_pct": 0.0,
+          "exceeds": false,
+          "latest": 0.4,
+          "mean": 0.4,
+          "side": null
+        },
+        "iso_velocity": {
+          "delta_pct": -0.09990009990008891,
+          "exceeds": false,
+          "latest": 0.3,
+          "mean": 0.30029999999999996,
+          "side": null
+        },
+        "kurtosis": {
+          "delta_pct": 0.0,
+          "exceeds": null,
+          "latest": -0.2,
+          "mean": -0.2,
+          "side": null
+        },
+        "one_x": {
+          "delta_pct": -0.09990009990010276,
+          "exceeds": false,
+          "latest": 0.1,
+          "mean": 0.10010000000000001,
+          "side": null
+        },
+        "peak": {
+          "delta_pct": -0.09990009990009778,
+          "exceeds": false,
+          "latest": 2.5,
+          "mean": 2.5025,
+          "side": null
+        },
+        "rms": {
+          "delta_pct": -0.09990009990008891,
+          "exceeds": false,
+          "latest": 1.0,
+          "mean": 1.001,
+          "side": null
+        }
+      },
+      "drift": {
+        "envelope_BPFI": {
+          "n": 1,
+          "p_value": null,
+          "r_squared": 0.0,
+          "significant": false,
+          "slope": 0.0,
+          "trend_direction": "stable"
+        },
+        "envelope_BPFO": {
+          "n": 1,
+          "p_value": null,
+          "r_squared": 0.0,
+          "significant": false,
+          "slope": 0.0,
+          "trend_direction": "stable"
+        },
+        "envelope_BSF": {
+          "n": 1,
+          "p_value": null,
+          "r_squared": 0.0,
+          "significant": false,
+          "slope": 0.0,
+          "trend_direction": "stable"
+        },
+        "envelope_FTF": {
+          "n": 1,
+          "p_value": null,
+          "r_squared": 0.0,
+          "significant": false,
+          "slope": 0.0,
+          "trend_direction": "stable"
+        },
+        "iso_velocity": {
+          "n": 1,
+          "p_value": null,
+          "r_squared": 0.0,
+          "significant": false,
+          "slope": 0.0,
+          "trend_direction": "stable"
+        },
+        "one_x": {
+          "n": 1,
+          "p_value": null,
+          "r_squared": 0.0,
+          "significant": false,
+          "slope": 0.0,
+          "trend_direction": "stable"
+        },
+        "peak": {
+          "n": 1,
+          "p_value": null,
+          "r_squared": 0.0,
+          "significant": false,
+          "slope": 0.0,
+          "trend_direction": "stable"
+        },
+        "rms": {
+          "n": 1,
+          "p_value": null,
+          "r_squared": 0.0,
+          "significant": false,
+          "slope": 0.0,
+          "trend_direction": "stable"
+        }
+      },
+      "exceedance_runs": {
+        "envelope_BPFI": [
+          false
+        ],
+        "envelope_BPFO": [
+          false
+        ],
+        "envelope_BSF": [
+          false
+        ],
+        "envelope_FTF": [
+          false
+        ],
+        "iso_velocity": [
+          false
+        ],
+        "one_x": [
+          false
+        ],
+        "peak": [
+          false
+        ],
+        "rms": [
+          false
+        ]
+      },
+      "iso_change": {
+        "boundary_bc_mm_s": 2.8,
+        "delta_mm_s": -0.00029999999999996696,
+        "exceeded": false,
+        "fraction": 0.25,
+        "machine_group": 2,
+        "support_type": "rigid",
+        "threshold_mm_s": 0.7
+      },
+      "per_indicator": {
+        "envelope_BPFI": {
+          "classification": "no_change",
+          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%))",
+          "direction": null,
+          "rules": {
+            "consecutive": false,
+            "consecutive_run": 0,
+            "drift": false,
+            "intermittent": false,
+            "intermittent_count": 0,
+            "intermittent_window": 1
+          },
+          "sudden": false
+        },
+        "envelope_BPFO": {
+          "classification": "no_change",
+          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%))",
+          "direction": null,
+          "rules": {
+            "consecutive": false,
+            "consecutive_run": 0,
+            "drift": false,
+            "intermittent": false,
+            "intermittent_count": 0,
+            "intermittent_window": 1
+          },
+          "sudden": false
+        },
+        "envelope_BSF": {
+          "classification": "no_change",
+          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%))",
+          "direction": null,
+          "rules": {
+            "consecutive": false,
+            "consecutive_run": 0,
+            "drift": false,
+            "intermittent": false,
+            "intermittent_count": 0,
+            "intermittent_window": 1
+          },
+          "sudden": false
+        },
+        "envelope_FTF": {
+          "classification": "no_change",
+          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%))",
+          "direction": null,
+          "rules": {
+            "consecutive": false,
+            "consecutive_run": 0,
+            "drift": false,
+            "intermittent": false,
+            "intermittent_count": 0,
+            "intermittent_window": 1
+          },
+          "sudden": false
+        },
+        "iso_velocity": {
+          "classification": "no_change",
+          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%))",
+          "direction": null,
+          "rules": {
+            "consecutive": false,
+            "consecutive_run": 0,
+            "drift": false,
+            "intermittent": false,
+            "intermittent_count": 0,
+            "intermittent_window": 1
+          },
+          "sudden": false
+        },
+        "one_x": {
+          "classification": "no_change",
+          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%))",
+          "direction": null,
+          "rules": {
+            "consecutive": false,
+            "consecutive_run": 0,
+            "drift": false,
+            "intermittent": false,
+            "intermittent_count": 0,
+            "intermittent_window": 1
+          },
+          "sudden": false
+        },
+        "peak": {
+          "classification": "no_change",
+          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%))",
+          "direction": null,
+          "rules": {
+            "consecutive": false,
+            "consecutive_run": 0,
+            "drift": false,
+            "intermittent": false,
+            "intermittent_count": 0,
+            "intermittent_window": 1
+          },
+          "sudden": false
+        },
+        "rms": {
+          "classification": "no_change",
+          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%))",
+          "direction": null,
+          "rules": {
+            "consecutive": false,
+            "consecutive_run": 0,
+            "drift": false,
+            "intermittent": false,
+            "intermittent_count": 0,
+            "intermittent_window": 1
+          },
+          "sudden": false
+        }
+      }
+    },
+    "lineage": {
+      "algorithm_version": 1,
+      "candidates": {
+        "health_snapshot/1+aaaaaaaaaaaaaaaa": 11
+      },
+      "covered": 11,
+      "current_processing_id": "health_snapshot/1+09700c336464a0ff",
+      "is_current": false,
+      "missing_for_current": 11,
+      "processing_id": "health_snapshot/1+aaaaaaaaaaaaaaaa",
+      "stale_context": 0
+    },
+    "measurement_point_id": "motor_de_h",
+    "message": "no change at motor_de_h of P-101 over 1 post-reference acquisition(s): latest acquisition inside the band (mean +/- max(3 sigma, 25%)) of every amplitude indicator and no bearing evidence persistence. Reference: health of the reference measurements not declared; relative comparison against the first 10 acquisition slot(s) of the point. Lineage health_snapshot/1+aaaaaaaaaaaaaaaa.",
+    "observed": {
+      "acquisitions_assessed": 1,
+      "evidence_presence": {
+        "BPFI": {
+          "k": 1,
+          "latest_evidence_strength": "none",
+          "presence": [
+            false
+          ],
+          "present_in_last_k": 0
+        },
+        "BPFO": {
+          "k": 1,
+          "latest_evidence_strength": "none",
+          "presence": [
+            false
+          ],
+          "present_in_last_k": 0
+        },
+        "BSF": {
+          "k": 1,
+          "latest_evidence_strength": "none",
+          "presence": [
+            false
+          ],
+          "present_in_last_k": 0
+        },
+        "FTF": {
+          "k": 1,
+          "latest_evidence_strength": "none",
+          "presence": [
+            false
+          ],
+          "present_in_last_k": 0
+        }
+      },
+      "indicators_unavailable": {},
+      "latest": {
+        "crest_factor": 2.5,
+        "envelope_BPFI": 0.4,
+        "envelope_BPFO": 0.5,
+        "envelope_BSF": 0.4,
+        "envelope_FTF": 0.4,
+        "iso_velocity": 0.3,
+        "kurtosis": -0.2,
+        "one_x": 0.1,
+        "peak": 2.5,
+        "rms": 1.0
+      },
+      "latest_acquired_at": "2026-03-16T09:00:00+01:00",
+      "latest_measurement_id": "000000000000000b",
+      "measurement_ids_assessed": [
+        {
+          "acquired_at": "2026-03-16T09:00:00+01:00",
+          "grade": "comparable",
+          "location": "seq_m11.csv",
+          "measurement_id": "000000000000000b",
+          "signal_id": "sig_000000000000000b"
+        }
+      ],
+      "reference_statistics": {
+        "crest_factor": {
+          "band": {
+            "basis": "25% of the mean",
+            "degenerate": false,
+            "half_width": 0.625,
+            "high": 3.125,
+            "low": 1.875
+          },
+          "mean": 2.5,
+          "n": 10,
+          "std": 0.0,
+          "unit": null
+        },
+        "envelope_BPFI": {
+          "band": {
+            "basis": "25% of the mean",
+            "degenerate": false,
+            "half_width": 0.1,
+            "high": 0.5,
+            "low": 0.30000000000000004
+          },
+          "mean": 0.4,
+          "n": 10,
+          "std": 0.0,
+          "unit": "g"
+        },
+        "envelope_BPFO": {
+          "band": {
+            "basis": "25% of the mean",
+            "degenerate": false,
+            "half_width": 0.125,
+            "high": 0.625,
+            "low": 0.375
+          },
+          "mean": 0.5,
+          "n": 10,
+          "std": 0.0,
+          "unit": "g"
+        },
+        "envelope_BSF": {
+          "band": {
+            "basis": "25% of the mean",
+            "degenerate": false,
+            "half_width": 0.1,
+            "high": 0.5,
+            "low": 0.30000000000000004
+          },
+          "mean": 0.4,
+          "n": 10,
+          "std": 0.0,
+          "unit": "g"
+        },
+        "envelope_FTF": {
+          "band": {
+            "basis": "25% of the mean",
+            "degenerate": false,
+            "half_width": 0.1,
+            "high": 0.5,
+            "low": 0.30000000000000004
+          },
+          "mean": 0.4,
+          "n": 10,
+          "std": 0.0,
+          "unit": "g"
+        },
+        "iso_velocity": {
+          "band": {
+            "basis": "25% of the mean",
+            "degenerate": false,
+            "half_width": 0.07507499999999999,
+            "high": 0.37537499999999996,
+            "low": 0.22522499999999995
+          },
+          "mean": 0.30029999999999996,
+          "n": 10,
+          "std": 0.003591656999213597,
+          "unit": "mm/s"
+        },
+        "kurtosis": {
+          "band": {
+            "basis": "25% of the mean",
+            "degenerate": false,
+            "half_width": 0.05,
+            "high": -0.15000000000000002,
+            "low": -0.25
+          },
+          "mean": -0.2,
+          "n": 10,
+          "std": 0.0,
+          "unit": null
+        },
+        "one_x": {
+          "band": {
+            "basis": "25% of the mean",
+            "degenerate": false,
+            "half_width": 0.025025000000000002,
+            "high": 0.12512500000000001,
+            "low": 0.075075
+          },
+          "mean": 0.10010000000000001,
+          "n": 10,
+          "std": 0.0011972189997378657,
+          "unit": "g"
+        },
+        "peak": {
+          "band": {
+            "basis": "25% of the mean",
+            "degenerate": false,
+            "half_width": 0.625625,
+            "high": 3.128125,
+            "low": 1.876875
+          },
+          "mean": 2.5025,
+          "n": 10,
+          "std": 0.029930474993446515,
+          "unit": "g"
+        },
+        "rms": {
+          "band": {
+            "basis": "25% of the mean",
+            "degenerate": false,
+            "half_width": 0.25025,
+            "high": 1.2512499999999998,
+            "low": 0.7507499999999999
+          },
+          "mean": 1.001,
+          "n": 10,
+          "std": 0.011972189997378656,
+          "unit": "g"
+        }
+      },
+      "slots_assessed": 11
+    },
+    "reference": {
+      "acquired_from": "2026-01-05T09:00:00+01:00",
+      "acquired_to": "2026-03-09T09:00:00+01:00",
+      "baseline": null,
+      "count": 10,
+      "excluded_inside_span": [],
+      "health_declared": false,
+      "kind": "automatic_window",
+      "measurement_ids": [
+        "0000000000000001",
+        "0000000000000002",
+        "0000000000000003",
+        "0000000000000004",
+        "0000000000000005",
+        "0000000000000006",
+        "0000000000000007",
+        "0000000000000008",
+        "0000000000000009",
+        "000000000000000a"
+      ],
+      "message": "health of the reference measurements not declared; relative comparison against the first 10 acquisition slot(s) of the point",
+      "outside_window": false,
+      "provisional": false,
+      "qualification_codes": {},
+      "statistics_quality": "full",
+      "withdrawn_baseline": null
+    },
+    "status": "assessed",
+    "suggested_verification": null
+  }
+}

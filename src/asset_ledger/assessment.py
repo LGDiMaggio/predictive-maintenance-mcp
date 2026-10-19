@@ -40,7 +40,18 @@ Vocabulary of the assessment
       evaluated set (reference plus the post-reference slots inside the
       requested window). The most recent lineage that covers EVERY slot is
       used; none covering all is ``processing_not_homogeneous`` with the
-      counts and the re-processing remedy, never a trend with holes.
+      counts and the re-processing remedy, never a trend with holes. The
+      lineage says how the numbers were computed; under which declaration
+      they were computed is the interpretation, chosen separately.
+    * **Interpretation**: inside the chosen lineage, the snapshot the
+      current declarations of the measurement and of its point produce
+      (``current_snapshot_id_of``), wherever the ledger recorded it.
+      Restoring an earlier declaration appends nothing, because that
+      snapshot already exists, so the lineage's latest snapshot is not
+      necessarily this one. Without it, the latest one stands in and the
+      slot counts in ``stale_context``: the message then opens with that
+      count and names re-processing only when it can write something for
+      the evaluated slots (it writes the current lineage only).
     * **Band**: per amplitude indicator, mean +/- max(3 sigma, 25% of the
       mean) of the reference in the unit expected by the point (the floor
       implements note 3 of ISO 20816-3, 6.3 and protects a sigma near
@@ -530,7 +541,9 @@ def _baseline_members(
 
     A member must still be a measurement of the point with the declaration
     version the baseline recorded (else ``baseline_member_superseded``) and
-    usable (else ``baseline_member_non_comparable``).
+    usable (else ``baseline_member_non_comparable``). The check compares
+    declaration versions, not their content: a member re-loaded with another
+    declaration and then with the validated one again is superseded.
     """
     by_id = {slot["measurement_id"]: slot for slot in slots}
     recorded_versions: dict[str, Any] = {}
@@ -798,6 +811,51 @@ def _select_lineage(evaluated: Sequence[dict[str, Any]]) -> dict[str, Any]:
         "counts": {pid: counts[pid] for pid in sorted(counts)},
         "recency": recency,
     }
+
+
+def _expected_snapshot_id(
+    slot: dict[str, Any], point: Optional[dict[str, Any]], processing: str
+) -> Optional[str]:
+    """The id the current declarations of *slot* produce on *processing*,
+    or None when the declaration cannot be resolved."""
+    try:
+        return current_snapshot_id_of(
+            slot["declaration"],
+            point,
+            processing=processing,
+            measurement_id=slot["measurement_id"],
+        )
+    except ValueError:
+        return None
+
+
+def _interpretation_snapshot(
+    slot: dict[str, Any], point: Optional[dict[str, Any]], processing: str
+) -> tuple[dict[str, Any], bool]:
+    """The snapshot that scores *slot* on lineage *processing*.
+
+    The one the current declarations of the measurement and its point
+    produce on that lineage, wherever the ledger recorded it (the last one
+    when several share its id). Restoring an earlier declaration appends
+    nothing, because that snapshot id already exists, so the lineage's
+    latest snapshot may be the one of the declaration in between. Without
+    such a snapshot, the lineage's latest one stands in.
+
+    Returns:
+        ``(snapshot, stale)``: ``stale`` is True when the latest snapshot
+        stands in. A declaration that cannot be resolved gives the latest
+        snapshot and False, since nothing can be said about its staleness.
+    """
+    record = slot["record"]
+    latest = record["snapshots_by_lineage"][processing]
+    expected = _expected_snapshot_id(slot, point, processing)
+    if expected is None:
+        return latest, False
+    for snapshot in reversed(record["snapshots"]):
+        lineage = (snapshot.get("processing") or {}).get("processing_id")
+        if snapshot.get("snapshot_id") == expected and lineage == processing:
+            return snapshot, False
+    return latest, True
 
 
 # ---------------------------------------------------------------------------
@@ -1322,9 +1380,120 @@ def _reprocess_call(asset_id: str, point_id: str) -> str:
     )
 
 
+#: The caveat of every stale-evidence clause that names the re-processing
+#: call: a call re-processes a bounded batch, and a measurement whose file is
+#: missing or changed, or whose declaration it refuses, is not recomputed.
+_REPROCESS_CAVEAT = (
+    "in bounded batches across the point's stale measurements, and a "
+    "measurement it cannot re-process keeps its previous snapshot (the "
+    "reprocess block gives the reason)"
+)
+
+#: The one verification an assessment scored partly from stale snapshots
+#: calls for, whatever its classification. It names what to check, not a
+#: remedy: re-processing may not be able to write the missing snapshots.
+_STALE_EVIDENCE_VERIFICATION = (
+    "Treat this classification as provisional: before relying on it, check "
+    "the lineage assessed and whether the snapshots of the evaluated "
+    "acquisitions were computed under their current declarations."
+)
+
+
+def _lacks_current_snapshot(
+    slot: dict[str, Any], point: Optional[dict[str, Any]], processing: str
+) -> bool:
+    """Re-processing's own staleness test, read from the view.
+
+    True when the measurement holds no snapshot with the id the current
+    declarations produce on *processing*, the current lineage; a
+    declaration that cannot be resolved counts, as it does in the service.
+    """
+    record = slot["record"]
+    if processing not in record["snapshots_by_lineage"]:
+        # No snapshot on this lineage, and the id hashes the lineage: no
+        # recorded id can match, so the context need not be hashed.
+        return True
+    expected = _expected_snapshot_id(slot, point, processing)
+    if expected is None:
+        return True
+    return all(
+        snapshot.get("snapshot_id") != expected for snapshot in record["snapshots"]
+    )
+
+
+def _stale_evidence(
+    *,
+    stale: int,
+    covered: int,
+    chosen: str,
+    current: str,
+    missing: int,
+    actionable: int,
+    call: str,
+) -> str:
+    """The sentence (without its period) that opens the message when
+    *stale* of the *covered* evaluated slots were scored from snapshots
+    computed under a previous declaration.
+
+    It names the re-processing call only when *actionable* evaluated slots
+    lack the current interpretation's snapshot on the *current* lineage,
+    the one re-processing writes. When the *chosen* lineage is another one,
+    it says that re-processing does not touch the chosen lineage's
+    snapshots, and when the assessment moves to the current lineage.
+    """
+    verb = "was" if stale == 1 else "were"
+    text = (
+        f"{stale} of the {covered} evaluated acquisition slots {verb} scored "
+        f"from snapshots computed under a previous declaration of the point "
+        f"or the measurement, so this verdict does not reflect the current "
+        f"declaration yet"
+    )
+    if chosen == current:
+        if actionable:
+            text += f"; {call} attempts to recompute them {_REPROCESS_CAVEAT}"
+        return text
+    if missing:
+        text += (
+            f"; this assessment uses lineage {chosen} because {missing} of the "
+            f"{covered} evaluated slots still lack a snapshot of the current "
+            f"lineage {current}, re-processing writes lineage {current} only "
+            f"and leaves the {chosen} snapshots unchanged, and the assessment "
+            f"moves to {current} once every evaluated slot has one"
+        )
+        if actionable:
+            text += (
+                f"; {call} attempts to compute the {actionable} missing or "
+                f"outdated {current} snapshot(s) of the evaluated slots "
+                f"{_REPROCESS_CAVEAT}"
+            )
+        return text
+    text += (
+        f"; every evaluated slot already has a snapshot of the current lineage "
+        f"{current}, but lineage {chosen} was recorded later and is the one "
+        f"assessed"
+    )
+    if not actionable:
+        return text + (
+            f", so re-processing has nothing to write on lineage {current} for "
+            f"the evaluated slots"
+        )
+    return text + (
+        f"; {call} attempts to recompute the {actionable} {current} snapshot(s) "
+        f"computed under a previous declaration {_REPROCESS_CAVEAT}, and the "
+        f"assessment moves to {current} as soon as re-processing appends a "
+        f"{current} snapshot to one of the evaluated slots"
+    )
+
+
 def _verification(
-    classification: str, coincides: Sequence[str], evidence_driven: bool
+    classification: str,
+    coincides: Sequence[str],
+    evidence_driven: bool,
+    *,
+    stale: bool = False,
 ) -> Optional[str]:
+    if stale:
+        return _STALE_EVIDENCE_VERIFICATION
     if classification == "no_change" or classification == "isolated_episode":
         return None
     if coincides:
@@ -1527,23 +1696,13 @@ def assess_change(
             "message": text,
         }
 
-    snapshots = {
-        s["measurement_id"]: s["record"]["snapshots_by_lineage"][chosen]
-        for s in evaluated
-    }
     point = staged["point"]
+    snapshots: dict[str, dict[str, Any]] = {}
     stale_context = 0
     for slot in evaluated:
-        try:
-            expected = current_snapshot_id_of(
-                slot["declaration"],
-                point,
-                processing=chosen,
-                measurement_id=slot["measurement_id"],
-            )
-        except ValueError:
-            continue
-        if snapshots[slot["measurement_id"]].get("snapshot_id") != expected:
+        snapshot, stale = _interpretation_snapshot(slot, point, chosen)
+        snapshots[slot["measurement_id"]] = snapshot
+        if stale:
             stale_context += 1
 
     values = {
@@ -1786,16 +1945,27 @@ def assess_change(
     message = (
         f"{headline} at {measurement_point_id} of {asset_id} over "
         f"{len(sequence)} post-reference acquisition(s): {criterion}. Reference: "
-        f"{reference_text}. Lineage {chosen}"
-        + (
-            f" ({stale_context} snapshot(s) computed with a previous point "
-            f"declaration; {_reprocess_call(asset_id, measurement_point_id)} "
-            f"recomputes them)"
-            if stale_context
-            else ""
-        )
-        + "."
+        f"{reference_text}. Lineage {chosen}."
     )
+    if stale_context:
+        actionable = sum(
+            1
+            for slot in evaluated
+            if _lacks_current_snapshot(slot, point, current_processing)
+        )
+        message = (
+            _stale_evidence(
+                stale=stale_context,
+                covered=len(evaluated),
+                chosen=chosen,
+                current=current_processing,
+                missing=missing_for_current,
+                actionable=actionable,
+                call=_reprocess_call(asset_id, measurement_point_id),
+            )
+            + ". "
+            + message
+        )
 
     return {
         "status": "assessed",
@@ -1856,6 +2026,8 @@ def assess_change(
             "evidence": evidence_assessed,
         },
         "comparability": comparability,
-        "suggested_verification": _verification(overall, coincides, evidence_driven),
+        "suggested_verification": _verification(
+            overall, coincides, evidence_driven, stale=bool(stale_context)
+        ),
         "message": message,
     }

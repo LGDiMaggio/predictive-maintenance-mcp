@@ -1228,10 +1228,15 @@ def build_asset_view(
         server instant, so a query can tell which measurements were
         acquired before the current declaration),
         ``measurements[measurement_id] = {history, current, snapshots,
-        snapshots_by_lineage, lineage_positions}`` (``lineage_positions``
-        maps a ``processing_id`` to the position, in the event order, of
-        its latest snapshot, so lineages can be ranked by recency across
-        measurements; measurements whose latest declaration names another
+        snapshots_by_lineage, lineage_positions}`` (``snapshots_by_lineage``
+        maps a ``processing_id`` to the latest snapshot recorded on it,
+        which is not necessarily the one the current declarations produce:
+        restoring an earlier declaration appends nothing, so a consumer that
+        needs that one selects it from ``snapshots`` by its expected id;
+        ``lineage_positions`` maps a ``processing_id`` to the position, in
+        the event order, of its latest snapshot, so lineages can be ranked
+        by recency across measurements; measurements whose latest
+        declaration names another
         asset are moved to ``reattributed`` as
         ``{measurement_id, to_asset_id}``), ``ordered_measurement_ids`` sorts
         the remaining measurements by ``current.declaration.acquired_at``

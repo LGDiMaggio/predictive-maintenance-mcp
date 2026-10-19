@@ -35,7 +35,7 @@ from typing import Any, Optional, Sequence
 
 import pytest
 
-from predictive_maintenance_mcp.asset_ledger import assessment
+from predictive_maintenance_mcp.asset_ledger import assessment, service
 from predictive_maintenance_mcp.asset_ledger.assessment import (
     AMPLITUDE_INDICATORS,
     ASSESSMENT_STATUSES,
@@ -217,6 +217,7 @@ def snapshot_event(
     context_digest: str = "ctx",
     point_version: Optional[int] = 1,
     missing: Optional[dict[str, Any]] = None,
+    machine_group: int = 2,
 ) -> dict[str, Any]:
     measurement_id = measurement_id or mid(index)
     payload = {
@@ -259,7 +260,7 @@ def snapshot_event(
             else {
                 "velocity_rms_mm_s": iso_velocity,
                 "zone": "A",
-                "machine_group": 2,
+                "machine_group": machine_group,
                 "support_type": "rigid",
                 "direction": "horizontal",
                 "operating_speed_rpm": 1800.0,
@@ -325,16 +326,17 @@ def series_events(
     sensor_of: Any = None,
     unit_of: Any = None,
     start: int = 1,
-    real_digests: bool = False,
+    placeholder_digests: bool = False,
 ) -> list[dict[str, Any]]:
     """Point declaration plus one measurement and one snapshot per value.
 
     ``rms`` is the value itself; peak, 1x and ISO velocity are proportional
     to it; the bearing block is quiet unless ``bearing_of(index)`` says
-    otherwise, so every amplitude indicator classifies alike. With
-    ``real_digests`` every snapshot carries the ``context_digest`` the
-    snapshot code computes for its declaration and the point; otherwise the
-    placeholder ``"ctx"``, which never matches the current context.
+    otherwise, so every amplitude indicator classifies alike. Every
+    snapshot carries the ``context_digest`` the snapshot code computes for
+    its declaration and the point, as a recorded snapshot does; with
+    ``placeholder_digests`` it carries ``"ctx"`` instead, which never
+    matches the current context, so every slot reads as stale.
     """
     point = point_event() if with_point else None
     events: list[dict[str, Any]] = [point] if point is not None else []
@@ -358,7 +360,9 @@ def series_events(
                 one_x=0.1 * value if with_one_x else None,
                 iso_velocity=0.3 * value if with_iso else None,
                 bearing=bearing_of(index) if bearing_of else bearing_block(),
-                context_digest=digest_of(measurement, point) if real_digests else "ctx",
+                context_digest=(
+                    "ctx" if placeholder_digests else digest_of(measurement, point)
+                ),
             )
         )
     return events
@@ -712,8 +716,16 @@ class TestDeclaredBaseline:
         """A later export of a baseline member's acquisition does not replace
         the member: the declared baseline is never silently swapped."""
         events = series_events(STABLE * 3) + [baseline_event([1, 2, 3, 4, 5])]
-        events.append(measurement_event(3, measurement_id=mid(103)))
-        events.append(snapshot_event(3, rms=5.0, measurement_id=mid(103)))
+        export = measurement_event(3, measurement_id=mid(103))
+        events.append(export)
+        events.append(
+            snapshot_event(
+                3,
+                rms=5.0,
+                measurement_id=mid(103),
+                context_digest=digest_of(export, events[0]),
+            )
+        )
         result = assess(view_of(events))
         assert result["status"] == "assessed"
         assert result["reference"]["measurement_ids"] == [mid(i) for i in range(1, 6)]
@@ -779,8 +791,16 @@ class TestClassification:
     def test_one_spike_exported_three_times_is_one_slot(self):
         events = series_events(STABLE)
         for measurement_id in (mid(11), mid(111), mid(211)):
-            events.append(measurement_event(11, measurement_id=measurement_id))
-            events.append(snapshot_event(11, rms=SPIKE, measurement_id=measurement_id))
+            export = measurement_event(11, measurement_id=measurement_id)
+            events.append(export)
+            events.append(
+                snapshot_event(
+                    11,
+                    rms=SPIKE,
+                    measurement_id=measurement_id,
+                    context_digest=digest_of(export, events[0]),
+                )
+            )
         result = assess(view_of(events))
         assert result["status"] == "assessed"
         assert result["assessed"]["classification"] == "unconfirmed_single_acquisition"
@@ -1165,38 +1185,19 @@ class TestLineage:
     def test_current_context_leaves_no_stale_snapshot(self):
         """Snapshots carrying the digest the current point declaration
         produces are not stale: no count and no re-processing suggestion."""
-        result = assess(view_of(series_events(STABLE + [1.0], real_digests=True)))
+        result = assess(view_of(series_events(STABLE + [1.0])))
         assert result["status"] == "assessed"
         assert result["lineage"]["stale_context"] == 0
-        assert "previous point declaration" not in result["message"]
+        assert "previous declaration" not in result["message"]
         assert REPROCESS_CALL not in result["message"]
-        # The placeholder digest of the other fixtures never matches the
-        # current context: every one of their evaluated slots counts as stale.
-        placeholder = assess(view_of(series_events(STABLE + [1.0])))
+        # The placeholder digest never matches the current context: every
+        # evaluated slot counts as stale.
+        placeholder = assess(
+            view_of(series_events(STABLE + [1.0], placeholder_digests=True))
+        )
         assert (
             placeholder["lineage"]["stale_context"] == placeholder["lineage"]["covered"]
         )
-
-    def test_redeclared_point_counts_every_evaluated_slot_as_stale(self):
-        """A re-declaration changing the resolved context (machine group)
-        with no snapshot added since: every evaluated slot is stale and the
-        message names the count and the re-processing call."""
-        events = series_events(STABLE + [1.0], real_digests=True)
-        events.append(
-            point_event(
-                2,
-                machine_group=1,
-                recorded_at=datetime(2026, 9, 1, tzinfo=timezone.utc),
-            )
-        )
-        result = assess(view_of(events))
-        assert result["status"] == "assessed"
-        assert result["lineage"]["covered"] == 11
-        assert result["lineage"]["stale_context"] == 11
-        assert (
-            "(11 snapshot(s) computed with a previous point declaration; "
-            f"{REPROCESS_CALL} recomputes them)"
-        ) in result["message"]
 
     def test_window_shrinks_the_evaluated_set_for_the_lineage(self):
         events = self.split(
@@ -1210,11 +1211,731 @@ class TestLineage:
 
 
 # ---------------------------------------------------------------------------
+# Restored interpretation: a declaration changed and changed back
+# ---------------------------------------------------------------------------
+
+#: Recording instants of the later point declarations, after every
+#: acquisition of the fixtures, in declaration order.
+REDECLARED_AT = datetime(2026, 9, 1, tzinfo=timezone.utc)
+RESTORED_AT = datetime(2026, 9, 8, tzinfo=timezone.utc)
+
+
+def of_type(events: Sequence[dict[str, Any]], event_type: str) -> list[dict[str, Any]]:
+    return [event for event in events if event["event_type"] == event_type]
+
+
+def without(
+    events: Sequence[dict[str, Any]], removed: Sequence[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """The event list with *removed* taken out (same order otherwise)."""
+    gone = {event["event_id"] for event in removed}
+    return [event for event in events if event["event_id"] not in gone]
+
+
+def b_snapshot(
+    measurement: dict[str, Any], point: dict[str, Any], rms: float, **overrides: Any
+) -> dict[str, Any]:
+    """The snapshot a measurement gets under point declaration *point*: the
+    series' proportional indicators, the digest of that context and the
+    point's machine group in the ISO block."""
+    index = int(measurement["payload"]["measurement_id"], 16)
+    fields: dict[str, Any] = {
+        "rms": rms,
+        "measurement_id": measurement["payload"]["measurement_id"],
+        "one_x": 0.1 * rms,
+        "iso_velocity": 0.3 * rms,
+        "bearing": bearing_block(),
+        "context_digest": digest_of(measurement, point),
+        "point_version": point["payload"]["declaration_version"],
+        "machine_group": point["payload"]["machine_group"],
+    }
+    fields.update(overrides)
+    return snapshot_event(index, **fields)
+
+
+def revert_events(
+    values: Sequence[float],
+    b_values: Sequence[float],
+    *,
+    restore: bool = True,
+    processing: str = LINEAGE_A,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Point A and one snapshot per value; point B (machine group 1) with
+    every measurement re-processed under it; then point A again (version 3,
+    the content of version 1). Returns the events and the snapshot events
+    computed under B."""
+    events = series_events(values, processing=processing)
+    point_b = point_event(2, machine_group=1, recorded_at=REDECLARED_AT)
+    events.append(point_b)
+    measurements = of_type(events, EVENT_MEASUREMENT_RECORDED)
+    b_snapshots = [
+        b_snapshot(measurement, point_b, value, processing=processing)
+        for measurement, value in zip(measurements, b_values)
+    ]
+    events.extend(b_snapshots)
+    if restore:
+        events.append(point_event(3, recorded_at=RESTORED_AT))
+    return events, b_snapshots
+
+
+def recomputed(
+    events: Sequence[dict[str, Any]],
+    point: dict[str, Any],
+    *,
+    processing: str = LINEAGE_A,
+) -> list[dict[str, Any]]:
+    """The snapshots every measurement of *events* gets under *point*, each
+    with the rms of its latest snapshot: appended, they bring every slot to
+    the current interpretation without changing a value."""
+    rms = {
+        event["payload"]["measurement_id"]: event["payload"]["indicators"]["rms"]
+        for event in of_type(events, EVENT_HEALTH_SNAPSHOT_COMPUTED)
+    }
+    return [
+        b_snapshot(
+            measurement,
+            point,
+            rms[measurement["payload"]["measurement_id"]],
+            processing=processing,
+        )
+        for measurement in of_type(events, EVENT_MEASUREMENT_RECORDED)
+    ]
+
+
+class TestRestoredInterpretation:
+    """A declaration changed from A to B and back to A: the snapshot A
+    produced is already recorded, so nothing new is appended, and the
+    assessment must score it although the lineage's latest snapshot is B's.
+    The latest snapshot is used only when no snapshot of the current
+    interpretation exists."""
+
+    revert = staticmethod(revert_events)
+
+    def test_point_revert_scores_the_restored_snapshots(self):
+        """The result equals the one the same ledger gives
+        without the snapshots computed under B."""
+        events, b_snapshots = self.revert(STABLE + [1.0], [2.0] * 11)
+        view = view_of(events)
+        # The scenario is the real one: A's snapshot was recorded first and
+        # the view still reports B's as the lineage's latest.
+        slot = view["measurements"][mid(11)]
+        assert len(slot["snapshots"]) == 2
+        assert slot["snapshots_by_lineage"][LINEAGE_A]["snapshot_id"] == (
+            b_snapshots[-1]["payload"]["snapshot_id"]
+        )
+        result = assess(view)
+        assert result["status"] == "assessed"
+        assert result["lineage"]["stale_context"] == 0
+        assert result["observed"]["latest"]["rms"] == pytest.approx(1.0)
+        assert result["observed"]["reference_statistics"]["rms"]["mean"] == (
+            pytest.approx(sum(STABLE) / len(STABLE))
+        )
+        assert canonical_json(result) == canonical_json(
+            assess(view_of(without(events, b_snapshots)))
+        )
+
+    def test_machine_group_revert_restores_the_iso_boundary(self):
+        """Only the machine group changes, so every indicator but the ISO
+        context is equal: the B/C boundary is group 2's again."""
+        events, _ = self.revert(STABLE + [1.0], STABLE + [1.0])
+        iso_change = assess(view_of(events))["derived"]["iso_change"]
+        assert iso_change["machine_group"] == 2
+        assert iso_change["boundary_bc_mm_s"] == pytest.approx(2.8)
+
+    def test_measurement_revert_scores_the_restored_snapshot(self):
+        """The latest slot declared with rpm 1800, then 1500, then 1800."""
+        events = series_events(STABLE + [1.0])
+        point = events[0]
+        changed = measurement_event(11, rpm=1500.0, version=2)
+        events.append(changed)
+        events.append(
+            b_snapshot(
+                changed,
+                point,
+                3.0,
+                one_x=0.9,
+                iso_velocity=0.9,
+                bearing=bearing_block(envelope=2.0),
+            )
+        )
+        events.append(measurement_event(11, rpm=1800.0, version=3))
+        result = assess(view_of(events))
+        latest = result["observed"]["latest"]
+        assert result["lineage"]["stale_context"] == 0
+        assert latest["rms"] == pytest.approx(1.0)
+        assert latest["one_x"] == pytest.approx(0.1)
+        assert latest["envelope_BPFO"] == pytest.approx(0.5)
+        assert result["assessed"]["classification"] == "no_change"
+
+    def test_interpretation_never_computed_falls_back_to_the_latest(self):
+        """A, B, C with no snapshot under C: every slot keeps the lineage's
+        latest snapshot (B's) and counts as stale."""
+        events, _ = self.revert(STABLE + [1.0], [2.0] * 11, restore=False)
+        events.append(point_event(3, machine_group=3, recorded_at=RESTORED_AT))
+        result = assess(view_of(events))
+        assert result["lineage"]["stale_context"] == 11
+        assert result["observed"]["latest"]["rms"] == pytest.approx(2.0)
+
+    def test_changing_back_to_b_matches_the_b_snapshots(self):
+        events, _ = self.revert(STABLE + [1.0], [2.0] * 11)
+        events.append(point_event(4, machine_group=1, recorded_at=RESTORED_AT + WEEK))
+        result = assess(view_of(events))
+        assert result["lineage"]["stale_context"] == 0
+        assert result["observed"]["latest"]["rms"] == pytest.approx(2.0)
+
+    @pytest.mark.parametrize(
+        "order, expected",
+        [
+            (("match", "match_again", "other"), 1.1),
+            (("match_again", "match", "other"), 1.0),
+            (("match", "other", "other_again"), 1.0),
+            (("other", "match", "other_again"), 1.0),
+        ],
+    )
+    def test_matching_snapshot_is_found_wherever_it_was_recorded(self, order, expected):
+        """Two payloads can share a snapshot id (another server version
+        recorded it): the later one is used. Snapshots of other contexts
+        recorded before or after never displace the match."""
+        events = series_events(STABLE)
+        point = events[0]
+        measurement = measurement_event(11)
+        events.append(measurement)
+        candidates = {
+            "match": b_snapshot(measurement, point, 1.0),
+            "match_again": b_snapshot(measurement, point, 1.1, point_version=3),
+            "other": b_snapshot(measurement, point, 2.0, context_digest="ctx"),
+            "other_again": b_snapshot(
+                measurement, point, 2.5, context_digest="ctx-other"
+            ),
+        }
+        events.extend(candidates[name] for name in order)
+        result = assess(view_of(events))
+        assert result["lineage"]["stale_context"] == 0
+        assert result["observed"]["latest"]["rms"] == pytest.approx(expected)
+
+    def test_older_complete_lineage_is_matched_while_the_current_has_holes(self):
+        """The current lineage covers four slots only, so the complete
+        lineage is chosen as today; inside it the restored interpretation
+        is matched."""
+        events, _ = self.revert(STABLE + [1.0], [2.0] * 11, restore=False)
+        point_b = of_type(events, EVENT_MEASUREMENT_POINT_DECLARED)[-1]
+        measurements = of_type(events, EVENT_MEASUREMENT_RECORDED)
+        events.extend(
+            b_snapshot(measurement, point_b, 2.0, processing=processing_id())
+            for measurement in measurements[:4]
+        )
+        events.append(point_event(3, recorded_at=RESTORED_AT))
+        lineage = assess(view_of(events))["lineage"]
+        assert lineage["processing_id"] == LINEAGE_A
+        assert lineage["is_current"] is False
+        assert lineage["missing_for_current"] == 7
+        assert lineage["stale_context"] == 0
+
+    def test_slots_first_loaded_under_b_are_the_only_stale_ones(self):
+        """Nine slots reverted, two loaded only while B was declared: the
+        reference mixes nine A snapshots and one B snapshot."""
+        events, _ = self.revert([1.0] * 9, [2.0] * 9, restore=False)
+        point_b = of_type(events, EVENT_MEASUREMENT_POINT_DECLARED)[-1]
+        for index in (10, 11):
+            measurement = measurement_event(index)
+            events.append(measurement)
+            events.append(b_snapshot(measurement, point_b, 2.0))
+        events.append(point_event(3, recorded_at=RESTORED_AT))
+        result = assess(view_of(events))
+        assert result["lineage"]["stale_context"] == 2
+        assert result["observed"]["reference_statistics"]["rms"]["mean"] == (
+            pytest.approx(1.1)
+        )
+        assert result["observed"]["latest"]["rms"] == pytest.approx(2.0)
+
+    def test_collapsed_duplicate_export_keeps_its_matched_representative(self):
+        events = series_events(STABLE + [1.0])
+        point_a = events[0]
+        export = measurement_event(11, measurement_id=mid(111))
+        events.append(export)
+        events.append(b_snapshot(export, point_a, 1.0))
+        point_b = point_event(2, machine_group=1, recorded_at=REDECLARED_AT)
+        events.append(point_b)
+        events.extend(
+            b_snapshot(measurement, point_b, 2.0)
+            for measurement in of_type(events, EVENT_MEASUREMENT_RECORDED)
+        )
+        events.append(point_event(3, recorded_at=RESTORED_AT))
+        result = assess(view_of(events))
+        collapsed = result["comparability"]["collapsed_duplicates"]
+        assert [c["measurement_id"] for c in collapsed] == [mid(11)]
+        assert collapsed[0]["kept_measurement_id"] == mid(111)
+        assert result["lineage"]["stale_context"] == 0
+        assert result["observed"]["latest"]["rms"] == pytest.approx(1.0)
+
+    def test_point_revert_keeps_every_baseline_member(self):
+        events, _ = self.revert(STABLE * 3, [2.0] * 30)
+        events.append(baseline_event([1, 2, 3, 4, 5]))
+        result = assess(view_of(events))
+        reference = result["reference"]
+        assert reference["kind"] == "declared_baseline"
+        assert reference["measurement_ids"] == [mid(i) for i in range(1, 6)]
+        assert result["lineage"]["stale_context"] == 0
+        assert reference_rms_mean(result) == pytest.approx(sum(STABLE[:5]) / 5)
+
+    def test_measurement_revert_of_a_member_still_supersedes_it(self):
+        """Unchanged behavior: baseline membership compares declaration
+        versions, so a member re-loaded with B and then with A again is
+        superseded although its interpretation is the validated one."""
+        events = series_events(STABLE * 2) + [baseline_event([1, 2, 3])]
+        point = events[0]
+        changed = measurement_event(2, rpm=1500.0, version=2)
+        events.append(changed)
+        events.append(b_snapshot(changed, point, 3.0))
+        events.append(measurement_event(2, rpm=1800.0, version=3))
+        result = assess(view_of(events))
+        assert result["status"] == "insufficient_history"
+        assert "baseline_member_superseded" in result["message"]
+
+    def test_unresolvable_declaration_keeps_todays_handling(self):
+        """A declaration the snapshot code cannot resolve (an rpm recorded as
+        text) leaves nothing to match: the slot is scored from its latest
+        snapshot and is not counted as stale."""
+        events = series_events(STABLE)
+        events.append(measurement_event(11, rpm="1800"))
+        events.append(snapshot_event(11, rms=1.0))
+        result = assess(view_of(events))
+        assessed_ids = [
+            ref["measurement_id"]
+            for ref in result["observed"]["measurement_ids_assessed"]
+        ]
+        assert mid(11) in assessed_ids
+        assert result["lineage"]["stale_context"] == 0
+        assert result["observed"]["latest"]["rms"] == pytest.approx(1.0)
+
+    def test_revert_assessment_is_deterministic_and_replayable(self):
+        events, _ = self.revert(STABLE + [1.0], [2.0] * 11)
+        view = view_of(events)
+        first = canonical_json(assess(view))
+        assert canonical_json(assess(view)) == first
+        assert canonical_json(assess(view_of(list(events)))) == first
+
+
+def reference_rms_mean(result: dict[str, Any]) -> float:
+    return float(result["observed"]["reference_statistics"]["rms"]["mean"])
+
+
+# ---------------------------------------------------------------------------
+# Stale evidence: the opening sentence and the remedies that can act
+# ---------------------------------------------------------------------------
+
+CURRENT_LINEAGE = processing_id()
+REPROCESS_CAVEAT = (
+    "in bounded batches across the point's stale measurements, and a "
+    "measurement it cannot re-process keeps its previous snapshot (the "
+    "reprocess block gives the reason)"
+)
+STALE_VERIFICATION = (
+    "Treat this classification as provisional: before relying on it, check "
+    "the lineage assessed and whether the snapshots of the evaluated "
+    "acquisitions were computed under their current declarations."
+)
+
+
+def stale_opening(stale: int, covered: int) -> str:
+    verb = "was" if stale == 1 else "were"
+    return (
+        f"{stale} of the {covered} evaluated acquisition slots {verb} scored "
+        "from snapshots computed under a previous declaration of the point or "
+        "the measurement, so this verdict does not reflect the current "
+        "declaration yet"
+    )
+
+
+def older_lineage_clause(missing: int, covered: int, actionable: int) -> str:
+    return (
+        f"; this assessment uses lineage {LINEAGE_A} because {missing} of the "
+        f"{covered} evaluated slots still lack a snapshot of the current "
+        f"lineage {CURRENT_LINEAGE}, re-processing writes lineage "
+        f"{CURRENT_LINEAGE} only and leaves the {LINEAGE_A} snapshots unchanged, "
+        f"and the assessment moves to {CURRENT_LINEAGE} once every evaluated "
+        f"slot has one; {REPROCESS_CALL} attempts to compute the {actionable} "
+        f"missing or outdated {CURRENT_LINEAGE} snapshot(s) of the evaluated "
+        f"slots {REPROCESS_CAVEAT}"
+    )
+
+
+def recorded_later_clause() -> str:
+    return (
+        f"; every evaluated slot already has a snapshot of the current lineage "
+        f"{CURRENT_LINEAGE}, but lineage {LINEAGE_A} was recorded later and is "
+        f"the one assessed"
+    )
+
+
+class TestStaleEvidence:
+    """When stale_context is above 0 the message opens with how many slots
+    were scored under a previous declaration, then the message the same view
+    would carry with nothing stale; the re-processing call is named only
+    when re-processing writes something for the evaluated slots."""
+
+    def test_redeclared_point_counts_every_evaluated_slot_as_stale(self):
+        """A re-declaration changing the resolved context (machine group)
+        with no snapshot added since. The fixture's lineage is not the
+        current one, so the remedy says re-processing writes the current
+        lineage and leaves the assessed one unchanged."""
+        events = series_events(STABLE + [1.0])
+        point_v2 = point_event(2, machine_group=1, recorded_at=REDECLARED_AT)
+        events.append(point_v2)
+        result = assess(view_of(events))
+        assert result["status"] == "assessed"
+        assert result["lineage"]["covered"] == 11
+        assert result["lineage"]["stale_context"] == 11
+        current = assess(view_of(events + recomputed(events, point_v2)))
+        assert current["lineage"]["stale_context"] == 0
+        assert result["message"] == (
+            stale_opening(11, 11)
+            + older_lineage_clause(11, 11, 11)
+            + ". "
+            + current["message"]
+        )
+        assert result["suggested_verification"] == STALE_VERIFICATION
+
+    def test_unresolvable_declaration_counts_toward_the_remedy_only(self):
+        """Re-processing treats a declaration it cannot resolve as stale (it
+        then reports it), so the remedy counts it among the snapshots to
+        compute, while the stale count, which cannot judge it, does not."""
+        events = unresolvable_declaration_events()
+        point = events[0]
+        older = [
+            b_snapshot(measurement, point, value, context_digest="ctx")
+            for measurement, value in zip(
+                of_type(events, EVENT_MEASUREMENT_RECORDED), STABLE
+            )
+        ]
+        older.append(snapshot_event(11, rms=1.0))
+        result = assess(view_of(events + older))
+        lineage = result["lineage"]
+        assert (
+            lineage["processing_id"],
+            lineage["stale_context"],
+            lineage["missing_for_current"],
+        ) == (LINEAGE_A, 10, 0)
+        assert result["message"].startswith(
+            stale_opening(10, 11)
+            + recorded_later_clause()
+            + f"; {REPROCESS_CALL} attempts to recompute the 1 {CURRENT_LINEAGE} "
+            f"snapshot(s) computed under a previous declaration {REPROCESS_CAVEAT}, "
+            f"and the assessment moves to {CURRENT_LINEAGE} as soon as "
+            f"re-processing appends a {CURRENT_LINEAGE} snapshot to one of the "
+            "evaluated slots. "
+        )
+
+    def test_current_lineage_names_the_call_with_its_caveat(self):
+        """A slot first loaded while B was declared is the only
+        stale one; its classification is no_change, which alone would call
+        for no verification."""
+        events, _ = revert_events(
+            STABLE, STABLE, restore=False, processing=CURRENT_LINEAGE
+        )
+        point_b = of_type(events, EVENT_MEASUREMENT_POINT_DECLARED)[-1]
+        late = measurement_event(11)
+        events += [late, b_snapshot(late, point_b, 1.0, processing=CURRENT_LINEAGE)]
+        point_a = point_event(3, recorded_at=RESTORED_AT)
+        events.append(point_a)
+        result = assess(view_of(events))
+        assert result["lineage"]["is_current"] is True
+        assert result["lineage"]["stale_context"] == 1
+        current = assess(
+            view_of(
+                events + [b_snapshot(late, point_a, 1.0, processing=CURRENT_LINEAGE)]
+            )
+        )
+        assert current["lineage"]["stale_context"] == 0
+        assert result["message"] == (
+            stale_opening(1, 11)
+            + f"; {REPROCESS_CALL} attempts to recompute them {REPROCESS_CAVEAT}. "
+            + current["message"]
+        )
+        assert result["assessed"]["classification"] == "no_change"
+        assert result["suggested_verification"] == STALE_VERIFICATION
+        assert current["suggested_verification"] is None
+
+    def test_older_lineage_clause_counts_the_slots_still_missing(self):
+        """While re-processing fills the current lineage, the
+        stale count on the assessed lineage stays 25 and the clause shows the
+        count of slots still missing fall; once the current lineage covers
+        every slot the assessment moves to it."""
+        values = STABLE * 2 + STABLE[:5]
+        events = series_events(values)
+        point_b = point_event(2, machine_group=1, recorded_at=REDECLARED_AT)
+        events.append(point_b)
+        filled = recomputed(events, point_b, processing=CURRENT_LINEAGE)
+        for done in (0, 10, 20):
+            result = assess(view_of(events + filled[:done]))
+            lineage = result["lineage"]
+            assert lineage["processing_id"] == LINEAGE_A
+            assert lineage["stale_context"] == 25
+            assert lineage["missing_for_current"] == 25 - done
+            assert result["message"].startswith(
+                stale_opening(25, 25)
+                + older_lineage_clause(25 - done, 25, 25 - done)
+                + ". "
+            )
+        final = assess(view_of(events + filled))["lineage"]
+        assert final["processing_id"] == CURRENT_LINEAGE
+        assert final["stale_context"] == 0
+
+    def test_older_lineage_recorded_later_has_nothing_to_write(self):
+        """The current lineage holds every current snapshot and
+        an older lineage, recorded later, holds snapshots of another
+        context. No call is named."""
+        values = STABLE + [1.0]
+        events = series_events(values, processing=CURRENT_LINEAGE)
+        point = events[0]
+        older = [
+            b_snapshot(measurement, point, value, context_digest="ctx")
+            for measurement, value in zip(
+                of_type(events, EVENT_MEASUREMENT_RECORDED), values
+            )
+        ]
+        result = assess(view_of(events + older))
+        lineage = result["lineage"]
+        assert lineage["processing_id"] == LINEAGE_A
+        assert lineage["missing_for_current"] == 0
+        assert lineage["stale_context"] == 11
+        current = assess(view_of(events + older + recomputed(events, point)))
+        assert current["lineage"]["processing_id"] == LINEAGE_A
+        assert current["lineage"]["stale_context"] == 0
+        assert result["message"] == (
+            stale_opening(11, 11)
+            + recorded_later_clause()
+            + ", so re-processing has nothing to write on lineage "
+            + f"{CURRENT_LINEAGE} for the evaluated slots. "
+            + current["message"]
+        )
+        assert REPROCESS_CALL not in result["message"]
+
+    def test_nothing_to_write_ignores_measurements_outside_the_evaluated_set(self):
+        """A non-comparable measurement without a current-lineage snapshot is
+        something re-processing may still reach; the sentence only speaks of
+        the evaluated slots, so it stays as it is."""
+        values = STABLE + [1.0]
+        events = series_events(values, processing=CURRENT_LINEAGE)
+        point = events[0]
+        measurements = of_type(events, EVENT_MEASUREMENT_RECORDED)
+        older = [
+            b_snapshot(measurement, point, value, context_digest="ctx")
+            for measurement, value in zip(measurements, values)
+        ]
+        other_axis = measurement_event(12, direction="vertical")
+        events += older + [
+            other_axis,
+            b_snapshot(other_axis, point, 1.0, context_digest="ctx"),
+        ]
+        result = assess(view_of(events))
+        excluded = [e["measurement_id"] for e in result["comparability"]["excluded"]]
+        assert mid(12) in excluded
+        assert result["lineage"]["stale_context"] == 11
+        assert (
+            stale_opening(11, 11)
+            + recorded_later_clause()
+            + ", so re-processing has nothing to write on lineage "
+            + f"{CURRENT_LINEAGE} for the evaluated slots. "
+        ) in result["message"]
+
+    def test_older_lineage_recorded_later_names_the_call_for_outdated_ones(self):
+        """The current lineage covers every slot, but its snapshot of the
+        latest slot was computed under another context: re-processing has
+        that one to rewrite, and the assessment moves as soon as it does."""
+        events = series_events(STABLE, processing=CURRENT_LINEAGE)
+        point = events[0]
+        late = measurement_event(11)
+        events += [
+            late,
+            b_snapshot(
+                late, point, 1.0, processing=CURRENT_LINEAGE, context_digest="ctx"
+            ),
+        ]
+        older = [
+            b_snapshot(measurement, point, value, context_digest="ctx")
+            for measurement, value in zip(
+                of_type(events, EVENT_MEASUREMENT_RECORDED), STABLE + [1.0]
+            )
+        ]
+        result = assess(view_of(events + older))
+        lineage = result["lineage"]
+        assert (lineage["processing_id"], lineage["missing_for_current"]) == (
+            LINEAGE_A,
+            0,
+        )
+        assert result["message"].startswith(
+            stale_opening(11, 11)
+            + recorded_later_clause()
+            + f"; {REPROCESS_CALL} attempts to recompute the 1 {CURRENT_LINEAGE} "
+            f"snapshot(s) computed under a previous declaration {REPROCESS_CAVEAT}, "
+            f"and the assessment moves to {CURRENT_LINEAGE} as soon as "
+            f"re-processing appends a {CURRENT_LINEAGE} snapshot to one of the "
+            "evaluated slots. "
+        )
+
+
+def partly_recomputed_events() -> list[dict[str, Any]]:
+    """Every slot on the older lineage, the first five also on the current
+    one."""
+    events = series_events(STABLE)
+    point = events[0]
+    measurements = of_type(events, EVENT_MEASUREMENT_RECORDED)
+    return events + [
+        b_snapshot(measurement, point, value, processing=CURRENT_LINEAGE)
+        for measurement, value in zip(measurements[:5], STABLE)
+    ]
+
+
+def partly_reprocessed_under_b_events() -> list[dict[str, Any]]:
+    """Point B still declared, re-processing stopped after six of the ten
+    measurements."""
+    events, under_b = revert_events(
+        STABLE, [2.0] * 10, restore=False, processing=CURRENT_LINEAGE
+    )
+    return without(events, under_b[:4])
+
+
+def unresolvable_declaration_events() -> list[dict[str, Any]]:
+    """Ten current slots on the current lineage and one whose declaration
+    cannot be resolved."""
+    events = series_events(STABLE, processing=CURRENT_LINEAGE)
+    events.append(measurement_event(11, rpm="1800"))
+    events.append(snapshot_event(11, rms=1.0, processing=CURRENT_LINEAGE))
+    return events
+
+
+class TestStalenessAgreesWithReprocessing:
+    """The re-processing call is named when the assessment finds a slot
+    lacking its current snapshot on the current lineage; re-processing
+    attempts the measurements its own staleness test selects. Both tests
+    must agree, or the call is named with nothing to attempt, or withheld
+    while re-processing has work."""
+
+    @pytest.mark.parametrize(
+        ("build", "lacking"),
+        [
+            (lambda: series_events(STABLE), 10),
+            (partly_recomputed_events, 5),
+            (
+                lambda: revert_events(STABLE, [2.0] * 10, processing=CURRENT_LINEAGE)[
+                    0
+                ],
+                0,
+            ),
+            (partly_reprocessed_under_b_events, 4),
+            (unresolvable_declaration_events, 1),
+        ],
+        ids=[
+            "older_lineage_only",
+            "partly_on_the_current_lineage",
+            "restored_declaration",
+            "partly_reprocessed_redeclaration",
+            "unresolvable_declaration",
+        ],
+    )
+    def test_each_slot_gets_the_same_answer(self, build, lacking):
+        view = view_of(build())
+        staged = collect_point_slots(view, POINT)
+        point = staged["point"]
+        answers = {
+            slot["measurement_id"]: (
+                assessment._lacks_current_snapshot(slot, point, CURRENT_LINEAGE),
+                service._snapshot_is_current(
+                    view,
+                    slot["measurement_id"],
+                    slot["declaration"],
+                    point,
+                    CURRENT_LINEAGE,
+                ),
+            )
+            for slot in staged["slots"]
+        }
+        assert all(lacks is not current for lacks, current in answers.values())
+        assert sum(lacks for lacks, _ in answers.values()) == lacking
+
+
+# ---------------------------------------------------------------------------
 # Contract: determinism, serialization, purity
 # ---------------------------------------------------------------------------
 
+#: Payloads of views no revert touched, recorded before the snapshot
+#: selection inside a lineage changed. Shape, strings, integers, bools and
+#: Nones must match exactly; floats within a tolerance far below any
+#: algorithmic drift and above the ulp differences numpy and scipy may show
+#: across the CI matrix.
+PAYLOAD_GOLDEN = Path(__file__).parent / "fixtures" / "assessment_payload_golden.json"
+#: From the repo root, with the checkout's interpreter (``import conftest``
+#: pins the import to THIS tree, also inside a git worktree).
+PAYLOAD_RECIPE = (
+    "python -c \"import sys; sys.path.insert(0, 'tests'); import conftest; "
+    "from test_asset_ledger_assessment import write_payload_golden; "
+    'write_payload_golden()"'
+)
+
+
+def golden_views() -> dict[str, list[dict[str, Any]]]:
+    return {
+        "stable": series_events(STABLE + [1.0]),
+        "spike": series_events(STABLE + [SPIKE]),
+        "ramp_with_rpm_gaps": series_events(
+            STABLE + [SPIKE] + STABLE[:9] + RAMP, rpm_missing=(3, 6)
+        ),
+        "declared_baseline": series_events(STABLE * 3)
+        + [baseline_event([1, 2, 3, 4, 5])],
+    }
+
+
+def write_payload_golden(path: Path = PAYLOAD_GOLDEN) -> None:
+    """Regenerate the payload golden ON PURPOSE only (never to make a red
+    test green), with ``PAYLOAD_RECIPE``."""
+    payloads = {
+        name: json.loads(canonical_json(assess(view_of(events))))
+        for name, events in golden_views().items()
+    }
+    path.write_text(
+        json.dumps(payloads, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+
+
+def assert_matches_golden(new: Any, old: Any, path: str) -> None:
+    """Recursive comparison of two decoded payloads, floats via
+    ``pytest.approx`` and everything else exactly."""
+    hint = f"(regenerate on purpose with {PAYLOAD_RECIPE} if the change is intended)"
+    if isinstance(old, dict):
+        assert isinstance(new, dict), f"{path}: expected an object {hint}"
+        assert set(new) == set(old), (
+            f"{path}: keys {sorted(set(new) ^ set(old))} differ from the golden "
+            f"shape {hint}"
+        )
+        for key, old_value in old.items():
+            assert_matches_golden(new[key], old_value, f"{path}.{key}")
+    elif isinstance(old, list):
+        assert isinstance(new, list), f"{path}: expected a list {hint}"
+        assert len(new) == len(
+            old
+        ), f"{path}: length {len(new)} != golden {len(old)} {hint}"
+        for index, (new_item, old_item) in enumerate(zip(new, old)):
+            assert_matches_golden(new_item, old_item, f"{path}[{index}]")
+    elif isinstance(old, float):
+        assert isinstance(new, float) and new == pytest.approx(
+            old, rel=1e-9, abs=1e-12
+        ), f"{path}: {new!r} != golden {old!r} {hint}"
+    else:
+        assert (
+            type(new) is type(old) and new == old
+        ), f"{path}: {new!r} != golden {old!r} {hint}"
+
 
 class TestContract:
+    def test_views_without_a_revert_keep_their_payloads(self):
+        golden = json.loads(PAYLOAD_GOLDEN.read_text(encoding="utf-8"))
+        views = golden_views()
+        assert set(golden) == set(views)
+        for name, events in views.items():
+            payload = json.loads(canonical_json(assess(view_of(events))))
+            assert_matches_golden(payload, golden[name], name)
+
     def test_same_view_gives_the_same_canonical_payload(self):
         values = STABLE + [SPIKE] + STABLE[:9] + RAMP
         events = series_events(values, rpm_missing=(3, 6))
