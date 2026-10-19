@@ -75,8 +75,8 @@ POST_U9_ADDITIONS: dict[str, str] = {
         "criterion, bearing evidence over the last K). New concept: "
         "estimate_rul and analyze_signal_trend take explicit series or one "
         "recording; this one reads the ledger and needs only asset and point. "
-        "reprocess=True (not force_reindex) recomputes stale snapshots, bounded "
-        "per call."
+        "reprocess=True (not force_reindex) runs one bounded call of a "
+        "re-processing sequence over the stale snapshots."
     ),
 }
 

@@ -75,7 +75,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   snapshots of a previous declaration opens by saying how many, is marked
   provisional, and names re-processing, as an attempt, when an evaluated
   acquisition lacks the snapshot of its current declarations on the
-  current lineage;
+  current lineage and re-processing can act on it, else counts it by the
+  action it needs;
   non-comparable acquisitions are listed, never dropped silently; at most
   one suggested verification and no list of recommendations.
 - **Four ledger tools** (34 to 38 tools, 41 endpoints):
@@ -88,9 +89,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `get_asset_history` (the index of the assets, or one asset's history
   newest first with an indicator preview, declarations, baselines and
   the integrity block) and `assess_asset_change` (above;
-  `reprocess=True` recomputes at most 10 stale snapshots per call from
-  the original files, hash-verified, and names the next call while
-  measurements remain).
+  `reprocess=True` runs one call of a re-processing sequence from the
+  original files, hash-verified: at most 10 attempts, 500 file checks and
+  50 failures per call, each failure listed with its `reason_code` and
+  `action` by the call that finds it, the point's measurements reported
+  in groups with `sequence_state`; the optional `reprocess_cursor` carries
+  the continuation token a `next_call` names. A call without
+  `reprocess_cursor` starts a new re-processing sequence, and a named call
+  is an attempt, not a promise; while the block gives a `next_call`, make
+  exactly that call, and when it gives none, `sequence_state` is
+  `complete` or `exhausted`, with the blocked measurements under
+  `needs_action`. A new sequence attempts again the failures only an
+  attempt finds).
 - **Generic integration path and a reference adapter.** A file plus its
   companion is the integration model for any acquisition system: an
   adapter converts the device output into a file the server reads and a

@@ -51,29 +51,39 @@ Re-processing (:func:`reprocess_stale_snapshots`, behind
 ``assess_asset_change(..., reprocess=True)``): a measurement of the point is
 STALE when its view holds no snapshot with the current ``processing_id``
 AND the ``context_digest`` the current declarations of the measurement and
-of its point resolve to. Up to
-``MAX_REPROCESS_PER_CALL`` stale measurements are re-processed per call, in
-the order members of the active reference (declared baseline or the first N
-slots), then the last K slots newest first, then the rest newest first
-(the duplicates collapsed into another acquisition slot last), so the
-reference and the last K slots carry the current lineage within two calls
-whatever the length of the history and every measurement the point
-declaration counts as stale is reached (the assessment moves onto the
-current lineage once every evaluated slot carries it and no other lineage
-covering them was recorded later; until then it uses the older lineage
-that still covers the whole set, or reports ``processing_not_homogeneous``
-when none does). The file is searched in
-every location ever declared for the measurement, most recent first
-(relative locations under
-the data directory, contained by ``safe_resolve``; absolute ones as
-recorded), its content hash is verified against the ledger before a single
-sample is decoded, and the location used is reported. A file missing
-everywhere or changed is a per-measurement ``not_reprocessable`` with the
-reason, and so is a file the signal store would refuse (an empty line
-between data lines, a NaN, infinite or non-numeric sample); the old
-snapshot is never touched. Only derived events are appended, each
-deduplicated by its deterministic ``snapshot_id``, so a repeated call is
-idempotent.
+of its point resolve to. One call of a re-processing sequence walks the
+stale measurements in priority order: members of the active reference
+(declared baseline or the first N slots), then the last K slots newest
+first, then the rest newest first (the duplicates collapsed into another
+acquisition slot last); the assessment moves onto the current lineage once
+every evaluated slot carries it and no other lineage covering them was
+recorded later, and until then it uses the older lineage that still covers
+the whole set, or reports ``processing_not_homogeneous`` when none does.
+Each measurement goes through three tiers. The view checks
+(``snapshot.snapshot_blocker``, shared with the assessment) read the
+ledger only. The file checks read metadata only: containment of each
+relative location through ``safe_resolve`` (the data directory resolved
+once per call; absolute locations as recorded) and one metadata call per
+location ever declared, most recent first, with the size compared to the
+recorded one; at most ``MAX_FILE_CHECKS_PER_CALL`` per call, a measurement's
+checks run in full or not at all, and an error is a per-location outcome,
+never a raise. The attempt verifies the content hash against the ledger
+before a single sample is decoded, decodes with the recorded declaration
+(refusing what the signal store refuses: an empty line between data lines,
+a NaN, infinite or non-numeric sample), computes and appends; at most
+``limit`` per call (``MAX_REPROCESS_PER_CALL`` for the tool). The call also
+stops once it has found ``MAX_LISTED_ITEMS`` failures, so every failure is
+listed in full by the call that finds it, with a code of
+``REPROCESS_REASON_CODES`` and the action that clears it (when no recorded
+location holds the recorded content, the most recent one decides the code).
+A stateless continuation token, which ``next_call`` carries only when an
+earlier failure must be passed over, lets the next call start after the
+last measurement handled; it is valid only while nothing that decides
+which measurements it passed has changed, else the call restarts the
+sequence and says so. The old snapshot is never touched and a failure
+appends nothing: only derived events are appended, each deduplicated by its
+deterministic ``snapshot_id``, so a repeated call on an unchanged ledger
+returns the same response.
 
 Declarations and queries (behind the four ledger tools):
 
@@ -86,7 +96,8 @@ Declarations and queries (behind the four ledger tools):
   response names the keys that changed and how many recorded measurements
   of the point now lack a snapshot with the current context and lineage
   (the staleness test shared with the re-processing), with the exact
-  re-processing call as the remedy.
+  re-processing call as the remedy when the view checks find one a call can
+  act on that is not collapsed into another acquisition slot.
 * :func:`declare_healthy_baseline` validates that every id is a recorded
   measurement of the point, that no two share an acquisition slot, and that
   each is comparable or qualified against the point and against the
@@ -2655,8 +2666,10 @@ def declare_measurement_point(
         (every declared key for version 1, empty when nothing changed),
         ``measurements_with_stale_context`` counts the recorded measurements
         of the point that lack a snapshot with the current context and
-        lineage, ``remedy`` is the exact re-processing call when that count
-        is positive (else None), ``declaration`` is the payload as recorded
+        lineage, ``remedy`` is the exact re-processing call when one of them
+        passes the view checks and is not collapsed into another acquisition
+        slot (else None, and the message counts them by reason),
+        ``declaration`` is the payload as recorded
         (the current one when nothing was appended) and
         ``bearing_in_catalog`` says whether a declared ``bearing_id`` is in
         the verified catalog (None without a bearing).

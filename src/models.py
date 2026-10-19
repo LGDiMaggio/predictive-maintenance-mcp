@@ -774,6 +774,23 @@ class TrendAnalysisResult(BaseModel):
 # Phase 3 Models: Asset Health Ledger
 # ============================================================================
 
+#: How a caller follows re-processing, stated by every output that names it.
+_REPROCESS_STOP_RULE = (
+    "A call without reprocess_cursor starts a new re-processing sequence: "
+    "start one only when no sequence of the point has ended in the "
+    "conversation, after the user took an action a sequence listed, after a "
+    "load or a declaration changed the point, or once after an environment "
+    "fix; a named call is an attempt, not a promise that it succeeds. While "
+    "the reprocess block gives a next_call, make exactly that call. When it "
+    "gives none, read sequence_state: 'complete' (every stale measurement "
+    "that represents an acquisition slot has a current snapshot) or "
+    "'exhausted' (the measurements under needs_action stay stale until their "
+    "action is taken; ask the user before any action that is theirs). A new "
+    "sequence attempts again the failures only an attempt finds (a file "
+    "rewritten with the same size, a file that no longer decodes), at most 10 "
+    "attempts, 500 file checks and 50 failures per call."
+)
+
 
 class MeasurementPointDeclarationResult(BaseModel):
     """Outcome of ``declare_measurement_point``.
@@ -783,7 +800,13 @@ class MeasurementPointDeclarationResult(BaseModel):
     nothing and reports the current version; a different one appends the
     next version and names the keys that changed. The count of recorded
     measurements whose snapshot no longer matches the declared context is
-    reported with the exact re-processing call, never applied silently.
+    reported, never applied silently, with the exact re-processing call when
+    a call can act on one of them. A call without reprocess_cursor starts a
+    new re-processing sequence, and a named call is an attempt, not a
+    promise that it succeeds; while the reprocess block gives a next_call,
+    make exactly that call; when it gives none, read sequence_state and
+    report the measurements under needs_action; a new sequence attempts
+    again the failures only an attempt finds.
     """
 
     asset_id: str = Field(description="Asset the point belongs to (ledger id)")
@@ -821,9 +844,12 @@ class MeasurementPointDeclarationResult(BaseModel):
     remedy: Optional[str] = Field(
         None,
         description=(
-            "The exact assess_asset_change(..., reprocess=True) call that "
-            "recomputes the stale snapshots (bounded per call); None when "
-            "nothing is stale"
+            "The exact assess_asset_change(..., reprocess=True) call to attempt "
+            "the stale snapshots, bounded per call, when a stale measurement "
+            "passes the checks re-processing reads from the ledger and is not a "
+            "recording collapsed into another acquisition slot; None otherwise, "
+            "and the message counts the stale measurements by reason. "
+            + _REPROCESS_STOP_RULE
         ),
     )
     declaration: dict[str, Any] = Field(
@@ -1064,8 +1090,11 @@ class AssetChangeAssessment(BaseModel):
         None,
         description=(
             "Concrete action for 'insufficient_history' or "
-            "'processing_not_homogeneous' (the exact re-processing call); "
-            "None otherwise"
+            "'processing_not_homogeneous': for the latter, the exact "
+            "re-processing call while a call can act on an evaluated "
+            "acquisition missing the current lineage, else the actions that "
+            "close the gap with counts and measurement ids; None otherwise. "
+            + _REPROCESS_STOP_RULE
         ),
     )
     suggestion: Optional[str] = Field(
@@ -1109,11 +1138,24 @@ class AssetChangeAssessment(BaseModel):
     reprocess: Optional[dict[str, Any]] = Field(
         None,
         description=(
-            "Outcome of the re-processing run before the assessment when "
-            "reprocess=True: processing_id, stale, reprocessed, "
-            "not_reprocessable, up_to_date, remaining, results per attempted "
-            "measurement, next_call (the exact call to continue, or None) and "
-            "message; None when reprocess was False"
+            "Outcome of the re-processing call run before the assessment when "
+            "reprocess=True, None when reprocess was False: processing_id; the "
+            "counts stale, reprocessed, not_reprocessable, up_to_date, "
+            "remaining, unresolved, superseded and earlier_in_sequence; "
+            "sequence_state ('continue', 'complete' or 'exhausted'); groups "
+            "(the point's measurements in six groups, each with its count, at "
+            "most 50 measurement_ids and truncated); results (each measurement "
+            "attempted or found not reprocessable in this call: outcome, "
+            "reason_code, reason, action, location, location_used, attempted, "
+            "snapshot_id); needs_action (one entry per reason_code with its "
+            "action, exact count and at most 50 ids in all); earlier_failures, "
+            "earlier_by_reason and earlier_not_detailed (what earlier calls of "
+            "the sequence found; the reasons of failures not detailed are in "
+            "the responses that found them, or one new sequence lists them "
+            "again); cursor (the token received), restarted (why a token was "
+            "not used), next_cursor, next_call (the exact call to make next, "
+            "or None once the sequence is complete or exhausted) and message. "
+            + _REPROCESS_STOP_RULE
         ),
     )
     message: str = Field(description="One-paragraph summary of the outcome")

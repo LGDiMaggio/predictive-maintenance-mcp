@@ -123,10 +123,16 @@ async def declare_measurement_point(
     Versioned per point: a re-declaration that changes nothing appends
     nothing and returns the current version; one that changes a value
     appends the next version and reports the changed keys. Measurements
-    whose snapshot was computed with a previous context are counted in
-    measurements_with_stale_context together with the exact
-    assess_asset_change(..., reprocess=True) call that recomputes them (a
-    note-only change makes nothing stale).
+    without a snapshot computed with the current context are counted in
+    measurements_with_stale_context (a note-only change makes nothing
+    stale), and remedy is the exact assess_asset_change(..., reprocess=True)
+    call when the checks re-processing reads from the ledger find one a
+    call can act on; the message counts the others by reason. That call
+    starts a new re-processing sequence, and a named call is an attempt,
+    not a promise that it succeeds: while the reprocess block gives a
+    next_call, make exactly that call; when it gives none, read
+    sequence_state and report the measurements under needs_action. A new
+    sequence attempts again the failures only an attempt finds.
 
     Args:
         ctx: MCP context. Unused, see this module's docstring on logging.
@@ -443,13 +449,38 @@ async def assess_asset_change(
 
     Snapshots are comparable only on one processing lineage. When no
     lineage covers every evaluated acquisition the status is
-    processing_not_homogeneous and the remedy is this call with
-    reprocess=True, which first recomputes the stale snapshots with the
-    current lineage: idempotent (a repeated call recomputes nothing that
-    is already current), bounded to 10 measurements per call (reference
-    members first, then the most recent), verified against the recorded
-    file hash, and the reprocess block names the exact next call while
-    measurements remain. Old snapshots are never deleted.
+    processing_not_homogeneous; the remedy names this call with
+    reprocess=True while a call can act on an evaluated acquisition that
+    lacks the current lineage, else the actions that close the gap, with
+    counts and measurement ids. reprocess=True first runs one call of a
+    re-processing sequence over the point's stale measurements, reference
+    members first, then the most recent: the ones it cannot re-process are
+    found from the ledger and from file metadata without an attempt, and
+    the others are attempted (hash verified against the ledger, decoded,
+    computed, appended), at most 10 attempts, 500 file checks and 50
+    failures per call. Each failure is listed with its reason_code and
+    action by the call that finds it; nothing is written for a failure and
+    old snapshots are never deleted.
+
+    Re-processing stop rule. A call without reprocess_cursor starts a new
+    re-processing sequence, including the call a message, a remedy or a
+    declaration names: start one only when no sequence of the point has
+    ended in this conversation, after the user took an action a sequence
+    listed, after a load or a declaration changed the point, once after an
+    environment fix, or when the user asks to list the blocked measurements
+    again; a named call is an attempt, not a promise that it succeeds.
+    While the reprocess block gives a next_call, make exactly that call,
+    with every argument it shows (reprocess_cursor included). When it gives
+    none, read sequence_state: complete means every stale measurement that
+    represents an acquisition slot now has a current snapshot (recordings
+    superseded in their acquisition slot are listed apart and need
+    nothing); exhausted means the measurements under needs_action stay
+    stale until their action is taken: report them grouped by action and
+    ask the user before any action that is theirs. When the response says
+    some earlier failures are not detailed there, their reasons are in the
+    responses of the calls that found them, or one new sequence lists them
+    again. A new sequence attempts again the failures only an attempt finds
+    (a file rewritten with the same size, a file that no longer decodes).
 
     The lineage assessed holds a snapshot of every evaluated acquisition
     (when no lineage does, the status is processing_not_homogeneous, as
@@ -467,11 +498,13 @@ async def assess_asset_change(
     the snapshots match the current declarations. The re-processing call
     is named when an evaluated acquisition lacks the snapshot of its
     current declarations on the current lineage, the test re-processing
-    uses to select measurements; the call is an attempt, and a measurement
-    it cannot re-process keeps its previous snapshot. A declared baseline
-    compares each member's declaration version, so a member re-loaded with
-    another declaration is superseded even when the original one is
-    restored.
+    uses to select measurements, and nothing re-processing reads from the
+    ledger (or, with reprocess=True, its reprocess block found) stops it;
+    the others are counted by what they need. The call is an attempt, and
+    a measurement it cannot re-process keeps its previous snapshot. A
+    declared baseline compares each member's declaration version, so a
+    member re-loaded with another declaration is superseded even when the
+    original one is restored.
 
     Args:
         ctx: MCP context. Unused, see this module's docstring on logging.
@@ -484,8 +517,8 @@ async def assess_asset_change(
             evidence (1 to 50).
         reference_measurements: Size of the automatic reference window
             when no baseline is declared (3 to 100).
-        reprocess: Recompute up to 10 stale snapshots with the current
-            lineage before assessing.
+        reprocess: Run one call of a re-processing sequence (at most 10
+            attempts) before assessing.
         reprocess_cursor: The continuation token a reprocess block's
             next_call carries; pass it exactly as given, with
             reprocess=True, or leave it out to start a new sequence.

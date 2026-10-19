@@ -24,6 +24,7 @@ import json
 import typing
 import zlib
 from pathlib import Path
+from typing import Optional
 from unittest.mock import AsyncMock
 
 import numpy as np
@@ -1159,6 +1160,41 @@ class TestAssessAssetChange:
         assert len(_events()) == before
 
 
+#: The parts of the re-processing stop rule, by the phrase every reference
+#: surface states for each.
+STOP_RULE_PARTS = {
+    "a call without the token starts a new sequence": (
+        "starts a new re-processing sequence"
+    ),
+    "a named call is an attempt": "an attempt, not a promise",
+    "within a sequence, follow next_call exactly": "make exactly that call",
+    "when it ends, read the state": "sequence_state",
+    "and report what needs an action": "needs_action",
+    "a new sequence attempts the costly failures again": (
+        "attempts again the failures only an attempt finds"
+    ),
+}
+
+#: Phrases no surface and no output uses: they promise an end a sequence
+#: may never reach, or a computation that is only an attempt.
+RETIRED_PHRASES = ("remaining 0", "repeat until remaining", "recomputes")
+
+REPO = Path(__file__).resolve().parent.parent
+
+
+def _plain(text: str) -> str:
+    """*text* without Markdown code marks, on one line."""
+    return " ".join(text.replace("`", "").split())
+
+
+def assert_runtime_wording(*texts: Optional[str]) -> None:
+    """Outputs built at runtime state only the part of the stop rule that
+    applies, and never a retired phrase."""
+    for text in texts:
+        for phrase in RETIRED_PHRASES:
+            assert phrase not in _plain(text or ""), (phrase, text)
+
+
 def _measurement_file(sandbox: Path, index: int, point: str = POINT) -> Path:
     return sandbox / f"{ASSET}_{point}_m{index:02d}.csv"
 
@@ -1181,6 +1217,54 @@ async def _assess(tools, ctx, **kwargs) -> AssetChangeAssessment:
     return await tools["assess_asset_change"](
         ctx=ctx, asset_id=ASSET, measurement_point_id=POINT, **kwargs
     )
+
+
+class TestReprocessStopRule:
+    """Every surface that recommends re-processing states the same stop
+    rule; none promises an end the sequence may not reach."""
+
+    @staticmethod
+    def reference_surfaces() -> dict[str, str]:
+        from predictive_maintenance_mcp import server
+
+        changelog = (REPO / "CHANGELOG.md").read_text(encoding="utf-8")
+        unreleased = changelog.split("## [Unreleased]", 1)[1].split("\n## [", 1)[0]
+        assessment = AssetChangeAssessment.model_fields
+        declaration = MeasurementPointDeclarationResult.model_fields
+        return {
+            "server instructions": server.mcp.instructions or "",
+            "assess_asset_change docstring": asset_tools.assess_asset_change.__doc__,
+            "declare_measurement_point docstring": (
+                asset_tools.declare_measurement_point.__doc__
+            ),
+            "AssetChangeAssessment.reprocess": assessment["reprocess"].description,
+            "AssetChangeAssessment.remedy": assessment["remedy"].description,
+            "MeasurementPointDeclarationResult": (
+                MeasurementPointDeclarationResult.__doc__
+            ),
+            "MeasurementPointDeclarationResult.remedy": (
+                declaration["remedy"].description
+            ),
+            "EXAMPLES.md": (REPO / "EXAMPLES.md").read_text(encoding="utf-8"),
+            "docs/TOOL_CATALOG.md": (REPO / "docs" / "TOOL_CATALOG.md").read_text(
+                encoding="utf-8"
+            ),
+            "docs/ADAPTER_GUIDE.md": (REPO / "docs" / "ADAPTER_GUIDE.md").read_text(
+                encoding="utf-8"
+            ),
+            "CHANGELOG.md [Unreleased]": unreleased,
+        }
+
+    def test_every_reference_surface_states_every_part(self):
+        for surface, text in self.reference_surfaces().items():
+            plain = _plain(text)
+            for part, phrase in STOP_RULE_PARTS.items():
+                assert phrase in plain, f"{surface} does not state: {part}"
+
+    def test_no_reference_surface_uses_a_retired_phrase(self):
+        for surface, text in self.reference_surfaces().items():
+            for phrase in RETIRED_PHRASES:
+                assert phrase not in _plain(text), f"{surface}: {phrase!r}"
 
 
 class TestReprocessSequenceThroughTheTool:
@@ -1217,6 +1301,7 @@ class TestReprocessSequenceThroughTheTool:
         assert result.suggested_verification.startswith(
             "Treat this classification as provisional"
         )
+        assert_runtime_wording(result.message, block["message"])
 
     @pytest.mark.asyncio
     async def test_mid_sequence_every_named_call_is_the_next_call(
@@ -1253,6 +1338,9 @@ class TestReprocessSequenceThroughTheTool:
         assert second.reprocess["sequence_state"] == "exhausted"
         assert second.reprocess["earlier_in_sequence"] == 10
         assert _named_calls(second.message) == []
+        assert_runtime_wording(
+            first.message, block["message"], second.message, second.reprocess["message"]
+        )
         assert _event_types().count(EVENT_HEALTH_SNAPSHOT_COMPUTED) == 15 + 5
         assert len(_events()) == events + 5
 
@@ -1290,6 +1378,7 @@ class TestReprocessSequenceThroughTheTool:
         assert (
             validate_documented_calls(result.remedy, build_endpoints(), "remedy") == []
         )
+        assert_runtime_wording(result.remedy, result.message, block["message"])
 
     @pytest.mark.asyncio
     async def test_ae9_token_misuse_is_refused_before_the_ledger_is_read(
@@ -1369,6 +1458,7 @@ class TestReprocessSequenceThroughTheTool:
         assert "1 is a recording collapsed into another acquisition slot" in (
             declared.message
         )
+        assert_runtime_wording(final.message, block["message"], declared.message)
 
 
 # ---------------------------------------------------------------------------

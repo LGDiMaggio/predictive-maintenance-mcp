@@ -315,9 +315,30 @@ mcp = MCPServer(
       (declare_measurement_point) instead of calling diagnose_vibration
       with default parameters
     - When assess_asset_change returns status processing_not_homogeneous,
-      call it again with reprocess=True: each call re-processes a bounded
-      number of measurements, so repeat it until the reprocess block
-      reports remaining 0
+      or its message or a declaration names the call with reprocess=True,
+      that call starts a new re-processing sequence (a call without
+      reprocess_cursor always does). Start one only when no sequence of the
+      point has ended in this conversation, after the user took an action
+      a sequence listed, after a load or a declaration changed the point,
+      once after an environment fix, or when the user asks to list the
+      blocked measurements again; otherwise report the earlier result. A
+      named call is an attempt, not a promise that it succeeds
+    - Within a sequence, while the reprocess block gives a next_call, make
+      exactly that call with every argument it shows. When it gives none,
+      read sequence_state: complete means every stale measurement that
+      represents an acquisition slot has a current snapshot (recordings
+      superseded in their acquisition slot are listed apart and need
+      nothing); exhausted means the measurements under needs_action stay
+      stale until their action is taken: report them grouped by action and
+      ask the user before any action that is theirs. When the final
+      response says some earlier failures are not detailed there, take
+      their reasons from the responses that found them, or say that one new
+      sequence lists them again
+    - A new sequence attempts again the failures only an attempt finds (a
+      file rewritten with the same size, a file that no longer decodes), at
+      most 10 attempts per call; the failures found from the ledger or from
+      file metadata cost no attempt, within 500 file checks per call, and
+      no call finds more than 50 failures
     - diagnose_vibration fills rpm, bearing_id, machine_group and
       support_type from the declared measurement and point when they are
       omitted and reports where each value came from in parameter_sources,
