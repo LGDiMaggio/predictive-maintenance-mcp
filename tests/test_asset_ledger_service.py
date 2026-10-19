@@ -1687,7 +1687,7 @@ class TestRestoredDeclaration:
     is stale."""
 
     def test_point_revert_reuses_the_recorded_snapshots(self, store, data_dir, root):
-        """Covers AE1."""
+        """A, B (re-processed), then A: nothing is stale or written."""
         declare(store, 2)
         load_sequence(store, data_dir, 11, policy=None)
         assert declare(store, 1)["measurements_with_stale_context"] == 11
@@ -1715,7 +1715,7 @@ class TestRestoredDeclaration:
         )
 
     def test_reload_under_b_then_revert(self, store, data_dir):
-        """Covers AE3: re-loading unchanged files while B is declared
+        """Re-loading unchanged files while B is declared
         appends B's snapshots at load time, with no re-processing call."""
         declare(store, 2)
         infos, arrays = sequence_infos(data_dir, 11)
@@ -1731,7 +1731,7 @@ class TestRestoredDeclaration:
         assert result["derived"]["iso_change"]["machine_group"] == 2
 
     def test_measurement_revert_reuses_the_recorded_snapshot(self, store, data_dir):
-        """Covers AE2: the latest measurement re-loaded with rpm 1500, then
+        """The latest measurement re-loaded with rpm 1500, then
         with 1800 again; the third load appends no snapshot and its
         snapshot_id is the one whose values the assessment uses."""
         declare(store, 2)

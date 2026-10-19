@@ -1188,10 +1188,10 @@ class TestLineage:
         result = assess(view_of(series_events(STABLE + [1.0])))
         assert result["status"] == "assessed"
         assert result["lineage"]["stale_context"] == 0
-        assert "previous point declaration" not in result["message"]
+        assert "previous declaration" not in result["message"]
         assert REPROCESS_CALL not in result["message"]
-        # The placeholder digest of the other fixtures never matches the
-        # current context: every one of their evaluated slots counts as stale.
+        # The placeholder digest never matches the current context: every
+        # evaluated slot counts as stale.
         placeholder = assess(
             view_of(series_events(STABLE + [1.0], placeholder_digests=True))
         )
@@ -1312,7 +1312,7 @@ class TestRestoredInterpretation:
     revert = staticmethod(revert_events)
 
     def test_point_revert_scores_the_restored_snapshots(self):
-        """Covers AE1: the result equals the one the same ledger gives
+        """The result equals the one the same ledger gives
         without the snapshots computed under B."""
         events, b_snapshots = self.revert(STABLE + [1.0], [2.0] * 11)
         view = view_of(events)
@@ -1343,7 +1343,7 @@ class TestRestoredInterpretation:
         assert iso_change["boundary_bc_mm_s"] == pytest.approx(2.8)
 
     def test_measurement_revert_scores_the_restored_snapshot(self):
-        """Covers AE2: rpm 1800, then 1500, then 1800 on the latest slot."""
+        """The latest slot declared with rpm 1800, then 1500, then 1800."""
         events = series_events(STABLE + [1.0])
         point = events[0]
         changed = measurement_event(11, rpm=1500.0, version=2)
@@ -1611,7 +1611,7 @@ class TestStaleEvidence:
         )
 
     def test_current_lineage_names_the_call_with_its_caveat(self):
-        """Covers AE4: a slot first loaded while B was declared is the only
+        """A slot first loaded while B was declared is the only
         stale one; its classification is no_change, which alone would call
         for no verification."""
         events, _ = revert_events(
@@ -1641,7 +1641,7 @@ class TestStaleEvidence:
         assert current["suggested_verification"] is None
 
     def test_older_lineage_clause_counts_the_slots_still_missing(self):
-        """Covers AE6: while re-processing fills the current lineage, the
+        """While re-processing fills the current lineage, the
         stale count on the assessed lineage stays 25 and the clause shows the
         count of slots still missing fall; once the current lineage covers
         every slot the assessment moves to it."""
@@ -1666,7 +1666,7 @@ class TestStaleEvidence:
         assert final["stale_context"] == 0
 
     def test_older_lineage_recorded_later_has_nothing_to_write(self):
-        """Covers AE7: the current lineage holds every current snapshot and
+        """The current lineage holds every current snapshot and
         an older lineage, recorded later, holds snapshots of another
         context. No call is named."""
         values = STABLE + [1.0]

@@ -1073,7 +1073,7 @@ class TestAssessAssetChange:
     async def test_revert_with_a_missing_file_keeps_both_blocks_consistent(
         self, tools, ctx, sandbox
     ):
-        """Covers AE5. Ten loads under A, re-processed under B; an eleventh
+        """Ten loads under A, re-processed under B; an eleventh
         loaded under B only, its file then removed; A declared again. The
         reverted slots are scored from A's snapshots, the eleventh stays
         stale, and the message names the call only as an attempt that may

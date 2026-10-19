@@ -813,9 +813,25 @@ def _select_lineage(evaluated: Sequence[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _expected_snapshot_id(
+    slot: dict[str, Any], point: Optional[dict[str, Any]], processing: str
+) -> Optional[str]:
+    """The id the current declarations of *slot* produce on *processing*,
+    or None when the declaration cannot be resolved."""
+    try:
+        return current_snapshot_id_of(
+            slot["declaration"],
+            point,
+            processing=processing,
+            measurement_id=slot["measurement_id"],
+        )
+    except ValueError:
+        return None
+
+
 def _interpretation_snapshot(
     slot: dict[str, Any], point: Optional[dict[str, Any]], processing: str
-) -> tuple[dict[str, Any], Optional[bool]]:
+) -> tuple[dict[str, Any], bool]:
     """The snapshot that scores *slot* on lineage *processing*.
 
     The one the current declarations of the measurement and its point
@@ -826,27 +842,20 @@ def _interpretation_snapshot(
     such a snapshot, the lineage's latest one stands in.
 
     Returns:
-        ``(snapshot, matched)``. ``matched`` is True for the current
-        interpretation's snapshot and False for the latest one used in its
-        place (stale). It is None when the declaration cannot be resolved:
-        the latest one is used and nothing can be said about staleness.
+        ``(snapshot, stale)``: ``stale`` is True when the latest snapshot
+        stands in. A declaration that cannot be resolved gives the latest
+        snapshot and False, since nothing can be said about its staleness.
     """
     record = slot["record"]
     latest = record["snapshots_by_lineage"][processing]
-    try:
-        expected = current_snapshot_id_of(
-            slot["declaration"],
-            point,
-            processing=processing,
-            measurement_id=slot["measurement_id"],
-        )
-    except ValueError:
-        return latest, None
+    expected = _expected_snapshot_id(slot, point, processing)
+    if expected is None:
+        return latest, False
     for snapshot in reversed(record["snapshots"]):
         lineage = (snapshot.get("processing") or {}).get("processing_id")
         if snapshot.get("snapshot_id") == expected and lineage == processing:
-            return snapshot, True
-    return latest, False
+            return snapshot, False
+    return latest, True
 
 
 # ---------------------------------------------------------------------------
@@ -1398,18 +1407,16 @@ def _lacks_current_snapshot(
     declarations produce on *processing*, the current lineage; a
     declaration that cannot be resolved counts, as it does in the service.
     """
-    try:
-        expected = current_snapshot_id_of(
-            slot["declaration"],
-            point,
-            processing=processing,
-            measurement_id=slot["measurement_id"],
-        )
-    except ValueError:
+    record = slot["record"]
+    if processing not in record["snapshots_by_lineage"]:
+        # No snapshot on this lineage, and the id hashes the lineage: no
+        # recorded id can match, so the context need not be hashed.
+        return True
+    expected = _expected_snapshot_id(slot, point, processing)
+    if expected is None:
         return True
     return all(
-        snapshot.get("snapshot_id") != expected
-        for snapshot in slot["record"]["snapshots"]
+        snapshot.get("snapshot_id") != expected for snapshot in record["snapshots"]
     )
 
 
@@ -1692,9 +1699,9 @@ def assess_change(
     snapshots: dict[str, dict[str, Any]] = {}
     stale_context = 0
     for slot in evaluated:
-        snapshot, matched = _interpretation_snapshot(slot, point, chosen)
+        snapshot, stale = _interpretation_snapshot(slot, point, chosen)
         snapshots[slot["measurement_id"]] = snapshot
-        if matched is False:
+        if stale:
             stale_context += 1
 
     values = {

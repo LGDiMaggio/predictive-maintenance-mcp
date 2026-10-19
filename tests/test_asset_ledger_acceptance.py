@@ -1031,7 +1031,7 @@ async def test_ae5_an_older_lineage_is_never_mixed_and_reprocessing_moves_on(
 async def test_older_lineage_recorded_later_after_a_revert(
     tools, ctx, sequence_data_dir, sequence
 ):
-    """Covers AE7. M01..M11 loaded under A, re-processed under B, then
+    """M01..M11 loaded under A, re-processed under B, then
     copied under an older lineage (recorded later, so it is the one
     assessed); the mm/s measurement loaded under B; A declared again. The
     current lineage already holds A's snapshot of every evaluated slot, so
