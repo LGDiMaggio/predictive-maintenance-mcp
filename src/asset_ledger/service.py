@@ -1788,8 +1788,12 @@ def _run_reprocess(
         else:
             cut = position[token.last]
             members = sorted(m for m in stale if position[m] <= cut)
+            # A token that matches carries a code for each of the first
+            # members and a count for every one of them.
             if (
                 members
+                and len(token.codes) == min(MAX_LISTED_ITEMS, len(members))
+                and sum(token.counts.values()) == len(members)
                 and digest_of(token.last, members, token.codes, token.counts)
                 == token.digest
             ):

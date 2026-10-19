@@ -2013,26 +2013,25 @@ def assess_change(
                 blocked.setdefault(code, []).append(slot["measurement_id"])
             else:
                 attemptable += 1
-        if attemptable:
+        members = _baseline_ids(view, measurement_point_id)
+        if attemptable and call is not None:
             remedy = (
-                f"call {call or reprocess_call(asset_id, measurement_point_id, params=params)} "
-                f"to attempt the missing {current_processing} snapshots of the "
-                f"evaluated slots (idempotent, bounded per call); while its "
-                f"reprocess block gives a next_call, make exactly that call"
+                f"call {call} to attempt the missing {current_processing} "
+                f"snapshots of the evaluated slots (idempotent, bounded per "
+                f"call); while its reprocess block gives a next_call, make "
+                f"exactly that call"
             )
             if blocked:
                 remedy += (
                     f"; {sum(len(ids) for ids in blocked.values())} of the "
                     f"{missing_for_current} slots missing one stay without it "
-                    f"until an action is taken: "
-                    f"{_remedy_actions(blocked, _baseline_ids(view, measurement_point_id))}"
+                    f"until an action is taken: {_remedy_actions(blocked, members)}"
                 )
         else:
             remedy = (
                 f"re-processing cannot compute the {missing_for_current} missing "
                 f"{current_processing} snapshot(s) of the evaluated slots until an "
-                f"action is taken: "
-                f"{_remedy_actions(blocked, _baseline_ids(view, measurement_point_id))}"
+                f"action is taken: {_remedy_actions(blocked, members)}"
                 f"; or, as a decision for the user, declare a baseline with "
                 f"declare_healthy_baseline over measurements that carry the "
                 f"current lineage {current_processing}, which also excludes the "

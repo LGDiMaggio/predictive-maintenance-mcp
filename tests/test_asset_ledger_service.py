@@ -3085,6 +3085,21 @@ class TestTokenValidity:
         second = self.again(store, data_dir, first, limit=3)
         assert second["restarted"] is None and second["remaining"] == 7
 
+    def test_a_crafted_token_that_matches_the_digest_restarts(
+        self, store, data_dir, monkeypatch
+    ):
+        """The digest detects corruption, it is no security boundary: a token
+        made to match it, whose codes and counts disagree with the ledger,
+        restarts the sequence instead of raising."""
+        _, first = self.first_call(store, data_dir)
+        parsed = service.parse_reprocess_cursor(first["next_cursor"])
+        monkeypatch.setattr(service, "content_hash", lambda payload: parsed.digest * 8)
+        crafted = service._cursor_token(
+            parsed.last, parsed.digest, ["file_missing"], {"file_missing": 1}
+        )
+        second = reprocess(store, data_dir, cursor=crafted)
+        assert second["restarted"]["reason_code"] == "ledger_changed"
+
     def test_a_token_of_another_point_or_asset_restarts(self, store, data_dir):
         _, first = self.first_call(store, data_dir)
         for asset, point in ((ASSET, "motor_nde_v"), (OTHER_ASSET, POINT)):
