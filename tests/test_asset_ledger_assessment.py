@@ -1199,27 +1199,6 @@ class TestLineage:
             placeholder["lineage"]["stale_context"] == placeholder["lineage"]["covered"]
         )
 
-    def test_redeclared_point_counts_every_evaluated_slot_as_stale(self):
-        """A re-declaration changing the resolved context (machine group)
-        with no snapshot added since: every evaluated slot is stale and the
-        message names the count and the re-processing call."""
-        events = series_events(STABLE + [1.0])
-        events.append(
-            point_event(
-                2,
-                machine_group=1,
-                recorded_at=datetime(2026, 9, 1, tzinfo=timezone.utc),
-            )
-        )
-        result = assess(view_of(events))
-        assert result["status"] == "assessed"
-        assert result["lineage"]["covered"] == 11
-        assert result["lineage"]["stale_context"] == 11
-        assert (
-            "(11 snapshot(s) computed with a previous point declaration; "
-            f"{REPROCESS_CALL} recomputes them)"
-        ) in result["message"]
-
     def test_window_shrinks_the_evaluated_set_for_the_lineage(self):
         events = self.split(
             lambda i: [LINEAGE_A] if i <= 20 else [LINEAGE_A, LINEAGE_B]
@@ -1274,6 +1253,55 @@ def b_snapshot(
     return snapshot_event(index, **fields)
 
 
+def revert_events(
+    values: Sequence[float],
+    b_values: Sequence[float],
+    *,
+    restore: bool = True,
+    processing: str = LINEAGE_A,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Point A and one snapshot per value; point B (machine group 1) with
+    every measurement re-processed under it; then point A again (version 3,
+    the content of version 1). Returns the events and the snapshot events
+    computed under B."""
+    events = series_events(values, processing=processing)
+    point_b = point_event(2, machine_group=1, recorded_at=REDECLARED_AT)
+    events.append(point_b)
+    measurements = of_type(events, EVENT_MEASUREMENT_RECORDED)
+    b_snapshots = [
+        b_snapshot(measurement, point_b, value, processing=processing)
+        for measurement, value in zip(measurements, b_values)
+    ]
+    events.extend(b_snapshots)
+    if restore:
+        events.append(point_event(3, recorded_at=RESTORED_AT))
+    return events, b_snapshots
+
+
+def recomputed(
+    events: Sequence[dict[str, Any]],
+    point: dict[str, Any],
+    *,
+    processing: str = LINEAGE_A,
+) -> list[dict[str, Any]]:
+    """The snapshots every measurement of *events* gets under *point*, each
+    with the rms of its latest snapshot: appended, they bring every slot to
+    the current interpretation without changing a value."""
+    rms = {
+        event["payload"]["measurement_id"]: event["payload"]["indicators"]["rms"]
+        for event in of_type(events, EVENT_HEALTH_SNAPSHOT_COMPUTED)
+    }
+    return [
+        b_snapshot(
+            measurement,
+            point,
+            rms[measurement["payload"]["measurement_id"]],
+            processing=processing,
+        )
+        for measurement in of_type(events, EVENT_MEASUREMENT_RECORDED)
+    ]
+
+
 class TestRestoredInterpretation:
     """A declaration changed from A to B and back to A: the snapshot A
     produced is already recorded, so nothing new is appended, and the
@@ -1281,29 +1309,7 @@ class TestRestoredInterpretation:
     The latest snapshot is used only when no snapshot of the current
     interpretation exists."""
 
-    @staticmethod
-    def revert(
-        values: Sequence[float],
-        b_values: Sequence[float],
-        *,
-        restore: bool = True,
-    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-        """Point A and one snapshot per value; point B (machine group 1)
-        with every measurement re-processed under it; then point A again
-        (version 3, the content of version 1). Returns the events and the
-        snapshot events computed under B."""
-        events = series_events(values)
-        point_b = point_event(2, machine_group=1, recorded_at=REDECLARED_AT)
-        events.append(point_b)
-        measurements = of_type(events, EVENT_MEASUREMENT_RECORDED)
-        b_snapshots = [
-            b_snapshot(measurement, point_b, value)
-            for measurement, value in zip(measurements, b_values)
-        ]
-        events.extend(b_snapshots)
-        if restore:
-            events.append(point_event(3, recorded_at=RESTORED_AT))
-        return events, b_snapshots
+    revert = staticmethod(revert_events)
 
     def test_point_revert_scores_the_restored_snapshots(self):
         """Covers AE1: the result equals the one the same ledger gives
@@ -1512,6 +1518,231 @@ class TestRestoredInterpretation:
 
 def reference_rms_mean(result: dict[str, Any]) -> float:
     return float(result["observed"]["reference_statistics"]["rms"]["mean"])
+
+
+# ---------------------------------------------------------------------------
+# Stale evidence: the opening sentence and the remedies that can act
+# ---------------------------------------------------------------------------
+
+CURRENT_LINEAGE = processing_id()
+REPROCESS_CAVEAT = (
+    "in bounded batches across the point's stale measurements, and a "
+    "measurement it cannot re-process keeps its previous snapshot (the "
+    "reprocess block gives the reason)"
+)
+STALE_VERIFICATION = (
+    "Treat this classification as provisional and confirm it once every "
+    "evaluated acquisition is assessed from a snapshot computed under the "
+    "current declaration."
+)
+
+
+def stale_opening(stale: int, covered: int) -> str:
+    verb = "was" if stale == 1 else "were"
+    return (
+        f"{stale} of the {covered} evaluated acquisition slots {verb} scored "
+        "from snapshots computed under a previous declaration of the point or "
+        "the measurement, so this verdict does not reflect the current "
+        "declaration yet"
+    )
+
+
+def older_lineage_clause(missing: int, covered: int, actionable: int) -> str:
+    return (
+        f"; this assessment uses lineage {LINEAGE_A} because {missing} of the "
+        f"{covered} evaluated slots still lack a snapshot of the current "
+        f"lineage {CURRENT_LINEAGE}, re-processing writes lineage "
+        f"{CURRENT_LINEAGE} only and leaves the {LINEAGE_A} snapshots unchanged, "
+        f"and the assessment moves to {CURRENT_LINEAGE} once every evaluated "
+        f"slot has one; {REPROCESS_CALL} attempts to compute the {actionable} "
+        f"missing or outdated {CURRENT_LINEAGE} snapshot(s) of the evaluated "
+        f"slots {REPROCESS_CAVEAT}"
+    )
+
+
+def recorded_later_clause() -> str:
+    return (
+        f"; every evaluated slot already has a snapshot of the current lineage "
+        f"{CURRENT_LINEAGE}, but lineage {LINEAGE_A} was recorded later and is "
+        f"the one assessed"
+    )
+
+
+class TestStaleEvidence:
+    """When stale_context is above 0 the message opens with how many slots
+    were scored under a previous declaration, then the message the same view
+    would carry with nothing stale; the re-processing call is named only
+    when re-processing writes something for the evaluated slots."""
+
+    def test_redeclared_point_counts_every_evaluated_slot_as_stale(self):
+        """A re-declaration changing the resolved context (machine group)
+        with no snapshot added since. The fixture's lineage is not the
+        current one, so the remedy says re-processing writes the current
+        lineage and leaves the assessed one unchanged."""
+        events = series_events(STABLE + [1.0])
+        point_v2 = point_event(2, machine_group=1, recorded_at=REDECLARED_AT)
+        events.append(point_v2)
+        result = assess(view_of(events))
+        assert result["status"] == "assessed"
+        assert result["lineage"]["covered"] == 11
+        assert result["lineage"]["stale_context"] == 11
+        current = assess(view_of(events + recomputed(events, point_v2)))
+        assert current["lineage"]["stale_context"] == 0
+        assert result["message"] == (
+            stale_opening(11, 11)
+            + older_lineage_clause(11, 11, 11)
+            + ". "
+            + current["message"]
+        )
+        assert result["suggested_verification"] == STALE_VERIFICATION
+
+    def test_current_lineage_names_the_call_with_its_caveat(self):
+        """Covers AE4: a slot first loaded while B was declared is the only
+        stale one; its classification is no_change, which alone would call
+        for no verification."""
+        events, _ = revert_events(
+            STABLE, STABLE, restore=False, processing=CURRENT_LINEAGE
+        )
+        point_b = of_type(events, EVENT_MEASUREMENT_POINT_DECLARED)[-1]
+        late = measurement_event(11)
+        events += [late, b_snapshot(late, point_b, 1.0, processing=CURRENT_LINEAGE)]
+        point_a = point_event(3, recorded_at=RESTORED_AT)
+        events.append(point_a)
+        result = assess(view_of(events))
+        assert result["lineage"]["is_current"] is True
+        assert result["lineage"]["stale_context"] == 1
+        current = assess(
+            view_of(
+                events + [b_snapshot(late, point_a, 1.0, processing=CURRENT_LINEAGE)]
+            )
+        )
+        assert current["lineage"]["stale_context"] == 0
+        assert result["message"] == (
+            stale_opening(1, 11)
+            + f"; {REPROCESS_CALL} attempts to recompute them {REPROCESS_CAVEAT}. "
+            + current["message"]
+        )
+        assert result["assessed"]["classification"] == "no_change"
+        assert result["suggested_verification"] == STALE_VERIFICATION
+        assert current["suggested_verification"] is None
+
+    def test_older_lineage_clause_counts_the_slots_still_missing(self):
+        """Covers AE6: while re-processing fills the current lineage, the
+        stale count on the assessed lineage stays 25 and the clause shows the
+        count of slots still missing fall; once the current lineage covers
+        every slot the assessment moves to it."""
+        values = STABLE * 2 + STABLE[:5]
+        events = series_events(values)
+        point_b = point_event(2, machine_group=1, recorded_at=REDECLARED_AT)
+        events.append(point_b)
+        filled = recomputed(events, point_b, processing=CURRENT_LINEAGE)
+        for done in (0, 10, 20):
+            result = assess(view_of(events + filled[:done]))
+            lineage = result["lineage"]
+            assert lineage["processing_id"] == LINEAGE_A
+            assert lineage["stale_context"] == 25
+            assert lineage["missing_for_current"] == 25 - done
+            assert result["message"].startswith(
+                stale_opening(25, 25)
+                + older_lineage_clause(25 - done, 25, 25 - done)
+                + ". "
+            )
+        final = assess(view_of(events + filled))["lineage"]
+        assert final["processing_id"] == CURRENT_LINEAGE
+        assert final["stale_context"] == 0
+
+    def test_older_lineage_recorded_later_has_nothing_to_write(self):
+        """Covers AE7: the current lineage holds every current snapshot and
+        an older lineage, recorded later, holds snapshots of another
+        context. No call is named."""
+        values = STABLE + [1.0]
+        events = series_events(values, processing=CURRENT_LINEAGE)
+        point = events[0]
+        older = [
+            b_snapshot(measurement, point, value, context_digest="ctx")
+            for measurement, value in zip(
+                of_type(events, EVENT_MEASUREMENT_RECORDED), values
+            )
+        ]
+        result = assess(view_of(events + older))
+        lineage = result["lineage"]
+        assert lineage["processing_id"] == LINEAGE_A
+        assert lineage["missing_for_current"] == 0
+        assert lineage["stale_context"] == 11
+        current = assess(view_of(events + older + recomputed(events, point)))
+        assert current["lineage"]["processing_id"] == LINEAGE_A
+        assert current["lineage"]["stale_context"] == 0
+        assert result["message"] == (
+            stale_opening(11, 11)
+            + recorded_later_clause()
+            + ", so re-processing has nothing to write on lineage "
+            + f"{CURRENT_LINEAGE} for the evaluated slots. "
+            + current["message"]
+        )
+        assert REPROCESS_CALL not in result["message"]
+
+    def test_nothing_to_write_ignores_measurements_outside_the_evaluated_set(self):
+        """A non-comparable measurement without a current-lineage snapshot is
+        something re-processing may still reach; the sentence only speaks of
+        the evaluated slots, so it stays as it is."""
+        values = STABLE + [1.0]
+        events = series_events(values, processing=CURRENT_LINEAGE)
+        point = events[0]
+        measurements = of_type(events, EVENT_MEASUREMENT_RECORDED)
+        older = [
+            b_snapshot(measurement, point, value, context_digest="ctx")
+            for measurement, value in zip(measurements, values)
+        ]
+        other_axis = measurement_event(12, direction="vertical")
+        events += older + [
+            other_axis,
+            b_snapshot(other_axis, point, 1.0, context_digest="ctx"),
+        ]
+        result = assess(view_of(events))
+        excluded = [e["measurement_id"] for e in result["comparability"]["excluded"]]
+        assert mid(12) in excluded
+        assert result["lineage"]["stale_context"] == 11
+        assert (
+            stale_opening(11, 11)
+            + recorded_later_clause()
+            + ", so re-processing has nothing to write on lineage "
+            + f"{CURRENT_LINEAGE} for the evaluated slots. "
+        ) in result["message"]
+
+    def test_older_lineage_recorded_later_names_the_call_for_outdated_ones(self):
+        """The current lineage covers every slot, but its snapshot of the
+        latest slot was computed under another context: re-processing has
+        that one to rewrite, and the assessment moves as soon as it does."""
+        events = series_events(STABLE, processing=CURRENT_LINEAGE)
+        point = events[0]
+        late = measurement_event(11)
+        events += [
+            late,
+            b_snapshot(
+                late, point, 1.0, processing=CURRENT_LINEAGE, context_digest="ctx"
+            ),
+        ]
+        older = [
+            b_snapshot(measurement, point, value, context_digest="ctx")
+            for measurement, value in zip(
+                of_type(events, EVENT_MEASUREMENT_RECORDED), STABLE + [1.0]
+            )
+        ]
+        result = assess(view_of(events + older))
+        lineage = result["lineage"]
+        assert (lineage["processing_id"], lineage["missing_for_current"]) == (
+            LINEAGE_A,
+            0,
+        )
+        assert result["message"].startswith(
+            stale_opening(11, 11)
+            + recorded_later_clause()
+            + f"; {REPROCESS_CALL} attempts to recompute the 1 {CURRENT_LINEAGE} "
+            f"snapshot(s) computed under a previous declaration {REPROCESS_CAVEAT}, "
+            f"and the assessment moves to {CURRENT_LINEAGE} as soon as "
+            f"re-processing appends a {CURRENT_LINEAGE} snapshot to one of the "
+            "evaluated slots. "
+        )
 
 
 # ---------------------------------------------------------------------------
