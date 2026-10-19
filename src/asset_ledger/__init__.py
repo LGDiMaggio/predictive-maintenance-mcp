@@ -52,6 +52,7 @@ from .snapshot import (  # noqa: F401
     expected_frequencies,
     policy_params,
     processing_id,
+    recorded_locations,
     resolve_context,
     snapshot_blocker,
     snapshot_id,

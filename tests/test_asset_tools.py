@@ -1175,6 +1175,16 @@ STOP_RULE_PARTS = {
     ),
 }
 
+#: The start conditions of a new sequence, which every surface that lists
+#: them lists in full.
+START_CONDITIONS = (
+    "including the call a message, a remedy or a declaration names",
+    "after the user took an action",
+    "after a load or a declaration changed the point",
+    "once after an environment fix",
+    "asks to list the blocked measurements again",
+)
+
 #: Phrases no surface and no output uses: they promise an end a sequence
 #: may never reach, or a computation that is only an attempt.
 RETIRED_PHRASES = ("remaining 0", "repeat until remaining", "recomputes")
@@ -1265,6 +1275,47 @@ class TestReprocessStopRule:
         for surface, text in self.reference_surfaces().items():
             for phrase in RETIRED_PHRASES:
                 assert phrase not in _plain(text), f"{surface}: {phrase!r}"
+
+    def test_every_listing_surface_lists_every_start_condition(self):
+        """The surfaces that enumerate when a new sequence starts enumerate
+        the same conditions (the shorter surfaces only say that a call
+        without the token starts one)."""
+        surfaces = self.reference_surfaces()
+        listing = [
+            "server instructions",
+            "assess_asset_change docstring",
+            "AssetChangeAssessment.reprocess",
+            "AssetChangeAssessment.remedy",
+            "MeasurementPointDeclarationResult.remedy",
+            "EXAMPLES.md",
+            "docs/TOOL_CATALOG.md",
+        ]
+        for surface in listing:
+            plain = _plain(surfaces[surface])
+            for condition in START_CONDITIONS:
+                assert condition in plain, f"{surface} omits: {condition}"
+
+    def test_the_stated_bounds_are_the_constants(self):
+        """Every surface that states the per-call bounds states the values
+        the service enforces."""
+        bounds = (
+            f"{ledger_service.MAX_REPROCESS_PER_CALL} attempts",
+            f"{ledger_service.MAX_FILE_CHECKS_PER_CALL} file checks",
+            f"{ledger_service.MAX_LISTED_ITEMS} failures",
+        )
+        surfaces = self.reference_surfaces()
+        stating = [
+            "server instructions",
+            "assess_asset_change docstring",
+            "AssetChangeAssessment.reprocess",
+            "EXAMPLES.md",
+            "docs/TOOL_CATALOG.md",
+            "CHANGELOG.md [Unreleased]",
+        ]
+        for surface in stating:
+            plain = _plain(surfaces[surface])
+            for bound in bounds:
+                assert bound in plain, f"{surface} does not state {bound}"
 
 
 class TestReprocessSequenceThroughTheTool:
@@ -1379,6 +1430,67 @@ class TestReprocessSequenceThroughTheTool:
             validate_documented_calls(result.remedy, build_endpoints(), "remedy") == []
         )
         assert_runtime_wording(result.remedy, result.message, block["message"])
+
+    @pytest.mark.asyncio
+    async def test_the_remedy_of_a_continuing_call_counts_the_earlier_failures(
+        self, tools, ctx, sandbox, monkeypatch
+    ):
+        """Twenty changed files among 25 slots on the older lineage: the
+        second call, given the token, names its own next_call and counts the
+        10 failures the first call found with the 5 it found itself; the third
+        call names no call."""
+        await _declare_point(tools, ctx)
+        await _load_measurements(tools, ctx, sandbox, 25)
+        monkeypatch.setattr(
+            snapshot_module, "ALGORITHM_VERSION", snapshot_module.ALGORITHM_VERSION + 1
+        )
+        names = [
+            _place(
+                sandbox,
+                f"late_m{index:02d}.csv",
+                _noise(900 + index),
+                _companion(index=index),
+            )
+            for index in range(26, 31)
+        ]
+        await tools["load_signal"](ctx=ctx, filepath=names)
+        for index in range(1, 21):
+            _same_size_change(_measurement_file(sandbox, index))
+        first = await _assess(tools, ctx, reprocess=True)
+        assert first.reprocess["reprocessed"] == 0
+        assert first.reprocess["not_reprocessable"] == 10
+        token = first.reprocess["next_cursor"]
+        assert token is not None
+
+        second = await _assess(tools, ctx, reprocess=True, reprocess_cursor=token)
+        block = second.reprocess
+        assert block["restarted"] is None
+        assert (block["reprocessed"], block["not_reprocessable"]) == (5, 5)
+        assert block["earlier_in_sequence"] == 10
+        assert block["next_cursor"] not in (None, token)
+        assert second.status == "processing_not_homogeneous"
+        assert second.remedy.startswith(f"call {block['next_call']} to attempt")
+        assert _named_calls(second.remedy) == [block["next_call"]]
+        assert (
+            "; 15 of the 20 slots missing one stay without it until an action is "
+            "taken: 15 need the user's decision on a changed file"
+        ) in second.remedy
+        assert (
+            validate_documented_calls(second.remedy, build_endpoints(), "remedy") == []
+        )
+
+        third = await _assess(
+            tools, ctx, reprocess=True, reprocess_cursor=block["next_cursor"]
+        )
+        assert third.reprocess["sequence_state"] == "exhausted"
+        assert third.reprocess["earlier_in_sequence"] == 15
+        assert third.remedy.startswith(
+            "re-processing cannot compute the 20 missing "
+            f"{third.current_processing_id} snapshot(s) of the evaluated slots until "
+            "an action is taken: 20 need the user's decision on a changed file"
+        )
+        assert _named_calls(third.remedy) == []
+        assert_runtime_wording(second.remedy, third.remedy, block["message"])
 
     @pytest.mark.asyncio
     async def test_ae9_token_misuse_is_refused_before_the_ledger_is_read(

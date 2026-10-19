@@ -1192,6 +1192,8 @@ class TestModulePurity:
 class TestReprocessStaleSnapshots:
     def test_contract_constants(self):
         assert MAX_REPROCESS_PER_CALL == 10
+        assert service.MAX_FILE_CHECKS_PER_CALL == 500
+        assert service.MAX_LISTED_ITEMS == 50
         assert REPROCESS_OUTCOMES == ("reprocessed", "up_to_date", "not_reprocessable")
 
     def test_twenty_five_stale_with_limit_ten_over_three_calls(self, store, data_dir):
@@ -2252,6 +2254,42 @@ class TestReasonCodes:
         assert entry["reason_code"] == "file_inaccessible"
         assert entry["reason"].startswith("cannot read m01.csv: Symlink loop")
 
+    def test_a_name_windows_cannot_hold_is_no_file(self, store, data_dir, monkeypatch):
+        measurement_id = one_stale(store, data_dir)
+        error = OSError(22, "The filename syntax is incorrect")
+        error.winerror = 123
+        refuse_stat_of(monkeypatch, "m01.csv", error)
+        entry = only(reprocess(store, data_dir), measurement_id)
+        assert entry["reason_code"] == "file_missing"
+
+    def test_a_file_where_a_directory_was_is_no_file(self, store, data_dir):
+        declare_point(store)
+        values = noise(1, 5000)
+        path = data_dir / "sub" / "m01.csv"
+        info = make_info(path, values, acquired_at=acquired(1))
+        [outcome] = record(store, data_dir, [info], {"m01": values}, policy=OLD_POLICY)
+        shutil.rmtree(data_dir / "sub")
+        (data_dir / "sub").write_text("not a directory", encoding="ascii")
+        entry = only(reprocess(store, data_dir), outcome["measurement_id"])
+        assert entry["reason_code"] == "file_missing"
+        assert entry["reason"] == "file not found at sub/m01.csv"
+
+    def test_a_reason_names_at_most_three_locations(self, store, data_dir):
+        declare_point(store)
+        values = noise(1, 5000)
+        names = ["m01.csv"] + [f"c{k}/m01.csv" for k in range(1, 5)]
+        for name in names:
+            info = make_info(data_dir / name, values, acquired_at=acquired(1))
+            [outcome] = record(
+                store, data_dir, [info], {"m01": values}, policy=OLD_POLICY
+            )
+            (data_dir / name).unlink()
+        entry = only(reprocess(store, data_dir), outcome["measurement_id"])
+        assert entry["reason"] == (
+            "file not found at c4/m01.csv; file not found at c3/m01.csv; file not "
+            "found at c2/m01.csv; and 2 more location(s)"
+        )
+
     def test_a_size_change_is_found_without_hashing(self, store, data_dir, spy):
         measurement_id = _differs(store, data_dir, None)
         spy["digest"].clear()
@@ -2903,6 +2941,49 @@ class TestReprocessSequences:
             with pytest.raises(ValueError, match=problem) as refused:
                 reprocess(store, data_dir, cursor=token)
             assert "pass the token exactly as next_call gives it" in str(refused.value)
+
+    def test_a_code_counted_fewer_times_than_it_appears_is_refused(self):
+        token = "r1." + "0" * 16 + "." + "0" * 8 + ".ff.f1g1"
+        with pytest.raises(ValueError, match="its codes disagree with its counts"):
+            service.parse_reprocess_cursor(token)
+
+    def test_superseded_failures_carried_by_the_token(
+        self, store, data_dir, monkeypatch
+    ):
+        """Two duplicate exports, each collapsed into the slot of a later one
+        and both gone: the first call ends after one of them, the token
+        carries it, and the sequence ends complete with both superseded."""
+        declare_point(store)
+        arrays = {
+            name: noise(seed, 5000)
+            for seed, name in enumerate(("a1", "a2", "b1", "b2"), start=1)
+        }
+        infos = [
+            make_info(
+                data_dir / f"{name}.csv",
+                values,
+                acquired_at=acquired(1 if name.startswith("a") else 2),
+            )
+            for name, values in arrays.items()
+        ]
+        record(store, data_dir, infos, arrays, policy=OLD_POLICY)
+        for name in ("a1", "b1"):
+            (data_dir / f"{name}.csv").unlink()
+        monkeypatch.setattr(service, "MAX_FILE_CHECKS_PER_CALL", 7)
+        first = reprocess(store, data_dir)
+        assert_partition(first, 4)
+        assert first["sequence_state"] == "continue"
+        assert first["superseded"] == 1
+        assert first["next_cursor"] is not None
+        second = reprocess(store, data_dir, cursor=first["next_cursor"])
+        assert_partition(second, 4)
+        assert second["restarted"] is None
+        assert second["sequence_state"] == "complete"
+        assert second["groups"]["superseded"]["count"] == 2
+        assert second["earlier_in_sequence"] == 0
+        assert second["earlier_failures"] == []
+        assert second["earlier_by_reason"] == {}
+        assert (second["unresolved"], second["needs_action"]) == (0, [])
 
     def test_the_token_stays_under_its_cap(self):
         counts = {code: 999_999 for code in REASON_CODE_TABLE}

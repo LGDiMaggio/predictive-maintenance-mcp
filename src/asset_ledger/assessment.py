@@ -1552,8 +1552,9 @@ def reprocess_action(
         )
     if code == "undecodable":
         return (
-            "correct the file and load it again with load_signal; a corrected "
-            "file loads as a new recording"
+            "re-export or re-acquire the capture at the source (filling, "
+            "interpolating or deleting samples is not a fix), then load it with "
+            "load_signal; the new file loads as a new recording"
             + (
                 "; for a member of the declared baseline, then declare the "
                 "baseline again"
@@ -2337,7 +2338,12 @@ def assess_change(
                 actionable=actionable,
                 call=call,
                 blocked=stale_blocked,
-                listed=reprocess is not None,
+                listed=reprocess is not None
+                and all(
+                    m in reprocess.blocked
+                    for ids in stale_blocked.values()
+                    for m in ids
+                ),
             )
             + ". "
             + message

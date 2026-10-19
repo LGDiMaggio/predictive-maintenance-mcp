@@ -314,15 +314,15 @@ mcp = MCPServer(
       user for the point context named in its remedy
       (declare_measurement_point) instead of calling diagnose_vibration
       with default parameters
-    - When assess_asset_change returns status processing_not_homogeneous,
-      or its message or a declaration names the call with reprocess=True,
-      that call starts a new re-processing sequence (a call without
-      reprocess_cursor always does). Start one only when no sequence of the
-      point has ended in this conversation, after the user took an action
-      a sequence listed, after a load or a declaration changed the point,
-      once after an environment fix, or when the user asks to list the
-      blocked measurements again; otherwise report the earlier result. A
-      named call is an attempt, not a promise that it succeeds
+    - A call to assess_asset_change with reprocess=True and no
+      reprocess_cursor starts a new re-processing sequence, including the
+      call a message, a remedy or a declaration names (as when the status
+      is processing_not_homogeneous). Start one only when no sequence of
+      the point has ended in this conversation, after the user took an
+      action a sequence listed, after a load or a declaration changed the
+      point, once after an environment fix, or when the user asks to list
+      the blocked measurements again; otherwise report the earlier result.
+      A named call is an attempt, not a promise that it succeeds
     - Within a sequence, while the reprocess block gives a next_call, make
       exactly that call with every argument it shows. When it gives none,
       read sequence_state: complete means every stale measurement that

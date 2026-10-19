@@ -2077,6 +2077,79 @@ class TestReprocessCoupling:
         assert service.reprocess_call is assessment.reprocess_call
 
 
+def older_lineage_partly_current_events(
+    rate_missing: bool = False,
+) -> list[dict[str, Any]]:
+    """Ten slots on an older lineage, every one stale there, the first five
+    also current on the current lineage; the last five lack it."""
+    events = [point_event()]
+    for index, value in enumerate(STABLE, start=1):
+        measurement = measurement_event(
+            index, sampling_rate=None if rate_missing and index > 5 else 10000.0
+        )
+        events.append(measurement)
+        events.append(snapshot_event(index, rms=value, processing=LINEAGE_A))
+        if index <= 5:
+            events.append(
+                b_snapshot(measurement, events[0], value, processing=CURRENT_LINEAGE)
+            )
+    return events
+
+
+def older_lineage_missing_clause() -> str:
+    return (
+        f"; this assessment uses lineage {LINEAGE_A} because 5 of the 10 evaluated "
+        f"slots still lack a snapshot of the current lineage {CURRENT_LINEAGE}, "
+        f"re-processing writes lineage {CURRENT_LINEAGE} only and leaves the "
+        f"{LINEAGE_A} snapshots unchanged, and the assessment moves to "
+        f"{CURRENT_LINEAGE} once every evaluated slot has one"
+    )
+
+
+class TestBlockedSlotsOnAnOlderLineage:
+    """The clause counting slots re-processing cannot act on also follows the
+    older-lineage sentence, and says the reprocess block reports them only
+    when the block did."""
+
+    def test_the_block_found_them(self):
+        found = ReprocessCoupling(
+            blocked={mid(i): "file_missing" for i in range(6, 11)}, next_call=None
+        )
+        result = assess(view_of(older_lineage_partly_current_events()), reprocess=found)
+        assert result["lineage"]["processing_id"] == LINEAGE_A
+        assert result["message"].startswith(
+            stale_opening(10, 10)
+            + older_lineage_missing_clause()
+            + blocked_clause(5, "5 need the file restored or located")
+            + " (the reprocess block reports them). "
+        )
+
+    def test_the_view_checks_found_them_and_the_block_did_not_reach_them(self):
+        """With reprocess=True, a slot the view checks block but the call never
+        reached is not in the block: the clause gives its action itself."""
+        events = older_lineage_partly_current_events(rate_missing=True)
+        for coupling in (None, ReprocessCoupling(blocked={}, next_call=None)):
+            result = assess(view_of(events), reprocess=coupling)
+            assert result["message"].startswith(
+                stale_opening(10, 10)
+                + older_lineage_missing_clause()
+                + blocked_clause(5, "5 need a declared sampling rate")
+                + " (for a declared sampling rate, ask the user for the sampling "
+                "rate, then re-load the file with load_signal and a companion that "
+                "declares it (the same bytes keep the same measurement_id)). "
+            )
+
+    def test_the_named_call_repeats_acquired_until(self):
+        params = AssessmentParams(
+            acquired_since=acquired(3), acquired_until=acquired(9), last_k=4
+        )
+        assert reprocess_call(ASSET, POINT, params=params) == (
+            "assess_asset_change(asset_id='P-101', measurement_point_id='motor_de_h', "
+            f"acquired_since={acquired(3)!r}, acquired_until={acquired(9)!r}, "
+            "last_k=4, reprocess=True)"
+        )
+
+
 class TestViewChecksAgree:
     """The assessment and re-processing apply one view-check function to the
     same recorded payload and point declaration."""

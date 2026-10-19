@@ -776,19 +776,21 @@ class TrendAnalysisResult(BaseModel):
 
 #: How a caller follows re-processing, stated by every output that names it.
 _REPROCESS_STOP_RULE = (
-    "A call without reprocess_cursor starts a new re-processing sequence: "
-    "start one only when no sequence of the point has ended in the "
-    "conversation, after the user took an action a sequence listed, after a "
-    "load or a declaration changed the point, or once after an environment "
-    "fix; a named call is an attempt, not a promise that it succeeds. While "
-    "the reprocess block gives a next_call, make exactly that call. When it "
-    "gives none, read sequence_state: 'complete' (every stale measurement "
-    "that represents an acquisition slot has a current snapshot) or "
-    "'exhausted' (the measurements under needs_action stay stale until their "
-    "action is taken; ask the user before any action that is theirs). A new "
-    "sequence attempts again the failures only an attempt finds (a file "
-    "rewritten with the same size, a file that no longer decodes), at most 10 "
-    "attempts, 500 file checks and 50 failures per call."
+    "A call without reprocess_cursor starts a new re-processing sequence, "
+    "including the call a message, a remedy or a declaration names: start one "
+    "only when no sequence of the point has ended in the conversation, after "
+    "the user took an action a sequence listed, after a load or a declaration "
+    "changed the point, once after an environment fix, or when the user asks "
+    "to list the blocked measurements again; a named call is an attempt, not a "
+    "promise that it succeeds. While the reprocess block gives a next_call, "
+    "make exactly that call. When it gives none, read sequence_state: "
+    "'complete' (every stale measurement that represents an acquisition slot "
+    "has a current snapshot) or 'exhausted' (the measurements under "
+    "needs_action stay stale until their action is taken; ask the user before "
+    "any action that is theirs). A new sequence attempts again the failures "
+    "only an attempt finds (a file rewritten with the same size, a file that "
+    "no longer decodes), at most 10 attempts, 500 file checks and 50 failures "
+    "per call."
 )
 
 

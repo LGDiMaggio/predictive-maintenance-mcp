@@ -224,8 +224,9 @@ __all__ = [
 logger = logging.getLogger(__name__)
 
 #: Stale measurements ATTEMPTED per :func:`reprocess_stale_snapshots` call
-#: (an attempt hashes, decodes, computes and appends). Ten keeps one tool
-#: call bounded: ten hashes, ten decodes, ten snapshots.
+#: (an attempt hashes the recorded locations until one matches, then decodes,
+#: computes and appends). Ten keeps one tool call bounded: ten decodes, ten
+#: snapshots.
 MAX_REPROCESS_PER_CALL = 10
 
 #: File checks per call: each containment check of a relative location and
@@ -288,6 +289,9 @@ _CURSOR_PATTERN = re.compile(
 
 #: Locations a not-reprocessable reason names before "and N more".
 _MAX_REASON_LOCATIONS = 3
+
+#: Windows error of a metadata call on a name the file system cannot hold.
+_ERROR_INVALID_NAME = 123
 
 #: Measurement ids a message names per reason code.
 _MAX_MESSAGE_IDS = 5
@@ -1459,7 +1463,11 @@ def _check_locations(
             failed[location] = _missing(location)
             continue
         except (OSError, RuntimeError) as exc:
-            failed[location] = _inaccessible(location, exc)
+            # A name Windows cannot hold is no file, not an access problem.
+            invalid_name = getattr(exc, "winerror", None) == _ERROR_INVALID_NAME
+            failed[location] = (
+                _missing(location) if invalid_name else _inaccessible(location, exc)
+            )
             continue
         if not stat.S_ISREG(info.st_mode):
             failed[location] = _missing(location)
