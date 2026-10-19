@@ -38,6 +38,7 @@ from ..asset_ledger import service as ledger_service
 from ..asset_ledger.assessment import (
     MIN_REFERENCE_MEASUREMENTS,
     AssessmentParams,
+    ReprocessCoupling,
     assess_change,
     validate_params,
 )
@@ -420,6 +421,7 @@ async def assess_asset_change(
     last_k: int = 5,
     reference_measurements: int = 10,
     reprocess: bool = False,
+    reprocess_cursor: Optional[str] = None,
 ) -> AssetChangeAssessment:
     """Assess the change of one measurement point against its reference.
 
@@ -484,6 +486,9 @@ async def assess_asset_change(
             when no baseline is declared (3 to 100).
         reprocess: Recompute up to 10 stale snapshots with the current
             lineage before assessing.
+        reprocess_cursor: The continuation token a reprocess block's
+            next_call carries; pass it exactly as given, with
+            reprocess=True, or leave it out to start a new sequence.
 
     Returns:
         AssetChangeAssessment with status 'assessed', 'not_found',
@@ -510,16 +515,27 @@ async def assess_asset_change(
         acquired_until=acquired_until,
     )
     validate_params(params)
+    if reprocess_cursor is not None:
+        if not reprocess:
+            raise ValueError(
+                "reprocess_cursor continues a re-processing sequence and needs "
+                "reprocess=True; pass the token exactly as next_call gives it, "
+                "with reprocess=True, or leave reprocess_cursor out to start a new "
+                "sequence."
+            )
+        ledger_service.parse_reprocess_cursor(reprocess_cursor)
     store = LedgerStore(get_ledger_dir())
 
     reprocess_block: Optional[dict[str, Any]] = None
+    coupling: Optional[ReprocessCoupling] = None
     if reprocess:
-        reprocess_block = ledger_service.reprocess_stale_snapshots(
+        reprocess_block, coupling = ledger_service.reprocess_for_assessment(
             asset_id,
             measurement_point_id,
             store=store,
             data_dir=config.DATA_DIR,
             params=params,
+            cursor=reprocess_cursor,
         )
         logger.info(reprocess_block["message"])
 
@@ -529,6 +545,7 @@ async def assess_asset_change(
         measurement_point_id,
         params=params,
         known_assets=store.list_assets(),
+        reprocess=coupling,
     )
     logger.info(
         "Change assessment of %s/%s: %s",

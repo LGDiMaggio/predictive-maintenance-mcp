@@ -98,6 +98,7 @@ from .snapshot import (
     context_digest,
     processing_id,
     resolve_context,
+    snapshot_blocker,
     snapshot_id,
 )
 
@@ -119,6 +120,7 @@ __all__ = [
     "validate_params",
     "collect_point_slots",
     "current_snapshot_id_of",
+    "reprocess_action",
     "reprocess_call",
     "assess_change",
 ]
@@ -171,6 +173,9 @@ MIN_USABLE_SLOTS = MIN_REFERENCE_MEASUREMENTS + 1
 
 #: Cap of the per-measurement listings (excluded, collapsed) in a payload.
 MAX_LISTED_ITEMS = 50
+
+#: Measurement ids a remedy names per action.
+_REMEDY_IDS = 5
 
 _SEVERITY: dict[str, int] = {name: rank for rank, name in enumerate(CLASSIFICATIONS)}
 _DIRECTION_OF_SIDE: dict[str, str] = {"above": "increase", "below": "decrease"}
@@ -533,6 +538,14 @@ def _active_baseline(view: dict[str, Any], point_id: str) -> dict[str, Any]:
         "current": current if isinstance(current, dict) else None,
         "withdrawn": withdrawn,
     }
+
+
+def _baseline_ids(view: dict[str, Any], point_id: str) -> frozenset[str]:
+    """The members the active declared baseline of the point names."""
+    baseline = _active_baseline(view, point_id)["current"]
+    if baseline is None:
+        return frozenset()
+    return frozenset(str(m) for m in (baseline.get("measurement_ids") or []))
 
 
 def _baseline_members(
@@ -1434,6 +1447,128 @@ class ReprocessCoupling(NamedTuple):
     next_call: Optional[str]
 
 
+#: How a new sequence is started, in the actions that call for one.
+_NEW_SEQUENCE = (
+    "start one new re-processing sequence (the re-processing call without "
+    "reprocess_cursor)"
+)
+
+#: Appended to the actions that re-load a member of the declared baseline.
+_RELOAD_MEMBER_NOTE = (
+    "; for a member of the declared baseline, a re-load records a new "
+    "declaration version, which removes it from the baseline until the "
+    "baseline is declared again"
+)
+
+
+def reprocess_action(
+    code: str,
+    *,
+    member: bool = False,
+    relative: bool = False,
+    data_dir: Optional[str] = None,
+) -> Optional[str]:
+    """The action that clears a not-reprocessable reason *code* (None for a
+    recording superseded in its acquisition slot, which never scores).
+
+    Args:
+        code: A reason code of the service's `REPROCESS_REASON_CODES`.
+        member: The measurement is a member of the declared baseline.
+        relative: Its most recent recorded location is relative to the
+            data directory.
+        data_dir: The data directory relative locations resolved under.
+    """
+    reload_note = _RELOAD_MEMBER_NOTE if member else ""
+    if code == "no_valid_sampling_rate":
+        return (
+            "ask the user for the sampling rate, then re-load the file with "
+            "load_signal and a companion that declares it (the same bytes keep "
+            "the same measurement_id)" + reload_note
+        )
+    if code == "declaration_unresolvable":
+        return (
+            "ask the user to correct the measurement object of the companion "
+            "and re-load the file with load_signal, or to re-declare the point "
+            "with declare_measurement_point" + reload_note
+        )
+    if code == "raw_format_incomplete":
+        return (
+            "re-load the file with load_signal and its raw declaration, "
+            "sample_format included (the same bytes keep the same "
+            "measurement_id)" + reload_note
+        )
+    if code == "no_file_recorded":
+        return (
+            "re-load the file with load_signal and its companion, so the ledger "
+            "records its location and content hash" + reload_note
+        )
+    if code == "location_outside_data_dir":
+        return (
+            "load the file with load_signal by its real path, or replace the "
+            "link inside the data directory with the file itself" + reload_note
+        )
+    if code == "file_missing":
+        resolved = (
+            ""
+            if data_dir is None
+            else f"; relative locations resolved under {data_dir}"
+        )
+        check = (
+            "check first that the server runs with the data directory the file "
+            f"was loaded under (data/signals under PDM_PROJECT_DIR{resolved}), then "
+            if relative
+            else ""
+        )
+        if member:
+            return check + (
+                "restore the file at one of its recorded locations, the only "
+                "action that keeps it in the declared baseline; loading it from "
+                "anywhere else records a new declaration version and removes it "
+                "from the baseline until the baseline is declared again"
+            )
+        return check + (
+            "restore the file at one of its recorded locations, or load it with "
+            "load_signal from where the user says it is now, with its companion "
+            "beside it; the load succeeds when it reports the same "
+            "measurement_id"
+        )
+    if code == "content_differs":
+        return (
+            "a decision for the user, which the agent asks for and does not "
+            "make: restore the original file at its recorded location, or load "
+            "the current file with load_signal as a new recording if it is meant "
+            "to replace the old one"
+            + (
+                "; for a member of the declared baseline, a new recording then "
+                "needs the baseline declared again"
+                if member
+                else ""
+            )
+        )
+    if code == "file_inaccessible":
+        return (
+            "fix access to the file (its permissions, an offline cloud "
+            f"placeholder, a network drive), then {_NEW_SEQUENCE}"
+        )
+    if code == "undecodable":
+        return (
+            "correct the file and load it again with load_signal; a corrected "
+            "file loads as a new recording"
+            + (
+                "; for a member of the declared baseline, then declare the "
+                "baseline again"
+                if member
+                else ""
+            )
+        )
+    if code == "append_failed":
+        return (
+            "fix the ledger directory (free space, permissions, a lock held by "
+            f"another process), then {_NEW_SEQUENCE}"
+        )
+    return None
+
+
 #: The caveat of every stale-evidence clause that names the re-processing
 #: call: a call re-processes a bounded batch, and a measurement whose file is
 #: missing or changed, or whose declaration it refuses, is not recomputed.
@@ -1475,6 +1610,112 @@ def _lacks_current_snapshot(
     )
 
 
+#: What a stale evaluated slot that re-processing cannot act on needs, by
+#: reason code, in the order the codes are found.
+_BLOCKED_NEEDS: dict[str, str] = {
+    "no_valid_sampling_rate": "a declared sampling rate",
+    "declaration_unresolvable": "a corrected declaration",
+    "raw_format_incomplete": "the raw declaration re-loaded",
+    "no_file_recorded": "the file re-loaded with its companion",
+    "location_outside_data_dir": "the file loaded by its real path",
+    "file_missing": "the file restored or located",
+    "content_differs": "the user's decision on a changed file",
+    "file_inaccessible": "access to the file fixed",
+    "undecodable": "a corrected file",
+    "append_failed": "the ledger directory fixed",
+}
+
+#: The blocked slots of a stale clause or a remedy, by reason code (None:
+#: found by an earlier call of the sequence whose code is not detailed).
+_Blocked = dict[Optional[str], list[str]]
+
+
+def _reprocess_blocker(
+    slot: dict[str, Any],
+    point: Optional[dict[str, Any]],
+    reprocess: Optional[ReprocessCoupling],
+) -> tuple[bool, Optional[str]]:
+    """Whether re-processing cannot act on *slot*, and the reason code.
+
+    The view checks re-processing applies (``snapshot_blocker``), then,
+    when a re-processing run in the same call found it not reprocessable,
+    that finding.
+    """
+    found = snapshot_blocker(slot["payload"], point)
+    if found is not None:
+        return True, found[0]
+    measurement_id = slot["measurement_id"]
+    if reprocess is not None and measurement_id in reprocess.blocked:
+        return True, reprocess.blocked[measurement_id]
+    return False, None
+
+
+def _ordered_codes(blocked: _Blocked) -> list[Optional[str]]:
+    order: list[Optional[str]] = [*_BLOCKED_NEEDS, None]
+    return [code for code in order if code in blocked]
+
+
+def _blocked_counts(blocked: _Blocked) -> str:
+    """'2 need a corrected declaration, 1 needs ...' in code order."""
+    parts: list[str] = []
+    for code in _ordered_codes(blocked):
+        count = len(blocked[code])
+        if code is None:
+            verb = "was" if count == 1 else "were"
+            parts.append(
+                f"{count} {verb} found not reprocessable by an earlier call of "
+                f"this sequence"
+            )
+        else:
+            verb = "needs" if count == 1 else "need"
+            parts.append(f"{count} {verb} {_BLOCKED_NEEDS[code]}")
+    return ", ".join(parts)
+
+
+def _blocked_clause(blocked: _Blocked, current: str, *, listed: bool) -> str:
+    """The clause of the stale-evidence sentence that counts the evaluated
+    slots re-processing cannot act on until an action is taken. It carries
+    no path: locations stay in the reprocess block."""
+    if not blocked:
+        return ""
+    total = sum(len(ids) for ids in blocked.values())
+    text = (
+        f"; {total} evaluated slot(s) lacking the {current} snapshot of their "
+        f"current declarations stay stale until an action is taken: "
+        f"{_blocked_counts(blocked)}"
+    )
+    if listed:
+        return text + " (the reprocess block reports them)"
+    actions = "; ".join(
+        f"for {_BLOCKED_NEEDS[code]}, {reprocess_action(code)}"
+        for code in _ordered_codes(blocked)
+        if code is not None
+    )
+    return f"{text} ({actions})"
+
+
+def _remedy_actions(blocked: _Blocked, members: frozenset[str]) -> str:
+    """The actions that close the gap, with counts and up to five ids each."""
+    parts: list[str] = []
+    for code in _ordered_codes(blocked):
+        ids = blocked[code]
+        shown = ", ".join(ids[:_REMEDY_IDS]) + (
+            f" and {len(ids) - _REMEDY_IDS} more" if len(ids) > _REMEDY_IDS else ""
+        )
+        if code is None:
+            parts.append(
+                f"{len(ids)} found not reprocessable by an earlier call of this "
+                f"sequence ({shown}): the responses of the calls that found them "
+                f"give the reason and the action, or one new sequence lists them "
+                f"again"
+            )
+            continue
+        verb = "needs" if len(ids) == 1 else "need"
+        action = reprocess_action(code, member=any(m in members for m in ids))
+        parts.append(f"{len(ids)} {verb} {_BLOCKED_NEEDS[code]} ({shown}): {action}")
+    return "; ".join(parts)
+
+
 def _stale_evidence(
     *,
     stale: int,
@@ -1483,18 +1724,24 @@ def _stale_evidence(
     current: str,
     missing: int,
     actionable: int,
-    call: str,
+    call: Optional[str],
+    blocked: _Blocked,
+    listed: bool,
 ) -> str:
     """The sentence (without its period) that opens the message when
     *stale* of the *covered* evaluated slots were scored from snapshots
     computed under a previous declaration.
 
-    It names the re-processing call only when *actionable* evaluated slots
-    lack the current interpretation's snapshot on the *current* lineage,
-    the one re-processing writes. When the *chosen* lineage is another one,
-    it says that re-processing does not touch the chosen lineage's
-    snapshots, and when the assessment moves to the current lineage.
+    It names the re-processing *call* only when *actionable* evaluated
+    slots lack the current interpretation's snapshot on the *current*
+    lineage, the one re-processing writes, and re-processing can act on
+    them; the *blocked* ones are counted by what they need, and *listed*
+    says the reprocess block of the same response lists them. When the
+    *chosen* lineage is another one, it says that re-processing does not
+    touch the chosen lineage's snapshots, and when the assessment moves to
+    the current lineage.
     """
+    named = actionable if call is not None else 0
     verb = "was" if stale == 1 else "were"
     text = (
         f"{stale} of the {covered} evaluated acquisition slots {verb} scored "
@@ -1502,10 +1749,11 @@ def _stale_evidence(
         f"or the measurement, so this verdict does not reflect the current "
         f"declaration yet"
     )
+    tail = _blocked_clause(blocked, current, listed=listed)
     if chosen == current:
-        if actionable:
+        if named:
             text += f"; {call} attempts to recompute them {_REPROCESS_CAVEAT}"
-        return text
+        return text + tail
     if missing:
         text += (
             f"; this assessment uses lineage {chosen} because {missing} of the "
@@ -1514,29 +1762,36 @@ def _stale_evidence(
             f"and leaves the {chosen} snapshots unchanged, and the assessment "
             f"moves to {current} once every evaluated slot has one"
         )
-        if actionable:
+        if named:
             text += (
-                f"; {call} attempts to compute the {actionable} missing or "
+                f"; {call} attempts to compute the {named} missing or "
                 f"outdated {current} snapshot(s) of the evaluated slots "
                 f"{_REPROCESS_CAVEAT}"
             )
-        return text
+        return text + tail
     text += (
         f"; every evaluated slot already has a snapshot of the current lineage "
         f"{current}, but lineage {chosen} was recorded later and is the one "
         f"assessed"
     )
-    if not actionable:
+    if named:
+        return (
+            text
+            + (
+                f"; {call} attempts to recompute the {named} {current} "
+                f"snapshot(s) computed under a previous declaration "
+                f"{_REPROCESS_CAVEAT}, and the assessment moves to {current} as "
+                f"soon as re-processing appends a {current} snapshot to one of "
+                f"the evaluated slots"
+            )
+            + tail
+        )
+    if not blocked:
         return text + (
             f", so re-processing has nothing to write on lineage {current} for "
             f"the evaluated slots"
         )
-    return text + (
-        f"; {call} attempts to recompute the {actionable} {current} snapshot(s) "
-        f"computed under a previous declaration {_REPROCESS_CAVEAT}, and the "
-        f"assessment moves to {current} as soon as re-processing appends a "
-        f"{current} snapshot to one of the evaluated slots"
-    )
+    return text + tail
 
 
 def _verification(
@@ -1581,11 +1836,13 @@ def assess_change(
     *,
     params: AssessmentParams = AssessmentParams(),
     known_assets: Optional[list[str]] = None,
+    reprocess: Optional[ReprocessCoupling] = None,
 ) -> dict[str, Any]:
     """Assess the change of one measurement point from the asset view.
 
     See the module docstring for the vocabulary. The function is pure and
-    deterministic: the same view and parameters give the same payload.
+    deterministic: the same view, parameters and *reprocess* give the same
+    payload.
 
     Args:
         view: Output of ``store.build_asset_view`` (or ``read_view``) for
@@ -1595,6 +1852,13 @@ def assess_change(
         params: Policy; see :class:`AssessmentParams`.
         known_assets: The ids the ledger directory lists (reported on
             ``not_found``); None means unknown.
+        reprocess: What a re-processing run in the same call found (the
+            measurements it could not re-process and its ``next_call``), or
+            None without one. Without it only the view checks re-processing
+            applies decide which stale slots a re-processing call can act on
+            (the assessment reads no file); with it the stale clause and the
+            ``processing_not_homogeneous`` remedy name exactly its
+            ``next_call``, or the actions when it gives none.
 
     Returns:
         A dict with ``status`` in :data:`ASSESSMENT_STATUSES` and:
@@ -1711,6 +1975,12 @@ def assess_change(
     evaluated = reference_slots + sequence
     lineage = _select_lineage(evaluated)
     current_processing = processing_id()
+    point = staged["point"]
+    call = (
+        reprocess_call(asset_id, measurement_point_id, params=params)
+        if reprocess is None
+        else reprocess.next_call
+    )
     missing_for_current = sum(
         1
         for slot in evaluated
@@ -1733,6 +2003,41 @@ def assess_change(
                 f" {len(reference_missing)} member(s) of the declared baseline "
                 f"lack a snapshot of the current lineage."
             )
+        attemptable = 0
+        blocked: _Blocked = {}
+        for slot in evaluated:
+            if current_processing in slot["record"]["snapshots_by_lineage"]:
+                continue
+            is_blocked, code = _reprocess_blocker(slot, point, reprocess)
+            if is_blocked:
+                blocked.setdefault(code, []).append(slot["measurement_id"])
+            else:
+                attemptable += 1
+        if attemptable:
+            remedy = (
+                f"call {call or reprocess_call(asset_id, measurement_point_id, params=params)} "
+                f"to attempt the missing {current_processing} snapshots of the "
+                f"evaluated slots (idempotent, bounded per call); while its "
+                f"reprocess block gives a next_call, make exactly that call"
+            )
+            if blocked:
+                remedy += (
+                    f"; {sum(len(ids) for ids in blocked.values())} of the "
+                    f"{missing_for_current} slots missing one stay without it "
+                    f"until an action is taken: "
+                    f"{_remedy_actions(blocked, _baseline_ids(view, measurement_point_id))}"
+                )
+        else:
+            remedy = (
+                f"re-processing cannot compute the {missing_for_current} missing "
+                f"{current_processing} snapshot(s) of the evaluated slots until an "
+                f"action is taken: "
+                f"{_remedy_actions(blocked, _baseline_ids(view, measurement_point_id))}"
+                f"; or, as a decision for the user, declare a baseline with "
+                f"declare_healthy_baseline over measurements that carry the "
+                f"current lineage {current_processing}, which also excludes the "
+                f"usable non-members inside the baseline's time span"
+            )
         return {
             "status": "processing_not_homogeneous",
             **base,
@@ -1740,17 +2045,12 @@ def assess_change(
             "evaluated_slots": len(evaluated),
             "missing_for_current": missing_for_current,
             "current_processing_id": current_processing,
-            "remedy": (
-                f"call {reprocess_call(asset_id, measurement_point_id, params=params)} to "
-                f"re-process the missing snapshots with the current lineage "
-                f"(idempotent, limited per call; repeat until remaining is 0)"
-            ),
+            "remedy": remedy,
             "reference": reference_block,
             "comparability": comparability,
             "message": text,
         }
 
-    point = staged["point"]
     snapshots: dict[str, dict[str, Any]] = {}
     stale_context = 0
     for slot in evaluated:
@@ -2002,11 +2302,16 @@ def assess_change(
         f"{reference_text}. Lineage {chosen}."
     )
     if stale_context:
-        actionable = sum(
-            1
-            for slot in evaluated
-            if _lacks_current_snapshot(slot, point, current_processing)
-        )
+        actionable = 0
+        stale_blocked: _Blocked = {}
+        for slot in evaluated:
+            if not _lacks_current_snapshot(slot, point, current_processing):
+                continue
+            is_blocked, code = _reprocess_blocker(slot, point, reprocess)
+            if is_blocked:
+                stale_blocked.setdefault(code, []).append(slot["measurement_id"])
+            else:
+                actionable += 1
         message = (
             _stale_evidence(
                 stale=stale_context,
@@ -2015,7 +2320,9 @@ def assess_change(
                 current=current_processing,
                 missing=missing_for_current,
                 actionable=actionable,
-                call=reprocess_call(asset_id, measurement_point_id, params=params),
+                call=call,
+                blocked=stale_blocked,
+                listed=reprocess is not None,
             )
             + ". "
             + message

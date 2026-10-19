@@ -2175,8 +2175,8 @@ class TestReasonCodes:
         assert service.REPROCESS_REASON_CODES == REASON_CODE_TABLE
         assert set(TRIGGERS) == set(REASON_CODE_TABLE)
         for code in REASON_CODE_TABLE[:-1]:
-            assert service._reprocess_action(code)
-        assert service._reprocess_action("superseded_in_slot") is None
+            assert service.reprocess_action(code)
+        assert service.reprocess_action("superseded_in_slot") is None
 
     @pytest.mark.parametrize("code", REASON_CODE_TABLE)
     def test_each_code_for_its_trigger(self, store, data_dir, monkeypatch, code):
@@ -2483,6 +2483,31 @@ class TestReasonCodes:
         assert result["next_call"] is None
         assert "the sequence is complete" in result["message"]
         assert "needs_action" not in result["message"]
+
+    def test_the_declaration_names_the_call_only_when_one_can_act(
+        self, store, data_dir
+    ):
+        """Stale measurements that fail the view checks, or are collapsed into
+        another slot, are counted by reason; the remedy names the call only
+        for one a call can act on."""
+        values = noise(1)
+        info = make_info(data_dir / "norate.csv", values, sampling_rate=None)
+        assert record_one(store, data_dir, info, values)["snapshot_status"] == "skipped"
+        declared = declare(store, 2)
+        assert declared["measurements_with_stale_context"] == 1
+        assert declared["remedy"] is None
+        assert declared["message"].endswith(
+            "; 1 recorded measurement(s) lack a snapshot computed with the current "
+            "context and lineage; 1 needs an action before re-processing can "
+            "compute it (1 no_valid_sampling_rate)."
+        )
+        load_sequence(store, data_dir, 2)
+        redeclared = declare(store, 1)
+        assert redeclared["measurements_with_stale_context"] == 3
+        assert redeclared["remedy"] == REPROCESS_CALL
+        assert f"; call {REPROCESS_CALL} to attempt the 2 that pass" in (
+            redeclared["message"]
+        )
 
     def test_an_already_recorded_snapshot_is_not_appended_again(
         self, store, data_dir, monkeypatch

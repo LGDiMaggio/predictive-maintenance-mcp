@@ -237,6 +237,18 @@
             "default": false,
             "title": "Reprocess",
             "type": "boolean"
+          },
+          "reprocess_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Reprocess Cursor"
           }
         },
         "required": [

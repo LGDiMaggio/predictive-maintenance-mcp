@@ -138,6 +138,7 @@ from .assessment import (
     _known_points,
     collect_point_slots,
     current_snapshot_id_of,
+    reprocess_action,
     reprocess_call,
 )
 from .comparability import assess_measurement_comparability, build_reference_context
@@ -1500,7 +1501,7 @@ def _located_failure(
     missing there, there is no changed file to decide about.
     """
     reused = taken()
-    outcomes = {
+    outcomes: dict[str, _LocationOutcome] = {
         location: (
             (
                 "file_missing",
@@ -1512,12 +1513,11 @@ def _located_failure(
         )
         for location in locations
     }
-    failed = outcomes
-    clauses = [failed[location][1] for location in locations]
+    clauses = [outcomes[location][1] for location in locations]
     reason = "; ".join(clauses[:_MAX_REASON_LOCATIONS])
     if len(clauses) > _MAX_REASON_LOCATIONS:
         reason += f"; and {len(clauses) - _MAX_REASON_LOCATIONS} more location(s)"
-    return failed[locations[0]][0], reason
+    return outcomes[locations[0]][0], reason
 
 
 #: Reason text of the view checks that carries what clears them (the
@@ -1532,123 +1532,6 @@ _VIEW_REASON_SUFFIX = {
         "supersedes this one)"
     ),
 }
-
-#: How a new sequence is started, in the actions that call for one.
-_NEW_SEQUENCE = (
-    "start one new re-processing sequence (the re-processing call without "
-    "reprocess_cursor)"
-)
-
-#: Appended to the actions that re-load a member of the declared baseline.
-_RELOAD_MEMBER_NOTE = (
-    "; for a member of the declared baseline, a re-load records a new "
-    "declaration version, which removes it from the baseline until the "
-    "baseline is declared again"
-)
-
-
-def _reprocess_action(
-    code: str,
-    *,
-    member: bool = False,
-    relative: bool = False,
-    data_dir: Optional[Path] = None,
-) -> Optional[str]:
-    """The action that clears a not-reprocessable reason *code* (None for a
-    recording superseded in its acquisition slot, which never scores).
-
-    Args:
-        code: A code of :data:`REPROCESS_REASON_CODES`.
-        member: The measurement is a member of the declared baseline.
-        relative: Its most recent recorded location is relative to the
-            data directory.
-        data_dir: The data directory relative locations resolved under.
-    """
-    reload_note = _RELOAD_MEMBER_NOTE if member else ""
-    if code == "no_valid_sampling_rate":
-        return (
-            "ask the user for the sampling rate, then re-load the file with "
-            "load_signal and a companion that declares it (the same bytes keep "
-            "the same measurement_id)" + reload_note
-        )
-    if code == "declaration_unresolvable":
-        return (
-            "ask the user to correct the measurement object of the companion "
-            "and re-load the file with load_signal, or to re-declare the point "
-            "with declare_measurement_point" + reload_note
-        )
-    if code == "raw_format_incomplete":
-        return (
-            "re-load the file with load_signal and its raw declaration, "
-            "sample_format included (the same bytes keep the same "
-            "measurement_id)" + reload_note
-        )
-    if code == "no_file_recorded":
-        return (
-            "re-load the file with load_signal and its companion, so the ledger "
-            "records its location and content hash" + reload_note
-        )
-    if code == "location_outside_data_dir":
-        return (
-            "load the file with load_signal by its real path, or replace the "
-            "link inside the data directory with the file itself" + reload_note
-        )
-    if code == "file_missing":
-        check = (
-            "check first that the server runs with the data directory the file "
-            "was loaded under (data/signals under PDM_PROJECT_DIR; relative "
-            f"locations resolved under {data_dir}), then "
-            if relative
-            else ""
-        )
-        if member:
-            return check + (
-                "restore the file at one of its recorded locations, the only "
-                "action that keeps it in the declared baseline; loading it from "
-                "anywhere else records a new declaration version and removes it "
-                "from the baseline until the baseline is declared again"
-            )
-        return check + (
-            "restore the file at one of its recorded locations, or load it with "
-            "load_signal from where the user says it is now, with its companion "
-            "beside it; the load succeeds when it reports the same "
-            "measurement_id"
-        )
-    if code == "content_differs":
-        return (
-            "a decision for the user, which the agent asks for and does not "
-            "make: restore the original file at its recorded location, or load "
-            "the current file with load_signal as a new recording if it is meant "
-            "to replace the old one"
-            + (
-                "; for a member of the declared baseline, a new recording then "
-                "needs the baseline declared again"
-                if member
-                else ""
-            )
-        )
-    if code == "file_inaccessible":
-        return (
-            "fix access to the file (its permissions, an offline cloud "
-            f"placeholder, a network drive), then {_NEW_SEQUENCE}"
-        )
-    if code == "undecodable":
-        return (
-            "correct the file and load it again with load_signal; a corrected "
-            "file loads as a new recording"
-            + (
-                "; for a member of the declared baseline, then declare the "
-                "baseline again"
-                if member
-                else ""
-            )
-        )
-    if code == "append_failed":
-        return (
-            "fix the ledger directory (free space, permissions, a lock held by "
-            f"another process), then {_NEW_SEQUENCE}"
-        )
-    return None
 
 
 def _decode(path: Path, declaration: Mapping[str, Any]) -> np.ndarray:
@@ -1947,11 +1830,11 @@ def _run_reprocess(
             return
         result["reason_code"] = found[measurement_id] = code
         result["reason"] = reason
-        result["action"] = _reprocess_action(
+        result["action"] = reprocess_action(
             code,
             member=measurement_id in plan.baseline_members,
             relative=_location_is_relative(measurements[measurement_id]["current"]),
-            data_dir=data_root,
+            data_dir=str(data_root),
         )
 
     for measurement_id in plan.order[start:]:
@@ -2122,11 +2005,11 @@ def _run_reprocess(
                 "acquired_at"
             ),
             "reason_code": earlier_codes[m],
-            "action": _reprocess_action(
+            "action": reprocess_action(
                 earlier_codes[m],
                 member=m in plan.baseline_members,
                 relative=_location_is_relative(measurements[m]["current"]),
-                data_dir=data_root,
+                data_dir=str(data_root),
             ),
             "location": next(
                 iter(_candidate_locations(measurements[m]["current"])), None
@@ -2159,13 +2042,13 @@ def _run_reprocess(
     needs_action = []
     for code, entry in needs.items():
         ids = entry["measurement_ids"]
-        entry["action"] = _reprocess_action(
+        entry["action"] = reprocess_action(
             code,
             member=any(m in plan.baseline_members for m in ids),
             relative=any(
                 _location_is_relative(measurements[m]["current"]) for m in ids
             ),
-            data_dir=data_root,
+            data_dir=str(data_root),
         )
         entry["measurement_ids_truncated"] = entry["count"] > len(ids)
         needs_action.append(entry)
@@ -2857,7 +2740,25 @@ def declare_measurement_point(
     version = int(decided["version"])
     changed = list(decided["changed"])
     stale = _stale_measurement_ids(state.view, measurement_point_id, point)
-    remedy = reprocess_call(asset_id, measurement_point_id) if stale else None
+    collapsed = set(
+        _reprocess_plan(
+            state.view, measurement_point_id, AssessmentParams()
+        ).kept_by_duplicate
+    )
+    blocked: dict[str, int] = {}
+    attemptable = 0
+    for measurement_id in stale:
+        if measurement_id in collapsed:
+            blocked["collapsed"] = blocked.get("collapsed", 0) + 1
+            continue
+        found = snapshot_blocker(
+            state.view["measurements"][measurement_id]["current"], point
+        )
+        if found is None:
+            attemptable += 1
+        else:
+            blocked[found[0]] = blocked.get(found[0], 0) + 1
+    remedy = reprocess_call(asset_id, measurement_point_id) if attemptable else None
 
     in_catalog: Optional[bool] = None
     declared_bearing = point.get("bearing_id")
@@ -2876,9 +2777,31 @@ def declare_measurement_point(
         message += " (identical to the current declaration: nothing appended)"
     if stale:
         message += (
-            f"; {len(stale)} recorded measurement(s) carry a snapshot computed "
-            f"with a previous context or lineage; call {remedy} to recompute them"
+            f"; {len(stale)} recorded measurement(s) lack a snapshot computed "
+            f"with the current context and lineage"
         )
+        if remedy is not None:
+            message += (
+                f"; call {remedy} to attempt the {attemptable} that pass the "
+                f"checks re-processing reads from the ledger"
+            )
+        collapsed_count = blocked.pop("collapsed", 0)
+        if blocked:
+            count = sum(blocked.values())
+            message += (
+                f"; {count} {'needs' if count == 1 else 'need'} an action before "
+                f"re-processing can compute {'it' if count == 1 else 'them'} ("
+                + ", ".join(f"{n} {code}" for code, n in blocked.items())
+                + ")"
+            )
+        if collapsed_count:
+            message += f"; {collapsed_count} " + (
+                "is a recording collapsed into another acquisition slot, "
+                "which never scores"
+                if collapsed_count == 1
+                else "are recordings collapsed into another acquisition "
+                "slot, which never score"
+            )
     if in_catalog is False:
         message += (
             f"; bearing {declared_bearing!r} is not in the verified catalog, so "

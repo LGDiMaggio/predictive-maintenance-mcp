@@ -273,6 +273,30 @@ class TestFailuresRaise:
         )
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {"reprocess_cursor": "r1." + "0" * 16 + "." + "0" * 8 + ".f.f1"},
+            {"reprocess": True, "reprocess_cursor": "not-a-token"},
+        ],
+        ids=["without_reprocess", "malformed"],
+    )
+    async def test_reprocess_cursor_misuse_raises(
+        self, tools, sandbox_dirs, mock_ctx, kwargs
+    ):
+        """A continuation token without reprocess=True, or one that is not a
+        token, is misuse of assess_asset_change: a ToolError naming the fix.
+        A token that no longer matches the ledger is not misuse (the call
+        restarts the sequence), so it lives in the ledger tests."""
+        with pytest.raises(ToolError, match="pass the token exactly as next_call"):
+            await tools["assess_asset_change"].fn(
+                ctx=mock_ctx,
+                asset_id="P-101",
+                measurement_point_id="motor_de_h",
+                **kwargs,
+            )
+
+    @pytest.mark.asyncio
     async def test_raw_binary_missing_declaration_raises(
         self, tools, sandbox_dirs, mock_ctx
     ):
