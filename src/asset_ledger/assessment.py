@@ -800,6 +800,42 @@ def _select_lineage(evaluated: Sequence[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _interpretation_snapshot(
+    slot: dict[str, Any], point: Optional[dict[str, Any]], processing: str
+) -> tuple[dict[str, Any], Optional[bool]]:
+    """The snapshot that scores *slot* on lineage *processing*.
+
+    The one the current declarations of the measurement and its point
+    produce on that lineage, wherever the ledger recorded it (the last one
+    when several share its id). Restoring an earlier declaration appends
+    nothing, because that snapshot id already exists, so the lineage's
+    latest snapshot may be the one of the declaration in between. Without
+    such a snapshot, the lineage's latest one stands in.
+
+    Returns:
+        ``(snapshot, matched)``. ``matched`` is True for the current
+        interpretation's snapshot and False for the latest one used in its
+        place (stale). It is None when the declaration cannot be resolved:
+        the latest one is used and nothing can be said about staleness.
+    """
+    record = slot["record"]
+    latest = record["snapshots_by_lineage"][processing]
+    try:
+        expected = current_snapshot_id_of(
+            slot["declaration"],
+            point,
+            processing=processing,
+            measurement_id=slot["measurement_id"],
+        )
+    except ValueError:
+        return latest, None
+    for snapshot in reversed(record["snapshots"]):
+        lineage = (snapshot.get("processing") or {}).get("processing_id")
+        if snapshot.get("snapshot_id") == expected and lineage == processing:
+            return snapshot, True
+    return latest, False
+
+
 # ---------------------------------------------------------------------------
 # Indicators, bands, classification
 # ---------------------------------------------------------------------------
@@ -1527,23 +1563,13 @@ def assess_change(
             "message": text,
         }
 
-    snapshots = {
-        s["measurement_id"]: s["record"]["snapshots_by_lineage"][chosen]
-        for s in evaluated
-    }
     point = staged["point"]
+    snapshots: dict[str, dict[str, Any]] = {}
     stale_context = 0
     for slot in evaluated:
-        try:
-            expected = current_snapshot_id_of(
-                slot["declaration"],
-                point,
-                processing=chosen,
-                measurement_id=slot["measurement_id"],
-            )
-        except ValueError:
-            continue
-        if snapshots[slot["measurement_id"]].get("snapshot_id") != expected:
+        snapshot, matched = _interpretation_snapshot(slot, point, chosen)
+        snapshots[slot["measurement_id"]] = snapshot
+        if matched is False:
             stale_context += 1
 
     values = {
