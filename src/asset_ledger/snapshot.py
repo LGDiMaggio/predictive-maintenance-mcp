@@ -80,6 +80,7 @@ __all__ = [
     "compute_health_snapshot",
     "snapshot_id",
     "VIEW_BLOCKER_CODES",
+    "recorded_locations",
     "snapshot_blocker",
 ]
 
@@ -888,6 +889,27 @@ def snapshot_id(measurement_id: str, processing_id: str, context_digest: str) ->
     return hashlib.sha256(joined).hexdigest()[:_ID_HEX_CHARS]
 
 
+def recorded_locations(payload: Mapping[str, Any]) -> list[str]:
+    """Every location ever declared for a recorded measurement, most recent
+    first, without repeats.
+
+    Args:
+        payload: The measurement's current ``measurement_recorded`` payload.
+    """
+    locations = payload.get("locations")
+    candidates = (
+        [str(item) for item in locations] if isinstance(locations, list) else []
+    )
+    file_info = payload.get("file")
+    if isinstance(file_info, dict) and file_info.get("location") is not None:
+        candidates.append(str(file_info["location"]))
+    ordered: list[str] = []
+    for location in reversed(candidates):
+        if location not in ordered:
+            ordered.append(location)
+    return ordered
+
+
 #: Reason codes :func:`snapshot_blocker` returns, in the order it checks
 #: them: the recorded payload alone shows that no snapshot can be computed.
 VIEW_BLOCKER_CODES: tuple[str, ...] = (
@@ -947,13 +969,10 @@ def snapshot_blocker(
             "raw_format_incomplete",
             "recorded raw_format declares no sample_format",
         )
+    if not recorded_locations(payload):
+        return ("no_file_recorded", "no file location recorded for the measurement")
     file_info = payload.get("file")
     recorded_file = file_info if isinstance(file_info, Mapping) else {}
-    locations = payload.get("locations")
-    if recorded_file.get("location") is None and not (
-        isinstance(locations, list) and locations
-    ):
-        return ("no_file_recorded", "no file location recorded for the measurement")
     if not recorded_file.get("content_sha256"):
         return (
             "no_file_recorded",

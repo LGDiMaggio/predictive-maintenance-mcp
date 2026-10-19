@@ -2035,6 +2035,20 @@ class TestReprocessCoupling:
             f"({ids_text(range(1, 6))}): {RESTORE_ACTION}"
         )
 
+    def test_the_remedy_counts_earlier_failures_it_does_not_detail(self):
+        found = ReprocessCoupling(
+            blocked={mid(i): None for i in range(1, 11)}, next_call=None
+        )
+        result = assess(view_of(split_lineage_events()), reprocess=found)
+        assert result["remedy"] == (
+            f"re-processing cannot compute the 10 missing {CURRENT_LINEAGE} "
+            "snapshot(s) of the evaluated slots until an action is taken: 10 found "
+            "not reprocessable by an earlier call of this sequence "
+            f"({ids_text(range(1, 11))}): the responses of the calls that found "
+            "them give the reason and the action, or one new sequence lists them "
+            f"again{BASELINE_ESCAPE}"
+        )
+
     def test_a_plain_assessment_names_the_actions_the_view_checks_find(self):
         result = assess(view_of(split_lineage_events(rate_missing=True)))
         assert result["status"] == "processing_not_homogeneous"
@@ -2069,6 +2083,14 @@ class TestViewChecksAgree:
 
     def test_one_function(self):
         assert assessment.snapshot_blocker is service.snapshot_blocker
+
+    def test_every_blocking_code_has_what_it_needs(self):
+        """The assessment cannot import the service's vocabulary, so its
+        table of needs follows it here."""
+        assert list(assessment._BLOCKED_NEEDS) == list(
+            service.REPROCESS_REASON_CODES[:-1]
+        )
+        assert service.REPROCESS_REASON_CODES[-1] == "superseded_in_slot"
 
     @pytest.mark.parametrize(
         "build",

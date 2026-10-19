@@ -79,7 +79,7 @@ clock. Two identical views give byte-identical canonical payloads.
 import logging
 import math
 from datetime import datetime, timezone
-from typing import Any, NamedTuple, Optional, Sequence
+from typing import Any, Iterable, NamedTuple, Optional, Sequence
 
 import numpy as np
 
@@ -1627,7 +1627,7 @@ _BLOCKED_NEEDS: dict[str, str] = {
 
 #: The blocked slots of a stale clause or a remedy, by reason code (None:
 #: found by an earlier call of the sequence whose code is not detailed).
-_Blocked = dict[Optional[str], list[str]]
+_BlockedByCode = dict[Optional[str], list[str]]
 
 
 def _reprocess_blocker(
@@ -1650,12 +1650,30 @@ def _reprocess_blocker(
     return False, None
 
 
-def _ordered_codes(blocked: _Blocked) -> list[Optional[str]]:
+def _split_blocked(
+    slots: Iterable[dict[str, Any]],
+    point: Optional[dict[str, Any]],
+    reprocess: Optional[ReprocessCoupling],
+) -> tuple[int, _BlockedByCode]:
+    """How many of *slots* re-processing can act on, and the others by
+    reason code (see :func:`_reprocess_blocker`)."""
+    attemptable = 0
+    blocked: _BlockedByCode = {}
+    for slot in slots:
+        is_blocked, code = _reprocess_blocker(slot, point, reprocess)
+        if is_blocked:
+            blocked.setdefault(code, []).append(slot["measurement_id"])
+        else:
+            attemptable += 1
+    return attemptable, blocked
+
+
+def _ordered_codes(blocked: _BlockedByCode) -> list[Optional[str]]:
     order: list[Optional[str]] = [*_BLOCKED_NEEDS, None]
     return [code for code in order if code in blocked]
 
 
-def _blocked_counts(blocked: _Blocked) -> str:
+def _blocked_counts(blocked: _BlockedByCode) -> str:
     """'2 need a corrected declaration, 1 needs ...' in code order."""
     parts: list[str] = []
     for code in _ordered_codes(blocked):
@@ -1672,7 +1690,7 @@ def _blocked_counts(blocked: _Blocked) -> str:
     return ", ".join(parts)
 
 
-def _blocked_clause(blocked: _Blocked, current: str, *, listed: bool) -> str:
+def _blocked_clause(blocked: _BlockedByCode, current: str, *, listed: bool) -> str:
     """The clause of the stale-evidence sentence that counts the evaluated
     slots re-processing cannot act on until an action is taken. It carries
     no path: locations stay in the reprocess block."""
@@ -1694,7 +1712,7 @@ def _blocked_clause(blocked: _Blocked, current: str, *, listed: bool) -> str:
     return f"{text} ({actions})"
 
 
-def _remedy_actions(blocked: _Blocked, members: frozenset[str]) -> str:
+def _remedy_actions(blocked: _BlockedByCode, members: frozenset[str]) -> str:
     """The actions that close the gap, with counts and up to five ids each."""
     parts: list[str] = []
     for code in _ordered_codes(blocked):
@@ -1725,7 +1743,7 @@ def _stale_evidence(
     missing: int,
     actionable: int,
     call: Optional[str],
-    blocked: _Blocked,
+    blocked: _BlockedByCode,
     listed: bool,
 ) -> str:
     """The sentence (without its period) that opens the message when
@@ -2003,16 +2021,15 @@ def assess_change(
                 f" {len(reference_missing)} member(s) of the declared baseline "
                 f"lack a snapshot of the current lineage."
             )
-        attemptable = 0
-        blocked: _Blocked = {}
-        for slot in evaluated:
-            if current_processing in slot["record"]["snapshots_by_lineage"]:
-                continue
-            is_blocked, code = _reprocess_blocker(slot, point, reprocess)
-            if is_blocked:
-                blocked.setdefault(code, []).append(slot["measurement_id"])
-            else:
-                attemptable += 1
+        attemptable, blocked = _split_blocked(
+            (
+                slot
+                for slot in evaluated
+                if current_processing not in slot["record"]["snapshots_by_lineage"]
+            ),
+            point,
+            reprocess,
+        )
         members = _baseline_ids(view, measurement_point_id)
         if attemptable and call is not None:
             remedy = (
@@ -2301,16 +2318,15 @@ def assess_change(
         f"{reference_text}. Lineage {chosen}."
     )
     if stale_context:
-        actionable = 0
-        stale_blocked: _Blocked = {}
-        for slot in evaluated:
-            if not _lacks_current_snapshot(slot, point, current_processing):
-                continue
-            is_blocked, code = _reprocess_blocker(slot, point, reprocess)
-            if is_blocked:
-                stale_blocked.setdefault(code, []).append(slot["measurement_id"])
-            else:
-                actionable += 1
+        actionable, stale_blocked = _split_blocked(
+            (
+                slot
+                for slot in evaluated
+                if _lacks_current_snapshot(slot, point, current_processing)
+            ),
+            point,
+            reprocess,
+        )
         message = (
             _stale_evidence(
                 stale=stale_context,

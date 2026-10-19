@@ -2203,6 +2203,55 @@ class TestReasonCodes:
         assert result["next_call"] is None
         assert snapshots() == before
 
+    @pytest.mark.parametrize(
+        ("code", "hint"),
+        [
+            ("no_valid_sampling_rate", "with a declared sampling rate"),
+            ("raw_format_incomplete", "with the raw declaration"),
+        ],
+    )
+    def test_view_reasons_keep_their_reload_hint(
+        self, store, data_dir, monkeypatch, code, hint
+    ):
+        measurement_id = TRIGGERS[code][0](store, data_dir, monkeypatch)
+        reason = only(reprocess(store, data_dir), measurement_id)["reason"]
+        assert reason.endswith(
+            f"; re-load the file {hint} (the new declaration supersedes this one)"
+        )
+
+    def test_a_directory_at_the_location_is_no_file(self, store, data_dir):
+        measurement_id = one_stale(store, data_dir)
+        path = data_dir / "m01.csv"
+        path.unlink()
+        path.mkdir()
+        entry = only(reprocess(store, data_dir), measurement_id)
+        assert entry["reason_code"] == "file_missing"
+        assert entry["reason"] == "file not found at m01.csv"
+
+    def test_no_location_recorded_at_all(self, store, data_dir):
+        measurement_id = one_stale(store, data_dir)
+        supersede(store, measurement_id, file={"location": None}, locations=[])
+        entry = only(reprocess(store, data_dir), measurement_id)
+        assert entry["reason_code"] == "no_file_recorded"
+        assert entry["reason"] == "no file location recorded for the measurement"
+        assert entry["location"] is None
+
+    def test_a_data_directory_that_does_not_resolve(self, store, data_dir, monkeypatch):
+        """Resolving the data directory fails (a link loop): each relative
+        location reports it through its containment check, nothing raises."""
+        measurement_id = one_stale(store, data_dir)
+        real_resolve = Path.resolve
+
+        def resolve(self, *args, **kwargs):
+            if self == data_dir or data_dir in self.parents:
+                raise RuntimeError(f"Symlink loop from {str(self)!r}")
+            return real_resolve(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "resolve", resolve)
+        entry = only(reprocess(store, data_dir), measurement_id)
+        assert entry["reason_code"] == "file_inaccessible"
+        assert entry["reason"].startswith("cannot read m01.csv: Symlink loop")
+
     def test_a_size_change_is_found_without_hashing(self, store, data_dir, spy):
         measurement_id = _differs(store, data_dir, None)
         spy["digest"].clear()
@@ -2403,17 +2452,6 @@ class TestReasonCodes:
             "reprocessed",
             "reprocessed",
         ]
-
-    def test_a_link_loop_in_the_containment_check(self, store, data_dir, monkeypatch):
-        measurement_id = one_stale(store, data_dir)
-
-        def looping(base: Path, location: str) -> Path:
-            raise RuntimeError(f"Symlink loop from {location!r}")
-
-        monkeypatch.setattr(service, "safe_resolve", looping)
-        entry = only(reprocess(store, data_dir), measurement_id)
-        assert entry["reason_code"] == "file_inaccessible"
-        assert entry["reason"].startswith("cannot read m01.csv: Symlink loop")
 
     def test_a_read_error_while_hashing(self, store, data_dir, monkeypatch):
         measurement_id = one_stale(store, data_dir)
@@ -2856,6 +2894,7 @@ class TestReprocessSequences:
         for token, problem in (
             (valid[:-2], "does not have the shape"),
             (valid.replace(".f.", ".F."), "does not have the shape"),
+            ("r2" + valid[2:], "does not have the shape"),
             (valid + "x" * 200, "more than the 200"),
             (valid.replace(".f.f1", ".ff.f1"), "its codes disagree with its counts"),
             (valid.replace(".f.f1", ".f.g1f1"), "its counts are not in code order"),

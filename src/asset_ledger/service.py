@@ -116,6 +116,7 @@ import math
 import os
 import re
 import stat
+import string
 from datetime import datetime, timezone
 from functools import partial
 from pathlib import Path
@@ -134,6 +135,7 @@ from ..signal_acquisition.loaders import (
 )
 from ..signal_acquisition.measurement import (
     MEASUREMENT_DECLARATION_KEYS,
+    MEASUREMENT_ID_HEX_CHARS,
     UNIT_FAMILIES,
     digest_file,
     normalize_direction,
@@ -146,6 +148,7 @@ from .assessment import (
     MIN_REFERENCE_MEASUREMENTS,
     AssessmentParams,
     ReprocessCoupling,
+    _baseline_ids,
     _known_points,
     collect_point_slots,
     current_snapshot_id_of,
@@ -159,6 +162,7 @@ from .snapshot import (
     SnapshotPolicy,
     compute_health_snapshot,
     processing_id as compute_processing_id,
+    recorded_locations,
     snapshot_blocker,
     snapshot_id as compute_snapshot_id,
 )
@@ -255,24 +259,32 @@ SEQUENCE_STATES: tuple[str, ...] = ("continue", "complete", "exhausted")
 #: whatever the number of failures it carries.
 MAX_CURSOR_CHARS = 200
 
-#: Version prefix of the token format: a later format refuses or restarts
-#: on older tokens deliberately.
+#: Version prefix of the token format: a token of another version is
+#: refused as malformed.
 _CURSOR_VERSION = "r1"
 
 #: Hex characters of the token's digest.
 _CURSOR_DIGEST_CHARS = 8
 
 #: One letter per reason code in a token.
-_CODE_LETTERS: dict[str, str] = dict(zip(REPROCESS_REASON_CODES, "abcdefghijk"))
+_CODE_LETTERS: dict[str, str] = dict(
+    zip(REPROCESS_REASON_CODES, string.ascii_lowercase)
+)
 _LETTER_CODES: dict[str, str] = {letter: code for code, letter in _CODE_LETTERS.items()}
+
+#: A code letter, and one count of a token: a letter and 1 to 999999.
+_CODE_LETTER = f"[{''.join(_CODE_LETTERS.values())}]"
+_COUNT_ENTRY = f"{_CODE_LETTER}[1-9][0-9]{{0,5}}"
+_CURSOR_COUNT = re.compile(f"({_CODE_LETTER})([1-9][0-9]{{0,5}})")
 
 #: ``r1.<last measurement>.<digest>.<codes of the first 50 earlier failures
 #: by id>.<count per code over every earlier failure>``.
 _CURSOR_PATTERN = re.compile(
-    r"r1\.([0-9a-f]{16})\.([0-9a-f]{8})\.([a-k]{1,50})\."
-    r"((?:[a-k][1-9][0-9]{0,5}){1,11})"
+    rf"{_CURSOR_VERSION}\.([0-9a-f]{{{MEASUREMENT_ID_HEX_CHARS}}})"
+    rf"\.([0-9a-f]{{{_CURSOR_DIGEST_CHARS}}})"
+    rf"\.({_CODE_LETTER}{{1,{MAX_LISTED_ITEMS}}})"
+    rf"\.((?:{_COUNT_ENTRY}){{1,{len(REPROCESS_REASON_CODES)}}})"
 )
-_CURSOR_COUNT = re.compile(r"([a-k])([1-9][0-9]{0,5})")
 
 #: Locations a not-reprocessable reason names before "and N more".
 _MAX_REASON_LOCATIONS = 3
@@ -1308,7 +1320,7 @@ def _snapshot_is_current(
     return expected in _snapshot_ids(view, measurement_id)
 
 
-class _PointOrder(NamedTuple):
+class _ReprocessPlan(NamedTuple):
     """The measurements of a point in re-processing priority, with what the
     groups and the actions read from the same staging."""
 
@@ -1321,7 +1333,7 @@ def _reprocess_plan(
     view: Mapping[str, Any],
     measurement_point_id: str,
     params: AssessmentParams,
-) -> _PointOrder:
+) -> _ReprocessPlan:
     """Measurement ids of the point in re-processing priority: members of
     the active reference (declared baseline, else the first N usable slots
     by ``acquired_at``), then the last K slots newest first, then the rest
@@ -1354,30 +1366,9 @@ def _reprocess_plan(
         str(entry["measurement_id"]): str(entry["kept_measurement_id"])
         for entry in staged["collapsed"]
     }
-    baselines = (view.get("baselines") or {}).get(measurement_point_id)
-    baseline = baselines.get("current") if isinstance(baselines, dict) else None
-    members = (
-        frozenset(str(m) for m in (baseline.get("measurement_ids") or []))
-        if isinstance(baseline, dict)
-        else frozenset()
+    return _ReprocessPlan(
+        ordered, kept, _baseline_ids(dict(view), measurement_point_id)
     )
-    return _PointOrder(ordered, kept, members)
-
-
-def _candidate_locations(payload: Mapping[str, Any]) -> list[str]:
-    """Every location ever declared, most recent first, without repeats."""
-    locations = payload.get("locations")
-    candidates = (
-        [str(item) for item in locations] if isinstance(locations, list) else []
-    )
-    file_info = payload.get("file")
-    if isinstance(file_info, dict) and file_info.get("location") is not None:
-        candidates.append(str(file_info["location"]))
-    ordered: list[str] = []
-    for location in reversed(candidates):
-        if location not in ordered:
-            ordered.append(location)
-    return ordered
 
 
 def _current_locations(view: Mapping[str, Any]) -> dict[str, set[str]]:
@@ -1412,6 +1403,21 @@ def _resolved_dir(directory: Path) -> Path:
 _LocationOutcome = tuple[str, str]
 
 
+def _file_checks_needed(locations: Sequence[str]) -> int:
+    """The file checks :func:`_check_locations` spends at most on
+    *locations*: a containment check and a metadata call for a relative
+    location, a metadata call for an absolute one."""
+    return sum(1 if Path(location).is_absolute() else 2 for location in locations)
+
+
+def _missing(location: str) -> _LocationOutcome:
+    return ("file_missing", f"file not found at {location}")
+
+
+def _inaccessible(location: str, exc: BaseException) -> _LocationOutcome:
+    return ("file_inaccessible", f"cannot read {location}: {_describe(exc)}")
+
+
 def _check_locations(
     locations: Sequence[str],
     data_dir: Path,
@@ -1444,25 +1450,19 @@ def _check_locations(
                 )
                 continue
             except (OSError, RuntimeError) as exc:
-                failed[location] = (
-                    "file_inaccessible",
-                    f"cannot read {location}: {_describe(exc)}",
-                )
+                failed[location] = _inaccessible(location, exc)
                 continue
         checks += 1
         try:
             info = os.stat(candidate)
         except (FileNotFoundError, NotADirectoryError, ValueError):
-            failed[location] = ("file_missing", f"file not found at {location}")
+            failed[location] = _missing(location)
             continue
         except (OSError, RuntimeError) as exc:
-            failed[location] = (
-                "file_inaccessible",
-                f"cannot read {location}: {_describe(exc)}",
-            )
+            failed[location] = _inaccessible(location, exc)
             continue
         if not stat.S_ISREG(info.st_mode):
-            failed[location] = ("file_missing", f"file not found at {location}")
+            failed[location] = _missing(location)
             continue
         if recorded_size is not None and info.st_size != recorded_size:
             failed[location] = (
@@ -1485,10 +1485,7 @@ def _verify_content(
         try:
             digest, _ = digest_file(path)
         except (OSError, RuntimeError) as exc:
-            failed[location] = (
-                "file_inaccessible",
-                f"cannot read {location}: {_describe(exc)}",
-            )
+            failed[location] = _inaccessible(location, exc)
             continue
         if digest != expected:
             failed[location] = ("content_differs", f"content differs at {location}")
@@ -1531,8 +1528,7 @@ def _located_failure(
     return outcomes[locations[0]][0], reason
 
 
-#: Reason text of the view checks that carries what clears them (the
-#: substrings existing callers already read).
+#: The re-load hint the reason of two view-check codes ends with.
 _VIEW_REASON_SUFFIX = {
     "no_valid_sampling_rate": (
         "; re-load the file with a declared sampling rate (the new declaration "
@@ -1677,7 +1673,7 @@ def _cursor_token(
 #: Why a well-formed token restarted the sequence, by restart code.
 _RESTART_REASONS = {
     "unknown_measurement": (
-        "the measurement it continues after is no longer a measurement of this " "point"
+        "the measurement it continues after is no longer a measurement of this point"
     ),
     "ledger_changed": (
         "it no longer matches the ledger: the point, its declaration or "
@@ -1775,7 +1771,6 @@ def _run_reprocess(
             ]
         )[:_CURSOR_DIGEST_CHARS]
 
-    # The token: continue after its last measurement, or restart.
     last: Optional[str] = None
     start = 0
     earlier: list[str] = []
@@ -1788,11 +1783,8 @@ def _run_reprocess(
         else:
             cut = position[token.last]
             members = sorted(m for m in stale if position[m] <= cut)
-            # A token that matches carries a code for each of the first
-            # members and a count for every one of them.
             if (
                 members
-                and len(token.codes) == min(MAX_LISTED_ITEMS, len(members))
                 and sum(token.counts.values()) == len(members)
                 and digest_of(token.last, members, token.codes, token.counts)
                 == token.digest
@@ -1809,16 +1801,25 @@ def _run_reprocess(
                 "reason": _RESTART_REASONS[restart_code],
             }
 
-    # The walk: view checks, file checks, attempts, under both bounds and
-    # the failure stop.
     results: list[dict[str, Any]] = []
-    handled: list[str] = []
     found: dict[str, str] = {}
     reprocessed_ids: list[str] = []
     late_current: list[str] = []
     attempts = 0
     file_checks = 0
     current_locations: dict[str, set[str]] = {}
+
+    def action_for(code: str, ids: Sequence[str]) -> Optional[str]:
+        """The action for *code*, in its declared-baseline and relative
+        location variants when one of *ids* calls for them."""
+        return reprocess_action(
+            code,
+            member=any(m in plan.baseline_members for m in ids),
+            relative=any(
+                _location_is_relative(measurements[m]["current"]) for m in ids
+            ),
+            data_dir=str(data_root),
+        )
 
     def taken_from(own_hash: str, locations: Sequence[str]) -> frozenset[str]:
         """The *locations* another measurement with a different recorded
@@ -1845,12 +1846,7 @@ def _run_reprocess(
             return
         result["reason_code"] = found[measurement_id] = code
         result["reason"] = reason
-        result["action"] = reprocess_action(
-            code,
-            member=measurement_id in plan.baseline_members,
-            relative=_location_is_relative(measurements[measurement_id]["current"]),
-            data_dir=str(data_root),
-        )
+        result["action"] = action_for(code, [measurement_id])
 
     for measurement_id in plan.order[start:]:
         if measurement_id not in stale_set:
@@ -1858,17 +1854,16 @@ def _run_reprocess(
         if attempts >= limit or len(found) >= MAX_LISTED_ITEMS:
             break
         payload = measurements[measurement_id]["current"]
-        declaration = payload.get("declaration") or {}
-        locations = _candidate_locations(payload)
+        declaration = _declaration_of(payload)
+        locations = recorded_locations(payload)
         file_info = payload.get("file") if isinstance(payload.get("file"), dict) else {}
         blocker = snapshot_blocker(payload, point)
-        if blocker is None:
-            needed = sum(
-                1 if Path(location).is_absolute() else 2 for location in locations
-            )
-            if handled and needed > MAX_FILE_CHECKS_PER_CALL - file_checks:
-                break
-        handled.append(measurement_id)
+        if (
+            blocker is None
+            and results
+            and _file_checks_needed(locations) > MAX_FILE_CHECKS_PER_CALL - file_checks
+        ):
+            break
         result: dict[str, Any] = {
             "measurement_id": measurement_id,
             "acquired_at": declaration.get("acquired_at"),
@@ -1876,7 +1871,7 @@ def _run_reprocess(
             "reason_code": None,
             "reason": None,
             "action": None,
-            "location": locations[0] if locations else None,
+            "location": next(iter(locations), None),
             "location_used": None,
             "attempted": False,
             "snapshot_id": None,
@@ -1974,7 +1969,7 @@ def _run_reprocess(
             current_processing,
         )
 
-    # The groups of the partition, the state, the token.
+    handled = [result["measurement_id"] for result in results]
     if handled:
         last = handled[-1]
     cut = -1 if last is None else position[last]
@@ -2016,18 +2011,13 @@ def _run_reprocess(
     detailed = [
         {
             "measurement_id": m,
-            "acquired_at": (measurements[m]["current"].get("declaration") or {}).get(
+            "acquired_at": _declaration_of(measurements[m]["current"]).get(
                 "acquired_at"
             ),
             "reason_code": earlier_codes[m],
-            "action": reprocess_action(
-                earlier_codes[m],
-                member=m in plan.baseline_members,
-                relative=_location_is_relative(measurements[m]["current"]),
-                data_dir=str(data_root),
-            ),
+            "action": action_for(earlier_codes[m], [m]),
             "location": next(
-                iter(_candidate_locations(measurements[m]["current"])), None
+                iter(recorded_locations(measurements[m]["current"])), None
             ),
         }
         for m in earlier[:MAX_LISTED_ITEMS]
@@ -2040,7 +2030,6 @@ def _run_reprocess(
     }
     not_detailed = len(earlier_ids) - len(detailed)
 
-    # needs_action: one entry per code, exact counts, at most 50 ids.
     totals: dict[str, int] = dict(earlier_by_reason)
     for m in failed_here:
         totals[found[m]] = totals.get(found[m], 0) + 1
@@ -2057,18 +2046,10 @@ def _run_reprocess(
     needs_action = []
     for code, entry in needs.items():
         ids = entry["measurement_ids"]
-        entry["action"] = reprocess_action(
-            code,
-            member=any(m in plan.baseline_members for m in ids),
-            relative=any(
-                _location_is_relative(measurements[m]["current"]) for m in ids
-            ),
-            data_dir=str(data_root),
-        )
+        entry["action"] = action_for(code, ids)
         entry["measurement_ids_truncated"] = entry["count"] > len(ids)
         needs_action.append(entry)
 
-    # The message.
     if not stale:
         message = (
             f"nothing to reprocess: {len(current_ids)} snapshot(s) of "
@@ -2163,7 +2144,7 @@ def _run_reprocess(
 def _location_is_relative(payload: Mapping[str, Any]) -> bool:
     """Whether the most recent recorded location is relative to the data
     directory."""
-    locations = _candidate_locations(payload)
+    locations = recorded_locations(payload)
     return bool(locations) and not Path(locations[0]).is_absolute()
 
 
@@ -2757,16 +2738,21 @@ def declare_measurement_point(
     version = int(decided["version"])
     changed = list(decided["changed"])
     stale = _stale_measurement_ids(state.view, measurement_point_id, point)
-    collapsed = set(
-        _reprocess_plan(
-            state.view, measurement_point_id, AssessmentParams()
-        ).kept_by_duplicate
+    collapsed = (
+        set(
+            _reprocess_plan(
+                state.view, measurement_point_id, AssessmentParams()
+            ).kept_by_duplicate
+        )
+        if stale
+        else set()
     )
     blocked: dict[str, int] = {}
+    collapsed_count = 0
     attemptable = 0
     for measurement_id in stale:
         if measurement_id in collapsed:
-            blocked["collapsed"] = blocked.get("collapsed", 0) + 1
+            collapsed_count += 1
             continue
         found = snapshot_blocker(
             state.view["measurements"][measurement_id]["current"], point
@@ -2802,7 +2788,6 @@ def declare_measurement_point(
                 f"; call {remedy} to attempt the {attemptable} that pass the "
                 f"checks re-processing reads from the ledger"
             )
-        collapsed_count = blocked.pop("collapsed", 0)
         if blocked:
             count = sum(blocked.values())
             message += (
