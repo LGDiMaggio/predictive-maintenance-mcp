@@ -217,6 +217,7 @@ def snapshot_event(
     context_digest: str = "ctx",
     point_version: Optional[int] = 1,
     missing: Optional[dict[str, Any]] = None,
+    machine_group: int = 2,
 ) -> dict[str, Any]:
     measurement_id = measurement_id or mid(index)
     payload = {
@@ -259,7 +260,7 @@ def snapshot_event(
             else {
                 "velocity_rms_mm_s": iso_velocity,
                 "zone": "A",
-                "machine_group": 2,
+                "machine_group": machine_group,
                 "support_type": "rigid",
                 "direction": "horizontal",
                 "operating_speed_rpm": 1800.0,
@@ -325,16 +326,17 @@ def series_events(
     sensor_of: Any = None,
     unit_of: Any = None,
     start: int = 1,
-    real_digests: bool = False,
+    placeholder_digests: bool = False,
 ) -> list[dict[str, Any]]:
     """Point declaration plus one measurement and one snapshot per value.
 
     ``rms`` is the value itself; peak, 1x and ISO velocity are proportional
     to it; the bearing block is quiet unless ``bearing_of(index)`` says
-    otherwise, so every amplitude indicator classifies alike. With
-    ``real_digests`` every snapshot carries the ``context_digest`` the
-    snapshot code computes for its declaration and the point; otherwise the
-    placeholder ``"ctx"``, which never matches the current context.
+    otherwise, so every amplitude indicator classifies alike. Every
+    snapshot carries the ``context_digest`` the snapshot code computes for
+    its declaration and the point, as a recorded snapshot does; with
+    ``placeholder_digests`` it carries ``"ctx"`` instead, which never
+    matches the current context, so every slot reads as stale.
     """
     point = point_event() if with_point else None
     events: list[dict[str, Any]] = [point] if point is not None else []
@@ -358,7 +360,9 @@ def series_events(
                 one_x=0.1 * value if with_one_x else None,
                 iso_velocity=0.3 * value if with_iso else None,
                 bearing=bearing_of(index) if bearing_of else bearing_block(),
-                context_digest=digest_of(measurement, point) if real_digests else "ctx",
+                context_digest=(
+                    "ctx" if placeholder_digests else digest_of(measurement, point)
+                ),
             )
         )
     return events
@@ -712,8 +716,16 @@ class TestDeclaredBaseline:
         """A later export of a baseline member's acquisition does not replace
         the member: the declared baseline is never silently swapped."""
         events = series_events(STABLE * 3) + [baseline_event([1, 2, 3, 4, 5])]
-        events.append(measurement_event(3, measurement_id=mid(103)))
-        events.append(snapshot_event(3, rms=5.0, measurement_id=mid(103)))
+        export = measurement_event(3, measurement_id=mid(103))
+        events.append(export)
+        events.append(
+            snapshot_event(
+                3,
+                rms=5.0,
+                measurement_id=mid(103),
+                context_digest=digest_of(export, events[0]),
+            )
+        )
         result = assess(view_of(events))
         assert result["status"] == "assessed"
         assert result["reference"]["measurement_ids"] == [mid(i) for i in range(1, 6)]
@@ -779,8 +791,16 @@ class TestClassification:
     def test_one_spike_exported_three_times_is_one_slot(self):
         events = series_events(STABLE)
         for measurement_id in (mid(11), mid(111), mid(211)):
-            events.append(measurement_event(11, measurement_id=measurement_id))
-            events.append(snapshot_event(11, rms=SPIKE, measurement_id=measurement_id))
+            export = measurement_event(11, measurement_id=measurement_id)
+            events.append(export)
+            events.append(
+                snapshot_event(
+                    11,
+                    rms=SPIKE,
+                    measurement_id=measurement_id,
+                    context_digest=digest_of(export, events[0]),
+                )
+            )
         result = assess(view_of(events))
         assert result["status"] == "assessed"
         assert result["assessed"]["classification"] == "unconfirmed_single_acquisition"
@@ -1165,14 +1185,16 @@ class TestLineage:
     def test_current_context_leaves_no_stale_snapshot(self):
         """Snapshots carrying the digest the current point declaration
         produces are not stale: no count and no re-processing suggestion."""
-        result = assess(view_of(series_events(STABLE + [1.0], real_digests=True)))
+        result = assess(view_of(series_events(STABLE + [1.0])))
         assert result["status"] == "assessed"
         assert result["lineage"]["stale_context"] == 0
         assert "previous point declaration" not in result["message"]
         assert REPROCESS_CALL not in result["message"]
         # The placeholder digest of the other fixtures never matches the
         # current context: every one of their evaluated slots counts as stale.
-        placeholder = assess(view_of(series_events(STABLE + [1.0])))
+        placeholder = assess(
+            view_of(series_events(STABLE + [1.0], placeholder_digests=True))
+        )
         assert (
             placeholder["lineage"]["stale_context"] == placeholder["lineage"]["covered"]
         )
@@ -1181,7 +1203,7 @@ class TestLineage:
         """A re-declaration changing the resolved context (machine group)
         with no snapshot added since: every evaluated slot is stale and the
         message names the count and the re-processing call."""
-        events = series_events(STABLE + [1.0], real_digests=True)
+        events = series_events(STABLE + [1.0])
         events.append(
             point_event(
                 2,
