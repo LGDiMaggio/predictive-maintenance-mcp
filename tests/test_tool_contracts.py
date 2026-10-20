@@ -52,6 +52,15 @@ Fixture history:
 - Initial snapshot (2026-10-15): 38 tools, every one with an outputSchema.
   Generated under mcp 2.0.0 and pydantic 2.12.0 (uv.lock); identical under
   mcp 2.3.0 and pydantic 2.14.1.
+- Re-processing progress (2026-10-19): regenerated intentionally: ADDITIVE,
+  no shape changed. Four descriptions rewritten: assess_asset_change
+  reprocess (the block's keys and how a sequence is followed) and remedy
+  (the call, or the actions that close the gap), and declare_measurement_point
+  root description and remedy (the call only when one can act). Each states
+  the stop rule, including when a new sequence starts. The reprocess
+  description names each failure's action_id and the needs_action actions
+  that give each text once. Generated under mcp 2.3.0 and pydantic 2.12.0
+  (uv.lock).
 """
 
 from __future__ import annotations

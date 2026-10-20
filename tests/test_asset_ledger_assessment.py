@@ -42,8 +42,10 @@ from predictive_maintenance_mcp.asset_ledger.assessment import (
     CLASSIFICATIONS,
     MIN_USABLE_SLOTS,
     AssessmentParams,
+    ReprocessCoupling,
     assess_change,
     collect_point_slots,
+    reprocess_call,
 )
 from predictive_maintenance_mcp.asset_ledger.snapshot import (
     context_digest,
@@ -1568,6 +1570,23 @@ def recorded_later_clause() -> str:
     )
 
 
+#: The action a declaration that does not resolve needs.
+CORRECTED_DECLARATION = (
+    "ask the user to correct the measurement object of the companion and "
+    "re-load the file with load_signal, or to re-declare the point with "
+    "declare_measurement_point"
+)
+
+
+def blocked_clause(total: int, counts: str) -> str:
+    """The clause counting the evaluated slots re-processing cannot act on."""
+    return (
+        f"; {total} evaluated slot(s) lacking the {CURRENT_LINEAGE} snapshot of "
+        f"their current declarations stay stale until an action is taken: "
+        f"{counts}"
+    )
+
+
 class TestStaleEvidence:
     """When stale_context is above 0 the message opens with how many slots
     were scored under a previous declaration, then the message the same view
@@ -1596,10 +1615,12 @@ class TestStaleEvidence:
         )
         assert result["suggested_verification"] == STALE_VERIFICATION
 
-    def test_unresolvable_declaration_counts_toward_the_remedy_only(self):
-        """Re-processing treats a declaration it cannot resolve as stale (it
-        then reports it), so the remedy counts it among the snapshots to
-        compute, while the stale count, which cannot judge it, does not."""
+    def test_unresolvable_declaration_needs_a_corrected_declaration(self):
+        """A declaration that cannot be resolved stays out of the stale count,
+        which cannot judge it, and it lacks its current snapshot. The view
+        checks re-processing applies find it without reading the file, so it
+        counts as needing a corrected declaration and no call is named for it:
+        a call could not act on it."""
         events = unresolvable_declaration_events()
         point = events[0]
         older = [
@@ -1619,12 +1640,10 @@ class TestStaleEvidence:
         assert result["message"].startswith(
             stale_opening(10, 11)
             + recorded_later_clause()
-            + f"; {REPROCESS_CALL} attempts to recompute the 1 {CURRENT_LINEAGE} "
-            f"snapshot(s) computed under a previous declaration {REPROCESS_CAVEAT}, "
-            f"and the assessment moves to {CURRENT_LINEAGE} as soon as "
-            f"re-processing appends a {CURRENT_LINEAGE} snapshot to one of the "
-            "evaluated slots. "
+            + blocked_clause(1, "1 needs a corrected declaration")
+            + f" (for a corrected declaration, {CORRECTED_DECLARATION}). "
         )
+        assert REPROCESS_CALL not in result["message"]
 
     def test_current_lineage_names_the_call_with_its_caveat(self):
         """A slot first loaded while B was declared is the only
@@ -1853,6 +1872,377 @@ class TestStalenessAgreesWithReprocessing:
         }
         assert all(lacks is not current for lacks, current in answers.values())
         assert sum(lacks for lacks, _ in answers.values()) == lacking
+
+
+def s12_events() -> list[dict[str, Any]]:
+    """S12: a stale evaluated slot whose declaration does not resolve (11)
+    and a stale evaluated slot re-processing can act on (12)."""
+    events = unresolvable_declaration_events()
+    events += [
+        measurement_event(12),
+        snapshot_event(12, rms=1.0, processing=CURRENT_LINEAGE),
+    ]
+    return events
+
+
+def one_stale_slot_events() -> list[dict[str, Any]]:
+    """Ten current slots and an eleventh scored from a snapshot of another
+    context, all on the current lineage."""
+    events = series_events(STABLE, processing=CURRENT_LINEAGE)
+    events += [
+        measurement_event(11),
+        snapshot_event(11, rms=1.0, processing=CURRENT_LINEAGE),
+    ]
+    return events
+
+
+def split_lineage_events(
+    *, rate_missing: bool = False, baseline: Sequence[int] = ()
+) -> list[dict[str, Any]]:
+    """Slots 1..10 only on an older lineage, 11..30 only on the current one:
+    no lineage covers the evaluated slots."""
+    events = [point_event()]
+    for index, value in enumerate(STABLE * 3, start=1):
+        events.append(
+            measurement_event(
+                index,
+                sampling_rate=None if rate_missing and index <= 10 else 10000.0,
+            )
+        )
+        lineage = LINEAGE_A if index <= 10 else CURRENT_LINEAGE
+        events.append(snapshot_event(index, rms=value, processing=lineage))
+    if baseline:
+        events.append(baseline_event(baseline))
+    return events
+
+
+#: The action a missing file of a measurement outside the baseline needs.
+RESTORE_ACTION = (
+    "restore the file at one of its recorded locations, or load it with "
+    "load_signal from where the user says it is now, with its companion beside "
+    "it; the load succeeds when it reports the same measurement_id"
+)
+
+#: The escape the processing_not_homogeneous remedy names as the user's.
+BASELINE_ESCAPE = (
+    "; or, as a decision for the user, declare a baseline with "
+    "declare_healthy_baseline over measurements that carry the current lineage "
+    f"{CURRENT_LINEAGE}, which also excludes the usable non-members inside the "
+    "baseline's time span"
+)
+
+#: A next_call carrying a continuation token, as a reprocess block gives it.
+TOKEN_CALL = REPROCESS_CALL[:-1] + ", reprocess_cursor='r1.token')"
+
+
+def ids_text(indices: Sequence[int]) -> str:
+    shown = ", ".join(mid(i) for i in indices[:5])
+    return shown + (f" and {len(indices) - 5} more" if len(indices) > 5 else "")
+
+
+class TestReprocessCoupling:
+    """A call is named only for slots re-processing can act on: the view
+    checks apply on every assessment, and what a re-processing run in the
+    same call found applies with it, whose next_call is the one named."""
+
+    def test_ae16_s12_names_the_call_for_the_attemptable_slot_only(self):
+        result = assess(view_of(s12_events()))
+        assert result["lineage"]["processing_id"] == CURRENT_LINEAGE
+        assert result["lineage"]["stale_context"] == 1  # PR #87's meaning
+        assert result["message"].startswith(
+            stale_opening(1, 12)
+            + f"; {REPROCESS_CALL} attempts to recompute them {REPROCESS_CAVEAT}"
+            + blocked_clause(1, "1 needs a corrected declaration")
+            + f" (for a corrected declaration, {CORRECTED_DECLARATION}). "
+        )
+
+    def test_a_slot_the_block_found_is_counted_and_no_call_named(self):
+        """AE7 on the pure function: the run in the same call found the only
+        stale slot not reprocessable and gives no next_call."""
+        view = view_of(one_stale_slot_events())
+        found = ReprocessCoupling(blocked={mid(11): "file_missing"}, next_call=None)
+        result = assess(view, reprocess=found)
+        assert result["message"].startswith(
+            stale_opening(1, 11)
+            + blocked_clause(1, "1 needs the file restored or located")
+            + " (the reprocess block reports them). "
+        )
+        assert "reprocess=True" not in result["message"]
+        assert result["suggested_verification"] == STALE_VERIFICATION
+
+        earlier = ReprocessCoupling(blocked={mid(11): None}, next_call=None)
+        assert (
+            blocked_clause(
+                1, "1 was found not reprocessable by an earlier call of this sequence"
+            )
+            in assess(view, reprocess=earlier)["message"]
+        )
+
+    def test_the_block_call_is_the_one_named(self):
+        view = view_of(one_stale_slot_events())
+        coupling = ReprocessCoupling(blocked={}, next_call=TOKEN_CALL)
+        message = assess(view, reprocess=coupling)["message"]
+        assert message.startswith(
+            stale_opening(1, 11)
+            + f"; {TOKEN_CALL} attempts to recompute them {REPROCESS_CAVEAT}. "
+        )
+
+    def test_ae4_processing_not_homogeneous_names_the_actions(self):
+        """S4: the reference slots lack the current lineage and their files
+        are gone; the remedy names the action with counts and ids, and the
+        baseline as the user's decision, never a repetition."""
+        found = ReprocessCoupling(
+            blocked={mid(i): "file_missing" for i in range(1, 11)}, next_call=None
+        )
+        result = assess(view_of(split_lineage_events()), reprocess=found)
+        assert result["status"] == "processing_not_homogeneous"
+        assert result["missing_for_current"] == 10
+        assert result["remedy"] == (
+            f"re-processing cannot compute the 10 missing {CURRENT_LINEAGE} "
+            "snapshot(s) of the evaluated slots until an action is taken: 10 need "
+            f"the file restored or located ({ids_text(range(1, 11))}): "
+            f"{RESTORE_ACTION}{BASELINE_ESCAPE}"
+        )
+        assert "repeat until" not in result["remedy"]
+        assert "reprocess=True" not in result["remedy"]
+
+    def test_ae11_the_remedy_restores_baseline_members_first(self):
+        found = ReprocessCoupling(
+            blocked={mid(i): "file_missing" for i in range(1, 11)}, next_call=None
+        )
+        events = split_lineage_events(baseline=(1, 2, 3))
+        result = assess(view_of(events), reprocess=found)
+        assert result["status"] == "processing_not_homogeneous"
+        assert (
+            "restore the file at one of its recorded locations, the only action "
+            "that keeps it in the declared baseline; loading it from anywhere else "
+            "records a new declaration version and removes it from the baseline "
+            "until the baseline is declared again"
+        ) in result["remedy"]
+
+    def test_the_remedy_names_the_block_call_while_some_slots_can_progress(self):
+        found = ReprocessCoupling(
+            blocked={mid(i): "file_missing" for i in range(1, 6)},
+            next_call=TOKEN_CALL,
+        )
+        result = assess(view_of(split_lineage_events()), reprocess=found)
+        assert result["remedy"] == (
+            f"call {TOKEN_CALL} to attempt the missing {CURRENT_LINEAGE} "
+            "snapshots of the evaluated slots (idempotent, bounded per call); "
+            "while its reprocess block gives a next_call, make exactly that call; "
+            "5 of the 10 slots missing one stay without it until an action is "
+            "taken: 5 need the file restored or located "
+            f"({ids_text(range(1, 6))}): {RESTORE_ACTION}"
+        )
+
+    def test_the_remedy_counts_earlier_failures_it_does_not_detail(self):
+        found = ReprocessCoupling(
+            blocked={mid(i): None for i in range(1, 11)}, next_call=None
+        )
+        result = assess(view_of(split_lineage_events()), reprocess=found)
+        assert result["remedy"] == (
+            f"re-processing cannot compute the 10 missing {CURRENT_LINEAGE} "
+            "snapshot(s) of the evaluated slots until an action is taken: 10 found "
+            "not reprocessable by an earlier call of this sequence "
+            f"({ids_text(range(1, 11))}): the responses of the calls that found "
+            "them give the reason and the action, or one new sequence lists them "
+            f"again{BASELINE_ESCAPE}"
+        )
+
+    def test_a_plain_assessment_names_the_actions_the_view_checks_find(self):
+        result = assess(view_of(split_lineage_events(rate_missing=True)))
+        assert result["status"] == "processing_not_homogeneous"
+        assert result["remedy"].startswith(
+            f"re-processing cannot compute the 10 missing {CURRENT_LINEAGE} "
+            "snapshot(s) of the evaluated slots until an action is taken: 10 need "
+            f"a declared sampling rate ({ids_text(range(1, 11))}): ask the user "
+            "for the sampling rate"
+        )
+        assert "reprocess=True" not in result["remedy"]
+
+    def test_named_calls_repeat_the_non_default_parameters(self):
+        params = AssessmentParams(
+            last_k=7, reference_measurements=12, acquired_since=acquired(13)
+        )
+        call = reprocess_call(ASSET, POINT, params=params)
+        assert call == (
+            "assess_asset_change(asset_id='P-101', measurement_point_id='motor_de_h', "
+            f"acquired_since={acquired(13)!r}, last_k=7, reference_measurements=12, "
+            "reprocess=True)"
+        )
+        assert reprocess_call(ASSET, POINT, params=AssessmentParams()) == REPROCESS_CALL
+        assert reprocess_call(ASSET, POINT, cursor="r1.token") == TOKEN_CALL
+        result = assess(view_of(split_lineage_events()), params=params)
+        assert result["remedy"].startswith(f"call {call} to attempt")
+        assert service.reprocess_call is assessment.reprocess_call
+
+
+def older_lineage_partly_current_events(
+    rate_missing_from: int = 11,
+) -> list[dict[str, Any]]:
+    """Ten slots on an older lineage, every one stale there, the first five
+    also current on the current lineage; the last five lack it. The slots
+    from *rate_missing_from* on declare no sampling rate."""
+    events = [point_event()]
+    for index, value in enumerate(STABLE, start=1):
+        measurement = measurement_event(
+            index, sampling_rate=None if index >= rate_missing_from else 10000.0
+        )
+        events.append(measurement)
+        events.append(snapshot_event(index, rms=value, processing=LINEAGE_A))
+        if index <= 5:
+            events.append(
+                b_snapshot(measurement, events[0], value, processing=CURRENT_LINEAGE)
+            )
+    return events
+
+
+def older_lineage_missing_clause() -> str:
+    return (
+        f"; this assessment uses lineage {LINEAGE_A} because 5 of the 10 evaluated "
+        f"slots still lack a snapshot of the current lineage {CURRENT_LINEAGE}, "
+        f"re-processing writes lineage {CURRENT_LINEAGE} only and leaves the "
+        f"{LINEAGE_A} snapshots unchanged, and the assessment moves to "
+        f"{CURRENT_LINEAGE} once every evaluated slot has one"
+    )
+
+
+class TestBlockedSlotsOnAnOlderLineage:
+    """The clause counting slots re-processing cannot act on also follows the
+    older-lineage sentence, and says the reprocess block reports them only
+    when the block did."""
+
+    def test_the_block_found_them(self):
+        found = ReprocessCoupling(
+            blocked={mid(i): "file_missing" for i in range(6, 11)}, next_call=None
+        )
+        result = assess(view_of(older_lineage_partly_current_events()), reprocess=found)
+        assert result["lineage"]["processing_id"] == LINEAGE_A
+        assert result["message"].startswith(
+            stale_opening(10, 10)
+            + older_lineage_missing_clause()
+            + blocked_clause(5, "5 need the file restored or located")
+            + " (the reprocess block reports them). "
+        )
+
+    def test_the_view_checks_found_them_and_the_block_did_not_reach_them(self):
+        """With reprocess=True, a slot the view checks block but the call never
+        reached is not in the block: the clause gives its action itself."""
+        events = older_lineage_partly_current_events(rate_missing_from=6)
+        for coupling in (None, ReprocessCoupling(blocked={}, next_call=None)):
+            result = assess(view_of(events), reprocess=coupling)
+            assert result["message"].startswith(
+                stale_opening(10, 10)
+                + older_lineage_missing_clause()
+                + blocked_clause(5, "5 need a declared sampling rate")
+                + " (for a declared sampling rate, ask the user for the sampling "
+                "rate, then re-load the file with load_signal and a companion that "
+                "declares it (the same bytes keep the same measurement_id)). "
+            )
+
+    def test_a_block_that_did_not_reach_every_slot_gives_every_action(self):
+        """Slots the block found and slots the view checks block that the
+        call never reached: the clause gives each action itself, the
+        earlier failures it cannot detail included."""
+        events = older_lineage_partly_current_events(rate_missing_from=9)
+        found = ReprocessCoupling(
+            blocked={mid(6): "file_missing", mid(7): None}, next_call=None
+        )
+        result = assess(view_of(events), reprocess=found)
+        assert result["message"].startswith(
+            stale_opening(10, 10)
+            + older_lineage_missing_clause()
+            + blocked_clause(
+                4,
+                "2 need a declared sampling rate, 1 needs the file restored or "
+                "located, 1 was found not reprocessable by an earlier call of this "
+                "sequence",
+            )
+            + " (for a declared sampling rate, ask the user for the sampling rate, "
+            "then re-load the file with load_signal and a companion that declares "
+            "it (the same bytes keep the same measurement_id); for the file "
+            f"restored or located, {RESTORE_ACTION}; for those found by an earlier "
+            "call, the responses of the calls that found them give the reason and "
+            "the action, or one new sequence lists them again). "
+        )
+
+    def test_an_inline_action_of_a_baseline_member_keeps_it_in_the_baseline(self):
+        """The member form of an action goes to the code whose slots include a
+        member of the declared baseline, and only to it."""
+        clause = assessment._blocked_clause(
+            {"file_missing": [mid(1), mid(2)], "no_valid_sampling_rate": [mid(3)]},
+            CURRENT_LINEAGE,
+            listed=False,
+            members=frozenset({mid(1)}),
+        )
+        assert clause == blocked_clause(
+            3, "1 needs a declared sampling rate, 2 need the file restored or located"
+        ) + (
+            " (for a declared sampling rate, ask the user for the sampling rate, "
+            "then re-load the file with load_signal and a companion that declares "
+            "it (the same bytes keep the same measurement_id); for the file "
+            "restored or located, restore the file at one of its recorded "
+            "locations, the only action that keeps it in the declared baseline; "
+            "loading it from anywhere else records a new declaration version and "
+            "removes it from the baseline until the baseline is declared again)"
+        )
+
+    def test_the_named_call_repeats_acquired_until(self):
+        params = AssessmentParams(
+            acquired_since=acquired(3), acquired_until=acquired(9), last_k=4
+        )
+        assert reprocess_call(ASSET, POINT, params=params) == (
+            "assess_asset_change(asset_id='P-101', measurement_point_id='motor_de_h', "
+            f"acquired_since={acquired(3)!r}, acquired_until={acquired(9)!r}, "
+            "last_k=4, reprocess=True)"
+        )
+
+
+class TestViewChecksAgree:
+    """The assessment and re-processing apply one view-check function to the
+    same recorded payload and point declaration."""
+
+    def test_one_function(self):
+        assert assessment.snapshot_blocker is service.snapshot_blocker
+
+    def test_every_blocking_code_has_what_it_needs(self):
+        """The assessment cannot import the service's vocabulary, so its
+        table of needs follows it here."""
+        assert list(assessment._BLOCKED_NEEDS) == list(
+            service.REPROCESS_REASON_CODES[:-1]
+        )
+        assert service.REPROCESS_REASON_CODES[-1] == "superseded_in_slot"
+
+    @pytest.mark.parametrize(
+        "build",
+        [
+            lambda: series_events(STABLE),
+            partly_recomputed_events,
+            partly_reprocessed_under_b_events,
+            unresolvable_declaration_events,
+            s12_events,
+            lambda: split_lineage_events(rate_missing=True),
+        ],
+        ids=[
+            "older_lineage_only",
+            "partly_on_the_current_lineage",
+            "partly_reprocessed_redeclaration",
+            "unresolvable_declaration",
+            "s12",
+            "no_sampling_rate",
+        ],
+    )
+    def test_each_slot_gets_the_same_answer(self, build):
+        view = view_of(build())
+        staged = collect_point_slots(view, POINT)
+        point = service._current_point(view, POINT)
+        for slot in staged["slots"]:
+            payload = view["measurements"][slot["measurement_id"]]["current"]
+            found = service.snapshot_blocker(payload, point)
+            assert assessment._reprocess_blocker(slot, staged["point"], None) == (
+                found is not None,
+                None if found is None else found[0],
+            )
 
 
 # ---------------------------------------------------------------------------

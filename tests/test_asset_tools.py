@@ -24,12 +24,18 @@ import json
 import typing
 import zlib
 from pathlib import Path
+from typing import Optional
 from unittest.mock import AsyncMock
 
 import numpy as np
 import pytest
 from mcp.server.mcpserver import MCPServer
 
+from test_documented_calls import (
+    build_endpoints,
+    extract_calls,
+    validate_documented_calls,
+)
 from _synthetic_sequence import (
     ASSET_ID as SEQUENCE_ASSET,
     BEARING_ID,
@@ -1076,9 +1082,10 @@ class TestAssessAssetChange:
         """Ten loads under A, re-processed under B; an eleventh
         loaded under B only, its file then removed; A declared again. The
         reverted slots are scored from A's snapshots, the eleventh stays
-        stale, and the message names the call only as an attempt that may
-        leave a measurement on its previous snapshot, as the reprocess block
-        in the same response reports."""
+        stale, and the reprocess block in the same response finds it not
+        reprocessable and ends the sequence: the message names no call and
+        says the slot stays stale until its action is taken, so one response
+        never contradicts itself."""
         await _declare_point(tools, ctx)
         await _load_measurements(tools, ctx, sandbox, 10)
         await _declare_point(tools, ctx, machine_group=1)
@@ -1101,7 +1108,9 @@ class TestAssessAssetChange:
         assert (block["stale"], block["reprocessed"]) == (1, 0)
         assert block["not_reprocessable"] == 1
         assert block["next_call"] is None
+        assert block["sequence_state"] == "exhausted"
         assert block["results"][0]["measurement_id"] == late_id
+        assert block["results"][0]["reason_code"] == "file_missing"
         assert "file not found" in block["results"][0]["reason"]
 
         assert result.status == "assessed"
@@ -1112,12 +1121,12 @@ class TestAssessAssetChange:
             "1 of the 11 evaluated acquisition slots was scored from snapshots "
             "computed under a previous declaration of the point or the "
             "measurement, so this verdict does not reflect the current "
-            "declaration yet; assess_asset_change(asset_id='P-101', "
-            "measurement_point_id='motor_de_h', reprocess=True) attempts to "
-            "recompute them in bounded batches across the point's stale "
-            "measurements, and a measurement it cannot re-process keeps its "
-            "previous snapshot (the reprocess block gives the reason). "
+            "declaration yet; 1 evaluated slot(s) lacking the "
+            f"{processing_id()} snapshot of their current declarations stay "
+            "stale until an action is taken: 1 needs the file restored or "
+            "located (the reprocess block reports them). "
         )
+        assert "reprocess=True" not in result.message
         assert "recomputes" not in result.message
         assert result.suggested_verification == (
             "Treat this classification as provisional: before relying on it, "
@@ -1149,6 +1158,420 @@ class TestAssessAssetChange:
         assert first.lineage["stale_context"] == 0
         assert "reprocess=True" not in first.message
         assert len(_events()) == before
+
+
+#: The parts of the re-processing stop rule, by the phrase every reference
+#: surface states for each.
+STOP_RULE_PARTS = {
+    "a call without the token starts a new sequence": (
+        "starts a new re-processing sequence"
+    ),
+    "a named call is an attempt": "an attempt, not a promise",
+    "within a sequence, follow next_call exactly": "make exactly that call",
+    "when it ends, read the state": "sequence_state",
+    "and report what needs an action": "needs_action",
+    "a new sequence attempts the costly failures again": (
+        "attempts again the failures only an attempt finds"
+    ),
+}
+
+#: The start conditions of a new sequence, which every surface that lists
+#: them lists in full.
+START_CONDITIONS = (
+    "including the call a message, a remedy or a declaration names",
+    "no sequence of the point has ended in",
+    "after the user took an action",
+    "after a load or a declaration changed the point",
+    "once after an environment fix",
+    "asks to list the blocked measurements again",
+)
+
+#: Phrases no surface and no output uses: they promise an end a sequence
+#: may never reach, or a computation that is only an attempt.
+RETIRED_PHRASES = ("remaining 0", "repeat until remaining", "recomputes")
+
+REPO = Path(__file__).resolve().parent.parent
+
+
+def _plain(text: str) -> str:
+    """*text* without Markdown code marks, on one line."""
+    return " ".join(text.replace("`", "").split())
+
+
+def assert_runtime_wording(*texts: Optional[str]) -> None:
+    """Outputs built at runtime state only the part of the stop rule that
+    applies, and never a retired phrase."""
+    for text in texts:
+        for phrase in RETIRED_PHRASES:
+            assert phrase not in _plain(text or ""), (phrase, text)
+
+
+def _measurement_file(sandbox: Path, index: int, point: str = POINT) -> Path:
+    return sandbox / f"{ASSET}_{point}_m{index:02d}.csv"
+
+
+def _same_size_change(path: Path) -> None:
+    """Other bytes of the same length: the lines in reverse order."""
+    lines = path.read_bytes().splitlines(keepends=True)
+    path.write_bytes(b"".join(reversed(lines)))
+
+
+def _named_calls(text: str) -> list[str]:
+    return [
+        f"{name}({args})"
+        for name, args, _ in extract_calls(text)
+        if name == "assess_asset_change"
+    ]
+
+
+async def _assess(tools, ctx, **kwargs) -> AssetChangeAssessment:
+    return await tools["assess_asset_change"](
+        ctx=ctx, asset_id=ASSET, measurement_point_id=POINT, **kwargs
+    )
+
+
+class TestReprocessStopRule:
+    """Every surface that recommends re-processing states the same stop
+    rule; none promises an end the sequence may not reach."""
+
+    @staticmethod
+    def reference_surfaces() -> dict[str, str]:
+        from predictive_maintenance_mcp import server
+
+        changelog = (REPO / "CHANGELOG.md").read_text(encoding="utf-8")
+        unreleased = changelog.split("## [Unreleased]", 1)[1].split("\n## [", 1)[0]
+        assessment = AssetChangeAssessment.model_fields
+        declaration = MeasurementPointDeclarationResult.model_fields
+        return {
+            "server instructions": server.mcp.instructions or "",
+            "assess_asset_change docstring": asset_tools.assess_asset_change.__doc__,
+            "declare_measurement_point docstring": (
+                asset_tools.declare_measurement_point.__doc__
+            ),
+            "AssetChangeAssessment.reprocess": assessment["reprocess"].description,
+            "AssetChangeAssessment.remedy": assessment["remedy"].description,
+            "MeasurementPointDeclarationResult": (
+                MeasurementPointDeclarationResult.__doc__
+            ),
+            "MeasurementPointDeclarationResult.remedy": (
+                declaration["remedy"].description
+            ),
+            "EXAMPLES.md": (REPO / "EXAMPLES.md").read_text(encoding="utf-8"),
+            "docs/TOOL_CATALOG.md": (REPO / "docs" / "TOOL_CATALOG.md").read_text(
+                encoding="utf-8"
+            ),
+            "docs/ADAPTER_GUIDE.md": (REPO / "docs" / "ADAPTER_GUIDE.md").read_text(
+                encoding="utf-8"
+            ),
+            "CHANGELOG.md [Unreleased]": unreleased,
+        }
+
+    def test_every_reference_surface_states_every_part(self):
+        for surface, text in self.reference_surfaces().items():
+            plain = _plain(text)
+            for part, phrase in STOP_RULE_PARTS.items():
+                assert phrase in plain, f"{surface} does not state: {part}"
+
+    def test_no_reference_surface_uses_a_retired_phrase(self):
+        for surface, text in self.reference_surfaces().items():
+            for phrase in RETIRED_PHRASES:
+                assert phrase not in _plain(text), f"{surface}: {phrase!r}"
+
+    def test_every_listing_surface_lists_every_start_condition(self):
+        """The surfaces that enumerate when a new sequence starts enumerate
+        the same conditions (the shorter surfaces only say that a call
+        without the token starts one)."""
+        surfaces = self.reference_surfaces()
+        listing = [
+            "server instructions",
+            "assess_asset_change docstring",
+            "AssetChangeAssessment.reprocess",
+            "AssetChangeAssessment.remedy",
+            "MeasurementPointDeclarationResult.remedy",
+            "EXAMPLES.md",
+            "docs/TOOL_CATALOG.md",
+        ]
+        for surface in listing:
+            plain = _plain(surfaces[surface])
+            for condition in START_CONDITIONS:
+                assert condition in plain, f"{surface} omits: {condition}"
+
+    def test_the_stated_bounds_are_the_constants(self):
+        """Every surface that states the per-call bounds states the values
+        the service enforces."""
+        bounds = (
+            f"{ledger_service.MAX_REPROCESS_PER_CALL} attempts",
+            f"{ledger_service.MAX_FILE_CHECKS_PER_CALL} file checks",
+            f"{ledger_service.MAX_LISTED_ITEMS} failures",
+        )
+        surfaces = self.reference_surfaces()
+        stating = [
+            "server instructions",
+            "assess_asset_change docstring",
+            "AssetChangeAssessment.reprocess",
+            "EXAMPLES.md",
+            "docs/TOOL_CATALOG.md",
+            "CHANGELOG.md [Unreleased]",
+        ]
+        for surface in stating:
+            plain = _plain(surfaces[surface])
+            for bound in bounds:
+                assert bound in plain, f"{surface} does not state {bound}"
+
+
+class TestReprocessSequenceThroughTheTool:
+    """The tool's side of a re-processing sequence: the continuation token,
+    the misuse rails, and one named call per response."""
+
+    @pytest.mark.asyncio
+    async def test_ae7_s1_ends_exhausted_and_names_no_call(self, tools, ctx, sandbox):
+        """S1 in one reprocess=True call: the 8 later slots are re-processed,
+        the 12 reference files are gone; the assessment still opens with the
+        stale-evidence sentence and names no call."""
+        await _declare_point(tools, ctx)
+        await _load_measurements(tools, ctx, sandbox, 20)
+        await _declare_point(tools, ctx, machine_group=1)
+        for index in range(1, 13):
+            _measurement_file(sandbox, index).unlink()
+        result = await _assess(tools, ctx, reference_measurements=12, reprocess=True)
+        block = result.reprocess
+        assert (block["reprocessed"], block["not_reprocessable"]) == (8, 12)
+        assert block["sequence_state"] == "exhausted"
+        assert block["remaining"] == 0 and block["next_call"] is None
+        assert result.status == "assessed"
+        assert result.lineage["stale_context"] == 12
+        assert result.message.startswith(
+            "12 of the 20 evaluated acquisition slots were scored from snapshots "
+            "computed under a previous declaration of the point or the "
+            "measurement, so this verdict does not reflect the current "
+            "declaration yet; 12 evaluated slot(s) lacking the "
+            f"{processing_id()} snapshot of their current declarations stay "
+            "stale until an action is taken: 12 need the file restored or "
+            "located (the reprocess block reports them). "
+        )
+        assert "reprocess=True" not in result.message
+        assert result.suggested_verification.startswith(
+            "Treat this classification as provisional"
+        )
+        assert_runtime_wording(result.message, block["message"])
+
+    @pytest.mark.asyncio
+    async def test_mid_sequence_every_named_call_is_the_next_call(
+        self, tools, ctx, sandbox
+    ):
+        """Ten changed files ahead of five eligible ones: the first response
+        carries a token, and its message names exactly its next_call, which
+        the registered surface accepts; the call it names ends the sequence."""
+        await _declare_point(tools, ctx)
+        await _load_measurements(tools, ctx, sandbox, 15)
+        await _declare_point(tools, ctx, machine_group=1)
+        for index in range(1, 11):
+            _same_size_change(_measurement_file(sandbox, index))
+        events = len(_events())
+        first = await _assess(tools, ctx, last_k=4, reprocess=True)
+        block = first.reprocess
+        token = block["next_cursor"]
+        assert token is not None and block["sequence_state"] == "continue"
+        assert block["next_call"] == (
+            "assess_asset_change(asset_id='P-101', measurement_point_id='motor_de_h', "
+            f"last_k=4, reprocess=True, reprocess_cursor={token!r})"
+        )
+        assert _named_calls(first.message) == [block["next_call"]]
+        assert block["next_call"] in block["message"]
+        endpoints = build_endpoints()
+        for text in (first.message, block["message"], block["next_call"]):
+            assert validate_documented_calls(text, endpoints, "runtime") == []
+
+        second = await _assess(
+            tools, ctx, last_k=4, reprocess=True, reprocess_cursor=token
+        )
+        assert second.reprocess["restarted"] is None
+        assert second.reprocess["cursor"] == token
+        assert second.reprocess["sequence_state"] == "exhausted"
+        assert second.reprocess["earlier_in_sequence"] == 10
+        assert _named_calls(second.message) == []
+        assert_runtime_wording(
+            first.message, block["message"], second.message, second.reprocess["message"]
+        )
+        assert _event_types().count(EVENT_HEALTH_SNAPSHOT_COMPUTED) == 15 + 5
+        assert len(_events()) == events + 5
+
+    @pytest.mark.asyncio
+    async def test_the_remedy_names_the_next_call_mid_sequence(
+        self, tools, ctx, sandbox, monkeypatch
+    ):
+        """processing_not_homogeneous while a sequence runs: the remedy names
+        the block's next_call, token included, and counts the slots found
+        not reprocessable."""
+        await _declare_point(tools, ctx)
+        await _load_measurements(tools, ctx, sandbox, 20)
+        monkeypatch.setattr(
+            snapshot_module, "ALGORITHM_VERSION", snapshot_module.ALGORITHM_VERSION + 1
+        )
+        names = [
+            _place(
+                sandbox,
+                f"late_m{index:02d}.csv",
+                _noise(900 + index),
+                _companion(index=index),
+            )
+            for index in range(21, 31)
+        ]
+        await tools["load_signal"](ctx=ctx, filepath=names)
+        for index in range(1, 11):
+            _same_size_change(_measurement_file(sandbox, index))
+        result = await _assess(tools, ctx, reprocess=True)
+        block = result.reprocess
+        assert result.status == "processing_not_homogeneous"
+        assert block["next_cursor"] is not None
+        assert result.remedy.startswith(f"call {block['next_call']} to attempt")
+        assert "10 of the 20 slots missing one stay without it" in result.remedy
+        assert "need the user's decision on a changed file" in result.remedy
+        assert (
+            validate_documented_calls(result.remedy, build_endpoints(), "remedy") == []
+        )
+        assert_runtime_wording(result.remedy, result.message, block["message"])
+
+    @pytest.mark.asyncio
+    async def test_the_remedy_of_a_continuing_call_counts_the_earlier_failures(
+        self, tools, ctx, sandbox, monkeypatch
+    ):
+        """Twenty changed files among 25 slots on the older lineage: the
+        second call, given the token, names its own next_call and counts the
+        10 failures the first call found with the 5 it found itself; the third
+        call names no call."""
+        await _declare_point(tools, ctx)
+        await _load_measurements(tools, ctx, sandbox, 25)
+        monkeypatch.setattr(
+            snapshot_module, "ALGORITHM_VERSION", snapshot_module.ALGORITHM_VERSION + 1
+        )
+        names = [
+            _place(
+                sandbox,
+                f"late_m{index:02d}.csv",
+                _noise(900 + index),
+                _companion(index=index),
+            )
+            for index in range(26, 31)
+        ]
+        await tools["load_signal"](ctx=ctx, filepath=names)
+        for index in range(1, 21):
+            _same_size_change(_measurement_file(sandbox, index))
+        first = await _assess(tools, ctx, reprocess=True)
+        assert first.reprocess["reprocessed"] == 0
+        assert first.reprocess["not_reprocessable"] == 10
+        token = first.reprocess["next_cursor"]
+        assert token is not None
+
+        second = await _assess(tools, ctx, reprocess=True, reprocess_cursor=token)
+        block = second.reprocess
+        assert block["restarted"] is None
+        assert (block["reprocessed"], block["not_reprocessable"]) == (5, 5)
+        assert block["earlier_in_sequence"] == 10
+        assert block["next_cursor"] not in (None, token)
+        assert second.status == "processing_not_homogeneous"
+        assert second.remedy.startswith(f"call {block['next_call']} to attempt")
+        assert _named_calls(second.remedy) == [block["next_call"]]
+        assert (
+            "; 15 of the 20 slots missing one stay without it until an action is "
+            "taken: 15 need the user's decision on a changed file"
+        ) in second.remedy
+        assert (
+            validate_documented_calls(second.remedy, build_endpoints(), "remedy") == []
+        )
+
+        third = await _assess(
+            tools, ctx, reprocess=True, reprocess_cursor=block["next_cursor"]
+        )
+        assert third.reprocess["sequence_state"] == "exhausted"
+        assert third.reprocess["earlier_in_sequence"] == 15
+        assert third.remedy.startswith(
+            "re-processing cannot compute the 20 missing "
+            f"{third.current_processing_id} snapshot(s) of the evaluated slots until "
+            "an action is taken: 20 need the user's decision on a changed file"
+        )
+        assert _named_calls(third.remedy) == []
+        assert_runtime_wording(second.remedy, third.remedy, block["message"])
+
+    @pytest.mark.asyncio
+    async def test_ae9_token_misuse_is_refused_before_the_ledger_is_read(
+        self, tools, ctx, sandbox, monkeypatch
+    ):
+        def unread(self, asset_id):
+            raise AssertionError("the ledger was read")
+
+        monkeypatch.setattr(LedgerStore, "read_view", unread)
+        valid = "r1." + "0" * 16 + "." + "0" * 8 + ".f.f1"
+        for kwargs, problem in (
+            ({"reprocess_cursor": valid}, "needs reprocess=True"),
+            ({"reprocess": True, "reprocess_cursor": valid[:-3]}, "shape"),
+            ({"reprocess": True, "reprocess_cursor": valid + "é"}, "shape"),
+            ({"reprocess": True, "reprocess_cursor": "r" * 201}, "more than the 200"),
+        ):
+            with pytest.raises(ValueError, match=problem) as refused:
+                await _assess(tools, ctx, **kwargs)
+            message = str(refused.value)
+            assert "pass the token exactly as next_call gives it" in message
+
+    @pytest.mark.asyncio
+    async def test_ae9_a_token_of_another_point_restarts(self, tools, ctx, sandbox):
+        await _declare_point(tools, ctx)
+        await _load_measurements(tools, ctx, sandbox, 12)
+        await _declare_point(tools, ctx, machine_group=1)
+        for index in range(1, 11):
+            _same_size_change(_measurement_file(sandbox, index))
+        token = (await _assess(tools, ctx, reprocess=True)).reprocess["next_cursor"]
+        assert token is not None
+        await _declare_point(tools, ctx, point=OTHER_POINT)
+        await _load_measurements(tools, ctx, sandbox, 4, point=OTHER_POINT)
+        other = await tools["assess_asset_change"](
+            ctx=ctx,
+            asset_id=ASSET,
+            measurement_point_id=OTHER_POINT,
+            reprocess=True,
+            reprocess_cursor=token,
+        )
+        assert other.reprocess["restarted"]["reason_code"] == "unknown_measurement"
+        assert other.reprocess["message"].startswith(
+            "The continuation token was not used (the measurement it continues "
+            "after is no longer a measurement of this point)"
+        )
+
+    @pytest.mark.asyncio
+    async def test_ae18_only_superseded_leftovers_suggest_nothing(
+        self, tools, ctx, sandbox
+    ):
+        """A duplicate export, loaded first and collapsed into the slot of the
+        later one, whose file is gone: the sequence ends complete, and
+        neither the assessment nor the point declaration names a call or an
+        action for it."""
+        await _declare_point(tools, ctx)
+        duplicate = _place(sandbox, "dup_m01.csv", _noise(9001), _companion(index=1))
+        dup = await tools["load_signal"](ctx=ctx, filepath=duplicate)
+        dup_id = dup.measurement["measurement_id"]
+        await _load_measurements(tools, ctx, sandbox, 11)
+        await _declare_point(tools, ctx, machine_group=1)
+        (sandbox / duplicate).unlink()
+        first = await _assess(tools, ctx, reprocess=True)
+        assert first.reprocess["sequence_state"] == "continue"
+        assert first.reprocess["next_cursor"] is None  # nothing failed yet
+        final = await _assess(tools, ctx, reprocess=True)
+        block = final.reprocess
+        assert block["sequence_state"] == "complete"
+        assert block["superseded"] == 1 and block["unresolved"] == 0
+        assert block["groups"]["superseded"]["measurement_ids"] == [dup_id]
+        assert block["needs_action"] == [] and block["next_call"] is None
+        assert final.status == "assessed" and final.lineage["stale_context"] == 0
+        assert "reprocess=True" not in final.message
+        declared = await _declare_point(tools, ctx, machine_group=1)
+        assert declared.appended is False
+        assert declared.measurements_with_stale_context == 1
+        assert declared.remedy is None
+        assert "reprocess=True" not in declared.message
+        assert "1 is a recording collapsed into another acquisition slot" in (
+            declared.message
+        )
+        assert_runtime_wording(final.message, block["message"], declared.message)
 
 
 # ---------------------------------------------------------------------------

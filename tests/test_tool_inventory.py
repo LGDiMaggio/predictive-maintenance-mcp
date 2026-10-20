@@ -72,6 +72,10 @@ Fixture history:
   carry ctx (context_kwarg pinned) and are declared in
   tests/test_surface_parity.py POST_U9_ADDITIONS. No existing tool's
   schema changed.
+- Re-processing progress (2026-10-19): regenerated intentionally: ADDITIVE.
+  assess_asset_change gained the OPTIONAL reprocess_cursor (default null),
+  the continuation token a reprocess block's next_call carries. No other
+  tool's schema changed; counts unchanged (38/0/3).
 
 Snapshot recipe (run from the repo root):
     python -c "from tests.test_tool_inventory import build_inventory, \\
