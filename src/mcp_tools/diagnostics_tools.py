@@ -39,6 +39,7 @@ from ..models import (
     AnomalyModelResult,
     AnomalyPredictionResult,
     BearingCatalogMiss,
+    BearingCheckOutcome,
     BearingFaultCheckResult,
     BearingFaultsSummary,
     VibrationSeverityResult,
@@ -1782,6 +1783,15 @@ async def diagnose_vibration(
     signal loaded without a measurement identity behaves exactly as
     before: only the explicit arguments and the historical defaults apply.
 
+    The bearing_check block says whether the bearing check ran: 'assessed'
+    (see bearing_faults), 'not_requested' (no bearing anywhere) or
+    'not_computed' with reason_code, reason and remedy. A bearing_id that
+    is not in the bearing catalog, a sampling rate too low for the
+    envelope band, or a point with fault_orders only is 'not_computed':
+    the diagnosis text says the check was not computed, the remedy is
+    among the recommendations, and the result says nothing about the
+    bearing.
+
     Args:
         ctx: MCP context. Unused — see this module's docstring on logging.
         signal_id: ID of the stored signal.
@@ -1789,8 +1799,9 @@ async def diagnose_vibration(
             the measurement's declared rpm, then the point's nominal_rpm. An
             explicit value that is zero, negative or not a finite number is
             refused, never replaced by a declared speed.
-        bearing_id: Bearing designation for fault detection. Optional: the
-            point's declared bearing_id.
+        bearing_id: Bearing designation for fault detection, checked only
+            when it is in the bearing catalog (see bearing_check). Optional:
+            the point's declared bearing_id.
         machine_group: 1 (large, >300 kW) or 2 (medium, 15-300 kW).
             Optional: the point's declaration, then 2.
         support_type: 'rigid' or 'flexible'. Optional: the point's
@@ -1860,16 +1871,27 @@ async def diagnose_vibration(
     # states the ISO refusal: the diagnosis text and the recommendations.
     overall_diagnosis: str = result["overall_diagnosis"]
     recommendations: list[str] = list(result["recommendations"])
+    bearing_check = BearingCheckOutcome(**result["bearing_check"])
     if sources["bearing_id"] == "not_supported_fault_orders":
         overall_diagnosis = (
             f"{overall_diagnosis} Bearing analysis: not computed — the "
             f"measurement point declares fault_orders and "
             f"{_FAULT_ORDERS_NOT_SUPPORTED}."
         )
-        recommendations.append(
-            _fault_orders_remedy(
-                signal_id, parameters.rpm, parameters.fault_orders or {}
-            )
+        remedy = _fault_orders_remedy(
+            signal_id, parameters.rpm, parameters.fault_orders or {}
+        )
+        recommendations.append(remedy)
+        # The pipeline saw no bearing; the structured block must not say
+        # "not_requested" for a point that declares fault orders.
+        bearing_check = BearingCheckOutcome(
+            status="not_computed",
+            reason_code="fault_orders_not_supported",
+            reason=(
+                f"The measurement point declares fault_orders without a "
+                f"bearing_id, and {_FAULT_ORDERS_NOT_SUPPORTED}."
+            ),
+            remedy=remedy,
         )
 
     # Convert nested dicts to Pydantic models
@@ -1918,6 +1940,7 @@ async def diagnose_vibration(
         psd_summary=result["psd_summary"],
         stft_summary=result["stft_summary"],
         bearing_faults=bearing_faults_model,
+        bearing_check=bearing_check,
         iso_severity=iso_model,
         anomaly_detection=result.get("anomaly_detection"),
         overall_diagnosis=overall_diagnosis,

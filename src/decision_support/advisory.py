@@ -124,8 +124,32 @@ def _build_iso_block(iso: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def _build_bearing_block(bearing_faults: Optional[dict]) -> dict:
-    """Author the frequency-matching block, or state why it was not attempted."""
+def _build_bearing_block(
+    bearing_faults: Optional[dict],
+    bearing_check: Optional[dict] = None,
+    bearing_id: Optional[str] = None,
+) -> dict:
+    """Author the frequency-matching block, or state why it was not attempted.
+
+    A designation that was supplied but could not be checked (the pipeline's
+    ``bearing_check`` is ``not_computed``) is a refusal with the engine's
+    reason and remedy, never the "no designation supplied" absence: telling
+    the caller to supply a bearing_id it already passed was issue #84.
+    """
+    if bearing_check and bearing_check.get("status") == "not_computed":
+        return {
+            "status": REFUSED,
+            "statement": (
+                f"Bearing characteristic-frequency matching was not computed. "
+                f"{bearing_check['reason']} No bearing check ran, so this "
+                f"report says nothing about the condition of the bearing."
+            ),
+            "reason": bearing_check["reason"],
+            "remedy": bearing_check["remedy"],
+            "bearing_id": bearing_id,
+            "rows": [],
+        }
+
     if not bearing_faults:
         return {
             "status": ABSENT,
@@ -299,10 +323,18 @@ def _build_verdict(bearing_block: dict, iso_block: dict, anomaly_block: dict) ->
             "fault_acronym": primary["fault_type"],
         }
 
+    not_computed = bearing_block["status"] == REFUSED
     if bearing_block["status"] == ASSESSED:
         headline = (
             "No bearing fault is indicated: no characteristic frequency "
             "matched a peak in the envelope spectrum."
+        )
+    elif not_computed:
+        bearing_id = bearing_block.get("bearing_id")
+        headline = (
+            "No bearing fault verdict was reached, because characteristic-"
+            "frequency matching was not computed"
+            + (f" for bearing {bearing_id!r}." if bearing_id else ".")
         )
     else:
         headline = (
@@ -310,18 +342,34 @@ def _build_verdict(bearing_block: dict, iso_block: dict, anomaly_block: dict) ->
             "frequency matching was not attempted."
         )
 
+    # The bearing was named but never checked, so it cannot be ruled out as
+    # the source of what the other indicators see.
     if iso_block["status"] == ASSESSED and iso_block["zone"] not in _ACCEPTABLE_ZONES:
-        headline += (
-            f" Broadband vibration is nonetheless elevated "
-            f"(Zone {iso_block['zone']}), so a non-bearing source should be "
-            f"considered."
-        )
+        if not_computed:
+            headline += (
+                f" Broadband vibration is nonetheless elevated "
+                f"(Zone {iso_block['zone']}), and the bearing was not checked, "
+                f"so it cannot be excluded as the source."
+            )
+        else:
+            headline += (
+                f" Broadband vibration is nonetheless elevated "
+                f"(Zone {iso_block['zone']}), so a non-bearing source should be "
+                f"considered."
+            )
     elif anomaly_block.get("overall_health") in ("Faulty", "Suspicious"):
-        headline += (
-            " The anomaly model nonetheless flags this signal as departing "
-            "from the learned healthy pattern, so a source outside the "
-            "bearing's characteristic frequencies should be considered."
-        )
+        if not_computed:
+            headline += (
+                " The anomaly model nonetheless flags this signal as departing "
+                "from the learned healthy pattern, and the bearing was not "
+                "checked, so it cannot be excluded as the source."
+            )
+        else:
+            headline += (
+                " The anomaly model nonetheless flags this signal as departing "
+                "from the learned healthy pattern, so a source outside the "
+                "bearing's characteristic frequencies should be considered."
+            )
 
     return {"statement": headline, "fault_canonical": None, "fault_acronym": ""}
 
@@ -488,6 +536,19 @@ def _build_recommendations(
             recommendations.append(
                 {**entry, "motivation": motivation, "evidence": evidence}
             )
+
+    if bearing_block["status"] == REFUSED:
+        recommendations.append(
+            {
+                "action": bearing_block["remedy"],
+                "urgency": "medium",
+                "description": (
+                    "The bearing check is unavailable until this is resolved."
+                ),
+                "motivation": bearing_block["reason"],
+                "evidence": [bearing_block["statement"]],
+            }
+        )
 
     if disagreements:
         recommendations.insert(
@@ -841,7 +902,11 @@ def build_advisory(
         )
 
     iso_block = _build_iso_block(diagnosis["iso_severity"])
-    bearing_block = _build_bearing_block(diagnosis.get("bearing_faults"))
+    bearing_block = _build_bearing_block(
+        diagnosis.get("bearing_faults"),
+        diagnosis.get("bearing_check"),
+        diagnosis.get("bearing_id"),
+    )
     anomaly_block = _build_anomaly_block(diagnosis.get("anomaly_detection"))
     energy_block = _build_energy_block(diagnosis["stft_summary"])
 

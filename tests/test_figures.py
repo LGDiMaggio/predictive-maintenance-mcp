@@ -124,6 +124,18 @@ class TestDegradation:
         assert without["caption"]
         assert "no bearing" in without["caption"].lower()
 
+    def test_caption_gives_the_reason_when_a_bearing_was_named(self):
+        """Issue #84: a designation was supplied but is not in the catalog;
+        the caption must not say that none was supplied."""
+        freqs, mags = _spectrum()
+        reason = "Bearing '9999' is not in the bearing catalog, so ..."
+        figure = build_annotated_envelope_figure(
+            freqs, mags, None, no_bands_reason=reason
+        )
+        assert figure["bands"] == []
+        assert figure["caption"].startswith(f"Envelope spectrum. {reason} ")
+        assert "no bearing designation" not in figure["caption"].lower()
+
     def test_empty_spectrum_raises_rather_than_drawing_nothing(self):
         with pytest.raises(ValueError):
             build_annotated_envelope_figure(np.array([]), np.array([]), None)

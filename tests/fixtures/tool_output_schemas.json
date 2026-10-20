@@ -1525,6 +1525,70 @@
   },
   "diagnose_vibration": {
     "$defs": {
+      "BearingCheckOutcome": {
+        "description": "Whether the bearing check of a diagnosis ran, and why not when it did not.\n\n``bearing_faults`` is None both when no bearing was given and when one\nwas given but the check could not run; this block tells the two apart,\nso a check that never ran cannot read as a clean one.",
+        "properties": {
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Why the check was not computed (status 'not_computed' only)",
+            "title": "Reason"
+          },
+          "reason_code": {
+            "anyOf": [
+              {
+                "enum": [
+                  "not_in_catalog",
+                  "envelope_band_unusable",
+                  "fault_orders_not_supported"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Why the check was not computed (status 'not_computed' only): 'not_in_catalog' (the designation is not in the bearing catalog), 'envelope_band_unusable' (the sampling rate leaves the envelope band empty) or 'fault_orders_not_supported' (the measurement point declares fault_orders, which this tool does not check)",
+            "title": "Reason Code"
+          },
+          "remedy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "How to check the bearing instead (status 'not_computed' only)",
+            "title": "Remedy"
+          },
+          "status": {
+            "description": "'assessed' (the check ran: see bearing_faults), 'not_requested' (no bearing designation from any source) or 'not_computed' (a bearing was given but the check could not run: see reason and remedy). Only 'assessed' says anything about the bearing.",
+            "enum": [
+              "assessed",
+              "not_requested",
+              "not_computed"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "BearingCheckOutcome",
+        "type": "object"
+      },
       "BearingFaultCheckResult": {
         "description": "Result of checking for a specific expected fault frequency.",
         "properties": {
@@ -1982,6 +2046,10 @@
         "description": "Anomaly detection results (health, ratio, score)",
         "title": "Anomaly Detection"
       },
+      "bearing_check": {
+        "$ref": "#/$defs/BearingCheckOutcome",
+        "description": "Whether the bearing check ran. A bearing_faults of None alone does not say whether a bearing was given: status 'not_computed' means one was and the check did not run (reason, remedy)."
+      },
       "bearing_faults": {
         "anyOf": [
           {
@@ -1992,7 +2060,7 @@
           }
         ],
         "default": null,
-        "description": "Bearing fault results"
+        "description": "Bearing fault results; None when the check did not run (see bearing_check)"
       },
       "bearing_id": {
         "anyOf": [
@@ -2008,7 +2076,7 @@
         "title": "Bearing Id"
       },
       "evidence_strength": {
-        "description": "Strength of corroborating fault evidence: 'none', 'weak', 'moderate', or 'strong'. Derived from the number and quality of independent findings (bearing fault frequency matches, shaft signatures, anomaly detection, ISO severity) \u2014 NOT from severity alone and NOT a probability. 'none' means no fault evidence was found (machine appears healthy).",
+        "description": "Strength of corroborating fault evidence: 'none', 'weak', 'moderate', or 'strong'. Derived from the number and quality of independent findings (bearing fault frequency matches, shaft signatures, anomaly detection, ISO severity) \u2014 NOT from severity alone and NOT a probability. 'none' means the analyses that ran found no fault evidence (machine appears healthy); a bearing check that was not computed (bearing_check.status 'not_computed') adds nothing and says nothing about the bearing.",
         "title": "Evidence Strength",
         "type": "string"
       },
@@ -2108,6 +2176,7 @@
       "fft_summary",
       "psd_summary",
       "stft_summary",
+      "bearing_check",
       "iso_severity",
       "overall_diagnosis",
       "evidence_strength",

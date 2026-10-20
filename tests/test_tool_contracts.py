@@ -61,6 +61,11 @@ Fixture history:
   description names each failure's action_id and the needs_action actions
   that give each text once. Generated under mcp 2.3.0 and pydantic 2.12.0
   (uv.lock).
+- Bearing check outcome (2026-10-20, #84): regenerated intentionally:
+  ADDITIVE, no shape changed. diagnose_vibration gains the required
+  bearing_check block (BearingCheckOutcome: status, reason_code, reason,
+  remedy); the bearing_faults and evidence_strength descriptions name it.
+  Generated under mcp 2.3.0 and pydantic 2.12.0 (uv.lock).
 """
 
 from __future__ import annotations

@@ -81,6 +81,7 @@ def build_annotated_envelope_figure(
     tolerance_pct: float = 5.0,
     max_freq: Optional[float] = None,
     max_points: int = _MAX_TRACE_POINTS,
+    no_bands_reason: Optional[str] = None,
 ) -> dict[str, Any]:
     """Build the annotated envelope spectrum as renderer-agnostic data.
 
@@ -104,6 +105,10 @@ def build_annotated_envelope_figure(
             sampling rate resolves the plotted band far more finely than any
             screen or page can show, and every extra point is bytes in a
             document meant to be emailed.
+        no_bands_reason: The sentence saying why no bands are drawn when a
+            bearing was named but its frequencies could not be computed.
+            ``None`` keeps the "no bearing designation was supplied"
+            caption, which would be false for a named bearing.
 
     Returns:
         A JSON-serialisable figure description: axis data, tolerance bands,
@@ -185,7 +190,7 @@ def build_annotated_envelope_figure(
         "bands": bands,
         "annotations": annotations,
         "omitted_labels": omitted,
-        "caption": _caption(bands, omitted, tolerance_pct, matched),
+        "caption": _caption(bands, omitted, tolerance_pct, matched, no_bands_reason),
     }
 
 
@@ -392,8 +397,15 @@ def _caption(
     omitted: list[str],
     tolerance_pct: float,
     matched: Optional[dict[str, Any]],
+    no_bands_reason: Optional[str] = None,
 ) -> str:
     """Author the sentence that says what the figure is evidence of."""
+    if not bands and no_bands_reason:
+        return (
+            f"Envelope spectrum. {no_bands_reason} No characteristic-frequency "
+            f"bands are drawn, so a peak cannot be attributed to a specific "
+            f"bearing element from this figure."
+        )
     if not bands:
         return (
             "Envelope spectrum. No bearing designation was supplied, so no "

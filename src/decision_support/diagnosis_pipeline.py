@@ -24,17 +24,18 @@ from ..signal_processing.spectral import (
     amplitude_spectrum,
     compute_psd,
     compute_stft_spectrogram,
+    resolve_envelope_band,
 )
 from ..signal_processing.features import (
     extract_time_domain_features as _extract_time_domain_features,
 )
 from ..signal_acquisition.repository import VALID_SIGNAL_UNITS, normalize_signal_unit
 from ..signal_validation import (
-    InvalidInputError,
     validate_rpm,
     validate_signal_and_fs,
 )
 from ..diagnostics.bearing_analyzer import check_all_bearing_faults
+from ..diagnostics.bearing_catalog import lookup_bearing
 from ..diagnostics.iso20816 import assess_severity_with_axis
 
 logger = logging.getLogger(__name__)
@@ -53,6 +54,81 @@ def _refused_iso_block(signal_id: str, reason: str, remedy: str) -> dict:
         "reason": reason,
         "remedy": remedy,
     }
+
+
+def _bearing_check(
+    status: str,
+    reason_code: Optional[str] = None,
+    reason: Optional[str] = None,
+    remedy: Optional[str] = None,
+) -> dict:
+    """Build the ``bearing_check`` block (``models.BearingCheckOutcome``).
+
+    ``bearing_faults`` is None both without a bearing and when a given one
+    could not be checked. This block tells the two apart, so a check that
+    never ran cannot read as a clean one.
+    """
+    return {
+        "status": status,
+        "reason_code": reason_code,
+        "reason": reason,
+        "remedy": remedy,
+    }
+
+
+def _not_in_catalog_check(bearing_id: str, rpm: float, signal_id: str) -> dict:
+    """The check cannot run: the catalog has no geometry for *bearing_id*."""
+    call = f"check_bearing_faults(signal_id={signal_id!r}, rpm={rpm:.10g}"
+    return _bearing_check(
+        "not_computed",
+        reason_code="not_in_catalog",
+        reason=(
+            f"Bearing {bearing_id!r} is not in the bearing catalog, so its "
+            f"characteristic frequencies (BPFO, BPFI, BSF, FTF) could not be "
+            f"computed."
+        ),
+        remedy=(
+            f"The bearing check of this diagnosis runs only for a designation "
+            f"in the bearing catalog. search_bearing_catalog(bearing_id="
+            f"{bearing_id!r}) lists the designations the catalog holds, in "
+            f"case the bearing is there under another one. Otherwise check "
+            f"the bearing with {call}, num_balls=..., ball_diameter_mm=..., "
+            f"pitch_diameter_mm=..., contact_angle_deg=...), taking the "
+            f"geometry from the bearing manufacturer's data and never "
+            f"estimating it, or with {call}, frequencies={{'BPFO': ..., "
+            f"'BPFI': ..., 'BSF': ..., 'FTF': ...}}) giving its characteristic "
+            f"frequencies in Hz."
+        ),
+    )
+
+
+def _envelope_band_check(bearing_id: str, fs: float) -> Optional[dict]:
+    """None when the check's default envelope band is usable at *fs*.
+
+    The band is 500 Hz up to just below Nyquist (``resolve_envelope_band``),
+    so it is empty at fs <= 1002 Hz and full width (500-5000 Hz) from 10 kHz:
+    the numbers the remedy names, pinned by the pipeline tests.
+    """
+    try:
+        resolve_envelope_band(fs)
+    except ValueError:
+        return _bearing_check(
+            "not_computed",
+            reason_code="envelope_band_unusable",
+            reason=(
+                f"At fs={fs:g} Hz the envelope band of the bearing check, from "
+                f"500 Hz to just below the Nyquist frequency ({fs / 2:g} Hz), "
+                f"is empty, so no envelope spectrum could be computed for "
+                f"bearing {bearing_id!r}."
+            ),
+            remedy=(
+                "Re-acquire the signal at a sampling rate above 1002 Hz, then "
+                "re-run the diagnosis: the envelope band runs from 500 Hz to "
+                "just below half the sampling rate, and reaches its full 500 "
+                "to 5000 Hz width at 10 kHz or more."
+            ),
+        )
+    return None
 
 
 def _compute_fft_summary(
@@ -198,7 +274,8 @@ def diagnose_vibration(
     1. FFT analysis
     2. PSD (Welch method)
     3. STFT spectrogram (time-varying behavior)
-    4. Bearing fault detection (if bearing_id provided)
+    4. Bearing fault detection (if bearing_id provided; ``bearing_check``
+       says whether it ran)
     5. ISO 20816-3 severity assessment (zone boundaries from
        ISO 10816-3:2009)
     6. Anomaly detection (OneClassSVM, if model available)
@@ -210,13 +287,18 @@ def diagnose_vibration(
     ``iso_severity`` block becomes a structured refusal
     (``status: "refused"`` + ``reason`` + ``remedy``) while the spectral,
     bearing, and anomaly blocks still run. Units are never guessed from
-    signal amplitude. Corrupt input is the exception: a NaN or infinite
-    sample, a non-finite or non-positive fs, or a shaft speed that is not a
-    positive finite number invalidates every block, so the whole call raises
-    before any block is computed. A refusal of the caller's own input that
-    arises inside the bearing check (a fault frequency that rounds to zero
-    at a fraction of 1 rpm) is raised too, never turned into a skipped
-    bearing block.
+    signal amplitude. The bearing check degrades the same way when it
+    cannot run: a ``bearing_id`` the catalog lacks, or a sampling rate that
+    leaves the envelope band empty (fs <= 1002 Hz), gives ``bearing_faults``
+    None and a ``bearing_check`` with ``status: "not_computed"``,
+    ``reason_code``, ``reason`` and ``remedy``, and the text and the
+    recommendations say so. Corrupt input is the exception: a NaN or
+    infinite sample, a non-finite or non-positive fs, or a shaft speed that
+    is not a positive finite number invalidates every block, so the whole
+    call raises before any block is computed. A refusal of the caller's own
+    input that arises inside the bearing check (a fault frequency that
+    rounds to zero at a fraction of 1 rpm) is raised too, never turned into
+    a skipped bearing block.
 
     Args:
         signal: 1D vibration signal.
@@ -236,7 +318,8 @@ def diagnose_vibration(
     Returns:
         Dict compatible with DiagnosisResult — ``iso_severity`` is either an
         assessed block (``status: "assessed"``) or a refusal
-        (``status: "refused"``).
+        (``status: "refused"``); ``bearing_check`` has ``status``
+        ``"assessed"``, ``"not_requested"`` or ``"not_computed"``.
 
     Raises:
         ValueError: If signal_unit is provided but is not a recognized unit
@@ -285,24 +368,30 @@ def diagnose_vibration(
         "num_time_bins": stft_result["num_time_bins"],
     }
 
-    # 4. Bearing faults
+    # 4. Bearing faults. A requested check runs, or bearing_check says why it
+    # could not: bearing_faults=None alone reads as "no bearing given", which
+    # is how an unknown designation used to pass for a clean result (#84).
     bearing_faults = None
-    if bearing_id:
-        try:
-            bearing_faults = check_all_bearing_faults(
-                signal=signal,
-                fs=fs,
-                bearing_id=bearing_id,
-                rpm=rpm,
-                signal_id=signal_id,
-            )
-        except InvalidInputError:
-            # The caller's own input is unusable (a computed fault frequency
-            # rounds to zero at a fraction of 1 rpm): refuse, never skip.
-            raise
-        except ValueError as e:
-            logger.warning(f"Bearing analysis skipped: {e}")
-            bearing_faults = None
+    if not bearing_id:
+        bearing_check = _bearing_check("not_requested")
+    elif lookup_bearing(bearing_id) is None:
+        bearing_check = _not_in_catalog_check(bearing_id, rpm, signal_id)
+    elif (band_check := _envelope_band_check(bearing_id, fs)) is not None:
+        bearing_check = band_check
+    else:
+        # Both conditions the check cannot run under are handled above, so
+        # what it raises now refuses the caller's own input (a fault frequency
+        # that rounds to zero at a fraction of 1 rpm): raised, never skipped.
+        bearing_faults = check_all_bearing_faults(
+            signal=signal,
+            fs=fs,
+            bearing_id=bearing_id,
+            rpm=rpm,
+            signal_id=signal_id,
+        )
+        bearing_check = _bearing_check("assessed")
+    if bearing_check["status"] == "not_computed":
+        logger.warning(f"Bearing analysis not computed: {bearing_check['reason']}")
 
     # 5. ISO severity — assessed only on a DECLARED unit and a sufficient
     # sampling rate; otherwise a schema-level refusal (the other blocks
@@ -358,6 +447,7 @@ def diagnose_vibration(
         psd_summary=psd_summary,
         stft_summary=stft_summary,
         bearing_faults=bearing_faults,
+        bearing_check=bearing_check,
         iso_severity=iso_result,
         anomaly=anomaly_result,
         rpm=rpm,
@@ -373,6 +463,7 @@ def diagnose_vibration(
         "psd_summary": psd_summary,
         "stft_summary": stft_summary,
         "bearing_faults": bearing_faults,
+        "bearing_check": bearing_check,
         "iso_severity": iso_result,
         "anomaly_detection": anomaly_result,
         "overall_diagnosis": diagnosis_text,
@@ -386,6 +477,7 @@ def _synthesize_diagnosis(
     psd_summary: dict,
     stft_summary: dict,
     bearing_faults: Optional[dict],
+    bearing_check: dict,
     iso_severity: dict,
     anomaly: Optional[dict],
     rpm: float,
@@ -401,7 +493,9 @@ def _synthesize_diagnosis(
       sampling rate) contributes NO evidence — no verdict, no points.
     - Shaft signature: dominant peak at 1x or 2x shaft speed +1.0.
     - Bearing fault frequencies: best detected check contributes
-      high +2.0 / moderate +1.0 / low +0.5.
+      high +2.0 / moderate +1.0 / low +0.5. A bearing check that was not
+      computed (``bearing_check``) contributes NO evidence either; the text
+      states why and the remedy is recommended, as for a refused ISO block.
     - Anomaly model: Faulty +1.0, Suspicious +0.5.
 
     Mapping: 0 -> "none", <2 -> "weak", <3 -> "moderate", >=3 -> "strong".
@@ -490,6 +584,13 @@ def _synthesize_diagnosis(
             lines.append(
                 "No bearing fault frequencies detected — bearing appears healthy."
             )
+    elif bearing_check["status"] == "not_computed":
+        lines.append(
+            f"Bearing analysis: not computed. {bearing_check['reason']} No "
+            f"bearing check ran, so this diagnosis says nothing about the "
+            f"condition of the bearing."
+        )
+        recommendations.append(bearing_check["remedy"])
 
     # Anomaly detection
     if anomaly:

@@ -103,18 +103,67 @@ class TestDiagnoseVibration:
             signal_unit="g",
         )
         assert result["bearing_faults"] is None
+        assert result["bearing_check"] == {
+            "status": "not_requested",
+            "reason_code": None,
+            "reason": None,
+            "remedy": None,
+        }
+        assert "Bearing analysis" not in result["overall_diagnosis"]
 
-    def test_diagnosis_bad_bearing_id(self, healthy_signal):
+    def test_unknown_bearing_id_is_a_check_not_computed_never_a_clean_one(
+        self, healthy_signal
+    ):
+        """Issue #84: a designation the catalog lacks used to leave the
+        result indistinguishable from "no bearing given", with "Continue
+        routine monitoring" as the only recommendation."""
         signal, fs = healthy_signal
         result = diagnose_vibration(
             signal=signal,
             fs=fs,
             rpm=1500,
+            signal_id="sig84",
             bearing_id="NONEXISTENT_999",
             signal_unit="g",
         )
-        # Should handle gracefully (bearing analysis skipped)
+        # Still degrades instead of raising, and bearing_faults keeps its
+        # meaning: no check result exists.
         assert result["bearing_faults"] is None
+        check = result["bearing_check"]
+        assert check["status"] == "not_computed"
+        assert check["reason_code"] == "not_in_catalog"
+        assert "'NONEXISTENT_999' is not in the bearing catalog" in check["reason"]
+        assert "search_bearing_catalog(bearing_id='NONEXISTENT_999')" in check["remedy"]
+        assert "check_bearing_faults(signal_id='sig84', rpm=1500, num_balls=" in (
+            check["remedy"]
+        )
+        assert "frequencies={'BPFO'" in check["remedy"]
+        assert (
+            f"Bearing analysis: not computed. {check['reason']}"
+            in result["overall_diagnosis"]
+        )
+        assert "says nothing about the condition of the bearing" in (
+            result["overall_diagnosis"]
+        )
+        assert check["remedy"] in result["recommendations"]
+        assert (
+            "Continue routine monitoring per maintenance schedule."
+            not in result["recommendations"]
+        )
+
+    def test_catalog_bearing_check_is_assessed(self, faulty_signal):
+        signal, fs = faulty_signal
+        result = diagnose_vibration(
+            signal=signal, fs=fs, rpm=1797, bearing_id="6205", signal_unit="g"
+        )
+        assert result["bearing_faults"] is not None
+        assert result["bearing_check"] == {
+            "status": "assessed",
+            "reason_code": None,
+            "reason": None,
+            "remedy": None,
+        }
+        assert "Bearing analysis: not computed" not in result["overall_diagnosis"]
 
 
 class TestISOSeverityRefusal:
@@ -473,6 +522,25 @@ class TestSynthesisEdgeCases:
         assert result["iso_severity"]["zone"] == "D"
         assert any("IMMEDIATE" in r for r in result["recommendations"])
 
+    def test_unknown_bearing_keeps_the_zone_d_action_and_adds_the_remedy(self):
+        """Issue #84: the bearing check that did not run takes nothing away
+        from the severity verdict, which stands on its own evidence."""
+        signal, fs = self._make_signal(10.0, 70)  # 70 Hz is not 1x/2x of 50 Hz
+        result = diagnose_vibration(
+            signal,
+            fs,
+            rpm=3000,
+            bearing_id="9999",
+            signal_unit="mm/s",
+            anomaly_model_name="nonexistent_model_84",
+        )
+        assert result["iso_severity"]["zone"] == "D"
+        assert result["recommendations"][0] == (
+            "IMMEDIATE ACTION: Stop machine and inspect."
+        )
+        assert result["recommendations"][1] == result["bearing_check"]["remedy"]
+        assert result["evidence_strength"] == "moderate"  # zone D +2.0 only
+
     def test_zone_d_alone_not_strong_evidence(self):
         """Severity alone (even zone D) must never reach 'strong' evidence.
 
@@ -514,6 +582,50 @@ class TestSynthesisEdgeCases:
         # Check that 2x is detected in FFT
         peak_f = result["fft_summary"]["peak_frequency_hz"]
         assert abs(peak_f - 100) < 5
+
+
+class TestBearingCheckEnvelopeBand:
+    """A catalog bearing whose default envelope band (500 Hz up to just below
+    Nyquist) is empty at this sampling rate: the check cannot run, and the
+    result says so instead of dropping it (the #84 path, same handler)."""
+
+    def _signal(self, fs):
+        t = np.arange(int(fs)) / fs
+        return 0.1 * np.sin(2 * np.pi * 50 * t)
+
+    def test_fs_at_the_limit_reports_the_check_not_computed(self):
+        fs = 1002.0  # Nyquist 501 Hz: band 500..500 Hz, empty
+        result = diagnose_vibration(
+            self._signal(fs), fs, rpm=1797, bearing_id="6205", signal_unit="g"
+        )
+        assert result["bearing_faults"] is None
+        check = result["bearing_check"]
+        assert check["status"] == "not_computed"
+        assert check["reason_code"] == "envelope_band_unusable"
+        assert "At fs=1002 Hz" in check["reason"]
+        assert "'6205'" in check["reason"]
+        assert "above 1002 Hz" in check["remedy"]
+        assert f"Bearing analysis: not computed. {check['reason']}" in (
+            result["overall_diagnosis"]
+        )
+        assert check["remedy"] in result["recommendations"]
+
+    def test_fs_just_above_the_limit_runs_the_check(self):
+        """Pins the 1002 Hz the remedy names: one step above it, it runs."""
+        fs = 1004.0  # Nyquist 502 Hz: band 500..501 Hz
+        result = diagnose_vibration(
+            self._signal(fs), fs, rpm=1797, bearing_id="6205", signal_unit="g"
+        )
+        assert result["bearing_check"]["status"] == "assessed"
+        assert result["bearing_faults"] is not None
+
+    def test_unknown_bearing_at_a_low_rate_names_the_catalog_first(self):
+        """Both conditions fail: the designation is the first one to fix."""
+        fs = 1000.0
+        result = diagnose_vibration(
+            self._signal(fs), fs, rpm=1797, bearing_id="9999", signal_unit="g"
+        )
+        assert result["bearing_check"]["reason_code"] == "not_in_catalog"
 
 
 class TestEvidenceStrengthUpperBranches:
