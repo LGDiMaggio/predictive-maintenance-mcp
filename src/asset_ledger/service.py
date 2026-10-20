@@ -2123,9 +2123,9 @@ def _run_reprocess(
             message += (
                 f"; {not_detailed} earlier failure(s) are not detailed in this "
                 f"response: the call that found each one listed it with its "
-                f"reason, action and location, and without those responses one "
-                f"new sequence (the call without reprocess_cursor) lists each "
-                f"again"
+                f"reason, location and action_id, the text of its action under "
+                f"needs_action, and without those responses one new sequence "
+                f"(the call without reprocess_cursor) lists each again"
             )
     if restarted is not None:
         message = (

@@ -2395,6 +2395,33 @@ class TestReasonCodes:
         assert second["changed"] == ["location"]
         return first["measurement_id"], original, copy_path
 
+    def test_an_absolute_and_a_relative_missing_file_get_their_own_action(
+        self, store, data_dir, tmp_path
+    ):
+        """The data directory check belongs to a relative location only: a
+        missing file whose most recent location is absolute gets the plain
+        action, and needs_action gives both texts once."""
+        measurement_id, original, newest = self.two_locations(store, data_dir, tmp_path)
+        newest.unlink()
+        original.unlink()
+        values = noise(2, 5000)
+        info = make_info(data_dir / "m02.csv", values, acquired_at=acquired(2))
+        [other] = record(store, data_dir, [info], {"m02": values}, policy=OLD_POLICY)
+        (data_dir / "m02.csv").unlink()
+        result = reprocess(store, data_dir)
+        absolute = only(result, measurement_id)
+        assert absolute["action_id"] == "file_missing"
+        assert action_of(result, absolute).startswith("restore the file")
+        relative = only(result, other["measurement_id"])
+        assert relative["action_id"] == "file_missing+relative_location"
+        assert action_of(result, relative).startswith("check first")
+        [needs] = result["needs_action"]
+        assert [a["action_id"] for a in needs["actions"]] == [
+            "file_missing",
+            "file_missing+relative_location",
+        ]
+        assert_actions_resolve(result)
+
     def test_the_most_recent_location_decides_the_code(self, store, data_dir, tmp_path):
         measurement_id, original, newest = self.two_locations(store, data_dir, tmp_path)
         newest.unlink()
@@ -3336,6 +3363,55 @@ class TestTokenValidity:
 
 class TestManyFailures:
     """S14: more failures than a listing holds."""
+
+    def test_a_code_only_undetailed_failures_count_gives_its_plain_action(
+        self, store, data_dir, monkeypatch
+    ):
+        """One undecodable file among 100 failures, with the largest id, so a
+        later call details the 50 earlier failures with the smallest ids and
+        not it: its reason code still names the plain action, which no
+        failure of the response references."""
+        declare_point(store)
+        ids = load_sequence(store, data_dir, 110)
+        order = service._reprocess_plan(
+            store.read_view(ASSET), POINT, AssessmentParams()
+        ).order
+        failing = order[:100]
+        last = max(failing)
+        name = {m: f"m{ids.index(m) + 1:02d}.csv" for m in ids}
+        for measurement_id in failing:
+            if measurement_id != last:
+                (data_dir / name[measurement_id]).unlink()
+        real_decode = service._decode
+
+        def decode(path: Path, declaration: Any) -> np.ndarray:
+            if path.name == name[last]:
+                raise ValueError(f"Recorded file '{path.name}' no longer decodes")
+            return real_decode(path, declaration)
+
+        monkeypatch.setattr(service, "_decode", decode)
+        first = reprocess(store, data_dir)
+        second = reprocess(store, data_dir, cursor=first["next_cursor"])
+        third = reprocess(store, data_dir, cursor=second["next_cursor"])
+        assert (third["earlier_in_sequence"], third["earlier_not_detailed"]) == (
+            100,
+            50,
+        )
+        assert third["earlier_by_reason"]["undecodable"] == 1
+        needs = {n["reason_code"]: n for n in third["needs_action"]}
+        assert needs["undecodable"]["count"] == 1
+        assert needs["undecodable"]["measurement_ids"] == []
+        assert needs["undecodable"]["actions"] == [
+            {
+                "action_id": "undecodable",
+                "action": service.reprocess_action("undecodable"),
+            }
+        ]
+        referenced = {
+            e["action_id"] for e in third["results"] + third["earlier_failures"]
+        }
+        assert "undecodable" not in referenced
+        assert_actions_resolve(third)
 
     def test_ae17_every_failure_is_listed_by_the_call_that_finds_it(
         self, store, data_dir, monkeypatch
