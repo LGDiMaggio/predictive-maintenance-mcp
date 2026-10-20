@@ -207,6 +207,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   check also covers `tools/`.
 
 ### Fixed
+- **A bearing that could not be checked is reported as not computed instead
+  of being dropped (#84).** `diagnose_vibration` with a `bearing_id` that is
+  not in the bearing catalog skipped the bearing check without saying so: the
+  result read "Fault evidence strength: none." with "Continue routine
+  monitoring per maintenance schedule." as the only recommendation, and
+  `generate_diagnostic_report` said that no bearing designation was supplied.
+  `diagnose_vibration` dropped a catalog bearing at a sampling rate of
+  1002 Hz or less, where the envelope band of the check is empty, the same
+  way. `DiagnosisResult` now carries a `bearing_check` block (additive):
+  `status` is `assessed` (the check ran), `not_requested` (no `bearing_id`
+  and no `fault_orders` on the measurement point) or `not_computed` (a check
+  was requested, by a `bearing_id` or by the point's `fault_orders`, but
+  could not run), and a check that was not computed has a `reason_code`
+  (`not_in_catalog`, `envelope_band_unusable`, `fault_orders_not_supported`),
+  a `reason` and a `remedy`. For a designation that is not in the catalog,
+  the remedy names `search_bearing_catalog` and the geometry and frequency
+  routes of `check_bearing_faults`. The diagnosis text says the check was not
+  computed and that the result says nothing about the bearing, and the
+  remedy replaces the routine-monitoring recommendation. A point that
+  declares `fault_orders` only, which was already reported, is now worded
+  the same way. `generate_diagnostic_report` returns the same `bearing_check`
+  block, and for a designation that is not in the catalog its bearing
+  section, verdict, recommendations and envelope figure caption give the
+  reason. At 1002 Hz or less the two tools differ: `diagnose_vibration`
+  returns the typed `not_computed` outcome (`envelope_band_unusable`), while
+  `generate_diagnostic_report`, as before, refuses the signal, because its
+  envelope figure needs that band. Without a bearing, the report's remedy
+  now names its `bearing_id` argument instead of the companion metadata,
+  which has no bearing field. A signal of 27 samples or fewer with a catalog
+  bearing, also dropped silently before, is now refused with a message that
+  gives the 28-sample minimum of the envelope filter and says that a
+  meaningful check needs a much longer record. `bearing_faults` stays `None`
+  when the check did not run, `evidence_strength` keeps its values (its
+  description no longer equates "none" with a healthy machine), and ISO zone
+  recommendations stay as they were.
 - **A shaft speed that is not a positive finite number is refused instead
   of analyzed (#83).** A zero, negative or NaN `rpm` gave fault frequencies
   of 0 Hz, below zero or NaN, so the bearing check reported "Bearing appears

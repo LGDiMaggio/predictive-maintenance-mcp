@@ -1102,12 +1102,17 @@ def _envelope_figure(
     band = resolve_envelope_band(fs, None)
     env_frequencies, env_magnitudes = envelope_spectrum_arrays(signal, fs, band)
     faults = diagnosis.get("bearing_faults") or {}
+    check = diagnosis.get("bearing_check") or {}
+    not_computed_reason = (
+        check.get("reason") if check.get("status") == "not_computed" else None
+    )
     return build_annotated_envelope_figure(
         env_frequencies,
         env_magnitudes,
         faults.get("bearing_frequencies"),
         matched=_matched_check(diagnosis),
         tolerance_pct=_MATCH_TOLERANCE_PCT,
+        no_bands_reason=not_computed_reason,
     )
 
 
@@ -1146,7 +1151,9 @@ async def generate_diagnostic_report(
         rpm: Machine operating speed in RPM, positive and finite.
         bearing_id: Bearing designation for characteristic-frequency
             matching. Omitted means the matching section states why it was
-            not attempted rather than disappearing.
+            not attempted rather than disappearing. A designation that is
+            not in the bearing catalog makes the section say the matching
+            was not computed and how to check the bearing instead.
         machine_group: ISO 20816-3 group — 1 (large, >300 kW) or 2 (medium,
             15-300 kW). Default 2.
         support_type: 'rigid' or 'flexible'. Default 'rigid'.
@@ -1162,7 +1169,9 @@ async def generate_diagnostic_report(
     Returns:
         Dict with ``statements`` (every authored sentence, in document
         order), ``files`` (one entry per rendering), ``verdict``,
-        ``evidence_strength``, and ``provenance``.
+        ``evidence_strength``, ``bearing_check`` (the same block
+        diagnose_vibration returns: whether the bearing check ran, and
+        why not), and ``provenance``.
 
     Raises:
         ValueError: If an unsupported format is requested, if rpm is not a
@@ -1224,6 +1233,7 @@ async def generate_diagnostic_report(
         "fault_canonical": advisory["verdict"]["fault_canonical"],
         "evidence_strength": advisory["evidence"]["strength"],
         "evidence_strength_note": advisory["evidence"]["strength_explanation"],
+        "bearing_check": diagnosis["bearing_check"],
         "statements": saved["statements"],
         "recommendations": advisory["recommendations"],
         "provenance": advisory["provenance"],

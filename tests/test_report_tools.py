@@ -938,6 +938,12 @@ class TestGenerateDiagnosticReport:
         assert result["statements"], "no authored statements returned"
         assert [f["format"] for f in result["files"]] == ["html"]
         assert Path(result["files"][0]["file_path"]).exists()
+        assert result["bearing_check"]["status"] == "not_requested"
+        assert any(
+            "generate_diagnostic_report with bearing_id" in s
+            for s in result["statements"]
+        )
+        assert not any("companion metadata" in s for s in result["statements"])
 
     @pytest.mark.asyncio
     async def test_statements_match_what_the_document_renders(
@@ -1009,6 +1015,39 @@ class TestGenerateDiagnosticReport:
                 signal_id="report_test", rpm=0.5, bearing_id="6205", ctx=mock_ctx
             )
         assert list(reports_dir.iterdir()) == []
+
+    @pytest.mark.asyncio
+    async def test_unknown_bearing_id_report_names_the_catalog_miss_and_remedy(
+        self, tools, repo, reports_dir, mock_ctx
+    ):
+        """Issue #84: the report said no designation was supplied and asked
+        for a bearing_id although one was passed. Section, verdict,
+        recommendations and figure caption now give the same reason."""
+        import html as _html
+
+        result = await tools["generate_diagnostic_report"](
+            signal_id="report_test", rpm=1500.0, bearing_id="9999", ctx=mock_ctx
+        )
+
+        assert "not computed for bearing '9999'" in result["verdict"]
+        assert result["bearing_check"]["status"] == "not_computed"
+        assert result["bearing_check"]["reason_code"] == "not_in_catalog"
+        statements = result["statements"]
+        assert not any("no bearing designation" in s.lower() for s in statements)
+        reason = next(
+            s for s in statements if "'9999' is not in the bearing catalog" in s
+        )
+        assert reason.startswith("Bearing characteristic-frequency matching")
+        actions = [r["action"] for r in result["recommendations"]]
+        assert any(
+            "check_bearing_faults(signal_id='report_test', rpm=1500," in a
+            for a in actions
+        )
+        rendered = Path(result["files"][0]["file_path"]).read_text(encoding="utf-8")
+        missing = [s for s in statements if _html.escape(s) not in rendered]
+        assert missing == [], f"returned but not rendered: {missing}"
+        assert "No bearing designation was supplied" not in rendered
+        assert _html.escape("Envelope spectrum. Bearing '9999' is not in") in rendered
 
     @pytest.mark.asyncio
     async def test_no_confidence_field_reaches_the_caller(

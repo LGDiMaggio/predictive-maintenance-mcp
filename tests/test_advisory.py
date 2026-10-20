@@ -113,14 +113,27 @@ def _anomaly(health="Faulty", ratio=1.0):
     }
 
 
+def _not_in_catalog_check():
+    """A ``bearing_check`` the pipeline returns for a designation the
+    catalog lacks (issue #84). The advisory carries reason and remedy
+    verbatim, so the strings here only need to be recognisable."""
+    return {
+        "status": "not_computed",
+        "reason_code": "not_in_catalog",
+        "reason": "Bearing '9999' is not in the bearing catalog, so ...",
+        "remedy": "Call search_bearing_catalog(bearing_id='9999') ...",
+    }
+
+
 def _diagnosis(
     iso=None,
     bearing_faults=None,
     anomaly=None,
     evidence_strength="strong",
     recommendations=None,
+    bearing_check=None,
 ):
-    return {
+    diagnosis = {
         "signal_id": "sig",
         "rpm": 1500.0,
         "bearing_id": "6205" if bearing_faults else None,
@@ -150,6 +163,12 @@ def _diagnosis(
         "evidence_strength": evidence_strength,
         "recommendations": recommendations or ["Schedule maintenance."],
     }
+    # Absent unless given: build_advisory reads the block with .get(), so a
+    # hand-built dict without it keeps its old reading.
+    if bearing_check is not None:
+        diagnosis["bearing_check"] = bearing_check
+        diagnosis["bearing_id"] = "9999"
+    return diagnosis
 
 
 # ---------------------------------------------------------------------------
@@ -309,7 +328,106 @@ class TestAuthoredAbsences:
         assert block["status"] == ABSENT
         assert block["statement"]
         assert "bearing" in block["statement"].lower()
-        assert block["remedy"]
+        # The remedy names the argument the report tool takes; the companion
+        # metadata has no bearing field.
+        assert "generate_diagnostic_report with bearing_id" in block["remedy"]
+        assert "companion" not in block["remedy"]
+
+    def test_unknown_bearing_says_matching_was_not_computed_not_unsupplied(self):
+        """Issue #84: the report said no designation was supplied, and told
+        the caller to pass a bearing_id it had passed."""
+        check = _not_in_catalog_check()
+        advisory = build_advisory(
+            _diagnosis(iso=_iso_assessed(zone="B"), bearing_check=check)
+        )
+        block = advisory["bearing_match"]
+        assert block["status"] == REFUSED
+        assert block["rows"] == []
+        assert block["statement"].startswith(
+            "Bearing characteristic-frequency matching was not computed. "
+        )
+        assert check["reason"] in block["statement"]
+        assert "says nothing about the condition of the bearing" in block["statement"]
+        assert block["remedy"] == check["remedy"]
+        assert advisory["verdict"]["statement"] == (
+            "No bearing fault verdict was reached, because characteristic-"
+            "frequency matching was not computed for bearing '9999'."
+        )
+        statements = collect_statements(advisory)
+        assert not any("no bearing designation" in s.lower() for s in statements)
+        remedies = [
+            r for r in advisory["recommendations"] if r["action"] == check["remedy"]
+        ]
+        assert len(remedies) == 1
+        assert remedies[0]["motivation"] == check["reason"]
+        assert remedies[0]["evidence"] == [block["statement"]]
+
+    def test_not_computed_bearing_keeps_the_zone_action_and_is_not_excluded(self):
+        """The zone C warning stands on its own evidence; the headline must
+        not send the reader to a non-bearing source when the bearing was
+        never checked."""
+        advisory = build_advisory(
+            _diagnosis(
+                iso=_iso_assessed(zone="C"), bearing_check=_not_in_catalog_check()
+            )
+        )
+        verdict = advisory["verdict"]["statement"]
+        assert "(Zone C)" in verdict
+        assert "cannot be excluded as the source" in verdict
+        assert "non-bearing source" not in verdict
+        zone_actions = [
+            r
+            for r in advisory["recommendations"]
+            if r["evidence"] == [advisory["iso"]["statement"]]
+        ]
+        assert zone_actions, "the ISO zone C action must still be recommended"
+
+    def test_not_computed_bearing_with_an_anomaly_flag_is_not_excluded(self):
+        advisory = build_advisory(
+            _diagnosis(
+                iso=_iso_assessed(zone="A"),
+                bearing_check=_not_in_catalog_check(),
+                anomaly=_anomaly(health="Suspicious", ratio=0.2),
+            )
+        )
+        verdict = advisory["verdict"]["statement"]
+        assert "anomaly model" in verdict
+        assert "cannot be excluded as the source" in verdict
+        assert "outside the bearing's characteristic frequencies" not in verdict
+
+    def test_not_computed_without_a_designation_names_no_bearing(self):
+        """The fault-orders shape (a check requested by the point's fault
+        orders, no bearing_id): not computed, and no bearing named "None"."""
+        diagnosis = _diagnosis(bearing_check=_not_in_catalog_check())
+        diagnosis["bearing_id"] = None
+        verdict = build_advisory(diagnosis)["verdict"]["statement"]
+        assert verdict.startswith(
+            "No bearing fault verdict was reached, because characteristic-"
+            "frequency matching was not computed."
+        )
+        assert "None" not in verdict
+
+    def test_result_without_a_bearing_check_block_reads_as_before(self):
+        """A diagnosis dict without bearing_check: the absence as before."""
+        advisory = build_advisory(_diagnosis(bearing_faults=None, anomaly=_anomaly()))
+        assert advisory["bearing_match"]["status"] == ABSENT
+        assert "no bearing designation was supplied" in (
+            advisory["bearing_match"]["statement"]
+        )
+
+    def test_not_requested_check_is_the_absent_block(self):
+        advisory = build_advisory(
+            _diagnosis(
+                anomaly=_anomaly(),
+                bearing_check={
+                    "status": "not_requested",
+                    "reason_code": None,
+                    "reason": None,
+                    "remedy": None,
+                },
+            )
+        )
+        assert advisory["bearing_match"]["status"] == ABSENT
 
     def test_refused_iso_block_carries_reason_and_remedy_verbatim(self):
         refusal = _iso_refused()
@@ -533,9 +651,15 @@ class TestPayloadShape:
         diagnosis = _diagnosis(bearing_faults=_bearing_faults(), anomaly=_anomaly())
         assert build_advisory(diagnosis) == build_advisory(diagnosis)
 
-    def test_status_constants_are_the_only_status_vocabulary(self):
+    @pytest.mark.parametrize("bearing_check", [None, _not_in_catalog_check()])
+    def test_status_constants_are_the_only_status_vocabulary(self, bearing_check):
         advisory = build_advisory(
-            _diagnosis(iso=_iso_refused(), bearing_faults=None, anomaly=None)
+            _diagnosis(
+                iso=_iso_refused(),
+                bearing_faults=None,
+                anomaly=None,
+                bearing_check=bearing_check,
+            )
         )
         for key in ("iso", "bearing_match", "anomaly", "baseline_comparison"):
             assert advisory[key]["status"] in (ASSESSED, REFUSED, ABSENT)

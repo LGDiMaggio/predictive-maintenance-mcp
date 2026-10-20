@@ -124,8 +124,31 @@ def _build_iso_block(iso: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def _build_bearing_block(bearing_faults: Optional[dict]) -> dict:
-    """Author the frequency-matching block, or state why it was not attempted."""
+def _build_bearing_block(
+    bearing_faults: Optional[dict],
+    bearing_check: Optional[dict],
+    bearing_id: Optional[str],
+) -> dict:
+    """Author the frequency-matching block, or state why it was not attempted.
+
+    A designation that was supplied but could not be checked (the pipeline's
+    ``bearing_check`` is ``not_computed``) is a refusal with the engine's
+    reason and remedy, never the "no designation supplied" absence.
+    """
+    if bearing_check and bearing_check.get("status") == "not_computed":
+        return {
+            "status": REFUSED,
+            "statement": (
+                f"Bearing characteristic-frequency matching was not computed. "
+                f"{bearing_check['reason']} No bearing check ran, so this "
+                f"report says nothing about the condition of the bearing."
+            ),
+            "reason": bearing_check["reason"],
+            "remedy": bearing_check["remedy"],
+            "bearing_id": bearing_id,
+            "rows": [],
+        }
+
     if not bearing_faults:
         return {
             "status": ABSENT,
@@ -137,9 +160,9 @@ def _build_bearing_block(bearing_faults: Optional[dict]) -> dict:
                 "element."
             ),
             "remedy": (
-                "Re-run the diagnosis with a bearing_id present in the "
-                "catalog, or add the bearing designation to the signal's "
-                "companion metadata."
+                "Re-run generate_diagnostic_report with bearing_id set to the "
+                "bearing's designation (search_bearing_catalog lists the "
+                "designations the bearing catalog holds)."
             ),
             "rows": [],
         }
@@ -299,10 +322,18 @@ def _build_verdict(bearing_block: dict, iso_block: dict, anomaly_block: dict) ->
             "fault_acronym": primary["fault_type"],
         }
 
+    not_computed = bearing_block["status"] == REFUSED
     if bearing_block["status"] == ASSESSED:
         headline = (
             "No bearing fault is indicated: no characteristic frequency "
             "matched a peak in the envelope spectrum."
+        )
+    elif not_computed:
+        bearing_id = bearing_block.get("bearing_id")
+        headline = (
+            "No bearing fault verdict was reached, because characteristic-"
+            "frequency matching was not computed"
+            + (f" for bearing {bearing_id!r}." if bearing_id else ".")
         )
     else:
         headline = (
@@ -310,17 +341,32 @@ def _build_verdict(bearing_block: dict, iso_block: dict, anomaly_block: dict) ->
             "frequency matching was not attempted."
         )
 
+    # A bearing named but never checked cannot be ruled out as the source.
+    unchecked = (
+        ", and the bearing was not checked, so it cannot be excluded as the source."
+    )
     if iso_block["status"] == ASSESSED and iso_block["zone"] not in _ACCEPTABLE_ZONES:
+        tail = (
+            unchecked
+            if not_computed
+            else ", so a non-bearing source should be considered."
+        )
         headline += (
             f" Broadband vibration is nonetheless elevated "
-            f"(Zone {iso_block['zone']}), so a non-bearing source should be "
-            f"considered."
+            f"(Zone {iso_block['zone']}){tail}"
         )
     elif anomaly_block.get("overall_health") in ("Faulty", "Suspicious"):
+        tail = (
+            unchecked
+            if not_computed
+            else (
+                ", so a source outside the bearing's characteristic frequencies "
+                "should be considered."
+            )
+        )
         headline += (
             " The anomaly model nonetheless flags this signal as departing "
-            "from the learned healthy pattern, so a source outside the "
-            "bearing's characteristic frequencies should be considered."
+            f"from the learned healthy pattern{tail}"
         )
 
     return {"statement": headline, "fault_canonical": None, "fault_acronym": ""}
@@ -428,6 +474,17 @@ def _build_disagreements(
 # ---------------------------------------------------------------------------
 
 
+def _refusal_recommendation(block: dict, description: str) -> dict:
+    """The action that lifts a refused block: its remedy, motivated by its reason."""
+    return {
+        "action": block["remedy"],
+        "urgency": "medium",
+        "description": description,
+        "motivation": block["reason"],
+        "evidence": [block["statement"]],
+    }
+
+
 def _build_recommendations(
     iso_block: dict,
     bearing_block: dict,
@@ -439,15 +496,9 @@ def _build_recommendations(
 
     if iso_block["status"] == REFUSED:
         recommendations.append(
-            {
-                "action": iso_block["remedy"],
-                "urgency": "medium",
-                "description": (
-                    "The severity verdict is unavailable until this is " "resolved."
-                ),
-                "motivation": iso_block["reason"],
-                "evidence": [iso_block["statement"]],
-            }
+            _refusal_recommendation(
+                iso_block, "The severity verdict is unavailable until this is resolved."
+            )
         )
         zone = None
     else:
@@ -488,6 +539,14 @@ def _build_recommendations(
             recommendations.append(
                 {**entry, "motivation": motivation, "evidence": evidence}
             )
+
+    if bearing_block["status"] == REFUSED:
+        recommendations.append(
+            _refusal_recommendation(
+                bearing_block,
+                "The bearing check is unavailable until this is resolved.",
+            )
+        )
 
     if disagreements:
         recommendations.insert(
@@ -841,7 +900,11 @@ def build_advisory(
         )
 
     iso_block = _build_iso_block(diagnosis["iso_severity"])
-    bearing_block = _build_bearing_block(diagnosis.get("bearing_faults"))
+    bearing_block = _build_bearing_block(
+        diagnosis.get("bearing_faults"),
+        diagnosis.get("bearing_check"),
+        diagnosis.get("bearing_id"),
+    )
     anomaly_block = _build_anomaly_block(diagnosis.get("anomaly_detection"))
     energy_block = _build_energy_block(diagnosis["stft_summary"])
 

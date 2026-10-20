@@ -1120,6 +1120,80 @@ class TestDiagnoseVibrationExtended:
             repo.clear_all()
 
     @pytest.mark.asyncio
+    async def test_issue_84_unknown_bearing_id_is_reported_not_computed(
+        self, tools, data_dir, mock_ctx
+    ):
+        """The issue's reproduction: a 0.1 g, 50 Hz sine at 10 kHz and a
+        designation the catalog lacks. The result used to read as a clean
+        bearing result ("Fault evidence strength: none." and only "Continue
+        routine monitoring") although no bearing check ran."""
+        from predictive_maintenance_mcp.signal_acquisition.repository import (
+            get_repository,
+        )
+
+        fs = 10000.0
+        t = np.arange(int(fs)) / fs
+        (data_dir / "s.csv").write_text(
+            "\n".join(f"{v:.6f}" for v in 0.1 * np.sin(2 * np.pi * 50 * t))
+        )
+        repo = get_repository()
+        repo.load_signal("s.csv", signal_id="s", sampling_rate=fs, signal_unit="g")
+        try:
+            result = await tools["diagnose_vibration"](
+                ctx=mock_ctx, signal_id="s", rpm=1797.0, bearing_id="9999"
+            )
+        finally:
+            repo.clear_all()
+
+        assert result.bearing_id == "9999"
+        assert result.parameter_sources["bearing_id"] == "explicit"
+        assert result.bearing_faults is None
+        check = result.bearing_check
+        assert check.status == "not_computed"
+        assert check.reason_code == "not_in_catalog"
+        assert check.reason.startswith("Bearing '9999' is not in the bearing catalog")
+        assert "check_bearing_faults(signal_id='s', rpm=1797, num_balls=" in (
+            check.remedy
+        )
+        # The text says so before it counts the evidence, and the remedy
+        # replaces the routine-monitoring default.
+        text = result.overall_diagnosis
+        assert f"Bearing analysis: not computed. {check.reason}" in text
+        assert text.index("Bearing analysis") < text.index("Fault evidence strength")
+        assert result.recommendations == [check.remedy]
+        assert result.model_dump()["bearing_check"]["status"] == "not_computed"
+
+    @pytest.mark.asyncio
+    async def test_signal_too_short_for_the_bearing_check_is_refused_in_plain_words(
+        self, tools, data_dir, mock_ctx
+    ):
+        """A 20-sample signal with a catalog bearing: refused with the
+        project's own sentence and remedy, never scipy's padlen text."""
+        from predictive_maintenance_mcp.signal_acquisition.repository import (
+            get_repository,
+        )
+
+        fs = 10000.0
+        t = np.arange(20) / fs
+        (data_dir / "tiny.csv").write_text(
+            "\n".join(f"{v:.6f}" for v in 0.1 * np.sin(2 * np.pi * 50 * t))
+        )
+        repo = get_repository()
+        repo.load_signal(
+            "tiny.csv", signal_id="tiny", sampling_rate=fs, signal_unit="g"
+        )
+        try:
+            with pytest.raises(ValueError) as exc_info:
+                await tools["diagnose_vibration"](
+                    ctx=mock_ctx, signal_id="tiny", rpm=1797.0, bearing_id="6205"
+                )
+        finally:
+            repo.clear_all()
+        message = str(exc_info.value)
+        assert "needs at least 28 samples, and the signal has 20" in message
+        assert "padlen" not in message
+
+    @pytest.mark.asyncio
     async def test_diagnosis_missing_signal(self, tools, data_dir, mock_ctx):
         """Diagnosis on non-existent signal_id should raise."""
         if "diagnose_vibration" not in tools:
@@ -1466,6 +1540,8 @@ class TestDiagnoseVibrationPointContext:
             "machine_group": "default",
             "support_type": "default",
         }
+        assert result.bearing_check.status == "not_requested"
+        assert result.bearing_check.reason is None
 
     @pytest.mark.asyncio
     async def test_all_explicit_arguments_are_reported_explicit(
@@ -1483,6 +1559,7 @@ class TestDiagnoseVibrationPointContext:
         assert (result.machine_group, result.support_type) == (1, "flexible")
         assert result.bearing_faults is not None
         assert result.bearing_faults.bearing_id == "6205"
+        assert result.bearing_check.status == "assessed"
         assert result.parameter_sources == {key: "explicit" for key in PARAMETER_KEYS}
 
     @pytest.mark.asyncio
@@ -1634,6 +1711,41 @@ class TestDiagnoseVibrationPointContext:
         assert "frequencies=" in remedies[0]
         expected_bpfo_hz = round(3.585 * 1500 / 60.0, 2)
         assert f"'BPFO': {expected_bpfo_hz}" in remedies[0]
+        # The structured block says the same: a check that did not run,
+        # stated before the evidence count, its remedy replacing the
+        # routine-monitoring default as for the other not-computed reasons.
+        assert result.bearing_check.status == "not_computed"
+        assert result.bearing_check.reason_code == "fault_orders_not_supported"
+        assert reason in result.bearing_check.reason
+        assert result.bearing_check.remedy == remedies[0]
+        text = result.overall_diagnosis
+        assert f"Bearing analysis: not computed. {result.bearing_check.reason}" in text
+        assert text.index("Bearing analysis") < text.index("Fault evidence strength")
+        assert (
+            "Continue routine monitoring per maintenance schedule."
+            not in result.recommendations
+        )
+
+    @pytest.mark.asyncio
+    async def test_point_declared_bearing_not_in_the_catalog_is_not_computed(
+        self, tools, data_dir, repo, mock_ctx
+    ):
+        """Issue #84 through the declared context: the point names a
+        designation the catalog lacks; the result says the check did not
+        run, exactly as for an explicit one."""
+        _write_identified_signal(data_dir, "m_unknown", rpm=1500)
+        repo.load_signal("m_unknown.csv")
+        _declare_point(bearing_id="9999")
+
+        result = await tools["diagnose_vibration"](ctx=mock_ctx, signal_id="m_unknown")
+
+        assert result.bearing_id == "9999"
+        assert result.parameter_sources["bearing_id"] == "point"
+        assert result.bearing_faults is None
+        assert result.bearing_check.status == "not_computed"
+        assert result.bearing_check.reason_code == "not_in_catalog"
+        assert "Bearing analysis: not computed." in result.overall_diagnosis
+        assert result.bearing_check.remedy in result.recommendations
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("rpm", [0.0, float("nan")], ids=["zero", "nan"])
