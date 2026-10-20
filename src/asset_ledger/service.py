@@ -74,8 +74,9 @@ a NaN, infinite or non-numeric sample), computes and appends; at most
 ``limit`` per call (``MAX_REPROCESS_PER_CALL`` for the tool). The call also
 stops once it has found ``MAX_LISTED_ITEMS`` failures, so every failure is
 listed in full by the call that finds it, with a code of
-``REPROCESS_REASON_CODES`` and the action that clears it (when no recorded
-location holds the recorded content, the most recent one decides the code).
+``REPROCESS_REASON_CODES`` and the ``action_id`` of the action that clears
+it, whose text ``needs_action`` gives once (when no recorded location holds
+the recorded content, the most recent one decides the code).
 A stateless continuation token, which ``next_call`` carries only when an
 earlier failure must be passed over, lets the next call start after the
 last measurement handled; it is valid only while nothing that decides
@@ -1817,17 +1818,21 @@ def _run_reprocess(
     file_checks = 0
     current_locations: dict[str, set[str]] = {}
 
-    def action_for(code: str, ids: Sequence[str]) -> Optional[str]:
-        """The action for *code*, in its declared-baseline and relative
-        location variants when one of *ids* calls for them."""
-        return reprocess_action(
+    # The text of every action_id this response references, by reason code.
+    forms: dict[str, dict[str, str]] = {}
+
+    def form_of(code: str, measurement_id: str) -> Optional[str]:
+        """The ``action_id`` of *code* for *measurement_id*, its text kept
+        for ``needs_action``."""
+        action_id, text = _action_form(
             code,
-            member=any(m in plan.baseline_members for m in ids),
-            relative=any(
-                _location_is_relative(measurements[m]["current"]) for m in ids
-            ),
+            member=measurement_id in plan.baseline_members,
+            relative=_location_is_relative(measurements[measurement_id]["current"]),
             data_dir=str(data_root),
         )
+        if action_id is not None and text is not None:
+            forms.setdefault(code, {})[action_id] = text
+        return action_id
 
     def taken_from(own_hash: str, locations: Sequence[str]) -> frozenset[str]:
         """The *locations* another measurement with a different recorded
@@ -1854,7 +1859,7 @@ def _run_reprocess(
             return
         result["reason_code"] = found[measurement_id] = code
         result["reason"] = reason
-        result["action"] = action_for(code, [measurement_id])
+        result["action_id"] = form_of(code, measurement_id)
 
     for measurement_id in plan.order[start:]:
         if measurement_id not in stale_set:
@@ -1878,7 +1883,7 @@ def _run_reprocess(
             "outcome": "not_reprocessable",
             "reason_code": None,
             "reason": None,
-            "action": None,
+            "action_id": None,
             "location": next(iter(locations), None),
             "location_used": None,
             "attempted": False,
@@ -2023,7 +2028,7 @@ def _run_reprocess(
                 "acquired_at"
             ),
             "reason_code": earlier_codes[m],
-            "action": action_for(earlier_codes[m], [m]),
+            "action_id": form_of(earlier_codes[m], m),
             "location": next(
                 iter(recorded_locations(measurements[m]["current"])), None
             ),
@@ -2041,8 +2046,24 @@ def _run_reprocess(
     totals: dict[str, int] = dict(earlier_by_reason)
     for m in failed_here:
         totals[found[m]] = totals.get(found[m], 0) + 1
+
+    def actions_of(code: str) -> list[dict[str, Optional[str]]]:
+        """Every form of *code*'s action a failure of this response
+        references, else its plain form (no failure of *code* is detailed
+        in this response)."""
+        referenced = forms.get(code)
+        if not referenced:
+            action_id, text = _action_form(code, data_dir=str(data_root))
+            return [{"action_id": action_id, "action": text}]
+        return [{"action_id": a, "action": text} for a, text in referenced.items()]
+
     needs: dict[str, dict[str, Any]] = {
-        code: {"reason_code": code, "count": totals[code], "measurement_ids": []}
+        code: {
+            "reason_code": code,
+            "count": totals[code],
+            "actions": actions_of(code),
+            "measurement_ids": [],
+        }
         for code in REPROCESS_REASON_CODES
         if totals.get(code)
     }
@@ -2052,10 +2073,10 @@ def _run_reprocess(
     for m, code in listed[:MAX_LISTED_ITEMS]:
         needs[code]["measurement_ids"].append(m)
     needs_action = []
-    for code, entry in needs.items():
-        ids = entry["measurement_ids"]
-        entry["action"] = action_for(code, ids)
-        entry["measurement_ids_truncated"] = entry["count"] > len(ids)
+    for entry in needs.values():
+        entry["measurement_ids_truncated"] = entry["count"] > len(
+            entry["measurement_ids"]
+        )
         needs_action.append(entry)
 
     if not stale:
@@ -2156,6 +2177,37 @@ def _location_is_relative(payload: Mapping[str, Any]) -> bool:
     return bool(locations) and not Path(locations[0]).is_absolute()
 
 
+#: The qualifiers of an ``action_id``, for the forms of an action that
+#: differ from its plain text.
+_MEMBER_FORM = "baseline_member"
+_RELATIVE_FORM = "relative_location"
+
+
+def _action_form(
+    code: str, *, member: bool = False, relative: bool = False, data_dir: str
+) -> tuple[Optional[str], Optional[str]]:
+    """The ``action_id`` and text of the action that clears *code* for one
+    measurement, (None, None) for a code that needs no action.
+
+    The id is the reason code, qualified by each form that changes the
+    text: ``+baseline_member`` for a member of the declared baseline,
+    ``+relative_location`` for a most recent location relative to the data
+    directory. Failures that need the same text share the id, and
+    ``needs_action`` gives that text once.
+    """
+    plain = reprocess_action(code, data_dir=data_dir)
+    if plain is None:
+        return None, None
+    member = member and reprocess_action(code, member=True, data_dir=data_dir) != plain
+    relative = (
+        relative and reprocess_action(code, relative=True, data_dir=data_dir) != plain
+    )
+    qualifiers = [_MEMBER_FORM] * member + [_RELATIVE_FORM] * relative
+    return "+".join([code, *qualifiers]), reprocess_action(
+        code, member=member, relative=relative, data_dir=data_dir
+    )
+
+
 def reprocess_stale_snapshots(
     asset_id: str,
     measurement_point_id: str,
@@ -2208,11 +2260,17 @@ def reprocess_stale_snapshots(
         message}``. ``groups`` partitions the point's measurements (each
         ``{count, measurement_ids, truncated}``, at most
         ``MAX_LISTED_ITEMS`` ids); ``results`` lists one ``{measurement_id,
-        acquired_at, outcome, reason_code, reason, action, location,
+        acquired_at, outcome, reason_code, reason, action_id, location,
         location_used, attempted, snapshot_id}`` per measurement attempted
         or found not reprocessable in this call (``outcome`` in
         :data:`REPROCESS_OUTCOMES`, ``reason_code`` in
-        :data:`REPROCESS_REASON_CODES`); ``remaining`` counts the stale
+        :data:`REPROCESS_REASON_CODES`); ``earlier_failures`` lists
+        ``{measurement_id, acquired_at, reason_code, action_id, location}``
+        per earlier failure detailed; ``needs_action`` holds one
+        ``{reason_code, count, actions, measurement_ids,
+        measurement_ids_truncated}`` per reason code, whose ``actions`` give
+        the text of each ``action_id`` this response references once (see
+        :func:`_action_form`); ``remaining`` counts the stale
         measurements after the last one this call handled, so ``next_call``
         (the exact call to make, with ``next_cursor`` as its
         ``reprocess_cursor`` when an earlier failure must be passed over) is

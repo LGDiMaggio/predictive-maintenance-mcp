@@ -1148,16 +1148,18 @@ class AssetChangeAssessment(BaseModel):
             "(the point's measurements in six groups, each with its count, at "
             "most 50 measurement_ids and truncated); results (each measurement "
             "attempted or found not reprocessable in this call: outcome, "
-            "reason_code, reason, action, location, location_used, attempted, "
-            "snapshot_id); needs_action (one entry per reason_code with its "
-            "action, exact count and at most 50 ids in all); earlier_failures, "
-            "earlier_by_reason and earlier_not_detailed (what earlier calls of "
-            "the sequence found; the reasons of failures not detailed are in "
-            "the responses that found them, or one new sequence lists them "
-            "again); cursor (the token received), restarted (why a token was "
-            "not used), next_cursor, next_call (the exact call to make next, "
-            "or None once the sequence is complete or exhausted) and message. "
-            + _REPROCESS_STOP_RULE
+            "reason_code, reason, action_id, location, location_used, "
+            "attempted, snapshot_id); needs_action (one entry per reason_code "
+            "with its exact count, at most 50 ids in all, and actions: the text "
+            "of each action_id a failure of this response references, given "
+            "once); earlier_failures (each with reason_code, action_id and "
+            "location), earlier_by_reason and earlier_not_detailed (what earlier "
+            "calls of the sequence found; the reasons of failures not detailed "
+            "are in the responses that found them, or one new sequence lists "
+            "them again); cursor (the token received), restarted (why a token "
+            "was not used), next_cursor, next_call (the exact call to make "
+            "next, or None once the sequence is complete or exhausted) and "
+            "message. " + _REPROCESS_STOP_RULE
         ),
     )
     message: str = Field(description="One-paragraph summary of the outcome")

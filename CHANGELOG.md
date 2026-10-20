@@ -91,16 +91,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the integrity block) and `assess_asset_change` (above;
   `reprocess=True` runs one call of a re-processing sequence from the
   original files, hash-verified: at most 10 attempts, 500 file checks and
-  50 failures per call, each failure listed with its `reason_code` and
-  `action` by the call that finds it, the point's measurements reported
-  in groups with `sequence_state`; the optional `reprocess_cursor` carries
-  the continuation token a `next_call` names. A call without
-  `reprocess_cursor` starts a new re-processing sequence, and a named call
-  is an attempt, not a promise; while the block gives a `next_call`, make
-  exactly that call, and when it gives none, `sequence_state` is
-  `complete` or `exhausted`, with the blocked measurements under
-  `needs_action`. A new sequence attempts again the failures only an
-  attempt finds).
+  50 failures per call, each failure listed with its `reason_code`,
+  location and `action_id` by the call that finds it, the text of each
+  action given once under `needs_action`, the point's measurements
+  reported in groups with `sequence_state`; the optional
+  `reprocess_cursor` carries the continuation token a `next_call` names.
+  A call without `reprocess_cursor` starts a new re-processing sequence,
+  and a named call is an attempt, not a promise; while the block gives a
+  `next_call`, make exactly that call, and when it gives none,
+  `sequence_state` is `complete` or `exhausted`, with the blocked
+  measurements under `needs_action`. A new sequence attempts again the
+  failures only an attempt finds).
 - **Generic integration path and a reference adapter.** A file plus its
   companion is the integration model for any acquisition system: an
   adapter converts the device output into a file the server reads and a

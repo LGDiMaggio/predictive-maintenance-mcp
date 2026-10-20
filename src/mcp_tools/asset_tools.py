@@ -458,9 +458,10 @@ async def assess_asset_change(
     found from the ledger and from file metadata without an attempt, and
     the others are attempted (hash verified against the ledger, decoded,
     computed, appended), at most 10 attempts, 500 file checks and 50
-    failures per call. Each failure is listed with its reason_code and
-    action by the call that finds it; nothing is written for a failure and
-    old snapshots are never deleted.
+    failures per call. Each failure is listed by the call that finds it
+    with its reason_code, location and action_id, and needs_action gives
+    the text of each action once, under its reason code; nothing is
+    written for a failure and old snapshots are never deleted.
 
     Re-processing stop rule. A call without reprocess_cursor starts a new
     re-processing sequence, including the call a message, a remedy or a

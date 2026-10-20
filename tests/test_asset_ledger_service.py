@@ -2054,6 +2054,38 @@ def only(response: dict[str, Any], measurement_id: str) -> dict[str, Any]:
     return entry
 
 
+def action_of(response: dict[str, Any], entry: dict[str, Any]) -> Optional[str]:
+    """The text of the action a failure of *response* references: the one
+    needs_action gives for its action_id under its reason code (None for a
+    failure that needs no action)."""
+    if entry["action_id"] is None:
+        return None
+    [needs] = [
+        n for n in response["needs_action"] if n["reason_code"] == entry["reason_code"]
+    ]
+    [text] = [
+        a["action"] for a in needs["actions"] if a["action_id"] == entry["action_id"]
+    ]
+    return text
+
+
+def assert_actions_resolve(response: dict[str, Any]) -> None:
+    """Every failure of *response* that needs an action references one that
+    needs_action gives, under its own reason code, and needs_action gives
+    each text once."""
+    failures = [
+        e
+        for e in response["results"]
+        if e["outcome"] == "not_reprocessable"
+        and e["reason_code"] != "superseded_in_slot"
+    ] + response["earlier_failures"]
+    for entry in failures:
+        assert entry["action_id"].split("+")[0] == entry["reason_code"]
+        assert action_of(response, entry)
+    texts = [a["action"] for n in response["needs_action"] for a in n["actions"]]
+    assert len(texts) == len(set(texts))
+
+
 def one_stale(store: LedgerStore, data_dir: Path) -> str:
     declare_point(store)
     [measurement_id] = load_sequence(store, data_dir, 1)
@@ -2200,7 +2232,8 @@ class TestReasonCodes:
         assert entry["reason_code"] == code
         assert substring in entry["reason"]
         assert entry["attempted"] is attempted
-        assert (entry["action"] is None) is (code == "superseded_in_slot")
+        assert (entry["action_id"] is None) is (code == "superseded_in_slot")
+        assert (action_of(result, entry) is None) is (code == "superseded_in_slot")
         assert (entry["snapshot_id"] is not None) is (code == "append_failed")
         assert result["next_call"] is None
         assert snapshots() == before
@@ -2311,9 +2344,11 @@ class TestReasonCodes:
             same_size_change(path)
         else:
             write_signal(path, noise(99, 5001))
-        entry = only(reprocess(store, data_dir), measurement_id)
+        result = reprocess(store, data_dir)
+        entry = only(result, measurement_id)
         assert entry["reason_code"] == "content_differs"
-        assert entry["action"].startswith(
+        assert entry["action_id"] == "content_differs"
+        assert action_of(result, entry).startswith(
             "a decision for the user, which the agent asks for and does not make: "
             "restore the original file at its recorded location, or load the "
             "current file with load_signal as a new recording"
@@ -2485,7 +2520,7 @@ class TestReasonCodes:
         assert (
             entry["reason"] == "cannot read m02.csv: PermissionError: Permission denied"
         )
-        assert entry["action"].startswith("fix access to the file")
+        assert action_of(result, entry).startswith("fix access to the file")
         assert [only(result, m)["outcome"] for m in (ids[0], ids[2])] == [
             "reprocessed",
             "reprocessed",
@@ -2534,16 +2569,29 @@ class TestReasonCodes:
             (data_dir / f"m{index:02d}.csv").unlink()
         result = reprocess(store, data_dir)
         for measurement_id in members:
-            action = only(result, measurement_id)["action"]
+            entry = only(result, measurement_id)
+            assert (
+                entry["action_id"] == "file_missing+baseline_member+relative_location"
+            )
+            action = action_of(result, entry)
             assert "the only action that keeps it in the declared baseline" in action
             assert (
                 "removes it from the baseline until the baseline is declared again"
                 in action
             )
-        plain = only(result, ids[11])["action"]
+        entry = only(result, ids[11])
+        assert entry["action_id"] == "file_missing+relative_location"
+        plain = action_of(result, entry)
         assert "declared baseline" not in plain
         assert "load it with load_signal from where the user says it is now" in plain
         assert f"relative locations resolved under {data_dir.resolve()}" in plain
+        # The four failures need two texts, and needs_action gives each once.
+        [needs] = result["needs_action"]
+        assert [a["action_id"] for a in needs["actions"]] == [
+            "file_missing+baseline_member+relative_location",
+            "file_missing+relative_location",
+        ]
+        assert_actions_resolve(result)
 
     def test_a_failing_duplicate_needs_no_action(self, store, data_dir):
         """AE18 on the service: the only stale leftover is a recording
@@ -2692,10 +2740,14 @@ class TestReprocessSequences:
         failures = [e for e in result["results"] if e["outcome"] == "not_reprocessable"]
         assert [e["measurement_id"] for e in failures] == ids[:12]
         assert {e["reason_code"] for e in failures} == {"file_missing"}
-        assert all(e["action"].startswith("check first") for e in failures)
+        assert {e["action_id"] for e in failures} == {"file_missing+relative_location"}
+        assert all(action_of(result, e).startswith("check first") for e in failures)
         assert all(e["attempted"] is False for e in failures)
         [entry] = result["needs_action"]
         assert entry["reason_code"] == "file_missing"
+        assert [a["action_id"] for a in entry["actions"]] == [
+            "file_missing+relative_location"
+        ]
         assert entry["count"] == 12
         assert entry["measurement_ids"] == ids[:12]
         assert result["message"].endswith(
@@ -2738,7 +2790,7 @@ class TestReprocessSequences:
         )
         for entry in detailed:
             assert entry["reason_code"] == "content_differs"
-            assert entry["action"].startswith("a decision for the user")
+            assert action_of(second, entry).startswith("a decision for the user")
             assert entry["location"] == only(first, entry["measurement_id"])["location"]
         assert second["earlier_by_reason"] == {"content_differs": 10}
         assert second["earlier_not_detailed"] == 0
@@ -2759,6 +2811,51 @@ class TestReprocessSequences:
         assert all(not (a & b) for a, b in zip(handled, handled[1:]))
         for response in responses:
             assert_partition(response, 3)
+
+    def test_an_earlier_failure_finds_its_action_in_a_later_response(
+        self, store, data_dir
+    ):
+        """Ten missing reference files found by the first call, changed files
+        found by both: the second call finds no missing file, and its
+        needs_action still gives the action the ten earlier failures name."""
+        declare_point(store)
+        ids = load_sequence(store, data_dir, 25)
+        for index in range(1, 11):
+            (data_dir / f"m{index:02d}.csv").unlink()
+        for index in range(11, 21):
+            same_size_change(data_dir / f"m{index:02d}.csv")
+        first = reprocess(store, data_dir)
+        assert first["next_cursor"] is not None
+        second = reprocess(store, data_dir, cursor=first["next_cursor"])
+        assert second["sequence_state"] == "exhausted"
+        here = {e["reason_code"] for e in second["results"]}
+        assert here == {"content_differs"}
+        earlier = {e["measurement_id"]: e for e in second["earlier_failures"]}
+        for measurement_id in ids[:10]:
+            assert earlier[measurement_id]["action_id"] == (
+                "file_missing+relative_location"
+            )
+        needs = {n["reason_code"]: n for n in second["needs_action"]}
+        assert [a["action_id"] for a in needs["file_missing"]["actions"]] == [
+            "file_missing+relative_location"
+        ]
+        assert_actions_resolve(second)
+
+    def test_a_code_no_failure_details_gives_its_plain_action(self):
+        """A reason code counted only by earlier failures the response does
+        not detail still names its action, in its plain form."""
+        action_id, text = service._action_form("undecodable", data_dir="data")
+        assert action_id == "undecodable"
+        assert text == service.reprocess_action("undecodable")
+        member_id, member_text = service._action_form(
+            "undecodable", member=True, relative=True, data_dir="data"
+        )
+        assert member_id == "undecodable+baseline_member"
+        assert member_text == service.reprocess_action("undecodable", member=True)
+        assert service._action_form("superseded_in_slot", data_dir="data") == (
+            None,
+            None,
+        )
 
     def test_ae6_s6_carries_a_token_past_the_failures(self, store, data_dir):
         declare_point(store)
@@ -3037,9 +3134,12 @@ class TestReprocessSequences:
                 e for e in response["results"] if e["outcome"] == "not_reprocessable"
             ]
             assert len(found) <= service.MAX_LISTED_ITEMS
-            assert all(
-                e["reason_code"] and e["action"] and e["location"] for e in found
-            )
+            assert all(e["reason_code"] and e["location"] for e in found)
+            assert_actions_resolve(response)
+            # Each action is given once, not per failure: a call that lists 50
+            # failures and details 50 earlier ones stays well below the
+            # 70,000 characters that per-failure action texts made it.
+            assert len(json.dumps(response, separators=(",", ":"))) < 40_000
             handled = {e["measurement_id"] for e in response["results"]}
             assert handled and not (handled & reached)
             reached |= handled
@@ -3296,10 +3396,13 @@ class TestManyFailures:
             for r in responses
         ]
         assert [len(f) for f in found] == [50, 50, 23]
-        for entries in found:
+        for response, entries in zip(responses, found):
             for entry in entries:
                 assert entry["reason_code"] and entry["location"]
-                assert entry["action"] or entry["reason_code"] == "superseded_in_slot"
+                assert (
+                    action_of(response, entry)
+                    or entry["reason_code"] == "superseded_in_slot"
+                )
         final = responses[-1]
         assert_partition(final, 128)
         assert final["reprocessed"] == 5
@@ -3319,6 +3422,10 @@ class TestManyFailures:
             "undecodable": 7,
         }
         assert sum(len(e["measurement_ids"]) for e in final["needs_action"]) == 50
+        # The 50 earlier failures detailed past the 50 ids needs_action lists
+        # still find their action there.
+        for response in responses:
+            assert_actions_resolve(response)
         assert "50 earlier failure(s) are not detailed in this response" in (
             final["message"]
         )
