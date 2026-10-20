@@ -163,8 +163,8 @@ def _diagnosis(
         "evidence_strength": evidence_strength,
         "recommendations": recommendations or ["Schedule maintenance."],
     }
-    # Absent unless given: a result from before the block existed must
-    # still be read the way it was.
+    # Absent unless given: build_advisory reads the block with .get(), so a
+    # hand-built dict without it keeps its old reading.
     if bearing_check is not None:
         diagnosis["bearing_check"] = bearing_check
         diagnosis["bearing_id"] = "9999"
@@ -393,7 +393,8 @@ class TestAuthoredAbsences:
         assert "outside the bearing's characteristic frequencies" not in verdict
 
     def test_not_computed_without_a_designation_names_no_bearing(self):
-        """The fault-orders shape: not computed, and no bearing_id to name."""
+        """Defensive: no pipeline path builds this today, but a not-computed
+        block without a designation must not name a bearing "None"."""
         diagnosis = _diagnosis(bearing_check=_not_in_catalog_check())
         diagnosis["bearing_id"] = None
         verdict = build_advisory(diagnosis)["verdict"]["statement"]
@@ -404,7 +405,7 @@ class TestAuthoredAbsences:
         assert "None" not in verdict
 
     def test_result_without_a_bearing_check_block_reads_as_before(self):
-        """A diagnosis dict from before bearing_check existed: unchanged."""
+        """A diagnosis dict without bearing_check: the absence as before."""
         advisory = build_advisory(_diagnosis(bearing_faults=None, anomaly=_anomaly()))
         assert advisory["bearing_match"]["status"] == ABSENT
         assert "no bearing designation was supplied" in (

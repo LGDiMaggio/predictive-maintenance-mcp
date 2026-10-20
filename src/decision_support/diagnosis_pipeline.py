@@ -62,12 +62,7 @@ def _bearing_check(
     reason: Optional[str] = None,
     remedy: Optional[str] = None,
 ) -> dict:
-    """Build the ``bearing_check`` block (``models.BearingCheckOutcome``).
-
-    ``bearing_faults`` is None both without a bearing and when a given one
-    could not be checked. This block tells the two apart, so a check that
-    never ran cannot read as a clean one.
-    """
+    """Build the ``bearing_check`` block (``models.BearingCheckOutcome``)."""
     return {
         "status": status,
         "reason_code": reason_code,
@@ -102,32 +97,47 @@ def _not_in_catalog_check(bearing_id: str, rpm: float, signal_id: str) -> dict:
     )
 
 
-def _envelope_band_check(bearing_id: str, fs: float) -> Optional[dict]:
-    """None when the check's default envelope band is usable at *fs*.
+def _empty_envelope_band_check(bearing_id: str, fs: float) -> dict:
+    """The check cannot run: its default envelope band is empty at *fs*.
 
     The band is 500 Hz up to just below Nyquist (``resolve_envelope_band``),
-    so it is empty at fs <= 1002 Hz and full width (500-5000 Hz) from 10 kHz:
-    the numbers the remedy names, pinned by the pipeline tests.
+    so it is empty at fs <= 1002 Hz and reaches 500-5000 Hz only above
+    10 kHz (10002 Hz): the numbers the remedy names, pinned by the tests.
+    """
+    return _bearing_check(
+        "not_computed",
+        reason_code="envelope_band_unusable",
+        reason=(
+            f"At fs={fs:g} Hz the envelope band of the bearing check, from "
+            f"500 Hz to just below the Nyquist frequency ({fs / 2:g} Hz), "
+            f"is empty, so no envelope spectrum could be computed for "
+            f"bearing {bearing_id!r}."
+        ),
+        remedy=(
+            "Re-acquire the signal at a higher sampling rate, then re-run the "
+            "diagnosis. The envelope band of the bearing check runs from "
+            "500 Hz to just below half the sampling rate: it is empty at "
+            "1002 Hz or less, and it reaches its full width, 500 to 5000 Hz, "
+            "only above 10 kHz."
+        ),
+    )
+
+
+def _unrunnable_bearing_check(
+    bearing_id: str, fs: float, rpm: float, signal_id: str
+) -> Optional[dict]:
+    """The not-computed block when the check cannot run, else None.
+
+    The sampling rate comes first: an empty envelope band blocks every route
+    of the check, the geometry and frequency routes the catalog remedy names
+    included, so re-acquiring is the first thing to fix.
     """
     try:
         resolve_envelope_band(fs)
     except ValueError:
-        return _bearing_check(
-            "not_computed",
-            reason_code="envelope_band_unusable",
-            reason=(
-                f"At fs={fs:g} Hz the envelope band of the bearing check, from "
-                f"500 Hz to just below the Nyquist frequency ({fs / 2:g} Hz), "
-                f"is empty, so no envelope spectrum could be computed for "
-                f"bearing {bearing_id!r}."
-            ),
-            remedy=(
-                "Re-acquire the signal at a sampling rate above 1002 Hz, then "
-                "re-run the diagnosis: the envelope band runs from 500 Hz to "
-                "just below half the sampling rate, and reaches its full 500 "
-                "to 5000 Hz width at 10 kHz or more."
-            ),
-        )
+        return _empty_envelope_band_check(bearing_id, fs)
+    if lookup_bearing(bearing_id) is None:
+        return _not_in_catalog_check(bearing_id, rpm, signal_id)
     return None
 
 
@@ -267,6 +277,7 @@ def diagnose_vibration(
     support_type: Literal["rigid", "flexible"] = "rigid",
     signal_unit: Optional[str] = None,
     anomaly_model_name: str = "bearing_health_model",
+    unchecked_bearing: Optional[dict] = None,
 ) -> dict:
     """Integrated vibration diagnosis pipeline.
 
@@ -288,17 +299,18 @@ def diagnose_vibration(
     (``status: "refused"`` + ``reason`` + ``remedy``) while the spectral,
     bearing, and anomaly blocks still run. Units are never guessed from
     signal amplitude. The bearing check degrades the same way when it
-    cannot run: a ``bearing_id`` the catalog lacks, or a sampling rate that
-    leaves the envelope band empty (fs <= 1002 Hz), gives ``bearing_faults``
-    None and a ``bearing_check`` with ``status: "not_computed"``,
-    ``reason_code``, ``reason`` and ``remedy``, and the text and the
-    recommendations say so. Corrupt input is the exception: a NaN or
-    infinite sample, a non-finite or non-positive fs, or a shaft speed that
-    is not a positive finite number invalidates every block, so the whole
-    call raises before any block is computed. A refusal of the caller's own
-    input that arises inside the bearing check (a fault frequency that
-    rounds to zero at a fraction of 1 rpm) is raised too, never turned into
-    a skipped bearing block.
+    cannot run: a sampling rate that leaves the envelope band empty
+    (fs <= 1002 Hz), a ``bearing_id`` the catalog lacks, or a caller's own
+    ``unchecked_bearing``, gives ``bearing_faults`` None and a
+    ``bearing_check`` with ``status: "not_computed"``, ``reason_code``,
+    ``reason`` and ``remedy``, and the text and the recommendations say so.
+    Corrupt input is the exception: a NaN or infinite sample, a non-finite
+    or non-positive fs, or a shaft speed that is not a positive finite
+    number invalidates every block, so the whole call raises before any
+    block is computed. Anything else the bearing check refuses is raised
+    too, never turned into a skipped bearing block: a fault frequency that
+    rounds to zero at a fraction of 1 rpm, or a signal too short for the
+    envelope filter (27 samples or fewer).
 
     Args:
         signal: 1D vibration signal.
@@ -314,6 +326,11 @@ def diagnose_vibration(
             the ISO severity block is refused with a remedy naming
             ``load_signal(signal_unit=...)``.
         anomaly_model_name: Name of trained anomaly model (default: 'bearing_health_model').
+        unchecked_bearing: A ``not_computed`` ``bearing_check`` block the
+            caller determined without a ``bearing_id`` (the MCP tool's point
+            that declares fault orders only). Reported, synthesized and
+            recommended like the pipeline's own; ignored when ``bearing_id``
+            is given.
 
     Returns:
         Dict compatible with DiagnosisResult — ``iso_severity`` is either an
@@ -325,8 +342,9 @@ def diagnose_vibration(
         ValueError: If signal_unit is provided but is not a recognized unit
             (caller misuse — distinct from the honest "undeclared" refusal),
             if fs or rpm is not a positive finite number, if any sample is
-            NaN or infinite, or if the bearing check refuses an expected
-            frequency computed from rpm.
+            NaN or infinite, or if the bearing check refuses its input (an
+            expected frequency computed from rpm that rounds to zero, a
+            signal too short for the envelope filter).
     """
     # Validate a provided unit up front; None stays None (undeclared).
     declared_unit: Optional[str] = None
@@ -340,9 +358,9 @@ def diagnose_vibration(
                 f"ISO refusal instead of a verdict."
             )
 
-    # Corrupt input is refused here, not per block: the blocks below catch
-    # the bearing ValueError and turn the ISO one into a refused block, so
-    # without this check a NaN sample would still yield a "diagnosis". The
+    # Corrupt input is refused here, not per block: the ISO block below turns
+    # its ValueError into a refused block, so without this check a NaN
+    # sample would still yield a "diagnosis". The
     # speed is checked unconditionally: without a bearing or a declared unit
     # no block looks at it, yet the synthesis still reads its 1x/2x lines.
     signal = validate_signal_and_fs(signal, fs)
@@ -369,19 +387,20 @@ def diagnose_vibration(
     }
 
     # 4. Bearing faults. A requested check runs, or bearing_check says why it
-    # could not: bearing_faults=None alone reads as "no bearing given", which
-    # is how an unknown designation used to pass for a clean result (#84).
+    # could not: bearing_faults=None alone reads as "no bearing given".
     bearing_faults = None
     if not bearing_id:
-        bearing_check = _bearing_check("not_requested")
-    elif lookup_bearing(bearing_id) is None:
-        bearing_check = _not_in_catalog_check(bearing_id, rpm, signal_id)
-    elif (band_check := _envelope_band_check(bearing_id, fs)) is not None:
-        bearing_check = band_check
+        bearing_check = unchecked_bearing or _bearing_check("not_requested")
+    elif (
+        unrunnable := _unrunnable_bearing_check(bearing_id, fs, rpm, signal_id)
+    ) is not None:
+        bearing_check = unrunnable
+        logger.warning(f"Bearing analysis not computed: {unrunnable['reason']}")
     else:
-        # Both conditions the check cannot run under are handled above, so
+        # The conditions the check cannot run under are handled above, so
         # what it raises now refuses the caller's own input (a fault frequency
-        # that rounds to zero at a fraction of 1 rpm): raised, never skipped.
+        # that rounds to zero at a fraction of 1 rpm, a signal too short for
+        # the envelope filter): raised, never skipped.
         bearing_faults = check_all_bearing_faults(
             signal=signal,
             fs=fs,
@@ -390,8 +409,6 @@ def diagnose_vibration(
             signal_id=signal_id,
         )
         bearing_check = _bearing_check("assessed")
-    if bearing_check["status"] == "not_computed":
-        logger.warning(f"Bearing analysis not computed: {bearing_check['reason']}")
 
     # 5. ISO severity — assessed only on a DECLARED unit and a sufficient
     # sampling rate; otherwise a schema-level refusal (the other blocks

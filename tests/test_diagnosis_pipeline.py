@@ -587,7 +587,7 @@ class TestSynthesisEdgeCases:
 class TestBearingCheckEnvelopeBand:
     """A catalog bearing whose default envelope band (500 Hz up to just below
     Nyquist) is empty at this sampling rate: the check cannot run, and the
-    result says so instead of dropping it (the #84 path, same handler)."""
+    result says so instead of dropping it."""
 
     def _signal(self, fs):
         t = np.arange(int(fs)) / fs
@@ -604,7 +604,7 @@ class TestBearingCheckEnvelopeBand:
         assert check["reason_code"] == "envelope_band_unusable"
         assert "At fs=1002 Hz" in check["reason"]
         assert "'6205'" in check["reason"]
-        assert "above 1002 Hz" in check["remedy"]
+        assert "it is empty at 1002 Hz or less" in check["remedy"]
         assert f"Bearing analysis: not computed. {check['reason']}" in (
             result["overall_diagnosis"]
         )
@@ -619,13 +619,76 @@ class TestBearingCheckEnvelopeBand:
         assert result["bearing_check"]["status"] == "assessed"
         assert result["bearing_faults"] is not None
 
-    def test_unknown_bearing_at_a_low_rate_names_the_catalog_first(self):
-        """Both conditions fail: the designation is the first one to fix."""
+    def test_full_band_width_starts_above_10_khz_as_the_remedy_says(self):
+        """Pins the remedy's "500 to 5000 Hz, only above 10 kHz"."""
+        from predictive_maintenance_mcp.signal_processing.spectral import (
+            resolve_envelope_band,
+        )
+
+        assert resolve_envelope_band(10000.0)[1] < 5000.0
+        assert resolve_envelope_band(10002.0) == (500.0, 5000.0)
+
+    def test_unknown_bearing_at_a_low_rate_names_the_sampling_rate_first(self):
+        """Both conditions fail: the empty band blocks every route of the
+        check, the geometry and frequency routes included, so re-acquiring
+        is the first thing to fix."""
         fs = 1000.0
         result = diagnose_vibration(
             self._signal(fs), fs, rpm=1797, bearing_id="9999", signal_unit="g"
         )
-        assert result["bearing_check"]["reason_code"] == "not_in_catalog"
+        assert result["bearing_check"]["reason_code"] == "envelope_band_unusable"
+
+    def test_signal_too_short_for_the_envelope_filter_is_refused(self):
+        """Raised, never dropped: the silent skip this replaced also hid it.
+        The same signal without a bearing is diagnosed as before."""
+        fs = 10000.0
+        short = self._signal(fs)[:20]
+        with pytest.raises(ValueError, match="padlen"):
+            diagnose_vibration(short, fs, rpm=1797, bearing_id="6205", signal_unit="g")
+        result = diagnose_vibration(short, fs, rpm=1797, signal_unit="g")
+        assert result["bearing_check"]["status"] == "not_requested"
+
+
+class TestUncheckedBearing:
+    """A caller-determined not-computed outcome (the MCP tool's point with
+    fault orders only) is stated like the pipeline's own."""
+
+    _CHECK = {
+        "status": "not_computed",
+        "reason_code": "fault_orders_not_supported",
+        "reason": "The measurement point declares fault_orders without a ...",
+        "remedy": "Bearing block not computed: ... check_bearing_faults(...)",
+    }
+
+    def test_is_reported_in_the_text_and_replaces_the_routine_default(
+        self, healthy_signal
+    ):
+        signal, fs = healthy_signal
+        result = diagnose_vibration(
+            signal,
+            fs,
+            rpm=1797,  # the 25 Hz peak is neither 1x nor 2x: no shaft action
+            signal_unit="g",
+            anomaly_model_name="nonexistent_model_84",
+            unchecked_bearing=dict(self._CHECK),
+        )
+        assert result["bearing_check"] == self._CHECK
+        text = result["overall_diagnosis"]
+        assert f"Bearing analysis: not computed. {self._CHECK['reason']}" in text
+        assert text.index("Bearing analysis") < text.index("Fault evidence strength")
+        assert result["recommendations"] == [self._CHECK["remedy"]]
+
+    def test_is_ignored_when_a_bearing_is_given(self, faulty_signal):
+        signal, fs = faulty_signal
+        result = diagnose_vibration(
+            signal,
+            fs,
+            rpm=1797,
+            bearing_id="6205",
+            signal_unit="g",
+            unchecked_bearing=dict(self._CHECK),
+        )
+        assert result["bearing_check"]["status"] == "assessed"
 
 
 class TestEvidenceStrengthUpperBranches:

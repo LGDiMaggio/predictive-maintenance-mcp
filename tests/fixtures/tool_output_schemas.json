@@ -2072,7 +2072,7 @@
           }
         ],
         "default": null,
-        "description": "Bearing used (if any)",
+        "description": "Bearing designation given (explicit or from the point), whether or not its check ran (see bearing_check)",
         "title": "Bearing Id"
       },
       "evidence_strength": {

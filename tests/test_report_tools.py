@@ -938,6 +938,7 @@ class TestGenerateDiagnosticReport:
         assert result["statements"], "no authored statements returned"
         assert [f["format"] for f in result["files"]] == ["html"]
         assert Path(result["files"][0]["file_path"]).exists()
+        assert result["bearing_check"]["status"] == "not_requested"
 
     @pytest.mark.asyncio
     async def test_statements_match_what_the_document_renders(
@@ -1024,6 +1025,8 @@ class TestGenerateDiagnosticReport:
         )
 
         assert "not computed for bearing '9999'" in result["verdict"]
+        assert result["bearing_check"]["status"] == "not_computed"
+        assert result["bearing_check"]["reason_code"] == "not_in_catalog"
         statements = result["statements"]
         assert not any("no bearing designation" in s.lower() for s in statements)
         reason = next(

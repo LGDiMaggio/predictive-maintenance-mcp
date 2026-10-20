@@ -1681,11 +1681,20 @@ class TestDiagnoseVibrationPointContext:
         assert "frequencies=" in remedies[0]
         expected_bpfo_hz = round(3.585 * 1500 / 60.0, 2)
         assert f"'BPFO': {expected_bpfo_hz}" in remedies[0]
-        # The structured block says the same: a check that did not run.
+        # The structured block says the same: a check that did not run,
+        # stated before the evidence count, its remedy replacing the
+        # routine-monitoring default as for the other not-computed reasons.
         assert result.bearing_check.status == "not_computed"
         assert result.bearing_check.reason_code == "fault_orders_not_supported"
         assert reason in result.bearing_check.reason
         assert result.bearing_check.remedy == remedies[0]
+        text = result.overall_diagnosis
+        assert f"Bearing analysis: not computed. {result.bearing_check.reason}" in text
+        assert text.index("Bearing analysis") < text.index("Fault evidence strength")
+        assert (
+            "Continue routine monitoring per maintenance schedule."
+            not in result.recommendations
+        )
 
     @pytest.mark.asyncio
     async def test_point_declared_bearing_not_in_the_catalog_is_not_computed(

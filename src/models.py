@@ -586,7 +586,13 @@ class DiagnosisResult(BaseModel):
 
     signal_id: str = Field(description="Signal identifier used")
     rpm: float = Field(description="Machine speed (RPM)")
-    bearing_id: Optional[str] = Field(None, description="Bearing used (if any)")
+    bearing_id: Optional[str] = Field(
+        None,
+        description=(
+            "Bearing designation given (explicit or from the point), whether "
+            "or not its check ran (see bearing_check)"
+        ),
+    )
     machine_group: int = Field(
         description="ISO 20816-3 machine group used for severity: 1 (large) or 2 (medium)"
     )

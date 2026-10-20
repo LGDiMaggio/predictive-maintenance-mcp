@@ -126,15 +126,14 @@ def _build_iso_block(iso: dict) -> dict:
 
 def _build_bearing_block(
     bearing_faults: Optional[dict],
-    bearing_check: Optional[dict] = None,
-    bearing_id: Optional[str] = None,
+    bearing_check: Optional[dict],
+    bearing_id: Optional[str],
 ) -> dict:
     """Author the frequency-matching block, or state why it was not attempted.
 
     A designation that was supplied but could not be checked (the pipeline's
     ``bearing_check`` is ``not_computed``) is a refusal with the engine's
-    reason and remedy, never the "no designation supplied" absence: telling
-    the caller to supply a bearing_id it already passed was issue #84.
+    reason and remedy, never the "no designation supplied" absence.
     """
     if bearing_check and bearing_check.get("status") == "not_computed":
         return {
@@ -342,34 +341,33 @@ def _build_verdict(bearing_block: dict, iso_block: dict, anomaly_block: dict) ->
             "frequency matching was not attempted."
         )
 
-    # The bearing was named but never checked, so it cannot be ruled out as
-    # the source of what the other indicators see.
+    # A bearing named but never checked cannot be ruled out as the source.
+    unchecked = (
+        ", and the bearing was not checked, so it cannot be excluded as the source."
+    )
     if iso_block["status"] == ASSESSED and iso_block["zone"] not in _ACCEPTABLE_ZONES:
-        if not_computed:
-            headline += (
-                f" Broadband vibration is nonetheless elevated "
-                f"(Zone {iso_block['zone']}), and the bearing was not checked, "
-                f"so it cannot be excluded as the source."
-            )
-        else:
-            headline += (
-                f" Broadband vibration is nonetheless elevated "
-                f"(Zone {iso_block['zone']}), so a non-bearing source should be "
-                f"considered."
-            )
+        tail = (
+            unchecked
+            if not_computed
+            else ", so a non-bearing source should be considered."
+        )
+        headline += (
+            f" Broadband vibration is nonetheless elevated "
+            f"(Zone {iso_block['zone']}){tail}"
+        )
     elif anomaly_block.get("overall_health") in ("Faulty", "Suspicious"):
-        if not_computed:
-            headline += (
-                " The anomaly model nonetheless flags this signal as departing "
-                "from the learned healthy pattern, and the bearing was not "
-                "checked, so it cannot be excluded as the source."
+        tail = (
+            unchecked
+            if not_computed
+            else (
+                ", so a source outside the bearing's characteristic frequencies "
+                "should be considered."
             )
-        else:
-            headline += (
-                " The anomaly model nonetheless flags this signal as departing "
-                "from the learned healthy pattern, so a source outside the "
-                "bearing's characteristic frequencies should be considered."
-            )
+        )
+        headline += (
+            " The anomaly model nonetheless flags this signal as departing "
+            f"from the learned healthy pattern{tail}"
+        )
 
     return {"statement": headline, "fault_canonical": None, "fault_acronym": ""}
 
@@ -476,6 +474,17 @@ def _build_disagreements(
 # ---------------------------------------------------------------------------
 
 
+def _refusal_recommendation(block: dict, description: str) -> dict:
+    """The action that lifts a refused block: its remedy, motivated by its reason."""
+    return {
+        "action": block["remedy"],
+        "urgency": "medium",
+        "description": description,
+        "motivation": block["reason"],
+        "evidence": [block["statement"]],
+    }
+
+
 def _build_recommendations(
     iso_block: dict,
     bearing_block: dict,
@@ -487,15 +496,9 @@ def _build_recommendations(
 
     if iso_block["status"] == REFUSED:
         recommendations.append(
-            {
-                "action": iso_block["remedy"],
-                "urgency": "medium",
-                "description": (
-                    "The severity verdict is unavailable until this is " "resolved."
-                ),
-                "motivation": iso_block["reason"],
-                "evidence": [iso_block["statement"]],
-            }
+            _refusal_recommendation(
+                iso_block, "The severity verdict is unavailable until this is resolved."
+            )
         )
         zone = None
     else:
@@ -539,15 +542,10 @@ def _build_recommendations(
 
     if bearing_block["status"] == REFUSED:
         recommendations.append(
-            {
-                "action": bearing_block["remedy"],
-                "urgency": "medium",
-                "description": (
-                    "The bearing check is unavailable until this is resolved."
-                ),
-                "motivation": bearing_block["reason"],
-                "evidence": [bearing_block["statement"]],
-            }
+            _refusal_recommendation(
+                bearing_block,
+                "The bearing check is unavailable until this is resolved.",
+            )
         )
 
     if disagreements:

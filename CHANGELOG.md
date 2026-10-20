@@ -216,16 +216,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `DiagnosisResult` now carries a `bearing_check` block (additive): `status`
   is `assessed`, `not_requested` or `not_computed`, and a check that was not
   computed has a `reason_code` (`not_in_catalog`, `envelope_band_unusable`,
-  `fault_orders_not_supported`), a `reason` and a `remedy` that names
-  `search_bearing_catalog` and the geometry and frequency routes of
-  `check_bearing_faults`. The diagnosis text says the check was not computed
-  and that the result says nothing about the bearing, and the remedy is among
-  the recommendations. The integrated report's bearing section, verdict,
-  recommendations and envelope figure caption give the same reason. The same
-  applies to a catalog bearing at a sampling rate of 1002 Hz or less, where
-  the envelope band of the check is empty; that case used to be dropped
-  silently too. `bearing_faults` stays `None` in these cases, `evidence_strength`
-  is unchanged, and ISO zone recommendations stay as they were.
+  `fault_orders_not_supported`), a `reason` and a `remedy`. For a designation
+  that is not in the catalog, the remedy names `search_bearing_catalog` and
+  the geometry and frequency routes of `check_bearing_faults`. The diagnosis
+  text says the check was not computed and that the result says nothing about
+  the bearing, and the remedy replaces the routine-monitoring recommendation.
+  `generate_diagnostic_report` returns the same `bearing_check` block, and its
+  bearing section, verdict, recommendations and envelope figure caption give
+  the reason. `diagnose_vibration` also reports as not computed a catalog
+  bearing at a sampling rate of 1002 Hz or less, where the envelope band of
+  the check is empty and which was dropped silently too, and a point that
+  declares `fault_orders` only, now worded like the other two cases;
+  `generate_diagnostic_report` still refuses a signal at such a rate. A signal
+  of 27 samples or fewer with a catalog bearing, which was dropped silently
+  as well, is now refused. `bearing_faults` stays `None` when the check did
+  not run, `evidence_strength` is unchanged, and ISO zone recommendations stay
+  as they were.
 - **A shaft speed that is not a positive finite number is refused instead
   of analyzed (#83).** A zero, negative or NaN `rpm` gave fault frequencies
   of 0 Hz, below zero or NaN, so the bearing check reported "Bearing appears

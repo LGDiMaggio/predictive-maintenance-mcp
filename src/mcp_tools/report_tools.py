@@ -1103,17 +1103,16 @@ def _envelope_figure(
     env_frequencies, env_magnitudes = envelope_spectrum_arrays(signal, fs, band)
     faults = diagnosis.get("bearing_faults") or {}
     check = diagnosis.get("bearing_check") or {}
+    not_computed_reason = (
+        check.get("reason") if check.get("status") == "not_computed" else None
+    )
     return build_annotated_envelope_figure(
         env_frequencies,
         env_magnitudes,
         faults.get("bearing_frequencies"),
         matched=_matched_check(diagnosis),
         tolerance_pct=_MATCH_TOLERANCE_PCT,
-        # A named bearing that could not be checked: the caption gives the
-        # reason instead of saying that no designation was supplied.
-        no_bands_reason=(
-            check.get("reason") if check.get("status") == "not_computed" else None
-        ),
+        no_bands_reason=not_computed_reason,
     )
 
 
@@ -1170,7 +1169,9 @@ async def generate_diagnostic_report(
     Returns:
         Dict with ``statements`` (every authored sentence, in document
         order), ``files`` (one entry per rendering), ``verdict``,
-        ``evidence_strength``, and ``provenance``.
+        ``evidence_strength``, ``bearing_check`` (the same block
+        diagnose_vibration returns: whether the bearing check ran, and
+        why not), and ``provenance``.
 
     Raises:
         ValueError: If an unsupported format is requested, if rpm is not a
@@ -1232,6 +1233,7 @@ async def generate_diagnostic_report(
         "fault_canonical": advisory["verdict"]["fault_canonical"],
         "evidence_strength": advisory["evidence"]["strength"],
         "evidence_strength_note": advisory["evidence"]["strength_explanation"],
+        "bearing_check": diagnosis["bearing_check"],
         "statements": saved["statements"],
         "recommendations": advisory["recommendations"],
         "provenance": advisory["provenance"],
