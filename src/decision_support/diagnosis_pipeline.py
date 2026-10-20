@@ -31,6 +31,7 @@ from ..signal_processing.features import (
 )
 from ..signal_acquisition.repository import VALID_SIGNAL_UNITS, normalize_signal_unit
 from ..signal_validation import (
+    InvalidInputError,
     validate_rpm,
     validate_signal_and_fs,
 )
@@ -120,6 +121,42 @@ def _empty_envelope_band_check(bearing_id: str, fs: float) -> dict:
             "1002 Hz or less, and it reaches its full width, 500 to 5000 Hz, "
             "only above 10 kHz."
         ),
+    )
+
+
+#: Fewest samples the bearing check's envelope band-pass filter runs on:
+#: ``sosfiltfilt`` pads 27 samples (scipy's default padlen for the 4th-order
+#: band) and needs a longer signal. Pinned against scipy by the tests.
+_ENVELOPE_FILTER_MIN_SAMPLES = 28
+
+
+def _refuse_signal_too_short_for_the_bearing_check(
+    signal: np.ndarray, fs: float
+) -> None:
+    """Refuse, with the project's own message, a signal the filter cannot take.
+
+    The filter's minimum only lets it run; the message says so, because a
+    record that just meets it resolves the envelope spectrum far too coarsely
+    for a meaningful check.
+
+    Raises:
+        InvalidInputError: If the signal has fewer samples than the filter needs.
+    """
+    n = len(signal)
+    if n >= _ENVELOPE_FILTER_MIN_SAMPLES:
+        return
+    duration_s = n / fs
+    raise InvalidInputError(
+        f"The bearing check cannot run on this signal: its envelope band-pass "
+        f"filter runs forward and backward and needs at least "
+        f"{_ENVELOPE_FILTER_MIN_SAMPLES} samples, and the signal has {n}. "
+        f"Meeting that minimum only lets the filter run; it does not make the "
+        f"check meaningful. The envelope spectrum resolves frequencies only to "
+        f"1 / duration ({1 / duration_s:.4g} Hz for this {duration_s:.4g} s "
+        f"signal), while the characteristic frequencies lie between a fraction "
+        f"of the shaft frequency and a few times it, so a meaningful check "
+        f"needs a record many shaft revolutions long. Load or re-acquire a "
+        f"longer record of the measurement, then re-run the diagnosis."
     )
 
 
@@ -310,7 +347,9 @@ def diagnose_vibration(
     block is computed. Anything else the bearing check refuses is raised
     too, never turned into a skipped bearing block: a fault frequency that
     rounds to zero at a fraction of 1 rpm, or a signal too short for the
-    envelope filter (27 samples or fewer).
+    envelope filter (fewer than 28 samples). ``bearing_check`` is
+    ``"not_requested"`` only without a ``bearing_id`` and without an
+    ``unchecked_bearing``.
 
     Args:
         signal: 1D vibration signal.
@@ -344,7 +383,7 @@ def diagnose_vibration(
             if fs or rpm is not a positive finite number, if any sample is
             NaN or infinite, or if the bearing check refuses its input (an
             expected frequency computed from rpm that rounds to zero, a
-            signal too short for the envelope filter).
+            signal too short for the envelope filter: ``InvalidInputError``).
     """
     # Validate a provided unit up front; None stays None (undeclared).
     declared_unit: Optional[str] = None
@@ -387,7 +426,7 @@ def diagnose_vibration(
     }
 
     # 4. Bearing faults. A requested check runs, or bearing_check says why it
-    # could not: bearing_faults=None alone reads as "no bearing given".
+    # could not: bearing_faults=None alone reads as "no check requested".
     bearing_faults = None
     if not bearing_id:
         bearing_check = unchecked_bearing or _bearing_check("not_requested")
@@ -399,8 +438,10 @@ def diagnose_vibration(
     else:
         # The conditions the check cannot run under are handled above, so
         # what it raises now refuses the caller's own input (a fault frequency
-        # that rounds to zero at a fraction of 1 rpm, a signal too short for
-        # the envelope filter): raised, never skipped.
+        # that rounds to zero at a fraction of 1 rpm, or a signal too short
+        # for the envelope filter, refused just below in the project's own
+        # words): raised, never skipped.
+        _refuse_signal_too_short_for_the_bearing_check(signal, fs)
         bearing_faults = check_all_bearing_faults(
             signal=signal,
             fs=fs,

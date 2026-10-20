@@ -160,9 +160,9 @@ def _build_bearing_block(
                 "element."
             ),
             "remedy": (
-                "Re-run the diagnosis with a bearing_id present in the "
-                "catalog, or add the bearing designation to the signal's "
-                "companion metadata."
+                "Re-run generate_diagnostic_report with bearing_id set to the "
+                "bearing's designation (search_bearing_catalog lists the "
+                "designations the bearing catalog holds)."
             ),
             "rows": [],
         }

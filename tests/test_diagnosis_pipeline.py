@@ -10,6 +10,7 @@ from predictive_maintenance_mcp.decision_support.diagnosis_pipeline import (
     _run_anomaly_detection,
     _extract_time_domain_features,
 )
+from predictive_maintenance_mcp.signal_validation import InvalidInputError
 
 
 @pytest.fixture
@@ -638,15 +639,34 @@ class TestBearingCheckEnvelopeBand:
         )
         assert result["bearing_check"]["reason_code"] == "envelope_band_unusable"
 
-    def test_signal_too_short_for_the_envelope_filter_is_refused(self):
+    @pytest.mark.parametrize("n", [20, 27])
+    def test_signal_too_short_for_the_envelope_filter_is_refused(self, n):
         """Raised, never dropped: the silent skip this replaced also hid it.
-        The same signal without a bearing is diagnosed as before."""
+        The refusal is the project's own sentence, not scipy's, and it keeps
+        the filter's minimum apart from what a meaningful check needs. The
+        same signal without a bearing is diagnosed as before."""
         fs = 10000.0
-        short = self._signal(fs)[:20]
-        with pytest.raises(ValueError, match="padlen"):
+        short = self._signal(fs)[:n]
+        with pytest.raises(InvalidInputError) as exc_info:
             diagnose_vibration(short, fs, rpm=1797, bearing_id="6205", signal_unit="g")
+        message = str(exc_info.value)
+        assert f"needs at least 28 samples, and the signal has {n}" in message
+        assert "only lets the filter run; it does not make the check meaningful" in (
+            message
+        )
+        assert "re-acquire a longer record" in message
+        assert "padlen" not in message
         result = diagnose_vibration(short, fs, rpm=1797, signal_unit="g")
         assert result["bearing_check"]["status"] == "not_requested"
+
+    def test_28_samples_reach_the_bearing_check(self):
+        """Pins the 28 the refusal names against scipy's filter: one sample
+        more than the refused 27, the check runs."""
+        fs = 10000.0
+        result = diagnose_vibration(
+            self._signal(fs)[:28], fs, rpm=1797, bearing_id="6205", signal_unit="g"
+        )
+        assert result["bearing_check"]["status"] == "assessed"
 
 
 class TestUncheckedBearing:
@@ -672,6 +692,9 @@ class TestUncheckedBearing:
             anomaly_model_name="nonexistent_model_84",
             unchecked_bearing=dict(self._CHECK),
         )
+        # Not computed without a designation: a check was requested (by the
+        # point's fault orders), so it is never "not_requested".
+        assert result["bearing_id"] is None
         assert result["bearing_check"] == self._CHECK
         text = result["overall_diagnosis"]
         assert f"Bearing analysis: not computed. {self._CHECK['reason']}" in text

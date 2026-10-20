@@ -939,6 +939,11 @@ class TestGenerateDiagnosticReport:
         assert [f["format"] for f in result["files"]] == ["html"]
         assert Path(result["files"][0]["file_path"]).exists()
         assert result["bearing_check"]["status"] == "not_requested"
+        assert any(
+            "generate_diagnostic_report with bearing_id" in s
+            for s in result["statements"]
+        )
+        assert not any("companion metadata" in s for s in result["statements"])
 
     @pytest.mark.asyncio
     async def test_statements_match_what_the_document_renders(

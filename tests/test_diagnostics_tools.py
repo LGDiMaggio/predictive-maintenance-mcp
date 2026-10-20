@@ -1164,6 +1164,36 @@ class TestDiagnoseVibrationExtended:
         assert result.model_dump()["bearing_check"]["status"] == "not_computed"
 
     @pytest.mark.asyncio
+    async def test_signal_too_short_for_the_bearing_check_is_refused_in_plain_words(
+        self, tools, data_dir, mock_ctx
+    ):
+        """A 20-sample signal with a catalog bearing: refused with the
+        project's own sentence and remedy, never scipy's padlen text."""
+        from predictive_maintenance_mcp.signal_acquisition.repository import (
+            get_repository,
+        )
+
+        fs = 10000.0
+        t = np.arange(20) / fs
+        (data_dir / "tiny.csv").write_text(
+            "\n".join(f"{v:.6f}" for v in 0.1 * np.sin(2 * np.pi * 50 * t))
+        )
+        repo = get_repository()
+        repo.load_signal(
+            "tiny.csv", signal_id="tiny", sampling_rate=fs, signal_unit="g"
+        )
+        try:
+            with pytest.raises(ValueError) as exc_info:
+                await tools["diagnose_vibration"](
+                    ctx=mock_ctx, signal_id="tiny", rpm=1797.0, bearing_id="6205"
+                )
+        finally:
+            repo.clear_all()
+        message = str(exc_info.value)
+        assert "needs at least 28 samples, and the signal has 20" in message
+        assert "padlen" not in message
+
+    @pytest.mark.asyncio
     async def test_diagnosis_missing_signal(self, tools, data_dir, mock_ctx):
         """Diagnosis on non-existent signal_id should raise."""
         if "diagnose_vibration" not in tools:

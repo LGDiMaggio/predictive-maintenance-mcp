@@ -1526,7 +1526,7 @@
   "diagnose_vibration": {
     "$defs": {
       "BearingCheckOutcome": {
-        "description": "Whether the bearing check of a diagnosis ran, and why not when it did not.\n\n``bearing_faults`` is None both when no bearing was given and when one\nwas given but the check could not run; this block tells the two apart,\nso a check that never ran cannot read as a clean one.",
+        "description": "Whether the bearing check of a diagnosis ran, and why not when it did not.\n\n``bearing_faults`` is None both when no bearing check was requested and\nwhen one was requested but could not run; this block tells the two\napart, so a check that never ran cannot read as a clean one.",
         "properties": {
           "reason": {
             "anyOf": [
@@ -1573,7 +1573,7 @@
             "title": "Remedy"
           },
           "status": {
-            "description": "'assessed' (the check ran: see bearing_faults), 'not_requested' (no bearing designation from any source) or 'not_computed' (a bearing was given but the check could not run: see reason and remedy). Only 'assessed' says anything about the bearing.",
+            "description": "'assessed' (the check ran: see bearing_faults), 'not_requested' (no bearing information from any source: no bearing_id and no fault_orders declared on the measurement point) or 'not_computed' (a bearing check was requested, by a bearing_id or by fault_orders declared on the measurement point, but could not run: see reason_code, reason and remedy). Only 'assessed' says anything about the bearing.",
             "enum": [
               "assessed",
               "not_requested",
@@ -2048,7 +2048,7 @@
       },
       "bearing_check": {
         "$ref": "#/$defs/BearingCheckOutcome",
-        "description": "Whether the bearing check ran. A bearing_faults of None alone does not say whether a bearing was given: status 'not_computed' means one was and the check did not run (reason, remedy)."
+        "description": "Whether the bearing check ran. A bearing_faults of None alone does not say whether a check was requested: status 'not_computed' means one was (a bearing_id, or fault_orders declared on the measurement point) and it did not run (reason_code, reason, remedy)."
       },
       "bearing_faults": {
         "anyOf": [
@@ -2072,11 +2072,11 @@
           }
         ],
         "default": null,
-        "description": "Bearing designation given (explicit or from the point), whether or not its check ran (see bearing_check)",
+        "description": "Bearing designation given (explicit or from the point), whether or not its check ran; None without one, also for a point that declares fault_orders only (see bearing_check)",
         "title": "Bearing Id"
       },
       "evidence_strength": {
-        "description": "Strength of corroborating fault evidence: 'none', 'weak', 'moderate', or 'strong'. Derived from the number and quality of independent findings (bearing fault frequency matches, shaft signatures, anomaly detection, ISO severity) \u2014 NOT from severity alone and NOT a probability. 'none' means the analyses that ran found no fault evidence (machine appears healthy); a bearing check that was not computed (bearing_check.status 'not_computed') adds nothing and says nothing about the bearing.",
+        "description": "Strength of corroborating fault evidence: 'none', 'weak', 'moderate', or 'strong'. Derived from the number and quality of independent findings (bearing fault frequency matches, shaft signatures, anomaly detection, ISO severity) \u2014 NOT from severity alone and NOT a probability. 'none' means the analyses that ran found no fault evidence, which does not establish that the machine is healthy; a bearing check that was not computed (bearing_check.status 'not_computed') adds nothing and says nothing about the bearing.",
         "title": "Evidence Strength",
         "type": "string"
       },

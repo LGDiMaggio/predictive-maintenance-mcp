@@ -1784,13 +1784,14 @@ async def diagnose_vibration(
     before: only the explicit arguments and the historical defaults apply.
 
     The bearing_check block says whether the bearing check ran: 'assessed'
-    (see bearing_faults), 'not_requested' (no bearing anywhere) or
-    'not_computed' with reason_code, reason and remedy. A sampling rate too
-    low for the envelope band, a bearing_id that is not in the bearing
-    catalog, or a point with fault_orders only is 'not_computed':
-    the diagnosis text says the check was not computed, the remedy is
-    among the recommendations, and the result says nothing about the
-    bearing.
+    (see bearing_faults), 'not_requested' (no bearing_id and no
+    fault_orders anywhere) or 'not_computed' (a check was requested, by a
+    bearing_id or by the point's fault_orders, but could not run) with
+    reason_code, reason and remedy. A sampling rate too low for the
+    envelope band, a bearing_id that is not in the bearing catalog, or a
+    point with fault_orders only is 'not_computed': the diagnosis text says
+    the check was not computed, the remedy is among the recommendations,
+    and the result says nothing about the bearing.
 
     Args:
         ctx: MCP context. Unused — see this module's docstring on logging.

@@ -328,7 +328,10 @@ class TestAuthoredAbsences:
         assert block["status"] == ABSENT
         assert block["statement"]
         assert "bearing" in block["statement"].lower()
-        assert block["remedy"]
+        # The remedy names the argument the report tool takes; the companion
+        # metadata has no bearing field.
+        assert "generate_diagnostic_report with bearing_id" in block["remedy"]
+        assert "companion" not in block["remedy"]
 
     def test_unknown_bearing_says_matching_was_not_computed_not_unsupplied(self):
         """Issue #84: the report said no designation was supplied, and told
@@ -393,8 +396,8 @@ class TestAuthoredAbsences:
         assert "outside the bearing's characteristic frequencies" not in verdict
 
     def test_not_computed_without_a_designation_names_no_bearing(self):
-        """Defensive: no pipeline path builds this today, but a not-computed
-        block without a designation must not name a bearing "None"."""
+        """The fault-orders shape (a check requested by the point's fault
+        orders, no bearing_id): not computed, and no bearing named "None"."""
         diagnosis = _diagnosis(bearing_check=_not_in_catalog_check())
         diagnosis["bearing_id"] = None
         verdict = build_advisory(diagnosis)["verdict"]["statement"]

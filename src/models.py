@@ -543,17 +543,20 @@ DiagnosisParameterSource = Literal[
 class BearingCheckOutcome(BaseModel):
     """Whether the bearing check of a diagnosis ran, and why not when it did not.
 
-    ``bearing_faults`` is None both when no bearing was given and when one
-    was given but the check could not run; this block tells the two apart,
-    so a check that never ran cannot read as a clean one.
+    ``bearing_faults`` is None both when no bearing check was requested and
+    when one was requested but could not run; this block tells the two
+    apart, so a check that never ran cannot read as a clean one.
     """
 
     status: Literal["assessed", "not_requested", "not_computed"] = Field(
         description=(
             "'assessed' (the check ran: see bearing_faults), 'not_requested' "
-            "(no bearing designation from any source) or 'not_computed' (a "
-            "bearing was given but the check could not run: see reason and "
-            "remedy). Only 'assessed' says anything about the bearing."
+            "(no bearing information from any source: no bearing_id and no "
+            "fault_orders declared on the measurement point) or "
+            "'not_computed' (a bearing check was requested, by a bearing_id "
+            "or by fault_orders declared on the measurement point, but could "
+            "not run: see reason_code, reason and remedy). Only 'assessed' "
+            "says anything about the bearing."
         )
     )
     reason_code: Optional[
@@ -590,7 +593,8 @@ class DiagnosisResult(BaseModel):
         None,
         description=(
             "Bearing designation given (explicit or from the point), whether "
-            "or not its check ran (see bearing_check)"
+            "or not its check ran; None without one, also for a point that "
+            "declares fault_orders only (see bearing_check)"
         ),
     )
     machine_group: int = Field(
@@ -612,8 +616,10 @@ class DiagnosisResult(BaseModel):
     bearing_check: BearingCheckOutcome = Field(
         description=(
             "Whether the bearing check ran. A bearing_faults of None alone "
-            "does not say whether a bearing was given: status 'not_computed' "
-            "means one was and the check did not run (reason, remedy)."
+            "does not say whether a check was requested: status "
+            "'not_computed' means one was (a bearing_id, or fault_orders "
+            "declared on the measurement point) and it did not run "
+            "(reason_code, reason, remedy)."
         )
     )
     iso_severity: VibrationSeverityResult | ISOSeverityRefusal = Field(
@@ -636,9 +642,10 @@ class DiagnosisResult(BaseModel):
             "independent findings (bearing fault frequency matches, shaft "
             "signatures, anomaly detection, ISO severity) — NOT from severity "
             "alone and NOT a probability. 'none' means the analyses that ran "
-            "found no fault evidence (machine appears healthy); a bearing "
-            "check that was not computed (bearing_check.status "
-            "'not_computed') adds nothing and says nothing about the bearing."
+            "found no fault evidence, which does not establish that the "
+            "machine is healthy; a bearing check that was not computed "
+            "(bearing_check.status 'not_computed') adds nothing and says "
+            "nothing about the bearing."
         )
     )
     recommendations: list[str] = Field(description="Recommended actions")
