@@ -153,9 +153,9 @@ def _refuse_signal_too_short_for_the_bearing_check(
         f"Meeting that minimum only lets the filter run; it does not make the "
         f"check meaningful. The envelope spectrum resolves frequencies only to "
         f"1 / duration ({1 / duration_s:.4g} Hz for this {duration_s:.4g} s "
-        f"signal), while the characteristic frequencies lie between a fraction "
-        f"of the shaft frequency and a few times it, so a meaningful check "
-        f"needs a record many shaft revolutions long. Load or re-acquire a "
+        f"signal), while the characteristic bearing frequencies depend on "
+        f"shaft speed and bearing geometry, so a meaningful check needs a "
+        f"record many shaft revolutions long. Load or re-acquire a "
         f"longer record of the measurement, then re-run the diagnosis."
     )
 

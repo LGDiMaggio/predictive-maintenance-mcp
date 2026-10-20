@@ -654,6 +654,11 @@ class TestBearingCheckEnvelopeBand:
         assert "only lets the filter run; it does not make the check meaningful" in (
             message
         )
+        assert "resolves frequencies only to 1 / duration" in message
+        assert (
+            "the characteristic bearing frequencies depend on shaft speed and "
+            "bearing geometry" in message
+        )
         assert "re-acquire a longer record" in message
         assert "padlen" not in message
         result = diagnose_vibration(short, fs, rpm=1797, signal_unit="g")
