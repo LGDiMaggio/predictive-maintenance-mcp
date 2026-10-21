@@ -443,6 +443,54 @@ def envelope_spectrum_arrays(
     return env_freqs[pos_mask], np.abs(env_fft[pos_mask])
 
 
+def envelope_top_peaks(
+    env_freqs: np.ndarray, env_mags: np.ndarray, freq_res: float, num_peaks: int
+) -> list[dict]:
+    """The strongest local maxima of an envelope spectrum, in frequency order.
+
+    The peak list of :func:`compute_envelope_spectrum`, split out so that a
+    caller holding the arrays of :func:`envelope_spectrum_arrays` gets the
+    same list without computing the spectrum twice.
+
+    Args:
+        env_freqs: Envelope spectrum frequencies (Hz).
+        env_mags: Envelope spectrum magnitudes.
+        freq_res: Frequency resolution fs / N (Hz).
+        num_peaks: Number of peaks to keep, strongest first.
+
+    Returns:
+        Dicts with ``frequency_hz``, ``magnitude``, ``magnitude_db`` (re the
+        spectrum maximum) and ``note``, sorted by frequency.
+    """
+    max_mag = float(np.max(env_mags)) if len(env_mags) > 0 else 1e-12
+    env_mags_db = 20 * np.log10(np.maximum(env_mags / max_mag, 1e-10))
+
+    min_dist = max(1, int(1.0 / freq_res))
+
+    peak_idx, _ = find_peaks(env_mags_db, distance=min_dist, prominence=2)
+
+    if len(peak_idx) == 0:
+        peak_idx = np.argsort(env_mags)[::-1][:num_peaks]
+
+    sorted_by_mag = peak_idx[np.argsort(env_mags[peak_idx])[::-1]]
+    top_idx = sorted_by_mag[:num_peaks]
+    top_idx = np.sort(top_idx)
+
+    top_peaks = []
+    for i in top_idx:
+        mag = float(env_mags[i])
+        mag_db = float(20 * np.log10(max(mag, 1e-12) / max_mag))
+        top_peaks.append(
+            {
+                "frequency_hz": round(float(env_freqs[i]), 3),
+                "magnitude": round(mag, 6),
+                "magnitude_db": round(mag_db, 2),
+                "note": "",
+            }
+        )
+    return top_peaks
+
+
 def compute_envelope_spectrum(
     signal: np.ndarray,
     fs: float,
@@ -481,35 +529,7 @@ def compute_envelope_spectrum(
     band_low, band_high = resolve_envelope_band(fs, frequency_range)
     env_freqs, env_mags = envelope_spectrum_arrays(signal, fs, (band_low, band_high))
     N = len(signal)
-
-    # Peak detection
-    max_mag = float(np.max(env_mags)) if len(env_mags) > 0 else 1e-12
-    env_mags_db = 20 * np.log10(np.maximum(env_mags / max_mag, 1e-10))
-
-    freq_res = fs / N
-    min_dist = max(1, int(1.0 / freq_res))
-
-    peak_idx, _ = find_peaks(env_mags_db, distance=min_dist, prominence=2)
-
-    if len(peak_idx) == 0:
-        peak_idx = np.argsort(env_mags)[::-1][:num_peaks]
-
-    sorted_by_mag = peak_idx[np.argsort(env_mags[peak_idx])[::-1]]
-    top_idx = sorted_by_mag[:num_peaks]
-    top_idx = np.sort(top_idx)
-
-    top_peaks = []
-    for i in top_idx:
-        mag = float(env_mags[i])
-        mag_db = float(20 * np.log10(max(mag, 1e-12) / max_mag))
-        top_peaks.append(
-            {
-                "frequency_hz": round(float(env_freqs[i]), 3),
-                "magnitude": round(mag, 6),
-                "magnitude_db": round(mag_db, 2),
-                "note": "",
-            }
-        )
+    top_peaks = envelope_top_peaks(env_freqs, env_mags, fs / N, num_peaks)
 
     # Diagnosis text
     lines = [

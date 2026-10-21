@@ -863,6 +863,307 @@
   },
   "check_bearing_faults": {
     "$defs": {
+      "BearingCandidate": {
+        "description": "A hypothesis with a significant line of its own and at least one counted\ncorroborating line.\n\nA significant corroborating line that is shared with another hypothesis or\nlies at a shaft order is not counted and does not make a candidate.\nEvidence in one envelope spectrum, not a confirmed fault.",
+        "properties": {
+          "fault_type": {
+            "description": "Checked label",
+            "title": "Fault Type",
+            "type": "string"
+          },
+          "fault_type_canonical": {
+            "anyOf": [
+              {
+                "enum": [
+                  "outer_race",
+                  "inner_race",
+                  "ball",
+                  "cage"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Canonical fault type (None for arbitrary labels)",
+            "title": "Fault Type Canonical"
+          },
+          "level_db": {
+            "description": "Power of the detected line over the local noise floor (dB)",
+            "title": "Level Db",
+            "type": "number"
+          },
+          "line_frequency_hz": {
+            "description": "Frequency of the line tested (Hz)",
+            "title": "Line Frequency Hz",
+            "type": "number"
+          },
+          "line_peak_hz": {
+            "description": "Frequency of the detected line (Hz)",
+            "title": "Line Peak Hz",
+            "type": "number"
+          }
+        },
+        "required": [
+          "fault_type",
+          "line_frequency_hz",
+          "line_peak_hz",
+          "level_db"
+        ],
+        "title": "BearingCandidate",
+        "type": "object"
+      },
+      "BearingCorroboratingLine": {
+        "description": "One further line the kinematics of a detected line predict.",
+        "properties": {
+          "counted": {
+            "description": "Whether the line counts as corroboration: significant, not at a shaft order and not shared with another hypothesis",
+            "title": "Counted",
+            "type": "boolean"
+          },
+          "excluded_by": {
+            "anyOf": [
+              {
+                "enum": [
+                  "shaft_order",
+                  "shared"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Why a significant line is not counted, if it is not",
+            "title": "Excluded By"
+          },
+          "expected_hz": {
+            "description": "Centre of the search window, anchored at the detected line (Hz)",
+            "title": "Expected Hz",
+            "type": "number"
+          },
+          "harmonic": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Harmonic number for a harmonic; None otherwise",
+            "title": "Harmonic"
+          },
+          "kind": {
+            "description": "harmonic of the detected line; sideband at the shaft rate (inner race) or the cage rate (rolling element); subharmonic, the 1 x BSF line of the rolling element",
+            "enum": [
+              "harmonic",
+              "sideband",
+              "subharmonic"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "level_db": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Power of that bin over the local noise floor (dB)",
+            "title": "Level Db"
+          },
+          "peak_hz": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Strongest bin in the window (Hz); None when the window could not be tested",
+            "title": "Peak Hz"
+          },
+          "significant": {
+            "description": "Whether the line is a local maximum above its threshold",
+            "title": "Significant",
+            "type": "boolean"
+          },
+          "threshold_db": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Level the line had to exceed (dB over the noise floor)",
+            "title": "Threshold Db"
+          },
+          "untestable_reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "search_window_too_narrow",
+                  "noise_floor_not_estimable",
+                  "outside_usable_envelope_band",
+                  "above_frequency_range"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Why the line could not be tested; None when it was tested",
+            "title": "Untestable Reason"
+          }
+        },
+        "required": [
+          "kind",
+          "expected_hz",
+          "significant",
+          "counted"
+        ],
+        "title": "BearingCorroboratingLine",
+        "type": "object"
+      },
+      "BearingEvidencePolicy": {
+        "description": "The statistical policy behind the evidence fields, with its assumptions.",
+        "properties": {
+          "assumptions": {
+            "description": "Statistical assumptions the nominal budgets rest on",
+            "items": {
+              "type": "string"
+            },
+            "title": "Assumptions",
+            "type": "array"
+          },
+          "exclusions": {
+            "description": "What the nominal budgets do not cover",
+            "items": {
+              "type": "string"
+            },
+            "title": "Exclusions",
+            "type": "array"
+          },
+          "false_alarm_probability_meaning": {
+            "description": "What the per-check budget means, and what it does not",
+            "title": "False Alarm Probability Meaning",
+            "type": "string"
+          },
+          "false_alarm_probability_per_check": {
+            "description": "Nominal family-wise false-alarm budget of one complete check, allocated over its tested hypotheses and their search bins by Bonferroni. Under the assumptions listed, the probability that the check finds a significant line at a tested frequency in a record with no periodic content there is at most this budget; the realized probability is not asserted to equal it. It is not the false-alarm rate or the specificity of the system, not the probability of an indicated outcome, and it applies to one check, not to repeated checks of one machine.",
+            "title": "False Alarm Probability Per Check",
+            "type": "number"
+          },
+          "false_alarm_probability_per_corroborating_line": {
+            "description": "Nominal false-alarm budget of each corroborating line, allocated over the bins of its window by Bonferroni",
+            "title": "False Alarm Probability Per Corroborating Line",
+            "type": "number"
+          },
+          "guard_bins": {
+            "description": "Bins left out between a search window and its reference",
+            "title": "Guard Bins",
+            "type": "integer"
+          },
+          "harmonics_tested": {
+            "description": "Number of harmonics tested above each detected line, starting at 2x (3 means 2x, 3x and 4x)",
+            "title": "Harmonics Tested",
+            "type": "integer"
+          },
+          "lowest_reference_bin": {
+            "description": "Reference bins start this many bins above 0 Hz, above the leakage of the removed envelope mean",
+            "title": "Lowest Reference Bin",
+            "type": "integer"
+          },
+          "method": {
+            "description": "Name of the line test",
+            "title": "Method",
+            "type": "string"
+          },
+          "min_narrow_window_bins": {
+            "description": "Least half-width of corroborating and shaft-order windows (bins)",
+            "title": "Min Narrow Window Bins",
+            "type": "integer"
+          },
+          "min_reference_bins": {
+            "description": "Fewest reference bins the noise floor needs",
+            "title": "Min Reference Bins",
+            "type": "integer"
+          },
+          "min_reference_bins_per_side": {
+            "description": "Least reference width on each side (bins), where the spectrum allows",
+            "title": "Min Reference Bins Per Side",
+            "type": "integer"
+          },
+          "min_search_bins": {
+            "description": "Fewest bins a search window needs to be testable",
+            "title": "Min Search Bins",
+            "type": "integer"
+          },
+          "narrow_window_fraction": {
+            "description": "Half-width of corroborating and shaft-order windows as a fraction of their frequency",
+            "title": "Narrow Window Fraction",
+            "type": "number"
+          },
+          "reference_width_fraction": {
+            "description": "Reference width on each side, as a fraction of the line frequency",
+            "title": "Reference Width Fraction",
+            "type": "number"
+          },
+          "search_window_pct": {
+            "description": "Half-width of each fundamental search window (% of its frequency)",
+            "title": "Search Window Pct",
+            "type": "number"
+          },
+          "usable_band_fraction": {
+            "description": "Lines and reference bins are used only below this fraction of the envelope band width (band high minus band low), which bounds the line frequencies the envelope can carry",
+            "title": "Usable Band Fraction",
+            "type": "number"
+          },
+          "version": {
+            "description": "Version of the evidence policy",
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "method",
+          "version",
+          "false_alarm_probability_per_check",
+          "false_alarm_probability_meaning",
+          "false_alarm_probability_per_corroborating_line",
+          "search_window_pct",
+          "harmonics_tested",
+          "min_search_bins",
+          "min_reference_bins",
+          "reference_width_fraction",
+          "min_reference_bins_per_side",
+          "guard_bins",
+          "usable_band_fraction",
+          "lowest_reference_bin",
+          "narrow_window_fraction",
+          "min_narrow_window_bins",
+          "assumptions",
+          "exclusions"
+        ],
+        "title": "BearingEvidencePolicy",
+        "type": "object"
+      },
       "BearingFaultCheckResult": {
         "description": "Result of checking for a specific expected fault frequency.",
         "properties": {
@@ -878,6 +1179,14 @@
             "default": null,
             "description": "Bearing designation (None for arbitrary-frequency checks)",
             "title": "Bearing Id"
+          },
+          "corroboration": {
+            "description": "Further lines tested for a significant line, anchored at it; empty when no significant line was found. Lines of one spectrum are correlated, not independent evidence.",
+            "items": {
+              "$ref": "#/$defs/BearingCorroboratingLine"
+            },
+            "title": "Corroboration",
+            "type": "array"
           },
           "detected": {
             "description": "Whether a peak was detected within tolerance",
@@ -956,6 +1265,70 @@
             "title": "Harmonics Detected",
             "type": "array"
           },
+          "level_db": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Power at line_peak_hz over the local noise floor (dB), reported whether or not the line is significant: compare it with threshold_db. It can exceed threshold_db while state is absent when the strongest bin lies on the edge of the search window, where a line outside the window leaks in. None when not testable.",
+            "title": "Level Db"
+          },
+          "line_amplitude": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Envelope amplitude at line_peak_hz; None when not testable",
+            "title": "Line Amplitude"
+          },
+          "line_frequency_hz": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Frequency of the line tested (Hz): the expected frequency, or twice the ball spin frequency for the rolling element (detected_frequency_hz is still matched near the ball spin frequency itself)",
+            "title": "Line Frequency Hz"
+          },
+          "line_peak_hz": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Strongest bin in the search window of the line tested (Hz), whether or not it is significant; None when not testable",
+            "title": "Line Peak Hz"
+          },
+          "line_test": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/BearingLineTest"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "How the line was tested; None when not testable"
+          },
           "magnitude": {
             "anyOf": [
               {
@@ -969,10 +1342,75 @@
             "description": "Magnitude at detected frequency",
             "title": "Magnitude"
           },
+          "shared_with": {
+            "description": "Labels of the other detected hypotheses whose search window, or the window of a harmonic, sideband or 1 x BSF line they predict, holds this hypothesis's detected line",
+            "items": {
+              "type": "string"
+            },
+            "title": "Shared With",
+            "type": "array"
+          },
           "signal_id": {
             "description": "Signal identifier used",
             "title": "Signal Id",
             "type": "string"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "enum": [
+                  "not_testable",
+                  "absent",
+                  "unconfirmed",
+                  "shared",
+                  "supported"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Significance-tested evidence for this hypothesis on the check's envelope spectrum: not_testable (the record cannot test its line), absent (no eligible peak, a local maximum strictly inside the search window, above threshold_db), unconfirmed (a line without a counted corroborating line, or a line at a shaft order), shared (another tested hypothesis also predicts a line where this line lies), supported (a significant line of its own with at least one counted corroborating line its kinematics predict). detected and evidence_strength come from an older tolerance match without false-alarm control and can disagree with state.",
+            "title": "State"
+          },
+          "state_reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "search_window_too_narrow",
+                  "noise_floor_not_estimable",
+                  "outside_usable_envelope_band",
+                  "above_frequency_range",
+                  "no_significant_line",
+                  "line_at_shaft_order",
+                  "line_shared",
+                  "no_corroboration",
+                  "corroborated"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Why the hypothesis is in its state",
+            "title": "State Reason"
+          },
+          "threshold_db": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Level the line had to exceed (dB over the local noise floor) for its share of the check's false-alarm budget; None when not testable",
+            "title": "Threshold Db"
           }
         },
         "required": [
@@ -983,6 +1421,39 @@
           "evidence_strength"
         ],
         "title": "BearingFaultCheckResult",
+        "type": "object"
+      },
+      "BearingLineTest": {
+        "description": "How the line of one hypothesis was tested against the noise floor.",
+        "properties": {
+          "false_alarm_probability": {
+            "description": "Nominal false-alarm budget allocated to this line's test over all its search bins together: the check's budget split evenly over the hypotheses it could test. It is not a measured probability for this record. The per-bin value is this divided by search_bins.",
+            "title": "False Alarm Probability",
+            "type": "number"
+          },
+          "reference_bins": {
+            "description": "Reference bins on both sides of the search window (N)",
+            "title": "Reference Bins",
+            "type": "integer"
+          },
+          "reference_rank": {
+            "description": "Rank k of the reference power taken as the noise floor (the median rank)",
+            "title": "Reference Rank",
+            "type": "integer"
+          },
+          "search_bins": {
+            "description": "Frequency bins searched for the line (M)",
+            "title": "Search Bins",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "search_bins",
+          "reference_bins",
+          "reference_rank",
+          "false_alarm_probability"
+        ],
+        "title": "BearingLineTest",
         "type": "object"
       }
     },
@@ -1008,6 +1479,26 @@
         "default": null,
         "description": "Bearing designation (catalog route); None for the explicit-frequencies and explicit-geometry routes",
         "title": "Bearing Id"
+      },
+      "candidates": {
+        "description": "Supported hypotheses, listed by level over the noise floor; the order does not rank which type is more likely or more severe. One entry for indicated, two or more for several_types, empty otherwise.",
+        "items": {
+          "$ref": "#/$defs/BearingCandidate"
+        },
+        "title": "Candidates",
+        "type": "array"
+      },
+      "evidence_policy": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/BearingEvidencePolicy"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Statistical policy and assumptions behind the evidence fields"
       },
       "fault_checks": {
         "description": "Results for each checked frequency",
@@ -1048,6 +1539,51 @@
         "default": null,
         "description": "Canonical form of most_likely_fault (None for arbitrary labels)",
         "title": "Most Likely Fault Canonical"
+      },
+      "next_step": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "What to do next for this outcome; None when the check suggests no step (every hypothesis was tested and none stands out), which does not mean the bearing is free of defects",
+        "title": "Next Step"
+      },
+      "outcome": {
+        "anyOf": [
+          {
+            "enum": [
+              "no_indication",
+              "inconclusive",
+              "indicated",
+              "several_types"
+            ],
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Significance-tested outcome of the check on one envelope spectrum: indicated (exactly one hypothesis supported: the evidence is consistent with that defect, not a confirmation of it), several_types (two or more supported, none singled out), inconclusive (a line without a counted corroborating line, at a shaft order or shared, or nothing testable), no_indication (no eligible peak at a tested frequency satisfies the detection criteria, which is not proof that no defect exists). most_likely_fault, overall_assessment and each check's detected and evidence_strength come from an older tolerance match without false-alarm control and can disagree with outcome.",
+        "title": "Outcome"
+      },
+      "outcome_reason": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Why the check reached its outcome, naming every hypothesis the record could not test",
+        "title": "Outcome Reason"
       },
       "overall_assessment": {
         "description": "Summary assessment text",
@@ -1525,6 +2061,58 @@
   },
   "diagnose_vibration": {
     "$defs": {
+      "BearingCandidate": {
+        "description": "A hypothesis with a significant line of its own and at least one counted\ncorroborating line.\n\nA significant corroborating line that is shared with another hypothesis or\nlies at a shaft order is not counted and does not make a candidate.\nEvidence in one envelope spectrum, not a confirmed fault.",
+        "properties": {
+          "fault_type": {
+            "description": "Checked label",
+            "title": "Fault Type",
+            "type": "string"
+          },
+          "fault_type_canonical": {
+            "anyOf": [
+              {
+                "enum": [
+                  "outer_race",
+                  "inner_race",
+                  "ball",
+                  "cage"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Canonical fault type (None for arbitrary labels)",
+            "title": "Fault Type Canonical"
+          },
+          "level_db": {
+            "description": "Power of the detected line over the local noise floor (dB)",
+            "title": "Level Db",
+            "type": "number"
+          },
+          "line_frequency_hz": {
+            "description": "Frequency of the line tested (Hz)",
+            "title": "Line Frequency Hz",
+            "type": "number"
+          },
+          "line_peak_hz": {
+            "description": "Frequency of the detected line (Hz)",
+            "title": "Line Peak Hz",
+            "type": "number"
+          }
+        },
+        "required": [
+          "fault_type",
+          "line_frequency_hz",
+          "line_peak_hz",
+          "level_db"
+        ],
+        "title": "BearingCandidate",
+        "type": "object"
+      },
       "BearingCheckOutcome": {
         "description": "Whether the bearing check of a diagnosis ran, and why not when it did not.\n\n``bearing_faults`` is None both when no bearing check was requested and\nwhen one was requested but could not run; this block tells the two\napart, so a check that never ran cannot read as a clean one.",
         "properties": {
@@ -1589,6 +2177,255 @@
         "title": "BearingCheckOutcome",
         "type": "object"
       },
+      "BearingCorroboratingLine": {
+        "description": "One further line the kinematics of a detected line predict.",
+        "properties": {
+          "counted": {
+            "description": "Whether the line counts as corroboration: significant, not at a shaft order and not shared with another hypothesis",
+            "title": "Counted",
+            "type": "boolean"
+          },
+          "excluded_by": {
+            "anyOf": [
+              {
+                "enum": [
+                  "shaft_order",
+                  "shared"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Why a significant line is not counted, if it is not",
+            "title": "Excluded By"
+          },
+          "expected_hz": {
+            "description": "Centre of the search window, anchored at the detected line (Hz)",
+            "title": "Expected Hz",
+            "type": "number"
+          },
+          "harmonic": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Harmonic number for a harmonic; None otherwise",
+            "title": "Harmonic"
+          },
+          "kind": {
+            "description": "harmonic of the detected line; sideband at the shaft rate (inner race) or the cage rate (rolling element); subharmonic, the 1 x BSF line of the rolling element",
+            "enum": [
+              "harmonic",
+              "sideband",
+              "subharmonic"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "level_db": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Power of that bin over the local noise floor (dB)",
+            "title": "Level Db"
+          },
+          "peak_hz": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Strongest bin in the window (Hz); None when the window could not be tested",
+            "title": "Peak Hz"
+          },
+          "significant": {
+            "description": "Whether the line is a local maximum above its threshold",
+            "title": "Significant",
+            "type": "boolean"
+          },
+          "threshold_db": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Level the line had to exceed (dB over the noise floor)",
+            "title": "Threshold Db"
+          },
+          "untestable_reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "search_window_too_narrow",
+                  "noise_floor_not_estimable",
+                  "outside_usable_envelope_band",
+                  "above_frequency_range"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Why the line could not be tested; None when it was tested",
+            "title": "Untestable Reason"
+          }
+        },
+        "required": [
+          "kind",
+          "expected_hz",
+          "significant",
+          "counted"
+        ],
+        "title": "BearingCorroboratingLine",
+        "type": "object"
+      },
+      "BearingEvidencePolicy": {
+        "description": "The statistical policy behind the evidence fields, with its assumptions.",
+        "properties": {
+          "assumptions": {
+            "description": "Statistical assumptions the nominal budgets rest on",
+            "items": {
+              "type": "string"
+            },
+            "title": "Assumptions",
+            "type": "array"
+          },
+          "exclusions": {
+            "description": "What the nominal budgets do not cover",
+            "items": {
+              "type": "string"
+            },
+            "title": "Exclusions",
+            "type": "array"
+          },
+          "false_alarm_probability_meaning": {
+            "description": "What the per-check budget means, and what it does not",
+            "title": "False Alarm Probability Meaning",
+            "type": "string"
+          },
+          "false_alarm_probability_per_check": {
+            "description": "Nominal family-wise false-alarm budget of one complete check, allocated over its tested hypotheses and their search bins by Bonferroni. Under the assumptions listed, the probability that the check finds a significant line at a tested frequency in a record with no periodic content there is at most this budget; the realized probability is not asserted to equal it. It is not the false-alarm rate or the specificity of the system, not the probability of an indicated outcome, and it applies to one check, not to repeated checks of one machine.",
+            "title": "False Alarm Probability Per Check",
+            "type": "number"
+          },
+          "false_alarm_probability_per_corroborating_line": {
+            "description": "Nominal false-alarm budget of each corroborating line, allocated over the bins of its window by Bonferroni",
+            "title": "False Alarm Probability Per Corroborating Line",
+            "type": "number"
+          },
+          "guard_bins": {
+            "description": "Bins left out between a search window and its reference",
+            "title": "Guard Bins",
+            "type": "integer"
+          },
+          "harmonics_tested": {
+            "description": "Number of harmonics tested above each detected line, starting at 2x (3 means 2x, 3x and 4x)",
+            "title": "Harmonics Tested",
+            "type": "integer"
+          },
+          "lowest_reference_bin": {
+            "description": "Reference bins start this many bins above 0 Hz, above the leakage of the removed envelope mean",
+            "title": "Lowest Reference Bin",
+            "type": "integer"
+          },
+          "method": {
+            "description": "Name of the line test",
+            "title": "Method",
+            "type": "string"
+          },
+          "min_narrow_window_bins": {
+            "description": "Least half-width of corroborating and shaft-order windows (bins)",
+            "title": "Min Narrow Window Bins",
+            "type": "integer"
+          },
+          "min_reference_bins": {
+            "description": "Fewest reference bins the noise floor needs",
+            "title": "Min Reference Bins",
+            "type": "integer"
+          },
+          "min_reference_bins_per_side": {
+            "description": "Least reference width on each side (bins), where the spectrum allows",
+            "title": "Min Reference Bins Per Side",
+            "type": "integer"
+          },
+          "min_search_bins": {
+            "description": "Fewest bins a search window needs to be testable",
+            "title": "Min Search Bins",
+            "type": "integer"
+          },
+          "narrow_window_fraction": {
+            "description": "Half-width of corroborating and shaft-order windows as a fraction of their frequency",
+            "title": "Narrow Window Fraction",
+            "type": "number"
+          },
+          "reference_width_fraction": {
+            "description": "Reference width on each side, as a fraction of the line frequency",
+            "title": "Reference Width Fraction",
+            "type": "number"
+          },
+          "search_window_pct": {
+            "description": "Half-width of each fundamental search window (% of its frequency)",
+            "title": "Search Window Pct",
+            "type": "number"
+          },
+          "usable_band_fraction": {
+            "description": "Lines and reference bins are used only below this fraction of the envelope band width (band high minus band low), which bounds the line frequencies the envelope can carry",
+            "title": "Usable Band Fraction",
+            "type": "number"
+          },
+          "version": {
+            "description": "Version of the evidence policy",
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "method",
+          "version",
+          "false_alarm_probability_per_check",
+          "false_alarm_probability_meaning",
+          "false_alarm_probability_per_corroborating_line",
+          "search_window_pct",
+          "harmonics_tested",
+          "min_search_bins",
+          "min_reference_bins",
+          "reference_width_fraction",
+          "min_reference_bins_per_side",
+          "guard_bins",
+          "usable_band_fraction",
+          "lowest_reference_bin",
+          "narrow_window_fraction",
+          "min_narrow_window_bins",
+          "assumptions",
+          "exclusions"
+        ],
+        "title": "BearingEvidencePolicy",
+        "type": "object"
+      },
       "BearingFaultCheckResult": {
         "description": "Result of checking for a specific expected fault frequency.",
         "properties": {
@@ -1604,6 +2441,14 @@
             "default": null,
             "description": "Bearing designation (None for arbitrary-frequency checks)",
             "title": "Bearing Id"
+          },
+          "corroboration": {
+            "description": "Further lines tested for a significant line, anchored at it; empty when no significant line was found. Lines of one spectrum are correlated, not independent evidence.",
+            "items": {
+              "$ref": "#/$defs/BearingCorroboratingLine"
+            },
+            "title": "Corroboration",
+            "type": "array"
           },
           "detected": {
             "description": "Whether a peak was detected within tolerance",
@@ -1682,6 +2527,70 @@
             "title": "Harmonics Detected",
             "type": "array"
           },
+          "level_db": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Power at line_peak_hz over the local noise floor (dB), reported whether or not the line is significant: compare it with threshold_db. It can exceed threshold_db while state is absent when the strongest bin lies on the edge of the search window, where a line outside the window leaks in. None when not testable.",
+            "title": "Level Db"
+          },
+          "line_amplitude": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Envelope amplitude at line_peak_hz; None when not testable",
+            "title": "Line Amplitude"
+          },
+          "line_frequency_hz": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Frequency of the line tested (Hz): the expected frequency, or twice the ball spin frequency for the rolling element (detected_frequency_hz is still matched near the ball spin frequency itself)",
+            "title": "Line Frequency Hz"
+          },
+          "line_peak_hz": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Strongest bin in the search window of the line tested (Hz), whether or not it is significant; None when not testable",
+            "title": "Line Peak Hz"
+          },
+          "line_test": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/BearingLineTest"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "How the line was tested; None when not testable"
+          },
           "magnitude": {
             "anyOf": [
               {
@@ -1695,10 +2604,75 @@
             "description": "Magnitude at detected frequency",
             "title": "Magnitude"
           },
+          "shared_with": {
+            "description": "Labels of the other detected hypotheses whose search window, or the window of a harmonic, sideband or 1 x BSF line they predict, holds this hypothesis's detected line",
+            "items": {
+              "type": "string"
+            },
+            "title": "Shared With",
+            "type": "array"
+          },
           "signal_id": {
             "description": "Signal identifier used",
             "title": "Signal Id",
             "type": "string"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "enum": [
+                  "not_testable",
+                  "absent",
+                  "unconfirmed",
+                  "shared",
+                  "supported"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Significance-tested evidence for this hypothesis on the check's envelope spectrum: not_testable (the record cannot test its line), absent (no eligible peak, a local maximum strictly inside the search window, above threshold_db), unconfirmed (a line without a counted corroborating line, or a line at a shaft order), shared (another tested hypothesis also predicts a line where this line lies), supported (a significant line of its own with at least one counted corroborating line its kinematics predict). detected and evidence_strength come from an older tolerance match without false-alarm control and can disagree with state.",
+            "title": "State"
+          },
+          "state_reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "search_window_too_narrow",
+                  "noise_floor_not_estimable",
+                  "outside_usable_envelope_band",
+                  "above_frequency_range",
+                  "no_significant_line",
+                  "line_at_shaft_order",
+                  "line_shared",
+                  "no_corroboration",
+                  "corroborated"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Why the hypothesis is in its state",
+            "title": "State Reason"
+          },
+          "threshold_db": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Level the line had to exceed (dB over the local noise floor) for its share of the check's false-alarm budget; None when not testable",
+            "title": "Threshold Db"
           }
         },
         "required": [
@@ -1734,6 +2708,26 @@
             "default": null,
             "description": "Bearing designation (catalog route); None for the explicit-frequencies and explicit-geometry routes",
             "title": "Bearing Id"
+          },
+          "candidates": {
+            "description": "Supported hypotheses, listed by level over the noise floor; the order does not rank which type is more likely or more severe. One entry for indicated, two or more for several_types, empty otherwise.",
+            "items": {
+              "$ref": "#/$defs/BearingCandidate"
+            },
+            "title": "Candidates",
+            "type": "array"
+          },
+          "evidence_policy": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/BearingEvidencePolicy"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Statistical policy and assumptions behind the evidence fields"
           },
           "fault_checks": {
             "description": "Results for each checked frequency",
@@ -1774,6 +2768,51 @@
             "default": null,
             "description": "Canonical form of most_likely_fault (None for arbitrary labels)",
             "title": "Most Likely Fault Canonical"
+          },
+          "next_step": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "What to do next for this outcome; None when the check suggests no step (every hypothesis was tested and none stands out), which does not mean the bearing is free of defects",
+            "title": "Next Step"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "enum": [
+                  "no_indication",
+                  "inconclusive",
+                  "indicated",
+                  "several_types"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Significance-tested outcome of the check on one envelope spectrum: indicated (exactly one hypothesis supported: the evidence is consistent with that defect, not a confirmation of it), several_types (two or more supported, none singled out), inconclusive (a line without a counted corroborating line, at a shaft order or shared, or nothing testable), no_indication (no eligible peak at a tested frequency satisfies the detection criteria, which is not proof that no defect exists). most_likely_fault, overall_assessment and each check's detected and evidence_strength come from an older tolerance match without false-alarm control and can disagree with outcome.",
+            "title": "Outcome"
+          },
+          "outcome_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Why the check reached its outcome, naming every hypothesis the record could not test",
+            "title": "Outcome Reason"
           },
           "overall_assessment": {
             "description": "Summary assessment text",
@@ -1818,6 +2857,39 @@
           "overall_assessment"
         ],
         "title": "BearingFaultsSummary",
+        "type": "object"
+      },
+      "BearingLineTest": {
+        "description": "How the line of one hypothesis was tested against the noise floor.",
+        "properties": {
+          "false_alarm_probability": {
+            "description": "Nominal false-alarm budget allocated to this line's test over all its search bins together: the check's budget split evenly over the hypotheses it could test. It is not a measured probability for this record. The per-bin value is this divided by search_bins.",
+            "title": "False Alarm Probability",
+            "type": "number"
+          },
+          "reference_bins": {
+            "description": "Reference bins on both sides of the search window (N)",
+            "title": "Reference Bins",
+            "type": "integer"
+          },
+          "reference_rank": {
+            "description": "Rank k of the reference power taken as the noise floor (the median rank)",
+            "title": "Reference Rank",
+            "type": "integer"
+          },
+          "search_bins": {
+            "description": "Frequency bins searched for the line (M)",
+            "title": "Search Bins",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "search_bins",
+          "reference_bins",
+          "reference_rank",
+          "false_alarm_probability"
+        ],
+        "title": "BearingLineTest",
         "type": "object"
       },
       "ISOSeverityRefusal": {

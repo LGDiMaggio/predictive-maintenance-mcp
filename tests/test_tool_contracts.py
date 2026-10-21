@@ -67,6 +67,16 @@ Fixture history:
   remedy); the bearing_id, bearing_faults and evidence_strength
   descriptions name it.
   Generated under mcp 2.3.0 and pydantic 2.12.0 (uv.lock).
+- Bearing evidence fields (2026-10-21, T1 PR B): regenerated intentionally:
+  ADDITIVE, no existing property or description changed. Each bearing fault
+  check (check_bearing_faults, and diagnose_vibration's bearing_faults)
+  gains state, state_reason, line_frequency_hz, line_peak_hz,
+  line_amplitude, level_db, threshold_db, line_test, corroboration and
+  shared_with; the summary gains outcome, outcome_reason, next_step,
+  candidates and evidence_policy, with four new definitions
+  (BearingLineTest, BearingCorroboratingLine, BearingCandidate,
+  BearingEvidencePolicy).
+  Generated under mcp 2.3.0 and pydantic 2.12.0 (uv.lock).
 """
 
 from __future__ import annotations

@@ -40,6 +40,8 @@ RMS, plus white noise at the stated SNR (defect RMS over noise RMS, in dB) and
   rate. A rolling-element defect strikes the inner and the outer race once
   per spin revolution, so its envelope line lies at twice the ball spin
   frequency.
+- ``cage``: impacts at FTF with constant amplitude, once per revolution of a
+  cage whose damage strikes the rolling elements.
 - ``combined``: an outer-race and an inner-race scenario added together, each
   at the stated SNR.
 
@@ -82,6 +84,7 @@ DEFECTS_PRESENT: dict[str, frozenset[str]] = {
     "outer": frozenset({"BPFO"}),
     "inner": frozenset({"BPFI"}),
     "rolling_element": frozenset({"BSF"}),
+    "cage": frozenset({"FTF"}),
     "combined": frozenset({"BPFO", "BPFI"}),
 }
 
@@ -111,16 +114,18 @@ FREQUENCIES_6205 = bearing_kinematics(Z_6205, BD_6205, PD_6205, 0.0, RPM_6205)
 #: A fault-free family: (rng, fs in Hz, duration in s, shaft speed in Hz).
 FaultFreeGenerator = Callable[[np.random.Generator, float, float, float], np.ndarray]
 
-DefectKind = Literal["outer", "inner", "rolling_element", "combined"]
+DefectKind = Literal["outer", "inner", "rolling_element", "cage", "combined"]
 
 
 def _samples(fs: float, seconds: float) -> int:
     return int(round(fs * seconds))
 
 
-def _resonance_response(fs: float, zeta: float = 0.05, length_s: float = 0.01):
+def _resonance_response(
+    fs: float, zeta: float = 0.05, length_s: float = 0.01, hz: float = RESONANCE_HZ
+):
     t = np.arange(int(length_s * fs)) / fs
-    wn = 2.0 * np.pi * RESONANCE_HZ
+    wn = 2.0 * np.pi * hz
     return np.exp(-zeta * wn * t) * np.sin(wn * np.sqrt(1.0 - zeta**2) * t)
 
 
@@ -219,11 +224,27 @@ def defect(
     snr_db: float,
     slip: float = 0.01,
     depth: float = 0.8,
+    resonance_hz: float = RESONANCE_HZ,
 ) -> np.ndarray:
-    """One defect scenario (see the module docstring for the model)."""
+    """One defect scenario (see the module docstring for the model).
+
+    ``resonance_hz`` moves the excited resonance, so that a narrow or low
+    envelope band can hold the impacts.
+    """
     if kind == "combined":
         return sum(
-            defect(part, rng, fs, seconds, frequencies, shaft_hz, snr_db, slip, depth)
+            defect(
+                part,
+                rng,
+                fs,
+                seconds,
+                frequencies,
+                shaft_hz,
+                snr_db,
+                slip,
+                depth,
+                resonance_hz,
+            )
             for part in ("outer", "inner")
         )
     # Impact rate and amplitude-modulation frequency (None: constant amplitude).
@@ -231,6 +252,7 @@ def defect(
         "outer": (frequencies["BPFO"], None),
         "inner": (frequencies["BPFI"], shaft_hz),
         "rolling_element": (2.0 * frequencies["BSF"], frequencies["FTF"]),
+        "cage": (frequencies["FTF"], None),
     }[kind]
     period = 1.0 / rate_hz
     times = []
@@ -249,7 +271,9 @@ def defect(
     n = _samples(fs, seconds)
     impacts = np.zeros(n)
     np.add.at(impacts, np.clip((times * fs).astype(int), 0, n - 1), amplitude)
-    response = np.convolve(impacts, _resonance_response(fs), mode="full")[:n]
+    response = np.convolve(
+        impacts, _resonance_response(fs, hz=resonance_hz), mode="full"
+    )[:n]
     response /= np.std(response)
     t = np.arange(n) / fs
     shaft = 0.3 * np.sin(2 * np.pi * shaft_hz * t) + 0.1 * np.sin(

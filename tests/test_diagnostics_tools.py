@@ -11,6 +11,7 @@ import pandas as pd
 from pathlib import Path
 from unittest.mock import AsyncMock
 
+from mcp import Client
 from mcp.server.mcpserver import MCPServer
 
 from predictive_maintenance_mcp.asset_ledger.store import (
@@ -199,6 +200,139 @@ class TestBearingTools:
             assert result.source  # catalog source echoed
         finally:
             repo.clear_all()
+
+
+class TestBearingEvidenceOverTheWire:
+    """The evidence fields reach the structured output of both bearing tools.
+
+    End to end through the registered tools and an MCP client, so a field an
+    explicit constructor forgets, or one a model drops, fails here.
+    """
+
+    #: Per-check and summary fields the evidence layer adds.
+    CHECK_FIELDS = (
+        "state",
+        "state_reason",
+        "line_frequency_hz",
+        "line_peak_hz",
+        "line_amplitude",
+        "level_db",
+        "threshold_db",
+        "line_test",
+        "corroboration",
+        "shared_with",
+    )
+    SUMMARY_FIELDS = (
+        "outcome",
+        "outcome_reason",
+        "next_step",
+        "candidates",
+        "evidence_policy",
+    )
+
+    @pytest.fixture
+    def outer_race_signal(self, data_dir):
+        """A seeded 6205 outer-race defect at -10 dB SNR, 12 kHz, 10 s."""
+        from _bearing_scenarios import (
+            DEFECT_SEED,
+            FREQUENCIES_6205,
+            RPM_6205,
+            defect,
+        )
+
+        fs = 12000
+        signal = defect(
+            "outer",
+            np.random.default_rng((DEFECT_SEED, 500)),
+            fs,
+            10.0,
+            FREQUENCIES_6205,
+            RPM_6205 / 60.0,
+            -10.0,
+        )
+        pd.DataFrame(signal).to_csv(
+            data_dir / "outer_race.csv", index=False, header=False
+        )
+        with open(data_dir / "outer_race_metadata.json", "w") as f:
+            json.dump({"sampling_rate": fs, "signal_unit": "g"}, f)
+        repo = get_repository()
+        repo.clear_all()
+        repo.load_signal("outer_race.csv", signal_id="outer_race")
+        yield "outer_race"
+        repo.clear_all()
+
+    def _assert_evidence(self, summary: dict) -> None:
+        for field in self.SUMMARY_FIELDS:
+            assert summary.get(field) is not None, f"summary field {field} missing"
+        assert summary["outcome"] == "indicated"
+        assert [c["fault_type"] for c in summary["candidates"]] == ["BPFO"]
+        assert summary["evidence_policy"]["false_alarm_probability_per_check"] == 0.01
+        checks = {c["fault_type"]: c for c in summary["fault_checks"]}
+        for check in checks.values():
+            missing = [f for f in self.CHECK_FIELDS if f not in check]
+            assert not missing, f"{check['fault_type']}: {missing} missing"
+        bpfo = checks["BPFO"]
+        assert bpfo["state"] == "supported"
+        assert bpfo["line_test"]["reference_bins"] >= 16
+        assert any(c["counted"] for c in bpfo["corroboration"])
+
+    @pytest.mark.asyncio
+    async def test_check_bearing_faults_returns_every_evidence_field(
+        self, mcp, outer_race_signal
+    ):
+        async with Client(mcp, mode="legacy") as client:
+            result = await client.call_tool(
+                "check_bearing_faults",
+                {"signal_id": outer_race_signal, "bearing_id": "6205", "rpm": 1797.0},
+                read_timeout_seconds=60,
+            )
+
+        assert not result.is_error
+        self._assert_evidence(result.structured_content)
+
+    @pytest.mark.asyncio
+    async def test_diagnose_vibration_returns_every_evidence_field(
+        self, mcp, outer_race_signal
+    ):
+        async with Client(mcp, mode="legacy") as client:
+            result = await client.call_tool(
+                "diagnose_vibration",
+                {"signal_id": outer_race_signal, "bearing_id": "6205", "rpm": 1797.0},
+                read_timeout_seconds=60,
+            )
+
+        assert not result.is_error
+        self._assert_evidence(result.structured_content["bearing_faults"])
+
+    @pytest.mark.asyncio
+    async def test_explicit_frequency_route_returns_the_evidence_fields(
+        self, mcp, outer_race_signal
+    ):
+        """The declared-frequency route reaches the same fields, BSF tested
+        at twice the declared ball spin frequency."""
+        from _bearing_scenarios import FREQUENCIES_6205
+
+        async with Client(mcp, mode="legacy") as client:
+            result = await client.call_tool(
+                "check_bearing_faults",
+                {
+                    "signal_id": outer_race_signal,
+                    "frequencies": FREQUENCIES_6205,
+                    "rpm": 1797.0,
+                },
+                read_timeout_seconds=60,
+            )
+
+        assert not result.is_error
+        self._assert_evidence(result.structured_content)
+        bsf = next(
+            c
+            for c in result.structured_content["fault_checks"]
+            if c["fault_type"] == "BSF"
+        )
+        assert bsf["line_frequency_hz"] == pytest.approx(
+            2 * FREQUENCIES_6205["BSF"], abs=1e-3
+        )
 
 
 # ---------------------------------------------------------------------------
