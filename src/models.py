@@ -307,6 +307,196 @@ class STFTResult(BaseModel):
     )
 
 
+#: Closed vocabularies of the bearing evidence layer.
+BearingEvidenceState = Literal[
+    "not_testable", "absent", "unconfirmed", "shared", "supported"
+]
+BearingEvidenceStateReason = Literal[
+    "search_window_too_narrow",
+    "noise_floor_not_estimable",
+    "outside_usable_envelope_band",
+    "above_frequency_range",
+    "no_significant_line",
+    "line_at_shaft_order",
+    "line_shared",
+    "no_corroboration",
+    "corroborated",
+]
+BearingCheckOutcomeName = Literal[
+    "no_indication", "inconclusive", "indicated", "several_types"
+]
+
+
+class BearingLineTest(BaseModel):
+    """How the line of one hypothesis was tested against the noise floor."""
+
+    search_bins: int = Field(description="Frequency bins searched for the line (M)")
+    reference_bins: int = Field(
+        description="Reference bins on both sides of the search window (N)"
+    )
+    reference_rank: int = Field(
+        description="Rank k of the reference power taken as the noise floor (the median rank)"
+    )
+    false_alarm_probability: float = Field(
+        description=(
+            "Nominal false-alarm budget allocated to this line's test over all its "
+            "search bins together: the check's budget split evenly over the "
+            "hypotheses it could test. It is not a measured probability for this "
+            "record. The per-bin value is this divided by search_bins."
+        )
+    )
+
+
+class BearingCorroboratingLine(BaseModel):
+    """One further line the kinematics of a detected line predict."""
+
+    kind: Literal["harmonic", "sideband", "subharmonic"] = Field(
+        description=(
+            "harmonic of the detected line; sideband at the shaft rate (inner "
+            "race) or the cage rate (rolling element); subharmonic, the 1 x BSF "
+            "line of the rolling element"
+        )
+    )
+    harmonic: Optional[int] = Field(
+        None, description="Harmonic number for a harmonic; None otherwise"
+    )
+    expected_hz: float = Field(
+        description="Centre of the search window, anchored at the detected line (Hz)"
+    )
+    peak_hz: Optional[float] = Field(
+        None,
+        description="Strongest bin in the window (Hz); None when the window could not be tested",
+    )
+    level_db: Optional[float] = Field(
+        None, description="Power of that bin over the local noise floor (dB)"
+    )
+    threshold_db: Optional[float] = Field(
+        None, description="Level the line had to exceed (dB over the noise floor)"
+    )
+    significant: bool = Field(
+        description="Whether the line is a local maximum above its threshold"
+    )
+    counted: bool = Field(
+        description=(
+            "Whether the line counts as corroboration: significant, not at a "
+            "shaft order and not shared with another hypothesis"
+        )
+    )
+    excluded_by: Optional[Literal["shaft_order", "shared"]] = Field(
+        None,
+        description="Why a significant line is not counted, if it is not",
+    )
+    untestable_reason: Optional[
+        Literal[
+            "search_window_too_narrow",
+            "noise_floor_not_estimable",
+            "outside_usable_envelope_band",
+            "above_frequency_range",
+        ]
+    ] = Field(
+        None, description="Why the line could not be tested; None when it was tested"
+    )
+
+
+class BearingCandidate(BaseModel):
+    """A hypothesis with a significant line of its own and at least one counted
+    corroborating line.
+
+    A significant corroborating line that is shared with another hypothesis or
+    lies at a shaft order is not counted and does not make a candidate.
+    Evidence in one envelope spectrum, not a confirmed fault.
+    """
+
+    fault_type: str = Field(description="Checked label")
+    fault_type_canonical: Optional[
+        Literal["outer_race", "inner_race", "ball", "cage"]
+    ] = Field(None, description="Canonical fault type (None for arbitrary labels)")
+    line_frequency_hz: float = Field(description="Frequency of the line tested (Hz)")
+    line_peak_hz: float = Field(description="Frequency of the detected line (Hz)")
+    level_db: float = Field(
+        description="Power of the detected line over the local noise floor (dB)"
+    )
+
+
+class BearingEvidencePolicy(BaseModel):
+    """The statistical policy behind the evidence fields, with its assumptions."""
+
+    method: str = Field(description="Name of the line test")
+    version: int = Field(description="Version of the evidence policy")
+    false_alarm_probability_per_check: float = Field(
+        description=(
+            "Nominal family-wise false-alarm budget of one complete check, "
+            "allocated over its tested hypotheses and their search bins by "
+            "Bonferroni. Under the assumptions listed, the probability that the "
+            "check finds a significant line at a tested frequency in a record with "
+            "no periodic content there is at most this budget; the realized "
+            "probability is not asserted to equal it. It is not the false-alarm "
+            "rate or the specificity of the system, not the probability of an "
+            "indicated outcome, and it applies to one check, not to repeated "
+            "checks of one machine."
+        )
+    )
+    false_alarm_probability_meaning: str = Field(
+        description="What the per-check budget means, and what it does not"
+    )
+    false_alarm_probability_per_corroborating_line: float = Field(
+        description=(
+            "Nominal false-alarm budget of each corroborating line, allocated over "
+            "the bins of its window by Bonferroni"
+        )
+    )
+    search_window_pct: float = Field(
+        description="Half-width of each fundamental search window (% of its frequency)"
+    )
+    harmonics_tested: int = Field(
+        description=(
+            "Number of harmonics tested above each detected line, starting at 2x "
+            "(3 means 2x, 3x and 4x)"
+        )
+    )
+    min_search_bins: int = Field(
+        description="Fewest bins a search window needs to be testable"
+    )
+    min_reference_bins: int = Field(
+        description="Fewest reference bins the noise floor needs"
+    )
+    reference_width_fraction: float = Field(
+        description="Reference width on each side, as a fraction of the line frequency"
+    )
+    min_reference_bins_per_side: int = Field(
+        description="Least reference width on each side (bins), where the spectrum allows"
+    )
+    guard_bins: int = Field(
+        description="Bins left out between a search window and its reference"
+    )
+    usable_band_fraction: float = Field(
+        description=(
+            "Lines and reference bins are used only below this fraction of the "
+            "envelope band width (band high minus band low), which bounds the line "
+            "frequencies the envelope can carry"
+        )
+    )
+    lowest_reference_bin: int = Field(
+        description=(
+            "Reference bins start this many bins above 0 Hz, above the leakage of "
+            "the removed envelope mean"
+        )
+    )
+    narrow_window_fraction: float = Field(
+        description=(
+            "Half-width of corroborating and shaft-order windows as a fraction "
+            "of their frequency"
+        )
+    )
+    min_narrow_window_bins: int = Field(
+        description="Least half-width of corroborating and shaft-order windows (bins)"
+    )
+    assumptions: list[str] = Field(
+        description="Statistical assumptions the nominal budgets rest on"
+    )
+    exclusions: list[str] = Field(description="What the nominal budgets do not cover")
+
+
 class BearingFaultCheckResult(BaseModel):
     """Result of checking for a specific expected fault frequency."""
 
@@ -352,6 +542,79 @@ class BearingFaultCheckResult(BaseModel):
             "detected peaks — not a probability."
         )
     )
+    state: Optional[BearingEvidenceState] = Field(
+        None,
+        description=(
+            "Significance-tested evidence for this hypothesis on the check's "
+            "envelope spectrum: not_testable (the record cannot test its line), "
+            "absent (no eligible peak, a local maximum strictly inside the search "
+            "window, above threshold_db), "
+            "unconfirmed (a line without a counted corroborating line, or a line "
+            "at a shaft order), shared (another tested hypothesis also predicts a "
+            "line where this line lies), supported (a significant line of its own "
+            "with at least one counted corroborating line its kinematics predict). "
+            "detected and "
+            "evidence_strength come from an older tolerance match without "
+            "false-alarm control and can disagree with state."
+        ),
+    )
+    state_reason: Optional[BearingEvidenceStateReason] = Field(
+        None, description="Why the hypothesis is in its state"
+    )
+    line_frequency_hz: Optional[float] = Field(
+        None,
+        description=(
+            "Frequency of the line tested (Hz): the expected frequency, or twice "
+            "the ball spin frequency for the rolling element (detected_frequency_hz "
+            "is still matched near the ball spin frequency itself)"
+        ),
+    )
+    line_peak_hz: Optional[float] = Field(
+        None,
+        description=(
+            "Strongest bin in the search window of the line tested (Hz), whether "
+            "or not it is significant; None when not testable"
+        ),
+    )
+    line_amplitude: Optional[float] = Field(
+        None, description="Envelope amplitude at line_peak_hz; None when not testable"
+    )
+    level_db: Optional[float] = Field(
+        None,
+        description=(
+            "Power at line_peak_hz over the local noise floor (dB), reported "
+            "whether or not the line is significant: compare it with threshold_db. "
+            "It can exceed threshold_db while state is absent when the strongest "
+            "bin lies on the edge of the search window, where a line outside the "
+            "window leaks in. None when not testable."
+        ),
+    )
+    threshold_db: Optional[float] = Field(
+        None,
+        description=(
+            "Level the line had to exceed (dB over the local noise floor) for its "
+            "share of the check's false-alarm budget; None when not testable"
+        ),
+    )
+    line_test: Optional[BearingLineTest] = Field(
+        None, description="How the line was tested; None when not testable"
+    )
+    corroboration: list[BearingCorroboratingLine] = Field(
+        default_factory=list,
+        description=(
+            "Further lines tested for a significant line, anchored at it; empty "
+            "when no significant line was found. Lines of one spectrum are "
+            "correlated, not independent evidence."
+        ),
+    )
+    shared_with: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Labels of the other detected hypotheses whose search window, or the "
+            "window of a harmonic, sideband or 1 x BSF line they predict, holds "
+            "this hypothesis's detected line"
+        ),
+    )
 
 
 class BearingFaultsSummary(BaseModel):
@@ -390,6 +653,50 @@ class BearingFaultsSummary(BaseModel):
             "source citation (bearing_id route), or a note for "
             "user-provided geometry/frequencies"
         ),
+    )
+    outcome: Optional[BearingCheckOutcomeName] = Field(
+        None,
+        description=(
+            "Significance-tested outcome of the check on one envelope spectrum: "
+            "indicated (exactly one hypothesis supported: the evidence is "
+            "consistent with that defect, not a confirmation of it), "
+            "several_types (two or more supported, none singled out), "
+            "inconclusive (a line without a counted corroborating line, at a "
+            "shaft order or shared, or nothing testable), no_indication (no "
+            "eligible peak at a tested frequency satisfies the detection criteria, "
+            "which is not proof that no defect exists). most_likely_fault, "
+            "overall_assessment "
+            "and each check's detected and evidence_strength come from an older "
+            "tolerance match without false-alarm control and can disagree with "
+            "outcome."
+        ),
+    )
+    outcome_reason: Optional[str] = Field(
+        None,
+        description=(
+            "Why the check reached its outcome, naming every hypothesis the record "
+            "could not test"
+        ),
+    )
+    next_step: Optional[str] = Field(
+        None,
+        description=(
+            "What to do next for this outcome; None when the check suggests no "
+            "step (every hypothesis was tested and none stands out), which does "
+            "not mean the bearing is free of defects"
+        ),
+    )
+    candidates: list[BearingCandidate] = Field(
+        default_factory=list,
+        description=(
+            "Supported hypotheses, listed by level over the noise floor; the order "
+            "does not rank which type is more likely or more severe. One entry for "
+            "indicated, two or more for several_types, empty otherwise."
+        ),
+    )
+    evidence_policy: Optional[BearingEvidencePolicy] = Field(
+        None,
+        description="Statistical policy and assumptions behind the evidence fields",
     )
 
 

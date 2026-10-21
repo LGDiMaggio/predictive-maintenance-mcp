@@ -5,6 +5,11 @@ Checks envelope spectrum peaks against expected bearing fault frequencies
 (BPFO, BPFI, BSF, FTF) with tolerance matching, harmonic detection,
 and evidence-strength rating (derived from detected peaks/harmonics,
 never presented as a probability).
+
+Every check also carries the fields of :mod:`.bearing_evidence` (per-check
+``state``, line level and corroboration; per-summary ``outcome``,
+``candidates`` and ``evidence_policy``), computed on the same envelope
+spectrum. The older fields keep their meaning and values for now.
 """
 
 import logging
@@ -13,7 +18,12 @@ from typing import Optional
 import numpy as np
 
 from .bearing_catalog import compute_fault_frequencies, lookup_bearing
-from ..signal_processing.spectral import compute_envelope_spectrum
+from .bearing_evidence import Hypothesis, evaluate_hypotheses
+from ..signal_processing.spectral import (
+    envelope_spectrum_arrays,
+    envelope_top_peaks,
+    resolve_envelope_band,
+)
 from ..signal_validation import (
     validate_expected_frequencies,
     validate_expected_frequency,
@@ -70,27 +80,129 @@ def check_bearing_fault_peak(
             over its available band instead of raising.
 
     Returns:
-        Dict compatible with BearingFaultCheckResult.
+        Dict compatible with BearingFaultCheckResult. The evidence fields
+        test this one frequency alone and without a shaft speed, so no
+        sideband or shaft-order test runs.
 
     Raises:
         ValueError: If fs is not a positive finite number, any sample is
             NaN or infinite, or ``expected_freq`` is not a positive finite
             number.
     """
+    (check,), _ = _check_on_one_spectrum(
+        signal,
+        fs,
+        [(fault_type, expected_freq)],
+        bearing_id=bearing_id,
+        signal_id=signal_id,
+        tolerance_pct=tolerance_pct,
+        num_harmonics=num_harmonics,
+        envelope_freq_range=envelope_freq_range,
+        shaft_hz=None,
+        cage_hz=None,
+    )
+    return check
+
+
+#: Envelope peaks the tolerance matching of the older per-check fields reads.
+_MATCHED_PEAKS = 50
+
+
+def _check_on_one_spectrum(
+    signal: np.ndarray,
+    fs: float,
+    expected: list[tuple[str, float]],
+    *,
+    bearing_id: Optional[str],
+    signal_id: str,
+    tolerance_pct: float,
+    num_harmonics: int,
+    envelope_freq_range: Optional[tuple[float, float]],
+    shaft_hz: Optional[float],
+    cage_hz: Optional[float],
+    catalog: bool = False,
+) -> tuple[list[dict], dict]:
+    """Every (label, expected Hz) checked on ONE envelope spectrum.
+
+    Returns:
+        (per-check dicts in input order, the evidence summary of
+        :func:`.bearing_evidence.evaluate_hypotheses`).
+    """
     # Every bearing verdict passes through here, so corrupt input is refused
     # before the envelope: a NaN envelope, or a zero, negative or NaN expected
     # frequency, matches no peak and the summary would read "Bearing appears
-    # healthy"; an infinite expected frequency matches every peak.
+    # healthy"; an infinite expected frequency matches every peak. Each
+    # frequency is validated before the spectrum it would first be used on,
+    # which keeps the order of refusals of one spectrum per frequency.
     signal = validate_signal_and_fs(signal, fs)
-    validate_expected_frequency(
-        expected_freq, label=fault_type, remedy=_PEAK_FREQUENCY_REMEDY
-    )
+    peaks = None
+    checks = []
+    for label, expected_freq in expected:
+        validate_expected_frequency(
+            expected_freq, label=label, remedy=_PEAK_FREQUENCY_REMEDY
+        )
+        if peaks is None:
+            band = resolve_envelope_band(fs, envelope_freq_range)
+            # The band as the filter realizes it (an upper edge at Nyquist
+            # sits 1 Hz below it, see envelope_spectrum_arrays).
+            band_width = min(band[1], fs / 2.0 - 1.0) - band[0]
+            freqs, mags = envelope_spectrum_arrays(signal, fs, band)
+            peaks = envelope_top_peaks(freqs, mags, fs / len(signal), _MATCHED_PEAKS)
+        checks.append(
+            _match_peaks(
+                peaks,
+                expected_freq,
+                label,
+                bearing_id,
+                signal_id,
+                tolerance_pct,
+                num_harmonics,
+            )
+        )
 
-    env = compute_envelope_spectrum(
-        signal, fs, frequency_range=envelope_freq_range, num_peaks=50
+    evidence = evaluate_hypotheses(
+        freqs,
+        mags,
+        [
+            Hypothesis(label, float(f), FAULT_TYPE_CANONICAL.get(label.upper()))
+            for label, f in expected
+        ],
+        shaft_hz=shaft_hz,
+        cage_hz=cage_hz,
+        num_harmonics=num_harmonics,
+        tolerance_pct=tolerance_pct,
+        catalog=catalog,
+        envelope_band_hz=band_width,
     )
+    for check, fields in zip(checks, evidence["checks"]):
+        check.update({k: v for k, v in fields.items() if k != "fault_type"})
+    return checks, evidence
 
-    peaks = env["top_peaks"]
+
+def _summary_evidence(evidence: dict) -> dict:
+    """The summary fields of an evidence result."""
+    return {
+        key: evidence[key]
+        for key in (
+            "outcome",
+            "outcome_reason",
+            "next_step",
+            "candidates",
+            "evidence_policy",
+        )
+    }
+
+
+def _match_peaks(
+    peaks: list[dict],
+    expected_freq: float,
+    fault_type: str,
+    bearing_id: Optional[str],
+    signal_id: str,
+    tolerance_pct: float,
+    num_harmonics: int,
+) -> dict:
+    """The older per-check fields: tolerance matching on the peak list."""
     tolerance = expected_freq * tolerance_pct / 100.0
 
     # Search for fundamental
@@ -206,20 +318,19 @@ def check_all_bearing_faults(
         "FTF": freq_data["FTF"],
     }
 
-    checks = []
-    for ft, expected in fault_types.items():
-        result = check_bearing_fault_peak(
-            signal=signal,
-            fs=fs,
-            expected_freq=expected,
-            fault_type=ft,
-            bearing_id=bearing_id,
-            signal_id=signal_id,
-            tolerance_pct=tolerance_pct,
-            num_harmonics=num_harmonics,
-            envelope_freq_range=envelope_freq_range,
-        )
-        checks.append(result)
+    checks, evidence = _check_on_one_spectrum(
+        signal,
+        fs,
+        list(fault_types.items()),
+        bearing_id=bearing_id,
+        signal_id=signal_id,
+        tolerance_pct=tolerance_pct,
+        num_harmonics=num_harmonics,
+        envelope_freq_range=envelope_freq_range,
+        shaft_hz=shaft_freq,
+        cage_hz=fault_types["FTF"],
+        catalog=True,
+    )
 
     most_likely, assessment = _summarize_fault_checks(checks)
 
@@ -241,6 +352,7 @@ def check_all_bearing_faults(
         # Catalog traceability: every catalog entry carries a mandatory
         # source citation — echo it so results stay auditable.
         "source": (freq_data.get("bearing_info") or {}).get("source"),
+        **_summary_evidence(evidence),
     }
 
 
@@ -322,20 +434,26 @@ def check_frequency_set(
         )
     validate_expected_frequencies(frequencies)
 
-    checks = [
-        check_bearing_fault_peak(
-            signal=signal,
-            fs=fs,
-            expected_freq=float(freq),
-            fault_type=label,
-            bearing_id="",
-            signal_id=signal_id,
-            tolerance_pct=tolerance_pct,
-            num_harmonics=num_harmonics,
-            envelope_freq_range=envelope_freq_range,
-        )
-        for label, freq in frequencies.items()
-    ]
+    checks, evidence = _check_on_one_spectrum(
+        signal,
+        fs,
+        [(label, float(freq)) for label, freq in frequencies.items()],
+        bearing_id="",
+        signal_id=signal_id,
+        tolerance_pct=tolerance_pct,
+        num_harmonics=num_harmonics,
+        envelope_freq_range=envelope_freq_range,
+        shaft_hz=rpm / 60.0,
+        # A declared cage frequency is the rolling element's modulation rate.
+        cage_hz=next(
+            (
+                float(freq)
+                for label, freq in frequencies.items()
+                if FAULT_TYPE_CANONICAL.get(label.upper()) == "cage"
+            ),
+            None,
+        ),
+    )
     most_likely, assessment = _summarize_fault_checks(checks)
 
     freq_echo = {k: float(v) for k, v in frequencies.items()}
@@ -354,6 +472,7 @@ def check_frequency_set(
             FAULT_TYPE_CANONICAL.get(most_likely) if most_likely else None
         ),
         "source": None,
+        **_summary_evidence(evidence),
     }
 
 

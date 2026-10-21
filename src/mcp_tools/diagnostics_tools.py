@@ -1486,6 +1486,11 @@ async def check_bearing_faults(
         most_likely_fault=result["most_likely_fault"],
         most_likely_fault_canonical=result["most_likely_fault_canonical"],
         source=result["source"],
+        outcome=result["outcome"],
+        outcome_reason=result["outcome_reason"],
+        next_step=result["next_step"],
+        candidates=result["candidates"],
+        evidence_policy=result["evidence_policy"],
     )
 
 
@@ -1905,6 +1910,11 @@ async def diagnose_vibration(
             most_likely_fault=bf["most_likely_fault"],
             most_likely_fault_canonical=bf.get("most_likely_fault_canonical"),
             source=bf.get("source"),
+            outcome=bf.get("outcome"),
+            outcome_reason=bf.get("outcome_reason"),
+            next_step=bf.get("next_step"),
+            candidates=bf.get("candidates", []),
+            evidence_policy=bf.get("evidence_policy"),
         )
 
     # ISO block: assessed result or schema-level refusal (reason + remedy)

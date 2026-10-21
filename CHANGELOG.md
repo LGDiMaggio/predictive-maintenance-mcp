@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Significance-tested bearing evidence next to the existing bearing check
+  fields.** `check_bearing_faults` and `diagnose_vibration` now return, for
+  each checked frequency, whether the record could test its line and, if it
+  could not, why; the line's level over the local noise floor and the
+  threshold it had to exceed; the further lines its kinematics predict; and
+  whether the line lies at a shaft order or is shared with another checked
+  frequency. For the whole check they return an outcome (`no_indication`,
+  `inconclusive`, `indicated`, `several_types`) with its reason, a next step,
+  the supported candidates and the statistical policy behind them: a nominal
+  1 % family-wise false-alarm budget per check, allocated by Bonferroni under
+  stated assumptions, and what it does not cover. An outcome is evidence from one envelope spectrum, not a
+  confirmed fault. The rolling element is tested at twice the ball spin
+  frequency. The new fields sit next to the existing ones, whose values, and
+  the statements built from them, do not change; a check now computes the
+  envelope spectrum once instead of once per fault frequency.
 - **Measurement provenance recorded with the CWRU benchmark outcomes.** The
   runner now collects a measurement-environment block — date, git describe of
   the measured tree, platform, Python/NumPy/SciPy versions, and the measured
