@@ -14,6 +14,7 @@ from predictive_maintenance_mcp.diagnostics.bearing_analyzer import (
     check_frequency_set,
     lookup_bearing_and_compute,
 )
+from tools.audit.report import KNOWN_DEFECT_PREFIX
 
 
 class TestBearingCatalog:
@@ -66,8 +67,8 @@ class TestCheckBearingFaultPeak:
         modulation = 1.0 + 0.8 * np.sin(2 * np.pi * bpfo * t)
         # Add harmonics
         modulation += 0.3 * np.sin(2 * np.pi * 2 * bpfo * t)
-        signal = carrier * modulation + 0.05 * np.random.randn(fs)
-        return signal, fs, bpfo
+        noise = 0.05 * np.random.default_rng(70_001).standard_normal(fs)
+        return carrier * modulation + noise, fs, bpfo
 
     def test_detects_known_frequency(self, signal_with_bpfo):
         signal, fs, bpfo = signal_with_bpfo
@@ -83,7 +84,19 @@ class TestCheckBearingFaultPeak:
         assert result["evidence_strength"] in ("high", "moderate")
         assert abs(result["detected_frequency_hz"] - bpfo) < bpfo * 0.05
 
+    @pytest.mark.xfail(
+        strict=True,
+        raises=AssertionError,
+        reason=(
+            f"{KNOWN_DEFECT_PREFIX} bearing-harmonics-without-fundamental: T1 M8: "
+            "harmonic windows are searched without a fundamental, so a "
+            "frequency with no line gets 'low' evidence"
+        ),
+    )
     def test_no_detection_wrong_frequency(self, signal_with_bpfo):
+        """The modulation has lines at BPFO and 2 x BPFO only (it stays
+        positive, so the envelope adds none), so 250 Hz +/- 3 % holds no line
+        and its harmonic windows hold nothing that belongs to it."""
         signal, fs, _ = signal_with_bpfo
         result = check_bearing_fault_peak(
             signal=signal,
@@ -93,9 +106,16 @@ class TestCheckBearingFaultPeak:
             bearing_id="6205",
             tolerance_pct=3.0,
         )
-        # May or may not detect depending on noise, but evidence should be low
-        if not result["detected"]:
-            assert result["evidence_strength"] in ("none", "low")
+
+        harmonics = [
+            (h["harmonic"], h["detected_hz"]) for h in result["harmonics_detected"]
+        ]
+
+        assert result["detected"] is False
+        assert (result["evidence_strength"], harmonics) == ("none", []), (
+            f"no line at 250 Hz, yet graded {result['evidence_strength']!r} "
+            f"from {harmonics}"
+        )
 
     def test_harmonics_detected(self, signal_with_bpfo):
         signal, fs, bpfo = signal_with_bpfo
