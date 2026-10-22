@@ -223,10 +223,10 @@ def save_envelope_report(
         num_peaks: Number of peaks to detect
         line_check: Optional check summary of the line test; None means no
             reference frequency was known and nothing is marked
-        rpm: The shaft speed the report was given or found declared, recorded
-            in the metadata (None without one)
-        rpm_source: Where ``rpm`` came from, "parameter" or "declared"
-            (None without a speed)
+        rpm: The shaft speed the line test used, recorded in the metadata
+            (None when no line test ran or it ran without a speed)
+        rpm_source: Where ``rpm`` came from: "explicit", "measurement" or
+            "point" (None without a speed)
 
     Returns:
         Dictionary with file path, metadata, and summary; ``bearing_matches``

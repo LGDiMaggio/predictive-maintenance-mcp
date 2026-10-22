@@ -1650,8 +1650,10 @@ def _declared_context(
         ) from exc
 
 
-def declared_rpm(signal_id: str, info: StoredSignalInfo) -> Optional[float]:
-    """The operating speed a stored signal declares, or None.
+def declared_rpm(
+    signal_id: str, info: StoredSignalInfo
+) -> tuple[Optional[float], Optional[str]]:
+    """The operating speed a stored signal declares, and where, or Nones.
 
     Resolved as diagnose_vibration resolves an rpm it is not given: the rpm
     of the companion's "measurement" object, then the nominal_rpm of the
@@ -1663,15 +1665,19 @@ def declared_rpm(signal_id: str, info: StoredSignalInfo) -> Optional[float]:
         info: Its stored metadata.
 
     Returns:
-        The declared rpm, or None when neither source declares one.
+        The declared rpm and its source, "measurement" or "point" as
+        diagnose_vibration's parameter_sources name them; (None, None) when
+        neither source declares one.
 
     Raises:
         ValueError: If a declared value is malformed.
     """
     identity = info.measurement
     point = _point_context_for(signal_id, identity)
-    rpm = _declared_context(signal_id, identity, point)["rpm"]
-    return None if rpm is None else float(rpm)
+    context = _declared_context(signal_id, identity, point)
+    if context["rpm"] is None:
+        return None, None
+    return float(context["rpm"]), context["rpm_source"]
 
 
 def _resolve_diagnosis_parameters(

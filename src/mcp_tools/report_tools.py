@@ -419,9 +419,10 @@ async def generate_envelope_report(
         Dictionary with file path, metadata, and summary (NO HTML content):
         bearing_matches holds one label per marked line, bearing_assessment
         the line test's claim statement (None without reference
-        frequencies). metadata.rpm is the shaft speed the report was given
-        or found declared, and metadata.rpm_source says which ("parameter"
-        or "declared"; both None without a speed).
+        frequencies). metadata.rpm is the shaft speed the line test used and
+        metadata.rpm_source where it came from ("explicit", "measurement" or
+        "point", as diagnose_vibration's parameter_sources name them); both
+        None when no line test ran or it ran without a speed.
 
     Raises:
         ValueError: If a given rpm is not a positive finite number, if
@@ -440,7 +441,7 @@ async def generate_envelope_report(
         ... )
     """
     if rpm is not None:
-        validate_rpm(rpm, source="the rpm parameter", optional=True)
+        rpm = validate_rpm(rpm, source="the rpm parameter", optional=True)
     if bearing_freqs is not None:
         validate_expected_frequencies(bearing_freqs, name="bearing_freqs")
 
@@ -478,10 +479,9 @@ async def generate_envelope_report(
     # Explicit rpm, else the declared speed, else None (the line test then
     # runs without its shaft tests). A malformed declared speed is refused
     # before the filter runs; an explicit rpm never reads it.
-    rpm_source = None if rpm is None else "parameter"
+    rpm_source = None if rpm is None else "explicit"
     if rpm is None and bearing_freqs:
-        rpm = declared_rpm(signal_id, info)
-        rpm_source = None if rpm is None else "declared"
+        rpm, rpm_source = declared_rpm(signal_id, info)
 
     # One pass: the time-domain view (band-pass filtered signal and its
     # envelope), the plotted envelope spectrum and the spectrum the line test
@@ -504,6 +504,9 @@ async def generate_envelope_report(
             ),
             spectrum=(env_frequencies, env_magnitudes),
         )
+    else:
+        # No line test used a speed, so the report records none.
+        rpm = rpm_source = None
 
     # Generate and save report (signal_id is the report's signal label)
     result = save_envelope_report(

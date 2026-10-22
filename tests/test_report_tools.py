@@ -825,28 +825,40 @@ class TestGenerateEnvelopeReport:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
-        ("declared", "rpm", "recorded"),
+        ("measurement_rpm", "point_rpm", "rpm", "recorded"),
         [
-            (None, None, (None, None)),
-            (1500.0, None, (1500.0, "declared")),
-            (1500.0, RPM_6205, (RPM_6205, "parameter")),
+            (None, None, None, (None, None)),
+            (1500.0, None, None, (1500.0, "measurement")),
+            (None, 1500.0, None, (1500.0, "point")),
+            (1500.0, None, RPM_6205, (RPM_6205, "explicit")),
         ],
-        ids=["no_speed", "declared", "parameter"],
+        ids=["no_speed", "measurement", "point", "explicit"],
     )
     async def test_the_report_records_its_speed_and_where_it_came_from(
-        self, tools, data_dir, repo, reports_dir, declared, rpm, recorded
+        self,
+        tools,
+        data_dir,
+        repo,
+        reports_dir,
+        measurement_rpm,
+        point_rpm,
+        rpm,
+        recorded,
     ):
         """Review finding: the claim depends on the speed, so the returned and
         the embedded metadata record the speed the line test used and its
-        source; two reports on one signal can be told apart."""
-        measurement = None
-        if declared is not None:
-            measurement = {
-                "asset_id": "P-101",
-                "measurement_point_id": "motor_de_h",
-                "acquired_at": "2026-10-22T08:00:00+00:00",
-                "rpm": declared,
-            }
+        source, in the vocabulary of diagnose_vibration's parameter_sources;
+        two reports on one signal can be told apart."""
+        measurement = {
+            "asset_id": LEDGER_ASSET,
+            "measurement_point_id": LEDGER_POINT,
+            "acquired_at": "2026-10-22T08:00:00+00:00",
+            "direction": "horizontal",
+        }
+        if measurement_rpm is not None:
+            measurement["rpm"] = measurement_rpm
+        if point_rpm is not None:
+            _declare_point(nominal_rpm=point_rpm)
         sid = _write_and_load(
             repo,
             data_dir,
@@ -900,7 +912,7 @@ class TestGenerateEnvelopeReport:
 
         explicit_check, plain_check = line_checks
         assert explicit_check["rpm"] == RPM_6205
-        assert explicit["metadata"]["rpm_source"] == "parameter"
+        assert explicit["metadata"]["rpm_source"] == "explicit"
         assert plain_check is None
         assert plain["bearing_assessment"] is None
         assert (plain["metadata"]["rpm"], plain["metadata"]["rpm_source"]) == (
@@ -982,6 +994,11 @@ class TestGenerateEnvelopeReport:
         assert result["bearing_matches"] == []
         assert result["bearing_assessment"] is None
         assert result["metadata"]["bearing_frequencies"] is None
+        # No line test used a speed, even a given one, so none is recorded.
+        assert (result["metadata"]["rpm"], result["metadata"]["rpm_source"]) == (
+            None,
+            None,
+        )
         assert result["peak_frequencies"]
         rendered = Path(result["file_path"]).read_text(encoding="utf-8")
         assert "Envelope Spectrum Peaks" in rendered

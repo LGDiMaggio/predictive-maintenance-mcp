@@ -194,24 +194,33 @@ class TestPluginRecommendationCalls:
         ]
         assert offending == [], "\n".join(offending)
 
-    def test_every_plugin_envelope_report_call_passes_the_speed(self):
+    def test_a_workflow_that_checks_with_a_speed_reports_with_it(self):
         """Without a speed the envelope report's shaft-order and sideband
-        tests do not run, so every example call of the plugin passes one (a
-        bare name reference such as a table's ``generate_envelope_report()``
-        is no call)."""
-        calls = [
-            (str(path.relative_to(REPO_ROOT)).replace("\\", "/"), line, args)
-            for path in PLUGIN_FILES
-            for name, args, line in extract_calls(path.read_text(encoding="utf-8"))
-            if name == "generate_envelope_report"
-        ]
+        tests do not run, so a plugin file that passes rpm to
+        check_bearing_faults passes it to its envelope reports as well. A
+        file without that check keeps a generic call: an explicit rpm
+        overrides the speed the signal declares."""
+        guarded = []
+        for path in PLUGIN_FILES:
+            calls = extract_calls(path.read_text(encoding="utf-8"))
+            if not any(
+                name == "check_bearing_faults" and "rpm=" in args
+                for name, args, _ in calls
+            ):
+                continue
+            source = str(path.relative_to(REPO_ROOT)).replace("\\", "/")
+            guarded += [
+                (source, line, args)
+                for name, args, line in calls
+                if name == "generate_envelope_report"
+            ]
 
         # Anti-rot: the scan must see the documented calls it guards.
-        assert calls, "no generate_envelope_report call found in plugin/"
+        assert guarded, "no envelope report in a plugin workflow with a speed"
         offending = [
             f"{source}:{line}: generate_envelope_report({args})"
-            for source, line, args in calls
-            if args.strip() and "rpm=" not in args
+            for source, line, args in guarded
+            if "rpm=" not in args
         ]
         assert offending == [], "\n".join(offending)
 
