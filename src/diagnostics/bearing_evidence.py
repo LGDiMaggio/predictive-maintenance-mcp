@@ -70,7 +70,10 @@ label outside it (a gear mesh, which is a shaft order by construction) gets
 the line test and harmonic corroboration only. A cage supported on its own
 is not singled out while the rolling-element line is significant: a
 rolling-element defect is modulated at the cage rate (Randall & Antoni 2011,
-MSSP 25, 485-520), so its cage-rate content can support the cage. Harmonics
+MSSP 25, 485-520), so its cage-rate content can support the cage. The rule
+is conservative: it also holds the cage back when the line in the
+rolling-element window lies at a shaft order and may be a shaft harmonic, a
+sensitivity cost accepted to avoid naming the wrong type. Harmonics
 and sidebands of one spectrum are correlated symptoms, never independent
 evidence (ISO 13379-1:2012, 5.1.3).
 """
@@ -855,7 +858,14 @@ def _outcome_text(
             )
         )
 
-    reasons += [_weak_sentence(hypotheses[n], checks[n]) for n in weak]
+    rolling_element_at_shaft_order = any(
+        h.canonical == _ROLLING_ELEMENT and c["state_reason"] == "line_at_shaft_order"
+        for h, c in zip(hypotheses, checks)
+    )
+    reasons += [
+        _weak_sentence(hypotheses[n], checks[n], rolling_element_at_shaft_order)
+        for n in weak
+    ]
 
     def cut(n: int, *untestable: str) -> bool:
         return any(
@@ -923,8 +933,16 @@ def _further_count(hypothesis: Hypothesis, check: dict[str, Any]) -> str:
     return f"1 {noun} also stands" if count == 1 else f"{count} {nouns} also stand"
 
 
-def _weak_sentence(hypothesis: Hypothesis, check: dict[str, Any]) -> str:
-    """Why a line that stands above the floor supports no type."""
+def _weak_sentence(
+    hypothesis: Hypothesis,
+    check: dict[str, Any],
+    rolling_element_at_shaft_order: bool = False,
+) -> str:
+    """Why a line that stands above the floor supports no type.
+
+    ``rolling_element_at_shaft_order`` tells a held-back cage that the line
+    in the rolling-element window lies at a shaft order.
+    """
     found = (
         f"{_capital(_at(hypothesis, check))} stands above the local noise floor, but"
     )
@@ -949,10 +967,22 @@ def _weak_sentence(hypothesis: Hypothesis, check: dict[str, Any]) -> str:
         )
     if reason == "rolling_element_line_present":
         ball, cage = _NAMES[_ROLLING_ELEMENT], _NAMES[_CAGE]
+        held_back = (
+            "Under this conservative ambiguity rule, no single fault type is named "
+            "from this spectrum."
+        )
+        if rolling_element_at_shaft_order:
+            return (
+                f"{found} another significant line falls within the search window of "
+                f"the {ball.line} and lies at a shaft order. That line may be a shaft "
+                f"harmonic and does not independently establish {ball.defect}. "
+                f"{held_back}"
+            )
         return (
-            f"{found} the {ball.line} is significant too, and {ball.defect} also "
-            f"produces lines at the cage rate, so the {cage.element} cannot be "
-            "singled out."
+            f"{found} another significant line falls within the search window of "
+            f"the {ball.line}. {_capital(ball.defect)} also produces lines at the "
+            f"cage rate, so the {cage.element} lines may come from one; that line "
+            f"alone does not establish {ball.defect}. {held_back}"
         )
     if reason != "no_corroboration":
         raise ValueError(f"no sentence for state reason {reason!r}")

@@ -20,12 +20,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   1 % family-wise false-alarm budget per check, allocated by Bonferroni under
   stated assumptions, and what it does not cover. An outcome is evidence from one envelope spectrum, not a
   confirmed fault. The rolling element is tested at twice the ball spin
-  frequency. A cage line supported on its own is reported as inconclusive
-  while the rolling-element line is significant, because a rolling-element
-  defect also produces lines at the cage rate. The new fields sit next to
-  the existing ones, whose values, and
-  the statements built from them, do not change; a check now computes the
-  envelope spectrum once instead of once per fault frequency.
+  frequency. When the cage is the only supported type and the rolling-element
+  line is significant, the cage hypothesis is reported as `unconfirmed` and
+  the check as `inconclusive`, because a rolling-element defect also produces
+  lines at the cage rate. This conservative rule costs sensitivity: in our
+  synthetic tests 31 of 265 otherwise correct cage indications became
+  inconclusive. Those tests carry only the first two shaft harmonics, so the
+  figure leaves out a further cost: a significant higher shaft harmonic in
+  the rolling-element window (on a 6203, the fourth) also makes a genuine
+  cage indication inconclusive. The new fields sit next to the existing ones,
+  whose values, and the statements built from them, do not change; a check
+  now computes the envelope spectrum once instead of once per fault
+  frequency.
 - **Measurement provenance recorded with the CWRU benchmark outcomes.** The
   runner now collects a measurement-environment block — date, git describe of
   the measured tree, platform, Python/NumPy/SciPy versions, and the measured
