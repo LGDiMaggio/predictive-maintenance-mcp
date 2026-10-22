@@ -629,8 +629,6 @@ def _synthesize_diagnosis(
             evidence_points += 1.0
             recommendations.append("Check alignment and coupling condition.")
 
-    # Bearing analysis: the sentence, the actions and the point follow the
-    # check's claim (bearing_claims), never the legacy per-check grades.
     if bearing_faults:
         lines.append(pipeline_statement(bearing_faults))
         if counts_as_finding(bearing_faults["claim"]):

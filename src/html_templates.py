@@ -504,8 +504,6 @@ def create_envelope_report(
                 """
         bearing_ref += "</div></div>"
 
-    # Bearing line test: the claim, the per-line badges and the labels of
-    # the central matcher, placed verbatim.
     line_test_html = ""
     if line_test:
         statements = "".join(
@@ -550,7 +548,6 @@ def create_envelope_report(
             + "</div>"
         )
 
-    # Peaks table (frequency and level only: no peak is matched here)
     peaks_html = "<div class='card'><h3 class='card-title'>🎯 Envelope Spectrum Peaks</h3><table style='width:100%; border-collapse: collapse;'>"
     peaks_html += "<tr style='background: #f5f7fa; font-weight: 600;'><th style='padding: 0.75rem; text-align: left;'>Rank</th><th style='padding: 0.75rem; text-align: left;'>Frequency (Hz)</th><th style='padding: 0.75rem; text-align: left;'>Magnitude (dB)</th></tr>"
 
@@ -577,8 +574,6 @@ def create_envelope_report(
     peak_freqs = [p["frequency"] for p in peaks[:10]]
     peak_mags = [p["magnitude_db"] for p in peaks[:10]]
 
-    # Markers at the lines the bearing line test tested (2 x BSF for the
-    # rolling element), not at the declared values.
     bearing_markers_script = ""
     if line_test:
         for row in line_test["rows"]:

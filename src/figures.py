@@ -32,6 +32,7 @@ from .diagnostics.bearing_claims import (
     emphasised_candidates,
     line_display_name,
 )
+from .diagnostics.bearing_evidence import _join
 
 #: Figure kind discriminator, so a renderer can dispatch without guessing.
 ANNOTATED_ENVELOPE = "annotated_envelope_spectrum"
@@ -285,8 +286,6 @@ def figure_to_svg(figure: dict[str, Any], width: int = 900, height: int = 420) -
         )
         tick -= 10.0
 
-    # Search windows behind the trace; the candidates' windows are emphasised
-    # alike.
     for band in figure["bands"]:
         x_low, x_high = px(band["low_hz"]), px(band["high_hz"])
         band_w = max(x_high - x_low, 1.5)
@@ -401,10 +400,6 @@ def _local_peak_db(x: np.ndarray, y_db: np.ndarray, low: float, high: float) -> 
     if not window.any():
         return round(float(np.min(y_db)), 4)
     return round(float(np.max(y_db[window])), 4)
-
-
-def _join(items: list[str]) -> str:
-    return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1]
 
 
 def _annotation_text(

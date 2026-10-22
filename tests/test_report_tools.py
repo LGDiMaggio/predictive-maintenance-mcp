@@ -1074,6 +1074,13 @@ class TestToolRegistration:
         }
         assert set(tools) == expected
 
+    def test_no_report_tool_takes_the_eligibility_as_an_argument(self, tools):
+        import inspect
+
+        for name in ("generate_diagnostic_report", "generate_envelope_report"):
+            parameters = inspect.signature(tools[name]).parameters
+            assert "acquisition_eligibility" not in parameters, name
+
 
 # ---------------------------------------------------------------------------
 # generate_diagnostic_report — the integrated, server-authored report

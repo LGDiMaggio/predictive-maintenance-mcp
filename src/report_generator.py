@@ -249,8 +249,6 @@ def save_envelope_report(
     top_idx = np.argsort(peak_mags_db)[::-1][:num_peaks]
     peak_indices = peak_indices[top_idx]
 
-    # Peaks of the displayed spectrum, for reading only: none is matched to a
-    # characteristic frequency here.
     peaks = [
         {
             "frequency": float(env_freq_display[idx]),
@@ -259,7 +257,6 @@ def save_envelope_report(
         for idx in peak_indices
     ]
 
-    # Labels, badges and statements of the central line test, if it ran.
     line_test = None
     labels: List[str] = []
     assessment = None

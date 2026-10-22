@@ -54,7 +54,15 @@ import math
 from collections.abc import Mapping, Sequence
 from typing import Any, Optional
 
-from .bearing_evidence import _NAMES, Hypothesis
+from .bearing_evidence import (
+    _CAGE,
+    _INNER_RACE,
+    _NAMES,
+    _ROLLING_ELEMENT,
+    Hypothesis,
+    _capital,
+    _join,
+)
 
 #: Claim levels, from the most cautious. ``supported_claim`` is reserved for
 #: evidence independent of one spectrum and is never produced here.
@@ -92,10 +100,7 @@ _FINDING_CONDITIONS = frozenset(
     {SEVERAL_TYPES, CAGE_COMB_NOT_EXCLUDED, INNER_RACE_SIDEBAND_NOT_EXCLUDED}
 )
 
-_CAGE = "cage"
 _OUTER_RACE = "outer_race"
-_INNER_RACE = "inner_race"
-_ROLLING_ELEMENT = "ball"
 #: Bearing types a cage-rate comb or an undeclared cage can concern.
 _NOT_CAGE = (_OUTER_RACE, _INNER_RACE, _ROLLING_ELEMENT)
 
@@ -396,11 +401,6 @@ CLAIM_SENTENCES: dict[str, str] = {
 _S = CLAIM_SENTENCES
 
 
-# ---------------------------------------------------------------------------
-# Acquisition eligibility
-# ---------------------------------------------------------------------------
-
-
 def validate_acquisition_eligibility(value: str) -> str:
     """Refuse an acquisition eligibility outside the closed vocabulary.
 
@@ -443,11 +443,6 @@ def acquisition_eligibility_from_companion(source_metadata: Mapping[str, Any]) -
     return UNKNOWN
 
 
-# ---------------------------------------------------------------------------
-# The claim
-# ---------------------------------------------------------------------------
-
-
 def _index(hypotheses: Sequence[Hypothesis], label: str) -> int:
     return next(n for n, h in enumerate(hypotheses) if h.label == label)
 
@@ -470,6 +465,41 @@ def _cage_comb_in_window(line_hz: float, cage_hz: float, tolerance: float) -> bo
     k_max = math.floor(line_hz * (1.0 + tolerance) / cage_hz) + 1
     return any(
         abs(k * cage_hz - line_hz) <= tolerance * line_hz for k in range(1, k_max + 1)
+    )
+
+
+def _cage_comb_not_excluded(
+    hypotheses: Sequence[Hypothesis],
+    checks: Sequence[Mapping[str, Any]],
+    x: Hypothesis,
+    cage: Optional[int],
+    tolerance: float,
+) -> bool:
+    """Whether the cage line was not testable and a cage multiple lies in x's window."""
+    return (
+        cage is not None
+        and checks[cage]["state"] == "not_testable"
+        and _cage_comb_in_window(x.line_hz, hypotheses[cage].line_hz, tolerance)
+    )
+
+
+def _inner_race_sideband_not_excluded(
+    hypotheses: Sequence[Hypothesis],
+    checks: Sequence[Mapping[str, Any]],
+    x: Hypothesis,
+    inner: Optional[int],
+    shaft_hz: Optional[float],
+    tolerance: float,
+) -> bool:
+    """Whether the inner-race line stands above the floor and its sideband at
+    BPFI minus twice the shaft rate lies in the outer-race window of x."""
+    return (
+        x.canonical == _OUTER_RACE
+        and inner is not None
+        and shaft_hz is not None
+        and checks[inner]["state"] not in ("absent", "not_testable")
+        and abs(hypotheses[inner].line_hz - 2.0 * shaft_hz - x.line_hz)
+        <= tolerance * x.line_hz
     )
 
 
@@ -510,20 +540,11 @@ def bearing_claim(
         x = hypotheses[n]
         cage = _first(hypotheses, _CAGE)
         if x.canonical in _NOT_CAGE:
-            if (
-                cage is not None
-                and checks[cage]["state"] == "not_testable"
-                and _cage_comb_in_window(x.line_hz, hypotheses[cage].line_hz, tolerance)
-            ):
+            if _cage_comb_not_excluded(hypotheses, checks, x, cage, tolerance):
                 conditions.append(CAGE_COMB_NOT_EXCLUDED)
             inner = _first(hypotheses, _INNER_RACE)
-            if (
-                x.canonical == _OUTER_RACE
-                and inner is not None
-                and shaft_hz is not None
-                and checks[inner]["state"] not in ("absent", "not_testable")
-                and abs(hypotheses[inner].line_hz - 2.0 * shaft_hz - x.line_hz)
-                <= tolerance * x.line_hz
+            if _inner_race_sideband_not_excluded(
+                hypotheses, checks, x, inner, shaft_hz, tolerance
             ):
                 conditions.append(INNER_RACE_SIDEBAND_NOT_EXCLUDED)
         if conditions:
@@ -579,22 +600,9 @@ def counts_as_finding(claim: Mapping[str, Any]) -> bool:
     )
 
 
-# ---------------------------------------------------------------------------
-# Sentences and actions
-# ---------------------------------------------------------------------------
-
-
 def _line_name(canonical: Optional[str], label: str) -> str:
     names = _NAMES.get(canonical or "")
     return names.line if names else f"{label} line"
-
-
-def _join(items: list[str]) -> str:
-    return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1]
-
-
-def _capital(sentence: str) -> str:
-    return sentence[0].upper() + sentence[1:]
 
 
 def claim_statement(
@@ -641,8 +649,12 @@ def claim_statement(
             and c["state_reason"] == "line_at_shaft_order"
             for h, c in zip(hypotheses, checks)
         )
-        key = "rolling_element_held_back"
-        return _S[key + "_shaft_order" if at_shaft_order else key]
+        key = (
+            "rolling_element_held_back_shaft_order"
+            if at_shaft_order
+            else "rolling_element_held_back"
+        )
+        return _S[key]
     if SEVERAL_TYPES in conditions:
         listed = []
         for candidate in evidence["candidates"]:
@@ -786,10 +798,6 @@ def aggregate_statement(strength: str) -> str:
     """The diagnosis's sentence on its combined evidence strength."""
     return _S["aggregate"].format(strength=strength)
 
-
-# ---------------------------------------------------------------------------
-# Report surfaces: the advisory, the figure and the envelope report
-# ---------------------------------------------------------------------------
 
 #: The badge of each per-line state (unconfirmed and shared lines stand
 #: above the floor but support no type).

@@ -459,9 +459,6 @@ async def generate_envelope_report(
 
     band = (filter_low, filter_high)
 
-    # The labels come from the central bearing line test on the engine's
-    # envelope spectrum of this band, never from a peak-to-frequency match
-    # of the report's own; the shaft speed is the one the signal declares.
     line_check = None
     if bearing_freqs:
         line_check = check_frequency_set(
@@ -476,7 +473,6 @@ async def generate_envelope_report(
             ),
         )
 
-    # The plotted spectrum is the one the line test used.
     env_frequencies, env_magnitudes = envelope_spectrum_arrays(
         signal_data, sampling_rate, band
     )
@@ -1204,8 +1200,6 @@ async def generate_diagnostic_report(
         machine_group=machine_group,
         support_type=support_type,
         signal_unit=info.signal_unit,
-        # From the signal's own stored companion only, as diagnose_vibration
-        # reads it: the unvalidated marker may withhold a claim, never certify.
         acquisition_eligibility=acquisition_eligibility_from_companion(
             info.source_metadata
         ),

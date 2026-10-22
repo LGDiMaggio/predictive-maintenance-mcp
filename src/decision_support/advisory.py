@@ -187,8 +187,6 @@ def _build_bearing_block(
             "rows": [],
         }
 
-    # One row per tested line, from the central matcher's evidence fields;
-    # the badge follows the state and the claim.
     claim = bearing_faults["claim"]
     marked = {c["fault_type"] for c in emphasised_candidates(bearing_faults)}
     rows = []
@@ -656,7 +654,6 @@ def build_baseline_comparison(
             f"described above is stable, not developing."
         )
     else:
-        # Several envelope deltas (one per candidate) lead alike.
         lead = min(_HEADLINE_ORDER.index(d["indicator"]) for d in moved)
         headline = " ".join(
             d["statement"]

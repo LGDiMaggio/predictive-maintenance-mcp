@@ -1418,8 +1418,6 @@ async def check_bearing_faults(
 
     signal_data, info = resolve_signal(signal_id)
     fs = info.sampling_rate
-    # From the signal's own stored companion only, never from an argument:
-    # the unvalidated marker may withhold a claim, never certify one.
     eligibility = acquisition_eligibility_from_companion(info.source_metadata)
 
     if bearing_id is not None:
@@ -1938,7 +1936,6 @@ async def diagnose_vibration(
         support_type=parameters.support_type,
         signal_unit=signal_unit,
         unchecked_bearing=unchecked_bearing,
-        # From the signal's own stored companion only (see check_bearing_faults).
         acquisition_eligibility=acquisition_eligibility_from_companion(
             info.source_metadata
         ),
