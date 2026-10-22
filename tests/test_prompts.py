@@ -133,6 +133,36 @@ class TestDiagnoseBearingPrompt:
             "diagnose_vibration's recommendations, quoted verbatim)"
         ) in flat
 
+    def test_envelope_report_gets_the_speed_the_prompt_was_given(self, prompts):
+        """T1 PR C review: without the speed the envelope report qualifies an
+        indication (shaft_tests_not_run) that check_bearing_faults, given the
+        speed in the same workflow, states as single-spectrum evidence."""
+        with_speed = prompts["diagnose_bearing"](
+            signal_id="test_signal", rpm=1797.0, bpfo=107.4, bpfi=162.2
+        )
+        without = prompts["diagnose_bearing"](signal_id="test_signal")
+
+        (call,) = [
+            line.strip()
+            for line in with_speed.splitlines()
+            if "Call: generate_envelope_report(" in line
+        ]
+        assert call.endswith(", rpm=1797.0)")
+        (call,) = [
+            line.strip()
+            for line in without.splitlines()
+            if "Call: generate_envelope_report(" in line
+        ]
+        assert "rpm=" not in call
+
+    def test_qualified_actions_put_the_measurement_first(self, prompts):
+        flat = " ".join(prompts["diagnose_bearing"](signal_id="test_signal").split())
+
+        assert (
+            "a comparable earlier, repeated or longer measurement first, or "
+            "inspection of every candidate alike"
+        ) in flat
+
     def test_prompt_description_drops_the_strongly_indicated_rule(self, mcp):
         prompt = next(
             p
@@ -161,6 +191,27 @@ class TestPluginRecommendationCalls:
             f"{source}:{line}: generate_maintenance_recommendations({args})"
             for source, line, args in calls
             if "fault_types" in args
+        ]
+        assert offending == [], "\n".join(offending)
+
+    def test_every_plugin_envelope_report_call_passes_the_speed(self):
+        """Without a speed the envelope report's shaft-order and sideband
+        tests do not run, so every example call of the plugin passes one (a
+        bare name reference such as a table's ``generate_envelope_report()``
+        is no call)."""
+        calls = [
+            (str(path.relative_to(REPO_ROOT)).replace("\\", "/"), line, args)
+            for path in PLUGIN_FILES
+            for name, args, line in extract_calls(path.read_text(encoding="utf-8"))
+            if name == "generate_envelope_report"
+        ]
+
+        # Anti-rot: the scan must see the documented calls it guards.
+        assert calls, "no generate_envelope_report call found in plugin/"
+        offending = [
+            f"{source}:{line}: generate_envelope_report({args})"
+            for source, line, args in calls
+            if args.strip() and "rpm=" not in args
         ]
         assert offending == [], "\n".join(offending)
 

@@ -145,7 +145,7 @@ to a structured ISO refusal (reason + remedy) when the unit is undeclared.
 
 ### Step 8 — Report Generation (Block 6)
 
-Call `generate_envelope_report(signal_id="<id>", bearing_freqs={"BPFO": 107.4, "BPFI": 162.2})`
+Call `generate_envelope_report(signal_id="<id>", bearing_freqs={"BPFO": 107.4, "BPFI": 162.2}, rpm=1797)`
 and `generate_fft_report(signal_id="<id>", rpm=1797)`.
 Optionally `generate_diagnostic_report_docx(signal_id="<id>", sections={"summary": "..."})`
 for a Word document. Report the returned file paths to the user.

@@ -112,7 +112,7 @@ runs FFT + PSD + STFT + bearing checks + ISO severity in one pass.
 
 ### Phase 6: Report Generation
 - Call `generate_fft_report(signal_id="<id>", rpm=1797)` for each analyzed signal
-- Call `generate_envelope_report(signal_id="<id>", bearing_freqs={"BPFO": 107.4})`
+- Call `generate_envelope_report(signal_id="<id>", bearing_freqs={"BPFO": 107.4}, rpm=1797)`
   if envelope analysis was performed
 - Call `generate_iso_report(signal_id="<id>", machine_group=2, support_type="rigid")`
   for the ISO assessment

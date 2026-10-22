@@ -26,7 +26,7 @@ Follow the bearing-diagnosis skill workflow:
 5. Envelope analysis — `analyze_envelope(signal_id="<id>", filter_low=500, filter_high=5000)`
 6. Evidence matching — `check_bearing_faults(signal_id="<id>", rpm=1797, bearing_id="6205")`
 7. ISO 20816-3 severity — `assess_severity(signal_id="<id>", machine_group=2, support_type="rigid")`
-8. Reports — `generate_envelope_report(signal_id="<id>")` +
+8. Reports — `generate_envelope_report(signal_id="<id>", rpm=1797)` +
    `generate_fft_report(signal_id="<id>")`, optionally
    `generate_diagnostic_report_docx(signal_id="<id>", sections={"Summary": "..."})`
 

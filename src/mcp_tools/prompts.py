@@ -219,7 +219,7 @@ def diagnose_bearing(
     (Or pass bearing_id="<designation>" for a catalog bearing instead of frequencies.)
 
     Optional visualization:
-    Call: generate_envelope_report(signal_id="{signal_id}", filter_low=500, filter_high=5000, max_freq=500, bearing_freqs={bearing_freqs_dict if freq_refs else freqs_placeholder})
+    Call: generate_envelope_report(signal_id="{signal_id}", filter_low=500, filter_high=5000, max_freq=500, bearing_freqs={bearing_freqs_dict if freq_refs else freqs_placeholder}{rpm_kwarg})
     This saves an interactive HTML envelope report (filtered signal +
     envelope spectrum with bearing frequency markers) to the reports/
     directory. Tell user to open the returned file path in their browser.
@@ -260,7 +260,7 @@ def diagnose_bearing(
 
     Based on diagnosis + ISO zone (ONLY use these recommendations - DO NOT invent others):
     • Single-spectrum indication (any zone) → Confirm it: compare with a comparable earlier measurement or inspect the element the claim names; never request bearing replacement from envelope evidence
-    • Qualified or withheld claim (any zone) → Only the claim's actions as the server renders them (the "Bearing" entries of diagnose_vibration's recommendations, quoted verbatim): inspection of every candidate alike, or a longer or repeated measurement; none when it renders none
+    • Qualified or withheld claim (any zone) → Only the claim's actions as the server renders them (the "Bearing" entries of diagnose_vibration's recommendations, quoted verbatim): a comparable earlier, repeated or longer measurement first, or inspection of every candidate alike; none when it renders none
     • Zone C/D → Also the zone action, whatever the bearing claim
     • No fault + Zone C/D → Investigate other causes: alignment, balance, looseness, foundation
     • No fault + Zone A/B → Continue routine monitoring

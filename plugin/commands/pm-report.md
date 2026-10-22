@@ -20,7 +20,7 @@ known; raw binary `.bin`/`.raw`/`.dat` files also need `sample_format` and
 
 Report types:
 - **fft**: `generate_fft_report(signal_id="<id>", max_freq=5000, num_peaks=15)`
-- **envelope**: `generate_envelope_report(signal_id="<id>", filter_low=500, filter_high=5000)`
+- **envelope**: `generate_envelope_report(signal_id="<id>", filter_low=500, filter_high=5000, rpm=1797)`
 - **iso**: `generate_iso_report(signal_id="<id>", machine_group=2, support_type="rigid")`
 - **comparison**: `generate_feature_comparison_report(signal_groups={"baseline": ["baseline_1"], "test": ["fault_1"]})`
   (signal_groups maps a group label to a list of signal_ids — ask which

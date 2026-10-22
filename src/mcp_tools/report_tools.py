@@ -419,7 +419,9 @@ async def generate_envelope_report(
         Dictionary with file path, metadata, and summary (NO HTML content):
         bearing_matches holds one label per marked line, bearing_assessment
         the line test's claim statement (None without reference
-        frequencies).
+        frequencies). metadata.rpm is the shaft speed the report was given
+        or found declared, and metadata.rpm_source says which ("parameter"
+        or "declared"; both None without a speed).
 
     Raises:
         ValueError: If a given rpm is not a positive finite number, if
@@ -433,7 +435,8 @@ async def generate_envelope_report(
         >>> # per CWRU geometry at 1797 RPM)
         >>> result = generate_envelope_report(
         ...     "real_train_OuterRaceFault_1",
-        ...     bearing_freqs={"BPFO": 107.36, "BPFI": 162.19, "BSF": 70.58, "FTF": 11.93}
+        ...     bearing_freqs={"BPFO": 107.36, "BPFI": 162.19, "BSF": 70.58, "FTF": 11.93},
+        ...     rpm=1797,
         ... )
     """
     if rpm is not None:
@@ -474,9 +477,11 @@ async def generate_envelope_report(
 
     # Explicit rpm, else the declared speed, else None (the line test then
     # runs without its shaft tests). A malformed declared speed is refused
-    # before the filter runs.
+    # before the filter runs; an explicit rpm never reads it.
+    rpm_source = None if rpm is None else "parameter"
     if rpm is None and bearing_freqs:
         rpm = declared_rpm(signal_id, info)
+        rpm_source = None if rpm is None else "declared"
 
     # One pass: the time-domain view (band-pass filtered signal and its
     # envelope), the plotted envelope spectrum and the spectrum the line test
@@ -513,6 +518,8 @@ async def generate_envelope_report(
         max_freq=max_freq,
         num_peaks=num_peaks,
         line_check=line_check,
+        rpm=rpm,
+        rpm_source=rpm_source,
     )
 
     logger.info(result["message"])

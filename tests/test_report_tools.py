@@ -34,6 +34,7 @@ from predictive_maintenance_mcp.mcp_tools.diagnostics_tools import check_bearing
 from predictive_maintenance_mcp.mcp_tools.report_tools import register
 from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
 from predictive_maintenance_mcp.mcp_tools import report_tools
+from test_diagnostics_tools import LEDGER_ASSET, LEDGER_POINT, _declare_point
 
 SHAFT_6205_HZ = RPM_6205 / 60.0
 
@@ -821,6 +822,91 @@ class TestGenerateEnvelopeReport:
         explicit, declared = line_checks
         assert explicit["rpm"] == RPM_6205
         assert declared["rpm"] == 1500.0
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("declared", "rpm", "recorded"),
+        [
+            (None, None, (None, None)),
+            (1500.0, None, (1500.0, "declared")),
+            (1500.0, RPM_6205, (RPM_6205, "parameter")),
+        ],
+        ids=["no_speed", "declared", "parameter"],
+    )
+    async def test_the_report_records_its_speed_and_where_it_came_from(
+        self, tools, data_dir, repo, reports_dir, declared, rpm, recorded
+    ):
+        """Review finding: the claim depends on the speed, so the returned and
+        the embedded metadata record the speed the line test used and its
+        source; two reports on one signal can be told apart."""
+        measurement = None
+        if declared is not None:
+            measurement = {
+                "asset_id": "P-101",
+                "measurement_point_id": "motor_de_h",
+                "acquired_at": "2026-10-22T08:00:00+00:00",
+                "rpm": declared,
+            }
+        sid = _write_and_load(
+            repo,
+            data_dir,
+            "env_speed_source",
+            _outer_race_10s(),
+            12000.0,
+            measurement=measurement,
+            **FREQUENCIES_6205,
+        )
+        kwargs = {} if rpm is None else {"rpm": rpm}
+
+        result = await tools["generate_envelope_report"](signal_id=sid, **kwargs)
+
+        returned = result["metadata"]
+        assert (returned["rpm"], returned["rpm_source"]) == recorded
+        embedded = tools["list_html_reports"](file_name=result["file_name"])["metadata"]
+        assert (embedded["rpm"], embedded["rpm_source"]) == recorded
+
+    @pytest.mark.asyncio
+    async def test_an_explicit_rpm_bypasses_a_malformed_declared_speed(
+        self, tools, data_dir, repo, reports_dir, line_checks
+    ):
+        """Review finding: with a point declaration whose nominal_rpm is
+        malformed, a call without rpm is refused before any report, an
+        explicit rpm is used without reading the declaration, and a call
+        without bearing frequencies stays descriptive."""
+        sid = _write_and_load(
+            repo,
+            data_dir,
+            "env_bad_point",
+            _outer_race_10s(),
+            12000.0,
+            measurement={
+                "asset_id": LEDGER_ASSET,
+                "measurement_point_id": LEDGER_POINT,
+                "acquired_at": "2026-10-22T08:00:00+00:00",
+                "direction": "horizontal",
+            },
+        )
+        _declare_point(nominal_rpm=-5.0)
+        freqs = dict(FREQUENCIES_6205)
+
+        with pytest.raises(ValueError, match="declared context"):
+            await tools["generate_envelope_report"](signal_id=sid, bearing_freqs=freqs)
+        assert list(reports_dir.iterdir()) == []
+
+        explicit = await tools["generate_envelope_report"](
+            signal_id=sid, bearing_freqs=freqs, rpm=RPM_6205
+        )
+        plain = await tools["generate_envelope_report"](signal_id=sid)
+
+        explicit_check, plain_check = line_checks
+        assert explicit_check["rpm"] == RPM_6205
+        assert explicit["metadata"]["rpm_source"] == "parameter"
+        assert plain_check is None
+        assert plain["bearing_assessment"] is None
+        assert (plain["metadata"]["rpm"], plain["metadata"]["rpm_source"]) == (
+            None,
+            None,
+        )
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(

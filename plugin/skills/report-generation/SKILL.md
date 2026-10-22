@@ -53,8 +53,9 @@ tools take `signal_id` — the handle returned by load_signal.
 (`rpm` is optional — when given, harmonic markers are drawn at 1x/2x/3x RPM)
 
 **Envelope report**:
-`generate_envelope_report(signal_id="<id>", filter_low=500, filter_high=5000, max_freq=500, bearing_freqs={"BPFO": 107.4, "BPFI": 162.2})`
-(`bearing_freqs` overlays expected fault frequency markers)
+`generate_envelope_report(signal_id="<id>", filter_low=500, filter_high=5000, max_freq=500, bearing_freqs={"BPFO": 107.4, "BPFI": 162.2}, rpm=1797)`
+(`bearing_freqs` overlays expected fault frequency markers; `rpm` is optional,
+and without it or a declared speed the shaft-order and sideband tests do not run)
 
 **ISO 20816-3 report**:
 `generate_iso_report(signal_id="<id>", machine_group=2, support_type="rigid")`
