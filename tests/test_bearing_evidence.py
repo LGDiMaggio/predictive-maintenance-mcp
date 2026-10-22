@@ -366,7 +366,7 @@ class TestPolicy:
 
 
 class TestCageAndRollingElement:
-    """A rolling-element defect is carried through the load zone at the cage
+    """A rolling-element defect can be carried through the load zone at the cage
     rate, so its cage-rate content can support the cage hypothesis. A cage
     supported on its own is not singled out while the rolling-element line
     (2 x BSF) is significant."""
@@ -420,11 +420,11 @@ class TestCageAndRollingElement:
         assert (
             "The cage line (FTF) at 11.90 Hz stands above the local noise floor, but "
             "another significant line falls within the search window of the "
-            "rolling-element line (2 x BSF). A rolling-element defect also produces "
-            "lines at the cage rate, so the cage lines may come from one; that line "
-            "alone does not establish a rolling-element defect. Under this "
-            "conservative ambiguity rule, no single fault type is named from this "
-            "spectrum."
+            "rolling-element line (2 x BSF). A rolling-element defect can also produce "
+            "modulation at the cage rate, which could explain the observed cage lines; "
+            "that line alone does not establish a rolling-element defect. Under this "
+            "conservative ambiguity rule, the significance-tested evidence is "
+            "inconclusive and does not support a unique fault type."
         ) in result["outcome_reason"]
 
     def test_a_lone_cage_without_a_rolling_element_line_is_still_indicated(self):
@@ -467,7 +467,7 @@ class TestCageAndRollingElement:
         assert (result["outcome"], result["candidates"]) == ("inconclusive", [])
         assert (
             "window of the rolling-element line (2 x BSF). A rolling-element defect "
-            "also produces lines at the cage rate"
+            "can also produce modulation at the cage rate"
         ) in result["outcome_reason"]
 
     def test_another_type_at_a_shaft_order_keeps_the_ordinary_sentence(self):
@@ -484,7 +484,7 @@ class TestCageAndRollingElement:
         assert "and lies at a shaft order" not in result["outcome_reason"]
         assert (
             "window of the rolling-element line (2 x BSF). A rolling-element defect "
-            "also produces lines at the cage rate"
+            "can also produce modulation at the cage rate"
         ) in result["outcome_reason"]
 
     def test_a_6203_shaft_harmonic_in_the_rolling_element_window_holds_the_cage_back(
@@ -512,9 +512,10 @@ class TestCageAndRollingElement:
             "rolling-element line (2 x BSF) and lies at a shaft order. That line may "
             "be a shaft harmonic and does not independently establish a "
             "rolling-element defect. A rolling-element defect cannot be excluded "
-            "either: it would also produce lines at the cage rate, so the cage lines "
-            "may come from one. Under this conservative ambiguity rule, no single "
-            "fault type is named from this spectrum."
+            "either: it can also produce modulation at the cage rate, which could "
+            "explain the observed cage lines. Under this conservative ambiguity rule, "
+            "the significance-tested evidence is inconclusive and does not support a "
+            "unique fault type."
         ) in held["outcome_reason"]
         assert control["outcome"] == "indicated"
         assert [c["fault_type"] for c in control["candidates"]] == ["FTF"]

@@ -69,7 +69,7 @@ harmonics are common in envelope spectra (Smith & Randall 2015, MSSP 64-65,
 label outside it (a gear mesh, which is a shaft order by construction) gets
 the line test and harmonic corroboration only. A cage supported on its own
 is not singled out while the rolling-element line is significant: a
-rolling-element defect is modulated at the cage rate (Randall & Antoni 2011,
+rolling-element defect can be modulated at the cage rate (Randall & Antoni 2011,
 MSSP 25, 485-520), so its cage-rate content can support the cage. The rule
 is conservative: it also holds the cage back when the line in the
 rolling-element window lies at a shaft order and may be a shaft harmonic, a
@@ -730,7 +730,7 @@ def _hold_back_lone_cage(
     """Unconfirm a cage that is the only supported type while the
     rolling-element line is significant (in place).
 
-    A rolling-element defect is modulated at the cage rate as the element
+    A rolling-element defect can be modulated at the cage rate as the element
     passes through the load zone, so its cage-rate content can support the
     cage line on its own.
     """
@@ -967,24 +967,26 @@ def _weak_sentence(
         )
     if reason == "rolling_element_line_present":
         ball, cage = _NAMES[_ROLLING_ELEMENT], _NAMES[_CAGE]
+        cage_rate = (
+            "can also produce modulation at the cage rate, which could explain the "
+            f"observed {cage.element} lines"
+        )
         held_back = (
-            "Under this conservative ambiguity rule, no single fault type is named "
-            "from this spectrum."
+            "Under this conservative ambiguity rule, the significance-tested evidence "
+            "is inconclusive and does not support a unique fault type."
         )
         if rolling_element_at_shaft_order:
             return (
                 f"{found} another significant line falls within the search window of "
                 f"the {ball.line} and lies at a shaft order. That line may be a shaft "
                 f"harmonic and does not independently establish {ball.defect}. "
-                f"{_capital(ball.defect)} cannot be excluded either: it would also "
-                f"produce lines at the cage rate, so the {cage.element} lines may "
-                f"come from one. {held_back}"
+                f"{_capital(ball.defect)} cannot be excluded either: it {cage_rate}. "
+                f"{held_back}"
             )
         return (
             f"{found} another significant line falls within the search window of "
-            f"the {ball.line}. {_capital(ball.defect)} also produces lines at the "
-            f"cage rate, so the {cage.element} lines may come from one; that line "
-            f"alone does not establish {ball.defect}. {held_back}"
+            f"the {ball.line}. {_capital(ball.defect)} {cage_rate}; that line alone "
+            f"does not establish {ball.defect}. {held_back}"
         )
     if reason != "no_corroboration":
         raise ValueError(f"no sentence for state reason {reason!r}")
