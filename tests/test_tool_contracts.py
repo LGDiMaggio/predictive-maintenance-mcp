@@ -94,7 +94,17 @@ Fixture history:
   detected, detected_frequency_hz, magnitude, deviation_pct,
   harmonics_detected and evidence_strength (a legacy tolerance match kept
   for compatibility), and diagnose_vibration's evidence_strength (counts
-  findings, a bearing finding once).
+  findings, a bearing finding once). Review follow-up, regenerated again in
+  the same PR: descriptions only, no property added or removed and no type
+  changed. The six legacy per-check field descriptions name the surfaces
+  that do not use them (the bearing statements and actions of
+  check_bearing_faults, diagnose_vibration and the reports) and the asset
+  ledger's evidence-persistence assessment that still uses detected,
+  magnitude and evidence_strength; the summary's outcome_reason and
+  next_step say they describe the evidence outcome before the claim and are
+  not relayed to name a fault type or a single element when claim.level is
+  not single_spectrum_evidence. Both on check_bearing_faults and
+  diagnose_vibration.
   Generated under mcp 2.3.0 and pydantic 2.12.0 (uv.lock).
 """
 

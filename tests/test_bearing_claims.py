@@ -277,6 +277,20 @@ class TestClaimLevels:
 
         assert _claim(hypotheses, evidence)["level"] == "single_spectrum_evidence"
 
+    def test_an_untestable_inner_race_line_qualifies_nothing(self):
+        """M3 needs an inner-race state neither absent nor not_testable: a line
+        the record could not test is not said to stand above the floor, even
+        with the shaft rate given and its sideband in the outer-race window."""
+        hypotheses, evidence = _constructed(
+            FREQUENCIES_6205, {"BPFO": "supported", "BPFI": "not_testable"}
+        )
+
+        assert _level(_claim(hypotheses, evidence, shaft_hz=SHAFT_HZ)) == (
+            "single_spectrum_evidence",
+            [],
+            [],
+        )
+
     def test_an_inner_race_sideband_outside_the_window_qualifies_nothing(self):
         """MFPT at 1500 rpm: BPFI - 2 x 25 Hz = 68.9 Hz, outside the outer-race
         window (81.1 Hz +/- 4.1 Hz)."""
@@ -375,8 +389,9 @@ class TestClaimLevels:
         assert claim["acquisition_eligibility"] == "known_inapplicable"
         assert named_candidate(claim, evidence) is None
         assert claim_statement(claim, evidence, hypotheses) == (
-            "This is a generated signal without noise; the line test assumes a "
-            "recording with measurement noise, so no bearing fault type is assessed."
+            "The signal's companion metadata declares a generated signal with an "
+            "additive noise level of 0; the line test assumes a recording with "
+            "measurement noise, so no bearing fault type is assessed."
         )
 
 

@@ -468,8 +468,9 @@ class TestVerdictAndEvidence:
             _diagnosis(iso=_iso_assessed(zone="B"), bearing_faults=faults)
         )
         generated = (
-            "This is a generated signal without noise; the line test assumes a "
-            "recording with measurement noise, so no bearing fault type is assessed."
+            "The signal's companion metadata declares a generated signal with an "
+            "additive noise level of 0; the line test assumes a recording with "
+            "measurement noise, so no bearing fault type is assessed."
         )
 
         assert advisory["verdict"]["statement"] == generated

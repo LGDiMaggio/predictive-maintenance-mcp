@@ -236,9 +236,14 @@ def diagnose_bearing(
          spectrum is consistent with [type]", with its levels and its stated
          assumption; it is not a confirmed fault and asks for confirmation
          (a comparable earlier measurement or an inspection of that element)
-       • qualified → name every reading the claim names; single out none
-       • withheld → name no fault type; give the claim's reason and next step
+       • qualified → quote overall_assessment verbatim: it names every
+         reading the claim cannot exclude; single out none
+       • withheld → name no fault type; quote overall_assessment verbatim:
+         it says why no fault type is assessed
        most_likely_fault is set only at single_spectrum_evidence.
+       outcome_reason and next_step describe the evidence outcome before the
+       claim: when claim.level is not single_spectrum_evidence, do not relay
+       them to name a fault type or a single element.
 
     B) IF envelope shows ambiguous/borderline peaks:
        → "Possible [fault type] - envelope peak near [frequency] but [state issue: weak magnitude, no harmonics, etc.]"
@@ -255,7 +260,7 @@ def diagnose_bearing(
 
     Based on diagnosis + ISO zone (ONLY use these recommendations - DO NOT invent others):
     • Single-spectrum indication (any zone) → Confirm it: compare with a comparable earlier measurement or inspect the element the claim names; never request bearing replacement from envelope evidence
-    • Qualified claim (any zone) → Only the steps the claim's actions name (inspection of every candidate alike, or a longer or repeated measurement)
+    • Qualified or withheld claim (any zone) → Only the claim's actions as the server renders them (the "Bearing" entries of diagnose_vibration's recommendations, quoted verbatim): inspection of every candidate alike, or a longer or repeated measurement; none when it renders none
     • Zone C/D → Also the zone action, whatever the bearing claim
     • No fault + Zone C/D → Investigate other causes: alignment, balance, looseness, foundation
     • No fault + Zone A/B → Continue routine monitoring

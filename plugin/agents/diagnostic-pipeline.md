@@ -118,10 +118,15 @@ runs FFT + PSD + STFT + bearing checks + ISO severity in one pass.
   for the ISO assessment
 - Call `generate_diagnostic_report_docx(signal_id="<id>", sections={"Summary": "..."})`
   for the final comprehensive document
-- Optionally formalize actions with
-  `generate_maintenance_recommendations(severity_zone="C", fault_types=["outer_race"])`
-  — fault_types uses the canonical vocabulary (outer_race, inner_race, ball,
-  cage, misalignment, unbalance, looseness), never BPFO/BPFI acronyms
+- Optionally formalize the zone action with
+  `generate_maintenance_recommendations(severity_zone="C")` (use the actual
+  zone letter). Do NOT pass fault_types taken from an envelope indication of
+  check_bearing_faults or diagnose_vibration: the tool does not verify fault
+  types, and its fault-type actions are maintenance actions for an established
+  fault. Pass fault_types only when the user states an independently
+  established fault (for example by inspection), in the canonical vocabulary
+  (outer_race, inner_race, ball, cage, misalignment, unbalance, looseness),
+  never BPFO/BPFI acronyms
 
 ### Phase 7: Summary
 Present a concise summary to the user:

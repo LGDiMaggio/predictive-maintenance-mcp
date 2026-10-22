@@ -4,6 +4,7 @@ import pytest
 from mcp.server.mcpserver import MCPServer
 
 from predictive_maintenance_mcp.mcp_tools.prompts import register
+from test_documented_calls import PLUGIN_FILES, REPO_ROOT, extract_calls
 
 
 @pytest.fixture
@@ -97,6 +98,41 @@ class TestDiagnoseBearingPrompt:
             "check_bearing_faults or diagnose_vibration"
         ) in flat
 
+    @pytest.mark.parametrize(
+        "kwargs",
+        [{}, {"rpm": 1797.0, "bpfo": 107.4, "bpfi": 162.2, "bsf": 70.6, "ftf": 14.3}],
+        ids=["minimal", "full"],
+    )
+    def test_withheld_and_qualified_claims_follow_the_claim_not_next_step(
+        self, prompts, kwargs
+    ):
+        """T1 PR C review: a withheld or qualified claim is relayed through
+        overall_assessment and the actions the server renders for it; the
+        evidence layer's outcome_reason and next_step can still name one
+        element, so they are not relayed to name a type or an element."""
+        result = prompts["diagnose_bearing"](signal_id="test_signal", **kwargs)
+        flat = " ".join(result.split())
+
+        assert "give the claim's reason and next step" not in flat
+        assert (
+            "qualified → quote overall_assessment verbatim: it names every "
+            "reading the claim cannot exclude; single out none"
+        ) in flat
+        assert (
+            "withheld → name no fault type; quote overall_assessment verbatim: "
+            "it says why no fault type is assessed"
+        ) in flat
+        assert (
+            "outcome_reason and next_step describe the evidence outcome before "
+            "the claim: when claim.level is not single_spectrum_evidence, do not "
+            "relay them to name a fault type or a single element."
+        ) in flat
+        assert (
+            "Qualified or withheld claim (any zone) → Only the claim's actions as "
+            'the server renders them (the "Bearing" entries of '
+            "diagnose_vibration's recommendations, quoted verbatim)"
+        ) in flat
+
     def test_prompt_description_drops_the_strongly_indicated_rule(self, mcp):
         prompt = next(
             p
@@ -104,6 +140,29 @@ class TestDiagnoseBearingPrompt:
             if p.name == "diagnose_bearing"
         )
         assert "STRONGLY" not in (prompt.description or "")
+
+
+class TestPluginRecommendationCalls:
+    """The plugin instructions (agents, skills, commands) follow the same rule
+    as the diagnose_bearing prompt: generate_maintenance_recommendations takes
+    the zone only, never a fault type an agent read off a bearing check."""
+
+    def test_no_plugin_call_passes_fault_types(self):
+        calls = [
+            (str(path.relative_to(REPO_ROOT)).replace("\\", "/"), line, args)
+            for path in PLUGIN_FILES
+            for name, args, line in extract_calls(path.read_text(encoding="utf-8"))
+            if name == "generate_maintenance_recommendations"
+        ]
+
+        # Anti-rot: the scan must see the documented calls it guards.
+        assert calls, "no generate_maintenance_recommendations call found in plugin/"
+        offending = [
+            f"{source}:{line}: generate_maintenance_recommendations({args})"
+            for source, line, args in calls
+            if "fault_types" in args
+        ]
+        assert offending == [], "\n".join(offending)
 
 
 class TestDiagnoseGearPrompt:

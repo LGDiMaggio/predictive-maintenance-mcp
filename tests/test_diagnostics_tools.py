@@ -356,8 +356,9 @@ class TestBearingClaimAcquisitionEligibility:
     known_inapplicable, which withholds the claim."""
 
     GENERATED_WITHOUT_NOISE = (
-        "This is a generated signal without noise; the line test assumes a "
-        "recording with measurement noise, so no bearing fault type is assessed."
+        "The signal's companion metadata declares a generated signal with an "
+        "additive noise level of 0; the line test assumes a recording with "
+        "measurement noise, so no bearing fault type is assessed."
     )
 
     @pytest.fixture
@@ -387,16 +388,33 @@ class TestBearingClaimAcquisitionEligibility:
         assert info.source_metadata["noise_level"] == noise_level
         return info.signal_id
 
-    async def _claim(self, tools, mock_ctx, signal_id: str):
+    #: The three expected-frequency routes of check_bearing_faults; each passes
+    #: the companion's eligibility at its own call site.
+    ROUTES = {
+        "bearing_id": {"bearing_id": "6205"},
+        "frequencies": {
+            "frequencies": {"BPFO": 107.36, "BPFI": 162.19, "BSF": 70.58, "FTF": 11.93}
+        },
+        "geometry": {
+            "num_balls": 9,
+            "ball_diameter_mm": 7.94,
+            "pitch_diameter_mm": 39.04,
+        },
+    }
+
+    async def _claim(self, tools, mock_ctx, signal_id: str, route: str = "bearing_id"):
         return await tools["check_bearing_faults"](
-            ctx=mock_ctx, signal_id=signal_id, bearing_id="6205", rpm=1800.0
+            ctx=mock_ctx, signal_id=signal_id, rpm=1800.0, **self.ROUTES[route]
         )
 
+    @pytest.mark.parametrize("route", sorted(ROUTES))
     @pytest.mark.asyncio
     async def test_a_noiseless_generated_signal_withholds_the_claim(
-        self, tools, store, mock_ctx
+        self, tools, store, mock_ctx, route
     ):
-        result = await self._claim(tools, mock_ctx, await self._generated(0.0))
+        result = await self._claim(
+            tools, mock_ctx, await self._generated(0.0), route=route
+        )
 
         assert result.claim.acquisition_eligibility == "known_inapplicable"
         assert result.claim.level == "withheld"

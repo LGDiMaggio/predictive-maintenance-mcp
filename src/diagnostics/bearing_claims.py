@@ -89,10 +89,21 @@ ROLLING_ELEMENT_HELD_BACK = "rolling_element_held_back"
 INCONCLUSIVE = "inconclusive"
 NOTHING_TESTABLE = "nothing_testable"
 NO_INDICATION = "no_indication"
+CLAIM_CONDITIONS = (
+    GENERATED_WITHOUT_NOISE,
+    SEVERAL_TYPES,
+    CAGE_COMB_NOT_EXCLUDED,
+    INNER_RACE_SIDEBAND_NOT_EXCLUDED,
+    ROLLING_ELEMENT_HELD_BACK,
+    INCONCLUSIVE,
+    NOTHING_TESTABLE,
+    NO_INDICATION,
+)
 
 # Limitations stated with single-spectrum evidence, without a level change.
 SIDEBAND_ONLY_CORROBORATION = "sideband_only_corroboration"
 CAGE_NOT_DECLARED = "cage_not_declared"
+CLAIM_LIMITATIONS = (SIDEBAND_ONLY_CORROBORATION, CAGE_NOT_DECLARED)
 
 #: Qualified claims that still rest on a supported type: they count as one
 #: bearing finding in the diagnosis's evidence points.
@@ -200,12 +211,14 @@ CLAIM_SENTENCES: dict[str, str] = {
         "assessed."
     ),
     "generated_without_noise": (
-        "This is a generated signal without noise; the line test assumes a "
-        "recording with measurement noise, so no bearing fault type is assessed."
+        "The signal's companion metadata declares a generated signal with an "
+        "additive noise level of 0; the line test assumes a recording with "
+        "measurement noise, so no bearing fault type is assessed."
     ),
     "generated_without_noise_label": (
-        "This is a generated signal without noise; the line test assumes a "
-        "recording with measurement noise, so no fault type is assessed."
+        "The signal's companion metadata declares a generated signal with an "
+        "additive noise level of 0; the line test assumes a recording with "
+        "measurement noise, so no fault type is assessed."
     ),
     # diagnose_vibration: the bearing statement, actions and the aggregate
     "pipeline_statement": "Bearing analysis: {statement}",

@@ -131,8 +131,13 @@ def _check_on_one_spectrum(
     shaft_hz: Optional[float],
     cage_hz: Optional[float],
     catalog: bool = False,
+    spectrum: Optional[tuple[np.ndarray, np.ndarray]] = None,
 ) -> tuple[list[dict], dict]:
     """Every (label, expected Hz) checked on ONE envelope spectrum.
+
+    ``spectrum``, when given, is that spectrum as (frequencies, magnitudes),
+    already computed by :func:`envelope_spectrum_arrays` on this signal and
+    band; the signal, fs, frequencies and band are still validated first.
 
     Returns:
         (per-check dicts in input order, the evidence summary of
@@ -156,7 +161,10 @@ def _check_on_one_spectrum(
             # The band as the filter realizes it (an upper edge at Nyquist
             # sits 1 Hz below it, see envelope_spectrum_arrays).
             band_width = min(band[1], fs / 2.0 - 1.0) - band[0]
-            freqs, mags = envelope_spectrum_arrays(signal, fs, band)
+            if spectrum is None:
+                freqs, mags = envelope_spectrum_arrays(signal, fs, band)
+            else:
+                freqs, mags = spectrum
             peaks = envelope_top_peaks(freqs, mags, fs / len(signal), _MATCHED_PEAKS)
         checks.append(
             _match_peaks(
@@ -415,6 +423,7 @@ def check_frequency_set(
     num_harmonics: int = 3,
     *,
     acquisition_eligibility: str = UNKNOWN,
+    spectrum: Optional[tuple[np.ndarray, np.ndarray]] = None,
 ) -> dict:
     """Check an arbitrary set of labeled expected frequencies in the envelope.
 
@@ -441,6 +450,11 @@ def check_frequency_set(
         acquisition_eligibility: "known_inapplicable" when the signal's own
             companion metadata declares a generated signal without noise
             (the claim is then withheld), else "unknown".
+        spectrum: The envelope spectrum of this signal on this band as
+            (frequencies, magnitudes), as :func:`envelope_spectrum_arrays`
+            returns it, when the caller has already computed it (the
+            envelope report); None computes it here. The signal and fs are
+            validated first either way.
 
     Returns:
         Dict compatible with BearingFaultsSummary (bearing_id/source None),
@@ -485,6 +499,7 @@ def check_frequency_set(
             ),
             None,
         ),
+        spectrum=spectrum,
     )
 
     freq_echo = {k: float(v) for k, v in frequencies.items()}

@@ -670,6 +670,41 @@ class TestGenerateEnvelopeReport:
         assert "No shaft speed is declared" not in rendered
 
     @pytest.mark.asyncio
+    async def test_noiseless_generated_signal_withholds_the_line_labels(
+        self, tools, data_dir, repo, reports_dir, monkeypatch
+    ):
+        """The report reads the claim's acquisition eligibility from the
+        signal's own companion, as check_bearing_faults does: a
+        generate_test_signal record with noise_level 0 gets no line label and
+        the withheld statement (with an unknown eligibility, the same record
+        and frequencies get line labels)."""
+        from predictive_maintenance_mcp.mcp_tools.acquisition_tools import (
+            generate_test_signal,
+        )
+
+        monkeypatch.setattr(
+            "predictive_maintenance_mcp.mcp_tools.acquisition_tools.DATA_DIR", data_dir
+        )
+        info = await generate_test_signal(
+            signal_type="bearing_fault",
+            duration=2.0,
+            sampling_rate=10000.0,
+            noise_level=0.0,
+            random_seed=7,
+        )
+
+        result = await tools["generate_envelope_report"](
+            signal_id=info.signal_id, bearing_freqs=dict(FREQUENCIES_6205)
+        )
+
+        assert result["bearing_matches"] == []
+        assert result["bearing_assessment"] == (
+            "The signal's companion metadata declares a generated signal with an "
+            "additive noise level of 0; the line test assumes a recording with "
+            "measurement noise, so no bearing fault type is assessed."
+        )
+
+    @pytest.mark.asyncio
     async def test_the_report_plots_the_spectrum_the_line_test_used(
         self, tools, data_dir, repo, reports_dir, monkeypatch
     ):
@@ -1294,8 +1329,9 @@ class TestGenerateDiagnosticReport:
         )
 
         assert result["verdict"] == (
-            "This is a generated signal without noise; the line test assumes a "
-            "recording with measurement noise, so no bearing fault type is assessed."
+            "The signal's companion metadata declares a generated signal with an "
+            "additive noise level of 0; the line test assumes a recording with "
+            "measurement noise, so no bearing fault type is assessed."
         )
         assert result["fault_canonical"] is None
         assert "not assessed" in result["statements"]

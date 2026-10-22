@@ -1262,7 +1262,7 @@
             "type": "array"
           },
           "detected": {
-            "description": "Whether a peak was detected within tolerance. A legacy tolerance match without false-alarm control, kept for compatibility until a later version; no statement or action of the server uses it.",
+            "description": "Whether a peak was detected within tolerance. A legacy tolerance match without false-alarm control, kept for compatibility until a later version. The bearing statements and actions of check_bearing_faults, diagnose_vibration and the reports do not use the legacy per-check fields; the asset ledger's evidence-persistence assessment (assess_asset_change) still uses detected, magnitude and evidence_strength until a later version.",
             "title": "Detected",
             "type": "boolean"
           },
@@ -1276,7 +1276,7 @@
               }
             ],
             "default": null,
-            "description": "Actual peak frequency. A legacy tolerance match without false-alarm control, kept for compatibility until a later version; no statement or action of the server uses it.",
+            "description": "Actual peak frequency. A legacy tolerance match without false-alarm control, kept for compatibility until a later version. The bearing statements and actions of check_bearing_faults, diagnose_vibration and the reports do not use the legacy per-check fields; the asset ledger's evidence-persistence assessment (assess_asset_change) still uses detected, magnitude and evidence_strength until a later version.",
             "title": "Detected Frequency Hz"
           },
           "deviation_pct": {
@@ -1289,11 +1289,11 @@
               }
             ],
             "default": null,
-            "description": "Deviation from expected (%). A legacy tolerance match without false-alarm control, kept for compatibility until a later version; no statement or action of the server uses it.",
+            "description": "Deviation from expected (%). A legacy tolerance match without false-alarm control, kept for compatibility until a later version. The bearing statements and actions of check_bearing_faults, diagnose_vibration and the reports do not use the legacy per-check fields; the asset ledger's evidence-persistence assessment (assess_asset_change) still uses detected, magnitude and evidence_strength until a later version.",
             "title": "Deviation Pct"
           },
           "evidence_strength": {
-            "description": "Strength of the spectral evidence for this fault: 'high' (fundamental + >=2 harmonics), 'moderate' (fundamental, weaker harmonics), 'low' (harmonics only), or 'none'. Derived from detected peaks, not a probability. A legacy tolerance match without false-alarm control, kept for compatibility until a later version; no statement or action of the server uses it.",
+            "description": "Strength of the spectral evidence for this fault: 'high' (fundamental + >=2 harmonics), 'moderate' (fundamental, weaker harmonics), 'low' (harmonics only), or 'none'. Derived from detected peaks, not a probability. A legacy tolerance match without false-alarm control, kept for compatibility until a later version. The bearing statements and actions of check_bearing_faults, diagnose_vibration and the reports do not use the legacy per-check fields; the asset ledger's evidence-persistence assessment (assess_asset_change) still uses detected, magnitude and evidence_strength until a later version.",
             "title": "Evidence Strength",
             "type": "string"
           },
@@ -1328,7 +1328,7 @@
           },
           "harmonics_detected": {
             "default": [],
-            "description": "Harmonics found. A legacy tolerance match without false-alarm control, kept for compatibility until a later version; no statement or action of the server uses it.",
+            "description": "Harmonics found. A legacy tolerance match without false-alarm control, kept for compatibility until a later version. The bearing statements and actions of check_bearing_faults, diagnose_vibration and the reports do not use the legacy per-check fields; the asset ledger's evidence-persistence assessment (assess_asset_change) still uses detected, magnitude and evidence_strength until a later version.",
             "items": {
               "additionalProperties": {
                 "type": "number"
@@ -1412,7 +1412,7 @@
               }
             ],
             "default": null,
-            "description": "Magnitude at detected frequency. A legacy tolerance match without false-alarm control, kept for compatibility until a later version; no statement or action of the server uses it.",
+            "description": "Magnitude at detected frequency. A legacy tolerance match without false-alarm control, kept for compatibility until a later version. The bearing statements and actions of check_bearing_faults, diagnose_vibration and the reports do not use the legacy per-check fields; the asset ledger's evidence-persistence assessment (assess_asset_change) still uses detected, magnitude and evidence_strength until a later version.",
             "title": "Magnitude"
           },
           "shared_with": {
@@ -1636,7 +1636,7 @@
           }
         ],
         "default": null,
-        "description": "What to do next for this outcome; None when the check suggests no step (every hypothesis was tested and none stands out), which does not mean the bearing is free of defects",
+        "description": "What to do next for this outcome; None when the check suggests no step (every hypothesis was tested and none stands out), which does not mean the bearing is free of defects. It describes the evidence outcome before the claim: when claim.level is not single_spectrum_evidence, do not relay it to name a fault type or a single element; overall_assessment states what the claim allows.",
         "title": "Next Step"
       },
       "outcome": {
@@ -1668,7 +1668,7 @@
           }
         ],
         "default": null,
-        "description": "Why the check reached its outcome, naming every hypothesis the record could not test",
+        "description": "Why the check reached its outcome, naming every hypothesis the record could not test. It describes the evidence outcome before the claim: when claim.level is not single_spectrum_evidence, do not relay it to name a fault type or a single element; overall_assessment states what the claim allows.",
         "title": "Outcome Reason"
       },
       "overall_assessment": {
@@ -2610,7 +2610,7 @@
             "type": "array"
           },
           "detected": {
-            "description": "Whether a peak was detected within tolerance. A legacy tolerance match without false-alarm control, kept for compatibility until a later version; no statement or action of the server uses it.",
+            "description": "Whether a peak was detected within tolerance. A legacy tolerance match without false-alarm control, kept for compatibility until a later version. The bearing statements and actions of check_bearing_faults, diagnose_vibration and the reports do not use the legacy per-check fields; the asset ledger's evidence-persistence assessment (assess_asset_change) still uses detected, magnitude and evidence_strength until a later version.",
             "title": "Detected",
             "type": "boolean"
           },
@@ -2624,7 +2624,7 @@
               }
             ],
             "default": null,
-            "description": "Actual peak frequency. A legacy tolerance match without false-alarm control, kept for compatibility until a later version; no statement or action of the server uses it.",
+            "description": "Actual peak frequency. A legacy tolerance match without false-alarm control, kept for compatibility until a later version. The bearing statements and actions of check_bearing_faults, diagnose_vibration and the reports do not use the legacy per-check fields; the asset ledger's evidence-persistence assessment (assess_asset_change) still uses detected, magnitude and evidence_strength until a later version.",
             "title": "Detected Frequency Hz"
           },
           "deviation_pct": {
@@ -2637,11 +2637,11 @@
               }
             ],
             "default": null,
-            "description": "Deviation from expected (%). A legacy tolerance match without false-alarm control, kept for compatibility until a later version; no statement or action of the server uses it.",
+            "description": "Deviation from expected (%). A legacy tolerance match without false-alarm control, kept for compatibility until a later version. The bearing statements and actions of check_bearing_faults, diagnose_vibration and the reports do not use the legacy per-check fields; the asset ledger's evidence-persistence assessment (assess_asset_change) still uses detected, magnitude and evidence_strength until a later version.",
             "title": "Deviation Pct"
           },
           "evidence_strength": {
-            "description": "Strength of the spectral evidence for this fault: 'high' (fundamental + >=2 harmonics), 'moderate' (fundamental, weaker harmonics), 'low' (harmonics only), or 'none'. Derived from detected peaks, not a probability. A legacy tolerance match without false-alarm control, kept for compatibility until a later version; no statement or action of the server uses it.",
+            "description": "Strength of the spectral evidence for this fault: 'high' (fundamental + >=2 harmonics), 'moderate' (fundamental, weaker harmonics), 'low' (harmonics only), or 'none'. Derived from detected peaks, not a probability. A legacy tolerance match without false-alarm control, kept for compatibility until a later version. The bearing statements and actions of check_bearing_faults, diagnose_vibration and the reports do not use the legacy per-check fields; the asset ledger's evidence-persistence assessment (assess_asset_change) still uses detected, magnitude and evidence_strength until a later version.",
             "title": "Evidence Strength",
             "type": "string"
           },
@@ -2676,7 +2676,7 @@
           },
           "harmonics_detected": {
             "default": [],
-            "description": "Harmonics found. A legacy tolerance match without false-alarm control, kept for compatibility until a later version; no statement or action of the server uses it.",
+            "description": "Harmonics found. A legacy tolerance match without false-alarm control, kept for compatibility until a later version. The bearing statements and actions of check_bearing_faults, diagnose_vibration and the reports do not use the legacy per-check fields; the asset ledger's evidence-persistence assessment (assess_asset_change) still uses detected, magnitude and evidence_strength until a later version.",
             "items": {
               "additionalProperties": {
                 "type": "number"
@@ -2760,7 +2760,7 @@
               }
             ],
             "default": null,
-            "description": "Magnitude at detected frequency. A legacy tolerance match without false-alarm control, kept for compatibility until a later version; no statement or action of the server uses it.",
+            "description": "Magnitude at detected frequency. A legacy tolerance match without false-alarm control, kept for compatibility until a later version. The bearing statements and actions of check_bearing_faults, diagnose_vibration and the reports do not use the legacy per-check fields; the asset ledger's evidence-persistence assessment (assess_asset_change) still uses detected, magnitude and evidence_strength until a later version.",
             "title": "Magnitude"
           },
           "shared_with": {
@@ -2951,7 +2951,7 @@
               }
             ],
             "default": null,
-            "description": "What to do next for this outcome; None when the check suggests no step (every hypothesis was tested and none stands out), which does not mean the bearing is free of defects",
+            "description": "What to do next for this outcome; None when the check suggests no step (every hypothesis was tested and none stands out), which does not mean the bearing is free of defects. It describes the evidence outcome before the claim: when claim.level is not single_spectrum_evidence, do not relay it to name a fault type or a single element; overall_assessment states what the claim allows.",
             "title": "Next Step"
           },
           "outcome": {
@@ -2983,7 +2983,7 @@
               }
             ],
             "default": null,
-            "description": "Why the check reached its outcome, naming every hypothesis the record could not test",
+            "description": "Why the check reached its outcome, naming every hypothesis the record could not test. It describes the evidence outcome before the claim: when claim.level is not single_spectrum_evidence, do not relay it to name a fault type or a single element; overall_assessment states what the claim allows.",
             "title": "Outcome Reason"
           },
           "overall_assessment": {

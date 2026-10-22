@@ -25,7 +25,6 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from scipy.signal import hilbert, butter, sosfiltfilt
 from mcp.server.mcpserver import MCPServer, Context
 
 from ..config import MODELS_DIR, REPORTS_DIR
@@ -56,6 +55,7 @@ from ._utils import refusal_boundary, resolve_model_paths, resolve_signal
 from .diagnostics_tools import assess_severity, declared_rpm
 from ..signal_processing.spectral import (
     amplitude_spectrum,
+    envelope_analysis_arrays,
     envelope_spectrum_arrays,
     resolve_envelope_band,
     validate_bandpass_band,
@@ -459,31 +459,30 @@ async def generate_envelope_report(
 
     band = (filter_low, filter_high)
 
+    # A malformed declared speed is refused before the filter runs.
+    rpm = declared_rpm(signal_id, info) if bearing_freqs else None
+
+    # One pass: the time-domain view (band-pass filtered signal and its
+    # envelope), the plotted envelope spectrum and the spectrum the line test
+    # reads all come from the same filter on the same band.
+    filtered_signal, envelope, env_frequencies, env_magnitudes = (
+        envelope_analysis_arrays(signal_data, sampling_rate, band)
+    )
+
     line_check = None
     if bearing_freqs:
         line_check = check_frequency_set(
             signal_data,
             sampling_rate,
             bearing_freqs,
-            declared_rpm(signal_id, info),
+            rpm,
             signal_id=signal_id,
             envelope_freq_range=band,
             acquisition_eligibility=acquisition_eligibility_from_companion(
                 info.source_metadata
             ),
+            spectrum=(env_frequencies, env_magnitudes),
         )
-
-    env_frequencies, env_magnitudes = envelope_spectrum_arrays(
-        signal_data, sampling_rate, band
-    )
-
-    # Time-domain view: band-pass filtered signal and its envelope (a corner
-    # exactly AT Nyquist is realized 1 Hz below it, as in the engine).
-    nyquist = sampling_rate / 2
-    high_norm = min(filter_high, nyquist - 1.0) / nyquist
-    sos = butter(4, [filter_low / nyquist, high_norm], btype="band", output="sos")
-    filtered_signal = sosfiltfilt(sos, signal_data)
-    envelope = np.abs(hilbert(filtered_signal))
 
     # Generate and save report (signal_id is the report's signal label)
     result = save_envelope_report(

@@ -342,8 +342,18 @@ BearingClaimLimitation = Literal["sideband_only_corroboration", "cage_not_declar
 #: Closes the description of each per-check field of the older matcher.
 _LEGACY_CHECK_FIELD = (
     "A legacy tolerance match without false-alarm control, kept for "
-    "compatibility until a later version; no statement or action of the server "
-    "uses it."
+    "compatibility until a later version. The bearing statements and actions "
+    "of check_bearing_faults, diagnose_vibration and the reports do not use "
+    "the legacy per-check fields; the asset ledger's evidence-persistence "
+    "assessment (assess_asset_change) still uses detected, magnitude and "
+    "evidence_strength until a later version."
+)
+
+#: Closes the description of the evidence summary's outcome texts.
+_BEFORE_CLAIM = (
+    " It describes the evidence outcome before the claim: when claim.level is "
+    "not single_spectrum_evidence, do not relay it to name a fault type or a "
+    "single element; overall_assessment states what the claim allows."
 )
 
 
@@ -788,7 +798,7 @@ class BearingFaultsSummary(BaseModel):
         None,
         description=(
             "Why the check reached its outcome, naming every hypothesis the record "
-            "could not test"
+            "could not test." + _BEFORE_CLAIM
         ),
     )
     next_step: Optional[str] = Field(
@@ -796,7 +806,7 @@ class BearingFaultsSummary(BaseModel):
         description=(
             "What to do next for this outcome; None when the check suggests no "
             "step (every hypothesis was tested and none stands out), which does "
-            "not mean the bearing is free of defects"
+            "not mean the bearing is free of defects." + _BEFORE_CLAIM
         ),
     )
     candidates: list[BearingCandidate] = Field(
