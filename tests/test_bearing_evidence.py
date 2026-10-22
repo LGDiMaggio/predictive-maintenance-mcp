@@ -365,6 +365,162 @@ class TestPolicy:
         assert set(record) == set(BearingEvidencePolicy.model_fields)
 
 
+class TestCageAndRollingElement:
+    """A rolling-element defect can be carried through the load zone at the cage
+    rate, so its cage-rate content can support the cage hypothesis. A cage
+    supported on its own is not singled out while the rolling-element line
+    (2 x BSF) is significant."""
+
+    HYPOTHESES = [Hypothesis("FTF", 11.93, "cage"), Hypothesis("BSF", 70.58, "ball")]
+
+    #: A 6203 at 1797 rpm, whose 2 x BSF line (119.44 Hz) lies at the fourth
+    #: shaft order (119.80 Hz).
+    HYPOTHESES_6203 = [
+        Hypothesis("BPFO", 91.44, "outer_race"),
+        Hypothesis("BPFI", 148.16, "inner_race"),
+        Hypothesis("BSF", 59.72, "ball"),
+        Hypothesis("FTF", 11.43, "cage"),
+    ]
+
+    def _check(self, line_hz_list, seed, hypotheses=None, cage_hz=11.93):
+        freqs, mags = _noise_spectrum(FAULT_FREE_SEED + seed)
+        for line_hz in line_hz_list:
+            mags = _with_line(freqs, mags, line_hz, power=400.0)
+        return evaluate_hypotheses(
+            freqs,
+            mags,
+            hypotheses or self.HYPOTHESES,
+            shaft_hz=29.95,
+            cage_hz=cage_hz,
+        )
+
+    @staticmethod
+    def _states(result):
+        return {
+            c["fault_type"]: (c["state"], c["state_reason"]) for c in result["checks"]
+        }
+
+    def test_a_lone_cage_with_a_significant_rolling_element_line_is_not_singled_out(
+        self,
+    ):
+        """Cage line and its 2x stand out, and so does the 2 x BSF line
+        (141.16 Hz) without corroboration of its own."""
+        result = self._check([11.93, 23.86, 141.16], seed=4600)
+        cage, ball = result["checks"]
+
+        assert (cage["state"], cage["state_reason"]) == (
+            "unconfirmed",
+            "rolling_element_line_present",
+        )
+        assert (ball["state"], ball["state_reason"]) == (
+            "unconfirmed",
+            "no_corroboration",
+        )
+        assert (result["outcome"], result["candidates"]) == ("inconclusive", [])
+        assert (
+            "The cage line (FTF) at 11.90 Hz stands above the local noise floor, but "
+            "another significant line falls within the search window of the "
+            "rolling-element line (2 x BSF). A rolling-element defect can also produce "
+            "modulation at the cage rate, which could explain the observed cage lines; "
+            "that line alone does not establish a rolling-element defect. Under this "
+            "conservative ambiguity rule, the significance-tested evidence is "
+            "inconclusive and does not support a unique fault type."
+        ) in result["outcome_reason"]
+
+    def test_a_lone_cage_without_a_rolling_element_line_is_still_indicated(self):
+        result = self._check([11.93, 23.86], seed=4601)
+        cage, ball = result["checks"]
+
+        assert (cage["state"], cage["state_reason"]) == ("supported", "corroborated")
+        assert ball["state"] == "absent"
+        assert result["outcome"] == "indicated"
+        assert [c["fault_type"] for c in result["candidates"]] == ["FTF"]
+
+    def test_a_cage_supported_next_to_another_type_stays_several_types(self):
+        """Only a cage supported on its own is held back. The same spectrum
+        with a corroborated outer-race line (BPFO and its 2x) as well is
+        several types, with the cage still supported."""
+        hypotheses = self.HYPOTHESES + [Hypothesis("BPFO", 107.36, "outer_race")]
+        lone = self._check([11.93, 23.86, 141.16], 4602, hypotheses)
+        both = self._check([11.93, 23.86, 141.16, 107.36, 214.72], 4602, hypotheses)
+
+        assert lone["outcome"] == "inconclusive"
+        assert self._states(lone)["FTF"] == (
+            "unconfirmed",
+            "rolling_element_line_present",
+        )
+        assert both["outcome"] == "several_types"
+        assert {c["fault_type"] for c in both["candidates"]} == {"FTF", "BPFO"}
+        assert self._states(both)["FTF"] == ("supported", "corroborated")
+
+    def test_a_shared_rolling_element_line_still_holds_a_lone_cage_back(self):
+        """The hold-back follows the significance of the rolling-element line,
+        not its state: a further declared frequency at 140 Hz also claims the
+        2 x BSF line, so that line is shared, and the cage, supported on its
+        own, is still not singled out."""
+        hypotheses = self.HYPOTHESES + [Hypothesis("X", 140.0, None)]
+        result = self._check([11.93, 23.86, 141.16], 4603, hypotheses)
+        states = self._states(result)
+
+        assert states["BSF"] == ("shared", "line_shared")
+        assert states["FTF"] == ("unconfirmed", "rolling_element_line_present")
+        assert (result["outcome"], result["candidates"]) == ("inconclusive", [])
+        assert (
+            "window of the rolling-element line (2 x BSF). A rolling-element defect "
+            "can also produce modulation at the cage rate"
+        ) in result["outcome_reason"]
+
+    def test_another_type_at_a_shaft_order_keeps_the_ordinary_sentence(self):
+        """Only the rolling-element line's own position decides the wording: an
+        outer-race line at the third shaft order, next to an off-order 2 x BSF
+        line, leaves the held-back cage with the ordinary sentence."""
+        hypotheses = self.HYPOTHESES + [Hypothesis("BPFO", 89.85, "outer_race")]
+        result = self._check([11.93, 23.86, 141.16, 89.85], 4605, hypotheses)
+        states = self._states(result)
+
+        assert states["BPFO"] == ("unconfirmed", "line_at_shaft_order")
+        assert states["BSF"] == ("unconfirmed", "no_corroboration")
+        assert states["FTF"] == ("unconfirmed", "rolling_element_line_present")
+        assert "and lies at a shaft order" not in result["outcome_reason"]
+        assert (
+            "window of the rolling-element line (2 x BSF). A rolling-element defect "
+            "can also produce modulation at the cage rate"
+        ) in result["outcome_reason"]
+
+    def test_a_6203_shaft_harmonic_in_the_rolling_element_window_holds_the_cage_back(
+        self,
+    ):
+        """An ordinary 4x shaft line, with no rolling-element content, lies in
+        the 6203's 2 x BSF window and holds back a genuine cage indication: a
+        sensitivity cost the conservative rule accepts. The otherwise
+        identical spectrum without it is indicated."""
+        cage_lines = [11.43, 22.86]
+        held = self._check(
+            cage_lines + [4 * 29.95], 4604, self.HYPOTHESES_6203, cage_hz=11.43
+        )
+        control = self._check(cage_lines, 4604, self.HYPOTHESES_6203, cage_hz=11.43)
+
+        assert self._states(held)["BSF"] == ("unconfirmed", "line_at_shaft_order")
+        assert self._states(held)["FTF"] == (
+            "unconfirmed",
+            "rolling_element_line_present",
+        )
+        assert (held["outcome"], held["candidates"]) == ("inconclusive", [])
+        assert (
+            "The cage line (FTF) at 11.40 Hz stands above the local noise floor, but "
+            "another significant line falls within the search window of the "
+            "rolling-element line (2 x BSF) and lies at a shaft order. That line may "
+            "be a shaft harmonic and does not independently establish a "
+            "rolling-element defect. A rolling-element defect cannot be excluded "
+            "either: it can also produce modulation at the cage rate, which could "
+            "explain the observed cage lines. Under this conservative ambiguity rule, "
+            "the significance-tested evidence is inconclusive and does not support a "
+            "unique fault type."
+        ) in held["outcome_reason"]
+        assert control["outcome"] == "indicated"
+        assert [c["fault_type"] for c in control["candidates"]] == ["FTF"]
+
+
 class TestLabelsOutsideTheVocabulary:
     def test_a_gear_mesh_at_a_shaft_order_is_not_discounted_as_a_shaft_line(self):
         """KTD10: a label outside the bearing vocabulary gets the line test and

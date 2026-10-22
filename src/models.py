@@ -320,6 +320,7 @@ BearingEvidenceStateReason = Literal[
     "line_at_shaft_order",
     "line_shared",
     "no_corroboration",
+    "rolling_element_line_present",
     "corroborated",
 ]
 BearingCheckOutcomeName = Literal[
@@ -549,8 +550,9 @@ class BearingFaultCheckResult(BaseModel):
             "envelope spectrum: not_testable (the record cannot test its line), "
             "absent (no eligible peak, a local maximum strictly inside the search "
             "window, above threshold_db), "
-            "unconfirmed (a line without a counted corroborating line, or a line "
-            "at a shaft order), shared (another tested hypothesis also predicts a "
+            "unconfirmed (a line without a counted corroborating line, a line at "
+            "a shaft order, or a cage line that a significant rolling-element line "
+            "can explain), shared (another tested hypothesis also predicts a "
             "line where this line lies), supported (a significant line of its own "
             "with at least one counted corroborating line its kinematics predict). "
             "detected and "
@@ -662,7 +664,8 @@ class BearingFaultsSummary(BaseModel):
             "consistent with that defect, not a confirmation of it), "
             "several_types (two or more supported, none singled out), "
             "inconclusive (a line without a counted corroborating line, at a "
-            "shaft order or shared, or nothing testable), no_indication (no "
+            "shaft order or shared, a cage line that a significant rolling-element "
+            "line can explain, or nothing testable), no_indication (no "
             "eligible peak at a tested frequency satisfies the detection criteria, "
             "which is not proof that no defect exists). most_likely_fault, "
             "overall_assessment "
