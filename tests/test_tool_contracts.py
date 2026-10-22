@@ -104,7 +104,14 @@ Fixture history:
   next_step say they describe the evidence outcome before the claim and are
   not relayed to name a fault type or a single element when claim.level is
   not single_spectrum_evidence. Both on check_bearing_faults and
-  diagnose_vibration.
+  diagnose_vibration. Second review follow-up, regenerated again in the same
+  PR: no property added or removed and no type changed. The BearingClaim
+  conditions enum gains one value, shaft_tests_not_run (a bearing type
+  indicated by a check run without a shaft speed is qualified, never
+  single-spectrum evidence); the conditions description names it, and the
+  BearingClaim description says the claim also depends on whether a shaft
+  speed was given. Both on check_bearing_faults and diagnose_vibration,
+  whose checks always have a speed.
   Generated under mcp 2.3.0 and pydantic 2.12.0 (uv.lock).
 """
 

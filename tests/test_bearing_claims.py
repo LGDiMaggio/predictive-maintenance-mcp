@@ -139,7 +139,7 @@ def _claim(
     evidence,
     *,
     eligibility: str = "unknown",
-    shaft_hz: float = SHAFT_HZ,
+    shaft_hz: float | None = SHAFT_HZ,
 ) -> dict:
     return bearing_claim(
         evidence,
@@ -498,6 +498,146 @@ class TestLimitations:
         )
 
 
+class TestWithoutAShaftSpeed:
+    """No shaft speed (shaft_hz None): the shaft-order and shaft-rate sideband
+    tests did not run, so an indicated bearing type is qualified and never
+    named as single-spectrum evidence. A label outside the vocabulary, a
+    withheld claim and every other outcome keep the claim they have with a
+    speed."""
+
+    STATEMENT = (
+        "The envelope evidence of this single spectrum is consistent with an "
+        "outer-race defect, but no shaft speed was given, so the shaft-order and "
+        "shaft-rate sideband tests did not run, and a shaft harmonic or a sideband "
+        "of another fault type cannot be excluded. No single fault type is named "
+        "from this spectrum."
+    )
+    ACTION = (
+        "Bearing 6205: declare or pass the shaft speed and repeat the check, or "
+        "compare with a comparable earlier measurement."
+    )
+
+    def test_an_outer_race_indication_is_qualified(self):
+        hypotheses, evidence = _constructed(FREQUENCIES_6205, {"BPFO": "supported"})
+        claim = _claim(hypotheses, evidence, shaft_hz=None)
+        statement = claim_statement(claim, evidence, hypotheses)
+        actions = claim_actions(_summary(hypotheses, evidence, claim))
+
+        assert _level(claim) == ("qualified", ["shaft_tests_not_run"], [])
+        assert named_candidate(claim, evidence) is None
+        assert counts_as_finding(claim)
+        assert statement == self.STATEMENT
+        assert actions == [self.ACTION]
+        assert not _offending(statement) and not _offending(actions[0])
+        BearingClaim(**claim)
+
+    @pytest.mark.parametrize("label", list(FREQUENCIES_6205))
+    def test_every_bearing_type_is_qualified(self, label):
+        """The evidence layer applies the shaft-order rule to every type of the
+        vocabulary, the cage included, so each is capped alike."""
+        hypotheses, evidence = _constructed(FREQUENCIES_6205, {label: "supported"})
+        claim = _claim(hypotheses, evidence, shaft_hz=None)
+
+        assert _level(claim) == ("qualified", ["shaft_tests_not_run"], [])
+        assert claim_statement(claim, evidence, hypotheses).endswith(
+            "and a shaft harmonic or a sideband of another fault type cannot be "
+            "excluded. No single fault type is named from this spectrum."
+        )
+
+    def test_the_inner_race_sideband_is_not_assessed_and_the_cap_says_so(self):
+        """M3 needs the shaft rate: without it the significant inner-race line
+        cannot qualify the outer race, and the cap names what did not run."""
+        hypotheses, evidence = _constructed(
+            FREQUENCIES_6205, {"BPFO": "supported", "BPFI": "unconfirmed"}
+        )
+
+        assert _level(_claim(hypotheses, evidence, shaft_hz=None)) == (
+            "qualified",
+            ["shaft_tests_not_run"],
+            [],
+        )
+
+    def test_an_untestable_cage_and_no_shaft_speed_name_both(self):
+        hypotheses, evidence = _constructed(
+            FREQUENCIES_6205, {"BPFO": "supported", "FTF": "not_testable"}
+        )
+        claim = _claim(hypotheses, evidence, shaft_hz=None)
+        statement = claim_statement(claim, evidence, hypotheses)
+
+        assert claim["conditions"] == ["cage_comb_not_excluded", "shaft_tests_not_run"]
+        assert (
+            "so a cage defect cannot be excluded; and no shaft speed was given"
+            in statement
+        )
+        assert claim_actions(_summary(hypotheses, evidence, claim)) == [
+            "Bearing 6205: repeat the measurement with a capture long enough to "
+            "test the cage line, or compare with a comparable earlier measurement.",
+            self.ACTION,
+        ]
+
+    def test_an_undeclared_cage_is_no_limitation_once_qualified(self):
+        """Limitations are stated with single-spectrum evidence only."""
+        frequencies = {k: v for k, v in FREQUENCIES_6205.items() if k != "FTF"}
+        hypotheses, evidence = _constructed(frequencies, {"BPFO": "supported"})
+
+        assert _level(_claim(hypotheses, evidence, shaft_hz=None)) == (
+            "qualified",
+            ["shaft_tests_not_run"],
+            [],
+        )
+
+    def test_a_generated_signal_without_noise_stays_withheld(self):
+        hypotheses, evidence = _constructed(FREQUENCIES_6205, {"BPFO": "supported"})
+        claim = _claim(
+            hypotheses, evidence, eligibility="known_inapplicable", shaft_hz=None
+        )
+
+        assert _level(claim) == ("withheld", ["generated_without_noise"], [])
+        assert not counts_as_finding(claim)
+        assert claim_actions(_summary(hypotheses, evidence, claim)) == []
+
+    @pytest.mark.parametrize(
+        "case",
+        [
+            "several_types",
+            "held_back",
+            "inconclusive",
+            "no_indication",
+            "nothing_testable",
+        ],
+    )
+    def test_every_other_outcome_keeps_its_claim(self, case):
+        states, reasons, _ = TestEvidencePointsAndActions.CASES[case]
+        hypotheses, evidence = _constructed(FREQUENCIES_6205, states, reasons=reasons)
+
+        assert _claim(hypotheses, evidence, shaft_hz=None) == _claim(
+            hypotheses, evidence
+        )
+
+    def test_a_label_outside_the_vocabulary_is_not_capped(self):
+        """A custom label never gets the shaft-order rule, speed or not."""
+        hypotheses, evidence = _constructed({"GMF": 350.0}, {"GMF": "supported"})
+        claim = _claim(hypotheses, evidence, shaft_hz=None)
+        statement = claim_statement(claim, evidence, hypotheses)
+
+        assert _level(claim) == ("single_spectrum_evidence", [], [])
+        assert statement.startswith(
+            "The envelope evidence of this single spectrum is consistent with a "
+            "periodic line at the declared GMF frequency"
+        )
+        assert "defect" not in statement and "shaft" not in statement
+
+    def test_a_label_outside_the_vocabulary_beside_bearing_lines_is_not_capped(self):
+        frequencies = {"GMF": 350.0, **FREQUENCIES_6205}
+        hypotheses, evidence = _constructed(frequencies, {"GMF": "supported"})
+
+        assert _level(_claim(hypotheses, evidence, shaft_hz=None)) == (
+            "single_spectrum_evidence",
+            [],
+            [],
+        )
+
+
 class TestEvidencePointsAndActions:
     CASES = {
         "evidence": ({"BPFO": "supported"}, {}, True),
@@ -543,8 +683,8 @@ class TestEvidencePointsAndActions:
             (
                 "several_types",
                 [
-                    "Bearing 6205: inspect the outer race and the inner race with "
-                    "equal priority, and compare with a comparable earlier measurement."
+                    "Bearing 6205: compare with a comparable earlier measurement, and "
+                    "inspect the outer race and the inner race with equal priority."
                 ],
             ),
             (
@@ -558,8 +698,8 @@ class TestEvidencePointsAndActions:
             (
                 "inner_race_sideband",
                 [
-                    "Bearing 6205: inspect the outer and inner races with equal "
-                    "priority, or compare with a comparable earlier measurement."
+                    "Bearing 6205: compare with a comparable earlier measurement, or "
+                    "inspect the outer and inner races with equal priority."
                 ],
             ),
             (
@@ -781,6 +921,22 @@ class TestAnalyzerSummary:
                 RPM_6205,
                 acquisition_eligibility="eligible",
             )
+
+    def test_a_frequency_set_checked_without_a_speed_names_no_single_type(self):
+        """The same 10 s outer-race record: with the speed nothing qualifies
+        the indication; without it the shaft-order and sideband tests did not
+        run and the claim is capped at qualified."""
+        signal = _outer_race(10.0, -15.0, 0)
+        with_speed = check_frequency_set(signal, FS, FREQUENCIES_6205, RPM_6205)
+        without = check_frequency_set(signal, FS, FREQUENCIES_6205, None)
+
+        assert with_speed["claim"]["level"] == "single_spectrum_evidence"
+        assert without["outcome"] == "indicated"
+        assert without["candidates"] == with_speed["candidates"]
+        assert _level(without["claim"]) == ("qualified", ["shaft_tests_not_run"], [])
+        assert without["most_likely_fault"] is None
+        assert without["most_likely_fault_canonical"] is None
+        assert without["overall_assessment"] == TestWithoutAShaftSpeed.STATEMENT
 
     def test_a_lowercase_label_keeps_its_canonical_form(self):
         """The candidate's canonical form upper-cases the label; the summary

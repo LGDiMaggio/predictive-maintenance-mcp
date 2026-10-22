@@ -355,7 +355,8 @@ class TestVerdictAndEvidence:
         assert faults["claim"]["conditions"] == ["several_types"]
         assert verdict.startswith(faults["overall_assessment"])
         assert (
-            "inspect the outer race and the inner race with equal priority" in verdict
+            "compare with a comparable earlier measurement, and inspect the outer "
+            "race and the inner race with equal priority." in verdict
         )
         assert advisory["verdict"]["fault_canonical"] is None
         assert "most likely" not in verdict.lower()

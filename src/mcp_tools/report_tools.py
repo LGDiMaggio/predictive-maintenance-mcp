@@ -373,6 +373,7 @@ async def generate_envelope_report(
     num_peaks: int = 15,
     bearing_freqs: Optional[dict[str, float]] = None,
     ctx: Context | None = None,
+    rpm: Optional[float] = None,
 ) -> dict[str, Any]:
     """
     Generate professional envelope analysis report (HTML) for a stored signal.
@@ -389,9 +390,14 @@ async def generate_envelope_report(
     marks only the candidate lines of that test's claim; it states the claim
     and draws each window at the line tested (2 x BSF for the rolling
     element). The shaft speed of the sideband and shaft-order tests is the
-    one the signal declares (the rpm of the companion's "measurement"
-    object, else the measurement point's nominal_rpm); without one those
-    tests do not run, and the report and every label say so.
+    rpm parameter when given, else the one the signal declares (the rpm of
+    the companion's "measurement" object, else the measurement point's
+    nominal_rpm); it is never estimated, and never inferred from the
+    reference frequencies. Without a speed those tests do not run, the
+    report and every label say so, and an indicated bearing type is stated
+    as qualified (shaft_tests_not_run), never as single-spectrum evidence.
+    Without reference frequencies no line test runs: the report shows the
+    spectrum and its peaks and states no claim, with or without rpm.
 
     Args:
         signal_id: ID of the stored signal (from load_signal).
@@ -404,6 +410,10 @@ async def generate_envelope_report(
         bearing_freqs: Optional dict with BPFO, BPFI, BSF, FTF in Hz, each
             positive and finite
         ctx: MCP context. Unused — see this module's docstring on logging.
+        rpm: Optional measured shaft speed in RPM for the line test's
+            sideband and shaft-order tests; it takes precedence over the
+            speed the signal declares. Omit it when unknown; a given value
+            must be positive and finite.
 
     Returns:
         Dictionary with file path, metadata, and summary (NO HTML content):
@@ -412,10 +422,11 @@ async def generate_envelope_report(
         frequencies).
 
     Raises:
-        ValueError: If bearing_freqs holds a value that is not a positive
-            finite number (every such label is listed), if the signal_id is
-            not loaded, if the stored signal has no sampling rate, or if the
-            signal's declared speed is malformed.
+        ValueError: If a given rpm is not a positive finite number, if
+            bearing_freqs holds a value that is not a positive finite number
+            (every such label is listed), if the signal_id is not loaded, if
+            the stored signal has no sampling rate, or if no rpm is given and
+            the signal's declared speed is malformed.
 
     Example:
         >>> # Bearing frequencies computed for YOUR bearing/rpm (here: 6205
@@ -425,6 +436,8 @@ async def generate_envelope_report(
         ...     bearing_freqs={"BPFO": 107.36, "BPFI": 162.19, "BSF": 70.58, "FTF": 11.93}
         ... )
     """
+    if rpm is not None:
+        validate_rpm(rpm, source="the rpm parameter", optional=True)
     if bearing_freqs is not None:
         validate_expected_frequencies(bearing_freqs, name="bearing_freqs")
 
@@ -459,8 +472,11 @@ async def generate_envelope_report(
 
     band = (filter_low, filter_high)
 
-    # A malformed declared speed is refused before the filter runs.
-    rpm = declared_rpm(signal_id, info) if bearing_freqs else None
+    # Explicit rpm, else the declared speed, else None (the line test then
+    # runs without its shaft tests). A malformed declared speed is refused
+    # before the filter runs.
+    if rpm is None and bearing_freqs:
+        rpm = declared_rpm(signal_id, info)
 
     # One pass: the time-domain view (band-pass filtered signal and its
     # envelope), the plotted envelope spectrum and the spectrum the line test

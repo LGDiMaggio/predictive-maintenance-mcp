@@ -212,9 +212,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the rolling element, with the claim's candidates emphasised alike) and
   `generate_envelope_report` follow the claim and the central bearing line
   test. The envelope report runs that test on the envelope spectrum it
-  plots and marks only its candidate lines; the shaft speed comes from the
-  signal's declared measurement or its measurement point, and without one
-  the sideband and shaft-order tests do not run and the report says so.
+  plots and marks only its candidate lines; the shaft speed comes from its
+  new optional `rpm` parameter (additive), else from the signal's declared
+  measurement or its measurement point. Without one the sideband and
+  shaft-order tests do not run, the report says so, and an indicated
+  bearing type is qualified (`shaft_tests_not_run`) instead of being named
+  as single-spectrum evidence.
   The per-check fields `detected`, `evidence_strength`,
   `detected_frequency_hz`, `magnitude`, `deviation_pct` and
   `harmonics_detected` keep their values. `generate_maintenance_recommendations`

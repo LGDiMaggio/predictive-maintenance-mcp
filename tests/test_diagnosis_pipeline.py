@@ -946,8 +946,8 @@ class TestBearingClaimInTheDiagnosis:
         assert "the inner-race line (BPFI)" in text
         assert "most likely" not in text.lower()
         assert _bearing_actions(result) == [
-            "Bearing 6205: inspect the outer race and the inner race with equal "
-            "priority, and compare with a comparable earlier measurement."
+            "Bearing 6205: compare with a comparable earlier measurement, and "
+            "inspect the outer race and the inner race with equal priority."
         ]
         assert not [r for r in result["recommendations"] if "replac" in r.lower()]
 

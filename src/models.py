@@ -332,6 +332,7 @@ BearingClaimCondition = Literal[
     "several_types",
     "cage_comb_not_excluded",
     "inner_race_sideband_not_excluded",
+    "shaft_tests_not_run",
     "rolling_element_held_back",
     "inconclusive",
     "nothing_testable",
@@ -530,9 +531,9 @@ class BearingEvidencePolicy(BaseModel):
 class BearingClaim(BaseModel):
     """What the bearing check may state from its significance-tested evidence.
 
-    Derived from outcome, the per-check states and the declared frequencies;
-    it never changes them. most_likely_fault, most_likely_fault_canonical and
-    overall_assessment follow it.
+    Derived from outcome, the per-check states, the declared frequencies and
+    whether a shaft speed was given; it never changes them. most_likely_fault,
+    most_likely_fault_canonical and overall_assessment follow it.
     """
 
     level: BearingClaimLevel = Field(
@@ -561,11 +562,15 @@ class BearingClaim(BaseModel):
             "inner_race_sideband_not_excluded (outer race indicated, the "
             "inner-race line stands above the floor, and the declared BPFI minus "
             "twice the shaft rate lies in the outer-race search window), "
-            "rolling_element_held_back (a cage held back because the "
-            "rolling-element line stands above the floor), inconclusive, "
-            "nothing_testable, no_indication (the outcome itself). The window "
-            "conditions qualify the claim only: outcome, candidates and states "
-            "stay as tested."
+            "shaft_tests_not_run (a bearing type indicated by a check run "
+            "without a shaft speed, so the shaft-order and shaft-rate sideband "
+            "tests did not run and neither a shaft harmonic nor a sideband of "
+            "another fault type is excluded; never for a label outside the "
+            "bearing vocabulary), rolling_element_held_back (a cage held back "
+            "because the rolling-element line stands above the floor), "
+            "inconclusive, nothing_testable, no_indication (the outcome itself). "
+            "The window conditions and shaft_tests_not_run qualify the claim "
+            "only: outcome, candidates and states stay as tested."
         ),
     )
     limitations: list[BearingClaimLimitation] = Field(

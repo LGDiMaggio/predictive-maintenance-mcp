@@ -1152,6 +1152,18 @@
             "title": "Num Peaks",
             "type": "integer"
           },
+          "rpm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Rpm"
+          },
           "signal_id": {
             "title": "Signal Id",
             "type": "string"

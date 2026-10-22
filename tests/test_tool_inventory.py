@@ -76,6 +76,11 @@ Fixture history:
   assess_asset_change gained the OPTIONAL reprocess_cursor (default null),
   the continuation token a reprocess block's next_call carries. No other
   tool's schema changed; counts unchanged (38/0/3).
+- Envelope report speed (2026-10-22, T1 PR C): regenerated intentionally:
+  ADDITIVE. generate_envelope_report gained the OPTIONAL rpm (default
+  null), declared after ctx so no positional argument moves; it takes
+  precedence over the speed the signal declares. No other tool's schema
+  changed; counts unchanged (38/0/3).
 
 Snapshot recipe (run from the repo root):
     python -c "from tests.test_tool_inventory import build_inventory, \\

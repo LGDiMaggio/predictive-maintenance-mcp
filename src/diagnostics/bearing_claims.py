@@ -35,6 +35,13 @@ candidates, a state or a line test, and they add no sharing or detection rule.
   layer held a lone cage back because the rolling-element line is significant
   (its state reason ``rolling_element_line_present``).
 
+A check run without a shaft speed ran no shaft-order or shaft-rate sideband
+test, so it could not exclude that an indicated bearing line is a shaft
+harmonic or another type's sideband (the inner-race sideband predicate needs
+the shaft rate): such an indication is qualified (``shaft_tests_not_run``),
+never single-spectrum evidence. Missing information never makes a claim
+stronger.
+
 A label outside the bearing vocabulary never gets these predicates or a
 bearing element in its sentences. An acquisition known to be outside the line
 test's model (a generated signal without noise, as the signal's own companion
@@ -85,6 +92,7 @@ GENERATED_WITHOUT_NOISE = "generated_without_noise"
 SEVERAL_TYPES = "several_types"
 CAGE_COMB_NOT_EXCLUDED = "cage_comb_not_excluded"
 INNER_RACE_SIDEBAND_NOT_EXCLUDED = "inner_race_sideband_not_excluded"
+SHAFT_TESTS_NOT_RUN = "shaft_tests_not_run"
 ROLLING_ELEMENT_HELD_BACK = "rolling_element_held_back"
 INCONCLUSIVE = "inconclusive"
 NOTHING_TESTABLE = "nothing_testable"
@@ -94,6 +102,7 @@ CLAIM_CONDITIONS = (
     SEVERAL_TYPES,
     CAGE_COMB_NOT_EXCLUDED,
     INNER_RACE_SIDEBAND_NOT_EXCLUDED,
+    SHAFT_TESTS_NOT_RUN,
     ROLLING_ELEMENT_HELD_BACK,
     INCONCLUSIVE,
     NOTHING_TESTABLE,
@@ -108,7 +117,12 @@ CLAIM_LIMITATIONS = (SIDEBAND_ONLY_CORROBORATION, CAGE_NOT_DECLARED)
 #: Qualified claims that still rest on a supported type: they count as one
 #: bearing finding in the diagnosis's evidence points.
 _FINDING_CONDITIONS = frozenset(
-    {SEVERAL_TYPES, CAGE_COMB_NOT_EXCLUDED, INNER_RACE_SIDEBAND_NOT_EXCLUDED}
+    {
+        SEVERAL_TYPES,
+        CAGE_COMB_NOT_EXCLUDED,
+        INNER_RACE_SIDEBAND_NOT_EXCLUDED,
+        SHAFT_TESTS_NOT_RUN,
+    }
 )
 
 _OUTER_RACE = "outer_race"
@@ -180,6 +194,11 @@ CLAIM_SENTENCES: dict[str, str] = {
         "window of the outer-race line (BPFO), so an inner-race defect cannot be "
         "excluded"
     ),
+    "shaft_tests_not_run": (
+        "no shaft speed was given, so the shaft-order and shaft-rate sideband "
+        "tests did not run, and a shaft harmonic or a sideband of another fault "
+        "type cannot be excluded"
+    ),
     "rolling_element_held_back": (
         "The significance-tested evidence is inconclusive and does not support a "
         "unique fault type: the cage lines may come from a cage defect or from a "
@@ -233,8 +252,8 @@ CLAIM_SENTENCES: dict[str, str] = {
         "comparable measurement."
     ),
     "action_several_types": (
-        "{prefix}inspect {elements} with equal priority, and compare with a "
-        "comparable earlier measurement."
+        "{prefix}compare with a comparable earlier measurement, and inspect "
+        "{elements} with equal priority."
     ),
     "action_several_types_label": (
         "{prefix}compare with a comparable earlier measurement before acting on "
@@ -249,7 +268,11 @@ CLAIM_SENTENCES: dict[str, str] = {
         "compare with a comparable earlier measurement."
     ),
     "action_inner_race_sideband": (
-        "{prefix}inspect the outer and inner races with equal priority, or compare "
+        "{prefix}compare with a comparable earlier measurement, or inspect the "
+        "outer and inner races with equal priority."
+    ),
+    "action_shaft_tests_not_run": (
+        "{prefix}declare or pass the shaft speed and repeat the check, or compare "
         "with a comparable earlier measurement."
     ),
     "action_repeat": (
@@ -530,7 +553,10 @@ def bearing_claim(
         evidence: The result of :func:`.bearing_evidence.evaluate_hypotheses`
             (``checks`` in hypothesis order, ``outcome``, ``candidates``).
         hypotheses: The tested hypotheses, in the order of ``evidence``.
-        shaft_hz: Shaft rate (Hz); None skips the inner-race sideband test.
+        shaft_hz: Shaft rate (Hz). None means the check ran no shaft-order
+            or shaft-rate sideband test: the inner-race sideband predicate
+            is skipped and an indicated bearing type is qualified
+            (``shaft_tests_not_run``); a label outside the vocabulary is not.
         tolerance_pct: Half-width of the fundamental search windows, in
             percent of the line frequency (the check's own tolerance).
         acquisition_eligibility: "known_inapplicable" or "unknown".
@@ -560,6 +586,11 @@ def bearing_claim(
                 hypotheses, checks, x, inner, shaft_hz, tolerance
             ):
                 conditions.append(INNER_RACE_SIDEBAND_NOT_EXCLUDED)
+        # The evidence layer discounts shaft orders for the bearing vocabulary
+        # only; without a shaft rate neither that test nor the inner-race
+        # sideband predicate could run.
+        if shaft_hz is None and x.canonical in _NAMES:
+            conditions.append(SHAFT_TESTS_NOT_RUN)
         if conditions:
             level = QUALIFIED
         else:
@@ -691,6 +722,8 @@ def claim_statement(
             alternatives.append(_S[key].format(line=names.line))
         if INNER_RACE_SIDEBAND_NOT_EXCLUDED in conditions:
             alternatives.append(_S["inner_race_sideband"])
+        if SHAFT_TESTS_NOT_RUN in conditions:
+            alternatives.append(_S["shaft_tests_not_run"])
         return _S["not_excluded"].format(
             defect=names.defect,
             alternatives=_S["not_excluded_joiner"].join(alternatives),
@@ -739,11 +772,11 @@ def pipeline_statement(summary: Mapping[str, Any]) -> str:
 def claim_actions(summary: Mapping[str, Any]) -> list[str]:
     """The bearing actions of ``diagnose_vibration``, from a check summary.
 
-    Confirmation steps at single-spectrum evidence; inspection of every
-    candidate alike, an acquisition step or a comparison at qualified; a
-    repeat or acquisition step for an inconclusive or untestable record; none
-    for no indication and for a generated signal without noise. Never a
-    replacement.
+    Confirmation steps at single-spectrum evidence; at qualified, a
+    comparison first and then inspection of every candidate alike, or an
+    acquisition step, a speed declaration or a comparison; a repeat or
+    acquisition step for an inconclusive or untestable record; none for no
+    indication and for a generated signal without noise. Never a replacement.
 
     Args:
         summary: A check summary (``check_all_bearing_faults`` or
@@ -795,6 +828,8 @@ def claim_actions(summary: Mapping[str, Any]) -> list[str]:
         actions.append(_S[key].format(prefix=prefix))
     if INNER_RACE_SIDEBAND_NOT_EXCLUDED in conditions:
         actions.append(_S["action_inner_race_sideband"].format(prefix=prefix))
+    if SHAFT_TESTS_NOT_RUN in conditions:
+        actions.append(_S["action_shaft_tests_not_run"].format(prefix=prefix))
     if ROLLING_ELEMENT_HELD_BACK in conditions or INCONCLUSIVE in conditions:
         actions.append(_S["action_repeat"].format(prefix=prefix))
     if NOTHING_TESTABLE in conditions and summary.get("next_step"):
