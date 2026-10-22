@@ -77,6 +77,12 @@ Fixture history:
   (BearingLineTest, BearingCorroboratingLine, BearingCandidate,
   BearingEvidencePolicy).
   Generated under mcp 2.3.0 and pydantic 2.12.0 (uv.lock).
+- Cage and rolling-element ambiguity (2026-10-22, T1): regenerated
+  intentionally: no property added or removed. The bearing state_reason
+  enum gains rolling_element_line_present, and the state and outcome
+  descriptions name that case (unconfirmed and inconclusive), on
+  check_bearing_faults and diagnose_vibration.
+  Generated under mcp 2.3.0 and pydantic 2.12.0 (uv.lock).
 """
 
 from __future__ import annotations

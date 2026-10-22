@@ -1111,6 +1111,43 @@ class TestEvidenceDefects:
             f"candidates {[_candidates(r) for r in results]}"
         )
 
+    def test_rolling_element_defect_is_not_named_a_cage_defect(self):
+        """A strong 6203 rolling-element defect: its 2 x BSF line (119.4 Hz)
+        lies at the 4th shaft order, so the rolling element cannot be
+        supported, while its cage-rate modulation supports the cage line. The
+        cage is not singled out while the rolling-element line is
+        significant."""
+        frequencies = {"BPFO": 91.44, "BPFI": 148.16, "BSF": 59.72, "FTF": 11.43}
+        results = [
+            check_all_bearing_faults(
+                defect(
+                    "rolling_element",
+                    _rng((DEFECT_SEED, 12, i)),
+                    FS,
+                    DEFECT_SECONDS,
+                    frequencies,
+                    SHAFT_HZ,
+                    0.0,
+                ),
+                FS,
+                "6203",
+                RPM_6205,
+            )
+            for i in range(EVIDENCE_DEFECT_SEEDS)
+        ]
+        named_cage = [
+            i
+            for i, r in enumerate(results)
+            if r["outcome"] == "indicated" and _candidates(r) == ["FTF"]
+        ]
+        held = sum(
+            _check(r, "FTF")["state_reason"] == "rolling_element_line_present"
+            for r in results
+        )
+
+        assert not named_cage, f"named a cage defect on seeds {named_cage}"
+        assert held, "no record held the cage back for the rolling-element line"
+
     def test_combined_defects_are_several_types_with_both_levels(
         self, evidence_defects
     ):

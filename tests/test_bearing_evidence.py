@@ -365,6 +365,56 @@ class TestPolicy:
         assert set(record) == set(BearingEvidencePolicy.model_fields)
 
 
+class TestCageAndRollingElement:
+    """A rolling-element defect is carried through the load zone at the cage
+    rate, so its cage-rate content can support the cage hypothesis. A cage
+    supported on its own is not singled out while the rolling-element line
+    (2 x BSF) is significant."""
+
+    HYPOTHESES = [Hypothesis("FTF", 11.93, "cage"), Hypothesis("BSF", 70.58, "ball")]
+
+    def _check(self, line_hz_list, seed):
+        freqs, mags = _noise_spectrum(FAULT_FREE_SEED + seed)
+        for line_hz in line_hz_list:
+            mags = _with_line(freqs, mags, line_hz, power=400.0)
+        return evaluate_hypotheses(
+            freqs, mags, self.HYPOTHESES, shaft_hz=29.95, cage_hz=11.93
+        )
+
+    def test_a_lone_cage_with_a_significant_rolling_element_line_is_not_singled_out(
+        self,
+    ):
+        """Cage line and its 2x stand out, and so does the 2 x BSF line
+        (141.16 Hz) without corroboration of its own."""
+        result = self._check([11.93, 23.86, 141.16], seed=4600)
+        cage, ball = result["checks"]
+
+        assert (cage["state"], cage["state_reason"]) == (
+            "unconfirmed",
+            "rolling_element_line_present",
+        )
+        assert (ball["state"], ball["state_reason"]) == (
+            "unconfirmed",
+            "no_corroboration",
+        )
+        assert (result["outcome"], result["candidates"]) == ("inconclusive", [])
+        assert (
+            "The cage line (FTF) at 11.90 Hz stands above the local noise floor, but "
+            "the rolling-element line (2 x BSF) is significant too, and a "
+            "rolling-element defect also produces lines at the cage rate, so the "
+            "cage cannot be singled out."
+        ) in result["outcome_reason"]
+
+    def test_a_lone_cage_without_a_rolling_element_line_is_still_indicated(self):
+        result = self._check([11.93, 23.86], seed=4601)
+        cage, ball = result["checks"]
+
+        assert (cage["state"], cage["state_reason"]) == ("supported", "corroborated")
+        assert ball["state"] == "absent"
+        assert result["outcome"] == "indicated"
+        assert [c["fault_type"] for c in result["candidates"]] == ["FTF"]
+
+
 class TestLabelsOutsideTheVocabulary:
     def test_a_gear_mesh_at_a_shaft_order_is_not_discounted_as_a_shaft_line(self):
         """KTD10: a label outside the bearing vocabulary gets the line test and

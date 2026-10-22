@@ -20,7 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   1 % family-wise false-alarm budget per check, allocated by Bonferroni under
   stated assumptions, and what it does not cover. An outcome is evidence from one envelope spectrum, not a
   confirmed fault. The rolling element is tested at twice the ball spin
-  frequency. The new fields sit next to the existing ones, whose values, and
+  frequency. A cage line supported on its own is reported as inconclusive
+  while the rolling-element line is significant, because a rolling-element
+  defect also produces lines at the cage rate. The new fields sit next to
+  the existing ones, whose values, and
   the statements built from them, do not change; a check now computes the
   envelope spectrum once instead of once per fault frequency.
 - **Measurement provenance recorded with the CWRU benchmark outcomes.** The

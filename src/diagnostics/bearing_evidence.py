@@ -67,9 +67,11 @@ inside the window of an integer shaft order supports nothing, because shaft
 harmonics are common in envelope spectra (Smith & Randall 2015, MSSP 64-65,
 100-131). The shaft-order rule applies to the bearing vocabulary only: a
 label outside it (a gear mesh, which is a shaft order by construction) gets
-the line test and harmonic corroboration only. Harmonics and sidebands of
-one spectrum are correlated symptoms, never independent evidence
-(ISO 13379-1:2012, 5.1.3).
+the line test and harmonic corroboration only. A cage supported on its own
+is not singled out while the rolling-element line is significant: a
+rolling-element defect is modulated at the cage rate, so its cage-rate
+content can support the cage. Harmonics and sidebands of one spectrum are
+correlated symptoms, never independent evidence (ISO 13379-1:2012, 5.1.3).
 """
 
 import math
@@ -118,6 +120,7 @@ USABLE_BAND_FRACTION = 0.9
 #: Fault types whose kinematics add sidebands or a subharmonic.
 _INNER_RACE = "inner_race"
 _ROLLING_ELEMENT = "ball"
+_CAGE = "cage"
 
 EVIDENCE_POLICY: dict[str, Any] = {
     "method": "os_cfar_envelope_line_test",
@@ -675,6 +678,22 @@ def evaluate_hypotheses(
             }
         )
 
+    # A rolling-element defect is carried through the load zone at the cage
+    # rate, so its cage-rate content can support the cage: a cage supported on
+    # its own is not singled out while the rolling-element line is significant.
+    sole = [n for n, c in enumerate(checks) if c["state"] == "supported"]
+    if (
+        len(sole) == 1
+        and hypotheses[sole[0]].canonical == _CAGE
+        and any(
+            h.canonical == _ROLLING_ELEMENT
+            and c["state"] not in ("absent", "not_testable")
+            for h, c in zip(hypotheses, checks)
+        )
+    ):
+        checks[sole[0]]["state"] = "unconfirmed"
+        checks[sole[0]]["state_reason"] = "rolling_element_line_present"
+
     supported = sorted(
         (n for n, c in enumerate(checks) if c["state"] == "supported"),
         key=lambda n: (-lines[n]["level_db"], hypotheses[n].label),
@@ -914,6 +933,12 @@ def _weak_sentence(hypothesis: Hypothesis, check: dict[str, Any]) -> str:
         return (
             f"{found} it lies where the {_join(owners)} checks also predict a line, "
             "so it supports none of them."
+        )
+    if reason == "rolling_element_line_present":
+        return (
+            f"{found} the rolling-element line (2 x BSF) is significant too, and a "
+            "rolling-element defect also produces lines at the cage rate, so the cage "
+            "cannot be singled out."
         )
     if reason != "no_corroboration":
         raise ValueError(f"no sentence for state reason {reason!r}")
