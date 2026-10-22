@@ -976,7 +976,9 @@ def _weak_sentence(
                 f"{found} another significant line falls within the search window of "
                 f"the {ball.line} and lies at a shaft order. That line may be a shaft "
                 f"harmonic and does not independently establish {ball.defect}. "
-                f"{held_back}"
+                f"{_capital(ball.defect)} cannot be excluded either: it would also "
+                f"produce lines at the cage rate, so the {cage.element} lines may "
+                f"come from one. {held_back}"
             )
         return (
             f"{found} another significant line falls within the search window of "

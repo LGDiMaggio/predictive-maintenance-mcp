@@ -465,6 +465,27 @@ class TestCageAndRollingElement:
         assert states["BSF"] == ("shared", "line_shared")
         assert states["FTF"] == ("unconfirmed", "rolling_element_line_present")
         assert (result["outcome"], result["candidates"]) == ("inconclusive", [])
+        assert (
+            "window of the rolling-element line (2 x BSF). A rolling-element defect "
+            "also produces lines at the cage rate"
+        ) in result["outcome_reason"]
+
+    def test_another_type_at_a_shaft_order_keeps_the_ordinary_sentence(self):
+        """Only the rolling-element line's own position decides the wording: an
+        outer-race line at the third shaft order, next to an off-order 2 x BSF
+        line, leaves the held-back cage with the ordinary sentence."""
+        hypotheses = self.HYPOTHESES + [Hypothesis("BPFO", 89.85, "outer_race")]
+        result = self._check([11.93, 23.86, 141.16, 89.85], 4605, hypotheses)
+        states = self._states(result)
+
+        assert states["BPFO"] == ("unconfirmed", "line_at_shaft_order")
+        assert states["BSF"] == ("unconfirmed", "no_corroboration")
+        assert states["FTF"] == ("unconfirmed", "rolling_element_line_present")
+        assert "and lies at a shaft order" not in result["outcome_reason"]
+        assert (
+            "window of the rolling-element line (2 x BSF). A rolling-element defect "
+            "also produces lines at the cage rate"
+        ) in result["outcome_reason"]
 
     def test_a_6203_shaft_harmonic_in_the_rolling_element_window_holds_the_cage_back(
         self,
@@ -490,8 +511,10 @@ class TestCageAndRollingElement:
             "another significant line falls within the search window of the "
             "rolling-element line (2 x BSF) and lies at a shaft order. That line may "
             "be a shaft harmonic and does not independently establish a "
-            "rolling-element defect. Under this conservative ambiguity rule, no "
-            "single fault type is named from this spectrum."
+            "rolling-element defect. A rolling-element defect cannot be excluded "
+            "either: it would also produce lines at the cage rate, so the cage lines "
+            "may come from one. Under this conservative ambiguity rule, no single "
+            "fault type is named from this spectrum."
         ) in held["outcome_reason"]
         assert control["outcome"] == "indicated"
         assert [c["fault_type"] for c in control["candidates"]] == ["FTF"]

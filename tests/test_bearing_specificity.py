@@ -1140,13 +1140,18 @@ class TestEvidenceDefects:
             for i, r in enumerate(results)
             if r["outcome"] == "indicated" and _candidates(r) == ["FTF"]
         ]
-        held = sum(
-            _check(r, "FTF")["state_reason"] == "rolling_element_line_present"
+        held = [
+            r
             for r in results
-        )
+            if _check(r, "FTF")["state_reason"] == "rolling_element_line_present"
+        ]
 
         assert not named_cage, f"named a cage defect on seeds {named_cage}"
         assert held, "no record held the cage back for the rolling-element line"
+        assert all(
+            "A rolling-element defect cannot be excluded either" in r["outcome_reason"]
+            for r in held
+        )
 
     def test_combined_defects_are_several_types_with_both_levels(
         self, evidence_defects
