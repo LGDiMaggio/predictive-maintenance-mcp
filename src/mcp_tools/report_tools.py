@@ -25,7 +25,6 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from scipy.fft import fft, fftfreq
 from scipy.signal import hilbert, butter, sosfiltfilt
 from mcp.server.mcpserver import MCPServer, Context
 
@@ -34,6 +33,8 @@ from ..decision_support.advisory import build_advisory
 from ..decision_support.diagnosis_pipeline import (
     diagnose_vibration as _diagnose_vibration,
 )
+from ..diagnostics.bearing_analyzer import check_frequency_set
+from ..diagnostics.bearing_claims import acquisition_eligibility_from_companion
 from ..figures import build_annotated_envelope_figure
 from ..models import StoredSignalInfo
 from ..report_generator import (
@@ -52,7 +53,7 @@ from ._utils import refusal_boundary, resolve_model_paths, resolve_signal
 
 # Canonical modular twin of the ISO evaluation tool (module-level function
 # since U6) — replaces the former runtime import from the deprecated monolith.
-from .diagnostics_tools import assess_severity
+from .diagnostics_tools import assess_severity, declared_rpm
 from ..signal_processing.spectral import (
     amplitude_spectrum,
     envelope_spectrum_arrays,
@@ -383,6 +384,15 @@ async def generate_envelope_report(
     passed explicitly or, if omitted, are read from the source file's
     companion _metadata.json when present.
 
+    With reference frequencies, the report runs the bearing line test of
+    check_bearing_faults on the envelope spectrum it plots (same band) and
+    marks only the candidate lines of that test's claim; it states the claim
+    and draws each window at the line tested (2 x BSF for the rolling
+    element). The shaft speed of the sideband and shaft-order tests is the
+    one the signal declares (the rpm of the companion's "measurement"
+    object, else the measurement point's nominal_rpm); without one those
+    tests do not run, and the report and every label say so.
+
     Args:
         signal_id: ID of the stored signal (from load_signal).
         filter_low: Bandpass filter low cutoff (Hz). Default 500 Hz
@@ -396,12 +406,16 @@ async def generate_envelope_report(
         ctx: MCP context. Unused — see this module's docstring on logging.
 
     Returns:
-        Dictionary with file path, metadata, and summary (NO HTML content)
+        Dictionary with file path, metadata, and summary (NO HTML content):
+        bearing_matches holds one label per marked line, bearing_assessment
+        the line test's claim statement (None without reference
+        frequencies).
 
     Raises:
         ValueError: If bearing_freqs holds a value that is not a positive
             finite number (every such label is listed), if the signal_id is
-            not loaded, or if the stored signal has no sampling rate.
+            not loaded, if the stored signal has no sampling rate, or if the
+            signal's declared speed is malformed.
 
     Example:
         >>> # Bearing frequencies computed for YOUR bearing/rpm (here: 6205
@@ -438,37 +452,48 @@ async def generate_envelope_report(
         metadata = _companion_metadata(info)
         if any(k in metadata for k in ("BPFO", "BPFI", "BSF", "FTF")):
             bearing_freqs = {
-                "BPFO": metadata.get("BPFO"),
-                "BPFI": metadata.get("BPFI"),
-                "BSF": metadata.get("BSF"),
-                "FTF": metadata.get("FTF"),
+                k: metadata[k]
+                for k in ("BPFO", "BPFI", "BSF", "FTF")
+                if metadata.get(k) is not None
             }
 
-    # Bandpass filter (a corner exactly AT Nyquist is realized 1 Hz below
-    # it — a digital filter corner cannot sit at Nyquist)
+    band = (filter_low, filter_high)
+
+    # The labels come from the central bearing line test on the engine's
+    # envelope spectrum of this band, never from a peak-to-frequency match
+    # of the report's own; the shaft speed is the one the signal declares.
+    line_check = None
+    if bearing_freqs:
+        line_check = check_frequency_set(
+            signal_data,
+            sampling_rate,
+            bearing_freqs,
+            declared_rpm(signal_id, info),
+            signal_id=signal_id,
+            envelope_freq_range=band,
+            acquisition_eligibility=acquisition_eligibility_from_companion(
+                info.source_metadata
+            ),
+        )
+
+    # The plotted spectrum is the one the line test used.
+    env_frequencies, env_magnitudes = envelope_spectrum_arrays(
+        signal_data, sampling_rate, band
+    )
+
+    # Time-domain view: band-pass filtered signal and its envelope (a corner
+    # exactly AT Nyquist is realized 1 Hz below it, as in the engine).
     nyquist = sampling_rate / 2
     high_norm = min(filter_high, nyquist - 1.0) / nyquist
     sos = butter(4, [filter_low / nyquist, high_norm], btype="band", output="sos")
     filtered_signal = sosfiltfilt(sos, signal_data)
-
-    # Envelope via Hilbert
-    analytic_signal = hilbert(filtered_signal)
-    envelope = np.abs(analytic_signal)
-
-    # Envelope spectrum
-    N = len(envelope)
-    env_fft = fft(envelope)
-    env_frequencies = fftfreq(N, 1 / sampling_rate)
-
-    positive_idx = env_frequencies > 0
-    env_frequencies = env_frequencies[positive_idx]
-    env_magnitudes = 2.0 * np.abs(env_fft[positive_idx]) / N
+    envelope = np.abs(hilbert(filtered_signal))
 
     # Generate and save report (signal_id is the report's signal label)
     result = save_envelope_report(
         signal_file=signal_id,
         sampling_rate=sampling_rate,
-        filter_band=(filter_low, filter_high),
+        filter_band=band,
         filtered_signal=filtered_signal,
         envelope=envelope,
         env_frequencies=env_frequencies,
@@ -476,14 +501,13 @@ async def generate_envelope_report(
         bearing_freqs=bearing_freqs,
         max_freq=max_freq,
         num_peaks=num_peaks,
+        line_check=line_check,
     )
 
     logger.info(result["message"])
     logger.info(f"Report location: {result['file_path']}")
-    if result.get("bearing_matches"):
-        logger.info(
-            f"Bearing frequency matches: {', '.join(result['bearing_matches'])}"
-        )
+    if line_check is not None:
+        logger.info(f"Bearing line test: {result['bearing_assessment']}")
 
     return result
 
@@ -1061,34 +1085,14 @@ async def generate_feature_comparison_report(
     }
 
 
-#: Frequency tolerance used by the bearing matching engine. The figure draws
-#: this exact value, so a reader sees the tolerance the verdict applied.
-_MATCH_TOLERANCE_PCT = 5.0
+#: Search-window half-width (percent of each tested line) of the bearing check
+#: diagnose_vibration runs. The figure draws this exact value, so a reader
+#: sees the windows the check searched.
+_SEARCH_WINDOW_PCT = 5.0
 
 #: Renderings this tool can emit. HTML is self-contained and needs nothing
 #: extra; PDF needs the optional ``[pdf]`` extra.
 _SUPPORTED_FORMATS = ("html", "pdf")
-
-
-def _matched_check(diagnosis: dict[str, Any]) -> Optional[dict[str, Any]]:
-    """The strongest matching fault check, for figure emphasis."""
-    faults = diagnosis.get("bearing_faults")
-    if not faults:
-        return None
-    order = {"high": 3, "moderate": 2, "low": 1}
-    detected = [
-        check
-        for check in faults.get("fault_checks", [])
-        if check.get("detected") and check.get("detected_frequency_hz")
-    ]
-    if not detected:
-        return None
-    best = max(detected, key=lambda c: order.get(c.get("evidence_strength"), 0))
-    return {
-        "fault_type": best["fault_type"],
-        "measured_hz": best["detected_frequency_hz"],
-        "deviation_pct": best.get("deviation_pct"),
-    }
 
 
 def _envelope_figure(
@@ -1096,12 +1100,12 @@ def _envelope_figure(
 ) -> dict[str, Any]:
     """Build the annotated envelope spectrum for this diagnosis.
 
-    Uses the same spectrum computation the bearing matching consumed, so the
-    figure cannot show a peak the verdict never saw.
+    Uses the same spectrum computation the bearing check consumed, so the
+    figure cannot show a line the check never tested; its windows and their
+    emphasis follow the check's tested lines and claim.
     """
     band = resolve_envelope_band(fs, None)
     env_frequencies, env_magnitudes = envelope_spectrum_arrays(signal, fs, band)
-    faults = diagnosis.get("bearing_faults") or {}
     check = diagnosis.get("bearing_check") or {}
     not_computed_reason = (
         check.get("reason") if check.get("status") == "not_computed" else None
@@ -1109,9 +1113,8 @@ def _envelope_figure(
     return build_annotated_envelope_figure(
         env_frequencies,
         env_magnitudes,
-        faults.get("bearing_frequencies"),
-        matched=_matched_check(diagnosis),
-        tolerance_pct=_MATCH_TOLERANCE_PCT,
+        diagnosis.get("bearing_faults"),
+        tolerance_pct=_SEARCH_WINDOW_PCT,
         no_bands_reason=not_computed_reason,
     )
 
@@ -1201,6 +1204,11 @@ async def generate_diagnostic_report(
         machine_group=machine_group,
         support_type=support_type,
         signal_unit=info.signal_unit,
+        # From the signal's own stored companion only, as diagnose_vibration
+        # reads it: the unvalidated marker may withhold a claim, never certify.
+        acquisition_eligibility=acquisition_eligibility_from_companion(
+            info.source_metadata
+        ),
     )
 
     baseline_diagnosis = None
@@ -1216,6 +1224,9 @@ async def generate_diagnostic_report(
             machine_group=machine_group,
             support_type=support_type,
             signal_unit=baseline_info.signal_unit,
+            acquisition_eligibility=acquisition_eligibility_from_companion(
+                baseline_info.source_metadata
+            ),
         )
 
     advisory = build_advisory(diagnosis, baseline_diagnosis)

@@ -77,6 +77,29 @@ class TestGenerateRecommendations:
         assert "BPFO" in msg
         assert "outer_race" in msg and "looseness" in msg
 
+    def test_caller_supplied_fault_keeps_its_action_and_is_not_called_detected(self):
+        """T1 PR C: the action texts are unchanged; the description says the
+        fault type came from the caller and is not verified, never that it
+        was detected."""
+        recs = generate_recommendations("B", fault_types=["outer_race"])
+
+        assert [(r["action"], r["urgency"]) for r in recs] == [
+            ("Schedule inspection", "medium"),
+            ("Replace bearing, check alignment", "medium"),
+        ]
+        assert recs[1]["description"] == (
+            "Fault type supplied by the caller (outer_race); this tool does not "
+            "verify it."
+        )
+        assert not any("detected" in r["description"].lower() for r in recs)
+
+    def test_zone_d_keeps_its_zone_action_with_a_caller_supplied_fault(self):
+        recs = generate_recommendations("D", fault_types=["inner_race"])
+
+        assert recs[0]["action"] == "Immediate shutdown recommended"
+        assert recs[0]["urgency"] == "critical"
+        assert recs[1]["action"] == "Replace bearing, inspect shaft condition"
+
     def test_vocabulary_covers_canonical_bearing_faults(self):
         """VALID_FAULT_TYPES includes every canonical bearing fault."""
         from predictive_maintenance_mcp.decision_support.recommendations import (
@@ -87,3 +110,23 @@ class TestGenerateRecommendations:
         )
 
         assert set(FAULT_TYPE_CANONICAL.values()) <= set(VALID_FAULT_TYPES)
+
+
+class TestToolDescription:
+    """What a model reads before passing fault types to the tool."""
+
+    def test_fault_types_are_described_as_caller_supplied_and_unverified(self):
+        from predictive_maintenance_mcp.mcp_tools.decision_support_tools import (
+            generate_maintenance_recommendations,
+        )
+
+        doc = " ".join((generate_maintenance_recommendations.__doc__ or "").split())
+
+        assert "supplied by the caller" in doc
+        assert "not verified by this tool" in doc
+        assert "inspection" in doc
+        assert (
+            "must not be a type taken from an envelope indication of "
+            "check_bearing_faults or diagnose_vibration"
+        ) in doc
+        assert "Detected fault types" not in doc

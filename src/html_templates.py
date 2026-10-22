@@ -5,6 +5,7 @@ This module contains modern, responsive HTML templates for data visualization.
 All templates are self-contained with inline CSS and use Plotly.js CDN for interactivity.
 """
 
+from html import escape
 from typing import Dict, List, Any, Optional
 
 
@@ -434,6 +435,7 @@ def create_envelope_report(
     peaks: List[Dict[str, float]],
     bearing_freqs: Optional[Dict[str, float]],
     metadata: Dict[str, Any],
+    line_test: Optional[Dict[str, Any]] = None,
 ) -> str:
     """
     Create professional envelope analysis report.
@@ -447,9 +449,14 @@ def create_envelope_report(
         envelope: Envelope signal
         env_freq: Envelope spectrum frequencies
         env_mag_db: Envelope spectrum magnitudes in dB
-        peaks: Detected peaks
-        bearing_freqs: Optional dict with BPFO, BPFI, BSF, FTF
+        peaks: Detected peaks (frequency and level only)
+        bearing_freqs: Optional dict with the declared BPFO, BPFI, BSF, FTF
         metadata: Additional metadata
+        line_test: Optional result of the central bearing line test, as
+            ``save_envelope_report`` prepares it: ``statements``, ``labels``
+            and one row per tested line (``name``, ``line_hz``, ``peak_hz``,
+            ``level_db``, ``badge``, ``emphasised``). Every word of it is
+            server-authored; this template only places it.
 
     Returns:
         Complete HTML report
@@ -497,14 +504,59 @@ def create_envelope_report(
                 """
         bearing_ref += "</div></div>"
 
-    # Peaks table
+    # Bearing line test: the claim, the per-line badges and the labels of
+    # the central matcher, placed verbatim.
+    line_test_html = ""
+    if line_test:
+        statements = "".join(
+            f"<p style='margin-bottom: 0.5rem;'>{escape(s)}</p>"
+            for s in line_test["statements"]
+        )
+        rows = ""
+        for row in line_test["rows"]:
+            peak_text = (
+                f"{row['peak_hz']:.2f}" if row.get("peak_hz") is not None else "-"
+            )
+            level_text = (
+                f"{row['level_db']:.1f}" if row.get("level_db") is not None else "-"
+            )
+            badge = "badge-warning" if row["emphasised"] else "badge-info"
+            rows += (
+                "<tr style='border-bottom: 1px solid #e0e0e0;'>"
+                f"<td style='padding: 0.75rem;'>{escape(row['name'])}</td>"
+                f"<td style='padding: 0.75rem; font-family: monospace;'>{row['line_hz']:.2f}</td>"
+                f"<td style='padding: 0.75rem; font-family: monospace;'>{peak_text}</td>"
+                f"<td style='padding: 0.75rem; font-family: monospace;'>{level_text}</td>"
+                f"<td style='padding: 0.75rem;'><span class='badge {badge}'>{escape(row['badge'])}</span></td>"
+                "</tr>"
+            )
+        labels = "".join(f"<li>{escape(label)}</li>" for label in line_test["labels"])
+        line_test_html = (
+            "<div class='card'><h3 class='card-title'>Bearing line test</h3>"
+            f"{statements}"
+            "<table style='width:100%; border-collapse: collapse; margin-top: 0.75rem;'>"
+            "<tr style='background: #f5f7fa; font-weight: 600;'>"
+            "<th style='padding: 0.75rem; text-align: left;'>Line</th>"
+            "<th style='padding: 0.75rem; text-align: left;'>Line tested (Hz)</th>"
+            "<th style='padding: 0.75rem; text-align: left;'>Strongest bin (Hz)</th>"
+            "<th style='padding: 0.75rem; text-align: left;'>Level above floor (dB)</th>"
+            "<th style='padding: 0.75rem; text-align: left;'>State</th></tr>"
+            f"{rows}</table>"
+            + (
+                f"<ul style='margin-top: 0.75rem; padding-left: 1.25rem;'>{labels}</ul>"
+                if labels
+                else ""
+            )
+            + "</div>"
+        )
+
+    # Peaks table (frequency and level only: no peak is matched here)
     peaks_html = "<div class='card'><h3 class='card-title'>🎯 Envelope Spectrum Peaks</h3><table style='width:100%; border-collapse: collapse;'>"
-    peaks_html += "<tr style='background: #f5f7fa; font-weight: 600;'><th style='padding: 0.75rem; text-align: left;'>Rank</th><th style='padding: 0.75rem; text-align: left;'>Frequency (Hz)</th><th style='padding: 0.75rem; text-align: left;'>Magnitude (dB)</th><th style='padding: 0.75rem; text-align: left;'>Match</th></tr>"
+    peaks_html += "<tr style='background: #f5f7fa; font-weight: 600;'><th style='padding: 0.75rem; text-align: left;'>Rank</th><th style='padding: 0.75rem; text-align: left;'>Frequency (Hz)</th><th style='padding: 0.75rem; text-align: left;'>Magnitude (dB)</th></tr>"
 
     for i, peak in enumerate(peaks[:10], 1):
         freq = peak["frequency"]
         mag_db = peak["magnitude_db"]
-        match = peak.get("match", "")
 
         peaks_html += f"<tr style='border-bottom: 1px solid #e0e0e0;'>"
         peaks_html += f"<td style='padding: 0.75rem;'><strong>#{i}</strong></td>"
@@ -514,7 +566,6 @@ def create_envelope_report(
         peaks_html += (
             f"<td style='padding: 0.75rem; font-family: monospace;'>{mag_db:.1f}</td>"
         )
-        peaks_html += f"<td style='padding: 0.75rem; color: #e74c3c; font-weight: 600;'>{match}</td>"
         peaks_html += "</tr>"
 
     peaks_html += "</table></div>"
@@ -526,15 +577,17 @@ def create_envelope_report(
     peak_freqs = [p["frequency"] for p in peaks[:10]]
     peak_mags = [p["magnitude_db"] for p in peaks[:10]]
 
-    # Bearing frequency markers
+    # Markers at the lines the bearing line test tested (2 x BSF for the
+    # rolling element), not at the declared values.
     bearing_markers_script = ""
-    if bearing_freqs:
-        for name, freq in bearing_freqs.items():
-            if freq and freq <= max(env_freq):
+    if line_test:
+        for row in line_test["rows"]:
+            name, freq = row["name"], row["line_hz"]
+            if freq <= max(env_freq):
                 colors = {
                     "BPFO": "#e74c3c",
                     "BPFI": "#f39c12",
-                    "BSF": "#3498db",
+                    "2 x BSF": "#3498db",
                     "FTF": "#2ecc71",
                 }
                 color = colors.get(name, "#95a5a6")
@@ -673,6 +726,7 @@ def create_envelope_report(
     <div class="container">
         {info_cards}
         {bearing_ref}
+        {line_test_html}
         {charts_div}
         {peaks_html}
     </div>

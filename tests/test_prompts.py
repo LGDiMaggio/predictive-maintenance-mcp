@@ -70,6 +70,41 @@ class TestDiagnoseBearingPrompt:
         assert 'signal_unit="<confirmed-unit>"' in result
         assert "confirm" in result.lower()
 
+    @pytest.mark.parametrize(
+        "kwargs",
+        [{}, {"rpm": 1797.0, "bpfo": 107.4, "bpfi": 162.2, "bsf": 70.6, "ftf": 14.3}],
+        ids=["minimal", "full"],
+    )
+    def test_respects_the_server_claim_and_asks_for_no_replacement(
+        self, prompts, kwargs
+    ):
+        """T1 PR C: no "STRONGLY indicated" reading of a 5 % peak, no
+        "Confirmed fault ... plan replacement" row, and no inferred fault type
+        chained into generate_maintenance_recommendations."""
+        result = prompts["diagnose_bearing"](signal_id="test_signal", **kwargs)
+        flat = " ".join(result.split())
+
+        assert "STRONGLY" not in result
+        assert "plan replacement" not in result
+        assert "Confirmed fault" not in result
+        assert "fault_types=[" not in result
+        assert "claim.level" in flat
+        assert "single_spectrum_evidence" in flat
+        assert "never request bearing replacement" in flat
+        assert 'generate_maintenance_recommendations(severity_zone="A")' in result
+        assert (
+            "Do NOT pass fault_types taken from an envelope indication of "
+            "check_bearing_faults or diagnose_vibration"
+        ) in flat
+
+    def test_prompt_description_drops_the_strongly_indicated_rule(self, mcp):
+        prompt = next(
+            p
+            for p in mcp._prompt_manager._prompts.values()
+            if p.name == "diagnose_bearing"
+        )
+        assert "STRONGLY" not in (prompt.description or "")
+
 
 class TestDiagnoseGearPrompt:
     """Tests for diagnose_gear prompt."""

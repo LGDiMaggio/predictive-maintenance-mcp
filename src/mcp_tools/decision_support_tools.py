@@ -53,7 +53,7 @@ async def generate_maintenance_recommendations(
     severity_zone: Literal["A", "B", "C", "D"],
     fault_types: Optional[list[FaultType]] = None,
 ) -> str:
-    """Generate maintenance recommendations based on severity and detected faults.
+    """Generate maintenance recommendations based on severity and fault types.
 
     Combines ISO zone-based urgency with fault-specific maintenance
     actions. This tool intentionally does NOT accept a confidence
@@ -63,10 +63,15 @@ async def generate_maintenance_recommendations(
     Args:
         ctx: MCP context. Unused — see this module's docstring on logging.
         severity_zone: ISO zone letter — "A", "B", "C", or "D".
-        fault_types: Detected fault types from the closed canonical
-            vocabulary — outer_race/inner_race/ball/cage for bearings
-            (NOT the BPFO/BPFI/BSF/FTF acronyms) plus misalignment/
-            unbalance/looseness. None for zone-only advice.
+        fault_types: Fault types supplied by the caller, from the closed
+            canonical vocabulary: outer_race/inner_race/ball/cage for
+            bearings (NOT the BPFO/BPFI/BSF/FTF acronyms) plus
+            misalignment/unbalance/looseness. They are not verified by this
+            tool. They may represent independently established faults (for
+            example by inspection) or explicitly requested scenarios, and
+            must not be a type taken from an envelope indication of
+            check_bearing_faults or diagnose_vibration. None for zone-only
+            advice.
 
     Returns:
         Formatted string listing all maintenance recommendations.

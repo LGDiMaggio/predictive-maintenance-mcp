@@ -142,14 +142,23 @@ class TestSeverityAndReport:
         assert severity.original_unit == "g"
 
     def test_envelope_report_saved_with_the_declared_frequencies_marked(self, chain):
+        """Since T1 PR C the report marks the lines of the same line test
+        check_bearing_faults runs, on the same band, and states its claim. The
+        sample declares no measurement rpm, so the report's test runs without
+        the sideband and shaft-order tests and every label says so."""
         report = chain["report"]
         path = Path(report["file_path"])
         assert path.exists()
         assert path.suffix == ".html"
         assert path.parent.resolve() == chain["reports_dir"].resolve()
-        matched = " ".join(report["bearing_matches"])
-        assert "BPFO" in matched and "BPFI" in matched
-        assert "BSF" not in matched and "FTF" not in matched
+        labels = report["bearing_matches"]
+        assert [label.split(" ", 1)[0] for label in labels] == ["BPFO", "BPFI"]
+        for label in labels:
+            assert label.endswith(
+                "no shaft speed is declared, so the sideband test and the "
+                "shaft-order test were not run"
+            )
+        assert report["bearing_assessment"] == chain["faults"].overall_assessment
 
 
 class TestReadmeParagraph:

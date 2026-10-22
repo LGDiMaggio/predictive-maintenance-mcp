@@ -198,7 +198,7 @@ def _summary_evidence(
     evidence: dict,
     expected: list[tuple[str, float]],
     *,
-    shaft_hz: float,
+    shaft_hz: Optional[float],
     tolerance_pct: float,
     acquisition_eligibility: str,
 ) -> dict[str, Any]:
@@ -408,7 +408,7 @@ def check_frequency_set(
     signal: np.ndarray,
     fs: float,
     frequencies: dict[str, float],
-    rpm: float,
+    rpm: Optional[float],
     signal_id: str = "",
     tolerance_pct: float = 5.0,
     envelope_freq_range: Optional[tuple[float, float]] = None,
@@ -428,7 +428,9 @@ def check_frequency_set(
         frequencies: {label: expected frequency in Hz}, all values positive
             and finite.
         rpm: Shaft speed in RPM (echoed; shaft frequency = rpm/60), positive
-            and finite.
+            and finite; None when no speed is declared, which runs no
+            shaft-rate sideband or shaft-order test (the outcome reason says
+            so) and echoes ``rpm`` and ``shaft_frequency_hz`` as None.
         signal_id: Signal identifier (for result labeling).
         tolerance_pct: Frequency tolerance in percent.
         envelope_freq_range: Bandpass filter range for envelope. ``None``
@@ -445,14 +447,16 @@ def check_frequency_set(
         with its ``claim``.
 
     Raises:
-        ValueError: If rpm is not a positive finite number, if
+        ValueError: If a given rpm is not a positive finite number, if
             acquisition_eligibility is not one of its two values, if
             frequencies is empty or contains a value that is not a positive
             finite number (every such label is listed), or if
             :func:`check_bearing_fault_peak` refuses the signal or fs
             (non-finite samples, a non-finite or non-positive fs).
     """
-    validate_rpm(rpm)
+    if rpm is not None:
+        validate_rpm(rpm)
+    shaft_hz = None if rpm is None else rpm / 60.0
     validate_acquisition_eligibility(acquisition_eligibility)
     if not frequencies:
         raise ValueError(
@@ -471,7 +475,7 @@ def check_frequency_set(
         tolerance_pct=tolerance_pct,
         num_harmonics=num_harmonics,
         envelope_freq_range=envelope_freq_range,
-        shaft_hz=rpm / 60.0,
+        shaft_hz=shaft_hz,
         # A declared cage frequency is the rolling element's modulation rate.
         cage_hz=next(
             (
@@ -484,20 +488,21 @@ def check_frequency_set(
     )
 
     freq_echo = {k: float(v) for k, v in frequencies.items()}
-    freq_echo["shaft_freq_hz"] = rpm / 60.0
+    if shaft_hz is not None:
+        freq_echo["shaft_freq_hz"] = shaft_hz
 
     return {
         "signal_id": signal_id,
         "bearing_id": None,
         "rpm": rpm,
-        "shaft_frequency_hz": rpm / 60.0,
+        "shaft_frequency_hz": shaft_hz,
         "bearing_frequencies": freq_echo,
         "fault_checks": checks,
         "source": None,
         **_summary_evidence(
             evidence,
             expected,
-            shaft_hz=rpm / 60.0,
+            shaft_hz=shaft_hz,
             tolerance_pct=tolerance_pct,
             acquisition_eligibility=acquisition_eligibility,
         ),

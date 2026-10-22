@@ -46,6 +46,7 @@ from ..models import (
     ISOSeverityRefusal,
     DiagnosisParameterSource,
     DiagnosisResult,
+    StoredSignalInfo,
 )
 from ..document_reader import (
     calculate_bearing_frequencies,
@@ -1372,9 +1373,11 @@ async def check_bearing_faults(
         tolerance_pct: Frequency matching tolerance in percent (default 5).
 
     Returns:
-        BearingFaultsSummary with one check per expected frequency,
-        overall assessment, most likely fault (+ canonical form), and the
-        provenance of the expected frequencies (`source`).
+        BearingFaultsSummary with one check per expected frequency, the
+        claim, the overall assessment that follows it, most_likely_fault and
+        its canonical form, set only when the claim is
+        single_spectrum_evidence, and the provenance of the expected
+        frequencies (`source`).
 
     Raises:
         ValueError: If not exactly one route is given, if the geometry is
@@ -1626,6 +1629,53 @@ def _missing_rpm_message(
     )
 
 
+def _declared_context(
+    signal_id: str,
+    identity: Optional[dict[str, Any]],
+    point: Optional[dict[str, Any]],
+) -> dict[str, Any]:
+    """The declared context of a signal: its measurement, then its point.
+
+    Raises:
+        ValueError: If a declared value is malformed (the message names the
+            remedies).
+    """
+    declared: dict[str, Any] = dict(identity) if identity is not None else {}
+    try:
+        return _resolve_declared_context(declared, point)
+    except ValueError as exc:
+        raise ValueError(
+            f"The declared context of signal '{signal_id}' cannot be used: "
+            f"{exc} Re-declare the measurement point with "
+            f"declare_measurement_point(...), fix the companion and re-load "
+            f"the file, or pass the parameter explicitly to this call."
+        ) from exc
+
+
+def declared_rpm(signal_id: str, info: StoredSignalInfo) -> Optional[float]:
+    """The operating speed a stored signal declares, or None.
+
+    Resolved as diagnose_vibration resolves an rpm it is not given: the rpm
+    of the companion's "measurement" object, then the nominal_rpm of the
+    measurement point's current declaration in the asset ledger. Never
+    estimated and never defaulted.
+
+    Args:
+        signal_id: The stored signal (for messages).
+        info: Its stored metadata.
+
+    Returns:
+        The declared rpm, or None when neither source declares one.
+
+    Raises:
+        ValueError: If a declared value is malformed.
+    """
+    identity = info.measurement
+    point = _point_context_for(signal_id, identity)
+    rpm = _declared_context(signal_id, identity, point)["rpm"]
+    return None if rpm is None else float(rpm)
+
+
 def _resolve_diagnosis_parameters(
     signal_id: str,
     identity: Optional[dict[str, Any]],
@@ -1664,16 +1714,7 @@ def _resolve_diagnosis_parameters(
         ValueError: If no source provides an rpm (the message names the
             three remedies), or if a declared value is malformed.
     """
-    declared: dict[str, Any] = dict(identity) if identity is not None else {}
-    try:
-        context = _resolve_declared_context(declared, point)
-    except ValueError as exc:
-        raise ValueError(
-            f"The declared context of signal '{signal_id}' cannot be used: "
-            f"{exc} Re-declare the measurement point with "
-            f"declare_measurement_point(...), fix the companion and re-load "
-            f"the file, or pass the parameter explicitly to this call."
-        ) from exc
+    context = _declared_context(signal_id, identity, point)
 
     sources: dict[str, DiagnosisParameterSource] = {}
 

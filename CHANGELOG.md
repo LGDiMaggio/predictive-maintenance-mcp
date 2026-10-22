@@ -29,8 +29,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   only the first two shaft harmonics; a significant higher shaft harmonic in
   the rolling-element window (on a 6203, the fourth) can cause additional
   abstention that this measurement does not capture. The new fields sit next
-  to the existing ones, whose values, and the statements built from them, do
-  not change; a check now computes the envelope spectrum once instead of once
+  to the existing per-check fields, whose values do not change (the summary
+  fields and statements that now follow the claim are described under
+  Changed); a check now computes the envelope spectrum once instead of once
   per fault frequency.
 - **Measurement provenance recorded with the CWRU benchmark outcomes.** The
   runner now collects a measurement-environment block — date, git describe of
@@ -188,6 +189,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   updates stay off, and MCP SDK major updates are ignored.
 
 ### Changed
+- **Bearing statements, actions and reports follow a claim block.**
+  `check_bearing_faults` and the `bearing_faults` block of
+  `diagnose_vibration` carry a new `claim` block (additive): `level`
+  (`withheld`, `qualified` or `single_spectrum_evidence`), `conditions`,
+  `limitations`, `acquisition_eligibility`, `basis` and `policy_version`.
+  `most_likely_fault`, `most_likely_fault_canonical` and
+  `overall_assessment` keep their keys and now follow the claim: a type is
+  named only as single-spectrum evidence, and the canonical form comes from
+  the candidate. An indicated type is qualified when the record cannot test
+  the cage line and a harmonic of the cage frequency falls in its search
+  window, or when an outer-race indication sits beside a significant
+  inner-race line whose sideband at BPFI minus twice the shaft rate falls in
+  the outer-race window; a generated signal whose own companion declares a
+  noise level of 0 is withheld. The bearing text, actions and combined
+  `evidence_strength` of `diagnose_vibration` follow the claim: a bearing
+  finding counts once, the weight of two for high evidence is gone, and the
+  bearing actions are confirmation, inspection, repeat or acquisition steps.
+  `generate_diagnostic_report` (verdict, bearing section and its badges,
+  evidence, disagreements, actions, baseline deltas), its annotated
+  envelope figure (one search window around each tested line, 2 x BSF for
+  the rolling element, with the claim's candidates emphasised alike) and
+  `generate_envelope_report` follow the claim and the central bearing line
+  test. The envelope report runs that test on the envelope spectrum it
+  plots and marks only its candidate lines; the shaft speed comes from the
+  signal's declared measurement or its measurement point, and without one
+  the sideband and shaft-order tests do not run and the report says so.
+  The per-check fields `detected`, `evidence_strength`,
+  `detected_frequency_hz`, `magnitude`, `deviation_pct` and
+  `harmonics_detected` keep their values. `generate_maintenance_recommendations`
+  keeps its signature and its actions; its description now says the fault
+  types are supplied by the caller and not verified, and each fault entry
+  says so instead of "Detected fault". The `diagnose_bearing` prompt asks
+  for the server's claim and a confirmation step. Before 1.0 this is a
+  behavior change of published fields: the next release bumps MINOR, per
+  the project's pre-1.0 rule.
 - **`diagnose_vibration`: `rpm`, `machine_group` and `support_type` are
   now optional** (additive; calls that pass them behave as before).
   Precedence: the explicit argument, then the `rpm` declared in the

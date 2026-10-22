@@ -451,6 +451,18 @@ class TestBearingClaimAcquisitionEligibility:
             parameters = inspect.signature(tools[name]).parameters
             assert "acquisition_eligibility" not in parameters, name
 
+    def test_check_description_ties_the_named_type_to_the_claim(self, tools):
+        """The model-facing description no longer promises a most likely
+        fault for every check: the type is named only at
+        single_spectrum_evidence."""
+        doc = " ".join((tools["check_bearing_faults"].__doc__ or "").split())
+
+        assert "most likely fault (+ canonical form)" not in doc
+        assert (
+            "most_likely_fault and its canonical form, set only when the claim is "
+            "single_spectrum_evidence"
+        ) in doc
+
     @pytest.mark.asyncio
     async def test_a_check_that_did_not_run_carries_no_claim(
         self, tools, data_dir, store, mock_ctx

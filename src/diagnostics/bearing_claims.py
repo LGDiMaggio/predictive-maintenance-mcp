@@ -43,7 +43,11 @@ may only make a claim more cautious; an ``unknown`` acquisition is not a
 validation of the model's assumptions.
 
 Every sentence and action this module writes comes from ``CLAIM_SENTENCES``,
-one closed list.
+one closed list. The report surfaces (the advisory of
+``generate_diagnostic_report``, its envelope figure and badges, the envelope
+report and the caller-supplied fault types of
+``generate_maintenance_recommendations``) take their bearing wording from the
+same list, through the functions at the end of this module.
 """
 
 import math
@@ -240,6 +244,153 @@ CLAIM_SENTENCES: dict[str, str] = {
         "findings, is not a probability, and does not identify or confirm a fault "
         "type."
     ),
+    # generate_diagnostic_report: the advisory's bearing section, one sentence
+    # per tested line
+    "block_intro": (
+        "Envelope line test for bearing {bearing_id} at {shaft_hz:.1f} Hz shaft speed."
+    ),
+    "block_intro_unnamed": "Envelope line test at {shaft_hz:.1f} Hz shaft speed.",
+    "block_supported": (
+        "The {line} at {peak_hz:.2f} Hz stands {level_db:.1f} dB above the local "
+        "noise floor, and further lines of its kinematics also stand above the "
+        "floor in the same spectrum."
+    ),
+    "block_supported_label": (
+        "The {line} at {peak_hz:.2f} Hz stands {level_db:.1f} dB above the local "
+        "noise floor, and harmonics of it also stand above the floor in the same "
+        "spectrum."
+    ),
+    "block_not_counted": (
+        "The {line} at {peak_hz:.2f} Hz stands {level_db:.1f} dB above the local "
+        "noise floor but is not counted as support for a fault type."
+    ),
+    "block_absent": (
+        "The {line} does not stand above the local noise floor in this record and "
+        "band."
+    ),
+    "block_not_testable": "The {line} could not be tested in this record.",
+    # badges of the per-line table (integrated report, envelope report)
+    "badge_supported": "above the floor, corroborated",
+    "badge_not_counted": "above the floor, not counted",
+    "badge_absent": "not above the floor",
+    "badge_not_testable": "not testable",
+    "badge_not_assessed": "not assessed",
+    # the advisory's verdict, after the claim statement and its actions
+    "verdict_zone_elevated": (
+        "Broadband vibration is elevated (Zone {zone}), and the envelope evidence "
+        "names no bearing fault type, so bearing and non-bearing sources both "
+        "remain possible."
+    ),
+    "verdict_anomaly_flag": (
+        "The anomaly model places this signal outside the pattern it learned, and "
+        "the envelope evidence names no bearing fault type, so bearing and "
+        "non-bearing sources both remain possible."
+    ),
+    # the advisory's evidence: the counted lines of each candidate
+    "evidence_lines": (
+        "Lines counted for the {line}: the line at {peak_hz:.2f} Hz "
+        "({level_db:.1f} dB above the local noise floor), with {members}. Each "
+        "stands above the local noise floor of this spectrum in its line test: "
+        "the tested lines share a nominal false-alarm level of {check_pct:g} % per "
+        "check, and each further line is tested at {line_pct:g} %. Lines of one "
+        "spectrum are not independent evidence and do not confirm a fault."
+    ),
+    "member_harmonic": "harmonic {harmonic} at {peak_hz:.2f} Hz ({level_db:.1f} dB)",
+    "member_shaft_sideband": (
+        "a shaft-rate sideband at {peak_hz:.2f} Hz ({level_db:.1f} dB)"
+    ),
+    "member_cage_sideband": (
+        "a cage-rate sideband at {peak_hz:.2f} Hz ({level_db:.1f} dB)"
+    ),
+    "member_subharmonic": "the 1 x BSF line at {peak_hz:.2f} Hz ({level_db:.1f} dB)",
+    # the advisory's disagreements (ISO zone A or B)
+    "disagreement_evidence": (
+        "Indicators differ. Zone {zone} describes overall vibration energy as "
+        "acceptable, while the envelope evidence of this single spectrum is "
+        "consistent with {defect}. Both can hold: a localised defect can stand out "
+        "in the envelope spectrum while adding little broadband energy. The "
+        "envelope evidence warrants confirmation despite the acceptable zone; it "
+        "is not a confirmed fault."
+    ),
+    "periodic_line": "a periodic line at the declared {label} frequency",
+    "disagreement_anomaly": (
+        "Indicators differ. Zone {zone} describes overall vibration energy as "
+        "acceptable, while the anomaly model ({health}, {ratio_pct:.0f}% of "
+        "segments) places this signal outside the pattern it learned. The anomaly "
+        "model does not identify a fault type or a bearing element."
+    ),
+    # the advisory's bearing recommendations (the actions are claim_actions)
+    "action_description_evidence": (
+        "Single-spectrum envelope evidence is not a confirmed fault; this step "
+        "confirms or excludes it."
+    ),
+    "action_description_qualified": (
+        "The envelope evidence does not single out one fault type; this step "
+        "addresses the readings it cannot exclude."
+    ),
+    "action_description_withheld": (
+        "The envelope evidence supports no fault type in this record; this step "
+        "can make the record assessable."
+    ),
+    "evidence_strength_explanation": (
+        "Evidence strength counts the findings of the analyses that ran, a bearing "
+        "finding once. It is not a confidence score, it is not a probability, and "
+        "it does not identify or confirm a fault type."
+    ),
+    # the advisory's baseline comparison, per candidate
+    "delta_envelope": (
+        "Envelope amplitude of the {line} is {delta_db:.1f} dB {direction} than "
+        "baseline (strongest bin of its search window: {peak_hz:.2f} Hz, baseline "
+        "{baseline_peak_hz:.2f} Hz)."
+    ),
+    "delta_envelope_unchanged": (
+        "Envelope amplitude of the {line} is unchanged against baseline."
+    ),
+    # the annotated envelope figure
+    "figure_caption": (
+        "Envelope spectrum with the {labels} search windows overlaid. Each shaded "
+        "band is the ±{tolerance_pct:g}% window around the line its check "
+        "tests{rolling_element}. A peak inside a window is not a finding by "
+        "itself: the check counts a line only when it stands above the local noise "
+        "floor and a further line it predicts does too."
+    ),
+    "figure_rolling_element": " (2 x BSF for the rolling element)",
+    "figure_emphasis_one": (
+        "The emphasised window ({labels}) holds the candidate line of the bearing "
+        "statement in this report."
+    ),
+    "figure_emphasis_many": (
+        "The emphasised windows ({labels}) hold the candidate lines of the bearing "
+        "statement in this report, emphasised alike."
+    ),
+    "figure_emphasis_none": (
+        "No window is emphasised: the bearing statement in this report names no "
+        "candidate line."
+    ),
+    "figure_annotation": "{name} {line_hz:.2f} Hz",
+    "figure_annotation_candidate": (
+        "{name} {line_hz:.2f} Hz: strongest bin {peak_hz:.1f} Hz, {level_db:.1f} dB "
+        "above the floor"
+    ),
+    # generate_envelope_report: one label per candidate line
+    "envelope_label": (
+        "{name} line at {peak_hz:.2f} Hz, {level_db:.1f} dB above the local noise "
+        "floor and corroborated in this spectrum"
+    ),
+    "envelope_label_no_speed": (
+        "{name} line at {peak_hz:.2f} Hz, {level_db:.1f} dB above the local noise "
+        "floor and corroborated in this spectrum; no shaft speed is declared, so "
+        "the sideband test and the shaft-order test were not run"
+    ),
+    "envelope_no_speed": (
+        "No shaft speed is declared for this signal (the rpm of its measurement or "
+        "the nominal rpm of its measurement point), so the line test ran without "
+        "the sideband test and the shaft-order test."
+    ),
+    # generate_maintenance_recommendations: a fault type the caller supplies
+    "caller_fault_type": (
+        "Fault type supplied by the caller ({fault}); this tool does not verify it."
+    ),
 }
 
 _S = CLAIM_SENTENCES
@@ -303,6 +454,12 @@ def _index(hypotheses: Sequence[Hypothesis], label: str) -> int:
 
 def _first(hypotheses: Sequence[Hypothesis], canonical: str) -> Optional[int]:
     return next((n for n, h in enumerate(hypotheses) if h.canonical == canonical), None)
+
+
+def _sideband_only(canonical: Optional[str], check: Mapping[str, Any]) -> bool:
+    """Whether an inner-race line's only counted corroboration is sidebands."""
+    counted = {m["kind"] for m in check["corroboration"] if m["counted"]}
+    return canonical == _INNER_RACE and counted == {"sideband"}
 
 
 def _cage_comb_in_window(line_hz: float, cage_hz: float, tolerance: float) -> bool:
@@ -373,8 +530,7 @@ def bearing_claim(
             level = QUALIFIED
         else:
             level = SINGLE_SPECTRUM_EVIDENCE
-            counted = {m["kind"] for m in checks[n]["corroboration"] if m["counted"]}
-            if x.canonical == _INNER_RACE and counted == {"sideband"}:
+            if _sideband_only(x.canonical, checks[n]):
                 limitations.append(SIDEBAND_ONLY_CORROBORATION)
             if x.canonical in _NOT_CAGE and cage is None:
                 limitations.append(CAGE_NOT_DECLARED)
@@ -629,3 +785,235 @@ def claim_actions(summary: Mapping[str, Any]) -> list[str]:
 def aggregate_statement(strength: str) -> str:
     """The diagnosis's sentence on its combined evidence strength."""
     return _S["aggregate"].format(strength=strength)
+
+
+# ---------------------------------------------------------------------------
+# Report surfaces: the advisory, the figure and the envelope report
+# ---------------------------------------------------------------------------
+
+#: The badge of each per-line state (unconfirmed and shared lines stand
+#: above the floor but support no type).
+_BADGE_KEYS = {
+    "supported": "badge_supported",
+    "unconfirmed": "badge_not_counted",
+    "shared": "badge_not_counted",
+    "absent": "badge_absent",
+    "not_testable": "badge_not_testable",
+}
+
+#: How a counted corroborating line is named, per kind.
+_MEMBER_KEYS = {
+    ("harmonic", None): "member_harmonic",
+    ("sideband", _INNER_RACE): "member_shaft_sideband",
+    ("sideband", _ROLLING_ELEMENT): "member_cage_sideband",
+    ("subharmonic", _ROLLING_ELEMENT): "member_subharmonic",
+}
+
+
+def emphasised_candidates(summary: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """The candidates a report may mark, in the check's level order.
+
+    Every candidate alike at single-spectrum evidence and at a qualified
+    claim; none when the claim is withheld (a generated signal without noise
+    keeps its candidates in the evidence fields, but no report marks them).
+
+    Args:
+        summary: A check summary with its ``claim`` and ``candidates``.
+
+    Returns:
+        Copies of the candidates to mark.
+    """
+    if summary["claim"]["level"] == WITHHELD:
+        return []
+    return [dict(c) for c in summary["candidates"]]
+
+
+def line_display_name(label: str, canonical: Optional[str]) -> str:
+    """The short name of the line a check tests: '2 x BSF' for the rolling
+    element, whose line is tested at twice the declared ball spin frequency."""
+    return f"2 x {label}" if canonical == _ROLLING_ELEMENT else label
+
+
+def state_badge(state: str, claim: Mapping[str, Any]) -> str:
+    """The badge of one tested line, from its state and the claim.
+
+    A claim withheld because the signal is generated without noise makes
+    every badge "not assessed": the line test's model does not apply.
+    """
+    if GENERATED_WITHOUT_NOISE in claim["conditions"]:
+        return _S["badge_not_assessed"]
+    return _S[_BADGE_KEYS[state]]
+
+
+def _check_of(summary: Mapping[str, Any], label: str) -> Mapping[str, Any]:
+    return next(c for c in summary["fault_checks"] if c["fault_type"] == label)
+
+
+def line_test_statement(summary: Mapping[str, Any]) -> str:
+    """What the line test found on each tested line, for a report section.
+
+    One sentence per hypothesis from its state; for a generated signal
+    without noise, the claim's withheld statement instead.
+
+    Args:
+        summary: A check summary with ``shaft_frequency_hz``, ``fault_checks``
+            and ``claim``.
+
+    Returns:
+        The section statement.
+    """
+    bearing_id = summary.get("bearing_id")
+    shaft_hz = summary["shaft_frequency_hz"]
+    sentences = [
+        (
+            _S["block_intro"].format(bearing_id=bearing_id, shaft_hz=shaft_hz)
+            if bearing_id
+            else _S["block_intro_unnamed"].format(shaft_hz=shaft_hz)
+        )
+    ]
+    if GENERATED_WITHOUT_NOISE in summary["claim"]["conditions"]:
+        return " ".join([*sentences, summary["overall_assessment"]])
+    for check in summary["fault_checks"]:
+        canonical = check.get("fault_type_canonical")
+        line = _line_name(canonical, check["fault_type"])
+        state = check["state"]
+        if state == "supported":
+            key = "block_supported" if canonical in _NAMES else "block_supported_label"
+        elif state in ("unconfirmed", "shared"):
+            key = "block_not_counted"
+        else:
+            key = "block_absent" if state == "absent" else "block_not_testable"
+        sentences.append(
+            _S[key].format(
+                line=line, peak_hz=check["line_peak_hz"], level_db=check["level_db"]
+            )
+        )
+    return " ".join(sentences)
+
+
+def _member_phrase(member: Mapping[str, Any], canonical: Optional[str]) -> str:
+    kind = member["kind"]
+    key = _MEMBER_KEYS[(kind, None if kind == "harmonic" else canonical)]
+    return _S[key].format(
+        harmonic=member["harmonic"],
+        peak_hz=member["peak_hz"],
+        level_db=member["level_db"],
+    )
+
+
+def counted_lines_statements(summary: Mapping[str, Any]) -> list[str]:
+    """One sentence per marked candidate: its line and its counted lines.
+
+    Each sentence claims only that the lines stand above the local noise
+    floor at the evidence policy's nominal false-alarm levels, and that
+    lines of one spectrum are not independent evidence; an inner-race line
+    corroborated by sidebands alone carries the sideband limitation.
+
+    Args:
+        summary: A check summary with ``evidence_policy``.
+
+    Returns:
+        The sentences, in the candidates' level order; none at withheld.
+    """
+    policy = summary["evidence_policy"]
+    sentences = []
+    for candidate in emphasised_candidates(summary):
+        check = _check_of(summary, candidate["fault_type"])
+        canonical = candidate["fault_type_canonical"]
+        members = [
+            _member_phrase(m, canonical) for m in check["corroboration"] if m["counted"]
+        ]
+        sentence = _S["evidence_lines"].format(
+            line=_line_name(canonical, candidate["fault_type"]),
+            peak_hz=check["line_peak_hz"],
+            level_db=check["level_db"],
+            members=_join(members),
+            check_pct=100.0 * policy["false_alarm_probability_per_check"],
+            line_pct=100.0 * policy["false_alarm_probability_per_corroborating_line"],
+        )
+        if _sideband_only(canonical, check):
+            sentence += " " + _S["limitation_sideband_only"]
+        sentences.append(sentence)
+    return sentences
+
+
+def _defect_phrase(label: str, canonical: Optional[str]) -> str:
+    names = _NAMES.get(canonical or "")
+    return names.defect if names else _S["periodic_line"].format(label=label)
+
+
+def evidence_disagreement_statement(summary: Mapping[str, Any], zone: str) -> str:
+    """The disagreement of single-spectrum evidence with an acceptable zone.
+
+    Args:
+        summary: A check summary whose claim is single-spectrum evidence.
+        zone: The acceptable ISO zone ("A" or "B").
+
+    Returns:
+        The statement: the envelope evidence warrants confirmation despite
+        the acceptable zone, and is not a confirmed fault.
+    """
+    (candidate,) = summary["candidates"]
+    return _S["disagreement_evidence"].format(
+        zone=zone,
+        defect=_defect_phrase(
+            candidate["fault_type"], candidate["fault_type_canonical"]
+        ),
+    )
+
+
+def envelope_delta_statement(
+    check: Mapping[str, Any],
+    *,
+    delta_db: float,
+    direction: str,
+    baseline_peak_hz: float,
+) -> str:
+    """The baseline comparison of a candidate's envelope amplitude.
+
+    Args:
+        check: The candidate's per-check dict in the signal's check.
+        delta_db: Amplitude change at the tested line, in dB.
+        direction: "higher", "lower" or "unchanged".
+        baseline_peak_hz: The strongest bin of the same window in the baseline.
+
+    Returns:
+        The delta sentence.
+    """
+    line = _line_name(check.get("fault_type_canonical"), check["fault_type"])
+    if direction == "unchanged":
+        return _S["delta_envelope_unchanged"].format(line=line)
+    return _S["delta_envelope"].format(
+        line=line,
+        delta_db=abs(delta_db),
+        direction=direction,
+        peak_hz=check["line_peak_hz"],
+        baseline_peak_hz=baseline_peak_hz,
+    )
+
+
+def envelope_labels(summary: Mapping[str, Any]) -> list[str]:
+    """One envelope-report label per marked candidate line.
+
+    A check run without a shaft speed (``shaft_frequency_hz`` None) ran no
+    sideband or shaft-order test, and every label says so.
+
+    Args:
+        summary: A check summary (``check_frequency_set``).
+
+    Returns:
+        The labels, in the candidates' level order; none at withheld.
+    """
+    key = (
+        "envelope_label_no_speed"
+        if summary.get("shaft_frequency_hz") is None
+        else "envelope_label"
+    )
+    return [
+        _S[key].format(
+            name=line_display_name(c["fault_type"], c["fault_type_canonical"]),
+            peak_hz=c["line_peak_hz"],
+            level_db=c["level_db"],
+        )
+        for c in emphasised_candidates(summary)
+    ]

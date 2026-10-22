@@ -625,12 +625,6 @@ class TestStatementsAndActions:
             BEARING_MAINTENANCE, mfpt_baseline["recommendations"]
         )
 
-    @tripwire(
-        "bearing-noise-match-drives-actions",
-        "T1 M9: the advisory names a fault, reports disagreeing indicators, "
-        "recommends a bearing replacement and says harmonics rule out noise on "
-        "a healthy recording",
-    )
     def test_uncorroborated_line_is_no_finding_of_the_advisory(self, mfpt_baseline):
         advisory = build_advisory(mfpt_baseline)
         found = {
@@ -648,11 +642,6 @@ class TestStatementsAndActions:
 
         assert not any(found.values()), {k: v for k, v in found.items() if v}
 
-    @tripwire(
-        "bearing-replacement-from-envelope-evidence",
-        "T1 AE11: a single-record envelope indication produces 'Replace "
-        "bearing' and 'plan replacement'",
-    )
     def test_envelope_indication_asks_for_no_replacement(self):
         """``golden_bearing``: a true BPFO modulation."""
         diagnosis = diagnose_vibration(

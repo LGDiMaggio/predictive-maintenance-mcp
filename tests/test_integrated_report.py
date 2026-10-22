@@ -55,12 +55,7 @@ def advisory():
 def figure():
     freqs = np.linspace(0.0, 500.0, 1500)
     mags = 0.001 + 0.05 * np.exp(-(((freqs - 80.5) / 0.8) ** 2))
-    return build_annotated_envelope_figure(
-        freqs,
-        mags,
-        {"BPFO": 81.125, "BPFI": 118.875, "BSF": 63.91, "FTF": 14.84},
-        matched={"fault_type": "BPFO", "measured_hz": 80.5, "deviation_pct": 0.77},
-    )
+    return build_annotated_envelope_figure(freqs, mags, _bearing_faults())
 
 
 class TestRenderedContent:
@@ -70,11 +65,12 @@ class TestRenderedContent:
         assert html.escape(THRESHOLD_PROVENANCE) in rendered
 
     def test_every_authored_statement_appears_verbatim(self, advisory, figure):
-        """Covers AE4."""
+        """Covers AE4. The statements include the figure caption and the
+        badges of the line-test table."""
         rendered = create_integrated_diagnostic_report(advisory, figure)
         missing = [
             statement
-            for statement in collect_statements(advisory)
+            for statement in collect_statements(advisory, figure)
             if html.escape(statement) not in rendered
         ]
         assert missing == [], f"rendering dropped authored statements: {missing}"
@@ -206,7 +202,7 @@ class TestSaving:
 
     def test_result_carries_the_authored_statements(self, advisory, figure):
         result = save_integrated_diagnostic_report(advisory, figure)
-        assert result["statements"] == collect_statements(advisory)
+        assert result["statements"] == collect_statements(advisory, figure)
         assert result["report_type"] == "integrated_diagnostic"
         Path(result["file_path"]).unlink()
 
@@ -262,7 +258,7 @@ class TestPdfRendering:
             extracted = _pdf_text(path)
             missing = [
                 s
-                for s in collect_statements(advisory)
+                for s in collect_statements(advisory, figure)
                 if _normalise(s) not in extracted
             ]
             assert missing == [], f"PDF dropped authored statements: {missing}"
@@ -288,7 +284,7 @@ class TestPdfRendering:
         try:
             rendered_html = html_path.read_text(encoding="utf-8")
             extracted_pdf = _pdf_text(pdf_path)
-            for statement in collect_statements(advisory):
+            for statement in collect_statements(advisory, figure):
                 in_html = html.escape(statement) in rendered_html
                 in_pdf = _normalise(statement) in extracted_pdf
                 assert (

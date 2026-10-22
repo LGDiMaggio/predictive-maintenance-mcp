@@ -2,9 +2,17 @@
 
 A figure earns its place in a report only if removing it would weaken a
 conclusion. The annotated envelope spectrum earns its place: it is where a
-reader sees that the dominant peak falls inside one characteristic-frequency
-band and outside the other three, drawn against the same tolerance the verdict
-used.
+reader sees the search window of each line the bearing check tested, at the
+tolerance the check used, and which windows hold the candidate lines of the
+check's claim.
+
+The windows sit around each hypothesis's tested line (``line_frequency_hz``:
+twice the ball spin frequency for the rolling element), and emphasis follows
+the claim (:mod:`.diagnostics.bearing_claims`): every candidate alike at
+single-spectrum evidence and at a qualified claim, none when the claim is
+withheld. A peak inside a window is not a finding by itself, and the caption,
+written from the same closed list of sentences as every bearing statement,
+says so.
 
 Figures are built as plain data — lists, floats, strings — rather than as
 rendered output, for two reasons. Both the HTML and the PDF rendering consume
@@ -15,20 +23,22 @@ so the argument survives a static export.
 
 from __future__ import annotations
 
-from typing import Any, Optional, Sequence
+from typing import Any, Mapping, Optional, Sequence
 
 import numpy as np
+
+from .diagnostics.bearing_claims import (
+    CLAIM_SENTENCES,
+    emphasised_candidates,
+    line_display_name,
+)
 
 #: Figure kind discriminator, so a renderer can dispatch without guessing.
 ANNOTATED_ENVELOPE = "annotated_envelope_spectrum"
 
-#: Keys that ride along in a bearing-frequency dict without being defect
-#: frequencies. Drawing shaft speed as a fault band would invent a defect.
-_NON_FAULT_KEYS = frozenset({"shaft_freq_hz", "shaft_frequency_hz", "rpm"})
-
 #: Default upper edge of the frequency axis. Bearing defect frequencies for
 #: industrial rolling-element bearings sit well below this; the axis extends
-#: automatically when a characteristic frequency would otherwise fall outside.
+#: automatically when a tested line would otherwise fall outside.
 _DEFAULT_MAX_FREQ_HZ = 500.0
 
 _FLOOR_DB = 1e-12
@@ -76,8 +86,7 @@ def _decimate_preserving_peaks(
 def build_annotated_envelope_figure(
     env_frequencies: Sequence[float] | np.ndarray,
     env_magnitudes: Sequence[float] | np.ndarray,
-    bearing_frequencies: Optional[dict[str, float]] = None,
-    matched: Optional[dict[str, Any]] = None,
+    bearing_check: Optional[Mapping[str, Any]] = None,
     tolerance_pct: float = 5.0,
     max_freq: Optional[float] = None,
     max_points: int = _MAX_TRACE_POINTS,
@@ -88,31 +97,31 @@ def build_annotated_envelope_figure(
     Args:
         env_frequencies: Envelope spectrum frequency axis (Hz).
         env_magnitudes: Envelope spectrum magnitudes, linear scale.
-        bearing_frequencies: Characteristic frequencies keyed by acronym
-            (``BPFO``, ``BPFI``, ``BSF``, ``FTF``). Non-defect entries such as
-            ``shaft_freq_hz`` are ignored. ``None`` produces a plain spectrum
-            with a caption saying why it carries no bands.
-        matched: The check that matched, as ``{"fault_type": ...,
-            "measured_hz": ..., "deviation_pct": ...}``. Its band and
-            annotation are flagged so a renderer can emphasise them.
-        tolerance_pct: The matching tolerance, drawn as the band half-width.
-            This must be the tolerance the verdict actually used — a figure
-            drawn against a different tolerance would show a match the
-            diagnosis did not make.
+        bearing_check: The bearing check summary (``fault_checks`` with each
+            line's ``line_frequency_hz``, ``candidates`` and ``claim``). One
+            search window is drawn per tested line; the windows of the
+            candidates the claim lets a report mark are emphasised alike.
+            ``None`` produces a plain spectrum with a caption saying why it
+            carries no windows.
+        tolerance_pct: The check's search tolerance, drawn as the window
+            half-width in percent of the tested line. It must be the
+            tolerance the check used, or the figure would show windows the
+            check did not search.
         max_freq: Upper edge of the frequency axis. ``None`` extends the axis
-            to cover every characteristic frequency.
+            to cover every tested line.
         max_points: Cap on trace points. A long acquisition at a high
             sampling rate resolves the plotted band far more finely than any
             screen or page can show, and every extra point is bytes in a
             document meant to be emailed.
-        no_bands_reason: The sentence saying why no bands are drawn when a
+        no_bands_reason: The sentence saying why no windows are drawn when a
             bearing was named but its frequencies could not be computed.
             ``None`` keeps the "no bearing designation was supplied"
             caption, which would be false for a named bearing.
 
     Returns:
-        A JSON-serialisable figure description: axis data, tolerance bands,
-        annotations, the labels that fell outside the axis, and a caption.
+        A JSON-serialisable figure description: axis data, search windows
+        (``bands``), annotations, the labels that fell outside the axis, and
+        a caption.
 
     Raises:
         ValueError: If the spectrum is empty or the two arrays disagree in
@@ -134,8 +143,10 @@ def build_annotated_envelope_figure(
             f"spectrum computation."
         )
 
-    defects = _defect_frequencies(bearing_frequencies)
-    axis_max = _resolve_axis_max(freqs, defects, max_freq)
+    lines = _tested_lines(bearing_check)
+    axis_max = _resolve_axis_max(
+        freqs, [line["line_frequency_hz"] for line in lines], max_freq
+    )
 
     mask = freqs <= axis_max
     x, y_linear = _decimate_preserving_peaks(freqs[mask], mags[mask], max_points)
@@ -145,27 +156,39 @@ def build_annotated_envelope_figure(
     else:
         y_db = 20.0 * np.log10((y_linear + _FLOOR_DB) / peak)
 
-    matched_label = (matched or {}).get("fault_type")
+    marked = (
+        [c["fault_type"] for c in emphasised_candidates(bearing_check)]
+        if bearing_check
+        else []
+    )
     bands: list[dict[str, Any]] = []
     annotations: list[dict[str, Any]] = []
     omitted: list[str] = []
+    rolling_element = False
 
-    for label, center in defects:
+    for check in lines:
+        label = check["fault_type"]
+        center = float(check["line_frequency_hz"])
         if center > axis_max:
             omitted.append(label)
             continue
+        canonical = check.get("fault_type_canonical")
+        name = line_display_name(label, canonical)
+        # The rolling element's window sits at 2 x BSF; the caption says so.
+        rolling_element = rolling_element or name != label
         half = center * tolerance_pct / 100.0
-        is_matched = label == matched_label
+        emphasised = label in marked
         bands.append(
             {
                 "label": label,
+                "name": name,
                 "center_hz": round(center, _BAND_PRECISION),
                 # Rounded at a precision fine enough that the band edges still
                 # span exactly 2x the tolerance — rounding the two edges more
                 # coarsely distorts the width the reader is asked to trust.
                 "low_hz": round(center - half, _BAND_PRECISION),
                 "high_hz": round(center + half, _BAND_PRECISION),
-                "matched": is_matched,
+                "emphasised": emphasised,
             }
         )
         annotations.append(
@@ -173,13 +196,12 @@ def build_annotated_envelope_figure(
                 "label": label,
                 "x": round(center, _BAND_PRECISION),
                 "y": _local_peak_db(x, y_db, center - half, center + half),
-                "text": _annotation_text(
-                    label, center, matched if is_matched else None
-                ),
-                "matched": is_matched,
+                "text": _annotation_text(name, center, check if emphasised else None),
+                "emphasised": emphasised,
             }
         )
 
+    drawn = {band["label"]: band["name"] for band in bands}
     return {
         "kind": ANNOTATED_ENVELOPE,
         "x": [round(float(v), 4) for v in x],
@@ -190,7 +212,14 @@ def build_annotated_envelope_figure(
         "bands": bands,
         "annotations": annotations,
         "omitted_labels": omitted,
-        "caption": _caption(bands, omitted, tolerance_pct, matched, no_bands_reason),
+        "caption": _caption(
+            bands,
+            omitted,
+            tolerance_pct,
+            [drawn.get(label, label) for label in marked],
+            rolling_element,
+            no_bands_reason,
+        ),
     }
 
 
@@ -256,13 +285,13 @@ def figure_to_svg(figure: dict[str, Any], width: int = 900, height: int = 420) -
         )
         tick -= 10.0
 
-    # Tolerance bands behind the trace: the reader must see the peak sitting
-    # inside one and outside the rest.
+    # Search windows behind the trace; the candidates' windows are emphasised
+    # alike.
     for band in figure["bands"]:
         x_low, x_high = px(band["low_hz"]), px(band["high_hz"])
         band_w = max(x_high - x_low, 1.5)
-        fill = "#e74c3c" if band["matched"] else "#95a5a6"
-        opacity = "0.28" if band["matched"] else "0.14"
+        fill = "#e74c3c" if band["emphasised"] else "#95a5a6"
+        opacity = "0.28" if band["emphasised"] else "0.14"
         parts.append(
             f'<rect x="{x_low}" y="{top}" width="{round(band_w, 2)}" '
             f'height="{plot_h}" fill="{fill}" fill-opacity="{opacity}"/>'
@@ -304,8 +333,8 @@ def figure_to_svg(figure: dict[str, Any], width: int = 900, height: int = 420) -
     for index, annotation in enumerate(figure["annotations"]):
         x_pos = px(annotation["x"])
         y_pos = max(py(annotation["y"]) - 10, top + 12 + (index % 2) * 14)
-        weight = "700" if annotation["matched"] else "500"
-        colour = "#c0392b" if annotation["matched"] else "#5d6d7e"
+        weight = "700" if annotation["emphasised"] else "500"
+        colour = "#c0392b" if annotation["emphasised"] else "#5d6d7e"
         anchor = "start" if x_pos < left + plot_w * 0.75 else "end"
         parts.append(
             f'<text x="{round(x_pos + (4 if anchor == "start" else -4), 2)}" '
@@ -337,23 +366,20 @@ def _esc(text: str) -> str:
     )
 
 
-def _defect_frequencies(
-    bearing_frequencies: Optional[dict[str, float]],
-) -> list[tuple[str, float]]:
-    """Return defect frequencies in ascending order, excluding shaft speed."""
-    if not bearing_frequencies:
+def _tested_lines(
+    bearing_check: Optional[Mapping[str, Any]],
+) -> list[Mapping[str, Any]]:
+    """The checks of a bearing check summary, by tested line, ascending."""
+    if not bearing_check:
         return []
-    entries = [
-        (label, float(value))
-        for label, value in bearing_frequencies.items()
-        if label not in _NON_FAULT_KEYS and value and float(value) > 0.0
-    ]
-    return sorted(entries, key=lambda item: item[1])
+    return sorted(
+        bearing_check["fault_checks"], key=lambda check: check["line_frequency_hz"]
+    )
 
 
 def _resolve_axis_max(
     freqs: np.ndarray,
-    defects: list[tuple[str, float]],
+    line_frequencies: list[float],
     max_freq: Optional[float],
 ) -> float:
     """Choose the frequency axis upper edge."""
@@ -362,10 +388,10 @@ def _resolve_axis_max(
         return min(float(max_freq), spectrum_max)
 
     wanted = _DEFAULT_MAX_FREQ_HZ
-    if defects:
-        # Leave headroom past the highest defect band so it is not clipped at
-        # the axis edge, where a reader cannot see which side the peak is on.
-        wanted = max(wanted, defects[-1][1] * 1.25)
+    if line_frequencies:
+        # Leave headroom past the highest window so it is not clipped at the
+        # axis edge, where a reader cannot see which side the peak is on.
+        wanted = max(wanted, max(line_frequencies) * 1.25)
     return min(wanted, spectrum_max)
 
 
@@ -377,26 +403,34 @@ def _local_peak_db(x: np.ndarray, y_db: np.ndarray, low: float, high: float) -> 
     return round(float(np.max(y_db[window])), 4)
 
 
-def _annotation_text(
-    label: str, center: float, matched: Optional[dict[str, Any]]
-) -> str:
-    """Annotation copy — carries the numbers, so a static export still argues."""
-    if not matched:
-        return f"{label} {center:.2f} Hz"
+def _join(items: list[str]) -> str:
+    return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1]
 
-    measured = matched.get("measured_hz")
-    deviation = matched.get("deviation_pct")
-    text = f"{label} {center:.2f} Hz — peak at {measured:.1f} Hz"
-    if deviation is not None:
-        text += f" ({deviation:.2f}% off)"
-    return text
+
+def _annotation_text(
+    name: str, center: float, candidate: Optional[Mapping[str, Any]]
+) -> str:
+    """Annotation copy: carries the numbers, so a static export still argues.
+
+    A candidate's annotation adds the strongest bin of its window and its
+    level above the local noise floor.
+    """
+    if not candidate:
+        return CLAIM_SENTENCES["figure_annotation"].format(name=name, line_hz=center)
+    return CLAIM_SENTENCES["figure_annotation_candidate"].format(
+        name=name,
+        line_hz=center,
+        peak_hz=candidate["line_peak_hz"],
+        level_db=candidate["level_db"],
+    )
 
 
 def _caption(
     bands: list[dict[str, Any]],
     omitted: list[str],
     tolerance_pct: float,
-    matched: Optional[dict[str, Any]],
+    emphasised: list[str],
+    rolling_element: bool,
     no_bands_reason: Optional[str] = None,
 ) -> str:
     """Author the sentence that says what the figure is evidence of."""
@@ -413,18 +447,18 @@ def _caption(
             "attributed to a specific bearing element from this figure."
         )
 
-    labels = ", ".join(band["label"] for band in bands)
-    caption = (
-        f"Envelope spectrum with the {labels} characteristic frequencies "
-        f"overlaid. Each shaded band is the ±{tolerance_pct:g}% matching "
-        f"tolerance used by the diagnosis, so a peak inside a band is a match "
-        f"and a peak outside every band is not."
+    caption = CLAIM_SENTENCES["figure_caption"].format(
+        labels=_join([band["label"] for band in bands]),
+        tolerance_pct=tolerance_pct,
+        rolling_element=(
+            CLAIM_SENTENCES["figure_rolling_element"] if rolling_element else ""
+        ),
     )
-    if matched and matched.get("fault_type"):
-        caption += (
-            f" The dominant peak falls inside the {matched['fault_type']} "
-            f"band and outside the others."
-        )
+    if not emphasised:
+        caption += " " + CLAIM_SENTENCES["figure_emphasis_none"]
+    else:
+        key = "figure_emphasis_one" if len(emphasised) == 1 else "figure_emphasis_many"
+        caption += " " + CLAIM_SENTENCES[key].format(labels=_join(emphasised))
     if omitted:
         caption += (
             f" {', '.join(omitted)} lies beyond the plotted range and is not " f"shown."

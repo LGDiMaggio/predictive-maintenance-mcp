@@ -2,11 +2,18 @@
 ISO 13374 Block 6 — Decision Support: Maintenance Recommendations.
 
 Rule-based recommendation engine for vibration-based maintenance decisions.
+
+The fault types are supplied by the caller and are not verified here: they
+may stand for faults established independently (for example by inspection)
+or for scenarios the caller asks about. No server surface passes a bearing
+type inferred from envelope evidence to this table (the advisory takes its
+bearing actions from the bearing check's claim instead).
 """
 
 from __future__ import annotations
 
 from ..diagnostics.bearing_analyzer import FAULT_TYPE_CANONICAL
+from ..diagnostics.bearing_claims import CLAIM_SENTENCES
 
 # Mapping from fault type keyword to specific maintenance advice. Bearing
 # keys are the canonical fault vocabulary (bearing_analyzer
@@ -44,9 +51,9 @@ def generate_recommendations(
     Args:
         severity_zone: ISO 20816-3 zone letter — ``"A"``, ``"B"``,
             ``"C"``, or ``"D"``.
-        fault_types: Optional list of detected fault keywords from the
-            closed vocabulary ``VALID_FAULT_TYPES`` (e.g.
-            ``["outer_race", "misalignment"]``).
+        fault_types: Optional list of caller-supplied fault keywords from
+            the closed vocabulary ``VALID_FAULT_TYPES`` (e.g.
+            ``["outer_race", "misalignment"]``); not verified here.
 
     Returns:
         List of recommendation dicts, each containing ``action``,
@@ -119,7 +126,9 @@ def generate_recommendations(
                     {
                         "action": _FAULT_RECOMMENDATIONS[key],
                         "urgency": urgency,
-                        "description": f"Detected fault: {fault}.",
+                        "description": CLAIM_SENTENCES["caller_fault_type"].format(
+                            fault=fault
+                        ),
                     }
                 )
 
