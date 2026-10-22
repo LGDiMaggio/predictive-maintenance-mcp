@@ -60,6 +60,7 @@ from ..diagnostics.bearing_analyzer import (
     check_all_bearing_faults as _check_all_faults,
     check_frequency_set as _check_frequency_set,
 )
+from ..diagnostics.bearing_claims import acquisition_eligibility_from_companion
 from ..diagnostics.iso20816 import (
     assess_severity_raw,
     classify_zone,
@@ -1414,6 +1415,9 @@ async def check_bearing_faults(
 
     signal_data, info = resolve_signal(signal_id)
     fs = info.sampling_rate
+    # From the signal's own stored companion only, never from an argument:
+    # the unvalidated marker may withhold a claim, never certify one.
+    eligibility = acquisition_eligibility_from_companion(info.source_metadata)
 
     if bearing_id is not None:
         # --- Catalog route (former check_bearing_faults_direct /
@@ -1426,6 +1430,7 @@ async def check_bearing_faults(
             rpm=rpm,
             signal_id=signal_id,
             tolerance_pct=tolerance_pct,
+            acquisition_eligibility=eligibility,
         )
     elif frequencies is not None:
         # --- Explicit-frequencies route (gearbox / out-of-catalog) -----
@@ -1440,6 +1445,7 @@ async def check_bearing_faults(
             rpm=rpm,
             signal_id=signal_id,
             tolerance_pct=tolerance_pct,
+            acquisition_eligibility=eligibility,
         )
         result["source"] = "user-provided frequencies"
     else:
@@ -1470,6 +1476,7 @@ async def check_bearing_faults(
             rpm=rpm,
             signal_id=signal_id,
             tolerance_pct=tolerance_pct,
+            acquisition_eligibility=eligibility,
         )
         result["source"] = "user-provided geometry"
 
@@ -1491,6 +1498,7 @@ async def check_bearing_faults(
         next_step=result["next_step"],
         candidates=result["candidates"],
         evidence_policy=result["evidence_policy"],
+        claim=result["claim"],
     )
 
 
@@ -1889,6 +1897,10 @@ async def diagnose_vibration(
         support_type=parameters.support_type,
         signal_unit=signal_unit,
         unchecked_bearing=unchecked_bearing,
+        # From the signal's own stored companion only (see check_bearing_faults).
+        acquisition_eligibility=acquisition_eligibility_from_companion(
+            info.source_metadata
+        ),
     )
 
     overall_diagnosis: str = result["overall_diagnosis"]
@@ -1915,6 +1927,7 @@ async def diagnose_vibration(
             next_step=bf.get("next_step"),
             candidates=bf.get("candidates", []),
             evidence_policy=bf.get("evidence_policy"),
+            claim=bf.get("claim"),
         )
 
     # ISO block: assessed result or schema-level refusal (reason + remedy)

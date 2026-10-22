@@ -228,6 +228,7 @@ class TestBearingEvidenceOverTheWire:
         "next_step",
         "candidates",
         "evidence_policy",
+        "claim",
     )
 
     @pytest.fixture
@@ -275,6 +276,19 @@ class TestBearingEvidenceOverTheWire:
         assert bpfo["state"] == "supported"
         assert bpfo["line_test"]["reference_bins"] >= 16
         assert any(c["counted"] for c in bpfo["corroboration"])
+        # A 10 s record tests the cage line and holds no inner-race defect,
+        # so nothing qualifies the indication; the companion declares no
+        # generator, so the acquisition is unknown.
+        assert summary["claim"] == {
+            "level": "single_spectrum_evidence",
+            "conditions": [],
+            "limitations": [],
+            "acquisition_eligibility": "unknown",
+            "basis": "significance_tested",
+            "policy_version": 1,
+        }
+        assert summary["most_likely_fault"] == "BPFO"
+        assert summary["most_likely_fault_canonical"] == "outer_race"
 
     @pytest.mark.asyncio
     async def test_check_bearing_faults_returns_every_evidence_field(
@@ -333,6 +347,132 @@ class TestBearingEvidenceOverTheWire:
         assert bsf["line_frequency_hz"] == pytest.approx(
             2 * FREQUENCIES_6205["BSF"], abs=1e-3
         )
+
+
+class TestBearingClaimAcquisitionEligibility:
+    """The claim's acquisition eligibility comes from the analyzed signal's
+    own stored companion metadata, never from a tool argument: only a
+    companion that declares a generated signal with noise_level 0 makes it
+    known_inapplicable, which withholds the claim."""
+
+    GENERATED_WITHOUT_NOISE = (
+        "This is a generated signal without noise; the line test assumes a "
+        "recording with measurement noise, so no bearing fault type is assessed."
+    )
+
+    @pytest.fixture
+    def store(self, data_dir, monkeypatch):
+        """generate_test_signal writes its signal and companion to data_dir."""
+        monkeypatch.setattr(
+            "predictive_maintenance_mcp.mcp_tools.acquisition_tools.DATA_DIR", data_dir
+        )
+        repo = get_repository()
+        repo.clear_all()
+        yield repo
+        repo.clear_all()
+
+    async def _generated(self, noise_level: float) -> str:
+        from predictive_maintenance_mcp.mcp_tools.acquisition_tools import (
+            generate_test_signal,
+        )
+
+        info = await generate_test_signal(
+            signal_type="bearing_fault",
+            duration=2.0,
+            sampling_rate=10000.0,
+            noise_level=noise_level,
+            random_seed=7,
+        )
+        assert info.source_metadata["generator"] == "generate_test_signal"
+        assert info.source_metadata["noise_level"] == noise_level
+        return info.signal_id
+
+    async def _claim(self, tools, mock_ctx, signal_id: str):
+        return await tools["check_bearing_faults"](
+            ctx=mock_ctx, signal_id=signal_id, bearing_id="6205", rpm=1800.0
+        )
+
+    @pytest.mark.asyncio
+    async def test_a_noiseless_generated_signal_withholds_the_claim(
+        self, tools, store, mock_ctx
+    ):
+        result = await self._claim(tools, mock_ctx, await self._generated(0.0))
+
+        assert result.claim.acquisition_eligibility == "known_inapplicable"
+        assert result.claim.level == "withheld"
+        assert result.claim.conditions == ["generated_without_noise"]
+        assert result.most_likely_fault is None
+        assert result.most_likely_fault_canonical is None
+        assert result.overall_assessment == self.GENERATED_WITHOUT_NOISE
+
+    @pytest.mark.asyncio
+    async def test_a_generated_signal_with_noise_is_unknown(
+        self, tools, store, mock_ctx
+    ):
+        result = await self._claim(tools, mock_ctx, await self._generated(0.1))
+
+        assert result.claim.acquisition_eligibility == "unknown"
+        assert "generated_without_noise" not in result.claim.conditions
+
+    @pytest.mark.asyncio
+    async def test_a_signal_without_companion_is_unknown(
+        self, tools, data_dir, store, mock_ctx
+    ):
+        signal = np.random.default_rng(11).standard_normal(20000)
+        pd.DataFrame(signal).to_csv(data_dir / "bare.csv", index=False, header=False)
+        store.load_signal("bare.csv", signal_id="bare", sampling_rate=10000)
+
+        result = await self._claim(tools, mock_ctx, "bare")
+
+        assert result.claim.acquisition_eligibility == "unknown"
+
+    @pytest.mark.asyncio
+    async def test_diagnose_vibration_carries_the_claim_of_the_companion(
+        self, tools, store, mock_ctx
+    ):
+        signal_id = await self._generated(0.0)
+
+        result = await tools["diagnose_vibration"](
+            ctx=mock_ctx, signal_id=signal_id, rpm=1800.0, bearing_id="6205"
+        )
+
+        claim = result.bearing_faults.claim
+        assert claim.acquisition_eligibility == "known_inapplicable"
+        assert claim.conditions == ["generated_without_noise"]
+        assert f"Bearing analysis: {self.GENERATED_WITHOUT_NOISE}" in (
+            result.overall_diagnosis
+        )
+        assert not [r for r in result.recommendations if r.startswith("Bearing 6205")]
+
+    def test_no_tool_takes_the_eligibility_as_an_argument(self, tools):
+        import inspect
+
+        for name in ("check_bearing_faults", "diagnose_vibration"):
+            parameters = inspect.signature(tools[name]).parameters
+            assert "acquisition_eligibility" not in parameters, name
+
+    @pytest.mark.asyncio
+    async def test_a_check_that_did_not_run_carries_no_claim(
+        self, tools, data_dir, store, mock_ctx
+    ):
+        """not_computed (a designation outside the catalog) and
+        not_requested (no bearing at all) have no bearing block to claim on."""
+        signal = np.random.default_rng(12).standard_normal(20000)
+        pd.DataFrame(signal).to_csv(data_dir / "plain.csv", index=False, header=False)
+        store.load_signal("plain.csv", signal_id="plain", sampling_rate=10000)
+
+        not_computed = await tools["diagnose_vibration"](
+            ctx=mock_ctx, signal_id="plain", rpm=1800.0, bearing_id="9999"
+        )
+        not_requested = await tools["diagnose_vibration"](
+            ctx=mock_ctx, signal_id="plain", rpm=1800.0
+        )
+
+        assert not_computed.bearing_check.status == "not_computed"
+        assert not_requested.bearing_check.status == "not_requested"
+        for result in (not_computed, not_requested):
+            assert result.bearing_faults is None
+            assert "claim" not in result.bearing_check.model_dump()
 
 
 # ---------------------------------------------------------------------------
@@ -1293,7 +1433,9 @@ class TestDiagnoseVibrationExtended:
         # replaces the routine-monitoring default.
         text = result.overall_diagnosis
         assert f"Bearing analysis: not computed. {check.reason}" in text
-        assert text.index("Bearing analysis") < text.index("Fault evidence strength")
+        assert text.index("Bearing analysis") < text.index(
+            "Combined evidence across the analyses that ran"
+        )
         assert result.recommendations == [check.remedy]
         assert result.model_dump()["bearing_check"]["status"] == "not_computed"
 
@@ -1854,7 +1996,9 @@ class TestDiagnoseVibrationPointContext:
         assert result.bearing_check.remedy == remedies[0]
         text = result.overall_diagnosis
         assert f"Bearing analysis: not computed. {result.bearing_check.reason}" in text
-        assert text.index("Bearing analysis") < text.index("Fault evidence strength")
+        assert text.index("Bearing analysis") < text.index(
+            "Combined evidence across the analyses that ran"
+        )
         assert (
             "Continue routine monitoring per maintenance schedule."
             not in result.recommendations

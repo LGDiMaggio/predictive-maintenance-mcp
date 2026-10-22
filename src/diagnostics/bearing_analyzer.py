@@ -9,15 +9,25 @@ never presented as a probability).
 Every check also carries the fields of :mod:`.bearing_evidence` (per-check
 ``state``, line level and corroboration; per-summary ``outcome``,
 ``candidates`` and ``evidence_policy``), computed on the same envelope
-spectrum. The older fields keep their meaning and values for now.
+spectrum. The summary's ``claim`` (:mod:`.bearing_claims`) says what the
+check may state from that evidence, and ``most_likely_fault``,
+``most_likely_fault_canonical`` and ``overall_assessment`` follow it. The
+older per-check fields keep their values for now.
 """
 
 import logging
-from typing import Optional
+from typing import Any, Optional
 
 import numpy as np
 
 from .bearing_catalog import compute_fault_frequencies, lookup_bearing
+from .bearing_claims import (
+    UNKNOWN,
+    bearing_claim,
+    claim_statement,
+    named_candidate,
+    validate_acquisition_eligibility,
+)
 from .bearing_evidence import Hypothesis, evaluate_hypotheses
 from ..signal_processing.spectral import (
     envelope_spectrum_arrays,
@@ -163,10 +173,7 @@ def _check_on_one_spectrum(
     evidence = evaluate_hypotheses(
         freqs,
         mags,
-        [
-            Hypothesis(label, float(f), FAULT_TYPE_CANONICAL.get(label.upper()))
-            for label, f in expected
-        ],
+        _hypotheses(expected),
         shaft_hz=shaft_hz,
         cage_hz=cage_hz,
         num_harmonics=num_harmonics,
@@ -179,17 +186,50 @@ def _check_on_one_spectrum(
     return checks, evidence
 
 
-def _summary_evidence(evidence: dict) -> dict:
-    """The summary fields of an evidence result."""
+def _hypotheses(expected: list[tuple[str, float]]) -> list[Hypothesis]:
+    """The tested hypotheses of (label, expected Hz) pairs, in input order."""
+    return [
+        Hypothesis(label, float(f), FAULT_TYPE_CANONICAL.get(label.upper()))
+        for label, f in expected
+    ]
+
+
+def _summary_evidence(
+    evidence: dict,
+    expected: list[tuple[str, float]],
+    *,
+    shaft_hz: float,
+    tolerance_pct: float,
+    acquisition_eligibility: str,
+) -> dict[str, Any]:
+    """The summary fields of an evidence result, with the claim and the
+    fields that follow it."""
+    hypotheses = _hypotheses(expected)
+    claim = bearing_claim(
+        evidence,
+        hypotheses,
+        shaft_hz=shaft_hz,
+        tolerance_pct=tolerance_pct,
+        acquisition_eligibility=acquisition_eligibility,
+    )
+    named = named_candidate(claim, evidence)
     return {
-        key: evidence[key]
-        for key in (
-            "outcome",
-            "outcome_reason",
-            "next_step",
-            "candidates",
-            "evidence_policy",
-        )
+        "overall_assessment": claim_statement(claim, evidence, hypotheses),
+        "most_likely_fault": named["fault_type"] if named else None,
+        "most_likely_fault_canonical": (
+            named["fault_type_canonical"] if named else None
+        ),
+        **{
+            key: evidence[key]
+            for key in (
+                "outcome",
+                "outcome_reason",
+                "next_step",
+                "candidates",
+                "evidence_policy",
+            )
+        },
+        "claim": claim,
     }
 
 
@@ -273,6 +313,8 @@ def check_all_bearing_faults(
     tolerance_pct: float = 5.0,
     envelope_freq_range: Optional[tuple[float, float]] = None,
     num_harmonics: int = 3,
+    *,
+    acquisition_eligibility: str = UNKNOWN,
 ) -> dict:
     """Run all four fault checks (BPFO, BPFI, BSF, FTF) for a bearing.
 
@@ -289,20 +331,26 @@ def check_all_bearing_faults(
         num_harmonics: Harmonics (2x, 3x, ...) checked per fault type; the
             default reproduces :func:`check_bearing_fault_peak`'s. Exposed
             so the asset ledger's snapshot policy can pin it explicitly.
+        acquisition_eligibility: "known_inapplicable" when the signal's own
+            companion metadata declares a generated signal without noise
+            (the claim is then withheld), else "unknown".
 
     Returns:
-        Dict compatible with BearingFaultsSummary.
+        Dict compatible with BearingFaultsSummary, with its ``claim``.
 
     Raises:
-        ValueError: If rpm is not a positive finite number, if the bearing
-            is not found in the catalog, or if :func:`check_bearing_fault_peak`
-            refuses the signal, fs or a computed frequency (non-finite
-            samples, a non-finite or non-positive fs, a frequency that rounds
-            to zero at a fraction of 1 rpm).
+        ValueError: If rpm is not a positive finite number, if
+            acquisition_eligibility is not one of its two values, if the
+            bearing is not found in the catalog, or if
+            :func:`check_bearing_fault_peak` refuses the signal, fs or a
+            computed frequency (non-finite samples, a non-finite or
+            non-positive fs, a frequency that rounds to zero at a fraction
+            of 1 rpm).
     """
     # Before the catalog lookup, so the speed is reported even for an
     # unknown designation.
     validate_rpm(rpm)
+    validate_acquisition_eligibility(acquisition_eligibility)
     freq_data = compute_fault_frequencies(bearing_id, rpm)
     if freq_data is None:
         raise ValueError(
@@ -318,10 +366,11 @@ def check_all_bearing_faults(
         "FTF": freq_data["FTF"],
     }
 
+    expected = list(fault_types.items())
     checks, evidence = _check_on_one_spectrum(
         signal,
         fs,
-        list(fault_types.items()),
+        expected,
         bearing_id=bearing_id,
         signal_id=signal_id,
         tolerance_pct=tolerance_pct,
@@ -331,8 +380,6 @@ def check_all_bearing_faults(
         cage_hz=fault_types["FTF"],
         catalog=True,
     )
-
-    most_likely, assessment = _summarize_fault_checks(checks)
 
     bearing_freqs = {k: v for k, v in fault_types.items()}
     bearing_freqs["shaft_freq_hz"] = shaft_freq
@@ -344,45 +391,17 @@ def check_all_bearing_faults(
         "shaft_frequency_hz": shaft_freq,
         "bearing_frequencies": bearing_freqs,
         "fault_checks": checks,
-        "overall_assessment": assessment,
-        "most_likely_fault": most_likely,
-        "most_likely_fault_canonical": (
-            FAULT_TYPE_CANONICAL.get(most_likely) if most_likely else None
-        ),
         # Catalog traceability: every catalog entry carries a mandatory
         # source citation — echo it so results stay auditable.
         "source": (freq_data.get("bearing_info") or {}).get("source"),
-        **_summary_evidence(evidence),
+        **_summary_evidence(
+            evidence,
+            expected,
+            shaft_hz=shaft_freq,
+            tolerance_pct=tolerance_pct,
+            acquisition_eligibility=acquisition_eligibility,
+        ),
     }
-
-
-def _summarize_fault_checks(checks: list[dict]) -> tuple[Optional[str], str]:
-    """Rank detected checks by evidence strength -> (most_likely, assessment)."""
-    evidence_order = {"high": 3, "moderate": 2, "low": 1, "none": 0}
-    detected_faults = [
-        c for c in checks if c["detected"] and c["evidence_strength"] != "none"
-    ]
-    detected_faults.sort(
-        key=lambda c: evidence_order.get(c["evidence_strength"], 0), reverse=True
-    )
-
-    most_likely = detected_faults[0]["fault_type"] if detected_faults else None
-
-    if not detected_faults:
-        assessment = (
-            "No bearing fault frequencies detected within tolerance. "
-            "Bearing appears healthy based on envelope spectrum analysis."
-        )
-    else:
-        fault_list = ", ".join(
-            f"{c['fault_type']} ({c['evidence_strength']} evidence)"
-            for c in detected_faults
-        )
-        assessment = (
-            f"Bearing fault frequencies detected: {fault_list}. "
-            f"Most likely fault: {most_likely}."
-        )
-    return most_likely, assessment
 
 
 def check_frequency_set(
@@ -394,6 +413,8 @@ def check_frequency_set(
     tolerance_pct: float = 5.0,
     envelope_freq_range: Optional[tuple[float, float]] = None,
     num_harmonics: int = 3,
+    *,
+    acquisition_eligibility: str = UNKNOWN,
 ) -> dict:
     """Check an arbitrary set of labeled expected frequencies in the envelope.
 
@@ -415,18 +436,24 @@ def check_frequency_set(
             min(5000, just below Nyquist)).
         num_harmonics: Harmonics (2x, 3x, ...) checked per label; the
             default reproduces :func:`check_bearing_fault_peak`'s.
+        acquisition_eligibility: "known_inapplicable" when the signal's own
+            companion metadata declares a generated signal without noise
+            (the claim is then withheld), else "unknown".
 
     Returns:
-        Dict compatible with BearingFaultsSummary (bearing_id/source None).
+        Dict compatible with BearingFaultsSummary (bearing_id/source None),
+        with its ``claim``.
 
     Raises:
-        ValueError: If rpm is not a positive finite number, if frequencies
-            is empty or contains a value that is not a positive finite number
-            (every such label is listed), or if :func:`check_bearing_fault_peak`
-            refuses the signal or fs (non-finite samples, a non-finite or
-            non-positive fs).
+        ValueError: If rpm is not a positive finite number, if
+            acquisition_eligibility is not one of its two values, if
+            frequencies is empty or contains a value that is not a positive
+            finite number (every such label is listed), or if
+            :func:`check_bearing_fault_peak` refuses the signal or fs
+            (non-finite samples, a non-finite or non-positive fs).
     """
     validate_rpm(rpm)
+    validate_acquisition_eligibility(acquisition_eligibility)
     if not frequencies:
         raise ValueError(
             "frequencies is empty — pass at least one {label: hz} entry, "
@@ -434,10 +461,11 @@ def check_frequency_set(
         )
     validate_expected_frequencies(frequencies)
 
+    expected = [(label, float(freq)) for label, freq in frequencies.items()]
     checks, evidence = _check_on_one_spectrum(
         signal,
         fs,
-        [(label, float(freq)) for label, freq in frequencies.items()],
+        expected,
         bearing_id="",
         signal_id=signal_id,
         tolerance_pct=tolerance_pct,
@@ -454,7 +482,6 @@ def check_frequency_set(
             None,
         ),
     )
-    most_likely, assessment = _summarize_fault_checks(checks)
 
     freq_echo = {k: float(v) for k, v in frequencies.items()}
     freq_echo["shaft_freq_hz"] = rpm / 60.0
@@ -466,13 +493,14 @@ def check_frequency_set(
         "shaft_frequency_hz": rpm / 60.0,
         "bearing_frequencies": freq_echo,
         "fault_checks": checks,
-        "overall_assessment": assessment,
-        "most_likely_fault": most_likely,
-        "most_likely_fault_canonical": (
-            FAULT_TYPE_CANONICAL.get(most_likely) if most_likely else None
-        ),
         "source": None,
-        **_summary_evidence(evidence),
+        **_summary_evidence(
+            evidence,
+            expected,
+            shaft_hz=rpm / 60.0,
+            tolerance_pct=tolerance_pct,
+            acquisition_eligibility=acquisition_eligibility,
+        ),
     }
 
 

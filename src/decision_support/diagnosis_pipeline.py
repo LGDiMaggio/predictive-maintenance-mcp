@@ -6,8 +6,9 @@ and anomaly detection (OneClassSVM) into a single coherent diagnostic
 result with an evidence-strength rating and actionable recommendations.
 
 The ``evidence_strength`` field is categorical (none/weak/moderate/strong)
-and derived from the number and quality of independent corroborating
-findings — never from severity alone and never presented as a probability.
+and counts the findings of the analyses that ran, a bearing finding once. It
+never rests on severity alone, is never presented as a probability, and never
+names or confirms a fault type.
 """
 
 import json
@@ -37,6 +38,13 @@ from ..signal_validation import (
 )
 from ..diagnostics.bearing_analyzer import check_all_bearing_faults
 from ..diagnostics.bearing_catalog import lookup_bearing
+from ..diagnostics.bearing_claims import (
+    UNKNOWN,
+    aggregate_statement,
+    claim_actions,
+    counts_as_finding,
+    pipeline_statement,
+)
 from ..diagnostics.iso20816 import assess_severity_with_axis
 
 logger = logging.getLogger(__name__)
@@ -315,6 +323,7 @@ def diagnose_vibration(
     signal_unit: Optional[str] = None,
     anomaly_model_name: str = "bearing_health_model",
     unchecked_bearing: Optional[dict] = None,
+    acquisition_eligibility: str = UNKNOWN,
 ) -> dict:
     """Integrated vibration diagnosis pipeline.
 
@@ -370,6 +379,10 @@ def diagnose_vibration(
             that declares fault orders only). Reported, synthesized and
             recommended like the pipeline's own; ignored when ``bearing_id``
             is given.
+        acquisition_eligibility: "known_inapplicable" when the signal's own
+            companion metadata declares a generated signal without noise
+            (the bearing claim is then withheld), else "unknown"; passed to
+            the bearing check.
 
     Returns:
         Dict compatible with DiagnosisResult — ``iso_severity`` is either an
@@ -448,6 +461,7 @@ def diagnose_vibration(
             bearing_id=bearing_id,
             rpm=rpm,
             signal_id=signal_id,
+            acquisition_eligibility=acquisition_eligibility,
         )
         bearing_check = _bearing_check("assessed")
 
@@ -543,22 +557,28 @@ def _synthesize_diagnosis(
     """Combine analysis results into diagnosis, evidence strength, and recommendations.
 
     The evidence strength is categorical (none/weak/moderate/strong) and
-    accumulates points from independent corroborating findings:
+    accumulates points from the findings of the analyses that ran:
 
     - ISO severity: zone C +1.0, zone D +2.0 (elevated broadband vibration
       is direct physical evidence of a problem, but on its own it is not
       corroborated). A refused ISO block (undeclared unit, insufficient
       sampling rate) contributes NO evidence — no verdict, no points.
     - Shaft signature: dominant peak at 1x or 2x shaft speed +1.0.
-    - Bearing fault frequencies: best detected check contributes
-      high +2.0 / moderate +1.0 / low +0.5. A bearing check that was not
-      computed (``bearing_check``) contributes NO evidence either; the text
-      states why and the remedy is recommended, as for a refused ISO block.
+    - Bearing claim (:mod:`..diagnostics.bearing_claims`): one finding,
+      +1.0, at single-spectrum evidence or qualified from an indicated or
+      several-types outcome; a withheld claim and one held back as
+      inconclusive add nothing. The bearing sentence and actions come from
+      the same claim (confirmation, inspection of every candidate alike, a
+      repeat or acquisition step; never a replacement). A bearing check that
+      was not computed (``bearing_check``) contributes NO evidence either;
+      the text states why and the remedy is recommended, as for a refused
+      ISO block.
     - Anomaly model: Faulty +1.0, Suspicious +0.5.
 
     Mapping: 0 -> "none", <2 -> "weak", <3 -> "moderate", >=3 -> "strong".
     A quiet machine with no findings therefore gets "none" — severity alone
-    can never produce "strong".
+    can never produce "strong". The sentence that reports it says it counts
+    findings, is not a probability and identifies no fault type.
     """
     lines = []
     recommendations = []
@@ -609,39 +629,13 @@ def _synthesize_diagnosis(
             evidence_points += 1.0
             recommendations.append("Check alignment and coupling condition.")
 
-    # Bearing fault analysis
+    # Bearing analysis: the sentence, the actions and the point follow the
+    # check's claim (bearing_claims), never the legacy per-check grades.
     if bearing_faults:
-        most_likely = bearing_faults.get("most_likely_fault")
-        if most_likely:
-            detected = [
-                c
-                for c in bearing_faults["fault_checks"]
-                if c["detected"] and c["evidence_strength"] != "none"
-            ]
-            fault_text = ", ".join(
-                f"{c['fault_type']} ({c['evidence_strength']} evidence)"
-                for c in detected
-            )
-            lines.append(f"Bearing faults detected: {fault_text}.")
-            lines.append(f"Most likely: {most_likely}.")
-
-            strengths = {c["evidence_strength"] for c in detected}
-            if "high" in strengths:
-                evidence_points += 2.0
-                recommendations.append(
-                    f"Bearing {bearing_faults['bearing_id']}: "
-                    f"plan replacement at next opportunity."
-                )
-            else:
-                evidence_points += 1.0 if "moderate" in strengths else 0.5
-                recommendations.append(
-                    f"Bearing {bearing_faults['bearing_id']}: "
-                    f"monitor closely, confirm with additional measurements."
-                )
-        else:
-            lines.append(
-                "No bearing fault frequencies detected — bearing appears healthy."
-            )
+        lines.append(pipeline_statement(bearing_faults))
+        if counts_as_finding(bearing_faults["claim"]):
+            evidence_points += 1.0
+        recommendations.extend(claim_actions(bearing_faults))
     elif bearing_check["status"] == "not_computed":
         lines.append(
             f"Bearing analysis: not computed. {bearing_check['reason']} No "
@@ -678,7 +672,7 @@ def _synthesize_diagnosis(
     else:
         evidence_strength = "strong"
 
-    lines.append(f"Fault evidence strength: {evidence_strength}.")
+    lines.append(aggregate_statement(evidence_strength))
 
     # Default recommendation if none generated
     if not recommendations:

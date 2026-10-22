@@ -83,6 +83,19 @@ Fixture history:
   descriptions name that case (unconfirmed and inconclusive), on
   check_bearing_faults and diagnose_vibration.
   Generated under mcp 2.3.0 and pydantic 2.12.0 (uv.lock).
+- Bearing claim (2026-10-22, T1 PR C): regenerated intentionally:
+  ADDITIVE, no property removed and no type changed. The bearing summary
+  (check_bearing_faults, and diagnose_vibration's bearing_faults) gains
+  claim, with one new definition (BearingClaim: level, conditions,
+  limitations, acquisition_eligibility, basis, policy_version). Descriptions
+  changed: overall_assessment, most_likely_fault and
+  most_likely_fault_canonical (derived from claim), outcome (no longer says
+  those fields can disagree with it), the six legacy per-check fields
+  detected, detected_frequency_hz, magnitude, deviation_pct,
+  harmonics_detected and evidence_strength (a legacy tolerance match kept
+  for compatibility), and diagnose_vibration's evidence_strength (counts
+  findings, a bearing finding once).
+  Generated under mcp 2.3.0 and pydantic 2.12.0 (uv.lock).
 """
 
 from __future__ import annotations
