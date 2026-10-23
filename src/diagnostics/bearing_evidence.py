@@ -127,6 +127,9 @@ _ROLLING_ELEMENT = "ball"
 
 _CAGE = "cage"
 
+#: States of a significant line that supports no type.
+_WEAK_STATES = ("unconfirmed", "shared")
+
 EVIDENCE_POLICY: dict[str, Any] = {
     "method": "os_cfar_envelope_line_test",
     "version": 1,
@@ -558,8 +561,9 @@ def evaluate_hypotheses(
 
     Returns:
         ``checks`` (one dict per hypothesis, in input order, with the
-        evidence fields and the kept per-check fields of
-        :func:`_kept_fields`), ``outcome``, ``outcome_reason``, ``next_step``,
+        evidence fields and the per-check fields of
+        :func:`_derived_check_fields`), ``outcome``, ``outcome_reason``,
+        ``next_step``,
         ``candidates`` (supported hypotheses, strongest first) and
         ``evidence_policy``.
     """
@@ -685,8 +689,8 @@ def evaluate_hypotheses(
         )
 
     _hold_back_lone_cage(hypotheses, lines, checks)
-    for n, check in enumerate(checks):
-        check.update(_kept_fields(hypotheses[n], lines[n], check, families.get(n, [])))
+    for n, (line, check) in enumerate(zip(lines, checks)):
+        check.update(_derived_check_fields(line, check, families.get(n, [])))
 
     supported = sorted(
         (n for n, c in enumerate(checks) if c["state"] == "supported"),
@@ -702,7 +706,7 @@ def evaluate_hypotheses(
         }
         for n in supported
     ]
-    weak = [n for n, c in enumerate(checks) if c["state"] in ("unconfirmed", "shared")]
+    weak = [n for n, c in enumerate(checks) if c["state"] in _WEAK_STATES]
     if len(supported) == 1:
         outcome = "indicated"
     elif len(supported) > 1:
@@ -750,14 +754,15 @@ def _hold_back_lone_cage(
         checks[supported[0]]["state_reason"] = "rolling_element_line_present"
 
 
-def _kept_fields(
-    hypothesis: Hypothesis,
+def _derived_check_fields(
     line: dict[str, Any],
     check: dict[str, Any],
     members: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    """The per-check fields kept from the earlier tolerance match, derived
-    from the check's state (after the cage hold-back).
+    """``detected``, ``detected_frequency_hz``, ``magnitude``,
+    ``deviation_pct``, ``harmonics_detected`` and ``evidence_strength`` of a
+    check, from its line test, its state (after the cage hold-back) and its
+    corroborating *members* (aligned with ``check["corroboration"]``).
 
     ``detected`` is the significance of the line tested, whatever the later
     state; the frequency, magnitude and deviation describe that line, the
@@ -773,17 +778,19 @@ def _kept_fields(
     ]
     if check["state"] == "supported":
         strength = "high" if len(counted) >= 2 else "moderate"
-    elif check["state"] in ("unconfirmed", "shared"):
+    elif check["state"] in _WEAK_STATES:
         strength = "low"
     else:
         strength = "none"
     detected = bool(line["significant"])
+    # The unrounded centre of the line's search window: the line tested.
+    tested_hz = line["expected_hz"]
     return {
         "detected": detected,
         "detected_frequency_hz": round(line["peak_hz"], 2) if detected else None,
         "magnitude": line["amplitude"] if detected else None,
         "deviation_pct": (
-            round((line["peak_hz"] - hypothesis.line_hz) / hypothesis.line_hz * 100, 2)
+            round((line["peak_hz"] - tested_hz) / tested_hz * 100, 2)
             if detected
             else None
         ),

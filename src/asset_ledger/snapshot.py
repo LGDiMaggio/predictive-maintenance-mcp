@@ -651,7 +651,8 @@ def compute_health_snapshot(
       tool's peak magnitude; only the trend of the number matters).
     * ``bearing`` only with a resolved rpm AND a catalog designation or
       declared fault orders; per label the analyzer verdict plus the
-      envelope amplitude at the expected frequency.
+      envelope amplitude at the line tested (twice the ball spin frequency
+      for the rolling element).
     * ``iso`` only when the unit, the machine group and the support type
       are all declared, via :func:`assess_severity_raw`; the block records
       the DECLARED direction (never the ``"vertical"`` default of the older

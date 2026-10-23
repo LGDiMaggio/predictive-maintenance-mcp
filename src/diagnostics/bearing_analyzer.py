@@ -161,10 +161,11 @@ def _check_on_one_spectrum(
             expected_freq, label=label, remedy=_PEAK_FREQUENCY_REMEDY
         )
 
+    hypotheses = _hypotheses(expected)
     evidence = evaluate_hypotheses(
         freqs,
         mags,
-        _hypotheses(expected),
+        hypotheses,
         shaft_hz=shaft_hz,
         cage_hz=cage_hz,
         num_harmonics=num_harmonics,
@@ -176,12 +177,14 @@ def _check_on_one_spectrum(
         {
             "signal_id": signal_id,
             "bearing_id": bearing_id,
-            "fault_type": label,
-            "fault_type_canonical": FAULT_TYPE_CANONICAL.get(label.upper()),
+            "fault_type": h.label,
+            "fault_type_canonical": h.canonical,
             "expected_frequency_hz": round(expected_freq, 2),
-            **{k: v for k, v in fields.items() if k != "fault_type"},
+            **fields,
         }
-        for (label, expected_freq), fields in zip(expected, evidence["checks"])
+        for h, (_, expected_freq), fields in zip(
+            hypotheses, expected, evidence["checks"]
+        )
     ]
     return checks, evidence
 

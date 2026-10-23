@@ -950,7 +950,7 @@ def _evidence_present(snapshot: dict[str, Any], label: str) -> bool:
         return False
     version = (snapshot.get("processing") or {}).get("algorithm_version")
     if isinstance(version, int) and version >= _STATE_EVIDENCE_VERSION:
-        return block.get("state") == "supported"
+        return bool(block.get("state") == "supported")
     return bool(block.get("detected")) and _number(block.get("magnitude")) is not None
 
 
