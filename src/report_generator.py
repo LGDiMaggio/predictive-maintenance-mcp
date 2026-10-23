@@ -272,7 +272,14 @@ def save_envelope_report(
         marked = {c["fault_type"] for c in emphasised_candidates(line_check)}
         statements = [assessment]
         if line_check.get("shaft_frequency_hz") is None:
-            statements.append(CLAIM_SENTENCES["envelope_no_speed"])
+            # A claim with shaft_tests_not_run already says the speed was not
+            # available; the note then adds only which fields were read.
+            stated = "shaft_tests_not_run" in line_check["claim"]["conditions"]
+            statements.append(
+                CLAIM_SENTENCES[
+                    "envelope_no_speed_source" if stated else "envelope_no_speed"
+                ]
+            )
         line_test = {
             "statements": statements,
             "labels": labels,

@@ -145,7 +145,9 @@ class TestSeverityAndReport:
         """Since T1 PR C the report marks the lines of the same line test
         check_bearing_faults runs, on the same band, and states its claim. The
         sample declares no measurement rpm, so the report's test runs without
-        the sideband and shaft-order tests and every label says so."""
+        the sideband and shaft-order tests, every label says so, and its
+        several-types statement is the bearing check's with one sentence added:
+        that the shaft-order test did not run for its two lines."""
         report = chain["report"]
         path = Path(report["file_path"])
         assert path.exists()
@@ -158,7 +160,17 @@ class TestSeverityAndReport:
                 "shaft speed was not available to this check, so the shaft-rate "
                 "sideband test and the shaft-order test did not run"
             )
-        assert report["bearing_assessment"] == chain["faults"].overall_assessment
+        closing = " The line test assumes"
+        assert report["bearing_assessment"] == chain[
+            "faults"
+        ].overall_assessment.replace(
+            closing,
+            " Shaft speed was not available to this check, so the shaft-order test "
+            "did not run and an overlap of the outer-race line (BPFO) or the "
+            "inner-race line (BPFI) with a shaft harmonic cannot be excluded."
+            + closing,
+        )
+        assert chain["faults"].claim.conditions == ["several_types"]
 
 
 class TestReadmeParagraph:

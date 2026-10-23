@@ -36,11 +36,14 @@ candidates, a state or a line test, and they add no sharing or detection rule.
   (its state reason ``rolling_element_line_present``).
 
 A check that had no shaft speed ran no shaft-order test, so it could not
-exclude that an indicated bearing line overlaps a shaft harmonic: such an
-indication is qualified (``shaft_tests_not_run``), never single-spectrum
-evidence. The inner-race sideband predicate needs the shaft rate too, so an
+exclude that a bearing line overlaps a shaft harmonic: an indicated bearing
+type is qualified (``shaft_tests_not_run``), never single-spectrum evidence,
+and a claim already qualified by several types or a held-back cage keeps its
+reason and adds the same condition and sentence for the bearing lines it
+names. The inner-race sideband predicate needs the shaft rate too, so an
 outer-race indication beside an inner-race line above the floor also names
-that untested ambiguity. Missing information never makes a claim stronger.
+that untested ambiguity. A label outside the bearing vocabulary never gets
+the condition. Missing information never makes a claim stronger.
 
 Every statement that rests on a significance-tested line (single-spectrum
 evidence and every qualified claim) closes with the line test's assumption
@@ -203,7 +206,7 @@ CLAIM_SENTENCES: dict[str, str] = {
     ),
     "shaft_tests_not_run": (
         "shaft speed was not available to this check, so the shaft-order test did "
-        "not run and an overlap of the {line} with a shaft harmonic cannot be "
+        "not run and an overlap of {lines} with a shaft harmonic cannot be "
         "excluded"
     ),
     "shaft_tests_not_run_inner_race": (
@@ -445,6 +448,13 @@ CLAIM_SENTENCES: dict[str, str] = {
         "therefore ran without the shaft-rate sideband test and the shaft-order "
         "test."
     ),
+    # the same note when the bearing statement already says the speed was not
+    # available, so the report does not state it twice
+    "envelope_no_speed_source": (
+        "No rpm was passed, and none is declared in the two fields this report "
+        "reads, the rpm of the signal's measurement and the nominal rpm of its "
+        "measurement point."
+    ),
     # generate_maintenance_recommendations: a fault type the caller supplies
     "caller_fault_type": (
         "Fault type supplied by the caller ({fault}); this tool does not verify it."
@@ -572,8 +582,9 @@ def bearing_claim(
         hypotheses: The tested hypotheses, in the order of ``evidence``.
         shaft_hz: Shaft rate (Hz). None means the check ran no shaft-order
             or shaft-rate sideband test: the inner-race sideband predicate
-            is skipped and an indicated bearing type is qualified
-            (``shaft_tests_not_run``); a label outside the vocabulary is not.
+            is skipped, and an indicated bearing type, several types with a
+            bearing line and a held-back cage carry ``shaft_tests_not_run``;
+            a label outside the vocabulary does not.
         tolerance_pct: Half-width of the fundamental search windows, in
             percent of the line frequency (the check's own tolerance).
         acquisition_eligibility: "known_inapplicable" or "unknown".
@@ -618,9 +629,16 @@ def bearing_claim(
                 limitations.append(CAGE_NOT_DECLARED)
     elif outcome == "several_types":
         level, conditions = QUALIFIED, [SEVERAL_TYPES]
+        if shaft_hz is None and any(
+            hypotheses[_index(hypotheses, c["fault_type"])].canonical in _NAMES
+            for c in evidence["candidates"]
+        ):
+            conditions.append(SHAFT_TESTS_NOT_RUN)
     elif outcome == "inconclusive":
         if any(c["state_reason"] == "rolling_element_line_present" for c in checks):
             level, conditions = QUALIFIED, [ROLLING_ELEMENT_HELD_BACK]
+            if shaft_hz is None:
+                conditions.append(SHAFT_TESTS_NOT_RUN)
         elif all(c["state"] == "not_testable" for c in checks):
             level, conditions = WITHHELD, [NOTHING_TESTABLE]
         else:
@@ -653,10 +671,12 @@ def counts_as_finding(claim: Mapping[str, Any]) -> bool:
 
     Single-spectrum evidence does, and so does a qualified claim from an
     indicated or several-types outcome; a withheld claim and a qualified one
-    from an inconclusive outcome do not.
+    from an inconclusive outcome (a cage held back, with or without a speed)
+    do not.
     """
     return claim["level"] == SINGLE_SPECTRUM_EVIDENCE or (
         claim["level"] == QUALIFIED
+        and ROLLING_ELEMENT_HELD_BACK not in claim["conditions"]
         and bool(_FINDING_CONDITIONS.intersection(claim["conditions"]))
     )
 
@@ -664,6 +684,16 @@ def counts_as_finding(claim: Mapping[str, Any]) -> bool:
 def _line_name(canonical: Optional[str], label: str) -> str:
     names = _NAMES.get(canonical or "")
     return names.line if names else f"{label} line"
+
+
+def _no_speed_sentence(hypotheses: Sequence[Hypothesis]) -> str:
+    """The shaft-order sentence of a qualified claim without a speed, naming
+    only the bearing lines it concerns (any one of them may overlap a shaft
+    harmonic)."""
+    names = [_NAMES.get(h.canonical or "") for h in hypotheses]
+    lines = [f"the {n.line}" for n in names if n]
+    either = lines[0] if len(lines) == 1 else ", ".join(lines[:-1]) + " or " + lines[-1]
+    return _capital(_S["shaft_tests_not_run"].format(lines=either)) + "."
 
 
 def claim_statement(
@@ -715,13 +745,24 @@ def claim_statement(
             if at_shaft_order
             else "rolling_element_held_back"
         )
-        return f"{_S[key]} {_S['assumption']}"
+        sentence = _S[key]
+        if SHAFT_TESTS_NOT_RUN in conditions:
+            held = [_first(hypotheses, _CAGE), _first(hypotheses, _ROLLING_ELEMENT)]
+            sentence += " " + _no_speed_sentence(
+                [hypotheses[n] for n in held if n is not None]
+            )
+        return f"{sentence} {_S['assumption']}"
     if SEVERAL_TYPES in conditions:
         listed = []
+        bearing_lines = []
         for candidate in evidence["candidates"]:
             n = _index(hypotheses, candidate["fault_type"])
             listed.append(_candidate_phrase(hypotheses[n], checks[n]))
+            if hypotheses[n].canonical in _NAMES:
+                bearing_lines.append(hypotheses[n])
         sentence = _S["several_types"].format(candidates=_join(listed))
+        if SHAFT_TESTS_NOT_RUN in conditions:
+            sentence += " " + _no_speed_sentence(bearing_lines)
         return f"{sentence} {_S['assumption']}"
 
     (candidate,) = evidence["candidates"]
@@ -741,7 +782,9 @@ def claim_statement(
         if INNER_RACE_SIDEBAND_NOT_EXCLUDED in conditions:
             alternatives.append(_S["inner_race_sideband"])
         if SHAFT_TESTS_NOT_RUN in conditions:
-            alternatives.append(_S["shaft_tests_not_run"].format(line=names.line))
+            alternatives.append(
+                _S["shaft_tests_not_run"].format(lines=f"the {names.line}")
+            )
             # Without the shaft rate the inner-race sideband predicate could not
             # run; the ambiguity is named only where it would have applied.
             inner = _first(hypotheses, _INNER_RACE)
@@ -838,15 +881,24 @@ def claim_actions(summary: Mapping[str, Any]) -> list[str]:
                 prefix=prefix, label=candidate["fault_type"]
             )
         ]
+    speed = (
+        [_S["action_shaft_tests_not_run"].format(prefix=prefix)]
+        if SHAFT_TESTS_NOT_RUN in conditions
+        else []
+    )
     if SEVERAL_TYPES in conditions:
         elements = [_NAMES.get(c["fault_type_canonical"] or "") for c in candidates]
         if all(elements):
             parts = [f"the {names.element}" for names in elements if names]
             return [
-                _S["action_several_types"].format(prefix=prefix, elements=_join(parts))
+                _S["action_several_types"].format(prefix=prefix, elements=_join(parts)),
+                *speed,
             ]
         labels = _join([c["fault_type"] for c in candidates])
-        return [_S["action_several_types_label"].format(prefix=prefix, labels=labels)]
+        return [
+            _S["action_several_types_label"].format(prefix=prefix, labels=labels),
+            *speed,
+        ]
 
     actions = []
     if CAGE_COMB_NOT_EXCLUDED in conditions:
@@ -861,10 +913,9 @@ def claim_actions(summary: Mapping[str, Any]) -> list[str]:
         actions.append(_S[key].format(prefix=prefix))
     if INNER_RACE_SIDEBAND_NOT_EXCLUDED in conditions:
         actions.append(_S["action_inner_race_sideband"].format(prefix=prefix))
-    if SHAFT_TESTS_NOT_RUN in conditions:
-        actions.append(_S["action_shaft_tests_not_run"].format(prefix=prefix))
     if ROLLING_ELEMENT_HELD_BACK in conditions or INCONCLUSIVE in conditions:
         actions.append(_S["action_repeat"].format(prefix=prefix))
+    actions += speed
     if NOTHING_TESTABLE in conditions and summary.get("next_step"):
         step = summary["next_step"]
         actions.append(

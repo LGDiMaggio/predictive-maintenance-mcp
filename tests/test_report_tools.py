@@ -73,6 +73,13 @@ OUTER_RACE_BESIDE_INNER_RACE_WITHOUT_SPEED = (
 #: What the envelope report states when no speed was available.
 NO_SPEED_NOTE = "Shaft speed was not available to this check"
 
+#: The report's note when the bearing statement already says it.
+SOURCE_NOTE = (
+    "No rpm was passed, and none is declared in the two fields this report "
+    "reads, the rpm of the signal's measurement and the nominal rpm of its "
+    "measurement point."
+)
+
 #: White-noise records of the envelope-report label test.
 ENVELOPE_NOISE_SEEDS = 20
 
@@ -709,12 +716,59 @@ class TestGenerateEnvelopeReport:
         )
         assert result["bearing_assessment"] == OUTER_RACE_WITHOUT_SPEED
         rendered = Path(result["file_path"]).read_text(encoding="utf-8")
-        assert (
-            f"{NO_SPEED_NOTE}: no rpm was passed, and none is declared in the two "
-            "fields this report reads"
-        ) in rendered
+        # The statement already says the speed was not available; the note
+        # adds only which fields were read and does not repeat the tests.
+        assert html_escape(SOURCE_NOTE) in rendered
+        assert "The line test therefore ran without" not in rendered
         assert html_escape(label) in rendered
         assert html_escape(result["bearing_assessment"]) in rendered
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("rpm", [None, RPM_6205], ids=["no_rpm", "rpm"])
+    async def test_several_types_say_whether_the_shaft_order_test_ran(
+        self, tools, data_dir, repo, reports_dir, line_checks, rpm
+    ):
+        """Owner correction (PR C wording gate): combined outer- and inner-race
+        defects at -5 dB stay several types with the same two candidates with
+        and without rpm, and the claim, the returned assessment and the HTML
+        agree on whether the shaft-order test ran, each saying it once."""
+        signal = defect(
+            "combined",
+            np.random.default_rng((DEFECT_SEED, 42, 0)),
+            12000.0,
+            10.0,
+            FREQUENCIES_6205,
+            SHAFT_6205_HZ,
+            -5.0,
+        )
+        sid = _write_and_load(
+            repo, data_dir, "env_combined", signal, 12000.0, **FREQUENCIES_6205
+        )
+        kwargs = {} if rpm is None else {"rpm": rpm}
+
+        result = await tools["generate_envelope_report"](signal_id=sid, **kwargs)
+
+        (check,) = line_checks
+        text = result["bearing_assessment"]
+        rendered = Path(result["file_path"]).read_text(encoding="utf-8")
+        assert check["outcome"] == "several_types"
+        assert [c["fault_type"] for c in check["candidates"]] == ["BPFO", "BPFI"]
+        assert check["most_likely_fault"] is None
+        assert text.count(ASSUMPTION) == 1 and text.endswith(ASSUMPTION)
+        assert html_escape(text) in rendered
+        if rpm is None:
+            assert check["claim"]["conditions"] == [
+                "several_types",
+                "shaft_tests_not_run",
+            ]
+            assert text.count(NO_SPEED_NOTE) == 1
+            assert "sideband" not in text
+            assert html_escape(SOURCE_NOTE) in rendered
+            assert "The line test therefore ran without" not in rendered
+        else:
+            assert check["claim"]["conditions"] == ["several_types"]
+            assert NO_SPEED_NOTE not in rendered
+            assert SOURCE_NOTE not in rendered
 
     @pytest.mark.asyncio
     async def test_a_declared_measurement_speed_runs_every_test(

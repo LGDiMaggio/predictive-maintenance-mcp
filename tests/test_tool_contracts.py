@@ -119,7 +119,13 @@ Fixture history:
   relation); the BearingClaim, level and overall_assessment descriptions say
   that qualified statements carry the same noise assumption and are no
   confirmed fault, and that the claim depends on whether a shaft speed was
-  available. Both on check_bearing_faults and diagnose_vibration.
+  available. Both on check_bearing_faults and diagnose_vibration. Final
+  wording correction, regenerated again in the same PR: one description
+  only, no property, enum value or type changed. The conditions description
+  says shaft_tests_not_run also accompanies several_types and
+  rolling_element_held_back, whose reason it keeps, and never labels outside
+  the bearing vocabulary alone. Both on check_bearing_faults and
+  diagnose_vibration.
   Generated under mcp 2.3.0 and pydantic 2.12.0 (uv.lock).
 """
 

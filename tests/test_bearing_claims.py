@@ -679,15 +679,128 @@ class TestWithoutAShaftSpeed:
         assert not counts_as_finding(claim)
         assert claim_actions(_summary(hypotheses, evidence, claim)) == []
 
+    HELD_BACK_STATEMENT = (
+        "The significance-tested evidence is inconclusive and does not support a "
+        "unique fault type: the cage lines may come from a cage defect or from a "
+        "rolling-element defect. Shaft speed was not available to this check, so "
+        "the shaft-order test did not run and an overlap of the cage line (FTF) or "
+        "the rolling-element line (2 x BSF) with a shaft harmonic cannot be "
+        f"excluded. {ASSUMPTION}"
+    )
+    SEVERAL_TYPES_STATEMENT = (
+        "The envelope evidence of this single spectrum is consistent with more "
+        "than one fault type, and none is singled out: the outer-race line (BPFO) "
+        f"at {FREQUENCIES_6205['BPFO']:.2f} Hz (20.0 dB) for an outer-race defect "
+        "and the inner-race line (BPFI) at "
+        f"{FREQUENCIES_6205['BPFI']:.2f} Hz (20.0 dB) for an inner-race defect. "
+        "They are listed by level above the local noise floor, which does not "
+        "rank them. Shaft speed was not available to this check, so the "
+        "shaft-order test did not run and an overlap of the outer-race line "
+        "(BPFO) or the inner-race line (BPFI) with a shaft harmonic cannot be "
+        f"excluded. {ASSUMPTION}"
+    )
+    REPEAT = (
+        "Bearing 6205: repeat the measurement, or compare it with a comparable "
+        "earlier measurement."
+    )
+    SEVERAL_TYPES_ACTION = (
+        "Bearing 6205: compare with a comparable earlier measurement, and inspect "
+        "the outer race and the inner race with equal priority."
+    )
+
+    @pytest.mark.parametrize("shaft_hz", [None, SHAFT_HZ], ids=["no_rpm", "rpm"])
+    def test_a_held_back_cage_says_whether_the_shaft_order_test_ran(self, shaft_hz):
+        """Owner correction (PR C wording gate): a cage held back for the
+        rolling element keeps its reason; without a speed it also carries
+        shaft_tests_not_run and names the two lines it concerns."""
+        states, reasons, _ = TestEvidencePointsAndActions.CASES["held_back"]
+        hypotheses, evidence = _constructed(FREQUENCIES_6205, states, reasons=reasons)
+        claim = _claim(hypotheses, evidence, shaft_hz=shaft_hz)
+        statement = claim_statement(claim, evidence, hypotheses)
+        actions = claim_actions(_summary(hypotheses, evidence, claim))
+
+        if shaft_hz is None:
+            assert _level(claim) == (
+                "qualified",
+                ["rolling_element_held_back", "shaft_tests_not_run"],
+                [],
+            )
+            assert statement == self.HELD_BACK_STATEMENT
+            assert actions == [self.REPEAT, self.ACTION]
+        else:
+            assert _level(claim) == ("qualified", ["rolling_element_held_back"], [])
+            assert "shaft speed" not in statement.lower()
+            assert actions == [self.REPEAT]
+        assert not counts_as_finding(claim)
+        assert named_candidate(claim, evidence) is None
+        assert statement.count(ASSUMPTION) == 1
+        assert "sideband" not in statement
+
+    @pytest.mark.parametrize("shaft_hz", [None, SHAFT_HZ], ids=["no_rpm", "rpm"])
+    def test_several_types_say_whether_the_shaft_order_test_ran(self, shaft_hz):
+        """The several-types reason and its candidates are kept; without a
+        speed the claim adds shaft_tests_not_run for its bearing lines."""
+        states, reasons, _ = TestEvidencePointsAndActions.CASES["several_types"]
+        hypotheses, evidence = _constructed(FREQUENCIES_6205, states, reasons=reasons)
+        claim = _claim(hypotheses, evidence, shaft_hz=shaft_hz)
+        statement = claim_statement(claim, evidence, hypotheses)
+        actions = claim_actions(_summary(hypotheses, evidence, claim))
+
+        if shaft_hz is None:
+            assert _level(claim) == (
+                "qualified",
+                ["several_types", "shaft_tests_not_run"],
+                [],
+            )
+            assert statement == self.SEVERAL_TYPES_STATEMENT
+            assert actions == [self.SEVERAL_TYPES_ACTION, self.ACTION]
+        else:
+            assert _level(claim) == ("qualified", ["several_types"], [])
+            assert "shaft speed" not in statement.lower()
+            assert actions == [self.SEVERAL_TYPES_ACTION]
+        assert counts_as_finding(claim)
+        assert named_candidate(claim, evidence) is None
+        assert statement.count(ASSUMPTION) == 1
+        assert "sideband" not in statement
+
+    def test_several_types_name_only_their_bearing_lines_without_a_speed(self):
+        """A custom label beside a bearing line: the no-speed sentence names the
+        bearing line only, and nothing bearing-specific is said of the label."""
+        frequencies = {"BPFO": FREQUENCIES_6205["BPFO"], "GMF": 350.0}
+        hypotheses, evidence = _constructed(
+            frequencies, {"BPFO": "supported", "GMF": "supported"}
+        )
+        claim = _claim(hypotheses, evidence, shaft_hz=None)
+        statement = claim_statement(claim, evidence, hypotheses)
+        no_speed = statement.split("which does not rank them. ")[1]
+
+        assert claim["conditions"] == ["several_types", "shaft_tests_not_run"]
+        assert no_speed == (
+            "Shaft speed was not available to this check, so the shaft-order test "
+            "did not run and an overlap of the outer-race line (BPFO) with a shaft "
+            f"harmonic cannot be excluded. {ASSUMPTION}"
+        )
+
+    def test_several_custom_labels_get_no_speed_condition(self):
+        """Labels outside the bearing vocabulary never get the shaft-order rule,
+        so no missing speed qualifies them."""
+        frequencies = {"GMF": 350.0, "VPF": 500.0}
+        hypotheses, evidence = _constructed(
+            frequencies, {"GMF": "supported", "VPF": "supported"}
+        )
+        claim = _claim(hypotheses, evidence, shaft_hz=None)
+        statement = claim_statement(claim, evidence, hypotheses)
+
+        assert claim["conditions"] == ["several_types"]
+        assert "shaft" not in statement and "defect" not in statement
+        assert claim_actions(_summary(hypotheses, evidence, claim)) == [
+            "Bearing 6205: compare with a comparable earlier measurement before "
+            "acting on the GMF and VPF lines."
+        ]
+
     @pytest.mark.parametrize(
         "case",
-        [
-            "several_types",
-            "held_back",
-            "inconclusive",
-            "no_indication",
-            "nothing_testable",
-        ],
+        ["inconclusive", "no_indication", "nothing_testable"],
     )
     def test_every_other_outcome_keeps_its_claim(self, case):
         states, reasons, _ = TestEvidencePointsAndActions.CASES[case]
@@ -878,6 +991,25 @@ def test_a_named_reading_always_states_the_assumption_and_no_confirmation(
         assert statement.count(ASSUMPTION) == 1
         assert statement.count("not a confirmed fault") == 1
         assert statement.endswith(ASSUMPTION)
+
+
+@pytest.mark.parametrize("shaft_hz", [SHAFT_HZ, None], ids=["speed", "no_speed"])
+@pytest.mark.parametrize("case", list(TestEvidencePointsAndActions.CASES))
+def test_the_condition_and_the_text_agree_on_a_missing_speed(case, shaft_hz):
+    """shaft_tests_not_run in the claim exactly when the statement says, once,
+    that the speed was not available, and the actions ask for it once."""
+    states, reasons, _ = TestEvidencePointsAndActions.CASES[case]
+    hypotheses, evidence = _constructed(FREQUENCIES_6205, states, reasons=reasons)
+    claim = _claim(hypotheses, evidence, shaft_hz=shaft_hz)
+    statement = claim_statement(claim, evidence, hypotheses).lower()
+    actions = claim_actions(
+        _summary(hypotheses, evidence, claim, next_step="Record more.")
+    )
+    flagged = "shaft_tests_not_run" in claim["conditions"]
+
+    assert statement.count("shaft speed was not available to this check") == flagged
+    assert sum("pass the shaft speed" in a for a in actions) == flagged
+    assert statement.count(ASSUMPTION.lower()) == (claim["level"] != "withheld")
 
 
 @pytest.mark.parametrize("key", [k for k in CLAIM_SENTENCES if k.startswith("action_")])

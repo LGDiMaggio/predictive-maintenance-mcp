@@ -221,7 +221,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   measurement or its measurement point. Without one the sideband and
   shaft-order tests do not run, the report says so, and an indicated
   bearing type is qualified (`shaft_tests_not_run`) instead of being named
-  as single-spectrum evidence. Other speed fields of a companion, such as a
+  as single-spectrum evidence; a several-types or held-back-cage claim made
+  without one keeps its reason, adds the same condition and says that the
+  shaft-order test did not run. Other speed fields of a companion, such as a
   top-level `shaft_speed`, are not read, so a report on such a signal
   without `rpm` is qualified the same way.
   The per-check fields `detected`, `evidence_strength`,
