@@ -17,10 +17,11 @@ bundled MFPT recordings:
   maintenance action in the diagnosis and the advisory, and envelope evidence
   alone never asks for a bearing replacement.
 
-The older fields express these properties as follows: a check *names* a fault
-when ``most_likely_fault`` is set, *supports* a type when that type's
+The per-check fields express these properties as follows: a check *names* a
+fault when ``most_likely_fault`` is set, *supports* a type when that type's
 ``evidence_strength`` is "moderate" or "high", and *detects* a type when its
-``detected`` is true. The evidence fields express them directly: the check's
+``detected`` is true; all three derive from the evidence fields, which express
+the properties directly: the check's
 ``outcome`` names one type only when it is "indicated", ``candidates`` lists
 the supported types, and each check's ``state`` says whether its line was
 tested, found, corroborated or shared. A bearing maintenance action is a
@@ -39,7 +40,7 @@ Rules this module follows:
   count copied from a run. A check is one bearing check of one record (one
   ``check_all_bearing_faults`` call), and the tests of its fault frequencies
   share that probability; each corroborating line is tested at it alone.
-- A property the older fields violate is a
+- A property the shipped engine violates is a
   ``pytest.mark.xfail(strict=True, raises=AssertionError)`` tripwire whose
   reason starts with ``audit-known-defect:``, so the weekly audit lists it;
   when the defect is fixed the tripwire XPASSes, which fails the strict run
@@ -718,9 +719,8 @@ class TestSensitivityControls:
 # The evidence fields: fault-free signals
 # ===========================================================================
 #
-# The properties above, on the fields of the evidence layer. These tests carry
-# no marker: the evidence layer is the fix the tripwires above wait for, and
-# the older fields keep their values until they switch to it.
+# The properties above, on the fields of the evidence layer, from which the
+# per-check fields of the sections above derive.
 
 #: The research's acquisition configurations: (fs in Hz, duration in s).
 EVIDENCE_CONFIGS = [(12000.0, 10.0), (12000.0, 1.0), (25600.0, 4.0), (48000.0, 2.0)]

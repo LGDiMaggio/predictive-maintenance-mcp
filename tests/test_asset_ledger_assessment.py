@@ -1011,7 +1011,9 @@ class TestBearingEvidence:
         ] == ("no_change")
 
     @staticmethod
-    def at_version(events: list[dict[str, Any]], version: int) -> list[dict[str, Any]]:
+    def at_version(
+        events: list[dict[str, Any]], version: Optional[int]
+    ) -> list[dict[str, Any]]:
         """The same events with every snapshot recorded under algorithm
         *version*."""
         rebuilt = []
@@ -1043,16 +1045,20 @@ class TestBearingEvidence:
         assert presence["present_in_last_k"] == (5 if persistent else 0)
         assert result["assessed"]["evidence"]["BPFO"]["persistent"] is persistent
 
-    def test_a_version_1_snapshot_keeps_its_recorded_rule(self):
-        """A version 1 snapshot is never read with the newer rule: the same
-        detected line with a magnitude is presence, whatever a state key."""
+    @pytest.mark.parametrize("version", [1, None])
+    def test_a_version_1_snapshot_keeps_its_recorded_rule(self, version):
+        """A version 1 snapshot, or one that records no integer version, is
+        never read with the newer rule: the same detected line with a
+        magnitude is presence, whatever a state key."""
 
         def bearing_of(index: int) -> dict[str, Any]:
             block = bearing_block(index >= 16, 120.0 if index >= 16 else None)
             block["labels"]["BPFO"]["state"] = "unconfirmed"
             return block
 
-        events = self.at_version(series_events(STABLE * 2, bearing_of=bearing_of), 1)
+        events = self.at_version(
+            series_events(STABLE * 2, bearing_of=bearing_of), version
+        )
         result = assess(view_of(events))
         assert result["observed"]["evidence_presence"]["BPFO"]["present_in_last_k"] == 5
 

@@ -1161,6 +1161,9 @@ class TestPartialComposition:
         )
         for check in engine["fault_checks"]:
             label = one["bearing"]["labels"][check["fault_type"]]
+            assert label["state"] == check["state"]
+            assert label["line_frequency_hz"] == check["line_frequency_hz"]
+            assert label["level_db"] == check["level_db"]
             assert label["detected"] == check["detected"]
             assert label["evidence_strength"] == check["evidence_strength"]
             assert label["magnitude"] == check["magnitude"]
