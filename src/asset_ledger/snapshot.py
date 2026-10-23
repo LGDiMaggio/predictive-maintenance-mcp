@@ -16,7 +16,8 @@ identical: ``health_snapshot/<ALGORITHM_VERSION>+<hash of the policy
 parameters>``. ``ALGORITHM_VERSION`` is bumped BY HAND whenever a change
 along the indicator paths (``signal_processing/features.py``,
 ``signal_processing/spectral.py``, ``diagnostics/bearing_analyzer.py``,
-``diagnostics/iso20816.py``) can change the numbers; the golden tripwire
+``diagnostics/bearing_evidence.py``, ``diagnostics/iso20816.py``) can
+change the numbers; the golden tripwire
 ``tests/fixtures/asset_snapshot_golden.json`` goes red on such a change
 without a bump. Data-dependent values (the envelope band resolved from the
 sampling rate, the number of samples) live in the informative ``effective``
@@ -47,6 +48,11 @@ import scipy
 
 from ..diagnostics.bearing_analyzer import check_all_bearing_faults, check_frequency_set
 from ..diagnostics.bearing_catalog import compute_fault_frequencies
+from ..diagnostics.bearing_evidence import (
+    CHECK_FALSE_ALARM_PROBABILITY,
+    CORROBORATION_FALSE_ALARM_PROBABILITY,
+    Hypothesis,
+)
 from ..diagnostics.iso20816 import assess_severity_raw
 from ..signal_acquisition.measurement import VALID_DIRECTIONS
 from ..signal_processing.features import extract_time_domain_features
@@ -87,8 +93,11 @@ __all__ = [
 logger = logging.getLogger(__name__)
 
 #: Hand-bumped whenever the numbers of ANY snapshot block can change
-#: (see the module docstring). Part of ``processing_id``.
-ALGORITHM_VERSION = 1
+#: (see the module docstring). Part of ``processing_id``. History:
+#: 1, the tolerance match of the bearing fault frequencies; 2, the
+#: significance-tested bearing evidence of ``diagnostics.bearing_evidence``,
+#: with the rolling element tested at 2 x BSF.
+ALGORITHM_VERSION = 2
 
 #: Prefix of every ``processing_id`` emitted by this module.
 PROCESSING_FAMILY = "health_snapshot"
@@ -144,7 +153,10 @@ class SnapshotPolicy(NamedTuple):
 
     Only what changes the numbers independently of the data belongs here;
     values resolved from the signal (band edges from fs, sample counts) are
-    reported in the snapshot's ``effective`` block instead.
+    reported in the snapshot's ``effective`` block instead. The false-alarm
+    probabilities of the bearing line test are fixed by
+    ``diagnostics.bearing_evidence``, not set here; :func:`policy_params`
+    records them, so they enter the lineage key too.
 
     Attributes:
         tolerance_pct: Frequency tolerance (percent) of the bearing fault
@@ -205,9 +217,11 @@ def policy_params(policy: SnapshotPolicy) -> dict[str, Any]:
 
     The returned dict is what ``processing_id`` hashes and what the
     snapshot records under ``processing.params``; every value has one
-    canonical representation (floats for the percentages and the segment,
-    an int for the harmonics, ``"default"`` or ``[low, high]`` for the
-    band), so equal policies always hash equal.
+    canonical representation (floats for the percentages, the segment and
+    the probabilities, an int for the harmonics, ``"default"`` or
+    ``[low, high]`` for the band), so equal policies always hash equal. It
+    adds the bearing line test's two false-alarm probabilities, per check
+    and per corroborating line, which the evidence module fixes.
 
     Raises:
         ValueError: If *policy* is not a :class:`SnapshotPolicy` or one of
@@ -256,6 +270,10 @@ def policy_params(policy: SnapshotPolicy) -> dict[str, Any]:
         "fft_segment_s": segment_param,
         "one_x_tolerance_pct": _positive_number(
             "one_x_tolerance_pct", policy.one_x_tolerance_pct
+        ),
+        "false_alarm_probability_per_check": float(CHECK_FALSE_ALARM_PROBABILITY),
+        "false_alarm_probability_per_corroborating_line": float(
+            CORROBORATION_FALSE_ALARM_PROBABILITY
         ),
     }
 
@@ -541,10 +559,12 @@ def _bearing_block(
 
     The verdict comes from the same analyzers ``check_bearing_faults`` uses
     (catalog route: :func:`check_all_bearing_faults`; declared orders:
-    :func:`check_frequency_set`). The envelope amplitude at every expected
-    frequency is read with :func:`amplitude_near_frequency` on the SAME
-    envelope spectrum the matching consumed, so it exists for every label
-    in every snapshot, detected or not.
+    :func:`check_frequency_set`), with the state, line frequency and level
+    the evidence layer tested. The envelope amplitude of every label is read
+    with :func:`amplitude_near_frequency` at the line tested (2 x BSF for
+    the rolling element) in the same window, on the SAME envelope spectrum
+    the analyzer tested, so it exists for every label in every snapshot,
+    detected or not, and measures the line the state describes.
 
     Raises:
         ValueError: From the analyzers (empty or non-positive frequencies).
@@ -579,11 +599,16 @@ def _bearing_block(
     for check in summary["fault_checks"]:
         label = check["fault_type"]
         expected_hz = float(frequencies[label])
+        # The unrounded frequency the evidence layer searched around.
+        line_hz = Hypothesis(label, expected_hz, check["fault_type_canonical"]).line_hz
         envelope = amplitude_near_frequency(
-            env_freqs, env_mags, expected_hz, policy.tolerance_pct
+            env_freqs, env_mags, line_hz, policy.tolerance_pct
         )
         labels[label] = {
             "expected_hz": expected_hz,
+            "line_frequency_hz": check["line_frequency_hz"],
+            "state": check["state"],
+            "level_db": check["level_db"],
             "detected": bool(check["detected"]),
             "evidence_strength": check["evidence_strength"],
             "magnitude": check["magnitude"],

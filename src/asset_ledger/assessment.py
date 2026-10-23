@@ -928,15 +928,29 @@ def _indicator_order(names: set[str]) -> list[str]:
     return ordered
 
 
+#: First snapshot algorithm version whose bearing labels record the
+#: significance-tested ``state`` (``snapshot.ALGORITHM_VERSION`` history).
+_STATE_EVIDENCE_VERSION = 2
+
+
 def _evidence_present(snapshot: dict[str, Any], label: str) -> bool:
-    """Bearing evidence counts as present only with ``detected`` True AND a
-    numeric ``magnitude`` (the analyzer can report a detection with no
-    magnitude on an empty envelope)."""
+    """Whether the snapshot records bearing evidence for *label*.
+
+    A snapshot of algorithm version 2 or later records the evidence state:
+    present only when it is ``supported`` (a significant line of its own,
+    corroborated by a counted line its kinematics predict). An earlier
+    snapshot is read with the rule it was recorded under, never with the
+    newer one: ``detected`` True AND a numeric ``magnitude`` (that analyzer
+    could report a detection with no magnitude on an empty envelope).
+    """
     bearing = snapshot.get("bearing")
     labels = bearing.get("labels") if isinstance(bearing, dict) else None
     block = labels.get(label) if isinstance(labels, dict) else None
     if not isinstance(block, dict):
         return False
+    version = (snapshot.get("processing") or {}).get("algorithm_version")
+    if isinstance(version, int) and version >= _STATE_EVIDENCE_VERSION:
+        return block.get("state") == "supported"
     return bool(block.get("detected")) and _number(block.get("magnitude")) is not None
 
 

@@ -1010,6 +1010,52 @@ class TestBearingEvidence:
             "classification"
         ] == ("no_change")
 
+    @staticmethod
+    def at_version(events: list[dict[str, Any]], version: int) -> list[dict[str, Any]]:
+        """The same events with every snapshot recorded under algorithm
+        *version*."""
+        rebuilt = []
+        for event in events:
+            if event["event_type"] == EVENT_HEALTH_SNAPSHOT_COMPUTED:
+                payload = json.loads(canonical_json(event["payload"]))
+                payload["processing"]["algorithm_version"] = version
+                event = make_event(EVENT_HEALTH_SNAPSHOT_COMPUTED, ASSET, payload)
+            rebuilt.append(event)
+        return rebuilt
+
+    @pytest.mark.parametrize(
+        "state, persistent", [("supported", True), ("unconfirmed", False)]
+    )
+    def test_from_version_2_presence_is_a_supported_state(self, state, persistent):
+        """From algorithm version 2 a snapshot records the evidence state, and
+        only a supported line is presence: an unconfirmed line in the last five
+        slots, detected with a magnitude, is none."""
+
+        def bearing_of(index: int) -> dict[str, Any]:
+            block = bearing_block(index >= 16, 120.0 if index >= 16 else None)
+            for label, entry in block["labels"].items():
+                entry["state"] = state if label == "BPFO" and index >= 16 else "absent"
+            return block
+
+        events = self.at_version(series_events(STABLE * 2, bearing_of=bearing_of), 2)
+        result = assess(view_of(events))
+        presence = result["observed"]["evidence_presence"]["BPFO"]
+        assert presence["present_in_last_k"] == (5 if persistent else 0)
+        assert result["assessed"]["evidence"]["BPFO"]["persistent"] is persistent
+
+    def test_a_version_1_snapshot_keeps_its_recorded_rule(self):
+        """A version 1 snapshot is never read with the newer rule: the same
+        detected line with a magnitude is presence, whatever a state key."""
+
+        def bearing_of(index: int) -> dict[str, Any]:
+            block = bearing_block(index >= 16, 120.0 if index >= 16 else None)
+            block["labels"]["BPFO"]["state"] = "unconfirmed"
+            return block
+
+        events = self.at_version(series_events(STABLE * 2, bearing_of=bearing_of), 1)
+        result = assess(view_of(events))
+        assert result["observed"]["evidence_presence"]["BPFO"]["present_in_last_k"] == 5
+
 
 # ---------------------------------------------------------------------------
 # Comparability (AE3, AE4) and slots

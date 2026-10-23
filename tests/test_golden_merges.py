@@ -32,6 +32,13 @@ pre-merge values of the three bearing summaries (a fault "most likely" on
 seeded noise among them) were removed from the snapshot instead of
 regenerated, and expected-value tests derived from each signal's
 construction pin them; every other key and golden case is unchanged.
+
+Deliberate change (T1 PR D, 2026-10-23): the per-check ``detected``,
+``detected_frequency_hz``, ``magnitude``, ``deviation_pct``,
+``harmonics_detected`` and ``evidence_strength`` now derive from the
+significance-tested evidence, so they were removed from the four bearing
+cases in the same way and are pinned by expected-value tests from the
+signals' construction; every other key and golden case is unchanged.
 """
 
 import json
@@ -50,7 +57,7 @@ from predictive_maintenance_mcp.mcp_tools.prognostics_tools import (
     analyze_signal_trend,
 )
 
-from _golden_signals import load_golden_signals
+from _golden_signals import BPFO_6205_1800, load_golden_signals
 
 GOLDEN_FILE = Path(__file__).parent / "fixtures" / "golden_merges.json"
 
@@ -309,6 +316,48 @@ def assert_golden_bearing_claim(summary) -> None:
     assert summary.overall_assessment == GOLDEN_BEARING_ASSESSMENT
 
 
+#: Frequency resolution of the 1 s golden records at 10 kHz (Hz).
+GOLDEN_BIN_HZ = 1.0
+
+
+def assert_nothing_detected(check) -> None:
+    assert check.detected is False, check.fault_type
+    assert check.evidence_strength == "none", check.fault_type
+    assert check.detected_frequency_hz is None, check.fault_type
+    assert check.magnitude is None, check.fault_type
+    assert check.deviation_pct is None, check.fault_type
+    assert check.harmonics_detected == [], check.fault_type
+
+
+def assert_golden_bearing_checks(summary) -> None:
+    """The expected-value replacement of the removed golden per-check keys.
+
+    golden_bearing modulates its carrier at BPFO and 2 x BPFO only, and the
+    modulation stays positive, so the envelope holds those two lines and
+    noise: BPFO is detected within one bin, corroborated by its second
+    harmonic alone ("moderate", one counted line); BPFI and the rolling
+    element (2 x BSF) have no line; the cage line cannot be tested in 1 s.
+    """
+    checks = {c.fault_type: c for c in summary.fault_checks}
+    bpfo = checks["BPFO"]
+    assert bpfo.detected is True
+    assert bpfo.evidence_strength == "moderate"
+    assert abs(bpfo.detected_frequency_hz - BPFO_6205_1800) <= GOLDEN_BIN_HZ
+    assert bpfo.magnitude == pytest.approx(bpfo.line_amplitude)
+    assert bpfo.deviation_pct == pytest.approx(
+        (bpfo.detected_frequency_hz - bpfo.line_frequency_hz)
+        / bpfo.line_frequency_hz
+        * 100.0,
+        abs=0.01,
+    )
+    (second,) = bpfo.harmonics_detected
+    assert second["harmonic"] == 2
+    assert abs(second["detected_hz"] - 2 * BPFO_6205_1800) <= 2 * GOLDEN_BIN_HZ
+    for label in ("BPFI", "BSF", "FTF"):
+        assert_nothing_detected(checks[label])
+    assert checks["FTF"].state == "not_testable"
+
+
 class TestGoldenCheckBearingFaults:
     @pytest.mark.asyncio
     async def test_bearing_route_matches_check_bearing_faults_direct(
@@ -323,6 +372,7 @@ class TestGoldenCheckBearingFaults:
         )
         assert_matches(new.model_dump(mode="json"), old, path="bearing_route")
         assert_golden_bearing_claim(new)
+        assert_golden_bearing_checks(new)
         # New traceability fields on top of the preserved behavior:
         assert new.source, "catalog source must be echoed for bearing_id route"
         canon = {c.fault_type: c.fault_type_canonical for c in new.fault_checks}
@@ -350,6 +400,8 @@ class TestGoldenCheckBearingFaults:
         assert new.most_likely_fault is None
         assert new.most_likely_fault_canonical is None
         assert "consistent with" not in new.overall_assessment
+        for check in new.fault_checks:
+            assert_nothing_detected(check)
 
     @pytest.mark.asyncio
     async def test_bearing_route_matches_lookup_bearing_and_compute(
@@ -366,6 +418,7 @@ class TestGoldenCheckBearingFaults:
         )
         assert_matches(new.model_dump(mode="json"), old, path="lookup_route")
         assert_golden_bearing_claim(new)
+        assert_golden_bearing_checks(new)
 
     @pytest.mark.asyncio
     async def test_single_fault_check_preserved_in_summary(
