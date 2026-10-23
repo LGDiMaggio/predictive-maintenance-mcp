@@ -893,9 +893,11 @@ class TestBearingClaimInTheDiagnosis:
             "Bearing analysis: The envelope evidence of this single spectrum is "
             "consistent with an outer-race defect" in text
         )
-        assert "This assumes the record's background is random measurement noise" in (
-            text
-        )
+        assert (
+            "The line test assumes the record's background is random measurement "
+            "noise, which this single acquisition does not verify; the result is "
+            "not a confirmed fault."
+        ) in text
         assert _bearing_actions(result) == [
             "Bearing 6205: confirm the single-spectrum indication with a comparable "
             "measurement or an inspection of the outer race."

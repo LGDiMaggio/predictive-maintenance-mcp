@@ -532,19 +532,22 @@ class BearingClaim(BaseModel):
     """What the bearing check may state from its significance-tested evidence.
 
     Derived from outcome, the per-check states, the declared frequencies and
-    whether a shaft speed was given; it never changes them. most_likely_fault,
-    most_likely_fault_canonical and overall_assessment follow it.
+    whether a shaft speed was available; it never changes them.
+    most_likely_fault, most_likely_fault_canonical and overall_assessment
+    follow it.
     """
 
     level: BearingClaimLevel = Field(
         description=(
             "withheld (no fault type is named; the statement says why the record "
             "supports none), qualified (the evidence and every competing "
-            "explanation the result cannot exclude are named, and no single type "
-            "is singled out) or single_spectrum_evidence (the envelope evidence of "
-            "this single spectrum is consistent with one type, assuming the "
-            "record's background is random measurement noise; it asks for "
-            "confirmation and is not a confirmed fault). A fourth level, "
+            "explanation the result cannot exclude are named, no single type is "
+            "singled out, and it is not a confirmed fault) or "
+            "single_spectrum_evidence (the envelope evidence of this single "
+            "spectrum is consistent with one type; it asks for confirmation and "
+            "is not a confirmed fault). Both rest on the assumption that the "
+            "record's background is random measurement noise, which one "
+            "acquisition does not verify. A fourth level, "
             "supported_claim, is reserved for evidence independent of one "
             "spectrum and is never produced by this check."
         )
@@ -753,9 +756,10 @@ class BearingFaultsSummary(BaseModel):
         description=(
             "One statement derived from claim: at single_spectrum_evidence, what "
             "the envelope evidence of this single spectrum is consistent with and "
-            "the assumption it rests on; at qualified, the evidence and the "
-            "competing explanations it cannot exclude; at withheld, why no fault "
-            "type is assessed. It is not a probability and not a confirmation."
+            "the assumption it rests on; at qualified, the evidence, the "
+            "competing explanations it cannot exclude and the same assumption; "
+            "at withheld, why no fault type is assessed. It is not a probability "
+            "and not a confirmation."
         )
     )
     most_likely_fault: Optional[str] = Field(

@@ -43,9 +43,9 @@ DECLARED_6205 = {"BPFO": 107.36, "BPFI": 162.19, "BSF": 70.58, "FTF": 11.93}
 
 #: The closing sentence of every single-spectrum and qualified statement.
 ASSUMPTION = (
-    "This assumes the record's background is random measurement noise, which "
-    "this single acquisition does not verify; the result is not a confirmed "
-    "fault."
+    "The line test assumes the record's background is random measurement "
+    "noise, which this single acquisition does not verify; the result is not "
+    "a confirmed fault."
 )
 
 #: The claim statement of an outer-race indication checked without a speed.
@@ -63,11 +63,11 @@ OUTER_RACE_BESIDE_INNER_RACE_WITHOUT_SPEED = (
     "outer-race defect, but shaft speed was not available to this check, so the "
     "shaft-order test did not run and an overlap of the outer-race line (BPFO) "
     "with a shaft harmonic cannot be excluded; and the inner-race line (BPFI) "
-    "also stands above the local noise floor, and without the shaft rate it "
-    "could not be tested whether its sideband at BPFI minus twice the shaft rate "
-    "falls within the search window of the outer-race line (BPFO), so an "
-    "inner-race defect cannot be excluded. No single fault type is named from "
-    f"this spectrum. {ASSUMPTION}"
+    "also stands above the local noise floor, and without the shaft speed it "
+    "could not be tested whether BPFI minus twice the shaft rate, where a "
+    "sideband of that line would lie, falls within the search window of the "
+    "outer-race line (BPFO), so an inner-race defect cannot be excluded. No "
+    f"single fault type is named from this spectrum. {ASSUMPTION}"
 )
 
 #: What the envelope report states when no speed was available.
@@ -710,8 +710,8 @@ class TestGenerateEnvelopeReport:
         assert result["bearing_assessment"] == OUTER_RACE_WITHOUT_SPEED
         rendered = Path(result["file_path"]).read_text(encoding="utf-8")
         assert (
-            f"{NO_SPEED_NOTE}: no rpm was passed, and the signal declares none in "
-            "the fields this report reads"
+            f"{NO_SPEED_NOTE}: no rpm was passed, and none is declared in the two "
+            "fields this report reads"
         ) in rendered
         assert html_escape(label) in rendered
         assert html_escape(result["bearing_assessment"]) in rendered
@@ -999,6 +999,10 @@ class TestGenerateEnvelopeReport:
         assert "defect" not in result["bearing_assessment"]
         (label,) = result["bearing_matches"]
         assert label.startswith("GMF line at ")
+        # Neither test the missing speed leaves out applies to a custom label.
+        assert label.endswith(
+            "above the local noise floor and corroborated in this spectrum"
+        )
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("rpm", [None, RPM_6205], ids=["no_rpm", "rpm"])

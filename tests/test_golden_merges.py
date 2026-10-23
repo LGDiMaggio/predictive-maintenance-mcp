@@ -292,7 +292,9 @@ GOLDEN_BEARING_ASSESSMENT = (
     "outer-race defect, but this record is too short to test the cage line "
     "(FTF), and a harmonic of the cage frequency falls within the search window "
     "of the outer-race line (BPFO), so a cage defect cannot be excluded. No "
-    "single fault type is named from this spectrum."
+    "single fault type is named from this spectrum. The line test assumes the "
+    "record's background is random measurement noise, which this single "
+    "acquisition does not verify; the result is not a confirmed fault."
 )
 
 

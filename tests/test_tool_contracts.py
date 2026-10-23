@@ -112,11 +112,14 @@ Fixture history:
   BearingClaim description says the claim also depends on whether a shaft
   speed was given. Both on check_bearing_faults and diagnose_vibration,
   whose checks always have a speed. Wording gate, regenerated again in the
-  same PR: one description only, no property, enum value or type changed.
-  The BearingClaim conditions description says what shaft_tests_not_run
-  leaves open (a shaft-harmonic overlap, and for an outer-race indication
-  beside an inner-race line above the floor the untested inner-race sideband
-  relation), on check_bearing_faults and diagnose_vibration.
+  same PR: descriptions only, no property, enum value or type changed. The
+  BearingClaim conditions description says what shaft_tests_not_run leaves
+  open (a shaft-harmonic overlap, and for an outer-race indication beside an
+  inner-race line above the floor the untested inner-race sideband
+  relation); the BearingClaim, level and overall_assessment descriptions say
+  that qualified statements carry the same noise assumption and are no
+  confirmed fault, and that the claim depends on whether a shaft speed was
+  available. Both on check_bearing_faults and diagnose_vibration.
   Generated under mcp 2.3.0 and pydantic 2.12.0 (uv.lock).
 """
 

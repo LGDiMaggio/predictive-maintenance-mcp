@@ -200,8 +200,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the candidate. An indicated type is qualified when the record cannot test
   the cage line and a harmonic of the cage frequency falls in its search
   window, or when an outer-race indication sits beside a significant
-  inner-race line whose sideband at BPFI minus twice the shaft rate falls in
-  the outer-race window; a generated signal whose own companion declares a
+  inner-race line and BPFI minus twice the shaft rate, where a sideband of
+  that line would lie, falls in the outer-race window; a generated signal
+  whose own companion declares a
   noise level of 0 is withheld. Every single-spectrum and qualified
   statement closes with the line test's assumption of a random-noise
   background, which one acquisition does not verify, and says that the

@@ -152,9 +152,9 @@ CLAIM_SENTENCES: dict[str, str] = {
     ),
     # closes every statement that rests on a significance-tested line
     "assumption": (
-        "This assumes the record's background is random measurement noise, which "
-        "this single acquisition does not verify; the result is not a confirmed "
-        "fault."
+        "The line test assumes the record's background is random measurement "
+        "noise, which this single acquisition does not verify; the result is not "
+        "a confirmed fault."
     ),
     "limitation_sideband_only": (
         "Its only corroborating lines are shaft-rate sidebands, which shaft-rate "
@@ -183,6 +183,7 @@ CLAIM_SENTENCES: dict[str, str] = {
         "{defect}, but {alternatives}. No single fault type is named from this "
         "spectrum."
     ),
+    "not_excluded_separator": "; ",
     "not_excluded_joiner": "; and ",
     "cage_comb_too_short": (
         "this record is too short to test the cage line (FTF), and a harmonic of "
@@ -196,9 +197,9 @@ CLAIM_SENTENCES: dict[str, str] = {
     ),
     "inner_race_sideband": (
         "the inner-race line (BPFI) also stands above the local noise floor, and "
-        "its sideband at BPFI minus twice the shaft rate falls within the search "
-        "window of the outer-race line (BPFO), so an inner-race defect cannot be "
-        "excluded"
+        "BPFI minus twice the shaft rate, where a sideband of that line would lie, "
+        "falls within the search window of the outer-race line (BPFO), so an "
+        "inner-race defect cannot be excluded"
     ),
     "shaft_tests_not_run": (
         "shaft speed was not available to this check, so the shaft-order test did "
@@ -207,9 +208,10 @@ CLAIM_SENTENCES: dict[str, str] = {
     ),
     "shaft_tests_not_run_inner_race": (
         "the inner-race line (BPFI) also stands above the local noise floor, and "
-        "without the shaft rate it could not be tested whether its sideband at "
-        "BPFI minus twice the shaft rate falls within the search window of the "
-        "outer-race line (BPFO), so an inner-race defect cannot be excluded"
+        "without the shaft speed it could not be tested whether BPFI minus twice "
+        "the shaft rate, where a sideband of that line would lie, falls within the "
+        "search window of the outer-race line (BPFO), so an inner-race defect "
+        "cannot be excluded"
     ),
     "rolling_element_held_back": (
         "The significance-tested evidence is inconclusive and does not support a "
@@ -437,9 +439,9 @@ CLAIM_SENTENCES: dict[str, str] = {
         "not run"
     ),
     "envelope_no_speed": (
-        "Shaft speed was not available to this check: no rpm was passed, and the "
-        "signal declares none in the fields this report reads (the rpm of its "
-        "measurement and the nominal rpm of its measurement point). The line test "
+        "Shaft speed was not available to this check: no rpm was passed, and none "
+        "is declared in the two fields this report reads, the rpm of the signal's "
+        "measurement and the nominal rpm of its measurement point. The line test "
         "therefore ran without the shaft-rate sideband test and the shaft-order "
         "test."
     ),
@@ -749,9 +751,14 @@ def claim_statement(
                 and checks[inner]["state"] not in ("absent", "not_testable")
             ):
                 alternatives.append(_S["shaft_tests_not_run_inner_race"])
+        first = _S["not_excluded_separator"].join(alternatives[:-1])
         sentence = _S["not_excluded"].format(
             defect=names.defect,
-            alternatives=_S["not_excluded_joiner"].join(alternatives),
+            alternatives=(
+                f"{first}{_S['not_excluded_joiner']}{alternatives[-1]}"
+                if first
+                else alternatives[-1]
+            ),
         )
         return f"{sentence} {_S['assumption']}"
 
@@ -766,13 +773,12 @@ def claim_statement(
         sentence = _S["evidence_label"].format(
             label=x.label, peak_hz=check["line_peak_hz"], level_db=check["level_db"]
         )
-    sentence += " " + _S["assumption"]
     limitations = claim["limitations"]
     if SIDEBAND_ONLY_CORROBORATION in limitations:
         sentence += " " + _S["limitation_sideband_only"]
     if CAGE_NOT_DECLARED in limitations:
         sentence += " " + _S["limitation_cage_not_declared"]
-    return sentence
+    return f"{sentence} {_S['assumption']}"
 
 
 def _candidate_phrase(hypothesis: Hypothesis, check: Mapping[str, Any]) -> str:
@@ -1079,7 +1085,8 @@ def envelope_labels(summary: Mapping[str, Any]) -> list[str]:
     """One envelope-report label per marked candidate line.
 
     A check run without a shaft speed (``shaft_frequency_hz`` None) ran no
-    sideband or shaft-order test, and every label says so.
+    sideband or shaft-order test, and the label of every bearing line says so;
+    a label outside the bearing vocabulary never gets those tests.
 
     Args:
         summary: A check summary (``check_frequency_set``).
@@ -1087,13 +1094,15 @@ def envelope_labels(summary: Mapping[str, Any]) -> list[str]:
     Returns:
         The labels, in the candidates' level order; none at withheld.
     """
-    key = (
-        "envelope_label_no_speed"
-        if summary.get("shaft_frequency_hz") is None
-        else "envelope_label"
-    )
+    no_speed = summary.get("shaft_frequency_hz") is None
     return [
-        _S[key].format(
+        _S[
+            (
+                "envelope_label_no_speed"
+                if no_speed and c["fault_type_canonical"] in _NAMES
+                else "envelope_label"
+            )
+        ].format(
             name=line_display_name(c["fault_type"], c["fault_type_canonical"]),
             peak_hz=c["line_peak_hz"],
             level_db=c["level_db"],

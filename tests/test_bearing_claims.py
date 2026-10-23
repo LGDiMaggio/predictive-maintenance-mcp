@@ -54,9 +54,9 @@ ALLOWED_NEGATIONS = ("not a confirmed fault", "is not a probability")
 
 #: Closes every single-spectrum and qualified statement, never a withheld one.
 ASSUMPTION = (
-    "This assumes the record's background is random measurement noise, which "
-    "this single acquisition does not verify; the result is not a confirmed "
-    "fault."
+    "The line test assumes the record's background is random measurement "
+    "noise, which this single acquisition does not verify; the result is not "
+    "a confirmed fault."
 )
 
 _DEFAULT_REASON = {
@@ -266,10 +266,10 @@ class TestClaimLevels:
         assert statement == (
             "The envelope evidence of this single spectrum is consistent with an "
             "outer-race defect, but the inner-race line (BPFI) also stands above "
-            "the local noise floor, and its sideband at BPFI minus twice the shaft "
-            "rate falls within the search window of the outer-race line (BPFO), so "
-            "an inner-race defect cannot be excluded. No single fault type is named "
-            f"from this spectrum. {ASSUMPTION}"
+            "the local noise floor, and BPFI minus twice the shaft rate, where a "
+            "sideband of that line would lie, falls within the search window of the "
+            "outer-race line (BPFO), so an inner-race defect cannot be excluded. No "
+            f"single fault type is named from this spectrum. {ASSUMPTION}"
         )
 
     def test_an_absent_inner_race_line_qualifies_nothing(self):
@@ -479,9 +479,10 @@ class TestLimitations:
             ["sideband_only_corroboration"],
         )
         assert statement.endswith(
-            f"{ASSUMPTION} Its only corroborating lines are shaft-rate sidebands, "
-            "which shaft-rate modulation of the background can also produce, so they "
-            "do not independently confirm an inner-race defect."
+            "above the local noise floor. Its only corroborating lines are shaft-rate "
+            "sidebands, which shaft-rate modulation of the background can also "
+            f"produce, so they do not independently confirm an inner-race defect. "
+            f"{ASSUMPTION}"
         )
 
     def test_a_harmonic_beside_the_sidebands_is_no_limitation(self):
@@ -498,8 +499,8 @@ class TestLimitations:
 
         assert _level(claim) == ("single_spectrum_evidence", [], ["cage_not_declared"])
         assert claim_statement(claim, evidence, hypotheses).endswith(
-            f"{ASSUMPTION} No cage rate was declared, so whether cage-rate lines "
-            "could explain this line was not assessed."
+            "above the local noise floor. No cage rate was declared, so whether "
+            f"cage-rate lines could explain this line was not assessed. {ASSUMPTION}"
         )
 
 
@@ -525,10 +526,10 @@ class TestWithoutAShaftSpeed:
         "the shaft-order test did not run and an overlap of the outer-race line "
         "(BPFO) with a shaft harmonic cannot be excluded; and the inner-race line "
         "(BPFI) also stands above the local noise floor, and without the shaft "
-        "rate it could not be tested whether its sideband at BPFI minus twice the "
-        "shaft rate falls within the search window of the outer-race line (BPFO), "
-        "so an inner-race defect cannot be excluded. No single fault type is named "
-        f"from this spectrum. {ASSUMPTION}"
+        "speed it could not be tested whether BPFI minus twice the shaft rate, "
+        "where a sideband of that line would lie, falls within the search window "
+        "of the outer-race line (BPFO), so an inner-race defect cannot be "
+        f"excluded. No single fault type is named from this spectrum. {ASSUMPTION}"
     )
     ACTION = (
         "Bearing 6205: declare or pass the shaft speed and repeat the check, or "
@@ -636,6 +637,26 @@ class TestWithoutAShaftSpeed:
             "test the cage line, or compare with a comparable earlier measurement.",
             self.ACTION,
         ]
+
+    def test_three_alternatives_read_as_one_list(self):
+        """An untestable cage, no speed and an inner-race line above the floor:
+        the three readings are listed once, the last after "; and "."""
+        hypotheses, evidence = _constructed(
+            FREQUENCIES_6205,
+            {"BPFO": "supported", "BPFI": "unconfirmed", "FTF": "not_testable"},
+        )
+        statement = claim_statement(
+            _claim(hypotheses, evidence, shaft_hz=None), evidence, hypotheses
+        )
+
+        assert statement.count("; and ") == 1
+        assert (
+            "so a cage defect cannot be excluded; shaft speed was not available to "
+            "this check" in statement
+        )
+        assert "with a shaft harmonic cannot be excluded; and the inner-race line" in (
+            statement
+        )
 
     def test_an_undeclared_cage_is_no_limitation_once_qualified(self):
         """Limitations are stated with single-spectrum evidence only."""
@@ -856,6 +877,7 @@ def test_a_named_reading_always_states_the_assumption_and_no_confirmation(
     else:
         assert statement.count(ASSUMPTION) == 1
         assert statement.count("not a confirmed fault") == 1
+        assert statement.endswith(ASSUMPTION)
 
 
 @pytest.mark.parametrize("key", [k for k in CLAIM_SENTENCES if k.startswith("action_")])
