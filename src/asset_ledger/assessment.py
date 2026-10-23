@@ -1795,7 +1795,6 @@ def _stale_evidence(
     touch the chosen lineage's snapshots, and when the assessment moves to
     the current lineage.
     """
-    named = actionable if call is not None else 0
     verb = "was" if stale == 1 else "were"
     text = (
         f"{stale} of the {covered} evaluated acquisition slots {verb} scored "
@@ -1803,25 +1802,25 @@ def _stale_evidence(
         f"or the measurement, so this verdict does not reflect the current "
         f"declaration yet"
     )
-    tail = _blocked_clause(blocked, current, listed=listed, members=members)
-    if chosen == current:
-        if named:
-            text += f"; {call} attempts to recompute them {_REPROCESS_CAVEAT}"
-        return text + tail
-    return (
-        text
-        + "; "
-        + _earlier_lineage(
-            covered=covered,
-            chosen=chosen,
-            current=current,
-            missing=missing,
-            named=named,
-            call=call,
-            blocked=blocked,
-            tail=tail,
+    if chosen != current:
+        return (
+            text
+            + "; "
+            + _earlier_lineage(
+                covered=covered,
+                chosen=chosen,
+                current=current,
+                missing=missing,
+                actionable=actionable,
+                call=call,
+                blocked=blocked,
+                listed=listed,
+                members=members,
+            )
         )
-    )
+    if actionable and call is not None:
+        text += f"; {call} attempts to recompute them {_REPROCESS_CAVEAT}"
+    return text + _blocked_clause(blocked, current, listed=listed, members=members)
 
 
 def _earlier_lineage(
@@ -1830,16 +1829,20 @@ def _earlier_lineage(
     chosen: str,
     current: str,
     missing: int,
-    named: int,
+    actionable: int,
     call: Optional[str],
     blocked: _BlockedByCode,
-    tail: str,
+    listed: bool,
+    members: frozenset[str],
 ) -> str:
     """The clause (without its period) that says the assessment uses the
     lineage *chosen*, not the *current* one, and names the re-processing
-    *call* when it can compute *named* of the evaluated slots' current
-    snapshots; *tail* counts the *blocked* ones. It continues the
-    stale-evidence sentence, or opens the message on its own."""
+    *call* when it can compute the current snapshots of *actionable*
+    evaluated slots; the *blocked* ones are counted as in the stale-evidence
+    sentence (*listed*, *members*). It continues that sentence, or opens the
+    message on its own."""
+    named = actionable if call is not None else 0
+    tail = _blocked_clause(blocked, current, listed=listed, members=members)
     if missing:
         text = (
             f"this assessment uses lineage {chosen} because {missing} of the "
@@ -2420,12 +2423,11 @@ def assess_change(
                 chosen=chosen,
                 current=current_processing,
                 missing=missing_for_current,
-                named=actionable if call is not None else 0,
+                actionable=actionable,
                 call=call,
                 blocked=stale_blocked,
-                tail=_blocked_clause(
-                    stale_blocked, current_processing, listed=listed, members=members
-                ),
+                listed=listed,
+                members=members,
             )
             opening = opening[0].upper() + opening[1:]
         message = opening + ". " + message
