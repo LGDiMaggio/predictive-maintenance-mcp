@@ -456,6 +456,66 @@ class TestLabelsOutsideTheVocabulary:
             "acting on the BPFO and GMF lines."
         ]
 
+    @pytest.mark.parametrize("shaft_hz", [SHAFT_HZ, None], ids=["rpm", "no_rpm"])
+    @pytest.mark.parametrize(
+        "frequencies, lead, bearing_lines",
+        [
+            (
+                {"BPFO": FREQUENCIES_6205["BPFO"], "BPFI": FREQUENCIES_6205["BPFI"]},
+                "more than one fault type",
+                "the outer-race line (BPFO) or the inner-race line (BPFI)",
+            ),
+            (
+                {"BPFO": FREQUENCIES_6205["BPFO"], "GMF": 350.0},
+                "more than one of the declared spectral lines",
+                "the outer-race line (BPFO)",
+            ),
+            (
+                {"GMF": 350.0, "VPF": 500.0},
+                "more than one of the declared spectral lines",
+                None,
+            ),
+        ],
+        ids=["BPFO+BPFI", "BPFO+GMF", "GMF+VPF"],
+    )
+    def test_several_types_call_custom_labels_declared_lines_not_fault_types(
+        self, frequencies, lead, bearing_lines, shaft_hz
+    ):
+        """Owner correction (PR C wording gate): only bearing hypotheses are
+        fault types; with a custom label among the candidates the statement
+        speaks of declared spectral lines, and the label is never given a
+        bearing-fault reading. Level, condition, candidates and the closing
+        assumption are those of every several-types claim."""
+        hypotheses, evidence = _constructed(
+            frequencies, {label: "supported" for label in frequencies}
+        )
+        claim = _claim(hypotheses, evidence, shaft_hz=shaft_hz)
+        statement = claim_statement(claim, evidence, hypotheses)
+        custom = [k for k in frequencies if k not in CANONICAL]
+
+        assert claim["level"] == "qualified"
+        assert claim["conditions"][0] == "several_types"
+        assert [c["fault_type"] for c in evidence["candidates"]] == list(frequencies)
+        assert statement.startswith(
+            "The envelope evidence of this single spectrum is consistent with "
+            f"{lead}, and none is singled out: "
+        )
+        assert ("fault type" in statement) is not bool(custom)
+        for label in custom:
+            assert (
+                f"the {label} line at {frequencies[label]:.2f} Hz (20.0 dB) for a "
+                f"periodic line at the declared {label} frequency"
+            ) in statement
+        assert statement.count(ASSUMPTION) == 1 and statement.endswith(ASSUMPTION)
+        if shaft_hz is None and bearing_lines:
+            assert claim["conditions"] == ["several_types", "shaft_tests_not_run"]
+            assert (
+                f"an overlap of {bearing_lines} with a shaft harmonic cannot be excluded"
+            ) in statement
+        else:
+            assert claim["conditions"] == ["several_types"]
+            assert "shaft" not in statement
+
     def test_no_indication_is_label_neutral(self):
         hypotheses, evidence = _constructed({"GMF": 350.0}, {})
         claim = _claim(hypotheses, evidence)

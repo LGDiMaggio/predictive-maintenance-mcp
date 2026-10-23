@@ -174,6 +174,13 @@ CLAIM_SENTENCES: dict[str, str] = {
         "than one fault type, and none is singled out: {candidates}. They are "
         "listed by level above the local noise floor, which does not rank them."
     ),
+    # the same when a candidate is a label outside the bearing vocabulary
+    "several_types_lines": (
+        "The envelope evidence of this single spectrum is consistent with more "
+        "than one of the declared spectral lines, and none is singled out: "
+        "{candidates}. They are listed by level above the local noise floor, "
+        "which does not rank them."
+    ),
     "several_types_candidate": (
         "the {line} at {peak_hz:.2f} Hz ({level_db:.1f} dB) for {defect}"
     ),
@@ -760,7 +767,13 @@ def claim_statement(
             listed.append(_candidate_phrase(hypotheses[n], checks[n]))
             if hypotheses[n].canonical in _NAMES:
                 bearing_lines.append(hypotheses[n])
-        sentence = _S["several_types"].format(candidates=_join(listed))
+        # A custom label is a declared line, not a fault type.
+        key = (
+            "several_types"
+            if len(bearing_lines) == len(listed)
+            else "several_types_lines"
+        )
+        sentence = _S[key].format(candidates=_join(listed))
         if SHAFT_TESTS_NOT_RUN in conditions:
             sentence += " " + _no_speed_sentence(bearing_lines)
         return f"{sentence} {_S['assumption']}"
