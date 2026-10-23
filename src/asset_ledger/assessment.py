@@ -1808,9 +1808,41 @@ def _stale_evidence(
         if named:
             text += f"; {call} attempts to recompute them {_REPROCESS_CAVEAT}"
         return text + tail
+    return (
+        text
+        + "; "
+        + _earlier_lineage(
+            covered=covered,
+            chosen=chosen,
+            current=current,
+            missing=missing,
+            named=named,
+            call=call,
+            blocked=blocked,
+            tail=tail,
+        )
+    )
+
+
+def _earlier_lineage(
+    *,
+    covered: int,
+    chosen: str,
+    current: str,
+    missing: int,
+    named: int,
+    call: Optional[str],
+    blocked: _BlockedByCode,
+    tail: str,
+) -> str:
+    """The clause (without its period) that says the assessment uses the
+    lineage *chosen*, not the *current* one, and names the re-processing
+    *call* when it can compute *named* of the evaluated slots' current
+    snapshots; *tail* counts the *blocked* ones. It continues the
+    stale-evidence sentence, or opens the message on its own."""
     if missing:
-        text += (
-            f"; this assessment uses lineage {chosen} because {missing} of the "
+        text = (
+            f"this assessment uses lineage {chosen} because {missing} of the "
             f"{covered} evaluated slots still lack a snapshot of the current "
             f"lineage {current}, re-processing writes lineage {current} only "
             f"and leaves the {chosen} snapshots unchanged, and the assessment "
@@ -1823,8 +1855,8 @@ def _stale_evidence(
                 f"{_REPROCESS_CAVEAT}"
             )
         return text + tail
-    text += (
-        f"; every evaluated slot already has a snapshot of the current lineage "
+    text = (
+        f"every evaluated slot already has a snapshot of the current lineage "
         f"{current}, but lineage {chosen} was recorded later and is the one "
         f"assessed"
     )
@@ -2353,7 +2385,7 @@ def assess_change(
         f"{len(sequence)} post-reference acquisition(s): {criterion}. Reference: "
         f"{reference_text}. Lineage {chosen}."
     )
-    if stale_context:
+    if stale_context or chosen != current_processing:
         actionable, stale_blocked = _split_blocked(
             (
                 slot
@@ -2363,8 +2395,12 @@ def assess_change(
             point,
             reprocess,
         )
-        message = (
-            _stale_evidence(
+        listed = reprocess is not None and all(
+            m in reprocess.blocked for ids in stale_blocked.values() for m in ids
+        )
+        members = _baseline_ids(view, measurement_point_id)
+        if stale_context:
+            opening = _stale_evidence(
                 stale=stale_context,
                 covered=len(evaluated),
                 chosen=chosen,
@@ -2373,17 +2409,26 @@ def assess_change(
                 actionable=actionable,
                 call=call,
                 blocked=stale_blocked,
-                listed=reprocess is not None
-                and all(
-                    m in reprocess.blocked
-                    for ids in stale_blocked.values()
-                    for m in ids
-                ),
-                members=_baseline_ids(view, measurement_point_id),
+                listed=listed,
+                members=members,
             )
-            + ". "
-            + message
-        )
+        else:
+            # Snapshots of another lineage, such as those of an earlier
+            # algorithm version, are never scored silently as current ones.
+            opening = _earlier_lineage(
+                covered=len(evaluated),
+                chosen=chosen,
+                current=current_processing,
+                missing=missing_for_current,
+                named=actionable if call is not None else 0,
+                call=call,
+                blocked=stale_blocked,
+                tail=_blocked_clause(
+                    stale_blocked, current_processing, listed=listed, members=members
+                ),
+            )
+            opening = opening[0].upper() + opening[1:]
+        message = opening + ". " + message
 
     return {
         "status": "assessed",

@@ -1076,6 +1076,59 @@ class TestAssessAssetChange:
         assert _event_types().count(EVENT_MEASUREMENT_RECORDED) == 15
 
     @pytest.mark.asyncio
+    async def test_an_earlier_algorithm_lineage_is_named_and_never_rewritten(
+        self, tools, ctx, sandbox, monkeypatch
+    ):
+        """12 measurements recorded under the previous algorithm version,
+        assessed after the bump: the assessment uses their lineage, opens by
+        saying it is not the current one and names the re-processing call,
+        and writes nothing, so the ledger stays byte-identical. Re-processing
+        appends current snapshots after the recorded events, and the
+        assessment then uses the current lineage without the sentence."""
+        await _declare_point(tools, ctx)
+        version = snapshot_module.ALGORITHM_VERSION
+        monkeypatch.setattr(snapshot_module, "ALGORITHM_VERSION", version - 1)
+        await _load_measurements(tools, ctx, sandbox, 12)
+        earlier = processing_id()
+        monkeypatch.setattr(snapshot_module, "ALGORITHM_VERSION", version)
+        current = processing_id()
+        ledger = get_ledger_dir() / f"{ASSET}.jsonl"
+        recorded = ledger.read_bytes()
+        call = (
+            f"assess_asset_change(asset_id='{ASSET}', "
+            f"measurement_point_id='{POINT}', reprocess=True)"
+        )
+
+        result = await _assess(tools, ctx)
+
+        assert ledger.read_bytes() == recorded
+        assert result.status == "assessed"
+        assert (result.lineage["processing_id"], result.lineage["is_current"]) == (
+            earlier,
+            False,
+        )
+        assert result.message.startswith(
+            f"This assessment uses lineage {earlier} because 12 of the 12 evaluated "
+            f"slots still lack a snapshot of the current lineage {current}, "
+            f"re-processing writes lineage {current} only and leaves the {earlier} "
+            f"snapshots unchanged, and the assessment moves to {current} once "
+            f"every evaluated slot has one; {call} attempts to compute the 12 "
+            f"missing or outdated {current} snapshot(s) of the evaluated slots"
+        )
+        assert _named_calls(result.message) == [call]
+
+        for _ in range(3):
+            moved = await _assess(tools, ctx, reprocess=True)
+            if moved.status == "assessed" and moved.lineage["is_current"]:
+                break
+        assert moved.lineage["processing_id"] == current
+        assert ledger.read_bytes().startswith(recorded)
+        final = await _assess(tools, ctx)
+        assert final.lineage["is_current"] is True
+        assert "This assessment uses lineage" not in final.message
+        assert call not in final.message
+
+    @pytest.mark.asyncio
     async def test_revert_with_a_missing_file_keeps_both_blocks_consistent(
         self, tools, ctx, sandbox
     ):

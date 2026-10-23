@@ -1232,8 +1232,11 @@ class TestLineage:
 
     def test_current_context_leaves_no_stale_snapshot(self):
         """Snapshots carrying the digest the current point declaration
-        produces are not stale: no count and no re-processing suggestion."""
-        result = assess(view_of(series_events(STABLE + [1.0])))
+        produces are not stale: no count and no re-processing suggestion. On
+        the current lineage, where no sentence names a non-current one."""
+        result = assess(
+            view_of(series_events(STABLE + [1.0], processing=processing_id()))
+        )
         assert result["status"] == "assessed"
         assert result["lineage"]["stale_context"] == 0
         assert "previous declaration" not in result["message"]
@@ -1616,6 +1619,21 @@ def recorded_later_clause() -> str:
     )
 
 
+def as_sentence(clause: str) -> str:
+    """A lineage clause of the stale sentence (``"; this assessment ..."``)
+    as the sentence that opens a message with nothing stale."""
+    text = clause.removeprefix("; ")
+    return text[0].upper() + text[1:]
+
+
+def split_lineage_sentence(message: str, clause: str) -> str:
+    """The rest of *message* after its opening lineage sentence, which must
+    be *clause* as a sentence."""
+    sentence = as_sentence(clause) + ". "
+    assert message.startswith(sentence), message
+    return message[len(sentence) :]
+
+
 #: The action a declaration that does not resolve needs.
 CORRECTED_DECLARATION = (
     "ask the user to correct the measurement object of the companion and "
@@ -1637,7 +1655,10 @@ class TestStaleEvidence:
     """When stale_context is above 0 the message opens with how many slots
     were scored under a previous declaration, then the message the same view
     would carry with nothing stale; the re-processing call is named only
-    when re-processing writes something for the evaluated slots."""
+    when re-processing writes something for the evaluated slots. With
+    nothing stale, a lineage that is not the current one opens the message
+    with the same lineage clause as a sentence; with stale slots the stale
+    sentence carries that clause instead."""
 
     def test_redeclared_point_counts_every_evaluated_slot_as_stale(self):
         """A re-declaration changing the resolved context (machine group)
@@ -1653,11 +1674,12 @@ class TestStaleEvidence:
         assert result["lineage"]["stale_context"] == 11
         current = assess(view_of(events + recomputed(events, point_v2)))
         assert current["lineage"]["stale_context"] == 0
+        clause = older_lineage_clause(11, 11, 11)
         assert result["message"] == (
             stale_opening(11, 11)
-            + older_lineage_clause(11, 11, 11)
+            + clause
             + ". "
-            + current["message"]
+            + split_lineage_sentence(current["message"], clause)
         )
         assert result["suggested_verification"] == STALE_VERIFICATION
 
@@ -1767,14 +1789,19 @@ class TestStaleEvidence:
         current = assess(view_of(events + older + recomputed(events, point)))
         assert current["lineage"]["processing_id"] == LINEAGE_A
         assert current["lineage"]["stale_context"] == 0
+        clause = (
+            recorded_later_clause()
+            + ", so re-processing has nothing to write on lineage "
+            + f"{CURRENT_LINEAGE} for the evaluated slots"
+        )
         assert result["message"] == (
             stale_opening(11, 11)
-            + recorded_later_clause()
-            + ", so re-processing has nothing to write on lineage "
-            + f"{CURRENT_LINEAGE} for the evaluated slots. "
-            + current["message"]
+            + clause
+            + ". "
+            + split_lineage_sentence(current["message"], clause)
         )
         assert REPROCESS_CALL not in result["message"]
+        assert REPROCESS_CALL not in current["message"]
 
     def test_nothing_to_write_ignores_measurements_outside_the_evaluated_set(self):
         """A non-comparable measurement without a current-lineage snapshot is

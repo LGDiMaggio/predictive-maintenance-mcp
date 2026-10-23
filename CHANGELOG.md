@@ -95,9 +95,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with the criterion stated in the response; bearing evidence is counted
   over the last K acquisitions; snapshots are compared only within one
   processing lineage, which must hold a snapshot of every evaluated
-  acquisition, and on it each evaluated acquisition is scored from the
-  snapshot computed under the current declarations of the measurement and
-  of its point when one exists, so restoring an earlier declaration reuses
+  acquisition; a result on a lineage other than the current one opens by
+  saying so and names re-processing when it can compute the current
+  snapshots; on the lineage used, each evaluated acquisition is scored
+  from the snapshot computed under the current declarations of the
+  measurement and of its point when one exists, so restoring an earlier
+  declaration reuses
   the snapshots already computed under it; a result partly scored from
   snapshots of a previous declaration opens by saying how many, is marked
   provisional, and names re-processing, as an attempt, when an evaluated
