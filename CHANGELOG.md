@@ -28,11 +28,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   correct cage indications became inconclusive. Those configurations carry
   only the first two shaft harmonics; a significant higher shaft harmonic in
   the rolling-element window (on a 6203, the fourth) can cause additional
-  abstention that this measurement does not capture. The new fields sit next
-  to the existing per-check fields, whose values do not change (the summary
-  fields and statements that now follow the claim are described under
-  Changed); a check now computes the envelope spectrum once instead of once
-  per fault frequency.
+  abstention that this measurement does not capture. The existing per-check
+  fields now derive from these results, and the summary fields and
+  statements follow the claim (both described under Changed); a check now
+  computes the envelope spectrum once instead of once per fault frequency.
 - **Measurement provenance recorded with the CWRU benchmark outcomes.** The
   runner now collects a measurement-environment block — date, git describe of
   the measured tree, platform, Python/NumPy/SciPy versions, and the measured
@@ -54,8 +53,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   append-only ledger (`data/ledger/<asset_id>.jsonl`, JSON Lines, one
   file per asset, plus a `_measurements.jsonl` index and a lock sidecar
   per file) together with a derived health snapshot: time-domain
-  indicators, 1x amplitude, envelope amplitude at each expected bearing
-  fault frequency and ISO 20816-3 severity, each tagged with its
+  indicators, 1x amplitude, the bearing evidence and envelope amplitude at
+  each tested bearing line (twice the ball spin frequency for the rolling
+  element) and ISO 20816-3 severity, each tagged with its
   processing lineage, and a `{reason, remedy}` entry for every block the
   declared context cannot support. The ledger keeps indicators,
   declarations and a file reference (location, SHA-256, size), never
@@ -226,15 +226,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shaft-order test did not run. Other speed fields of a companion, such as a
   top-level `shaft_speed`, are not read, so a report on such a signal
   without `rpm` is qualified the same way.
-  The per-check fields `detected`, `evidence_strength`,
-  `detected_frequency_hz`, `magnitude`, `deviation_pct` and
-  `harmonics_detected` keep their values. `generate_maintenance_recommendations`
+  `generate_maintenance_recommendations`
   keeps its signature and its actions; its description now says the fault
   types are supplied by the caller and not verified, and each fault entry
   says so instead of "Detected fault". The `diagnose_bearing` prompt asks
   for the server's claim and a confirmation step. Before 1.0 this is a
   behavior change of published fields: the next release bumps MINOR, per
   the project's pre-1.0 rule.
+- **The per-check bearing fields derive from the significance-tested
+  evidence.** `detected`, `detected_frequency_hz`, `magnitude`,
+  `deviation_pct`, `harmonics_detected` and `evidence_strength`, on each
+  check of `check_bearing_faults` and of the `bearing_faults` block of
+  `diagnose_vibration`, keep their keys and types. `detected` is now true
+  when the line tested is significant (a local maximum inside its search
+  window, above its threshold), whatever its later state.
+  `detected_frequency_hz`, `magnitude` and `deviation_pct` describe that
+  line and are null when nothing is detected; the deviation is measured from
+  the line tested, which for the rolling element is twice the ball spin
+  frequency. `harmonics_detected` lists only the counted harmonics of the
+  detected line; sidebands and the 1 x BSF line stay in `corroboration`.
+  `evidence_strength` keeps its four values and grades the state: `none`
+  (absent or not testable), `low` (unconfirmed or shared), `moderate` or
+  `high` (supported, with one or with two or more counted corroborating
+  lines). It counts lines of one envelope spectrum and is not a probability.
+  The tolerance match over the 50 largest envelope peaks is removed. Before
+  1.0 this is a behavior change of published fields: the next release bumps
+  MINOR, per the project's pre-1.0 rule.
 - **`diagnose_vibration`: `rpm`, `machine_group` and `support_type` are
   now optional** (additive; calls that pass them behave as before).
   Precedence: the explicit argument, then the `rpm` declared in the

@@ -26,10 +26,11 @@ Three rules hold throughout:
 
 Every bearing sentence, badge and action follows the bearing check's claim
 (:mod:`..diagnostics.bearing_claims`) and the central matcher's per-line
-states, from the same closed list of sentences. The legacy per-check fields
-(``detected``, ``evidence_strength``, ``detected_frequency_hz``,
-``magnitude``, ``deviation_pct``, ``harmonics_detected``) drive nothing here,
-and no inferred bearing fault type is passed to the recommendation table.
+states, from the same closed list of sentences. The per-check fields derived
+from those states (``detected``, ``evidence_strength``,
+``detected_frequency_hz``, ``magnitude``, ``deviation_pct``,
+``harmonics_detected``) drive nothing here, and no inferred bearing fault type
+is passed to the recommendation table.
 """
 
 from __future__ import annotations
