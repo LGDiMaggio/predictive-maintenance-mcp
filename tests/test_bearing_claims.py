@@ -52,9 +52,11 @@ FORBIDDEN = re.compile(
 )
 ALLOWED_NEGATIONS = ("not a confirmed fault", "is not a probability")
 
+#: Closes every single-spectrum and qualified statement, never a withheld one.
 ASSUMPTION = (
     "This assumes the record's background is random measurement noise, which "
-    "its metadata cannot confirm; it is not a confirmed fault."
+    "this single acquisition does not verify; the result is not a confirmed "
+    "fault."
 )
 
 _DEFAULT_REASON = {
@@ -206,7 +208,7 @@ class TestClaimLevels:
         assert "the outer-race line (BPFO) at" in statement
         assert "the inner-race line (BPFI) at" in statement
         assert statement.count("(20.0 dB)") == 2
-        assert statement.endswith("This is not a confirmed fault.")
+        assert statement.endswith(f"which does not rank them. {ASSUMPTION}")
 
     def test_untestable_cage_with_a_cage_harmonic_in_the_window_qualifies(self):
         """M2: on the 6205, BPFO = 9 x FTF, so the ninth cage harmonic lies
@@ -224,7 +226,7 @@ class TestClaimLevels:
             "outer-race defect, but this record is too short to test the cage line "
             "(FTF), and a harmonic of the cage frequency falls within the search "
             "window of the outer-race line (BPFO), so a cage defect cannot be "
-            "excluded. No single fault type is named from this spectrum."
+            f"excluded. No single fault type is named from this spectrum. {ASSUMPTION}"
         )
 
     def test_a_testable_cage_line_qualifies_nothing(self):
@@ -267,7 +269,7 @@ class TestClaimLevels:
             "the local noise floor, and its sideband at BPFI minus twice the shaft "
             "rate falls within the search window of the outer-race line (BPFO), so "
             "an inner-race defect cannot be excluded. No single fault type is named "
-            "from this spectrum."
+            f"from this spectrum. {ASSUMPTION}"
         )
 
     def test_an_absent_inner_race_line_qualifies_nothing(self):
@@ -314,7 +316,10 @@ class TestClaimLevels:
             "inner_race_sideband_not_excluded",
         ]
         assert "a cage defect cannot be excluded; and the inner-race line" in statement
-        assert statement.endswith("No single fault type is named from this spectrum.")
+        assert statement.endswith(
+            f"No single fault type is named from this spectrum. {ASSUMPTION}"
+        )
+        assert statement.count(ASSUMPTION) == 1
 
     def test_a_cage_held_back_for_the_rolling_element_is_qualified(self):
         hypotheses, evidence = _constructed(
@@ -328,7 +333,7 @@ class TestClaimLevels:
         assert claim_statement(claim, evidence, hypotheses) == (
             "The significance-tested evidence is inconclusive and does not support "
             "a unique fault type: the cage lines may come from a cage defect or "
-            "from a rolling-element defect."
+            f"from a rolling-element defect. {ASSUMPTION}"
         )
 
     def test_a_held_back_cage_names_a_shaft_harmonic_at_a_shaft_order(self):
@@ -344,7 +349,7 @@ class TestClaimLevels:
 
         assert claim_statement(claim, evidence, hypotheses).endswith(
             "rolling-element defect, and the line in the rolling-element window "
-            "lies at a shaft order and may be a shaft harmonic."
+            f"lies at a shaft order and may be a shaft harmonic. {ASSUMPTION}"
         )
 
     def test_inconclusive_is_withheld(self):
@@ -499,18 +504,31 @@ class TestLimitations:
 
 
 class TestWithoutAShaftSpeed:
-    """No shaft speed (shaft_hz None): the shaft-order and shaft-rate sideband
-    tests did not run, so an indicated bearing type is qualified and never
-    named as single-spectrum evidence. A label outside the vocabulary, a
+    """No shaft speed (shaft_hz None): the shaft-order test did not run, so an
+    indicated bearing type is qualified and never named as single-spectrum
+    evidence. The statement names a shaft-order overlap for every type, and
+    the inner-race sideband ambiguity only for an outer-race indication beside
+    an inner-race line above the floor. A label outside the vocabulary, a
     withheld claim and every other outcome keep the claim they have with a
     speed."""
 
     STATEMENT = (
         "The envelope evidence of this single spectrum is consistent with an "
-        "outer-race defect, but no shaft speed was given, so the shaft-order and "
-        "shaft-rate sideband tests did not run, and a shaft harmonic or a sideband "
-        "of another fault type cannot be excluded. No single fault type is named "
-        "from this spectrum."
+        "outer-race defect, but shaft speed was not available to this check, so "
+        "the shaft-order test did not run and an overlap of the outer-race line "
+        "(BPFO) with a shaft harmonic cannot be excluded. No single fault type is "
+        f"named from this spectrum. {ASSUMPTION}"
+    )
+    INNER_RACE_STATEMENT = (
+        "The envelope evidence of this single spectrum is consistent with an "
+        "outer-race defect, but shaft speed was not available to this check, so "
+        "the shaft-order test did not run and an overlap of the outer-race line "
+        "(BPFO) with a shaft harmonic cannot be excluded; and the inner-race line "
+        "(BPFI) also stands above the local noise floor, and without the shaft "
+        "rate it could not be tested whether its sideband at BPFI minus twice the "
+        "shaft rate falls within the search window of the outer-race line (BPFO), "
+        "so an inner-race defect cannot be excluded. No single fault type is named "
+        f"from this spectrum. {ASSUMPTION}"
     )
     ACTION = (
         "Bearing 6205: declare or pass the shaft speed and repeat the check, or "
@@ -538,24 +556,67 @@ class TestWithoutAShaftSpeed:
         hypotheses, evidence = _constructed(FREQUENCIES_6205, {label: "supported"})
         claim = _claim(hypotheses, evidence, shaft_hz=None)
 
+        claim = _claim(hypotheses, evidence, shaft_hz=None)
+        statement = claim_statement(claim, evidence, hypotheses)
+        line = {
+            "BPFO": "outer-race line (BPFO)",
+            "BPFI": "inner-race line (BPFI)",
+            "BSF": "rolling-element line (2 x BSF)",
+            "FTF": "cage line (FTF)",
+        }[label]
+
         assert _level(claim) == ("qualified", ["shaft_tests_not_run"], [])
-        assert claim_statement(claim, evidence, hypotheses).endswith(
-            "and a shaft harmonic or a sideband of another fault type cannot be "
-            "excluded. No single fault type is named from this spectrum."
-        )
+        assert (
+            "but shaft speed was not available to this check, so the shaft-order "
+            f"test did not run and an overlap of the {line} with a shaft harmonic "
+            "cannot be excluded. No single fault type is named from this spectrum."
+        ) in statement
+        assert statement.endswith(ASSUMPTION)
+        assert "sideband" not in statement
 
     def test_the_inner_race_sideband_is_not_assessed_and_the_cap_says_so(self):
         """M3 needs the shaft rate: without it the significant inner-race line
-        cannot qualify the outer race, and the cap names what did not run."""
+        cannot qualify the outer race, and the statement names the ambiguity
+        that could not be tested, without saying the sideband was found."""
         hypotheses, evidence = _constructed(
             FREQUENCIES_6205, {"BPFO": "supported", "BPFI": "unconfirmed"}
         )
+        claim = _claim(hypotheses, evidence, shaft_hz=None)
+        statement = claim_statement(claim, evidence, hypotheses)
 
-        assert _level(_claim(hypotheses, evidence, shaft_hz=None)) == (
-            "qualified",
-            ["shaft_tests_not_run"],
-            [],
+        assert _level(claim) == ("qualified", ["shaft_tests_not_run"], [])
+        assert statement == self.INNER_RACE_STATEMENT
+
+    @pytest.mark.parametrize(
+        "states, frequencies",
+        [
+            ({"BPFO": "supported", "BPFI": "absent"}, FREQUENCIES_6205),
+            ({"BPFO": "supported", "BPFI": "not_testable"}, FREQUENCIES_6205),
+            (
+                {"BPFO": "supported"},
+                {k: v for k, v in FREQUENCIES_6205.items() if k != "BPFI"},
+            ),
+            ({"BPFI": "supported", "BPFO": "unconfirmed"}, FREQUENCIES_6205),
+        ],
+        ids=[
+            "inner_absent",
+            "inner_not_testable",
+            "inner_undeclared",
+            "inner_indicated",
+        ],
+    )
+    def test_the_inner_race_ambiguity_is_named_only_where_it_applies(
+        self, states, frequencies
+    ):
+        """Only an outer-race indication beside a declared inner-race line that
+        stands above the floor raises the BPFI-sideband/BPFO question."""
+        hypotheses, evidence = _constructed(frequencies, states)
+        statement = claim_statement(
+            _claim(hypotheses, evidence, shaft_hz=None), evidence, hypotheses
         )
+
+        assert "sideband" not in statement
+        assert "an inner-race defect cannot be excluded" not in statement
 
     def test_an_untestable_cage_and_no_shaft_speed_name_both(self):
         hypotheses, evidence = _constructed(
@@ -566,9 +627,10 @@ class TestWithoutAShaftSpeed:
 
         assert claim["conditions"] == ["cage_comb_not_excluded", "shaft_tests_not_run"]
         assert (
-            "so a cage defect cannot be excluded; and no shaft speed was given"
-            in statement
+            "so a cage defect cannot be excluded; and shaft speed was not available "
+            "to this check" in statement
         )
+        assert statement.count(ASSUMPTION) == 1
         assert claim_actions(_summary(hypotheses, evidence, claim)) == [
             "Bearing 6205: repeat the measurement with a capture long enough to "
             "test the cage line, or compare with a comparable earlier measurement.",
@@ -772,6 +834,68 @@ def test_every_rendered_statement_and_action_is_free_of_forbidden_phrases():
             )
 
     assert not [s for s in rendered if _offending(s)]
+
+
+@pytest.mark.parametrize("shaft_hz", [SHAFT_HZ, None], ids=["speed", "no_speed"])
+@pytest.mark.parametrize("case", list(TestEvidencePointsAndActions.CASES))
+def test_a_named_reading_always_states_the_assumption_and_no_confirmation(
+    case, shaft_hz
+):
+    """Owner decision (T1 PR C wording gate): every single-spectrum and
+    qualified statement says once that it assumes a random-noise background
+    one acquisition does not verify and that the result is not a confirmed
+    fault; a withheld statement names no reading and carries neither."""
+    states, reasons, _ = TestEvidencePointsAndActions.CASES[case]
+    hypotheses, evidence = _constructed(FREQUENCIES_6205, states, reasons=reasons)
+    claim = _claim(hypotheses, evidence, shaft_hz=shaft_hz)
+    statement = claim_statement(claim, evidence, hypotheses)
+
+    if claim["level"] == "withheld":
+        assert ASSUMPTION not in statement
+        assert "not a confirmed fault" not in statement
+    else:
+        assert statement.count(ASSUMPTION) == 1
+        assert statement.count("not a confirmed fault") == 1
+
+
+@pytest.mark.parametrize("key", [k for k in CLAIM_SENTENCES if k.startswith("action_")])
+def test_an_action_offers_a_measurement_before_any_inspection(key):
+    """Owner decision: comparable measurements and non-invasive steps come
+    first; an inspection, where an action offers one, comes after them."""
+    text = CLAIM_SENTENCES[key]
+
+    if "inspect" in text:
+        assert text.index("measurement") < text.index("inspect"), text
+
+
+@pytest.mark.parametrize(
+    "case", [c for c in TestEvidencePointsAndActions.CASES if c != "nothing_testable"]
+)
+def test_an_evidence_layer_next_step_is_never_relayed_as_an_action(case):
+    """Owner decision: the evidence layer's next_step (which for several types
+    still opens with an inspection) is not routed into the claim actions; only
+    a record with nothing testable relays its acquisition step."""
+    states, reasons, _ = TestEvidencePointsAndActions.CASES[case]
+    hypotheses, evidence = _constructed(FREQUENCIES_6205, states, reasons=reasons)
+    claim = _claim(hypotheses, evidence)
+    step = "Inspect the bearing housing first (evidence-layer step)."
+
+    actions = claim_actions(_summary(hypotheses, evidence, claim, next_step=step))
+
+    assert not [a for a in actions if "evidence-layer step" in a]
+
+
+def test_the_relayed_step_of_an_untestable_record_is_an_acquisition_step():
+    """A 50 ms capture leaves no line testable: the relayed next_step asks for
+    a longer or better acquisition, never an inspection or a replacement."""
+    signal = _outer_race(10.0, -15.0, 0)[: int(0.05 * FS)]
+    result = check_frequency_set(signal, FS, FREQUENCIES_6205, RPM_6205)
+
+    assert result["claim"]["conditions"] == ["nothing_testable"]
+    actions = claim_actions(result)
+    assert actions
+    for action in actions:
+        assert "inspect" not in action.lower() and "replac" not in action.lower()
 
 
 def test_the_reserved_level_is_never_produced_and_never_valid():

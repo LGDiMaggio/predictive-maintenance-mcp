@@ -155,8 +155,8 @@ class TestSeverityAndReport:
         assert [label.split(" ", 1)[0] for label in labels] == ["BPFO", "BPFI"]
         for label in labels:
             assert label.endswith(
-                "no shaft speed is declared, so the sideband test and the "
-                "shaft-order test were not run"
+                "shaft speed was not available to this check, so the shaft-rate "
+                "sideband test and the shaft-order test did not run"
             )
         assert report["bearing_assessment"] == chain["faults"].overall_assessment
 

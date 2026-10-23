@@ -35,12 +35,17 @@ candidates, a state or a line test, and they add no sharing or detection rule.
   layer held a lone cage back because the rolling-element line is significant
   (its state reason ``rolling_element_line_present``).
 
-A check run without a shaft speed ran no shaft-order or shaft-rate sideband
-test, so it could not exclude that an indicated bearing line is a shaft
-harmonic or another type's sideband (the inner-race sideband predicate needs
-the shaft rate): such an indication is qualified (``shaft_tests_not_run``),
-never single-spectrum evidence. Missing information never makes a claim
-stronger.
+A check that had no shaft speed ran no shaft-order test, so it could not
+exclude that an indicated bearing line overlaps a shaft harmonic: such an
+indication is qualified (``shaft_tests_not_run``), never single-spectrum
+evidence. The inner-race sideband predicate needs the shaft rate too, so an
+outer-race indication beside an inner-race line above the floor also names
+that untested ambiguity. Missing information never makes a claim stronger.
+
+Every statement that rests on a significance-tested line (single-spectrum
+evidence and every qualified claim) closes with the line test's assumption
+of a random-noise background, which one acquisition does not verify, and
+with the fact that the result is not a confirmed fault.
 
 A label outside the bearing vocabulary never gets these predicates or a
 bearing element in its sentences. An acquisition known to be outside the line
@@ -138,16 +143,18 @@ CLAIM_SENTENCES: dict[str, str] = {
     "evidence": (
         "The envelope evidence of this single spectrum is consistent with "
         "{defect}: the {line} at {peak_hz:.2f} Hz stands {level_db:.1f} dB above "
-        "the local noise floor. This assumes the record's background is random "
-        "measurement noise, which its metadata cannot confirm; it is not a "
-        "confirmed fault."
+        "the local noise floor."
     ),
     "evidence_label": (
         "The envelope evidence of this single spectrum is consistent with a "
         "periodic line at the declared {label} frequency: the {label} line at "
-        "{peak_hz:.2f} Hz stands {level_db:.1f} dB above the local noise floor. "
+        "{peak_hz:.2f} Hz stands {level_db:.1f} dB above the local noise floor."
+    ),
+    # closes every statement that rests on a significance-tested line
+    "assumption": (
         "This assumes the record's background is random measurement noise, which "
-        "its metadata cannot confirm; it is not a confirmed fault."
+        "this single acquisition does not verify; the result is not a confirmed "
+        "fault."
     ),
     "limitation_sideband_only": (
         "Its only corroborating lines are shaft-rate sidebands, which shaft-rate "
@@ -162,8 +169,7 @@ CLAIM_SENTENCES: dict[str, str] = {
     "several_types": (
         "The envelope evidence of this single spectrum is consistent with more "
         "than one fault type, and none is singled out: {candidates}. They are "
-        "listed by level above the local noise floor, which does not rank them. "
-        "This is not a confirmed fault."
+        "listed by level above the local noise floor, which does not rank them."
     ),
     "several_types_candidate": (
         "the {line} at {peak_hz:.2f} Hz ({level_db:.1f} dB) for {defect}"
@@ -195,9 +201,15 @@ CLAIM_SENTENCES: dict[str, str] = {
         "excluded"
     ),
     "shaft_tests_not_run": (
-        "no shaft speed was given, so the shaft-order and shaft-rate sideband "
-        "tests did not run, and a shaft harmonic or a sideband of another fault "
-        "type cannot be excluded"
+        "shaft speed was not available to this check, so the shaft-order test did "
+        "not run and an overlap of the {line} with a shaft harmonic cannot be "
+        "excluded"
+    ),
+    "shaft_tests_not_run_inner_race": (
+        "the inner-race line (BPFI) also stands above the local noise floor, and "
+        "without the shaft rate it could not be tested whether its sideband at "
+        "BPFI minus twice the shaft rate falls within the search window of the "
+        "outer-race line (BPFO), so an inner-race defect cannot be excluded"
     ),
     "rolling_element_held_back": (
         "The significance-tested evidence is inconclusive and does not support a "
@@ -420,13 +432,16 @@ CLAIM_SENTENCES: dict[str, str] = {
     ),
     "envelope_label_no_speed": (
         "{name} line at {peak_hz:.2f} Hz, {level_db:.1f} dB above the local noise "
-        "floor and corroborated in this spectrum; no shaft speed is declared, so "
-        "the sideband test and the shaft-order test were not run"
+        "floor and corroborated in this spectrum; shaft speed was not available to "
+        "this check, so the shaft-rate sideband test and the shaft-order test did "
+        "not run"
     ),
     "envelope_no_speed": (
-        "No shaft speed is declared for this signal (the rpm of its measurement or "
-        "the nominal rpm of its measurement point), so the line test ran without "
-        "the sideband test and the shaft-order test."
+        "Shaft speed was not available to this check: no rpm was passed, and the "
+        "signal declares none in the fields this report reads (the rpm of its "
+        "measurement and the nominal rpm of its measurement point). The line test "
+        "therefore ran without the shaft-rate sideband test and the shaft-order "
+        "test."
     ),
     # generate_maintenance_recommendations: a fault type the caller supplies
     "caller_fault_type": (
@@ -698,13 +713,14 @@ def claim_statement(
             if at_shaft_order
             else "rolling_element_held_back"
         )
-        return _S[key]
+        return f"{_S[key]} {_S['assumption']}"
     if SEVERAL_TYPES in conditions:
         listed = []
         for candidate in evidence["candidates"]:
             n = _index(hypotheses, candidate["fault_type"])
             listed.append(_candidate_phrase(hypotheses[n], checks[n]))
-        return _S["several_types"].format(candidates=_join(listed))
+        sentence = _S["several_types"].format(candidates=_join(listed))
+        return f"{sentence} {_S['assumption']}"
 
     (candidate,) = evidence["candidates"]
     n = _index(hypotheses, candidate["fault_type"])
@@ -723,11 +739,21 @@ def claim_statement(
         if INNER_RACE_SIDEBAND_NOT_EXCLUDED in conditions:
             alternatives.append(_S["inner_race_sideband"])
         if SHAFT_TESTS_NOT_RUN in conditions:
-            alternatives.append(_S["shaft_tests_not_run"])
-        return _S["not_excluded"].format(
+            alternatives.append(_S["shaft_tests_not_run"].format(line=names.line))
+            # Without the shaft rate the inner-race sideband predicate could not
+            # run; the ambiguity is named only where it would have applied.
+            inner = _first(hypotheses, _INNER_RACE)
+            if (
+                x.canonical == _OUTER_RACE
+                and inner is not None
+                and checks[inner]["state"] not in ("absent", "not_testable")
+            ):
+                alternatives.append(_S["shaft_tests_not_run_inner_race"])
+        sentence = _S["not_excluded"].format(
             defect=names.defect,
             alternatives=_S["not_excluded_joiner"].join(alternatives),
         )
+        return f"{sentence} {_S['assumption']}"
 
     if names:
         sentence = _S["evidence"].format(
@@ -740,6 +766,7 @@ def claim_statement(
         sentence = _S["evidence_label"].format(
             label=x.label, peak_hz=check["line_peak_hz"], level_db=check["level_db"]
         )
+    sentence += " " + _S["assumption"]
     limitations = claim["limitations"]
     if SIDEBAND_ONLY_CORROBORATION in limitations:
         sentence += " " + _S["limitation_sideband_only"]

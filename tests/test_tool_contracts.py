@@ -111,7 +111,12 @@ Fixture history:
   single-spectrum evidence); the conditions description names it, and the
   BearingClaim description says the claim also depends on whether a shaft
   speed was given. Both on check_bearing_faults and diagnose_vibration,
-  whose checks always have a speed.
+  whose checks always have a speed. Wording gate, regenerated again in the
+  same PR: one description only, no property, enum value or type changed.
+  The BearingClaim conditions description says what shaft_tests_not_run
+  leaves open (a shaft-harmonic overlap, and for an outer-race indication
+  beside an inner-race line above the floor the untested inner-race sideband
+  relation), on check_bearing_faults and diagnose_vibration.
   Generated under mcp 2.3.0 and pydantic 2.12.0 (uv.lock).
 """
 

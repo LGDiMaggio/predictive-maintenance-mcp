@@ -41,14 +41,37 @@ SHAFT_6205_HZ = RPM_6205 / 60.0
 #: The 6205 at 1797 rpm as the tool's docstring example declares it.
 DECLARED_6205 = {"BPFO": 107.36, "BPFI": 162.19, "BSF": 70.58, "FTF": 11.93}
 
+#: The closing sentence of every single-spectrum and qualified statement.
+ASSUMPTION = (
+    "This assumes the record's background is random measurement noise, which "
+    "this single acquisition does not verify; the result is not a confirmed "
+    "fault."
+)
+
 #: The claim statement of an outer-race indication checked without a speed.
 OUTER_RACE_WITHOUT_SPEED = (
     "The envelope evidence of this single spectrum is consistent with an "
-    "outer-race defect, but no shaft speed was given, so the shaft-order and "
-    "shaft-rate sideband tests did not run, and a shaft harmonic or a sideband "
-    "of another fault type cannot be excluded. No single fault type is named "
-    "from this spectrum."
+    "outer-race defect, but shaft speed was not available to this check, so the "
+    "shaft-order test did not run and an overlap of the outer-race line (BPFO) "
+    "with a shaft harmonic cannot be excluded. No single fault type is named "
+    f"from this spectrum. {ASSUMPTION}"
 )
+
+#: The same, beside an inner-race line that stands above the floor.
+OUTER_RACE_BESIDE_INNER_RACE_WITHOUT_SPEED = (
+    "The envelope evidence of this single spectrum is consistent with an "
+    "outer-race defect, but shaft speed was not available to this check, so the "
+    "shaft-order test did not run and an overlap of the outer-race line (BPFO) "
+    "with a shaft harmonic cannot be excluded; and the inner-race line (BPFI) "
+    "also stands above the local noise floor, and without the shaft rate it "
+    "could not be tested whether its sideband at BPFI minus twice the shaft rate "
+    "falls within the search window of the outer-race line (BPFO), so an "
+    "inner-race defect cannot be excluded. No single fault type is named from "
+    f"this spectrum. {ASSUMPTION}"
+)
+
+#: What the envelope report states when no speed was available.
+NO_SPEED_NOTE = "Shaft speed was not available to this check"
 
 #: White-noise records of the envelope-report label test.
 ENVELOPE_NOISE_SEEDS = 20
@@ -680,13 +703,16 @@ class TestGenerateEnvelopeReport:
         (label,) = result["bearing_matches"]
         assert label.startswith("BPFO line at ")
         assert label.endswith(
-            "above the local noise floor and corroborated in this spectrum; no shaft "
-            "speed is declared, so the sideband test and the shaft-order test were "
-            "not run"
+            "above the local noise floor and corroborated in this spectrum; shaft "
+            "speed was not available to this check, so the shaft-rate sideband test "
+            "and the shaft-order test did not run"
         )
         assert result["bearing_assessment"] == OUTER_RACE_WITHOUT_SPEED
         rendered = Path(result["file_path"]).read_text(encoding="utf-8")
-        assert "No shaft speed is declared for this signal" in rendered
+        assert (
+            f"{NO_SPEED_NOTE}: no rpm was passed, and the signal declares none in "
+            "the fields this report reads"
+        ) in rendered
         assert html_escape(label) in rendered
         assert html_escape(result["bearing_assessment"]) in rendered
 
@@ -719,7 +745,7 @@ class TestGenerateEnvelopeReport:
             "above the local noise floor and corroborated in this spectrum"
         )
         rendered = Path(result["file_path"]).read_text(encoding="utf-8")
-        assert "No shaft speed is declared" not in rendered
+        assert NO_SPEED_NOTE not in rendered
 
     @pytest.mark.asyncio
     async def test_without_a_speed_the_claim_is_no_stronger_than_the_bearing_check(
@@ -757,7 +783,9 @@ class TestGenerateEnvelopeReport:
         assert no_speed_check["claim"]["level"] == "qualified"
         assert no_speed_check["claim"]["conditions"] == ["shaft_tests_not_run"]
         assert no_speed_check["most_likely_fault"] is None
-        assert without["bearing_assessment"] == OUTER_RACE_WITHOUT_SPEED
+        assert (
+            without["bearing_assessment"] == OUTER_RACE_BESIDE_INNER_RACE_WITHOUT_SPEED
+        )
         assert speed_check["claim"] == faults.claim.model_dump()
         assert speed_check["most_likely_fault"] is None
         assert with_speed["bearing_assessment"] == faults.overall_assessment
@@ -795,7 +823,7 @@ class TestGenerateEnvelopeReport:
             "above the local noise floor and corroborated in this spectrum"
         )
         rendered = Path(result["file_path"]).read_text(encoding="utf-8")
-        assert "No shaft speed is declared" not in rendered
+        assert NO_SPEED_NOTE not in rendered
 
     @pytest.mark.asyncio
     async def test_an_explicit_rpm_takes_precedence_over_the_declared_one(
@@ -1010,7 +1038,7 @@ class TestGenerateEnvelopeReport:
             "No single fault type",
             "inconclusive",
             "No eligible line",
-            "No shaft speed is declared",
+            NO_SPEED_NOTE,
         ):
             assert absent not in rendered, absent
 

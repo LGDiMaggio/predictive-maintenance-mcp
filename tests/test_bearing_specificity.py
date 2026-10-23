@@ -129,9 +129,14 @@ BEARING_MAINTENANCE = re.compile(
     re.IGNORECASE,
 )
 
-#: What a single-record envelope indication must never say.
+#: What a single-record envelope indication must never say. The one
+#: negation every single-spectrum and qualified statement carries, "not a
+#: confirmed fault", is no confirmation (as in test_bearing_claims and
+#: test_advisory); any other "confirmed" still is.
 REPLACEMENT_OR_CONFIRMATION = re.compile(
-    r"replace bearing|plan replacement|\bconfirmed\b", re.IGNORECASE
+    r"replace bearing|plan replacement"
+    r"|(?<!not a )\bconfirmed\b|\bconfirmed\b(?! fault)",
+    re.IGNORECASE,
 )
 
 #: A diagnosis sentence that lists detected fault types or names the likeliest.

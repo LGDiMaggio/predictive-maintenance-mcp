@@ -202,7 +202,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   window, or when an outer-race indication sits beside a significant
   inner-race line whose sideband at BPFI minus twice the shaft rate falls in
   the outer-race window; a generated signal whose own companion declares a
-  noise level of 0 is withheld. The bearing text, actions and combined
+  noise level of 0 is withheld. Every single-spectrum and qualified
+  statement closes with the line test's assumption of a random-noise
+  background, which one acquisition does not verify, and says that the
+  result is not a confirmed fault. The bearing text, actions and combined
   `evidence_strength` of `diagnose_vibration` follow the claim: a bearing
   finding counts once, the weight of two for high evidence is gone, and the
   bearing actions are confirmation, inspection, repeat or acquisition steps.
@@ -217,7 +220,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   measurement or its measurement point. Without one the sideband and
   shaft-order tests do not run, the report says so, and an indicated
   bearing type is qualified (`shaft_tests_not_run`) instead of being named
-  as single-spectrum evidence.
+  as single-spectrum evidence. Other speed fields of a companion, such as a
+  top-level `shaft_speed`, are not read, so a report on such a signal
+  without `rpm` is qualified the same way.
   The per-check fields `detected`, `evidence_strength`,
   `detected_frequency_hz`, `magnitude`, `deviation_pct` and
   `harmonics_detected` keep their values. `generate_maintenance_recommendations`
