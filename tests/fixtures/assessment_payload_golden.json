@@ -382,7 +382,7 @@
         "health_snapshot/1+aaaaaaaaaaaaaaaa": 30
       },
       "covered": 30,
-      "current_processing_id": "health_snapshot/1+09700c336464a0ff",
+      "current_processing_id": "health_snapshot/2+dcbb50a52f4e19d8",
       "is_current": false,
       "missing_for_current": 30,
       "processing_id": "health_snapshot/1+aaaaaaaaaaaaaaaa",
@@ -1055,7 +1055,7 @@
         "health_snapshot/1+aaaaaaaaaaaaaaaa": 30
       },
       "covered": 30,
-      "current_processing_id": "health_snapshot/1+09700c336464a0ff",
+      "current_processing_id": "health_snapshot/2+dcbb50a52f4e19d8",
       "is_current": false,
       "missing_for_current": 30,
       "processing_id": "health_snapshot/1+aaaaaaaaaaaaaaaa",
@@ -1689,7 +1689,7 @@
         "health_snapshot/1+aaaaaaaaaaaaaaaa": 11
       },
       "covered": 11,
-      "current_processing_id": "health_snapshot/1+09700c336464a0ff",
+      "current_processing_id": "health_snapshot/2+dcbb50a52f4e19d8",
       "is_current": false,
       "missing_for_current": 11,
       "processing_id": "health_snapshot/1+aaaaaaaaaaaaaaaa",
@@ -2272,7 +2272,7 @@
         "health_snapshot/1+aaaaaaaaaaaaaaaa": 11
       },
       "covered": 11,
-      "current_processing_id": "health_snapshot/1+09700c336464a0ff",
+      "current_processing_id": "health_snapshot/2+dcbb50a52f4e19d8",
       "is_current": false,
       "missing_for_current": 11,
       "processing_id": "health_snapshot/1+aaaaaaaaaaaaaaaa",
