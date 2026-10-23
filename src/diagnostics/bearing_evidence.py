@@ -889,7 +889,7 @@ def _outcome_text(
         if all(elements):
             parts = [f"the {names.element}" for names in elements if names]
             steps.append(
-                f"Inspect {_join(parts)} with equal priority, and compare with {compare}."
+                f"Compare with {compare}, and inspect {_join(parts)} with equal priority."
             )
         else:
             labels = _join([hypotheses[n].label for n in supported])

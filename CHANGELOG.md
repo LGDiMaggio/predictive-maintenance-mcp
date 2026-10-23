@@ -15,8 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   threshold it had to exceed; the further lines its kinematics predict; and
   whether the line lies at a shaft order or is shared with another checked
   frequency. For the whole check they return an outcome (`no_indication`,
-  `inconclusive`, `indicated`, `several_types`) with its reason, a next step,
-  the supported candidates and the statistical policy behind them: a nominal
+  `inconclusive`, `indicated`, `several_types`) with its reason, a next step
+  (for several types, a comparison with an earlier measurement first, then
+  an inspection of the candidates with equal priority), the supported
+  candidates and the statistical policy behind them: a nominal
   1 % family-wise false-alarm budget per check, allocated by Bonferroni under
   stated assumptions, and what it does not cover. An outcome is evidence from one envelope spectrum, not a
   confirmed fault. The rolling element is tested at twice the ball spin

@@ -1086,9 +1086,9 @@ def test_an_action_offers_a_measurement_before_any_inspection(key):
     "case", [c for c in TestEvidencePointsAndActions.CASES if c != "nothing_testable"]
 )
 def test_an_evidence_layer_next_step_is_never_relayed_as_an_action(case):
-    """Owner decision: the evidence layer's next_step (which for several types
-    still opens with an inspection) is not routed into the claim actions; only
-    a record with nothing testable relays its acquisition step."""
+    """Owner decision: the evidence layer's next_step is not routed into the
+    claim actions; only a record with nothing testable relays its acquisition
+    step."""
     states, reasons, _ = TestEvidencePointsAndActions.CASES[case]
     hypotheses, evidence = _constructed(FREQUENCIES_6205, states, reasons=reasons)
     claim = _claim(hypotheses, evidence)

@@ -1118,6 +1118,9 @@ class TestEvidenceDefects:
             assert "does not single out one of them" in result["outcome_reason"]
             step = result["next_step"]
             assert "the outer race" in step and "the inner race" in step
+            # Measurements first: the comparison comes before any inspection.
+            lowered = step.lower()
+            assert lowered.index("measurement") < lowered.index("inspect"), step
             text = f"{result['outcome_reason']} {step}".lower()
             assert "most likely" not in text and "replace" not in text
 

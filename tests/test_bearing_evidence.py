@@ -881,3 +881,34 @@ class TestPerCheckFields:
 
         assert check["state"] == "not_testable"
         assert _kept(check) == _not_detected()
+
+
+class TestSeveralTypesStep:
+    def test_several_bearing_types_compare_first_then_inspect_alike(self):
+        """Two supported races (BPFO with its 2x, BPFI with its upper
+        shaft-rate sideband): a comparable measurement first, then an
+        inspection of both races with equal priority."""
+        freqs, mags = _noise_spectrum(FAULT_FREE_SEED + 4404)
+        for line_hz in (107.4, 214.8, 162.2, 162.2 + 29.95):
+            mags = _with_line(freqs, mags, line_hz, power=400.0)
+
+        result = evaluate_hypotheses(
+            freqs,
+            mags,
+            [
+                Hypothesis("BPFO", 107.4, "outer_race"),
+                Hypothesis("BPFI", 162.2, "inner_race"),
+            ],
+            shaft_hz=29.95,
+            cage_hz=None,
+        )
+
+        assert result["outcome"] == "several_types"
+        assert result["next_step"] in (
+            "Compare with an earlier measurement of the same machine under comparable "
+            f"conditions, and inspect {races} with equal priority."
+            for races in (
+                "the outer race and the inner race",
+                "the inner race and the outer race",
+            )
+        )
