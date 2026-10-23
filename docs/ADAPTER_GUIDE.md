@@ -178,7 +178,7 @@ The ledger lives under `data/ledger/` (or `PMM_LEDGER_DIR`): one JSON Lines file
 What is written:
 
 - **Declarations**: the validated `measurement` fields, `sampling_rate`, `signal_unit`, the effective `raw_format` and the channel index, the `signal_id`, and a file reference (location relative to the data directory, or absolute with a flag; SHA-256 of the bytes; size). The free-form top-level keys of the companion (`source_metadata`) are never written to the ledger.
-- **Snapshots**: the indicators derived at load time (time-domain indicators, 1x amplitude, envelope amplitude at each expected bearing fault frequency, ISO 20816-3 severity) with their processing lineage, and a `{reason, remedy}` entry for every block the declared context could not support.
+- **Snapshots**: the indicators derived at load time (time-domain indicators, 1x amplitude, envelope amplitude at each tested bearing line (twice the ball spin frequency for the rolling element), ISO 20816-3 severity) with their processing lineage, and a `{reason, remedy}` entry for every block the declared context could not support.
 - **Point declarations** (versioned per point) **and baselines**, each with `declared_by` and the note.
 
 What is never written: the waveform. Consequences:
