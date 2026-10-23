@@ -231,6 +231,69 @@ class TestNonFiniteInputRefused:
                 rpm=1797,
             )
 
+    def test_a_given_spectrum_does_not_skip_the_refusal(self):
+        """The envelope report hands check_frequency_set the spectrum it
+        computed; the samples are still validated first."""
+        freqs = np.linspace(1.0, 500.0, 500)
+        with pytest.raises(ValueError, match="non-finite"):
+            check_frequency_set(
+                signal=self._nan_signal(),
+                fs=self.FS,
+                frequencies={"BPFO": 107.36},
+                rpm=1797,
+                spectrum=(freqs, np.ones_like(freqs)),
+            )
+
+
+class TestGivenEnvelopeSpectrum:
+    """check_frequency_set(spectrum=...) reads the caller's envelope spectrum
+    instead of computing it; given the spectrum of the same signal and band,
+    the result is the same."""
+
+    FS = 12000.0
+    BAND = (500.0, 5000.0)
+    FREQUENCIES = {"BPFO": 107.36, "BPFI": 162.19, "BSF": 70.58, "FTF": 11.93}
+
+    def test_the_same_spectrum_gives_the_same_result(self):
+        from predictive_maintenance_mcp.signal_processing.spectral import (
+            envelope_analysis_arrays,
+            envelope_spectrum_arrays,
+        )
+
+        rng = np.random.default_rng(20261022)
+        t = np.arange(int(2 * self.FS)) / self.FS
+        signal = (1 + 0.5 * np.sin(2 * np.pi * 107.36 * t)) * np.sin(
+            2 * np.pi * 3000.0 * t
+        ) + 0.5 * rng.standard_normal(t.size)
+        _, _, freqs, mags = envelope_analysis_arrays(signal, self.FS, self.BAND)
+        reference = envelope_spectrum_arrays(signal, self.FS, self.BAND)
+        assert np.array_equal(freqs, reference[0])
+        assert np.array_equal(mags, reference[1])
+
+        computed = check_frequency_set(
+            signal, self.FS, self.FREQUENCIES, 1797.0, envelope_freq_range=self.BAND
+        )
+        given = check_frequency_set(
+            signal,
+            self.FS,
+            self.FREQUENCIES,
+            1797.0,
+            envelope_freq_range=self.BAND,
+            spectrum=(freqs, mags),
+        )
+        # The given spectrum is the one read: a flat one changes the result.
+        flat = check_frequency_set(
+            signal,
+            self.FS,
+            self.FREQUENCIES,
+            1797.0,
+            envelope_freq_range=self.BAND,
+            spectrum=(freqs, np.ones_like(mags)),
+        )
+
+        assert given == computed
+        assert flat != computed
+
 
 RPM_PHRASE = "rpm must be positive and finite"
 BAD_SPEEDS = [0.0, -1797.0, np.nan, np.inf, -np.inf]

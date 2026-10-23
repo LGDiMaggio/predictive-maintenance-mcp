@@ -23,7 +23,6 @@
 2	src/rag.py	attr-defined	"None" has no attribute "encode"
 1	src/rag.py	attr-defined	"None" has no attribute "search"
 1	src/rag.py	attr-defined	"None" has no attribute "shape"
-1	src/report_generator.py	arg-type	Argument "peaks" to "create_envelope_report" has incompatible type "list[dict[str, object]]"; expected "list[dict[str, float]]"
 1	src/report_generator.py	arg-type	Argument "peaks" to "create_fft_report" has incompatible type "list[dict[str, object]]"; expected "list[dict[str, float]]"
 4	src/signal_acquisition/loaders.py	no-any-return	Returning Any from function declared to return "ndarray[tuple[Any, ...], dtype[Any]] | None"
 2	src/signal_acquisition/repository.py	no-any-return	Returning Any from function declared to return "ndarray[tuple[Any, ...], dtype[Any]] | None"

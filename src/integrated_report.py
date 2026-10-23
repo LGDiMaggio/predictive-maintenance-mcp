@@ -78,10 +78,12 @@ def _block_card(title: str, block: dict[str, Any]) -> str:
 
 
 def _bearing_table(block: dict[str, Any]) -> str:
-    """Calculated against measured, with a verdict per bearing element.
+    """The line test per element: the line tested, the strongest bin of its
+    window, its level above the local noise floor and the state's badge.
 
-    Putting the two numbers side by side is what lets a reader check the
-    match rather than accept it.
+    Putting the numbers side by side is what lets a reader check the line
+    test rather than accept it. The badge text is authored by the advisory;
+    candidate lines the claim marks get the emphasised style.
     """
     rows = block.get("rows") or []
     if not rows:
@@ -89,47 +91,46 @@ def _bearing_table(block: dict[str, Any]) -> str:
 
     cells = []
     for row in rows:
-        measured = (
-            f"{row['measured_hz']:.2f} Hz" if row.get("measured_hz") else "&mdash;"
+        peak = (
+            f"{row['peak_hz']:.2f} Hz" if row.get("peak_hz") is not None else "&mdash;"
         )
-        deviation = (
-            f"{row['deviation_pct']:.2f}%"
-            if row.get("deviation_pct") is not None
+        level = (
+            f"{row['level_db']:.1f} dB"
+            if row.get("level_db") is not None
             else "&mdash;"
         )
-        verdict_css = "badge-danger" if row["matched"] else "badge-success"
-        verdict_text = "match" if row["matched"] else "no match"
+        badge_css = "badge-warning" if row["emphasised"] else "badge-info"
         cells.append(
             "<tr>"
             f"<td>{_esc(row['fault_type'])}</td>"
-            f"<td>{row['expected_hz']:.2f} Hz</td>"
-            f"<td>{measured}</td>"
-            f"<td>{deviation}</td>"
-            f'<td><span class="badge {verdict_css}">{verdict_text}</span></td>'
+            f"<td>{row['line_hz']:.2f} Hz</td>"
+            f"<td>{peak}</td>"
+            f"<td>{level}</td>"
+            f'<td><span class="badge {badge_css}">{_esc(row["badge"])}</span></td>'
             "</tr>"
         )
 
     return (
         '<div class="card">'
-        '<h2 class="card-title">Calculated against measured</h2>'
+        '<h2 class="card-title">Line test per element</h2>'
         '<table style="width:100%;border-collapse:collapse;">'
         '<thead><tr style="text-align:left;border-bottom:2px solid var(--border-color);">'
-        "<th>Element</th><th>Calculated</th><th>Measured</th>"
-        "<th>Deviation</th><th>Verdict</th></tr></thead>"
+        "<th>Element</th><th>Line tested</th><th>Strongest bin</th>"
+        "<th>Level above floor</th><th>State</th></tr></thead>"
         f'<tbody>{"".join(cells)}</tbody>'
         "</table></div>"
     )
 
 
 def _figure_card(figure: Optional[dict[str, Any]]) -> str:
-    """The figure that closes the matching argument, or a note that it is absent."""
+    """The figure of the line tests, or a note that it is absent."""
     if not figure:
         return (
             '<div class="card">'
             '<h2 class="card-title">Envelope spectrum</h2>'
-            "<p>This report carries no envelope spectrum figure, so the "
-            "frequency match cannot be checked visually here &mdash; only "
-            "against the values in the table above.</p>"
+            "<p>This report carries no envelope spectrum figure, so the line "
+            "tests can be checked only against the values in the table "
+            "above.</p>"
             "</div>"
         )
 
@@ -295,7 +296,7 @@ def create_integrated_diagnostic_report(
         f"{_evidence_card(advisory['evidence'])}"
         f"{_iso_card(advisory['iso'])}"
         f"{disagreements}"
-        f"{_block_card('Bearing frequency matching', advisory['bearing_match'])}"
+        f"{_block_card('Bearing envelope line test', advisory['bearing_match'])}"
         f"{_bearing_table(advisory['bearing_match'])}"
         f"{_figure_card(figure)}"
         f"{_block_card('Anomaly detection', advisory['anomaly'])}"

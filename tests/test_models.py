@@ -235,6 +235,40 @@ class TestFaultVocabularySync:
 
         assert literal_values == set(VALID_SIGNAL_UNITS)
 
+    def test_bearing_claim_literals_match_the_claim_module(self):
+        """BearingClaim's level, conditions, limitations and
+        acquisition_eligibility Literals hand-duplicate the constants of
+        diagnostics/bearing_claims.py. Same get_args guard: a condition added
+        there without the Literal reddens this test, not a tool response."""
+        from typing import get_args
+
+        from predictive_maintenance_mcp.diagnostics import bearing_claims
+        from predictive_maintenance_mcp.models import (
+            BearingClaim,
+            BearingClaimCondition,
+            BearingClaimLevel,
+            BearingClaimLimitation,
+        )
+
+        fields = BearingClaim.model_fields
+        # The model validates against these aliases (list[...] for the lists).
+        assert fields["level"].annotation == BearingClaimLevel
+        assert get_args(fields["conditions"].annotation) == (BearingClaimCondition,)
+        assert get_args(fields["limitations"].annotation) == (BearingClaimLimitation,)
+
+        pairs = {
+            "level": (BearingClaimLevel, bearing_claims.CLAIM_LEVELS),
+            "conditions": (BearingClaimCondition, bearing_claims.CLAIM_CONDITIONS),
+            "limitations": (BearingClaimLimitation, bearing_claims.CLAIM_LIMITATIONS),
+            "acquisition_eligibility": (
+                fields["acquisition_eligibility"].annotation,
+                bearing_claims.ACQUISITION_ELIGIBILITIES,
+            ),
+        }
+        for name, (literal, constants) in pairs.items():
+            assert len(set(constants)) == len(constants), name
+            assert set(get_args(literal)) == set(constants), name
+
 
 # ── VibrationSeverityResult (unified severity model) ─────────────────────
 

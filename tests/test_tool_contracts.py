@@ -83,6 +83,50 @@ Fixture history:
   descriptions name that case (unconfirmed and inconclusive), on
   check_bearing_faults and diagnose_vibration.
   Generated under mcp 2.3.0 and pydantic 2.12.0 (uv.lock).
+- Bearing claim (2026-10-22, T1 PR C): regenerated intentionally:
+  ADDITIVE, no property removed and no type changed. The bearing summary
+  (check_bearing_faults, and diagnose_vibration's bearing_faults) gains
+  claim, with one new definition (BearingClaim: level, conditions,
+  limitations, acquisition_eligibility, basis, policy_version). Descriptions
+  changed: overall_assessment, most_likely_fault and
+  most_likely_fault_canonical (derived from claim), outcome (no longer says
+  those fields can disagree with it), the six legacy per-check fields
+  detected, detected_frequency_hz, magnitude, deviation_pct,
+  harmonics_detected and evidence_strength (a legacy tolerance match kept
+  for compatibility), and diagnose_vibration's evidence_strength (counts
+  findings, a bearing finding once). Review follow-up, regenerated again in
+  the same PR: descriptions only, no property added or removed and no type
+  changed. The six legacy per-check field descriptions name the surfaces
+  that do not use them (the bearing statements and actions of
+  check_bearing_faults, diagnose_vibration and the reports) and the asset
+  ledger's evidence-persistence assessment that still uses detected,
+  magnitude and evidence_strength; the summary's outcome_reason and
+  next_step say they describe the evidence outcome before the claim and are
+  not relayed to name a fault type or a single element when claim.level is
+  not single_spectrum_evidence. Both on check_bearing_faults and
+  diagnose_vibration. Second review follow-up, regenerated again in the same
+  PR: no property added or removed and no type changed. The BearingClaim
+  conditions enum gains one value, shaft_tests_not_run (a bearing type
+  indicated by a check run without a shaft speed is qualified, never
+  single-spectrum evidence); the conditions description names it, and the
+  BearingClaim description says the claim also depends on whether a shaft
+  speed was given. Both on check_bearing_faults and diagnose_vibration,
+  whose checks always have a speed. Wording gate, regenerated again in the
+  same PR: descriptions only, no property, enum value or type changed. The
+  BearingClaim conditions description says what shaft_tests_not_run leaves
+  open (a shaft-harmonic overlap, and for an outer-race indication beside an
+  inner-race line above the floor the untested inner-race sideband
+  relation); the BearingClaim, level and overall_assessment descriptions say
+  that qualified statements carry the same noise assumption and are no
+  confirmed fault, and that the claim depends on whether a shaft speed was
+  available. Both on check_bearing_faults and diagnose_vibration. Final
+  wording correction, regenerated again in the same PR: one description
+  only, no property, enum value or type changed. The conditions description
+  says shaft_tests_not_run also accompanies several_types and
+  rolling_element_held_back, whose reason it keeps, and never labels outside
+  the bearing vocabulary alone. Both on check_bearing_faults and
+  diagnose_vibration.
+  Generated under mcp 2.3.0 and pydantic 2.12.0 (uv.lock).
 """
 
 from __future__ import annotations

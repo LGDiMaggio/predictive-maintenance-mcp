@@ -22,6 +22,13 @@ from scipy.signal import find_peaks
 from .html_templates import create_fft_report, create_envelope_report, create_iso_report
 
 from .config import REPORTS_DIR
+from .diagnostics.bearing_claims import (
+    CLAIM_SENTENCES,
+    emphasised_candidates,
+    envelope_labels,
+    line_display_name,
+    state_badge,
+)
 from .path_safety import safe_resolve
 
 logger = logging.getLogger(__name__)
@@ -190,9 +197,17 @@ def save_envelope_report(
     bearing_freqs: Optional[Dict[str, float]] = None,
     max_freq: float = 500.0,
     num_peaks: int = 15,
+    line_check: Optional[Dict[str, Any]] = None,
+    rpm: Optional[float] = None,
+    rpm_source: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Generate and save professional envelope analysis report.
+
+    The report matches no peak to a frequency itself: a characteristic
+    frequency is marked only from ``line_check``, the central bearing line
+    test (``bearing_analyzer.check_frequency_set``) on the same envelope
+    spectrum, with the labels, badges and statement of its claim.
 
     Args:
         signal_file: Signal filename
@@ -200,14 +215,23 @@ def save_envelope_report(
         filter_band: (low, high) Hz tuple
         filtered_signal: Bandpass filtered signal
         envelope: Envelope signal
-        env_frequencies: Envelope spectrum frequencies
-        env_magnitudes: Envelope spectrum magnitudes
-        bearing_freqs: Optional dict with BPFO, BPFI, BSF, FTF
+        env_frequencies: Envelope spectrum frequencies (the line test's)
+        env_magnitudes: Envelope spectrum magnitudes (the line test's)
+        bearing_freqs: Optional dict with the declared BPFO, BPFI, BSF, FTF,
+            shown as reference values
         max_freq: Max frequency to display in envelope spectrum
         num_peaks: Number of peaks to detect
+        line_check: Optional check summary of the line test; None means no
+            reference frequency was known and nothing is marked
+        rpm: The shaft speed the line test used, recorded in the metadata
+            (None when no line test ran or it ran without a speed)
+        rpm_source: Where ``rpm`` came from: "explicit", "measurement" or
+            "point" (None without a speed)
 
     Returns:
-        Dictionary with file path, metadata, and summary
+        Dictionary with file path, metadata, and summary; ``bearing_matches``
+        holds one label per marked candidate line and ``bearing_assessment``
+        the claim statement (None without ``line_check``).
     """
     # Apply frequency limit
     mask = env_frequencies <= max_freq
@@ -231,21 +255,48 @@ def save_envelope_report(
     top_idx = np.argsort(peak_mags_db)[::-1][:num_peaks]
     peak_indices = peak_indices[top_idx]
 
-    # Build peaks list with bearing frequency matching
-    peaks = []
-    for idx in peak_indices:
-        freq = float(env_freq_display[idx])
-        mag_db = float(env_mag_display_db[idx])
+    peaks = [
+        {
+            "frequency": float(env_freq_display[idx]),
+            "magnitude_db": float(env_mag_display_db[idx]),
+        }
+        for idx in peak_indices
+    ]
 
-        # Check match with bearing frequencies
-        match = ""
-        if bearing_freqs:
-            for name, bf in bearing_freqs.items():
-                if bf and abs(freq - bf) < bf * 0.05:  # Within 5%
-                    match = f"≈ {name}"
-                    break
-
-        peaks.append({"frequency": freq, "magnitude_db": mag_db, "match": match})
+    line_test = None
+    labels: List[str] = []
+    assessment = None
+    if line_check is not None:
+        labels = envelope_labels(line_check)
+        assessment = line_check["overall_assessment"]
+        marked = {c["fault_type"] for c in emphasised_candidates(line_check)}
+        statements = [assessment]
+        if line_check.get("shaft_frequency_hz") is None:
+            # A claim with shaft_tests_not_run already says the speed was not
+            # available; the note then adds only which fields were read.
+            stated = "shaft_tests_not_run" in line_check["claim"]["conditions"]
+            statements.append(
+                CLAIM_SENTENCES[
+                    "envelope_no_speed_source" if stated else "envelope_no_speed"
+                ]
+            )
+        line_test = {
+            "statements": statements,
+            "labels": labels,
+            "rows": [
+                {
+                    "name": line_display_name(
+                        c["fault_type"], c.get("fault_type_canonical")
+                    ),
+                    "line_hz": c["line_frequency_hz"],
+                    "peak_hz": c.get("line_peak_hz"),
+                    "level_db": c.get("level_db"),
+                    "badge": state_badge(c["state"], line_check["claim"]),
+                    "emphasised": c["fault_type"] in marked,
+                }
+                for c in line_check["fault_checks"]
+            ],
+        }
 
     # Time arrays for plotting (downsample for file size)
     downsample_factor = max(1, len(filtered_signal) // 1000)
@@ -266,6 +317,8 @@ def save_envelope_report(
         "max_frequency": max_freq,
         "num_peaks": len(peaks),
         "bearing_frequencies": bearing_freqs,
+        "rpm": rpm,
+        "rpm_source": rpm_source,
         "report_type": "envelope_analysis",
     }
 
@@ -282,6 +335,7 @@ def save_envelope_report(
         peaks=peaks,
         bearing_freqs=bearing_freqs,
         metadata=metadata,
+        line_test=line_test,
     )
 
     # Save HTML file (timestamped: consecutive runs never overwrite)
@@ -292,9 +346,6 @@ def save_envelope_report(
 
     logger.info(f"Envelope report saved: {output_file.name}")
 
-    # Summary of matches
-    matches_found = [p["match"] for p in peaks if p["match"]]
-
     return {
         "file_path": str(output_file.absolute()),
         "file_name": output_file.name,
@@ -302,7 +353,8 @@ def save_envelope_report(
         "report_type": "envelope_analysis",
         "num_peaks_detected": len(peaks),
         "peak_frequencies": [p["frequency"] for p in peaks[:5]],
-        "bearing_matches": matches_found,
+        "bearing_matches": labels,
+        "bearing_assessment": assessment,
         "metadata": metadata,
         "message": f"✓ Envelope analysis report saved: {output_file.name} ({output_file.stat().st_size / 1024:.1f} KB)",
     }
@@ -379,7 +431,8 @@ def save_integrated_diagnostic_report(
 
     Returns:
         Dictionary with ``files`` (one entry per rendering), the authored
-        statements the document renders, and report metadata. ``file_path``
+        statements the document renders (the figure's caption and the
+        line-test badges among them), and report metadata. ``file_path``
         and ``file_name`` name the first rendering, for symmetry with the
         other save_* functions.
 
@@ -445,7 +498,7 @@ def save_integrated_diagnostic_report(
         "fault_canonical": verdict.get("fault_canonical"),
         "evidence_strength": advisory["evidence"]["strength"],
         "generated_at": generated_at,
-        "statements": collect_statements(advisory),
+        "statements": collect_statements(advisory, figure),
         "message": (
             f"Integrated diagnostic report saved: "
             f"{', '.join(f['file_name'] for f in files)}"

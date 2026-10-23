@@ -25,8 +25,6 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from scipy.fft import fft, fftfreq
-from scipy.signal import hilbert, butter, sosfiltfilt
 from mcp.server.mcpserver import MCPServer, Context
 
 from ..config import MODELS_DIR, REPORTS_DIR
@@ -34,6 +32,8 @@ from ..decision_support.advisory import build_advisory
 from ..decision_support.diagnosis_pipeline import (
     diagnose_vibration as _diagnose_vibration,
 )
+from ..diagnostics.bearing_analyzer import check_frequency_set
+from ..diagnostics.bearing_claims import acquisition_eligibility_from_companion
 from ..figures import build_annotated_envelope_figure
 from ..models import StoredSignalInfo
 from ..report_generator import (
@@ -52,9 +52,10 @@ from ._utils import refusal_boundary, resolve_model_paths, resolve_signal
 
 # Canonical modular twin of the ISO evaluation tool (module-level function
 # since U6) — replaces the former runtime import from the deprecated monolith.
-from .diagnostics_tools import assess_severity
+from .diagnostics_tools import assess_severity, declared_rpm
 from ..signal_processing.spectral import (
     amplitude_spectrum,
+    envelope_analysis_arrays,
     envelope_spectrum_arrays,
     resolve_envelope_band,
     validate_bandpass_band,
@@ -372,6 +373,7 @@ async def generate_envelope_report(
     num_peaks: int = 15,
     bearing_freqs: Optional[dict[str, float]] = None,
     ctx: Context | None = None,
+    rpm: Optional[float] = None,
 ) -> dict[str, Any]:
     """
     Generate professional envelope analysis report (HTML) for a stored signal.
@@ -382,6 +384,20 @@ async def generate_envelope_report(
     metadata. Reference bearing frequencies (BPFO/BPFI/BSF/FTF) can be
     passed explicitly or, if omitted, are read from the source file's
     companion _metadata.json when present.
+
+    With reference frequencies, the report runs the bearing line test of
+    check_bearing_faults on the envelope spectrum it plots (same band) and
+    marks only the candidate lines of that test's claim; it states the claim
+    and draws each window at the line tested (2 x BSF for the rolling
+    element). The shaft speed of the sideband and shaft-order tests is the
+    rpm parameter when given, else the one the signal declares (the rpm of
+    the companion's "measurement" object, else the measurement point's
+    nominal_rpm); it is never estimated, and never inferred from the
+    reference frequencies. Without a speed those tests do not run, the
+    report and every label say so, and an indicated bearing type is stated
+    as qualified (shaft_tests_not_run), never as single-spectrum evidence.
+    Without reference frequencies no line test runs: the report shows the
+    spectrum and its peaks and states no claim, with or without rpm.
 
     Args:
         signal_id: ID of the stored signal (from load_signal).
@@ -394,23 +410,38 @@ async def generate_envelope_report(
         bearing_freqs: Optional dict with BPFO, BPFI, BSF, FTF in Hz, each
             positive and finite
         ctx: MCP context. Unused — see this module's docstring on logging.
+        rpm: Optional measured shaft speed in RPM for the line test's
+            sideband and shaft-order tests; it takes precedence over the
+            speed the signal declares. Omit it when unknown; a given value
+            must be positive and finite.
 
     Returns:
-        Dictionary with file path, metadata, and summary (NO HTML content)
+        Dictionary with file path, metadata, and summary (NO HTML content):
+        bearing_matches holds one label per marked line, bearing_assessment
+        the line test's claim statement (None without reference
+        frequencies). metadata.rpm is the shaft speed the line test used and
+        metadata.rpm_source where it came from ("explicit", "measurement" or
+        "point", as diagnose_vibration's parameter_sources name them); both
+        None when no line test ran or it ran without a speed.
 
     Raises:
-        ValueError: If bearing_freqs holds a value that is not a positive
-            finite number (every such label is listed), if the signal_id is
-            not loaded, or if the stored signal has no sampling rate.
+        ValueError: If a given rpm is not a positive finite number, if
+            bearing_freqs holds a value that is not a positive finite number
+            (every such label is listed), if the signal_id is not loaded, if
+            the stored signal has no sampling rate, or if no rpm is given and
+            the signal's declared speed is malformed.
 
     Example:
         >>> # Bearing frequencies computed for YOUR bearing/rpm (here: 6205
         >>> # per CWRU geometry at 1797 RPM)
         >>> result = generate_envelope_report(
         ...     "real_train_OuterRaceFault_1",
-        ...     bearing_freqs={"BPFO": 107.36, "BPFI": 162.19, "BSF": 70.58, "FTF": 11.93}
+        ...     bearing_freqs={"BPFO": 107.36, "BPFI": 162.19, "BSF": 70.58, "FTF": 11.93},
+        ...     rpm=1797,
         ... )
     """
+    if rpm is not None:
+        rpm = validate_rpm(rpm, source="the rpm parameter", optional=True)
     if bearing_freqs is not None:
         validate_expected_frequencies(bearing_freqs, name="bearing_freqs")
 
@@ -438,37 +469,50 @@ async def generate_envelope_report(
         metadata = _companion_metadata(info)
         if any(k in metadata for k in ("BPFO", "BPFI", "BSF", "FTF")):
             bearing_freqs = {
-                "BPFO": metadata.get("BPFO"),
-                "BPFI": metadata.get("BPFI"),
-                "BSF": metadata.get("BSF"),
-                "FTF": metadata.get("FTF"),
+                k: metadata[k]
+                for k in ("BPFO", "BPFI", "BSF", "FTF")
+                if metadata.get(k) is not None
             }
 
-    # Bandpass filter (a corner exactly AT Nyquist is realized 1 Hz below
-    # it — a digital filter corner cannot sit at Nyquist)
-    nyquist = sampling_rate / 2
-    high_norm = min(filter_high, nyquist - 1.0) / nyquist
-    sos = butter(4, [filter_low / nyquist, high_norm], btype="band", output="sos")
-    filtered_signal = sosfiltfilt(sos, signal_data)
+    band = (filter_low, filter_high)
 
-    # Envelope via Hilbert
-    analytic_signal = hilbert(filtered_signal)
-    envelope = np.abs(analytic_signal)
+    # Explicit rpm, else the declared speed, else None (the line test then
+    # runs without its shaft tests). A malformed declared speed is refused
+    # before the filter runs; an explicit rpm never reads it.
+    rpm_source = None if rpm is None else "explicit"
+    if rpm is None and bearing_freqs:
+        rpm, rpm_source = declared_rpm(signal_id, info)
 
-    # Envelope spectrum
-    N = len(envelope)
-    env_fft = fft(envelope)
-    env_frequencies = fftfreq(N, 1 / sampling_rate)
+    # One pass: the time-domain view (band-pass filtered signal and its
+    # envelope), the plotted envelope spectrum and the spectrum the line test
+    # reads all come from the same filter on the same band.
+    filtered_signal, envelope, env_frequencies, env_magnitudes = (
+        envelope_analysis_arrays(signal_data, sampling_rate, band)
+    )
 
-    positive_idx = env_frequencies > 0
-    env_frequencies = env_frequencies[positive_idx]
-    env_magnitudes = 2.0 * np.abs(env_fft[positive_idx]) / N
+    line_check = None
+    if bearing_freqs:
+        line_check = check_frequency_set(
+            signal_data,
+            sampling_rate,
+            bearing_freqs,
+            rpm,
+            signal_id=signal_id,
+            envelope_freq_range=band,
+            acquisition_eligibility=acquisition_eligibility_from_companion(
+                info.source_metadata
+            ),
+            spectrum=(env_frequencies, env_magnitudes),
+        )
+    else:
+        # No line test used a speed, so the report records none.
+        rpm = rpm_source = None
 
     # Generate and save report (signal_id is the report's signal label)
     result = save_envelope_report(
         signal_file=signal_id,
         sampling_rate=sampling_rate,
-        filter_band=(filter_low, filter_high),
+        filter_band=band,
         filtered_signal=filtered_signal,
         envelope=envelope,
         env_frequencies=env_frequencies,
@@ -476,14 +520,15 @@ async def generate_envelope_report(
         bearing_freqs=bearing_freqs,
         max_freq=max_freq,
         num_peaks=num_peaks,
+        line_check=line_check,
+        rpm=rpm,
+        rpm_source=rpm_source,
     )
 
     logger.info(result["message"])
     logger.info(f"Report location: {result['file_path']}")
-    if result.get("bearing_matches"):
-        logger.info(
-            f"Bearing frequency matches: {', '.join(result['bearing_matches'])}"
-        )
+    if line_check is not None:
+        logger.info(f"Bearing line test: {result['bearing_assessment']}")
 
     return result
 
@@ -1061,34 +1106,14 @@ async def generate_feature_comparison_report(
     }
 
 
-#: Frequency tolerance used by the bearing matching engine. The figure draws
-#: this exact value, so a reader sees the tolerance the verdict applied.
-_MATCH_TOLERANCE_PCT = 5.0
+#: Search-window half-width (percent of each tested line) of the bearing check
+#: diagnose_vibration runs. The figure draws this exact value, so a reader
+#: sees the windows the check searched.
+_SEARCH_WINDOW_PCT = 5.0
 
 #: Renderings this tool can emit. HTML is self-contained and needs nothing
 #: extra; PDF needs the optional ``[pdf]`` extra.
 _SUPPORTED_FORMATS = ("html", "pdf")
-
-
-def _matched_check(diagnosis: dict[str, Any]) -> Optional[dict[str, Any]]:
-    """The strongest matching fault check, for figure emphasis."""
-    faults = diagnosis.get("bearing_faults")
-    if not faults:
-        return None
-    order = {"high": 3, "moderate": 2, "low": 1}
-    detected = [
-        check
-        for check in faults.get("fault_checks", [])
-        if check.get("detected") and check.get("detected_frequency_hz")
-    ]
-    if not detected:
-        return None
-    best = max(detected, key=lambda c: order.get(c.get("evidence_strength"), 0))
-    return {
-        "fault_type": best["fault_type"],
-        "measured_hz": best["detected_frequency_hz"],
-        "deviation_pct": best.get("deviation_pct"),
-    }
 
 
 def _envelope_figure(
@@ -1096,12 +1121,12 @@ def _envelope_figure(
 ) -> dict[str, Any]:
     """Build the annotated envelope spectrum for this diagnosis.
 
-    Uses the same spectrum computation the bearing matching consumed, so the
-    figure cannot show a peak the verdict never saw.
+    Uses the same spectrum computation the bearing check consumed, so the
+    figure cannot show a line the check never tested; its windows and their
+    emphasis follow the check's tested lines and claim.
     """
     band = resolve_envelope_band(fs, None)
     env_frequencies, env_magnitudes = envelope_spectrum_arrays(signal, fs, band)
-    faults = diagnosis.get("bearing_faults") or {}
     check = diagnosis.get("bearing_check") or {}
     not_computed_reason = (
         check.get("reason") if check.get("status") == "not_computed" else None
@@ -1109,9 +1134,8 @@ def _envelope_figure(
     return build_annotated_envelope_figure(
         env_frequencies,
         env_magnitudes,
-        faults.get("bearing_frequencies"),
-        matched=_matched_check(diagnosis),
-        tolerance_pct=_MATCH_TOLERANCE_PCT,
+        diagnosis.get("bearing_faults"),
+        tolerance_pct=_SEARCH_WINDOW_PCT,
         no_bands_reason=not_computed_reason,
     )
 
@@ -1201,6 +1225,9 @@ async def generate_diagnostic_report(
         machine_group=machine_group,
         support_type=support_type,
         signal_unit=info.signal_unit,
+        acquisition_eligibility=acquisition_eligibility_from_companion(
+            info.source_metadata
+        ),
     )
 
     baseline_diagnosis = None
@@ -1216,6 +1243,9 @@ async def generate_diagnostic_report(
             machine_group=machine_group,
             support_type=support_type,
             signal_unit=baseline_info.signal_unit,
+            acquisition_eligibility=acquisition_eligibility_from_companion(
+                baseline_info.source_metadata
+            ),
         )
 
     advisory = build_advisory(diagnosis, baseline_diagnosis)

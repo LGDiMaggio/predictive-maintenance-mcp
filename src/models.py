@@ -326,6 +326,36 @@ BearingEvidenceStateReason = Literal[
 BearingCheckOutcomeName = Literal[
     "no_indication", "inconclusive", "indicated", "several_types"
 ]
+BearingClaimLevel = Literal["withheld", "qualified", "single_spectrum_evidence"]
+BearingClaimCondition = Literal[
+    "generated_without_noise",
+    "several_types",
+    "cage_comb_not_excluded",
+    "inner_race_sideband_not_excluded",
+    "shaft_tests_not_run",
+    "rolling_element_held_back",
+    "inconclusive",
+    "nothing_testable",
+    "no_indication",
+]
+BearingClaimLimitation = Literal["sideband_only_corroboration", "cage_not_declared"]
+
+#: Closes the description of each per-check field of the older matcher.
+_LEGACY_CHECK_FIELD = (
+    "A legacy tolerance match without false-alarm control, kept for "
+    "compatibility until a later version. The bearing statements and actions "
+    "of check_bearing_faults, diagnose_vibration and the reports do not use "
+    "the legacy per-check fields; the asset ledger's evidence-persistence "
+    "assessment (assess_asset_change) still uses detected, magnitude and "
+    "evidence_strength until a later version."
+)
+
+#: Closes the description of the evidence summary's outcome texts.
+_BEFORE_CLAIM = (
+    " It describes the evidence outcome before the claim: when claim.level is "
+    "not single_spectrum_evidence, do not relay it to name a fault type or a "
+    "single element; overall_assessment states what the claim allows."
+)
 
 
 class BearingLineTest(BaseModel):
@@ -498,6 +528,88 @@ class BearingEvidencePolicy(BaseModel):
     exclusions: list[str] = Field(description="What the nominal budgets do not cover")
 
 
+class BearingClaim(BaseModel):
+    """What the bearing check may state from its significance-tested evidence.
+
+    Derived from outcome, the per-check states, the declared frequencies and
+    whether a shaft speed was available; it never changes them.
+    most_likely_fault, most_likely_fault_canonical and overall_assessment
+    follow it.
+    """
+
+    level: BearingClaimLevel = Field(
+        description=(
+            "withheld (no fault type is named; the statement says why the record "
+            "supports none), qualified (the evidence and every competing "
+            "explanation the result cannot exclude are named, no single type is "
+            "singled out, and it is not a confirmed fault) or "
+            "single_spectrum_evidence (the envelope evidence of this single "
+            "spectrum is consistent with one type; it asks for confirmation and "
+            "is not a confirmed fault). Both rest on the assumption that the "
+            "record's background is random measurement noise, which one "
+            "acquisition does not verify. A fourth level, "
+            "supported_claim, is reserved for evidence independent of one "
+            "spectrum and is never produced by this check."
+        )
+    )
+    conditions: list[BearingClaimCondition] = Field(
+        default_factory=list,
+        description=(
+            "Why the claim is qualified or withheld; empty for "
+            "single_spectrum_evidence. generated_without_noise (the signal's own "
+            "companion metadata declares a generated signal with noise_level 0, "
+            "outside the line test's model; withheld whatever the outcome), "
+            "several_types (outcome several_types), cage_comb_not_excluded (the "
+            "cage line was not testable and a multiple of the declared cage "
+            "frequency lies in the indicated line's search window), "
+            "inner_race_sideband_not_excluded (outer race indicated, the "
+            "inner-race line stands above the floor, and the declared BPFI minus "
+            "twice the shaft rate lies in the outer-race search window), "
+            "shaft_tests_not_run (a check that had no shaft speed available, so "
+            "the shaft-order test did not run and an overlap of the bearing lines "
+            "the claim names with a shaft harmonic is not excluded: an indicated "
+            "bearing type, or beside several_types or rolling_element_held_back, "
+            "whose reason it keeps; for an outer-race indication beside an "
+            "inner-race line above the floor, the inner-race sideband relation "
+            "could not be tested either; never for labels outside the bearing "
+            "vocabulary alone), "
+            "rolling_element_held_back (a cage held back "
+            "because the rolling-element line stands above the floor), "
+            "inconclusive, nothing_testable, no_indication (the outcome itself). "
+            "The window conditions and shaft_tests_not_run qualify the claim "
+            "only: outcome, candidates and states stay as tested."
+        ),
+    )
+    limitations: list[BearingClaimLimitation] = Field(
+        default_factory=list,
+        description=(
+            "Stated with single_spectrum_evidence without changing its level: "
+            "sideband_only_corroboration (an inner race whose only counted "
+            "corroborating lines are shaft-rate sidebands, which shaft-rate "
+            "modulation of the background can also produce), cage_not_declared "
+            "(no cage frequency was declared, so cage-rate lines were not "
+            "assessed as an explanation)"
+        ),
+    )
+    acquisition_eligibility: Literal["known_inapplicable", "unknown"] = Field(
+        description=(
+            "known_inapplicable only when the signal's own companion metadata "
+            "declares a generated signal (a generator key) with a numeric "
+            "noise_level of 0; unknown otherwise, which is not a validation of the "
+            "line test's assumptions: no route records what would establish them"
+        )
+    )
+    basis: Literal["significance_tested"] = Field(
+        description=(
+            "What the claim rests on: the significance-tested lines of one "
+            "envelope spectrum, never the legacy per-check fields"
+        )
+    )
+    policy_version: int = Field(
+        description="Version of the rules that map the evidence to a claim"
+    )
+
+
 class BearingFaultCheckResult(BaseModel):
     """Result of checking for a specific expected fault frequency."""
 
@@ -522,25 +634,29 @@ class BearingFaultCheckResult(BaseModel):
         ),
     )
     expected_frequency_hz: float = Field(description="Expected fault frequency")
-    detected: bool = Field(description="Whether a peak was detected within tolerance")
+    detected: bool = Field(
+        description=(
+            "Whether a peak was detected within tolerance. " + _LEGACY_CHECK_FIELD
+        )
+    )
     detected_frequency_hz: Optional[float] = Field(
-        None, description="Actual peak frequency"
+        None, description="Actual peak frequency. " + _LEGACY_CHECK_FIELD
     )
     magnitude: Optional[float] = Field(
-        None, description="Magnitude at detected frequency"
+        None, description="Magnitude at detected frequency. " + _LEGACY_CHECK_FIELD
     )
     deviation_pct: Optional[float] = Field(
-        None, description="Deviation from expected (%)"
+        None, description="Deviation from expected (%). " + _LEGACY_CHECK_FIELD
     )
     harmonics_detected: list[dict[str, float]] = Field(
-        default=[], description="Harmonics found"
+        default=[], description="Harmonics found. " + _LEGACY_CHECK_FIELD
     )
     evidence_strength: str = Field(
         description=(
             "Strength of the spectral evidence for this fault: 'high' "
             "(fundamental + >=2 harmonics), 'moderate' (fundamental, weaker "
             "harmonics), 'low' (harmonics only), or 'none'. Derived from "
-            "detected peaks — not a probability."
+            "detected peaks, not a probability. " + _LEGACY_CHECK_FIELD
         )
     )
     state: Optional[BearingEvidenceState] = Field(
@@ -638,15 +754,33 @@ class BearingFaultsSummary(BaseModel):
     fault_checks: list[BearingFaultCheckResult] = Field(
         description="Results for each checked frequency"
     )
-    overall_assessment: str = Field(description="Summary assessment text")
+    overall_assessment: str = Field(
+        description=(
+            "One statement derived from claim: at single_spectrum_evidence, what "
+            "the envelope evidence of this single spectrum is consistent with and "
+            "the assumption it rests on; at qualified, the evidence, the "
+            "competing explanations it cannot exclude and the same assumption; "
+            "at withheld, why no fault type is assessed. It is not a probability "
+            "and not a confirmation."
+        )
+    )
     most_likely_fault: Optional[str] = Field(
-        None, description="Most likely fault label if any"
+        None,
+        description=(
+            "The one supported label, derived from claim and set only when "
+            "claim.level is single_spectrum_evidence: evidence of this single "
+            "spectrum, not a confirmed fault. None at qualified and withheld. The "
+            "name is kept for compatibility; it is not a probability ranking."
+        ),
     )
     most_likely_fault_canonical: Optional[
         Literal["outer_race", "inner_race", "ball", "cage"]
     ] = Field(
         None,
-        description="Canonical form of most_likely_fault (None for arbitrary labels)",
+        description=(
+            "Canonical form of most_likely_fault; None when most_likely_fault is "
+            "None or its label is outside the bearing vocabulary"
+        ),
     )
     source: Optional[str] = Field(
         None,
@@ -667,18 +801,17 @@ class BearingFaultsSummary(BaseModel):
             "shaft order or shared, a cage line that a significant rolling-element "
             "line can explain, or nothing testable), no_indication (no "
             "eligible peak at a tested frequency satisfies the detection criteria, "
-            "which is not proof that no defect exists). most_likely_fault, "
-            "overall_assessment "
-            "and each check's detected and evidence_strength come from an older "
-            "tolerance match without false-alarm control and can disagree with "
-            "outcome."
+            "which is not proof that no defect exists). Each check's detected and "
+            "evidence_strength come from an older tolerance match without "
+            "false-alarm control and can disagree with outcome; most_likely_fault "
+            "and overall_assessment derive from claim."
         ),
     )
     outcome_reason: Optional[str] = Field(
         None,
         description=(
             "Why the check reached its outcome, naming every hypothesis the record "
-            "could not test"
+            "could not test." + _BEFORE_CLAIM
         ),
     )
     next_step: Optional[str] = Field(
@@ -686,7 +819,7 @@ class BearingFaultsSummary(BaseModel):
         description=(
             "What to do next for this outcome; None when the check suggests no "
             "step (every hypothesis was tested and none stands out), which does "
-            "not mean the bearing is free of defects"
+            "not mean the bearing is free of defects." + _BEFORE_CLAIM
         ),
     )
     candidates: list[BearingCandidate] = Field(
@@ -700,6 +833,15 @@ class BearingFaultsSummary(BaseModel):
     evidence_policy: Optional[BearingEvidencePolicy] = Field(
         None,
         description="Statistical policy and assumptions behind the evidence fields",
+    )
+    claim: Optional[BearingClaim] = Field(
+        None,
+        description=(
+            "What the check may state from its significance-tested evidence: "
+            "level, conditions, limitations and the acquisition eligibility the "
+            "signal's own metadata declares. most_likely_fault, "
+            "most_likely_fault_canonical and overall_assessment follow it."
+        ),
     )
 
 
@@ -947,12 +1089,16 @@ class DiagnosisResult(BaseModel):
     overall_diagnosis: str = Field(description="Combined diagnostic text")
     evidence_strength: str = Field(
         description=(
-            "Strength of corroborating fault evidence: 'none', 'weak', "
-            "'moderate', or 'strong'. Derived from the number and quality of "
-            "independent findings (bearing fault frequency matches, shaft "
-            "signatures, anomaly detection, ISO severity) — NOT from severity "
-            "alone and NOT a probability. 'none' means the analyses that ran "
-            "found no fault evidence, which does not establish that the "
+            "Combined evidence across the analyses that ran: 'none', 'weak', "
+            "'moderate', or 'strong'. It counts findings (ISO severity zone C or "
+            "D, a dominant peak at 1x or 2x shaft speed, the bearing claim, the "
+            "anomaly model) and never rests on severity alone. It is not a "
+            "probability and "
+            "does not identify or confirm a fault type. A bearing finding counts "
+            "once: at claim level single_spectrum_evidence, or qualified from an "
+            "indicated or several_types outcome; a withheld claim and one held "
+            "back as inconclusive count nothing. 'none' means the analyses that "
+            "ran found nothing to count, which does not establish that the "
             "machine is healthy; a bearing check that was not computed "
             "(bearing_check.status 'not_computed') adds nothing and says "
             "nothing about the bearing."

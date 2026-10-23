@@ -129,9 +129,14 @@ BEARING_MAINTENANCE = re.compile(
     re.IGNORECASE,
 )
 
-#: What a single-record envelope indication must never say.
+#: What a single-record envelope indication must never say. The one
+#: negation every single-spectrum and qualified statement carries, "not a
+#: confirmed fault", is no confirmation (as in test_bearing_claims and
+#: test_advisory); any other "confirmed" still is.
 REPLACEMENT_OR_CONFIRMATION = re.compile(
-    r"replace bearing|plan replacement|\bconfirmed\b", re.IGNORECASE
+    r"replace bearing|plan replacement"
+    r"|(?<!not a )\bconfirmed\b|\bconfirmed\b(?! fault)",
+    re.IGNORECASE,
 )
 
 #: A diagnosis sentence that lists detected fault types or names the likeliest.
@@ -228,10 +233,6 @@ def white_noise_checks() -> dict[float, list[dict]]:
 class TestFaultFreeSignals:
     """No bearing defect by construction: no fault type is a finding."""
 
-    @tripwire(
-        "bearing-detection-without-significance",
-        "T1 M1: the bearing check names a fault type on white noise",
-    )
     def test_white_noise_names_no_fault(self, white_noise_checks):
         named = {s: _named(checks) for s, checks in white_noise_checks.items()}
         detail = "; ".join(
@@ -287,11 +288,6 @@ class TestFaultFreeSignals:
         )
 
     @pytest.mark.parametrize("family", list(FAMILY_SEED_OFFSETS))
-    @tripwire(
-        "bearing-detection-without-significance",
-        "T1 M2-M3: the bearing check names a fault type on fault-free "
-        "coloured, impulsive, shaft-related and gear-tone signals",
-    )
     def test_fault_free_family_names_no_fault(self, family):
         offset = FAMILY_SEED_OFFSETS[family]
         checks = [
@@ -517,11 +513,6 @@ ORDER_RECORDS = 5
 
 
 class TestOrderIndependence:
-    @tripwire(
-        "bearing-ranking-by-list-order",
-        "T1 M7: the most likely fault among equally graded types follows the "
-        "order of the frequency dict",
-    )
     def test_frequency_order_does_not_change_the_outcome(self):
         """Combined outer- and inner-race defects at -10 dB, both orders."""
         forward = {k: FREQUENCIES_6205[k] for k in ("BPFO", "BPFI")}
@@ -603,11 +594,6 @@ def mfpt_baseline() -> dict:
 class TestStatementsAndActions:
     """A non-specific match is no finding; envelope evidence is no replacement."""
 
-    @tripwire(
-        "bearing-noise-match-drives-actions",
-        "T1 M12: the diagnosis turns a bearing match on white noise into fault "
-        "evidence and a bearing maintenance action",
-    )
     def test_diagnosis_of_white_noise_reports_no_bearing_evidence(self):
         wrong = []
         for i in range(PIPELINE_NOISE_RECORDS):
@@ -631,11 +617,6 @@ class TestStatementsAndActions:
             f"records: {wrong[:3]}"
         )
 
-    @tripwire(
-        "bearing-noise-match-drives-actions",
-        "T1 M9: an uncorroborated line in a healthy recording becomes a named "
-        "fault in the diagnosis",
-    )
     def test_uncorroborated_line_is_no_finding_of_the_diagnosis(self, mfpt_baseline):
         text = mfpt_baseline["overall_diagnosis"]
         named = mfpt_baseline["bearing_faults"]["most_likely_fault"]
@@ -649,12 +630,6 @@ class TestStatementsAndActions:
             BEARING_MAINTENANCE, mfpt_baseline["recommendations"]
         )
 
-    @tripwire(
-        "bearing-noise-match-drives-actions",
-        "T1 M9: the advisory names a fault, reports disagreeing indicators, "
-        "recommends a bearing replacement and says harmonics rule out noise on "
-        "a healthy recording",
-    )
     def test_uncorroborated_line_is_no_finding_of_the_advisory(self, mfpt_baseline):
         advisory = build_advisory(mfpt_baseline)
         found = {
@@ -672,11 +647,6 @@ class TestStatementsAndActions:
 
         assert not any(found.values()), {k: v for k, v in found.items() if v}
 
-    @tripwire(
-        "bearing-replacement-from-envelope-evidence",
-        "T1 AE11: a single-record envelope indication produces 'Replace "
-        "bearing' and 'plan replacement'",
-    )
     def test_envelope_indication_asks_for_no_replacement(self):
         """``golden_bearing``: a true BPFO modulation."""
         diagnosis = diagnose_vibration(
@@ -753,13 +723,23 @@ class TestActionVocabulary:
 
 
 class TestSensitivityControls:
-    def test_golden_bearing_outer_race_is_detected_and_most_likely(self):
+    def test_golden_bearing_outer_race_is_detected_and_indicated(self):
+        """``golden_bearing`` is a true BPFO modulation, 1 s at 10 kHz. The
+        outer race is indicated; since T1 PR C (a deliberate change),
+        ``most_likely_fault`` follows the claim, which this record qualifies:
+        its cage window (11.95 Hz +/- 5 %) holds fewer than 3 bins, and
+        BPFO = 9 x FTF lies in the outer-race window, so no single type is
+        named."""
         result = _catalog_check(
             golden_signals()["golden_bearing"], fs=GOLDEN_FS, rpm=GOLDEN_RPM
         )
 
         assert _check(result, "BPFO")["detected"]
-        assert result["most_likely_fault"] == "BPFO"
+        assert result["outcome"] == "indicated"
+        assert [c["fault_type"] for c in result["candidates"]] == ["BPFO"]
+        assert _check(result, "FTF")["state"] == "not_testable"
+        assert result["claim"]["conditions"] == ["cage_comb_not_excluded"]
+        assert result["most_likely_fault"] is None
 
 
 # ===========================================================================

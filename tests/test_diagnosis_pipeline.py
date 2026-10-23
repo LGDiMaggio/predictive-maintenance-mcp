@@ -2,13 +2,20 @@
 
 import json
 import pickle
+import re
+
 import numpy as np
 import pytest
 
 from predictive_maintenance_mcp.decision_support.diagnosis_pipeline import (
+    _bearing_check,
+    _synthesize_diagnosis,
     diagnose_vibration,
     _run_anomaly_detection,
     _extract_time_domain_features,
+)
+from predictive_maintenance_mcp.diagnostics.bearing_analyzer import (
+    check_all_bearing_faults,
 )
 from predictive_maintenance_mcp.signal_validation import InvalidInputError
 
@@ -703,7 +710,9 @@ class TestUncheckedBearing:
         assert result["bearing_check"] == self._CHECK
         text = result["overall_diagnosis"]
         assert f"Bearing analysis: not computed. {self._CHECK['reason']}" in text
-        assert text.index("Bearing analysis") < text.index("Fault evidence strength")
+        assert text.index("Bearing analysis") < text.index(
+            "Combined evidence across the analyses that ran"
+        )
         assert result["recommendations"] == [self._CHECK["remedy"]]
 
     def test_is_ignored_when_a_bearing_is_given(self, faulty_signal):
@@ -719,90 +728,300 @@ class TestUncheckedBearing:
         assert result["bearing_check"]["status"] == "assessed"
 
 
-class TestEvidenceStrengthUpperBranches:
-    """Exercise the moderate (>=2.0) and strong (>=3.0) evidence branches of
-    _synthesize_diagnosis, which the other tests only touch at the low end.
+#: 6205 BPFO at 1800 RPM (CWRU geometry): 3.5848 x 30 Hz. Matches the value
+#: used by the golden fixtures (tests/_golden_signals.py).
+BPFO_6205_1800 = 107.54
 
-    Both cases use an undeclared unit so the ISO block is REFUSED (contributes
-    NO points) — proving the upper branches are reached by CORROBORATION from
-    independent spectral analyses, not by severity.
+#: No anomaly model: the bearing claim is the only bearing-related finding.
+NO_MODEL = "nonexistent_model_evidence"
+
+#: The refused ISO block of a diagnosis without a declared unit.
+REFUSED_ISO = {
+    "status": "refused",
+    "signal_id": "s",
+    "reason": "Signal unit not declared.",
+    "remedy": "Declare the unit.",
+}
+
+
+def _bpfo_carrier(seconds: float, fs: int = 10000) -> np.ndarray:
+    """3 kHz carrier AM-modulated at BPFO + 2nd + 3rd harmonic, plus noise.
+
+    Modulation stays strictly positive (min 0.2), so the Hilbert envelope
+    recovers BPFO with two harmonics (the legacy grade is "high"). At 1 s and
+    10 kHz the cage line (11.95 Hz +/- 5 %) cannot be tested and BPFO is
+    9 x FTF, so the outer-race indication is qualified; at 10 s the cage line
+    is tested and nothing qualifies it.
+    """
+    t = np.arange(int(seconds * fs)) / fs
+    f = BPFO_6205_1800
+    modulation = (
+        1.0
+        + 0.40 * np.sin(2 * np.pi * f * t)
+        + 0.25 * np.sin(2 * np.pi * 2 * f * t)
+        + 0.15 * np.sin(2 * np.pi * 3 * f * t)
+    )
+    rng = np.random.default_rng(123)
+    return np.sin(2 * np.pi * 3000.0 * t) * modulation + 0.02 * rng.standard_normal(
+        t.size
+    )
+
+
+def _bearing_actions(result: dict) -> list[str]:
+    return [r for r in result["recommendations"] if r.startswith("Bearing ")]
+
+
+class TestEvidenceStrengthUpperBranches:
+    """Exercise the weak, moderate (>=2.0) and strong (>=3.0) evidence
+    branches of _synthesize_diagnosis, which the other tests only touch at
+    the low end.
+
+    The cases use an undeclared unit so the ISO block is REFUSED (contributes
+    NO points): the upper branches are reached by findings of separate
+    analyses, not by severity. A bearing finding counts once (+1.0), whatever
+    the legacy grade of its checks: the "high" grade no longer adds 2.0 (a
+    deliberate change of T1 PR C).
     """
 
-    #: 6205 BPFO at 1800 RPM (CWRU geometry): 3.5848 x 30 Hz. Matches the
-    #: value used by the golden fixtures (tests/_golden_signals.py).
-    BPFO_6205_1800 = 107.54
     RPM = 1800  # shaft = 30 Hz
 
-    def _modulated_carrier(self, t):
-        """3 kHz carrier AM-modulated at BPFO + 2nd + 3rd harmonic.
+    def _with_shaft_line(self) -> np.ndarray:
+        # Dominant shaft component at 1x (30 Hz) so the FFT peak lands on the
+        # shaft frequency (+1.0), on top of the modulated bearing carrier.
+        t = np.arange(10000) / 10000
+        return 1.5 * np.sin(2 * np.pi * 30.0 * t) + _bpfo_carrier(1.0)
 
-        Modulation stays strictly positive (min 0.2), so the Hilbert envelope
-        recovers BPFO with two harmonics -> "high" bearing evidence (+2.0).
-        """
-        f = self.BPFO_6205_1800
-        modulation = (
-            1.0
-            + 0.40 * np.sin(2 * np.pi * f * t)
-            + 0.25 * np.sin(2 * np.pi * 2 * f * t)
-            + 0.15 * np.sin(2 * np.pi * 3 * f * t)
-        )
-        return np.sin(2 * np.pi * 3000.0 * t) * modulation
-
-    def test_single_corroboration_is_moderate(self):
-        """One independent finding (a high-evidence bearing fault, +2.0) and
-        nothing else -> evidence_strength == 'moderate'.
-
-        The carrier dominates the FFT (no 1x/2x shaft match), the unit is
-        undeclared (ISO refused), and no anomaly model exists -> the ONLY
-        contribution is the bearing check.
-        """
-        fs = 10000
-        t = np.arange(int(fs)) / fs
-        rng = np.random.default_rng(123)
-        signal = self._modulated_carrier(t) + 0.02 * rng.standard_normal(t.size)
-
+    def test_a_bearing_finding_alone_is_weak(self):
+        """The carrier dominates the FFT (no 1x/2x shaft match), the unit is
+        undeclared (ISO refused), and no anomaly model exists: the ONLY
+        contribution is the bearing claim, qualified on this 1 s record."""
         result = diagnose_vibration(
-            signal,
-            fs,
+            _bpfo_carrier(1.0),
+            10000,
+            rpm=self.RPM,
+            signal_id="weak_case",
+            bearing_id="6205",
+            anomaly_model_name=NO_MODEL,
+        )
+
+        assert result["iso_severity"]["status"] == "refused"  # no ISO points
+        bearing = result["bearing_faults"]
+        assert "high" in {c["evidence_strength"] for c in bearing["fault_checks"]}
+        assert bearing["claim"]["conditions"] == ["cage_comb_not_excluded"]
+        assert result["evidence_strength"] == "weak"
+
+    def test_two_findings_are_moderate(self):
+        """A bearing finding (+1.0) and a dominant 1x shaft peak (+1.0)."""
+        result = diagnose_vibration(
+            self._with_shaft_line(),
+            10000,
             rpm=self.RPM,
             signal_id="moderate_case",
             bearing_id="6205",
-            anomaly_model_name="nonexistent_model_evidence",
+            anomaly_model_name=NO_MODEL,
         )
 
         assert result["iso_severity"]["status"] == "refused"  # no ISO points
-        strengths = {
-            c["evidence_strength"] for c in result["bearing_faults"]["fault_checks"]
-        }
-        assert "high" in strengths  # bearing check contributes +2.0
+        assert abs(result["fft_summary"]["peak_frequency_hz"] - 30.0) < 5
+        assert result["bearing_faults"]["claim"]["level"] == "qualified"
         assert result["evidence_strength"] == "moderate"
 
-    def test_two_corroborations_are_strong(self):
-        """Two independent findings — a high-evidence bearing fault (+2.0) AND
-        a dominant 1x shaft peak / unbalance (+1.0) — reach 'strong' (>=3.0),
-        with the ISO block still refused (contributing nothing)."""
-        fs = 10000
-        t = np.arange(int(fs)) / fs
-        rng = np.random.default_rng(123)
-        # Dominant shaft component at 1x (30 Hz) so the FFT peak lands on the
-        # shaft frequency (+1.0), on top of the modulated bearing carrier.
-        shaft = 1.5 * np.sin(2 * np.pi * 30.0 * t)
-        signal = shaft + self._modulated_carrier(t) + 0.02 * rng.standard_normal(t.size)
-
-        result = diagnose_vibration(
-            signal,
-            fs,
+    def test_three_findings_are_strong(self):
+        """The two findings above and an anomaly model that flags the signal
+        as faulty (+1.0) reach 'strong' (>=3.0), the ISO block still refused."""
+        blocks = diagnose_vibration(
+            self._with_shaft_line(),
+            10000,
             rpm=self.RPM,
             signal_id="strong_case",
             bearing_id="6205",
-            anomaly_model_name="nonexistent_model_evidence",
+            anomaly_model_name=NO_MODEL,
         )
 
-        assert result["iso_severity"]["status"] == "refused"  # no ISO points
-        peak_f = result["fft_summary"]["peak_frequency_hz"]
-        assert abs(peak_f - 30.0) < 5  # dominant 1x shaft peak
-        strengths = {
-            c["evidence_strength"] for c in result["bearing_faults"]["fault_checks"]
+        _, strength, _ = _synthesize_diagnosis(
+            fft_summary=blocks["fft_summary"],
+            psd_summary=blocks["psd_summary"],
+            stft_summary=blocks["stft_summary"],
+            bearing_faults=blocks["bearing_faults"],
+            bearing_check=blocks["bearing_check"],
+            iso_severity=blocks["iso_severity"],
+            anomaly={"overall_health": "Faulty", "anomaly_ratio": 0.5},
+            rpm=self.RPM,
+        )
+
+        assert strength == "strong"
+
+
+class TestBearingClaimInTheDiagnosis:
+    """The bearing sentence, the bearing actions and the bearing's evidence
+    point follow the check's claim; the aggregate counts findings."""
+
+    @staticmethod
+    def _synthesize(bearing_faults, iso=None, rpm=1800.0):
+        """Synthesis with only the bearing (and optionally ISO) contributing:
+        the dominant FFT peak at 3 kHz is no shaft order, no anomaly model."""
+        return _synthesize_diagnosis(
+            fft_summary={"peak_frequency_hz": 3000.0},
+            psd_summary={},
+            stft_summary={},
+            bearing_faults=bearing_faults,
+            bearing_check=_bearing_check("assessed"),
+            iso_severity=iso or REFUSED_ISO,
+            anomaly=None,
+            rpm=rpm,
+        )
+
+    def test_single_spectrum_evidence_is_stated_with_a_confirmation_step(self):
+        """10 s: the cage line is tested and nothing qualifies BPFO. The
+        legacy grade "high" used to add two points and "plan replacement"."""
+        result = diagnose_vibration(
+            _bpfo_carrier(10.0),
+            10000,
+            rpm=1800,
+            signal_id="e",
+            bearing_id="6205",
+            anomaly_model_name=NO_MODEL,
+        )
+        bearing = result["bearing_faults"]
+        text = result["overall_diagnosis"]
+
+        assert bearing["claim"]["level"] == "single_spectrum_evidence"
+        assert bearing["most_likely_fault"] == "BPFO"
+        assert "high" in {c["evidence_strength"] for c in bearing["fault_checks"]}
+        assert f"Bearing analysis: {bearing['overall_assessment']}" in text
+        assert (
+            "Bearing analysis: The envelope evidence of this single spectrum is "
+            "consistent with an outer-race defect" in text
+        )
+        assert (
+            "The line test assumes the record's background is random measurement "
+            "noise, which this single acquisition does not verify; the result is "
+            "not a confirmed fault."
+        ) in text
+        assert _bearing_actions(result) == [
+            "Bearing 6205: confirm the single-spectrum indication with a comparable "
+            "measurement or an inspection of the outer race."
+        ]
+        assert result["evidence_strength"] == "weak"  # +1, ISO refused
+        assert text.endswith(
+            "Combined evidence across the analyses that ran: weak. It counts "
+            "findings, is not a probability, and does not identify or confirm a "
+            "fault type."
+        )
+        for removed in (
+            "Bearing faults detected:",
+            "Most likely",
+            "plan replacement",
+            "Fault evidence strength",
+        ):
+            assert removed not in text + " ".join(result["recommendations"])
+
+    def test_several_types_lists_both_candidates_and_inspects_both_alike(self):
+        """AE4: combined outer- and inner-race defects at -10 dB."""
+        from _bearing_scenarios import DEFECT_SEED, FREQUENCIES_6205, RPM_6205, defect
+
+        signal = defect(
+            "combined",
+            np.random.default_rng((DEFECT_SEED, 42, 0)),
+            12000.0,
+            10.0,
+            FREQUENCIES_6205,
+            RPM_6205 / 60.0,
+            -10.0,
+        )
+        result = diagnose_vibration(
+            signal,
+            12000.0,
+            rpm=RPM_6205,
+            bearing_id="6205",
+            anomaly_model_name=NO_MODEL,
+        )
+        bearing = result["bearing_faults"]
+        text = result["overall_diagnosis"]
+
+        assert bearing["outcome"] == "several_types"
+        assert bearing["most_likely_fault"] is None
+        assert "none is singled out" in text
+        for candidate in bearing["candidates"]:
+            assert f"({candidate['level_db']:.1f} dB)" in text
+        assert "the outer-race line (BPFO)" in text
+        assert "the inner-race line (BPFI)" in text
+        assert "most likely" not in text.lower()
+        assert _bearing_actions(result) == [
+            "Bearing 6205: compare with a comparable earlier measurement, and "
+            "inspect the outer race and the inner race with equal priority."
+        ]
+        assert not [r for r in result["recommendations"] if "replac" in r.lower()]
+
+    def test_an_inconclusive_check_counts_nothing_and_asks_for_a_repeat(self):
+        """AE5: the MFPT baseline's line at twice the mains frequency in the
+        BPFI window, with no corroborating line."""
+        from _bearing_scenarios import load_mfpt
+
+        from predictive_maintenance_mcp.diagnostics.bearing_analyzer import (
+            check_frequency_set,
+        )
+
+        signal, fs, frequencies, rpm = load_mfpt("real_test/baseline_3.csv")
+        check = check_frequency_set(signal, fs, frequencies, rpm)
+        text, strength, recommendations = self._synthesize(check, rpm=rpm)
+
+        assert check["outcome"] == "inconclusive"
+        assert check["claim"]["conditions"] == ["inconclusive"]
+        assert (
+            "Bearing analysis: The significance-tested evidence is inconclusive and "
+            "does not support a unique fault type." in text
+        )
+        assert strength == "none"
+        assert recommendations == [
+            REFUSED_ISO["remedy"],
+            "Bearing check: repeat the measurement, or compare it with a "
+            "comparable earlier measurement.",
+        ]
+
+    def test_no_indication_never_reads_as_healthy(self):
+        """golden_noise: seeded noise, no defect by construction."""
+        from _golden_signals import FS as GOLDEN_FS
+        from _golden_signals import golden_signals
+
+        result = diagnose_vibration(
+            golden_signals()["golden_noise"],
+            GOLDEN_FS,
+            rpm=1800,
+            bearing_id="6205",
+            anomaly_model_name=NO_MODEL,
+        )
+        text = result["overall_diagnosis"]
+
+        assert result["bearing_faults"]["claim"]["conditions"] == ["no_indication"]
+        assert result["bearing_faults"]["most_likely_fault"] is None
+        assert (
+            "Bearing analysis: No eligible line at a tested characteristic frequency "
+            "stands above the local noise floor in this record and band. This is not "
+            "evidence that the bearing is free of defects." in text
+        )
+        assert "healthy" not in text.lower()
+        assert _bearing_actions(result) == []
+        assert result["evidence_strength"] == "none"
+
+    def test_the_zone_d_action_stays_beside_single_spectrum_evidence(self):
+        """AE11: the same envelope evidence with an ISO zone D velocity."""
+        bearing = check_all_bearing_faults(_bpfo_carrier(10.0), 10000, "6205", 1800)
+        zone_d = {
+            "status": "assessed",
+            "zone": "D",
+            "rms_velocity_mm_s": 12.0,
+            "severity_level": "Unacceptable",
         }
-        assert "high" in strengths  # bearing check contributes +2.0
-        assert result["evidence_strength"] == "strong"
+
+        text, strength, recommendations = self._synthesize(bearing, iso=zone_d)
+
+        assert bearing["claim"]["level"] == "single_spectrum_evidence"
+        assert recommendations == [
+            "IMMEDIATE ACTION: Stop machine and inspect.",
+            "Bearing 6205: confirm the single-spectrum indication with a comparable "
+            "measurement or an inspection of the outer race.",
+        ]
+        assert strength == "strong"  # zone D +2.0, bearing +1.0
+        offending = re.compile(r"replace bearing|plan replacement", re.IGNORECASE)
+        assert not [s for s in [text, *recommendations] if offending.search(s)]

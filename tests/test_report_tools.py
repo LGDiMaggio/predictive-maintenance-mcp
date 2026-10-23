@@ -4,10 +4,13 @@ Since U8 every report tool takes signal_id as its only signal handle:
 signals are loaded once via the repository and referenced by id.
 """
 
+import inspect
 import json
 import logging
 import os
 import pickle
+from html import escape as html_escape
+
 import pytest
 import numpy as np
 import pandas as pd
@@ -19,9 +22,66 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 from sklearn.svm import OneClassSVM
 
+from _bearing_scenarios import (
+    DEFECT_SEED,
+    FAULT_FREE_SEED,
+    FREQUENCIES_6205,
+    RPM_6205,
+    defect,
+    white,
+)
+from predictive_maintenance_mcp.mcp_tools.diagnostics_tools import check_bearing_faults
 from predictive_maintenance_mcp.mcp_tools.report_tools import register
 from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
 from predictive_maintenance_mcp.mcp_tools import report_tools
+from test_diagnostics_tools import LEDGER_ASSET, LEDGER_POINT, _declare_point
+
+SHAFT_6205_HZ = RPM_6205 / 60.0
+
+#: The 6205 at 1797 rpm as the tool's docstring example declares it.
+DECLARED_6205 = {"BPFO": 107.36, "BPFI": 162.19, "BSF": 70.58, "FTF": 11.93}
+
+#: The closing sentence of every single-spectrum and qualified statement.
+ASSUMPTION = (
+    "The line test assumes the record's background is random measurement "
+    "noise, which this single acquisition does not verify; the result is not "
+    "a confirmed fault."
+)
+
+#: The claim statement of an outer-race indication checked without a speed.
+OUTER_RACE_WITHOUT_SPEED = (
+    "The envelope evidence of this single spectrum is consistent with an "
+    "outer-race defect, but shaft speed was not available to this check, so the "
+    "shaft-order test did not run and an overlap of the outer-race line (BPFO) "
+    "with a shaft harmonic cannot be excluded. No single fault type is named "
+    f"from this spectrum. {ASSUMPTION}"
+)
+
+#: The same, beside an inner-race line that stands above the floor.
+OUTER_RACE_BESIDE_INNER_RACE_WITHOUT_SPEED = (
+    "The envelope evidence of this single spectrum is consistent with an "
+    "outer-race defect, but shaft speed was not available to this check, so the "
+    "shaft-order test did not run and an overlap of the outer-race line (BPFO) "
+    "with a shaft harmonic cannot be excluded; and the inner-race line (BPFI) "
+    "also stands above the local noise floor, and without the shaft speed it "
+    "could not be tested whether BPFI minus twice the shaft rate, where a "
+    "sideband of that line would lie, falls within the search window of the "
+    "outer-race line (BPFO), so an inner-race defect cannot be excluded. No "
+    f"single fault type is named from this spectrum. {ASSUMPTION}"
+)
+
+#: What the envelope report states when no speed was available.
+NO_SPEED_NOTE = "Shaft speed was not available to this check"
+
+#: The report's note when the bearing statement already says it.
+SOURCE_NOTE = (
+    "No rpm was passed, and none is declared in the two fields this report "
+    "reads, the rpm of the signal's measurement and the nominal rpm of its "
+    "measurement point."
+)
+
+#: White-noise records of the envelope-report label test.
+ENVELOPE_NOISE_SEEDS = 20
 
 #: Derived from the module so it cannot drift from the logger the
 #: tools actually write to.
@@ -137,6 +197,63 @@ def _load_extra_signal(
         with open(meta_path, "w") as f:
             json.dump({"sampling_rate": fs, "signal_unit": "g"}, f)
     return repo.load_signal(name)["signal_id"]
+
+
+def _write_and_load(repo, signals_dir, name, samples, fs, measurement=None, **extra):
+    """Write samples and a companion (rate, unit 'g', ``extra``, and the
+    optional measurement identity) and load them; returns the signal_id."""
+    pd.DataFrame(samples).to_csv(signals_dir / f"{name}.csv", index=False, header=False)
+    companion = {"sampling_rate": fs, "signal_unit": "g", **extra}
+    if measurement is not None:
+        companion["measurement"] = measurement
+    with open(signals_dir / f"{name}_metadata.json", "w") as f:
+        json.dump(companion, f)
+    return repo.load_signal(f"{name}.csv")["signal_id"]
+
+
+def _outer_race_10s() -> np.ndarray:
+    """An outer-race defect of a 6205 at 1797 rpm, 10 s at 12 kHz, -15 dB."""
+    return defect(
+        "outer",
+        np.random.default_rng((DEFECT_SEED, 40, 0)),
+        12000.0,
+        10.0,
+        FREQUENCIES_6205,
+        SHAFT_6205_HZ,
+        -15.0,
+    )
+
+
+def _outer_race_beside_a_weak_inner_race() -> np.ndarray:
+    """10 s at 12 kHz: a 3 kHz carrier modulated by an impulse train at the
+    declared BPFO, a weak component at the declared BPFI and white noise.
+
+    With the 6205 speed (1797 rpm) the outer-race line is supported, the
+    inner-race line stands above the floor without a counted line of its own,
+    and BPFI minus twice the shaft rate (102.3 Hz) lies in the outer-race
+    window (107.36 Hz +/- 5.37 Hz), so the check qualifies the outer race
+    (inner_race_sideband_not_excluded).
+    """
+    t = np.arange(0, 10.0, 1 / 12000.0)
+    carrier = np.sin(2 * np.pi * 3000.0 * t)
+    outer = np.exp(-25.0 * ((t * DECLARED_6205["BPFO"]) % 1.0))
+    inner = np.sin(2 * np.pi * DECLARED_6205["BPFI"] * t)
+    noise = np.random.default_rng(0).standard_normal(t.size)
+    return carrier * (0.3 + outer) + 0.09 * carrier * inner + 0.8 * noise
+
+
+@pytest.fixture
+def line_checks(monkeypatch):
+    """Every line test the envelope report hands to save_envelope_report."""
+    captured = []
+    save = report_tools.save_envelope_report
+
+    def spy(**kwargs):
+        captured.append(kwargs["line_check"])
+        return save(**kwargs)
+
+    monkeypatch.setattr(report_tools, "save_envelope_report", spy)
+    return captured
 
 
 # ---------------------------------------------------------------------------
@@ -528,10 +645,10 @@ class TestGenerateEnvelopeReport:
             await tools["generate_envelope_report"](signal_id="no_meta_env")
 
     @pytest.mark.asyncio
-    async def test_envelope_report_with_ctx_bearing_matches(
+    async def test_envelope_report_with_ctx_bearing_line_test(
         self, tools, repo, reports_dir, mock_ctx, package_caplog
     ):
-        """Bearing matches are reported on the module logger, not to ctx."""
+        """The bearing line test is reported on the module logger, not to ctx."""
         await tools["generate_envelope_report"](
             signal_id="report_test",
             filter_low=100.0,
@@ -539,12 +656,589 @@ class TestGenerateEnvelopeReport:
             bearing_freqs={"BPFO": 50.0, "BPFI": 100.0},
             ctx=mock_ctx,
         )
-        # The bearing-matches line specifically, not "some record exists":
+        # The line-test record specifically, not "some record exists":
         # three unconditional logger.info calls run before this branch is
         # even reached, so a bare `assert caplog.records` stayed green with
         # the branch deleted — which is the whole subject of this test.
-        assert _logged(package_caplog, "Bearing frequency matches")
+        assert _logged(package_caplog, "Bearing line test")
         mock_ctx.info.assert_not_called()  # SEP-2577: not the client's channel
+
+    @pytest.mark.asyncio
+    async def test_white_noise_carries_no_bearing_label(
+        self, tools, data_dir, repo, reports_dir
+    ):
+        """T1 PR C: labels come from the central line test. White noise, 1 s
+        at 12 kHz, 6205 frequencies at 1797 rpm: no seed carries a label (the
+        former peak-to-frequency matcher labelled most of them)."""
+        labelled = []
+        for i in range(ENVELOPE_NOISE_SEEDS):
+            rng = np.random.default_rng(FAULT_FREE_SEED + 1000 + i)
+            sid = _write_and_load(
+                repo,
+                data_dir,
+                f"env_noise_{i}",
+                white(rng, 12000.0, 1.0, SHAFT_6205_HZ),
+                12000.0,
+                **FREQUENCIES_6205,
+            )
+            result = await tools["generate_envelope_report"](signal_id=sid)
+            if result["bearing_matches"]:
+                labelled.append((sid, result["bearing_matches"]))
+
+        assert not labelled, labelled
+
+    @pytest.mark.asyncio
+    async def test_labels_without_a_declared_speed_say_the_tests_did_not_run(
+        self, tools, data_dir, repo, reports_dir, line_checks
+    ):
+        """No rpm parameter, no measurement rpm and no point: the check runs
+        without the sideband and shaft-order tests, every label and the report
+        say so, and the outer-race indication is qualified (shaft_tests_not_run),
+        never single-spectrum evidence."""
+        sid = _write_and_load(
+            repo, data_dir, "env_outer", _outer_race_10s(), 12000.0, **FREQUENCIES_6205
+        )
+
+        result = await tools["generate_envelope_report"](signal_id=sid)
+
+        (check,) = line_checks
+        assert check["rpm"] is None and check["shaft_frequency_hz"] is None
+        assert check["outcome"] == "indicated"
+        assert check["claim"]["level"] == "qualified"
+        assert check["claim"]["conditions"] == ["shaft_tests_not_run"]
+        assert check["most_likely_fault"] is None
+        (label,) = result["bearing_matches"]
+        assert label.startswith("BPFO line at ")
+        assert label.endswith(
+            "above the local noise floor and corroborated in this spectrum; shaft "
+            "speed was not available to this check, so the shaft-rate sideband test "
+            "and the shaft-order test did not run"
+        )
+        assert result["bearing_assessment"] == OUTER_RACE_WITHOUT_SPEED
+        rendered = Path(result["file_path"]).read_text(encoding="utf-8")
+        # The statement already says the speed was not available; the note
+        # adds only which fields were read and does not repeat the tests.
+        assert html_escape(SOURCE_NOTE) in rendered
+        assert "The line test therefore ran without" not in rendered
+        assert html_escape(label) in rendered
+        assert html_escape(result["bearing_assessment"]) in rendered
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("rpm", [None, RPM_6205], ids=["no_rpm", "rpm"])
+    async def test_several_types_say_whether_the_shaft_order_test_ran(
+        self, tools, data_dir, repo, reports_dir, line_checks, rpm
+    ):
+        """Owner correction (PR C wording gate): combined outer- and inner-race
+        defects at -5 dB stay several types with the same two candidates with
+        and without rpm, and the claim, the returned assessment and the HTML
+        agree on whether the shaft-order test ran, each saying it once."""
+        signal = defect(
+            "combined",
+            np.random.default_rng((DEFECT_SEED, 42, 0)),
+            12000.0,
+            10.0,
+            FREQUENCIES_6205,
+            SHAFT_6205_HZ,
+            -5.0,
+        )
+        sid = _write_and_load(
+            repo, data_dir, "env_combined", signal, 12000.0, **FREQUENCIES_6205
+        )
+        kwargs = {} if rpm is None else {"rpm": rpm}
+
+        result = await tools["generate_envelope_report"](signal_id=sid, **kwargs)
+
+        (check,) = line_checks
+        text = result["bearing_assessment"]
+        rendered = Path(result["file_path"]).read_text(encoding="utf-8")
+        assert check["outcome"] == "several_types"
+        assert [c["fault_type"] for c in check["candidates"]] == ["BPFO", "BPFI"]
+        assert check["most_likely_fault"] is None
+        assert text.count(ASSUMPTION) == 1 and text.endswith(ASSUMPTION)
+        assert html_escape(text) in rendered
+        if rpm is None:
+            assert check["claim"]["conditions"] == [
+                "several_types",
+                "shaft_tests_not_run",
+            ]
+            assert text.count(NO_SPEED_NOTE) == 1
+            assert "sideband" not in text
+            assert html_escape(SOURCE_NOTE) in rendered
+            assert "The line test therefore ran without" not in rendered
+        else:
+            assert check["claim"]["conditions"] == ["several_types"]
+            assert NO_SPEED_NOTE not in rendered
+            assert SOURCE_NOTE not in rendered
+
+    @pytest.mark.asyncio
+    async def test_a_declared_measurement_speed_runs_every_test(
+        self, tools, data_dir, repo, reports_dir
+    ):
+        """The measurement's rpm, as diagnose_vibration resolves it, gives the
+        check its shaft rate: the labels carry no note."""
+        sid = _write_and_load(
+            repo,
+            data_dir,
+            "env_outer_rpm",
+            _outer_race_10s(),
+            12000.0,
+            measurement={
+                "asset_id": "P-101",
+                "measurement_point_id": "motor_de_h",
+                "acquired_at": "2026-10-22T08:00:00+00:00",
+                "rpm": RPM_6205,
+            },
+            **FREQUENCIES_6205,
+        )
+
+        result = await tools["generate_envelope_report"](signal_id=sid)
+
+        (label,) = result["bearing_matches"]
+        assert label.startswith("BPFO line at ")
+        assert label.endswith(
+            "above the local noise floor and corroborated in this spectrum"
+        )
+        rendered = Path(result["file_path"]).read_text(encoding="utf-8")
+        assert NO_SPEED_NOTE not in rendered
+
+    @pytest.mark.asyncio
+    async def test_without_a_speed_the_claim_is_no_stronger_than_the_bearing_check(
+        self, tools, data_dir, repo, reports_dir, line_checks
+    ):
+        """Review finding: on a record where check_bearing_faults, given the
+        speed, qualifies an outer-race indication (inner_race_sideband_not_
+        excluded), the report without a speed used to name the outer race as
+        single-spectrum evidence. Without rpm it is now qualified because the
+        shaft tests did not run; with rpm=1797 it states the claim
+        check_bearing_faults states."""
+        sid = _write_and_load(
+            repo,
+            data_dir,
+            "env_outer_weak_inner",
+            _outer_race_beside_a_weak_inner_race(),
+            12000.0,
+            **DECLARED_6205,
+        )
+        faults = await check_bearing_faults(
+            None, sid, rpm=RPM_6205, frequencies=dict(DECLARED_6205)
+        )
+        assert faults.outcome == "indicated"
+        assert faults.claim.level == "qualified"
+        assert faults.claim.conditions == ["inner_race_sideband_not_excluded"]
+
+        without = await tools["generate_envelope_report"](signal_id=sid)
+        with_speed = await tools["generate_envelope_report"](
+            signal_id=sid, rpm=RPM_6205
+        )
+
+        no_speed_check, speed_check = line_checks
+        assert no_speed_check["outcome"] == "indicated"
+        assert no_speed_check["claim"]["level"] != "single_spectrum_evidence"
+        assert no_speed_check["claim"]["level"] == "qualified"
+        assert no_speed_check["claim"]["conditions"] == ["shaft_tests_not_run"]
+        assert no_speed_check["most_likely_fault"] is None
+        assert (
+            without["bearing_assessment"] == OUTER_RACE_BESIDE_INNER_RACE_WITHOUT_SPEED
+        )
+        assert speed_check["claim"] == faults.claim.model_dump()
+        assert speed_check["most_likely_fault"] is None
+        assert with_speed["bearing_assessment"] == faults.overall_assessment
+
+    @pytest.mark.asyncio
+    async def test_an_explicit_rpm_runs_the_sideband_and_shaft_order_tests(
+        self, tools, data_dir, repo, reports_dir, line_checks
+    ):
+        """A signal that declares no speed: the rpm parameter gives the check
+        its shaft rate, the labels carry no note, and the claim is the one
+        check_bearing_faults states with the same speed."""
+        sid = _write_and_load(
+            repo,
+            data_dir,
+            "env_outer_arg",
+            _outer_race_10s(),
+            12000.0,
+            **FREQUENCIES_6205,
+        )
+        faults = await check_bearing_faults(
+            None, sid, rpm=RPM_6205, frequencies=dict(FREQUENCIES_6205)
+        )
+
+        result = await tools["generate_envelope_report"](signal_id=sid, rpm=RPM_6205)
+
+        (check,) = line_checks
+        assert check["rpm"] == RPM_6205
+        assert check["shaft_frequency_hz"] == pytest.approx(SHAFT_6205_HZ)
+        assert check["claim"] == faults.claim.model_dump()
+        assert check["claim"]["level"] == "single_spectrum_evidence"
+        assert result["bearing_assessment"] == faults.overall_assessment
+        (label,) = result["bearing_matches"]
+        assert label.startswith("BPFO line at ")
+        assert label.endswith(
+            "above the local noise floor and corroborated in this spectrum"
+        )
+        rendered = Path(result["file_path"]).read_text(encoding="utf-8")
+        assert NO_SPEED_NOTE not in rendered
+
+    @pytest.mark.asyncio
+    async def test_an_explicit_rpm_takes_precedence_over_the_declared_one(
+        self, tools, data_dir, repo, reports_dir, line_checks
+    ):
+        sid = _write_and_load(
+            repo,
+            data_dir,
+            "env_outer_both",
+            _outer_race_10s(),
+            12000.0,
+            measurement={
+                "asset_id": "P-101",
+                "measurement_point_id": "motor_de_h",
+                "acquired_at": "2026-10-22T08:00:00+00:00",
+                "rpm": 1500.0,
+            },
+            **FREQUENCIES_6205,
+        )
+
+        await tools["generate_envelope_report"](signal_id=sid, rpm=RPM_6205)
+        await tools["generate_envelope_report"](signal_id=sid)
+
+        explicit, declared = line_checks
+        assert explicit["rpm"] == RPM_6205
+        assert declared["rpm"] == 1500.0
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("measurement_rpm", "point_rpm", "rpm", "recorded"),
+        [
+            (None, None, None, (None, None)),
+            (1500.0, None, None, (1500.0, "measurement")),
+            (None, 1500.0, None, (1500.0, "point")),
+            (1500.0, None, RPM_6205, (RPM_6205, "explicit")),
+        ],
+        ids=["no_speed", "measurement", "point", "explicit"],
+    )
+    async def test_the_report_records_its_speed_and_where_it_came_from(
+        self,
+        tools,
+        data_dir,
+        repo,
+        reports_dir,
+        measurement_rpm,
+        point_rpm,
+        rpm,
+        recorded,
+    ):
+        """Review finding: the claim depends on the speed, so the returned and
+        the embedded metadata record the speed the line test used and its
+        source, in the vocabulary of diagnose_vibration's parameter_sources;
+        two reports on one signal can be told apart."""
+        measurement = {
+            "asset_id": LEDGER_ASSET,
+            "measurement_point_id": LEDGER_POINT,
+            "acquired_at": "2026-10-22T08:00:00+00:00",
+            "direction": "horizontal",
+        }
+        if measurement_rpm is not None:
+            measurement["rpm"] = measurement_rpm
+        if point_rpm is not None:
+            _declare_point(nominal_rpm=point_rpm)
+        sid = _write_and_load(
+            repo,
+            data_dir,
+            "env_speed_source",
+            _outer_race_10s(),
+            12000.0,
+            measurement=measurement,
+            **FREQUENCIES_6205,
+        )
+        kwargs = {} if rpm is None else {"rpm": rpm}
+
+        result = await tools["generate_envelope_report"](signal_id=sid, **kwargs)
+
+        returned = result["metadata"]
+        assert (returned["rpm"], returned["rpm_source"]) == recorded
+        embedded = tools["list_html_reports"](file_name=result["file_name"])["metadata"]
+        assert (embedded["rpm"], embedded["rpm_source"]) == recorded
+
+    @pytest.mark.asyncio
+    async def test_an_explicit_rpm_bypasses_a_malformed_declared_speed(
+        self, tools, data_dir, repo, reports_dir, line_checks
+    ):
+        """Review finding: with a point declaration whose nominal_rpm is
+        malformed, a call without rpm is refused before any report, an
+        explicit rpm is used without reading the declaration, and a call
+        without bearing frequencies stays descriptive."""
+        sid = _write_and_load(
+            repo,
+            data_dir,
+            "env_bad_point",
+            _outer_race_10s(),
+            12000.0,
+            measurement={
+                "asset_id": LEDGER_ASSET,
+                "measurement_point_id": LEDGER_POINT,
+                "acquired_at": "2026-10-22T08:00:00+00:00",
+                "direction": "horizontal",
+            },
+        )
+        _declare_point(nominal_rpm=-5.0)
+        freqs = dict(FREQUENCIES_6205)
+
+        with pytest.raises(ValueError, match="declared context"):
+            await tools["generate_envelope_report"](signal_id=sid, bearing_freqs=freqs)
+        assert list(reports_dir.iterdir()) == []
+
+        explicit = await tools["generate_envelope_report"](
+            signal_id=sid, bearing_freqs=freqs, rpm=RPM_6205
+        )
+        plain = await tools["generate_envelope_report"](signal_id=sid)
+
+        explicit_check, plain_check = line_checks
+        assert explicit_check["rpm"] == RPM_6205
+        assert explicit["metadata"]["rpm_source"] == "explicit"
+        assert plain_check is None
+        assert plain["bearing_assessment"] is None
+        assert (plain["metadata"]["rpm"], plain["metadata"]["rpm_source"]) == (
+            None,
+            None,
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "rpm",
+        [0.0, -1797.0, float("nan"), float("inf")],
+        ids=["zero", "negative", "nan", "inf"],
+    )
+    async def test_an_invalid_rpm_is_refused_before_any_report(
+        self, tools, data_dir, repo, reports_dir, rpm
+    ):
+        sid = _write_and_load(
+            repo,
+            data_dir,
+            "env_outer_bad",
+            _outer_race_10s(),
+            12000.0,
+            **FREQUENCIES_6205,
+        )
+
+        with pytest.raises(ValueError) as exc_info:
+            await tools["generate_envelope_report"](signal_id=sid, rpm=rpm)
+
+        msg = str(exc_info.value)
+        assert "rpm must be positive and finite" in msg
+        assert "the rpm parameter" in msg
+        assert "omit rpm" in msg
+        assert list(reports_dir.iterdir()) == []
+
+    @pytest.mark.asyncio
+    async def test_a_label_outside_the_vocabulary_is_not_capped_without_a_speed(
+        self, tools, data_dir, repo, reports_dir, line_checks
+    ):
+        """A custom label never gets the shaft-order rule: without rpm its
+        indication stays single-spectrum evidence, label-neutral."""
+        sid = _write_and_load(repo, data_dir, "env_gmf", _outer_race_10s(), 12000.0)
+
+        result = await tools["generate_envelope_report"](
+            signal_id=sid, bearing_freqs={"GMF": FREQUENCIES_6205["BPFO"]}
+        )
+
+        (check,) = line_checks
+        assert check["rpm"] is None
+        assert check["outcome"] == "indicated"
+        assert check["claim"]["level"] == "single_spectrum_evidence"
+        assert check["claim"]["conditions"] == []
+        assert result["bearing_assessment"].startswith(
+            "The envelope evidence of this single spectrum is consistent with a "
+            "periodic line at the declared GMF frequency: the GMF line at"
+        )
+        assert "defect" not in result["bearing_assessment"]
+        (label,) = result["bearing_matches"]
+        assert label.startswith("GMF line at ")
+        # Neither test the missing speed leaves out applies to a custom label.
+        assert label.endswith(
+            "above the local noise floor and corroborated in this spectrum"
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("rpm", [None, RPM_6205], ids=["no_rpm", "rpm"])
+    async def test_without_bearing_frequencies_the_report_stays_descriptive(
+        self, tools, data_dir, repo, reports_dir, line_checks, monkeypatch, rpm
+    ):
+        """No bearing_freqs and none in the companion: no line test runs, with
+        or without rpm, and the report states no claim, marks no line and
+        draws no bearing reference."""
+
+        def no_line_test(*args, **kwargs):
+            raise AssertionError("the line test ran without reference frequencies")
+
+        monkeypatch.setattr(report_tools, "check_frequency_set", no_line_test)
+        sid = _write_and_load(repo, data_dir, "env_plain", _outer_race_10s(), 12000.0)
+        kwargs = {} if rpm is None else {"rpm": rpm}
+
+        result = await tools["generate_envelope_report"](signal_id=sid, **kwargs)
+
+        assert line_checks == [None]
+        assert result["bearing_matches"] == []
+        assert result["bearing_assessment"] is None
+        assert result["metadata"]["bearing_frequencies"] is None
+        # No line test used a speed, even a given one, so none is recorded.
+        assert (result["metadata"]["rpm"], result["metadata"]["rpm_source"]) == (
+            None,
+            None,
+        )
+        assert result["peak_frequencies"]
+        rendered = Path(result["file_path"]).read_text(encoding="utf-8")
+        assert "Envelope Spectrum Peaks" in rendered
+        for absent in (
+            "Bearing line test",
+            "Bearing Characteristic Frequencies",
+            "consistent with",
+            "single spectrum",
+            "No single fault type",
+            "inconclusive",
+            "No eligible line",
+            NO_SPEED_NOTE,
+        ):
+            assert absent not in rendered, absent
+
+    @pytest.mark.asyncio
+    async def test_existing_calls_keep_their_meaning(
+        self, repo, reports_dir, line_checks
+    ):
+        """rpm is the last parameter, after ctx: every positional argument
+        keeps its position, and a call without rpm runs as before."""
+        assert list(
+            inspect.signature(report_tools.generate_envelope_report).parameters
+        ) == [
+            "signal_id",
+            "filter_low",
+            "filter_high",
+            "max_freq",
+            "num_peaks",
+            "bearing_freqs",
+            "ctx",
+            "rpm",
+        ]
+        freqs = {"BPFO": 81.0, "BPFI": 119.0, "BSF": 64.0, "FTF": 15.0}
+        generate = report_tools.generate_envelope_report
+
+        results = [
+            await generate("report_test", 100.0, 4000.0, 500.0, 15, freqs),
+            await generate("report_test", 100.0, 4000.0, 500.0, 15, freqs, None),
+            await generate(
+                signal_id="report_test",
+                filter_low=100.0,
+                filter_high=4000.0,
+                max_freq=500.0,
+                num_peaks=15,
+                bearing_freqs=freqs,
+            ),
+        ]
+
+        assert len(line_checks) == 3
+        assert all(check["rpm"] is None for check in line_checks)
+        assert line_checks[0] == line_checks[1] == line_checks[2]
+        for result in results:
+            assert result["metadata"]["filter_band"] == (100.0, 4000.0)
+            assert result["metadata"]["bearing_frequencies"] == freqs
+
+    def test_the_input_schema_gains_only_an_optional_rpm(self, mcp):
+        (tool,) = [
+            t
+            for t in mcp._tool_manager._tools.values()
+            if t.name == "generate_envelope_report"
+        ]
+        properties = tool.parameters["properties"]
+
+        assert set(properties) == {
+            "signal_id",
+            "filter_low",
+            "filter_high",
+            "max_freq",
+            "num_peaks",
+            "bearing_freqs",
+            "rpm",
+        }
+        assert tool.parameters["required"] == ["signal_id"]
+        assert properties["rpm"] == {
+            "anyOf": [{"type": "number"}, {"type": "null"}],
+            "default": None,
+            "title": "Rpm",
+        }
+        assert tool.context_kwarg == "ctx"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("rpm", [None, RPM_6205], ids=["no_rpm", "rpm"])
+    async def test_noiseless_generated_signal_withholds_the_line_labels(
+        self, tools, data_dir, repo, reports_dir, monkeypatch, line_checks, rpm
+    ):
+        """The report reads the claim's acquisition eligibility from the
+        signal's own companion, as check_bearing_faults does: a
+        generate_test_signal record with noise_level 0 gets no line label and
+        the withheld statement, with and without rpm (with an unknown
+        eligibility, the same record and frequencies get line labels)."""
+        from predictive_maintenance_mcp.mcp_tools.acquisition_tools import (
+            generate_test_signal,
+        )
+
+        monkeypatch.setattr(
+            "predictive_maintenance_mcp.mcp_tools.acquisition_tools.DATA_DIR", data_dir
+        )
+        info = await generate_test_signal(
+            signal_type="bearing_fault",
+            duration=2.0,
+            sampling_rate=10000.0,
+            noise_level=0.0,
+            random_seed=7,
+        )
+        kwargs = {} if rpm is None else {"rpm": rpm}
+
+        result = await tools["generate_envelope_report"](
+            signal_id=info.signal_id, bearing_freqs=dict(FREQUENCIES_6205), **kwargs
+        )
+
+        (check,) = line_checks
+        assert check["rpm"] == rpm
+        assert check["claim"]["level"] == "withheld"
+        assert check["claim"]["conditions"] == ["generated_without_noise"]
+        assert result["bearing_matches"] == []
+        assert result["bearing_assessment"] == (
+            "The signal's companion metadata declares a generated signal with an "
+            "additive noise level of 0; the line test assumes a recording with "
+            "measurement noise, so no bearing fault type is assessed."
+        )
+
+    @pytest.mark.asyncio
+    async def test_the_report_plots_the_spectrum_the_line_test_used(
+        self, tools, data_dir, repo, reports_dir, monkeypatch
+    ):
+        """The plotted envelope spectrum is the engine's, on the report's band
+        (mean removed, Hann window), not a second computation."""
+        import predictive_maintenance_mcp.report_generator as generator
+        from predictive_maintenance_mcp.signal_processing.spectral import (
+            envelope_spectrum_arrays,
+        )
+
+        plotted = {}
+        render = generator.create_envelope_report
+
+        def capture(**kwargs):
+            plotted.update(kwargs)
+            return render(**kwargs)
+
+        monkeypatch.setattr(generator, "create_envelope_report", capture)
+        sid = _write_and_load(
+            repo, data_dir, "env_plot", _outer_race_10s(), 12000.0, **FREQUENCIES_6205
+        )
+
+        await tools["generate_envelope_report"](signal_id=sid)
+
+        freqs, mags = envelope_spectrum_arrays(
+            repo.get_signal(sid), 12000.0, (500.0, 5000.0)
+        )
+        shown = freqs <= 500.0
+        expected_db = 20 * np.log10((mags[shown] + 1e-12) / np.max(mags[shown]))
+        assert np.allclose(plotted["env_freq"], freqs[shown])
+        assert np.allclose(plotted["env_mag_db"], expected_db)
 
 
 # ---------------------------------------------------------------------------
@@ -918,6 +1612,13 @@ class TestToolRegistration:
         }
         assert set(tools) == expected
 
+    def test_no_report_tool_takes_the_eligibility_as_an_argument(self, tools):
+        import inspect
+
+        for name in ("generate_diagnostic_report", "generate_envelope_report"):
+            parameters = inspect.signature(tools[name]).parameters
+            assert "acquisition_eligibility" not in parameters, name
+
 
 # ---------------------------------------------------------------------------
 # generate_diagnostic_report — the integrated, server-authored report
@@ -1104,6 +1805,80 @@ class TestGenerateDiagnosticReport:
         assert result["recommendations"]
         for rec in result["recommendations"]:
             assert rec["motivation"]
+
+    @pytest.mark.asyncio
+    async def test_noiseless_generated_signal_withholds_the_claim(
+        self, tools, data_dir, repo, reports_dir, mock_ctx, monkeypatch
+    ):
+        """The signal's own companion (generate_test_signal, noise_level 0)
+        reaches the report's diagnosis: the claim is withheld there too."""
+        from predictive_maintenance_mcp.mcp_tools.acquisition_tools import (
+            generate_test_signal,
+        )
+
+        monkeypatch.setattr(
+            "predictive_maintenance_mcp.mcp_tools.acquisition_tools.DATA_DIR", data_dir
+        )
+        info = await generate_test_signal(
+            signal_type="bearing_fault",
+            duration=2.0,
+            sampling_rate=10000.0,
+            noise_level=0.0,
+            random_seed=7,
+        )
+
+        result = await tools["generate_diagnostic_report"](
+            signal_id=info.signal_id, rpm=1800.0, bearing_id="6205", ctx=mock_ctx
+        )
+
+        assert result["verdict"] == (
+            "The signal's companion metadata declares a generated signal with an "
+            "additive noise level of 0; the line test assumes a recording with "
+            "measurement noise, so no bearing fault type is assessed."
+        )
+        assert result["fault_canonical"] is None
+        assert "not assessed" in result["statements"]
+        assert not [
+            r for r in result["recommendations"] if r["action"].startswith("Bearing")
+        ]
+
+    @pytest.mark.asyncio
+    async def test_single_spectrum_evidence_report_asks_for_confirmation_only(
+        self, tools, data_dir, repo, reports_dir, mock_ctx
+    ):
+        """End to end on an outer-race defect: the verdict names the type as
+        single-spectrum evidence with its confirmation step, the figure
+        emphasises its window, and no statement or action asks for
+        replacement."""
+        import html as _html
+
+        sid = _write_and_load(repo, data_dir, "rep_outer", _outer_race_10s(), 12000.0)
+
+        result = await tools["generate_diagnostic_report"](
+            signal_id=sid, rpm=RPM_6205, bearing_id="6205", ctx=mock_ctx
+        )
+
+        assert result["fault_canonical"] == "outer_race"
+        assert result["verdict"].startswith(
+            "The envelope evidence of this single spectrum is consistent with an "
+            "outer-race defect"
+        )
+        assert result["verdict"].endswith(
+            "Bearing 6205: confirm the single-spectrum indication with a comparable "
+            "measurement or an inspection of the outer race."
+        )
+        caption = next(
+            s for s in result["statements"] if s.startswith("Envelope spectrum")
+        )
+        assert caption.endswith(
+            "The emphasised window (BPFO) holds the candidate line of the bearing "
+            "statement in this report."
+        )
+        texts = result["statements"] + [r["action"] for r in result["recommendations"]]
+        assert not [t for t in texts if "replac" in t.lower()]
+        rendered = Path(result["files"][0]["file_path"]).read_text(encoding="utf-8")
+        missing = [s for s in result["statements"] if _html.escape(s) not in rendered]
+        assert missing == [], f"returned but not rendered: {missing}"
 
     def test_docstring_states_the_caller_authorship_prohibition(self, tools):
         """The docstring is what a model reads before deciding how to render."""

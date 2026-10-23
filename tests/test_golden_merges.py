@@ -25,6 +25,13 @@ Snapshot regeneration: the capture script requires the pre-merge tools and
 exists only in the U9a working notes; the snapshot is regenerable because
 the fixtures are fully deterministic. Treat golden_merges.json as frozen
 regression armor — never edit it by hand.
+
+Deliberate change (T1 PR C, 2026-10-22): ``most_likely_fault`` and
+``overall_assessment`` of a bearing summary now follow its claim, so the
+pre-merge values of the three bearing summaries (a fault "most likely" on
+seeded noise among them) were removed from the snapshot instead of
+regenerated, and expected-value tests derived from each signal's
+construction pin them; every other key and golden case is unchanged.
 """
 
 import json
@@ -275,6 +282,32 @@ class TestGoldenAnalyzeEnvelope:
 # GOLDEN: check_bearing_faults (3-way merge)
 # ===========================================================================
 
+#: golden_bearing's claim, from its construction: a true BPFO modulation
+#: indicates the outer race, but its 1 s record at 10 kHz cannot test the cage
+#: line (11.95 Hz +/- 5 % holds fewer than 3 bins) and BPFO = 9 x FTF lies in
+#: the outer-race window, so a cage defect cannot be excluded and no single
+#: type is named (deliberate change of T1 PR C, see the module docstring).
+GOLDEN_BEARING_ASSESSMENT = (
+    "The envelope evidence of this single spectrum is consistent with an "
+    "outer-race defect, but this record is too short to test the cage line "
+    "(FTF), and a harmonic of the cage frequency falls within the search window "
+    "of the outer-race line (BPFO), so a cage defect cannot be excluded. No "
+    "single fault type is named from this spectrum. The line test assumes the "
+    "record's background is random measurement noise, which this single "
+    "acquisition does not verify; the result is not a confirmed fault."
+)
+
+
+def assert_golden_bearing_claim(summary) -> None:
+    """The expected-value replacement of the removed golden summary keys."""
+    assert summary.outcome == "indicated"
+    assert [c.fault_type for c in summary.candidates] == ["BPFO"]
+    assert summary.claim.level == "qualified"
+    assert summary.claim.conditions == ["cage_comb_not_excluded"]
+    assert summary.most_likely_fault is None
+    assert summary.most_likely_fault_canonical is None
+    assert summary.overall_assessment == GOLDEN_BEARING_ASSESSMENT
+
 
 class TestGoldenCheckBearingFaults:
     @pytest.mark.asyncio
@@ -289,6 +322,7 @@ class TestGoldenCheckBearingFaults:
             rpm=1800.0,
         )
         assert_matches(new.model_dump(mode="json"), old, path="bearing_route")
+        assert_golden_bearing_claim(new)
         # New traceability fields on top of the preserved behavior:
         assert new.source, "catalog source must be echoed for bearing_id route"
         canon = {c.fault_type: c.fault_type_canonical for c in new.fault_checks}
@@ -309,6 +343,13 @@ class TestGoldenCheckBearingFaults:
             rpm=1800.0,
         )
         assert_matches(new.model_dump(mode="json"), old, path="noise_route")
+        # Seeded noise holds no defect by construction: no type is named, and
+        # the claim is withheld (deliberate change, see the module docstring).
+        assert new.outcome in ("no_indication", "inconclusive")
+        assert new.claim.level == "withheld"
+        assert new.most_likely_fault is None
+        assert new.most_likely_fault_canonical is None
+        assert "consistent with" not in new.overall_assessment
 
     @pytest.mark.asyncio
     async def test_bearing_route_matches_lookup_bearing_and_compute(
@@ -324,6 +365,7 @@ class TestGoldenCheckBearingFaults:
             rpm=1800.0,
         )
         assert_matches(new.model_dump(mode="json"), old, path="lookup_route")
+        assert_golden_bearing_claim(new)
 
     @pytest.mark.asyncio
     async def test_single_fault_check_preserved_in_summary(

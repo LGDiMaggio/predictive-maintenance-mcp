@@ -411,6 +411,40 @@ def envelope_spectrum_arrays(
         ValueError: If the requested or resolved band is invalid for this
             sampling rate.
     """
+    _, _, freqs, mags = envelope_analysis_arrays(signal, fs, frequency_range)
+    return freqs, mags
+
+
+def envelope_analysis_arrays(
+    signal: np.ndarray,
+    fs: float,
+    frequency_range: Optional[tuple[float, float]] = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Band-pass filter, envelope and envelope spectrum of one signal, in one pass.
+
+    The computation of :func:`envelope_spectrum_arrays`, which returns only
+    the last two arrays. A caller that also shows the filtered signal and
+    its envelope (the envelope report) takes all four from this single pass,
+    so its time-domain view and its spectrum come from the same filter, and
+    it can hand the spectrum to the bearing line test instead of computing it
+    again.
+
+    Args:
+        signal: 1D time-domain signal.
+        fs: Sampling frequency (Hz).
+        frequency_range: Bandpass band (low, high) in Hz. ``None`` resolves
+            to the fs-aware default described in
+            :func:`compute_envelope_spectrum`.
+
+    Returns:
+        Tuple of (band-pass filtered signal, envelope, positive envelope
+        spectrum frequencies, envelope spectrum magnitudes). Full arrays,
+        not a summary: callers returning data to an LLM must summarise first.
+
+    Raises:
+        ValueError: If the requested or resolved band is invalid for this
+            sampling rate.
+    """
     nyquist = fs / 2.0
     band_low, band_high = resolve_envelope_band(fs, frequency_range)
 
@@ -440,7 +474,7 @@ def envelope_spectrum_arrays(
     env_freqs = fftfreq(N, 1 / fs)
 
     pos_mask = env_freqs > 0
-    return env_freqs[pos_mask], np.abs(env_fft[pos_mask])
+    return filtered, envelope, env_freqs[pos_mask], np.abs(env_fft[pos_mask])
 
 
 def envelope_top_peaks(

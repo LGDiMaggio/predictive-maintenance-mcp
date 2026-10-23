@@ -46,6 +46,7 @@ from ..models import (
     ISOSeverityRefusal,
     DiagnosisParameterSource,
     DiagnosisResult,
+    StoredSignalInfo,
 )
 from ..document_reader import (
     calculate_bearing_frequencies,
@@ -60,6 +61,7 @@ from ..diagnostics.bearing_analyzer import (
     check_all_bearing_faults as _check_all_faults,
     check_frequency_set as _check_frequency_set,
 )
+from ..diagnostics.bearing_claims import acquisition_eligibility_from_companion
 from ..diagnostics.iso20816 import (
     assess_severity_raw,
     classify_zone,
@@ -1371,9 +1373,11 @@ async def check_bearing_faults(
         tolerance_pct: Frequency matching tolerance in percent (default 5).
 
     Returns:
-        BearingFaultsSummary with one check per expected frequency,
-        overall assessment, most likely fault (+ canonical form), and the
-        provenance of the expected frequencies (`source`).
+        BearingFaultsSummary with one check per expected frequency, the
+        claim, the overall assessment that follows it, most_likely_fault and
+        its canonical form, set only when the claim is
+        single_spectrum_evidence, and the provenance of the expected
+        frequencies (`source`).
 
     Raises:
         ValueError: If not exactly one route is given, if the geometry is
@@ -1414,6 +1418,7 @@ async def check_bearing_faults(
 
     signal_data, info = resolve_signal(signal_id)
     fs = info.sampling_rate
+    eligibility = acquisition_eligibility_from_companion(info.source_metadata)
 
     if bearing_id is not None:
         # --- Catalog route (former check_bearing_faults_direct /
@@ -1426,6 +1431,7 @@ async def check_bearing_faults(
             rpm=rpm,
             signal_id=signal_id,
             tolerance_pct=tolerance_pct,
+            acquisition_eligibility=eligibility,
         )
     elif frequencies is not None:
         # --- Explicit-frequencies route (gearbox / out-of-catalog) -----
@@ -1440,6 +1446,7 @@ async def check_bearing_faults(
             rpm=rpm,
             signal_id=signal_id,
             tolerance_pct=tolerance_pct,
+            acquisition_eligibility=eligibility,
         )
         result["source"] = "user-provided frequencies"
     else:
@@ -1470,6 +1477,7 @@ async def check_bearing_faults(
             rpm=rpm,
             signal_id=signal_id,
             tolerance_pct=tolerance_pct,
+            acquisition_eligibility=eligibility,
         )
         result["source"] = "user-provided geometry"
 
@@ -1491,6 +1499,7 @@ async def check_bearing_faults(
         next_step=result["next_step"],
         candidates=result["candidates"],
         evidence_policy=result["evidence_policy"],
+        claim=result["claim"],
     )
 
 
@@ -1618,6 +1627,59 @@ def _missing_rpm_message(
     )
 
 
+def _declared_context(
+    signal_id: str,
+    identity: Optional[dict[str, Any]],
+    point: Optional[dict[str, Any]],
+) -> dict[str, Any]:
+    """The declared context of a signal: its measurement, then its point.
+
+    Raises:
+        ValueError: If a declared value is malformed (the message names the
+            remedies).
+    """
+    declared: dict[str, Any] = dict(identity) if identity is not None else {}
+    try:
+        return _resolve_declared_context(declared, point)
+    except ValueError as exc:
+        raise ValueError(
+            f"The declared context of signal '{signal_id}' cannot be used: "
+            f"{exc} Re-declare the measurement point with "
+            f"declare_measurement_point(...), fix the companion and re-load "
+            f"the file, or pass the parameter explicitly to this call."
+        ) from exc
+
+
+def declared_rpm(
+    signal_id: str, info: StoredSignalInfo
+) -> tuple[Optional[float], Optional[str]]:
+    """The operating speed a stored signal declares, and where, or Nones.
+
+    Resolved as diagnose_vibration resolves an rpm it is not given: the rpm
+    of the companion's "measurement" object, then the nominal_rpm of the
+    measurement point's current declaration in the asset ledger. Never
+    estimated and never defaulted.
+
+    Args:
+        signal_id: The stored signal (for messages).
+        info: Its stored metadata.
+
+    Returns:
+        The declared rpm and its source, "measurement" or "point" as
+        diagnose_vibration's parameter_sources name them; (None, None) when
+        neither source declares one.
+
+    Raises:
+        ValueError: If a declared value is malformed.
+    """
+    identity = info.measurement
+    point = _point_context_for(signal_id, identity)
+    context = _declared_context(signal_id, identity, point)
+    if context["rpm"] is None:
+        return None, None
+    return float(context["rpm"]), context["rpm_source"]
+
+
 def _resolve_diagnosis_parameters(
     signal_id: str,
     identity: Optional[dict[str, Any]],
@@ -1656,16 +1718,7 @@ def _resolve_diagnosis_parameters(
         ValueError: If no source provides an rpm (the message names the
             three remedies), or if a declared value is malformed.
     """
-    declared: dict[str, Any] = dict(identity) if identity is not None else {}
-    try:
-        context = _resolve_declared_context(declared, point)
-    except ValueError as exc:
-        raise ValueError(
-            f"The declared context of signal '{signal_id}' cannot be used: "
-            f"{exc} Re-declare the measurement point with "
-            f"declare_measurement_point(...), fix the companion and re-load "
-            f"the file, or pass the parameter explicitly to this call."
-        ) from exc
+    context = _declared_context(signal_id, identity, point)
 
     sources: dict[str, DiagnosisParameterSource] = {}
 
@@ -1889,6 +1942,9 @@ async def diagnose_vibration(
         support_type=parameters.support_type,
         signal_unit=signal_unit,
         unchecked_bearing=unchecked_bearing,
+        acquisition_eligibility=acquisition_eligibility_from_companion(
+            info.source_metadata
+        ),
     )
 
     overall_diagnosis: str = result["overall_diagnosis"]
@@ -1915,6 +1971,7 @@ async def diagnose_vibration(
             next_step=bf.get("next_step"),
             candidates=bf.get("candidates", []),
             evidence_policy=bf.get("evidence_policy"),
+            claim=bf.get("claim"),
         )
 
     # ISO block: assessed result or schema-level refusal (reason + remedy)

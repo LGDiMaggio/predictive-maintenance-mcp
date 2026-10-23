@@ -113,7 +113,7 @@ The 20 included signals should appear. If they do not, see [INSTALL.md, Troubles
 
 > *"Load real_train/OuterRaceFault_1.csv. The shaft runs at 1500 rpm: check the bearing against the fault frequencies declared in its metadata, assess the ISO severity and generate the envelope report."*
 
-What comes back is the server's evidence, not the model's opinion: two of the four declared frequencies come back as high evidence in the envelope spectrum, the outer race ranked most likely and the inner race graded high as well because its second harmonic shares a peak with the third outer-race harmonic, while the ball and cage frequencies stay unmatched; the ISO 20816-3 severity zone of the broadband velocity, with the machine group and support type the assessment assumed; and the path of an HTML report in `reports/` with those frequencies marked on the envelope spectrum. The call on the machine stays with you.
+What comes back is the server's evidence, not the model's opinion: in the envelope spectrum the outer-race and inner-race lines both stand above the local noise floor, each with a further line of its own, so the evidence of this single spectrum is consistent with more than one fault type, and the check lists both with their levels without singling either out, while neither the ball nor the cage line stands above the floor; the ISO 20816-3 severity zone of the broadband velocity, with the machine group and support type the assessment assumed; and the path of an HTML report in `reports/` with those frequencies marked on the envelope spectrum. The call on the machine stays with you.
 
 The file name carries the fault label, but the server never reads names. Ask which frequencies matched and with what deviation: the answer rests on the spectrum alone.
 

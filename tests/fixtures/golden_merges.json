@@ -779,8 +779,6 @@
           "signal_id": "golden_bearing"
         }
       ],
-      "most_likely_fault": "BPFO",
-      "overall_assessment": "Bearing fault frequencies detected: BPFO (high evidence), BSF (moderate evidence). Most likely fault: BPFO.",
       "rpm": 1800.0,
       "shaft_frequency_hz": 30.0,
       "signal_id": "golden_bearing"
@@ -877,8 +875,6 @@
           "signal_id": "golden_noise"
         }
       ],
-      "most_likely_fault": "BPFI",
-      "overall_assessment": "Bearing fault frequencies detected: BPFI (high evidence), BPFO (moderate evidence), BSF (moderate evidence). Most likely fault: BPFI.",
       "rpm": 1800.0,
       "shaft_frequency_hz": 30.0,
       "signal_id": "golden_noise"
@@ -975,8 +971,6 @@
           "signal_id": "golden_bearing"
         }
       ],
-      "most_likely_fault": "BPFO",
-      "overall_assessment": "Bearing fault frequencies detected: BPFO (high evidence), BSF (moderate evidence). Most likely fault: BPFO.",
       "rpm": 1800.0,
       "shaft_frequency_hz": 30.0,
       "signal_id": "golden_bearing"

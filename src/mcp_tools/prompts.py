@@ -28,7 +28,7 @@ def diagnose_bearing(
     Evidence-based policy:
     - Envelope peaks at characteristic frequencies are PRIMARY indicators (strong evidence)
     - Statistical indicators (CF>6, Kurtosis>6) are SECONDARY/confirmatory
-    - If envelope shows clear peaks at BPFO/BPFI/BSF/FTF (±5% tolerance) → bearing fault is STRONGLY indicated
+    - What may be said about a fault type follows the server's bearing claim (claim.level of check_bearing_faults); a single-spectrum indication asks for confirmation, never for bearing replacement
     - Additional high CF or Kurtosis reinforces the diagnosis but is not strictly required if envelope evidence is clear
 
     **ISO 20816-3 Defaults** (use if user doesn't specify):
@@ -219,7 +219,7 @@ def diagnose_bearing(
     (Or pass bearing_id="<designation>" for a catalog bearing instead of frequencies.)
 
     Optional visualization:
-    Call: generate_envelope_report(signal_id="{signal_id}", filter_low=500, filter_high=5000, max_freq=500, bearing_freqs={bearing_freqs_dict if freq_refs else freqs_placeholder})
+    Call: generate_envelope_report(signal_id="{signal_id}", filter_low=500, filter_high=5000, max_freq=500, bearing_freqs={bearing_freqs_dict if freq_refs else freqs_placeholder}{rpm_kwarg})
     This saves an interactive HTML envelope report (filtered signal +
     envelope spectrum with bearing frequency markers) to the reports/
     directory. Tell user to open the returned file path in their browser.
@@ -230,19 +230,20 @@ def diagnose_bearing(
 
     Decision tree:
 
-    A) IF envelope spectrum shows clear peak(s) at characteristic frequency (±5%):
-       → Bearing fault type is STRONGLY INDICATED
-
-       Classification by frequency:
-       • Peak at BPFO (±5%) → **Outer race fault** (canonical: outer_race)
-       • Peak at BPFI (±5%) → **Inner race fault** (canonical: inner_race)
-       • Peak at BSF (±5%) → **Rolling element (ball) fault** (canonical: ball)
-       • Peak at FTF (±5%) → **Cage fault** (canonical: cage)
-
-       Evidence strength:
-       - High evidence: Peak + harmonics present AND (CF>6 OR Kurtosis>6)
-       - Moderate evidence: Peak present but weaker harmonics OR moderate stats (CF 4-6, Kurt 3-6)
-       - Note: Even without extreme statistics, clear envelope peaks ARE diagnostic
+    A) Report the server's bearing claim from check_bearing_faults, not your own
+       reading of the peaks: claim.level and overall_assessment, verbatim.
+       • single_spectrum_evidence → "the envelope evidence of this single
+         spectrum is consistent with [type]", with its levels and its stated
+         assumption; it is not a confirmed fault and asks for confirmation
+         (a comparable earlier measurement or an inspection of that element)
+       • qualified → quote overall_assessment verbatim: it names every
+         reading the claim cannot exclude; single out none
+       • withheld → name no fault type; quote overall_assessment verbatim:
+         it says why no fault type is assessed
+       most_likely_fault is set only at single_spectrum_evidence.
+       outcome_reason and next_step describe the evidence outcome before the
+       claim: when claim.level is not single_spectrum_evidence, do not relay
+       them to name a fault type or a single element.
 
     B) IF envelope shows ambiguous/borderline peaks:
        → "Possible [fault type] - envelope peak near [frequency] but [state issue: weak magnitude, no harmonics, etc.]"
@@ -258,17 +259,18 @@ def diagnose_bearing(
     ═══════════════════════════════════════════════════════════════════════════════
 
     Based on diagnosis + ISO zone (ONLY use these recommendations - DO NOT invent others):
-    • Confirmed fault + Zone C/D → Immediate action: inspect bearing, plan replacement
-    • Confirmed fault + Zone B → Short-term action: schedule maintenance within 1-3 months, increase monitoring
-    • Confirmed fault + Zone A → Monitor closely: retest in 1-2 weeks, track progression
+    • Single-spectrum indication (any zone) → Confirm it: compare with a comparable earlier measurement or inspect the element the claim names; never request bearing replacement from envelope evidence
+    • Qualified or withheld claim (any zone) → Only the claim's actions as the server renders them (the "Bearing" entries of diagnose_vibration's recommendations, quoted verbatim): a comparable earlier, repeated or longer measurement first, or inspection of every candidate alike; none when it renders none
+    • Zone C/D → Also the zone action, whatever the bearing claim
     • No fault + Zone C/D → Investigate other causes: alignment, balance, looseness, foundation
     • No fault + Zone A/B → Continue routine monitoring
 
-    Optionally formalize:
-    Call: generate_maintenance_recommendations(severity_zone="A", fault_types=["outer_race"])
-    (Use the actual zone letter; fault_types uses the canonical vocabulary:
-    outer_race, inner_race, ball, cage, misalignment, unbalance, looseness —
-    NOT the BPFO/BPFI acronyms.)
+    Optionally formalize the zone action:
+    Call: generate_maintenance_recommendations(severity_zone="A")
+    (Use the actual zone letter. Do NOT pass fault_types taken from an
+    envelope indication of check_bearing_faults or diagnose_vibration: the
+    tool does not verify fault types, and its fault-type actions are
+    maintenance actions for an established fault.)
 
     CRITICAL: Do NOT suggest specific parameter values (e.g., filter frequencies, acquisition settings)
     unless they appear in tool outputs. Do NOT invent troubleshooting steps beyond those listed above.

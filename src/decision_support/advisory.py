@@ -23,6 +23,13 @@ Three rules hold throughout:
 3. A missing input produces an authored statement about the absence and the
    conclusion it makes unavailable. It never produces a missing section — a
    silently absent block reads as "nothing to report".
+
+Every bearing sentence, badge and action follows the bearing check's claim
+(:mod:`..diagnostics.bearing_claims`) and the central matcher's per-line
+states, from the same closed list of sentences. The legacy per-check fields
+(``detected``, ``evidence_strength``, ``detected_frequency_hz``,
+``magnitude``, ``deviation_pct``, ``harmonics_detected``) drive nothing here,
+and no inferred bearing fault type is passed to the recommendation table.
 """
 
 from __future__ import annotations
@@ -30,7 +37,20 @@ from __future__ import annotations
 import math
 from typing import Any, Optional
 
-from ..diagnostics.bearing_analyzer import FAULT_TYPE_CANONICAL
+from ..diagnostics.bearing_claims import (
+    CLAIM_SENTENCES,
+    QUALIFIED,
+    SINGLE_SPECTRUM_EVIDENCE,
+    WITHHELD,
+    claim_actions,
+    counted_lines_statements,
+    emphasised_candidates,
+    envelope_delta_statement,
+    evidence_disagreement_statement,
+    line_test_statement,
+    named_candidate,
+    state_badge,
+)
 from .recommendations import generate_recommendations
 
 #: Block status vocabulary. ``ASSESSED`` means the block reached a verdict;
@@ -41,12 +61,20 @@ REFUSED = "refused"
 ABSENT = "absent"
 
 #: Always rendered next to ``evidence_strength``. The categorical value on its
-#: own invites a reader — or a model — to hear a probability; this sentence is
+#: own invites a reader, or a model, to hear a probability; this sentence is
 #: what stops that reading.
-EVIDENCE_STRENGTH_EXPLANATION = (
-    "Evidence strength counts independent corroborating findings — it is "
-    "not a confidence score and not a probability."
-)
+EVIDENCE_STRENGTH_EXPLANATION = CLAIM_SENTENCES["evidence_strength_explanation"]
+
+#: The description of a bearing action, per claim level.
+_ACTION_DESCRIPTION = {
+    SINGLE_SPECTRUM_EVIDENCE: CLAIM_SENTENCES["action_description_evidence"],
+    QUALIFIED: CLAIM_SENTENCES["action_description_qualified"],
+    WITHHELD: CLAIM_SENTENCES["action_description_withheld"],
+}
+
+#: Urgency of a bearing action: a confirmation, inspection, repeat or
+#: acquisition step, never a maintenance action on the bearing.
+_BEARING_ACTION_URGENCY = "medium"
 
 #: Keys a ``diagnose_vibration`` result must carry. Guessing at a partial
 #: result would produce authored sentences about numbers that were never
@@ -62,18 +90,8 @@ _ACCEPTABLE_ZONES = ("A", "B")
 #: ratio, living on a 0-100 scale, would win almost every time.
 _HEADLINE_ORDER = ("envelope_magnitude", "rms_velocity", "anomaly_ratio")
 
-
-def _fault_label(canonical: Optional[str]) -> str:
-    """Render a canonical fault type as prose ('outer_race' -> 'outer race')."""
-    return canonical.replace("_", " ") if canonical else ""
-
-
-def _acronym_for(canonical: Optional[str]) -> str:
-    """Reverse-map a canonical fault type to its bearing acronym."""
-    for acronym, value in FAULT_TYPE_CANONICAL.items():
-        if value == canonical:
-            return acronym
-    return ""
+#: Anomaly-model verdicts that flag a departure from the learned pattern.
+_ANOMALY_FLAGS = ("Faulty", "Suspicious")
 
 
 # ---------------------------------------------------------------------------
@@ -129,11 +147,13 @@ def _build_bearing_block(
     bearing_check: Optional[dict],
     bearing_id: Optional[str],
 ) -> dict:
-    """Author the frequency-matching block, or state why it was not attempted.
+    """Author the bearing line-test block, or state why it was not attempted.
 
     A designation that was supplied but could not be checked (the pipeline's
     ``bearing_check`` is ``not_computed``) is a refusal with the engine's
-    reason and remedy, never the "no designation supplied" absence.
+    reason and remedy, never the "no designation supplied" absence. An
+    assessed block states each tested line by its state and carries one row
+    per line with its closed-list badge.
     """
     if bearing_check and bearing_check.get("status") == "not_computed":
         return {
@@ -167,49 +187,35 @@ def _build_bearing_block(
             "rows": [],
         }
 
+    claim = bearing_faults["claim"]
+    marked = {c["fault_type"] for c in emphasised_candidates(bearing_faults)}
     rows = []
-    for check in bearing_faults.get("fault_checks", []):
+    for check in bearing_faults["fault_checks"]:
         rows.append(
             {
                 "fault_type": check["fault_type"],
                 "fault_canonical": check.get("fault_type_canonical"),
                 "expected_hz": check["expected_frequency_hz"],
-                "measured_hz": check.get("detected_frequency_hz"),
-                "deviation_pct": check.get("deviation_pct"),
-                "magnitude": check.get("magnitude"),
-                "harmonics": len(check.get("harmonics_detected") or []),
-                "matched": bool(check.get("detected")),
-                "evidence_strength": check.get("evidence_strength", "none"),
+                "line_hz": check["line_frequency_hz"],
+                "peak_hz": check.get("line_peak_hz"),
+                "amplitude": check.get("line_amplitude"),
+                "level_db": check.get("level_db"),
+                "counted_lines": sum(
+                    1 for m in check.get("corroboration") or [] if m["counted"]
+                ),
+                "state": check["state"],
+                "emphasised": check["fault_type"] in marked,
+                "badge": state_badge(check["state"], claim),
             }
-        )
-
-    matched = [r for r in rows if r["matched"]]
-    if matched:
-        parts = [
-            f"{r['fault_type']} expected at {r['expected_hz']:.2f} Hz, "
-            f"measured at {r['measured_hz']:.2f} Hz "
-            f"({r['deviation_pct']:.2f}% deviation)"
-            for r in matched
-        ]
-        statement = (
-            f"Bearing {bearing_faults.get('bearing_id')} at "
-            f"{bearing_faults.get('shaft_frequency_hz', 0.0):.1f} Hz shaft "
-            f"speed: {'; '.join(parts)}. The remaining characteristic "
-            f"frequencies did not match."
-        )
-    else:
-        statement = (
-            f"Bearing {bearing_faults.get('bearing_id')}: none of the four "
-            f"characteristic frequencies (BPFO, BPFI, BSF, FTF) matched a "
-            f"peak in the envelope spectrum within tolerance."
         )
 
     return {
         "status": ASSESSED,
-        "statement": statement,
+        "statement": line_test_statement(bearing_faults),
         "bearing_id": bearing_faults.get("bearing_id"),
         "shaft_frequency_hz": bearing_faults.get("shaft_frequency_hz"),
         "bearing_frequencies": bearing_faults.get("bearing_frequencies", {}),
+        "claim_level": claim["level"],
         "rows": rows,
     }
 
@@ -300,35 +306,50 @@ def _build_energy_block(stft_summary: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def _build_verdict(bearing_block: dict, iso_block: dict, anomaly_block: dict) -> dict:
-    """Author the headline verdict from the blocks that reached one."""
-    matched = [r for r in bearing_block.get("rows", []) if r["matched"]]
-    if matched:
-        primary = max(
-            matched,
-            key=lambda r: {"high": 3, "moderate": 2, "low": 1}.get(
-                r["evidence_strength"], 0
-            ),
+def _anomaly_flagged(anomaly_block: dict) -> bool:
+    return anomaly_block.get("overall_health") in _ANOMALY_FLAGS
+
+
+def _build_verdict(
+    bearing_faults: Optional[dict],
+    bearing_block: dict,
+    iso_block: dict,
+    anomaly_block: dict,
+) -> dict:
+    """Author the headline verdict from the blocks that reached one.
+
+    For an assessed bearing check: the claim's statement and its actions, one
+    branch per claim level. A type is named (``fault_canonical``) only at
+    single-spectrum evidence; at several types every candidate is named
+    alike; a withheld claim keeps bearing and non-bearing sources open when
+    the zone or the anomaly model points to a problem.
+    """
+    if bearing_block["status"] == ASSESSED and bearing_faults:
+        claim = bearing_faults["claim"]
+        statement = " ".join(
+            [bearing_faults["overall_assessment"], *claim_actions(bearing_faults)]
         )
-        canonical = primary["fault_canonical"]
-        label = _fault_label(canonical)
-        return {
-            "statement": (
-                f"A {label} fault is indicated: the envelope spectrum peak "
-                f"matches the {primary['fault_type']} characteristic frequency "
-                f"of this bearing within {primary['deviation_pct']:.2f}%."
-            ),
-            "fault_canonical": canonical,
-            "fault_acronym": primary["fault_type"],
-        }
+        named = named_candidate(claim, bearing_faults)
+        if named:
+            return {
+                "statement": statement,
+                "fault_canonical": named["fault_type_canonical"],
+                "fault_acronym": named["fault_type"],
+            }
+        if claim["level"] == WITHHELD:
+            if (
+                iso_block["status"] == ASSESSED
+                and iso_block["zone"] not in _ACCEPTABLE_ZONES
+            ):
+                statement += " " + CLAIM_SENTENCES["verdict_zone_elevated"].format(
+                    zone=iso_block["zone"]
+                )
+            elif _anomaly_flagged(anomaly_block):
+                statement += " " + CLAIM_SENTENCES["verdict_anomaly_flag"]
+        return {"statement": statement, "fault_canonical": None, "fault_acronym": ""}
 
     not_computed = bearing_block["status"] == REFUSED
-    if bearing_block["status"] == ASSESSED:
-        headline = (
-            "No bearing fault is indicated: no characteristic frequency "
-            "matched a peak in the envelope spectrum."
-        )
-    elif not_computed:
+    if not_computed:
         bearing_id = bearing_block.get("bearing_id")
         headline = (
             "No bearing fault verdict was reached, because characteristic-"
@@ -355,7 +376,7 @@ def _build_verdict(bearing_block: dict, iso_block: dict, anomaly_block: dict) ->
             f" Broadband vibration is nonetheless elevated "
             f"(Zone {iso_block['zone']}){tail}"
         )
-    elif anomaly_block.get("overall_health") in ("Faulty", "Suspicious"):
+    elif _anomaly_flagged(anomaly_block):
         tail = (
             unchecked
             if not_computed
@@ -379,23 +400,17 @@ def _build_evidence(
     anomaly_block: dict,
     energy_block: dict,
 ) -> dict:
-    """Collect the facts that support the verdict, as authored sentences."""
+    """Collect the facts that support the verdict, as authored sentences.
+
+    For the bearing: the counted lines of each candidate the claim lets a
+    report mark, with their levels, claiming only that they stand above the
+    local noise floor at the stated nominal false-alarm levels.
+    """
     statements: list[str] = []
 
-    for row in bearing_block.get("rows", []):
-        if not row["matched"]:
-            continue
-        acronym = row["fault_type"]
-        sentence = (
-            f"{acronym} match: expected {row['expected_hz']:.2f} Hz, measured "
-            f"{row['measured_hz']:.2f} Hz, deviation {row['deviation_pct']:.2f}%."
-        )
-        if row["harmonics"]:
-            sentence += (
-                f" {row['harmonics']} harmonic(s) of {acronym} are also "
-                f"present, which a single noise peak would not produce."
-            )
-        statements.append(sentence)
+    faults = diagnosis.get("bearing_faults")
+    if bearing_block["status"] == ASSESSED and faults:
+        statements += counted_lines_statements(faults)
 
     if iso_block["status"] == ASSESSED:
         statements.append(iso_block["statement"])
@@ -421,52 +436,51 @@ def _build_evidence(
 
 
 def _build_disagreements(
-    iso_block: dict, bearing_block: dict, anomaly_block: dict
+    iso_block: dict,
+    bearing_faults: Optional[dict],
+    bearing_block: dict,
+    anomaly_block: dict,
 ) -> list[dict]:
-    """Name the indicators that disagree, and which one governs the action.
+    """Name the indicators that disagree with an acceptable ISO zone.
 
     A refused ISO block is not an indicator and cannot disagree with one — an
-    absent verdict is silence, not a contradicting opinion.
+    absent verdict is silence, not a contradicting opinion. Only
+    single-spectrum evidence drives a bearing entry, which asks for
+    confirmation; an anomaly-model flag has its own entry, which names no
+    bearing type.
     """
     if iso_block["status"] != ASSESSED:
         return []
-    if iso_block["zone"] not in _ACCEPTABLE_ZONES:
+    zone = iso_block["zone"]
+    if zone not in _ACCEPTABLE_ZONES:
         return []
 
-    dissenting: list[str] = []
-    if anomaly_block.get("overall_health") in ("Faulty", "Suspicious"):
-        dissenting.append(
-            f"the anomaly model ({anomaly_block['overall_health']}, "
-            f"{anomaly_block['anomaly_ratio'] * 100:.0f}% of segments)"
+    entries: list[dict] = []
+    if (
+        bearing_block["status"] == ASSESSED
+        and bearing_faults
+        and bearing_faults["claim"]["level"] == SINGLE_SPECTRUM_EVIDENCE
+    ):
+        entries.append(
+            {
+                "statement": evidence_disagreement_statement(bearing_faults, zone),
+                "governing_indicator": "single-spectrum envelope evidence",
+                "deferring_indicator": f"ISO zone {zone}",
+            }
         )
-    strong_matches = [
-        r
-        for r in bearing_block.get("rows", [])
-        if r["matched"] and r["evidence_strength"] in ("high", "moderate")
-    ]
-    if strong_matches:
-        names = ", ".join(r["fault_type"] for r in strong_matches)
-        dissenting.append(f"the characteristic-frequency match ({names})")
-
-    if not dissenting:
-        return []
-
-    return [
-        {
-            "statement": (
-                f"Indicators disagree. Zone {iso_block['zone']} describes "
-                f"overall vibration energy as acceptable, while "
-                f"{' and '.join(dissenting)} indicate a developing fault. "
-                f"These are not contradictory: a localised defect can be "
-                f"unambiguous in the envelope spectrum while the broadband "
-                f"level it contributes is still low. The fault-pattern "
-                f"evidence governs the recommended action; the ISO zone "
-                f"describes how far the condition has progressed."
-            ),
-            "governing_indicator": "fault-pattern evidence",
-            "deferring_indicator": f"ISO zone {iso_block['zone']}",
-        }
-    ]
+    if _anomaly_flagged(anomaly_block):
+        entries.append(
+            {
+                "statement": CLAIM_SENTENCES["disagreement_anomaly"].format(
+                    zone=zone,
+                    health=anomaly_block["overall_health"],
+                    ratio_pct=anomaly_block["anomaly_ratio"] * 100,
+                ),
+                "governing_indicator": "anomaly model",
+                "deferring_indicator": f"ISO zone {zone}",
+            }
+        )
+    return entries
 
 
 # ---------------------------------------------------------------------------
@@ -487,11 +501,17 @@ def _refusal_recommendation(block: dict, description: str) -> dict:
 
 def _build_recommendations(
     iso_block: dict,
+    bearing_faults: Optional[dict],
     bearing_block: dict,
     anomaly_block: dict,
-    disagreements: list[dict],
 ) -> list[dict]:
-    """Attach a motivation and its supporting evidence to each action."""
+    """Attach a motivation and its supporting evidence to each action.
+
+    The zone actions come from the recommendation table, by the ISO zone
+    alone. The bearing actions are the claim's (confirmation, inspection of
+    every candidate alike, a repeat or acquisition step); no inferred bearing
+    fault type is ever passed to the table.
+    """
     recommendations: list[dict] = []
 
     if iso_block["status"] == REFUSED:
@@ -500,44 +520,34 @@ def _build_recommendations(
                 iso_block, "The severity verdict is unavailable until this is resolved."
             )
         )
-        zone = None
     else:
         zone = iso_block["zone"]
-
-    fault_types = [
-        r["fault_canonical"]
-        for r in bearing_block.get("rows", [])
-        if r["matched"] and r["fault_canonical"]
-    ]
-
-    if zone is not None:
-        # generate_recommendations emits the zone action(s) first, then one
-        # entry per fault type in the order given. Split on that structure
-        # rather than on the wording of the description: matching a prose
-        # prefix would silently mislabel every recommendation the day that
-        # sentence is reworded.
-        zone_only = generate_recommendations(severity_zone=zone)
-        base = generate_recommendations(severity_zone=zone, fault_types=fault_types)
-        for index, entry in enumerate(base):
-            fault_index = index - len(zone_only)
-            if fault_index >= 0:
-                acronym = _acronym_for(fault_types[fault_index])
-                motivation = (
-                    "The characteristic frequency of this bearing element "
-                    "matched a peak in the envelope spectrum within tolerance"
-                    + (f" ({acronym})." if acronym else ".")
-                )
-                evidence = [bearing_block["statement"]]
-            else:
-                severity = iso_block.get("severity_level")
-                motivation = (
-                    f"ISO Zone {zone} is classified as {severity.lower()}."
-                    if severity
-                    else f"ISO Zone {zone}."
-                )
-                evidence = [iso_block["statement"]]
+        severity = iso_block.get("severity_level")
+        motivation = (
+            f"ISO Zone {zone} is classified as {severity.lower()}."
+            if severity
+            else f"ISO Zone {zone}."
+        )
+        for entry in generate_recommendations(severity_zone=zone):
             recommendations.append(
-                {**entry, "motivation": motivation, "evidence": evidence}
+                {
+                    **entry,
+                    "motivation": motivation,
+                    "evidence": [iso_block["statement"]],
+                }
+            )
+
+    if bearing_block["status"] == ASSESSED and bearing_faults:
+        description = _ACTION_DESCRIPTION[bearing_faults["claim"]["level"]]
+        for action in claim_actions(bearing_faults):
+            recommendations.append(
+                {
+                    "action": action,
+                    "urgency": _BEARING_ACTION_URGENCY,
+                    "description": description,
+                    "motivation": bearing_faults["overall_assessment"],
+                    "evidence": [bearing_block["statement"]],
+                }
             )
 
     if bearing_block["status"] == REFUSED:
@@ -546,21 +556,6 @@ def _build_recommendations(
                 bearing_block,
                 "The bearing check is unavailable until this is resolved.",
             )
-        )
-
-    if disagreements:
-        recommendations.insert(
-            0,
-            {
-                "action": ("Treat this as actionable despite the acceptable ISO zone"),
-                "urgency": "medium",
-                "description": (
-                    "Fault-pattern evidence and the severity zone describe "
-                    "different stages of the same condition."
-                ),
-                "motivation": disagreements[0]["statement"],
-                "evidence": [disagreements[0]["statement"]],
-            },
         )
 
     if anomaly_block["status"] == ABSENT:
@@ -631,10 +626,9 @@ def build_baseline_comparison(
         for delta in (
             _rms_delta(diagnosis, baseline),
             _anomaly_delta(diagnosis, baseline),
-            _envelope_delta(diagnosis, baseline),
         )
         if delta is not None
-    ]
+    ] + _envelope_deltas(diagnosis, baseline)
 
     if not deltas:
         return {
@@ -660,11 +654,16 @@ def build_baseline_comparison(
             f"described above is stable, not developing."
         )
     else:
-        headline = min(moved, key=lambda d: _HEADLINE_ORDER.index(d["indicator"]))
+        lead = min(_HEADLINE_ORDER.index(d["indicator"]) for d in moved)
+        headline = " ".join(
+            d["statement"]
+            for d in moved
+            if _HEADLINE_ORDER.index(d["indicator"]) == lead
+        )
         statement = (
             f"Compared with baseline {baseline.get('signal_id')}: "
             f"{len(moved)} of {len(deltas)} indicators moved. "
-            f"{headline['statement']}"
+            f"{headline}"
         )
 
     return {
@@ -775,64 +774,57 @@ def _anomaly_delta(diagnosis: dict, baseline: dict) -> Optional[dict]:
     }
 
 
-def _envelope_delta(diagnosis: dict, baseline: dict) -> Optional[dict]:
-    """Compare envelope amplitude at the fault frequency that actually matched.
+def _envelope_deltas(diagnosis: dict, baseline: dict) -> list[dict]:
+    """Compare envelope amplitude at each candidate's tested line.
 
-    This is the delta that separates "the machine is noisier" from "this
-    specific defect grew": it looks only at the frequency the verdict rests on.
+    One delta per candidate the claim lets a report mark, all alike, each at
+    the line its check tested: the strongest bin of the search window
+    (``line_amplitude``) in the signal against the same window in the
+    baseline, which reports it for every testable line, significant or not.
     """
     signal_faults = diagnosis.get("bearing_faults")
     baseline_faults = baseline.get("bearing_faults")
     if not signal_faults or not baseline_faults:
-        return None
+        return []
 
-    matched = next(
-        (
-            c
-            for c in signal_faults.get("fault_checks", [])
-            if c.get("detected") and c.get("magnitude")
-        ),
-        None,
-    )
-    if matched is None:
-        return None
-
-    reference = next(
-        (
-            c
-            for c in baseline_faults.get("fault_checks", [])
-            if c["fault_type"] == matched["fault_type"] and c.get("magnitude")
-        ),
-        None,
-    )
-    if reference is None:
-        return None
-
-    now = matched["magnitude"]
-    then = reference["magnitude"]
-    delta_db = 20 * math.log10(now / then)
-    direction = _direction(delta_db, 0.05)
-    acronym = matched["fault_type"]
-    if direction == "unchanged":
-        statement = (
-            f"Envelope amplitude at the {acronym} frequency is unchanged "
-            f"against baseline."
+    deltas = []
+    for candidate in emphasised_candidates(signal_faults):
+        label = candidate["fault_type"]
+        check = next(
+            c for c in signal_faults["fault_checks"] if c["fault_type"] == label
         )
-    else:
-        statement = (
-            f"Envelope amplitude at the {acronym} frequency is "
-            f"{abs(delta_db):.1f} dB {direction} than baseline — the defect "
-            f"signature itself, not overall machine noise."
+        reference = next(
+            (
+                c
+                for c in baseline_faults["fault_checks"]
+                if c["fault_type"] == label and c.get("line_amplitude")
+            ),
+            None,
         )
-    return {
-        "indicator": "envelope_magnitude",
-        "unit": "dB",
-        "value": now,
-        "baseline_value": then,
-        "delta": round(delta_db, 2),
-        "direction": direction,
-        "statement": statement,
-    }
+        if not check.get("line_amplitude") or reference is None:
+            continue
+        now = check["line_amplitude"]
+        then = reference["line_amplitude"]
+        delta_db = 20 * math.log10(now / then)
+        direction = _direction(delta_db, 0.05)
+        deltas.append(
+            {
+                "indicator": "envelope_magnitude",
+                "fault_type": label,
+                "unit": "dB",
+                "value": now,
+                "baseline_value": then,
+                "delta": round(delta_db, 2),
+                "direction": direction,
+                "statement": envelope_delta_statement(
+                    check,
+                    delta_db=delta_db,
+                    direction=direction,
+                    baseline_peak_hz=reference["line_peak_hz"],
+                ),
+            }
+        )
+    return deltas
 
 
 # ---------------------------------------------------------------------------
@@ -899,23 +891,26 @@ def build_advisory(
             f"it was not given."
         )
 
+    bearing_faults = diagnosis.get("bearing_faults")
     iso_block = _build_iso_block(diagnosis["iso_severity"])
     bearing_block = _build_bearing_block(
-        diagnosis.get("bearing_faults"),
+        bearing_faults,
         diagnosis.get("bearing_check"),
         diagnosis.get("bearing_id"),
     )
     anomaly_block = _build_anomaly_block(diagnosis.get("anomaly_detection"))
     energy_block = _build_energy_block(diagnosis["stft_summary"])
 
-    verdict = _build_verdict(bearing_block, iso_block, anomaly_block)
+    verdict = _build_verdict(bearing_faults, bearing_block, iso_block, anomaly_block)
     evidence = _build_evidence(
         diagnosis, bearing_block, iso_block, anomaly_block, energy_block
     )
-    disagreements = _build_disagreements(iso_block, bearing_block, anomaly_block)
+    disagreements = _build_disagreements(
+        iso_block, bearing_faults, bearing_block, anomaly_block
+    )
     baseline_block = build_baseline_comparison(diagnosis, baseline_diagnosis)
     recommendations = _build_recommendations(
-        iso_block, bearing_block, anomaly_block, disagreements
+        iso_block, bearing_faults, bearing_block, anomaly_block
     )
 
     return {
@@ -933,12 +928,24 @@ def build_advisory(
     }
 
 
-def collect_statements(advisory: dict) -> list[str]:
+def collect_statements(
+    advisory: dict, figure: Optional[dict[str, Any]] = None
+) -> list[str]:
     """Return every authored statement in the payload, in document order.
 
     This is the surface the cross-rendering parity test asserts on: a
     statement present here and absent from a rendering means that rendering
-    dropped something the server said.
+    dropped something the server said. The badges of the bearing line-test
+    table are included, and so is the caption of ``figure`` (the report's
+    annotated envelope spectrum) when it is given.
+
+    Args:
+        advisory: Payload from :func:`build_advisory`.
+        figure: Optional description from
+            :func:`..figures.build_annotated_envelope_figure`.
+
+    Returns:
+        The statements, each once.
     """
     statements: list[str] = []
 
@@ -950,6 +957,8 @@ def collect_statements(advisory: dict) -> list[str]:
     for block_key in ("iso", "bearing_match", "anomaly", "spectral_energy"):
         add(advisory[block_key].get("statement"))
         add(advisory[block_key].get("remedy"))
+    for row in advisory["bearing_match"].get("rows", []):
+        add(row["badge"])
     for entry in advisory["disagreements"]:
         add(entry["statement"])
     add(advisory["baseline_comparison"].get("statement"))
@@ -962,5 +971,7 @@ def collect_statements(advisory: dict) -> list[str]:
         add(rec["action"])
         add(rec["description"])
         add(rec["motivation"])
+    if figure is not None:
+        add(figure.get("caption"))
 
     return statements

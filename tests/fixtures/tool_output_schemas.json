@@ -915,6 +915,80 @@
         "title": "BearingCandidate",
         "type": "object"
       },
+      "BearingClaim": {
+        "description": "What the bearing check may state from its significance-tested evidence.\n\nDerived from outcome, the per-check states, the declared frequencies and\nwhether a shaft speed was available; it never changes them.\nmost_likely_fault, most_likely_fault_canonical and overall_assessment\nfollow it.",
+        "properties": {
+          "acquisition_eligibility": {
+            "description": "known_inapplicable only when the signal's own companion metadata declares a generated signal (a generator key) with a numeric noise_level of 0; unknown otherwise, which is not a validation of the line test's assumptions: no route records what would establish them",
+            "enum": [
+              "known_inapplicable",
+              "unknown"
+            ],
+            "title": "Acquisition Eligibility",
+            "type": "string"
+          },
+          "basis": {
+            "const": "significance_tested",
+            "description": "What the claim rests on: the significance-tested lines of one envelope spectrum, never the legacy per-check fields",
+            "title": "Basis",
+            "type": "string"
+          },
+          "conditions": {
+            "description": "Why the claim is qualified or withheld; empty for single_spectrum_evidence. generated_without_noise (the signal's own companion metadata declares a generated signal with noise_level 0, outside the line test's model; withheld whatever the outcome), several_types (outcome several_types), cage_comb_not_excluded (the cage line was not testable and a multiple of the declared cage frequency lies in the indicated line's search window), inner_race_sideband_not_excluded (outer race indicated, the inner-race line stands above the floor, and the declared BPFI minus twice the shaft rate lies in the outer-race search window), shaft_tests_not_run (a check that had no shaft speed available, so the shaft-order test did not run and an overlap of the bearing lines the claim names with a shaft harmonic is not excluded: an indicated bearing type, or beside several_types or rolling_element_held_back, whose reason it keeps; for an outer-race indication beside an inner-race line above the floor, the inner-race sideband relation could not be tested either; never for labels outside the bearing vocabulary alone), rolling_element_held_back (a cage held back because the rolling-element line stands above the floor), inconclusive, nothing_testable, no_indication (the outcome itself). The window conditions and shaft_tests_not_run qualify the claim only: outcome, candidates and states stay as tested.",
+            "items": {
+              "enum": [
+                "generated_without_noise",
+                "several_types",
+                "cage_comb_not_excluded",
+                "inner_race_sideband_not_excluded",
+                "shaft_tests_not_run",
+                "rolling_element_held_back",
+                "inconclusive",
+                "nothing_testable",
+                "no_indication"
+              ],
+              "type": "string"
+            },
+            "title": "Conditions",
+            "type": "array"
+          },
+          "level": {
+            "description": "withheld (no fault type is named; the statement says why the record supports none), qualified (the evidence and every competing explanation the result cannot exclude are named, no single type is singled out, and it is not a confirmed fault) or single_spectrum_evidence (the envelope evidence of this single spectrum is consistent with one type; it asks for confirmation and is not a confirmed fault). Both rest on the assumption that the record's background is random measurement noise, which one acquisition does not verify. A fourth level, supported_claim, is reserved for evidence independent of one spectrum and is never produced by this check.",
+            "enum": [
+              "withheld",
+              "qualified",
+              "single_spectrum_evidence"
+            ],
+            "title": "Level",
+            "type": "string"
+          },
+          "limitations": {
+            "description": "Stated with single_spectrum_evidence without changing its level: sideband_only_corroboration (an inner race whose only counted corroborating lines are shaft-rate sidebands, which shaft-rate modulation of the background can also produce), cage_not_declared (no cage frequency was declared, so cage-rate lines were not assessed as an explanation)",
+            "items": {
+              "enum": [
+                "sideband_only_corroboration",
+                "cage_not_declared"
+              ],
+              "type": "string"
+            },
+            "title": "Limitations",
+            "type": "array"
+          },
+          "policy_version": {
+            "description": "Version of the rules that map the evidence to a claim",
+            "title": "Policy Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "level",
+          "acquisition_eligibility",
+          "basis",
+          "policy_version"
+        ],
+        "title": "BearingClaim",
+        "type": "object"
+      },
       "BearingCorroboratingLine": {
         "description": "One further line the kinematics of a detected line predict.",
         "properties": {
@@ -1189,7 +1263,7 @@
             "type": "array"
           },
           "detected": {
-            "description": "Whether a peak was detected within tolerance",
+            "description": "Whether a peak was detected within tolerance. A legacy tolerance match without false-alarm control, kept for compatibility until a later version. The bearing statements and actions of check_bearing_faults, diagnose_vibration and the reports do not use the legacy per-check fields; the asset ledger's evidence-persistence assessment (assess_asset_change) still uses detected, magnitude and evidence_strength until a later version.",
             "title": "Detected",
             "type": "boolean"
           },
@@ -1203,7 +1277,7 @@
               }
             ],
             "default": null,
-            "description": "Actual peak frequency",
+            "description": "Actual peak frequency. A legacy tolerance match without false-alarm control, kept for compatibility until a later version. The bearing statements and actions of check_bearing_faults, diagnose_vibration and the reports do not use the legacy per-check fields; the asset ledger's evidence-persistence assessment (assess_asset_change) still uses detected, magnitude and evidence_strength until a later version.",
             "title": "Detected Frequency Hz"
           },
           "deviation_pct": {
@@ -1216,11 +1290,11 @@
               }
             ],
             "default": null,
-            "description": "Deviation from expected (%)",
+            "description": "Deviation from expected (%). A legacy tolerance match without false-alarm control, kept for compatibility until a later version. The bearing statements and actions of check_bearing_faults, diagnose_vibration and the reports do not use the legacy per-check fields; the asset ledger's evidence-persistence assessment (assess_asset_change) still uses detected, magnitude and evidence_strength until a later version.",
             "title": "Deviation Pct"
           },
           "evidence_strength": {
-            "description": "Strength of the spectral evidence for this fault: 'high' (fundamental + >=2 harmonics), 'moderate' (fundamental, weaker harmonics), 'low' (harmonics only), or 'none'. Derived from detected peaks \u2014 not a probability.",
+            "description": "Strength of the spectral evidence for this fault: 'high' (fundamental + >=2 harmonics), 'moderate' (fundamental, weaker harmonics), 'low' (harmonics only), or 'none'. Derived from detected peaks, not a probability. A legacy tolerance match without false-alarm control, kept for compatibility until a later version. The bearing statements and actions of check_bearing_faults, diagnose_vibration and the reports do not use the legacy per-check fields; the asset ledger's evidence-persistence assessment (assess_asset_change) still uses detected, magnitude and evidence_strength until a later version.",
             "title": "Evidence Strength",
             "type": "string"
           },
@@ -1255,7 +1329,7 @@
           },
           "harmonics_detected": {
             "default": [],
-            "description": "Harmonics found",
+            "description": "Harmonics found. A legacy tolerance match without false-alarm control, kept for compatibility until a later version. The bearing statements and actions of check_bearing_faults, diagnose_vibration and the reports do not use the legacy per-check fields; the asset ledger's evidence-persistence assessment (assess_asset_change) still uses detected, magnitude and evidence_strength until a later version.",
             "items": {
               "additionalProperties": {
                 "type": "number"
@@ -1339,7 +1413,7 @@
               }
             ],
             "default": null,
-            "description": "Magnitude at detected frequency",
+            "description": "Magnitude at detected frequency. A legacy tolerance match without false-alarm control, kept for compatibility until a later version. The bearing statements and actions of check_bearing_faults, diagnose_vibration and the reports do not use the legacy per-check fields; the asset ledger's evidence-persistence assessment (assess_asset_change) still uses detected, magnitude and evidence_strength until a later version.",
             "title": "Magnitude"
           },
           "shared_with": {
@@ -1489,6 +1563,18 @@
         "title": "Candidates",
         "type": "array"
       },
+      "claim": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/BearingClaim"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "What the check may state from its significance-tested evidence: level, conditions, limitations and the acquisition eligibility the signal's own metadata declares. most_likely_fault, most_likely_fault_canonical and overall_assessment follow it."
+      },
       "evidence_policy": {
         "anyOf": [
           {
@@ -1519,7 +1605,7 @@
           }
         ],
         "default": null,
-        "description": "Most likely fault label if any",
+        "description": "The one supported label, derived from claim and set only when claim.level is single_spectrum_evidence: evidence of this single spectrum, not a confirmed fault. None at qualified and withheld. The name is kept for compatibility; it is not a probability ranking.",
         "title": "Most Likely Fault"
       },
       "most_likely_fault_canonical": {
@@ -1538,7 +1624,7 @@
           }
         ],
         "default": null,
-        "description": "Canonical form of most_likely_fault (None for arbitrary labels)",
+        "description": "Canonical form of most_likely_fault; None when most_likely_fault is None or its label is outside the bearing vocabulary",
         "title": "Most Likely Fault Canonical"
       },
       "next_step": {
@@ -1551,7 +1637,7 @@
           }
         ],
         "default": null,
-        "description": "What to do next for this outcome; None when the check suggests no step (every hypothesis was tested and none stands out), which does not mean the bearing is free of defects",
+        "description": "What to do next for this outcome; None when the check suggests no step (every hypothesis was tested and none stands out), which does not mean the bearing is free of defects. It describes the evidence outcome before the claim: when claim.level is not single_spectrum_evidence, do not relay it to name a fault type or a single element; overall_assessment states what the claim allows.",
         "title": "Next Step"
       },
       "outcome": {
@@ -1570,7 +1656,7 @@
           }
         ],
         "default": null,
-        "description": "Significance-tested outcome of the check on one envelope spectrum: indicated (exactly one hypothesis supported: the evidence is consistent with that defect, not a confirmation of it), several_types (two or more supported, none singled out), inconclusive (a line without a counted corroborating line, at a shaft order or shared, a cage line that a significant rolling-element line can explain, or nothing testable), no_indication (no eligible peak at a tested frequency satisfies the detection criteria, which is not proof that no defect exists). most_likely_fault, overall_assessment and each check's detected and evidence_strength come from an older tolerance match without false-alarm control and can disagree with outcome.",
+        "description": "Significance-tested outcome of the check on one envelope spectrum: indicated (exactly one hypothesis supported: the evidence is consistent with that defect, not a confirmation of it), several_types (two or more supported, none singled out), inconclusive (a line without a counted corroborating line, at a shaft order or shared, a cage line that a significant rolling-element line can explain, or nothing testable), no_indication (no eligible peak at a tested frequency satisfies the detection criteria, which is not proof that no defect exists). Each check's detected and evidence_strength come from an older tolerance match without false-alarm control and can disagree with outcome; most_likely_fault and overall_assessment derive from claim.",
         "title": "Outcome"
       },
       "outcome_reason": {
@@ -1583,11 +1669,11 @@
           }
         ],
         "default": null,
-        "description": "Why the check reached its outcome, naming every hypothesis the record could not test",
+        "description": "Why the check reached its outcome, naming every hypothesis the record could not test. It describes the evidence outcome before the claim: when claim.level is not single_spectrum_evidence, do not relay it to name a fault type or a single element; overall_assessment states what the claim allows.",
         "title": "Outcome Reason"
       },
       "overall_assessment": {
-        "description": "Summary assessment text",
+        "description": "One statement derived from claim: at single_spectrum_evidence, what the envelope evidence of this single spectrum is consistent with and the assumption it rests on; at qualified, the evidence, the competing explanations it cannot exclude and the same assumption; at withheld, why no fault type is assessed. It is not a probability and not a confirmation.",
         "title": "Overall Assessment",
         "type": "string"
       },
@@ -2178,6 +2264,80 @@
         "title": "BearingCheckOutcome",
         "type": "object"
       },
+      "BearingClaim": {
+        "description": "What the bearing check may state from its significance-tested evidence.\n\nDerived from outcome, the per-check states, the declared frequencies and\nwhether a shaft speed was available; it never changes them.\nmost_likely_fault, most_likely_fault_canonical and overall_assessment\nfollow it.",
+        "properties": {
+          "acquisition_eligibility": {
+            "description": "known_inapplicable only when the signal's own companion metadata declares a generated signal (a generator key) with a numeric noise_level of 0; unknown otherwise, which is not a validation of the line test's assumptions: no route records what would establish them",
+            "enum": [
+              "known_inapplicable",
+              "unknown"
+            ],
+            "title": "Acquisition Eligibility",
+            "type": "string"
+          },
+          "basis": {
+            "const": "significance_tested",
+            "description": "What the claim rests on: the significance-tested lines of one envelope spectrum, never the legacy per-check fields",
+            "title": "Basis",
+            "type": "string"
+          },
+          "conditions": {
+            "description": "Why the claim is qualified or withheld; empty for single_spectrum_evidence. generated_without_noise (the signal's own companion metadata declares a generated signal with noise_level 0, outside the line test's model; withheld whatever the outcome), several_types (outcome several_types), cage_comb_not_excluded (the cage line was not testable and a multiple of the declared cage frequency lies in the indicated line's search window), inner_race_sideband_not_excluded (outer race indicated, the inner-race line stands above the floor, and the declared BPFI minus twice the shaft rate lies in the outer-race search window), shaft_tests_not_run (a check that had no shaft speed available, so the shaft-order test did not run and an overlap of the bearing lines the claim names with a shaft harmonic is not excluded: an indicated bearing type, or beside several_types or rolling_element_held_back, whose reason it keeps; for an outer-race indication beside an inner-race line above the floor, the inner-race sideband relation could not be tested either; never for labels outside the bearing vocabulary alone), rolling_element_held_back (a cage held back because the rolling-element line stands above the floor), inconclusive, nothing_testable, no_indication (the outcome itself). The window conditions and shaft_tests_not_run qualify the claim only: outcome, candidates and states stay as tested.",
+            "items": {
+              "enum": [
+                "generated_without_noise",
+                "several_types",
+                "cage_comb_not_excluded",
+                "inner_race_sideband_not_excluded",
+                "shaft_tests_not_run",
+                "rolling_element_held_back",
+                "inconclusive",
+                "nothing_testable",
+                "no_indication"
+              ],
+              "type": "string"
+            },
+            "title": "Conditions",
+            "type": "array"
+          },
+          "level": {
+            "description": "withheld (no fault type is named; the statement says why the record supports none), qualified (the evidence and every competing explanation the result cannot exclude are named, no single type is singled out, and it is not a confirmed fault) or single_spectrum_evidence (the envelope evidence of this single spectrum is consistent with one type; it asks for confirmation and is not a confirmed fault). Both rest on the assumption that the record's background is random measurement noise, which one acquisition does not verify. A fourth level, supported_claim, is reserved for evidence independent of one spectrum and is never produced by this check.",
+            "enum": [
+              "withheld",
+              "qualified",
+              "single_spectrum_evidence"
+            ],
+            "title": "Level",
+            "type": "string"
+          },
+          "limitations": {
+            "description": "Stated with single_spectrum_evidence without changing its level: sideband_only_corroboration (an inner race whose only counted corroborating lines are shaft-rate sidebands, which shaft-rate modulation of the background can also produce), cage_not_declared (no cage frequency was declared, so cage-rate lines were not assessed as an explanation)",
+            "items": {
+              "enum": [
+                "sideband_only_corroboration",
+                "cage_not_declared"
+              ],
+              "type": "string"
+            },
+            "title": "Limitations",
+            "type": "array"
+          },
+          "policy_version": {
+            "description": "Version of the rules that map the evidence to a claim",
+            "title": "Policy Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "level",
+          "acquisition_eligibility",
+          "basis",
+          "policy_version"
+        ],
+        "title": "BearingClaim",
+        "type": "object"
+      },
       "BearingCorroboratingLine": {
         "description": "One further line the kinematics of a detected line predict.",
         "properties": {
@@ -2452,7 +2612,7 @@
             "type": "array"
           },
           "detected": {
-            "description": "Whether a peak was detected within tolerance",
+            "description": "Whether a peak was detected within tolerance. A legacy tolerance match without false-alarm control, kept for compatibility until a later version. The bearing statements and actions of check_bearing_faults, diagnose_vibration and the reports do not use the legacy per-check fields; the asset ledger's evidence-persistence assessment (assess_asset_change) still uses detected, magnitude and evidence_strength until a later version.",
             "title": "Detected",
             "type": "boolean"
           },
@@ -2466,7 +2626,7 @@
               }
             ],
             "default": null,
-            "description": "Actual peak frequency",
+            "description": "Actual peak frequency. A legacy tolerance match without false-alarm control, kept for compatibility until a later version. The bearing statements and actions of check_bearing_faults, diagnose_vibration and the reports do not use the legacy per-check fields; the asset ledger's evidence-persistence assessment (assess_asset_change) still uses detected, magnitude and evidence_strength until a later version.",
             "title": "Detected Frequency Hz"
           },
           "deviation_pct": {
@@ -2479,11 +2639,11 @@
               }
             ],
             "default": null,
-            "description": "Deviation from expected (%)",
+            "description": "Deviation from expected (%). A legacy tolerance match without false-alarm control, kept for compatibility until a later version. The bearing statements and actions of check_bearing_faults, diagnose_vibration and the reports do not use the legacy per-check fields; the asset ledger's evidence-persistence assessment (assess_asset_change) still uses detected, magnitude and evidence_strength until a later version.",
             "title": "Deviation Pct"
           },
           "evidence_strength": {
-            "description": "Strength of the spectral evidence for this fault: 'high' (fundamental + >=2 harmonics), 'moderate' (fundamental, weaker harmonics), 'low' (harmonics only), or 'none'. Derived from detected peaks \u2014 not a probability.",
+            "description": "Strength of the spectral evidence for this fault: 'high' (fundamental + >=2 harmonics), 'moderate' (fundamental, weaker harmonics), 'low' (harmonics only), or 'none'. Derived from detected peaks, not a probability. A legacy tolerance match without false-alarm control, kept for compatibility until a later version. The bearing statements and actions of check_bearing_faults, diagnose_vibration and the reports do not use the legacy per-check fields; the asset ledger's evidence-persistence assessment (assess_asset_change) still uses detected, magnitude and evidence_strength until a later version.",
             "title": "Evidence Strength",
             "type": "string"
           },
@@ -2518,7 +2678,7 @@
           },
           "harmonics_detected": {
             "default": [],
-            "description": "Harmonics found",
+            "description": "Harmonics found. A legacy tolerance match without false-alarm control, kept for compatibility until a later version. The bearing statements and actions of check_bearing_faults, diagnose_vibration and the reports do not use the legacy per-check fields; the asset ledger's evidence-persistence assessment (assess_asset_change) still uses detected, magnitude and evidence_strength until a later version.",
             "items": {
               "additionalProperties": {
                 "type": "number"
@@ -2602,7 +2762,7 @@
               }
             ],
             "default": null,
-            "description": "Magnitude at detected frequency",
+            "description": "Magnitude at detected frequency. A legacy tolerance match without false-alarm control, kept for compatibility until a later version. The bearing statements and actions of check_bearing_faults, diagnose_vibration and the reports do not use the legacy per-check fields; the asset ledger's evidence-persistence assessment (assess_asset_change) still uses detected, magnitude and evidence_strength until a later version.",
             "title": "Magnitude"
           },
           "shared_with": {
@@ -2719,6 +2879,18 @@
             "title": "Candidates",
             "type": "array"
           },
+          "claim": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/BearingClaim"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "What the check may state from its significance-tested evidence: level, conditions, limitations and the acquisition eligibility the signal's own metadata declares. most_likely_fault, most_likely_fault_canonical and overall_assessment follow it."
+          },
           "evidence_policy": {
             "anyOf": [
               {
@@ -2749,7 +2921,7 @@
               }
             ],
             "default": null,
-            "description": "Most likely fault label if any",
+            "description": "The one supported label, derived from claim and set only when claim.level is single_spectrum_evidence: evidence of this single spectrum, not a confirmed fault. None at qualified and withheld. The name is kept for compatibility; it is not a probability ranking.",
             "title": "Most Likely Fault"
           },
           "most_likely_fault_canonical": {
@@ -2768,7 +2940,7 @@
               }
             ],
             "default": null,
-            "description": "Canonical form of most_likely_fault (None for arbitrary labels)",
+            "description": "Canonical form of most_likely_fault; None when most_likely_fault is None or its label is outside the bearing vocabulary",
             "title": "Most Likely Fault Canonical"
           },
           "next_step": {
@@ -2781,7 +2953,7 @@
               }
             ],
             "default": null,
-            "description": "What to do next for this outcome; None when the check suggests no step (every hypothesis was tested and none stands out), which does not mean the bearing is free of defects",
+            "description": "What to do next for this outcome; None when the check suggests no step (every hypothesis was tested and none stands out), which does not mean the bearing is free of defects. It describes the evidence outcome before the claim: when claim.level is not single_spectrum_evidence, do not relay it to name a fault type or a single element; overall_assessment states what the claim allows.",
             "title": "Next Step"
           },
           "outcome": {
@@ -2800,7 +2972,7 @@
               }
             ],
             "default": null,
-            "description": "Significance-tested outcome of the check on one envelope spectrum: indicated (exactly one hypothesis supported: the evidence is consistent with that defect, not a confirmation of it), several_types (two or more supported, none singled out), inconclusive (a line without a counted corroborating line, at a shaft order or shared, a cage line that a significant rolling-element line can explain, or nothing testable), no_indication (no eligible peak at a tested frequency satisfies the detection criteria, which is not proof that no defect exists). most_likely_fault, overall_assessment and each check's detected and evidence_strength come from an older tolerance match without false-alarm control and can disagree with outcome.",
+            "description": "Significance-tested outcome of the check on one envelope spectrum: indicated (exactly one hypothesis supported: the evidence is consistent with that defect, not a confirmation of it), several_types (two or more supported, none singled out), inconclusive (a line without a counted corroborating line, at a shaft order or shared, a cage line that a significant rolling-element line can explain, or nothing testable), no_indication (no eligible peak at a tested frequency satisfies the detection criteria, which is not proof that no defect exists). Each check's detected and evidence_strength come from an older tolerance match without false-alarm control and can disagree with outcome; most_likely_fault and overall_assessment derive from claim.",
             "title": "Outcome"
           },
           "outcome_reason": {
@@ -2813,11 +2985,11 @@
               }
             ],
             "default": null,
-            "description": "Why the check reached its outcome, naming every hypothesis the record could not test",
+            "description": "Why the check reached its outcome, naming every hypothesis the record could not test. It describes the evidence outcome before the claim: when claim.level is not single_spectrum_evidence, do not relay it to name a fault type or a single element; overall_assessment states what the claim allows.",
             "title": "Outcome Reason"
           },
           "overall_assessment": {
-            "description": "Summary assessment text",
+            "description": "One statement derived from claim: at single_spectrum_evidence, what the envelope evidence of this single spectrum is consistent with and the assumption it rests on; at qualified, the evidence, the competing explanations it cannot exclude and the same assumption; at withheld, why no fault type is assessed. It is not a probability and not a confirmation.",
             "title": "Overall Assessment",
             "type": "string"
           },
@@ -3150,7 +3322,7 @@
         "title": "Bearing Id"
       },
       "evidence_strength": {
-        "description": "Strength of corroborating fault evidence: 'none', 'weak', 'moderate', or 'strong'. Derived from the number and quality of independent findings (bearing fault frequency matches, shaft signatures, anomaly detection, ISO severity) \u2014 NOT from severity alone and NOT a probability. 'none' means the analyses that ran found no fault evidence, which does not establish that the machine is healthy; a bearing check that was not computed (bearing_check.status 'not_computed') adds nothing and says nothing about the bearing.",
+        "description": "Combined evidence across the analyses that ran: 'none', 'weak', 'moderate', or 'strong'. It counts findings (ISO severity zone C or D, a dominant peak at 1x or 2x shaft speed, the bearing claim, the anomaly model) and never rests on severity alone. It is not a probability and does not identify or confirm a fault type. A bearing finding counts once: at claim level single_spectrum_evidence, or qualified from an indicated or several_types outcome; a withheld claim and one held back as inconclusive count nothing. 'none' means the analyses that ran found nothing to count, which does not establish that the machine is healthy; a bearing check that was not computed (bearing_check.status 'not_computed') adds nothing and says nothing about the bearing.",
         "title": "Evidence Strength",
         "type": "string"
       },
