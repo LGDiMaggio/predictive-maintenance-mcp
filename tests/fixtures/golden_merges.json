@@ -699,83 +699,26 @@
       "fault_checks": [
         {
           "bearing_id": "6205",
-          "detected": true,
-          "detected_frequency_hz": 108.0,
-          "deviation_pct": 0.43,
-          "evidence_strength": "high",
           "expected_frequency_hz": 107.54,
           "fault_type": "BPFO",
-          "harmonics_detected": [
-            {
-              "detected_hz": 215.0,
-              "expected_hz": 215.08,
-              "harmonic": 2.0,
-              "magnitude": 741.12761
-            },
-            {
-              "detected_hz": 323.0,
-              "expected_hz": 322.62,
-              "harmonic": 3.0,
-              "magnitude": 9.82357
-            },
-            {
-              "detected_hz": 431.0,
-              "expected_hz": 430.16,
-              "harmonic": 4.0,
-              "magnitude": 9.555077
-            }
-          ],
-          "magnitude": 1734.210812,
           "signal_id": "golden_bearing"
         },
         {
           "bearing_id": "6205",
-          "detected": false,
-          "detected_frequency_hz": null,
-          "deviation_pct": null,
-          "evidence_strength": "low",
           "expected_frequency_hz": 162.46,
           "fault_type": "BPFI",
-          "harmonics_detected": [
-            {
-              "detected_hz": 323.0,
-              "expected_hz": 324.92,
-              "harmonic": 2.0,
-              "magnitude": 9.82357
-            }
-          ],
-          "magnitude": null,
           "signal_id": "golden_bearing"
         },
         {
           "bearing_id": "6205",
-          "detected": true,
-          "detected_frequency_hz": 68.0,
-          "deviation_pct": -3.82,
-          "evidence_strength": "moderate",
           "expected_frequency_hz": 70.7,
           "fault_type": "BSF",
-          "harmonics_detected": [
-            {
-              "detected_hz": 215.0,
-              "expected_hz": 212.1,
-              "harmonic": 3.0,
-              "magnitude": 741.12761
-            }
-          ],
-          "magnitude": 10.32659,
           "signal_id": "golden_bearing"
         },
         {
           "bearing_id": "6205",
-          "detected": false,
-          "detected_frequency_hz": null,
-          "deviation_pct": null,
-          "evidence_strength": "none",
           "expected_frequency_hz": 11.95,
           "fault_type": "FTF",
-          "harmonics_detected": [],
-          "magnitude": null,
           "signal_id": "golden_bearing"
         }
       ],
@@ -795,83 +738,26 @@
       "fault_checks": [
         {
           "bearing_id": "6205",
-          "detected": true,
-          "detected_frequency_hz": 109.0,
-          "deviation_pct": 1.36,
-          "evidence_strength": "moderate",
           "expected_frequency_hz": 107.54,
           "fault_type": "BPFO",
-          "harmonics_detected": [
-            {
-              "detected_hz": 317.0,
-              "expected_hz": 322.62,
-              "harmonic": 3.0,
-              "magnitude": 9.596656
-            }
-          ],
-          "magnitude": 13.27016,
           "signal_id": "golden_noise"
         },
         {
           "bearing_id": "6205",
-          "detected": true,
-          "detected_frequency_hz": 169.0,
-          "deviation_pct": 4.03,
-          "evidence_strength": "high",
           "expected_frequency_hz": 162.46,
           "fault_type": "BPFI",
-          "harmonics_detected": [
-            {
-              "detected_hz": 317.0,
-              "expected_hz": 324.92,
-              "harmonic": 2.0,
-              "magnitude": 9.596656
-            },
-            {
-              "detected_hz": 468.0,
-              "expected_hz": 487.38,
-              "harmonic": 3.0,
-              "magnitude": 10.158706
-            },
-            {
-              "detected_hz": 625.0,
-              "expected_hz": 649.84,
-              "harmonic": 4.0,
-              "magnitude": 9.27109
-            }
-          ],
-          "magnitude": 9.519848,
           "signal_id": "golden_noise"
         },
         {
           "bearing_id": "6205",
-          "detected": true,
-          "detected_frequency_hz": 74.0,
-          "deviation_pct": 4.67,
-          "evidence_strength": "moderate",
           "expected_frequency_hz": 70.7,
           "fault_type": "BSF",
-          "harmonics_detected": [
-            {
-              "detected_hz": 274.0,
-              "expected_hz": 282.8,
-              "harmonic": 4.0,
-              "magnitude": 11.291841
-            }
-          ],
-          "magnitude": 11.203339,
           "signal_id": "golden_noise"
         },
         {
           "bearing_id": "6205",
-          "detected": false,
-          "detected_frequency_hz": null,
-          "deviation_pct": null,
-          "evidence_strength": "none",
           "expected_frequency_hz": 11.95,
           "fault_type": "FTF",
-          "harmonics_detected": [],
-          "magnitude": null,
           "signal_id": "golden_noise"
         }
       ],
@@ -891,83 +777,26 @@
       "fault_checks": [
         {
           "bearing_id": "SKF 6205-2RS",
-          "detected": true,
-          "detected_frequency_hz": 108.0,
-          "deviation_pct": 0.43,
-          "evidence_strength": "high",
           "expected_frequency_hz": 107.54,
           "fault_type": "BPFO",
-          "harmonics_detected": [
-            {
-              "detected_hz": 215.0,
-              "expected_hz": 215.08,
-              "harmonic": 2.0,
-              "magnitude": 741.12761
-            },
-            {
-              "detected_hz": 323.0,
-              "expected_hz": 322.62,
-              "harmonic": 3.0,
-              "magnitude": 9.82357
-            },
-            {
-              "detected_hz": 431.0,
-              "expected_hz": 430.16,
-              "harmonic": 4.0,
-              "magnitude": 9.555077
-            }
-          ],
-          "magnitude": 1734.210812,
           "signal_id": "golden_bearing"
         },
         {
           "bearing_id": "SKF 6205-2RS",
-          "detected": false,
-          "detected_frequency_hz": null,
-          "deviation_pct": null,
-          "evidence_strength": "low",
           "expected_frequency_hz": 162.46,
           "fault_type": "BPFI",
-          "harmonics_detected": [
-            {
-              "detected_hz": 323.0,
-              "expected_hz": 324.92,
-              "harmonic": 2.0,
-              "magnitude": 9.82357
-            }
-          ],
-          "magnitude": null,
           "signal_id": "golden_bearing"
         },
         {
           "bearing_id": "SKF 6205-2RS",
-          "detected": true,
-          "detected_frequency_hz": 68.0,
-          "deviation_pct": -3.82,
-          "evidence_strength": "moderate",
           "expected_frequency_hz": 70.7,
           "fault_type": "BSF",
-          "harmonics_detected": [
-            {
-              "detected_hz": 215.0,
-              "expected_hz": 212.1,
-              "harmonic": 3.0,
-              "magnitude": 741.12761
-            }
-          ],
-          "magnitude": 10.32659,
           "signal_id": "golden_bearing"
         },
         {
           "bearing_id": "SKF 6205-2RS",
-          "detected": false,
-          "detected_frequency_hz": null,
-          "deviation_pct": null,
-          "evidence_strength": "none",
           "expected_frequency_hz": 11.95,
           "fault_type": "FTF",
-          "harmonics_detected": [],
-          "magnitude": null,
           "signal_id": "golden_bearing"
         }
       ],
@@ -977,33 +806,8 @@
     },
     "single_peak_bpfo": {
       "bearing_id": "6205",
-      "detected": true,
-      "detected_frequency_hz": 108.0,
-      "deviation_pct": 0.43,
-      "evidence_strength": "high",
       "expected_frequency_hz": 107.54,
       "fault_type": "BPFO",
-      "harmonics_detected": [
-        {
-          "detected_hz": 215.0,
-          "expected_hz": 215.08,
-          "harmonic": 2.0,
-          "magnitude": 741.12761
-        },
-        {
-          "detected_hz": 323.0,
-          "expected_hz": 322.62,
-          "harmonic": 3.0,
-          "magnitude": 9.82357
-        },
-        {
-          "detected_hz": 431.0,
-          "expected_hz": 430.16,
-          "harmonic": 4.0,
-          "magnitude": 9.555077
-        }
-      ],
-      "magnitude": 1734.210812,
       "signal_id": "golden_bearing"
     }
   }

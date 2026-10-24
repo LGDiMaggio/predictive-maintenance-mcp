@@ -340,16 +340,6 @@ BearingClaimCondition = Literal[
 ]
 BearingClaimLimitation = Literal["sideband_only_corroboration", "cage_not_declared"]
 
-#: Closes the description of each per-check field of the older matcher.
-_LEGACY_CHECK_FIELD = (
-    "A legacy tolerance match without false-alarm control, kept for "
-    "compatibility until a later version. The bearing statements and actions "
-    "of check_bearing_faults, diagnose_vibration and the reports do not use "
-    "the legacy per-check fields; the asset ledger's evidence-persistence "
-    "assessment (assess_asset_change) still uses detected, magnitude and "
-    "evidence_strength until a later version."
-)
-
 #: Closes the description of the evidence summary's outcome texts.
 _BEFORE_CLAIM = (
     " It describes the evidence outcome before the claim: when claim.level is "
@@ -602,7 +592,7 @@ class BearingClaim(BaseModel):
     basis: Literal["significance_tested"] = Field(
         description=(
             "What the claim rests on: the significance-tested lines of one "
-            "envelope spectrum, never the legacy per-check fields"
+            "envelope spectrum"
         )
     )
     policy_version: int = Field(
@@ -636,27 +626,55 @@ class BearingFaultCheckResult(BaseModel):
     expected_frequency_hz: float = Field(description="Expected fault frequency")
     detected: bool = Field(
         description=(
-            "Whether a peak was detected within tolerance. " + _LEGACY_CHECK_FIELD
+            "Whether the line tested (line_frequency_hz) is significant: the "
+            "strongest bin of its search window is a local maximum strictly inside "
+            "the window and its level over the local noise floor exceeds "
+            "threshold_db. True whatever the later state (unconfirmed, shared or "
+            "supported): state says whether the line supports this fault type."
         )
     )
     detected_frequency_hz: Optional[float] = Field(
-        None, description="Actual peak frequency. " + _LEGACY_CHECK_FIELD
+        None,
+        description=(
+            "Frequency of the detected line (Hz), the strongest bin in the search "
+            "window of the line tested; None when detected is false"
+        ),
     )
     magnitude: Optional[float] = Field(
-        None, description="Magnitude at detected frequency. " + _LEGACY_CHECK_FIELD
+        None,
+        description=(
+            "Envelope amplitude of the detected line (the same value as "
+            "line_amplitude); None when detected is false"
+        ),
     )
     deviation_pct: Optional[float] = Field(
-        None, description="Deviation from expected (%). " + _LEGACY_CHECK_FIELD
+        None,
+        description=(
+            "Deviation of detected_frequency_hz from line_frequency_hz, the line "
+            "tested (%), not from expected_frequency_hz: for the rolling element "
+            "the line tested is twice the ball spin frequency. None when detected "
+            "is false"
+        ),
     )
     harmonics_detected: list[dict[str, float]] = Field(
-        default=[], description="Harmonics found. " + _LEGACY_CHECK_FIELD
+        default=[],
+        description=(
+            "Counted harmonics of the detected line, each near a whole multiple "
+            "of detected_frequency_hz (harmonic: the multiple; expected_hz: that "
+            "multiple of the detected line; detected_hz; magnitude: envelope "
+            "amplitude): significant, a local maximum inside its window, at no "
+            "shaft order and not shared with another tested hypothesis. "
+            "Sidebands and the 1 x BSF line are listed only in corroboration. "
+            "Lines of one spectrum are correlated, not independent evidence."
+        ),
     )
     evidence_strength: str = Field(
         description=(
-            "Strength of the spectral evidence for this fault: 'high' "
-            "(fundamental + >=2 harmonics), 'moderate' (fundamental, weaker "
-            "harmonics), 'low' (harmonics only), or 'none'. Derived from "
-            "detected peaks, not a probability. " + _LEGACY_CHECK_FIELD
+            "Grade of the significance-tested evidence for this hypothesis, from "
+            "its state: 'none' (absent or not_testable), 'low' (unconfirmed or "
+            "shared), 'moderate' (supported, one counted corroborating line), "
+            "'high' (supported, two or more). It counts lines of one envelope "
+            "spectrum: it is not a probability, and it does not confirm a fault."
         )
     )
     state: Optional[BearingEvidenceState] = Field(
@@ -671,9 +689,7 @@ class BearingFaultCheckResult(BaseModel):
             "can explain), shared (another tested hypothesis also predicts a "
             "line where this line lies), supported (a significant line of its own "
             "with at least one counted corroborating line its kinematics predict). "
-            "detected and "
-            "evidence_strength come from an older tolerance match without "
-            "false-alarm control and can disagree with state."
+            "detected and evidence_strength are derived from it."
         ),
     )
     state_reason: Optional[BearingEvidenceStateReason] = Field(
@@ -684,7 +700,7 @@ class BearingFaultCheckResult(BaseModel):
         description=(
             "Frequency of the line tested (Hz): the expected frequency, or twice "
             "the ball spin frequency for the rolling element (detected_frequency_hz "
-            "is still matched near the ball spin frequency itself)"
+            "and deviation_pct refer to this line)"
         ),
     )
     line_peak_hz: Optional[float] = Field(
@@ -801,10 +817,8 @@ class BearingFaultsSummary(BaseModel):
             "shaft order or shared, a cage line that a significant rolling-element "
             "line can explain, or nothing testable), no_indication (no "
             "eligible peak at a tested frequency satisfies the detection criteria, "
-            "which is not proof that no defect exists). Each check's detected and "
-            "evidence_strength come from an older tolerance match without "
-            "false-alarm control and can disagree with outcome; most_likely_fault "
-            "and overall_assessment derive from claim."
+            "which is not proof that no defect exists). most_likely_fault and "
+            "overall_assessment derive from claim."
         ),
     )
     outcome_reason: Optional[str] = Field(

@@ -120,7 +120,7 @@ def amplitude_near_frequency(
 
     Pure helper shared by the asset ledger's health snapshot: the 1x
     amplitude on :func:`amplitude_spectrum` and the envelope amplitude at
-    every expected bearing frequency on :func:`envelope_spectrum_arrays`. It
+    every tested bearing line on :func:`envelope_spectrum_arrays`. It
     searches BINS, not detected peaks, so the value exists in every
     spectrum, also when nothing stands out: the emergence of a line over a
     sequence of measurements is trendable from the first snapshot.

@@ -17,10 +17,11 @@ bundled MFPT recordings:
   maintenance action in the diagnosis and the advisory, and envelope evidence
   alone never asks for a bearing replacement.
 
-The older fields express these properties as follows: a check *names* a fault
-when ``most_likely_fault`` is set, *supports* a type when that type's
+The per-check fields express these properties as follows: a check *names* a
+fault when ``most_likely_fault`` is set, *supports* a type when that type's
 ``evidence_strength`` is "moderate" or "high", and *detects* a type when its
-``detected`` is true. The evidence fields express them directly: the check's
+``detected`` is true; all three derive from the evidence fields, which express
+the properties directly: the check's
 ``outcome`` names one type only when it is "indicated", ``candidates`` lists
 the supported types, and each check's ``state`` says whether its line was
 tested, found, corroborated or shared. A bearing maintenance action is a
@@ -39,7 +40,7 @@ Rules this module follows:
   count copied from a run. A check is one bearing check of one record (one
   ``check_all_bearing_faults`` call), and the tests of its fault frequencies
   share that probability; each corroborating line is tested at it alone.
-- A property the older fields violate is a
+- A property the shipped engine violates is a
   ``pytest.mark.xfail(strict=True, raises=AssertionError)`` tripwire whose
   reason starts with ``audit-known-defect:``, so the weekly audit lists it;
   when the defect is fixed the tripwire XPASSes, which fails the strict run
@@ -242,11 +243,6 @@ class TestFaultFreeSignals:
 
         assert not any(named.values()), f"white noise named a fault: {detail}"
 
-    @tripwire(
-        "bearing-detection-without-significance",
-        "T1 M1: the bearing check grades a fault type moderate or high on "
-        "white noise",
-    )
     def test_white_noise_supports_no_fault_type(self, white_noise_checks):
         supported = {
             s: sum(bool(_supported(r)) for r in checks)
@@ -259,11 +255,6 @@ class TestFaultFreeSignals:
 
         assert not any(supported.values()), message
 
-    @tripwire(
-        "bearing-detection-without-significance",
-        "T1 M1: fault frequencies are detected on white noise far above a "
-        "nominal 1 % false-alarm probability per check",
-    )
     def test_white_noise_detections_stay_within_the_check_false_alarm_rate(
         self, white_noise_checks
     ):
@@ -305,11 +296,6 @@ class TestFaultFreeSignals:
             f"{FAULT_FREE_SEEDS} records {sorted(set(named))}"
         )
 
-    @tripwire(
-        "bearing-detection-without-significance",
-        "T1 M4: fault frequencies are detected on a pure 50 Hz sine, which "
-        "has no signal content in the envelope band",
-    )
     def test_empty_envelope_band_detects_nothing(self):
         """``golden_iso`` is a pure 50 Hz sine: none of the signal lies in the
         500 Hz to 5 kHz envelope band. What the band-pass filter leaves there
@@ -424,10 +410,6 @@ class TestSingleDefect:
             f"{[r['most_likely_fault'] for r in outer_race_checks]}"
         )
 
-    @tripwire(
-        "bearing-wrong-type-co-detected",
-        "T1 M5: an outer-race defect also detects other fault types",
-    )
     def test_outer_race_defect_detects_no_other_type(self, outer_race_checks):
         others = [
             sorted(set(_detected(r)) - DEFECTS_PRESENT["outer"])
@@ -441,11 +423,6 @@ class TestSingleDefect:
             f"{sorted({t for o in others for t in o})}"
         )
 
-    @tripwire(
-        "bearing-rolling-element-line",
-        "T1 M5: the rolling-element check tests 1xBSF, so a defect striking at "
-        "2xBSF is not supported and another type is named",
-    )
     def test_rolling_element_defect_is_supported_and_no_other_type_named(
         self, rolling_element_checks
     ):
@@ -463,10 +440,6 @@ class TestSingleDefect:
             f"named {[r['most_likely_fault'] for r in rolling_element_checks]}"
         )
 
-    @tripwire(
-        "bearing-shared-line-double-counted",
-        "T1 M6: a line two fault types share is credited to both",
-    )
     def test_shared_line_does_not_corroborate_a_second_type(self):
         """The shared-line scenario (``tests/_bearing_scenarios.py``) on the
         6205: the line at 3 x BPFO is also exactly twice the 1.5 x BPFO line
@@ -746,9 +719,8 @@ class TestSensitivityControls:
 # The evidence fields: fault-free signals
 # ===========================================================================
 #
-# The properties above, on the fields of the evidence layer. These tests carry
-# no marker: the evidence layer is the fix the tripwires above wait for, and
-# the older fields keep their values until they switch to it.
+# The properties above, on the fields of the evidence layer, from which the
+# per-check fields of the sections above derive.
 
 #: The research's acquisition configurations: (fs in Hz, duration in s).
 EVIDENCE_CONFIGS = [(12000.0, 10.0), (12000.0, 1.0), (25600.0, 4.0), (48000.0, 2.0)]
@@ -1146,6 +1118,9 @@ class TestEvidenceDefects:
             assert "does not single out one of them" in result["outcome_reason"]
             step = result["next_step"]
             assert "the outer race" in step and "the inner race" in step
+            # Measurements first: the comparison comes before any inspection.
+            lowered = step.lower()
+            assert lowered.index("measurement") < lowered.index("inspect"), step
             text = f"{result['outcome_reason']} {step}".lower()
             assert "most likely" not in text and "replace" not in text
 

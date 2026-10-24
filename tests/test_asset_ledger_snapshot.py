@@ -45,6 +45,11 @@ Fixture history:
   (catalog bearing on a group 2 rigid point; fault orders on a group 1
   flexible point with the rpm from the point; partial snapshot without rpm
   and without a point declaration).
+- T1 PR D (2026-10-23): ALGORITHM_VERSION 2, the same three cases. The
+  bearing labels carry the significance-tested ``state``,
+  ``line_frequency_hz`` and ``level_db``; their kept fields and the
+  envelope amplitude follow the line tested (2 x BSF for the rolling
+  element); the policy params record the two false-alarm probabilities.
 
 Regenerate ON PURPOSE only (never to make a red test green), adding a line
 to the history above and, when the numbers changed, bumping
@@ -104,6 +109,7 @@ from predictive_maintenance_mcp.signal_processing.spectral import (
     envelope_spectrum_arrays,
 )
 
+from _bearing_scenarios import DEFECT_SEED, FREQUENCIES_6205, RPM_6205, defect, white
 from _golden_signals import BPFO_6205_1800, FS, golden_signals, load_golden_signals
 
 #: The golden tripwire fixture (see the module docstring for the recipe).
@@ -514,6 +520,8 @@ class TestPolicyAndLineage:
             "envelope_band_policy": "default",
             "fft_segment_s": 1.0,
             "one_x_tolerance_pct": 5.0,
+            "false_alarm_probability_per_check": 0.01,
+            "false_alarm_probability_per_corroborating_line": 0.01,
         }
         assert processing_id(as_ints) == processing_id()
         assert (
@@ -819,6 +827,9 @@ class TestHappyPath:
         bpfo = labels["BPFO"]
         assert set(bpfo) == {
             "expected_hz",
+            "line_frequency_hz",
+            "state",
+            "level_db",
             "detected",
             "evidence_strength",
             "magnitude",
@@ -828,12 +839,17 @@ class TestHappyPath:
             "envelope_peak_hz",
         }
         assert bpfo["expected_hz"] == pytest.approx(BPFO_6205_1800, abs=0.01)
+        assert bpfo["line_frequency_hz"] == pytest.approx(bpfo["expected_hz"], abs=1e-3)
+        # golden_bearing modulates at BPFO and 2 x BPFO only: the line and its
+        # second harmonic stand out, nothing else corroborates it.
+        assert bpfo["state"] == "supported"
         assert bpfo["detected"] is True
-        assert bpfo["evidence_strength"] != "none"
+        assert bpfo["evidence_strength"] == "moderate"
+        assert bpfo["level_db"] > 0
         assert bpfo["magnitude"] > 0
         assert abs(bpfo["deviation_pct"]) <= 5.0
-        assert bpfo["harmonics_detected"]
-        # The analyzer's peak is one of the bins the amplitude search saw.
+        assert [h["harmonic"] for h in bpfo["harmonics_detected"]] == [2]
+        # The detected line is the strongest bin the amplitude search saw.
         assert bpfo["envelope_amplitude"] == pytest.approx(bpfo["magnitude"], abs=1e-6)
         assert (
             abs(bpfo["envelope_peak_hz"] - bpfo["expected_hz"])
@@ -905,6 +921,9 @@ class TestHappyPath:
         labels = bearing_snapshot["bearing"]["labels"]
         for check in engine["fault_checks"]:
             label = labels[check["fault_type"]]
+            assert label["state"] == check["state"]
+            assert label["line_frequency_hz"] == check["line_frequency_hz"]
+            assert label["level_db"] == check["level_db"]
             assert label["detected"] == check["detected"]
             assert label["evidence_strength"] == check["evidence_strength"]
             assert label["magnitude"] == check["magnitude"]
@@ -1142,6 +1161,9 @@ class TestPartialComposition:
         )
         for check in engine["fault_checks"]:
             label = one["bearing"]["labels"][check["fault_type"]]
+            assert label["state"] == check["state"]
+            assert label["line_frequency_hz"] == check["line_frequency_hz"]
+            assert label["level_db"] == check["level_db"]
             assert label["detected"] == check["detected"]
             assert label["evidence_strength"] == check["evidence_strength"]
             assert label["magnitude"] == check["magnitude"]
@@ -1387,28 +1409,31 @@ class TestGoldenIsoBearingBand:
             signals["golden_iso"], FS, BAND_10K
         )
         for label, block in iso_bearing["bearing"]["labels"].items():
-            hit = amplitude_near_frequency(
-                env_freqs, env_mags, block["expected_hz"], 5.0
-            )
+            # The line tested: twice the ball spin frequency for the rolling
+            # element, the expected frequency otherwise.
+            line_hz = block["expected_hz"] * (2.0 if label == "BSF" else 1.0)
+            hit = amplitude_near_frequency(env_freqs, env_mags, line_hz, 5.0)
             assert block["envelope_amplitude"] == hit["amplitude"], label
             assert block["envelope_peak_hz"] == hit["frequency_hz"], label
 
     def test_no_label_carries_a_peak_magnitude_on_the_empty_band(self, iso_bearing):
-        """The analyzer rounds every peak of the residue away (``magnitude``
-        None) while the envelope amplitude stays a number: the indicator
-        exists where the verdict has nothing to show."""
+        """At 1800 rpm no residue line is a significant local maximum inside
+        its window (the one near BPFO lies on the window edge; at 1700 rpm it
+        does not, see the evidence-layer tripwire of
+        ``tests/test_bearing_specificity.py``), so no label carries a
+        magnitude, while the envelope amplitude stays a number: the
+        indicator exists where the verdict has nothing to show."""
         for label, block in iso_bearing["bearing"]["labels"].items():
             assert block["magnitude"] is None, label
             assert block["envelope_amplitude"] < 1e-3, label
 
     def test_verdicts_are_the_engines_own(self, signals, iso_bearing):
         """The snapshot reports the engine's verdict verbatim, also on a
-        numerically empty envelope where the analyzer's relative peak picker
-        (prominence over the spectrum maximum, no absolute floor) may still
-        mark a fundamental within tolerance as ``detected``. Overriding it
-        here would make the ledger disagree with ``check_bearing_faults`` on
-        the same signal; the engine, not the snapshot, is where a floor
-        belongs."""
+        numerically empty envelope where the band-pass residue can hold a
+        significant line (at another speed, see the evidence-layer tripwire).
+        Overriding it here would make the ledger disagree with
+        ``check_bearing_faults`` on the same signal; the engine, not the
+        snapshot, is where such a decision belongs."""
         engine = check_all_bearing_faults(
             signals["golden_iso"],
             FS,
@@ -1420,6 +1445,7 @@ class TestGoldenIsoBearingBand:
         )
         for check in engine["fault_checks"]:
             label = iso_bearing["bearing"]["labels"][check["fault_type"]]
+            assert label["state"] == check["state"]
             assert label["detected"] == check["detected"]
             assert label["evidence_strength"] == check["evidence_strength"]
             assert label["magnitude"] == check["magnitude"]
@@ -1434,6 +1460,60 @@ class TestGoldenIsoBearingBand:
         assert one["processing"]["effective"]["envelope_band_hz"] == [1000.0, 3000.0]
         assert one["processing"]["params"]["envelope_band_policy"] == [1000.0, 3000.0]
         assert one["bearing"] is not None
+
+
+class TestRollingElementLine:
+    """A rolling-element defect strikes both races once per spin revolution,
+    so its envelope line is at twice the ball spin frequency: the snapshot
+    tests BSF there and reads ``envelope_BSF`` there, so the indicator
+    measures the line the state describes."""
+
+    FS = 12000.0
+    SECONDS = 10.0
+    SHAFT_HZ = RPM_6205 / 60.0
+    SEED = DEFECT_SEED + 900
+    SNR_DB = -10.0
+
+    def _snap(self, signal: np.ndarray) -> dict[str, Any]:
+        decl = declaration(rpm=RPM_6205, sampling_rate=self.FS)
+        return snap(signal, decl, point(), fs=self.FS)
+
+    def test_envelope_bsf_is_read_at_twice_the_ball_spin_and_rises_with_the_defect(
+        self,
+    ):
+        """A rolling-element defect at -10 dB SNR (``tests/_bearing_scenarios.py``:
+        unit-variance impacts plus white noise of standard deviation
+        10^(10/20)), against white noise of that standard deviation alone."""
+        noise_std = 10 ** (-self.SNR_DB / 20.0)
+        healthy = self._snap(
+            noise_std
+            * white(np.random.default_rng(self.SEED), self.FS, self.SECONDS, 0.0)
+        )
+        faulty = self._snap(
+            defect(
+                "rolling_element",
+                np.random.default_rng(self.SEED + 1),
+                self.FS,
+                self.SECONDS,
+                FREQUENCIES_6205,
+                self.SHAFT_HZ,
+                self.SNR_DB,
+            )
+        )
+        bsf = float(compute_fault_frequencies("6205", RPM_6205)["BSF"])
+        for snapshot in (healthy, faulty):
+            block = snapshot["bearing"]["labels"]["BSF"]
+            assert block["expected_hz"] == bsf
+            assert block["line_frequency_hz"] == pytest.approx(2 * bsf, abs=1e-3)
+            assert abs(block["envelope_peak_hz"] - 2 * bsf) <= 0.05 * 2 * bsf
+
+        line = faulty["bearing"]["labels"]["BSF"]
+        assert line["state"] == "supported"
+        assert line["envelope_amplitude"] == pytest.approx(line["magnitude"], abs=1e-12)
+        assert (
+            line["envelope_amplitude"]
+            > healthy["bearing"]["labels"]["BSF"]["envelope_amplitude"]
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -1643,6 +1723,6 @@ class TestModulePurity:
     def test_package_reexports_every_public_name(self):
         from predictive_maintenance_mcp import asset_ledger
 
-        assert s.ALGORITHM_VERSION == 1
+        assert s.ALGORITHM_VERSION == 2
         for name in s.__all__:
             assert getattr(asset_ledger, name) is getattr(s, name), name
