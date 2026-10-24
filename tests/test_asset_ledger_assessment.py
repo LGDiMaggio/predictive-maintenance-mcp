@@ -1366,9 +1366,66 @@ class TestCaptureComparison:
             "last 4 compared acquisitions, 4 consecutive (1 of the last 5 "
             "acquisitions not compared: capture differs from the reference)"
         )
-        # The amplitude rules keep the slot.
+        # The amplitude rules keep the slot: rms reads exactly as on the same
+        # acquisitions with one capture.
+        uniform = assess(
+            view_of(
+                current_events(STABLE * 2, bearing_of=supported_at(set(range(16, 21))))
+            )
+        )
         assert result["observed"]["acquisitions_assessed"] == 10
-        assert result["derived"]["exceedance_runs"]["rms"] == [False] * 5
+        for block in ("deltas", "drift", "per_indicator"):
+            assert result["derived"][block]["rms"] == uniform["derived"][block]["rms"]
+
+    def test_a_capture_without_a_valid_sampling_rate_is_not_recorded(self):
+        events = current_events(
+            STABLE * 2,
+            capture_of=lambda index: (0.0, 20000) if index == 18 else (10000.0, 20000),
+        )
+        excluded = assess(view_of(events))["observed"]["capture_comparison"]["excluded"]
+        assert [
+            (e["measurement_id"], e["sampling_rate_hz"], e["duration_s"], e["reasons"])
+            for e in excluded
+        ] == [(mid(18), None, None, ["capture_not_recorded"])]
+
+    def test_an_envelope_missing_in_one_slot_makes_that_label_unavailable(self):
+        """A slot whose bearing block lacks FTF leaves envelope_FTF without a
+        band: FTF's evidence is unavailable, with the missing count, while
+        the other labels are classified; the criterion names both."""
+
+        def bearing_of(index: int) -> dict[str, Any]:
+            block = state_block()
+            if index == 3:
+                del block["labels"]["FTF"]
+            return block
+
+        result = assess(view_of(current_events(STABLE * 2, bearing_of=bearing_of)))
+        evidence = result["assessed"]["evidence"]
+        assert evidence["BPFO"]["basis"] == "reference_relative"
+        assert (evidence["FTF"]["basis"], evidence["FTF"]["classification"]) == (
+            "unavailable",
+            None,
+        )
+        assert evidence["FTF"]["criterion"] == (
+            "reference-relative bearing evidence unavailable: envelope_FTF is "
+            "missing in 1 of the 20 evaluated acquisitions"
+        )
+        assert result["assessed"]["criterion"] == (
+            "latest acquisition inside the band (mean +/- max(3 sigma, 25%)) of "
+            "every amplitude indicator; no supported bearing evidence above the "
+            "reference band for BPFO, BPFI, BSF; reference-relative bearing "
+            "evidence of FTF unavailable"
+        )
+
+    def test_no_bearing_block_says_the_evidence_was_not_computed(self):
+        result = assess(
+            view_of(current_events(STABLE * 2, bearing_of=lambda index: None))
+        )
+        assert result["observed"]["evidence_presence"] == {}
+        assert result["assessed"]["criterion"] == (
+            "latest acquisition inside the band (mean +/- max(3 sigma, 25%)) of "
+            "every amplitude indicator; bearing evidence not computed"
+        )
 
     def test_a_reference_slot_with_another_capture_leaves_the_envelope_band(self):
         events = current_events(
