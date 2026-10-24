@@ -327,11 +327,11 @@ Contributions welcome from **everyone** — not just programmers. Domain experts
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Sample data is CC BY-NC-SA 4.0 (non-commercial); for commercial use, replace with your own machinery data.
+MIT, see [LICENSE](LICENSE). The sample data in `data/` is licensed separately under CC BY-NC-SA 4.0 (non-commercial); its attribution and terms are in [data/LICENSE](data/LICENSE). For commercial use, replace it with your own machinery data.
 
 ## Acknowledgments
 
-[MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) (descended from [FastMCP](https://github.com/jlowin/fastmcp)) · [Model Context Protocol](https://modelcontextprotocol.io/) by Anthropic · Sample data from [MathWorks](https://github.com/mathworks/RollingElementBearingFaultDiagnosis-Data) · Core development assisted by [Claude](https://claude.ai)
+[MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) (descended from [FastMCP](https://github.com/jlowin/fastmcp)) · [Model Context Protocol](https://modelcontextprotocol.io/) by Anthropic · Sample data by Eric Bechhoefer, redistributed by [MathWorks](https://github.com/mathworks/RollingElementBearingFaultDiagnosis-Data) · Core development assisted by [Claude](https://claude.ai)
 
 ---
 

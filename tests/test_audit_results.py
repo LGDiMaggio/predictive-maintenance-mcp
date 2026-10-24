@@ -160,6 +160,7 @@ class TestCli:
         assert audit_main.SUBCOMMANDS == (
             "smoke",
             "package-smoke",
+            "artifact-licensing",
             "upstream",
             "floors",
             "lock-reqs",

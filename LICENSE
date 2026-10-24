@@ -19,17 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
----
-
-Note on Sample Data:
-
-The sample bearing vibration data in the `data/` directory is derived from 
-MathWorks RollingElementBearingFaultDiagnosis-Data and is licensed under 
-CC BY-NC-SA 4.0 (Creative Commons Attribution-NonCommercial-ShareAlike 4.0).
-
-For commercial use, please replace the sample data with your own vibration 
-measurements or contact the original data provider for licensing.
-
-Data Source: https://github.com/mathworks/RollingElementBearingFaultDiagnosis-Data
-Data License: CC BY-NC-SA 4.0 (https://creativecommons.org/licenses/by-nc-sa/4.0/)
