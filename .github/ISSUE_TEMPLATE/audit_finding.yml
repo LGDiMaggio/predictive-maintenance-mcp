@@ -28,6 +28,7 @@ body:
         - diagnostic-correctness
         - security
         - dependency
+        - licensing
     validations:
       required: true
   - type: dropdown

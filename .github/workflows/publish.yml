@@ -58,6 +58,9 @@ jobs:
           name: dist
           path: dist/
 
+      - name: Check the licensing of the built wheel and sdist
+        run: python -m tools.audit artifact-licensing --dist dist --variant release-py3.11
+
       - name: Install the wheel into a fresh venv and run the stdio smoke harness
         run: python -m tools.audit package-smoke --dist dist --artifact wheel --variant release-py3.11
 

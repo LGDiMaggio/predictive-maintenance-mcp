@@ -303,6 +303,23 @@ def test_the_pull_request_package_smoke_job_still_installs_the_wheel(workflow):
     )
 
 
+def test_the_pull_request_package_smoke_job_checks_both_artifacts_licensing(workflow):
+    """The job builds the sdist too and reads both artifacts, not MANIFEST.in."""
+    script = job_script(workflow, "package-smoke")
+    assert "python -m build --wheel" not in script
+    assert "python -m build" in script
+    assert "python -m tools.audit artifact-licensing --dist dist" in script
+
+
+def test_no_release_upload_runs_before_the_artifacts_licensing_is_checked(workflows):
+    """The smoke job every upload waits for also checks the licensing of the
+    exact sdist and wheel the build job produced."""
+    publish = workflows["publish.yml"]
+    assert "python -m tools.audit artifact-licensing --dist dist" in job_script(
+        publish, "smoke"
+    )
+
+
 def test_no_release_upload_runs_before_the_wheel_is_smoke_tested(workflows):
     """The TestPyPI upload waits for the smoke job, and PyPI waits for TestPyPI,
     so a wheel that does not install and start never reaches either index."""

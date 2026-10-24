@@ -10,10 +10,6 @@ include INSTALL.md
 include pyproject.toml
 include setup_venv.py
 
-# Include data files
-recursive-include data *.csv *.json *.txt *.mat *.wav *.npy *.parquet
-recursive-include data/signals/samples README.md
-
 # Include tests
 recursive-include tests *.py
 
@@ -23,6 +19,9 @@ global-exclude __pycache__
 global-exclude *.so
 global-exclude .DS_Store
 
+# data/ holds the sample signals, under their own license (data/LICENSE), and
+# local downloads: never packaged
+prune data
 # Exclude generated files (data/ledger holds operator data: never packaged)
 prune data/ledger
 # README/docs images are served from GitHub by absolute URL: never packaged

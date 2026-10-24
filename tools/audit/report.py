@@ -1608,6 +1608,11 @@ def _reproduction(group: Sequence[Mapping[str, Any]]) -> str:
             "python -m build",
             "python -m tools.audit package-smoke --dist dist --artifact wheel",
         ]
+    elif check == "artifact-licensing":
+        commands += [
+            "python -m build",
+            "python -m tools.audit artifact-licensing --dist dist",
+        ]
     elif check == "upstream":
         commands.append("python -m tools.audit upstream")
     elif check == "security":

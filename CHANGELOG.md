@@ -189,6 +189,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   updates stay off, and MCP SDK major updates are ignored.
 
 ### Changed
+- **The sample bearing data is no longer part of the source distribution.**
+  The sdist now contains no files from `data/`; the sample signals stay in
+  the repository. `LICENSE` now holds only the MIT License, and the license
+  and attribution of the sample data are in `data/LICENSE`.
 - **Bearing statements, actions and reports follow a claim block.**
   `check_bearing_faults` and the `bearing_faults` block of
   `diagnose_vibration` carry a new `claim` block (additive): `level`
