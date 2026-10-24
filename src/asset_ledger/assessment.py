@@ -2416,8 +2416,11 @@ def assess_change(
                 members=members,
             )
         else:
-            # Snapshots of another lineage, such as those of an earlier
-            # algorithm version, are never scored silently as current ones.
+            # A disclosure, not a correction: the snapshots of another
+            # lineage, such as those of an earlier algorithm version, are
+            # scored as recorded (version 1 bearing evidence by its recorded
+            # rule, see _evidence_present) and still enter the
+            # classification; the sentence only says which lineage that is.
             opening = _earlier_lineage(
                 covered=len(evaluated),
                 chosen=chosen,

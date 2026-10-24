@@ -1116,6 +1116,10 @@ class TestAssessAssetChange:
             f"missing or outdated {current} snapshot(s) of the evaluated slots"
         )
         assert _named_calls(result.message) == [call]
+        assert (
+            validate_documented_calls(result.message, build_endpoints(), "message")
+            == []
+        )
 
         for _ in range(3):
             moved = await _assess(tools, ctx, reprocess=True)
