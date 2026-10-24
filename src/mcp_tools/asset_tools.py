@@ -442,8 +442,17 @@ async def assess_asset_change(
     reference band is mean plus or minus max(3 sigma, 25 percent) and the
     post-reference acquisitions are classified as no_change,
     isolated_episode, unconfirmed_single_acquisition or persistent_change
-    with the criterion spelled out; bearing evidence is counted over the
-    last_k acquisitions; the overall verdict is the most severe. Every
+    with the criterion spelled out. Bearing evidence over the last_k
+    acquisitions is reported as recorded and, on the current processing
+    lineage, classified against the reference: a label counts in an
+    acquisition when its evidence state is supported and the envelope
+    amplitude at its tested line is above the reference band. The envelope
+    indicators and the bearing evidence compare only acquisitions whose
+    sampling rate and capture duration are within 1 percent of the
+    reference median and list the others with their reasons. Evidence of an
+    earlier lineage is reported as legacy and not classified; evidence that
+    cannot be classified is reported as unavailable, never as absent. The
+    overall verdict is the most severe. Every
     comparability qualification is reported and non-comparable
     acquisitions are listed, never silently dropped. The result carries at
     most one suggested_verification, no list of recommendations.

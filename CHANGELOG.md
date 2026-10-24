@@ -92,8 +92,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `persistent_change` (three consecutive outside the band on the same
   side, at least four of the last five on the same side, or a
   significant drift ending outside),
-  with the criterion stated in the response; bearing evidence is counted
-  over the last K acquisitions; snapshots are compared only within one
+  with the criterion stated in the response; bearing evidence over the
+  last K acquisitions is reported as the snapshots record it and, on the
+  current processing lineage, classified against the reference: a bearing
+  label counts in an acquisition when its evidence state is supported and
+  the envelope amplitude at its tested line is above the reference band,
+  and the response also gives how many reference acquisitions show the
+  line; the envelope indicators and the bearing evidence compare only
+  acquisitions whose sampling rate and capture duration are within 1
+  percent of the reference median, and list the others with their
+  reasons; bearing evidence of an earlier lineage is reported as recorded,
+  marked legacy with its algorithm version, and is neither classified nor
+  counted in the overall verdict; evidence that cannot be classified is
+  reported as unavailable, never as absent; snapshots are compared only within one
   processing lineage, which must hold a snapshot of every evaluated
   acquisition; a result on a lineage other than the current one opens by
   saying so and names re-processing when it can compute the current

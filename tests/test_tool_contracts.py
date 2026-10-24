@@ -136,6 +136,13 @@ Fixture history:
   no longer contrast them with it. Both on check_bearing_faults and
   diagnose_vibration.
   Generated under mcp 2.3.0 and pydantic 2.12.0 (uv.lock).
+- Reference-relative ledger evidence (2026-10-24, T1 PR E): regenerated
+  intentionally: two descriptions only, no property, enum value or type
+  changed (observed and assessed are free-form objects). On
+  assess_asset_change, observed names the raw and reference-relative
+  presence, reference_present and capture_comparison, and assessed names
+  the evidence basis (reference_relative, legacy or unavailable).
+  Generated under mcp 2.3.0 and pydantic 2.12.0 (uv.lock).
 """
 
 from __future__ import annotations
