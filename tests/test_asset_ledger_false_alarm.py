@@ -20,6 +20,11 @@ ten), as a user calling ``assess_asset_change`` after each load would see it.
   growing linearly from 0.1 to 1.0 of the -10 dB SNR amplitude (as the
   acceptance ramp's depth grows from 0.1 to 1.0). BSF reaches persistent
   change; no other label does.
+- AE8 on real snapshots: 20 sequences of the stable recipe whose BPFO line
+  is present at a constant depth from M01 on, so the reference shows it.
+  The line is supported in the later acquisitions, never above the
+  reference band, and no assessment is driven by bearing evidence: these
+  are the sequences on which the reference band decides.
 
 The D-T1-12 numbers and the two ramps' timelines print with:
 
@@ -93,6 +98,10 @@ STABLE_SEEDS = tuple(
 #: AE7: BPFO reaches persistent change within this many acquisitions of its
 #: onset, the onset acquisition included.
 ONSET_ACQUISITIONS = 3
+
+#: AE8: the BPFO modulation depth of the sequences whose line the reference
+#: already shows (the acceptance ramp's depth at M23).
+REFERENCE_LINE_DEPTH = 0.3
 
 #: The rolling-element ramp: the AE3 record (10 s at 12 kHz, a 6205 at its
 #: CWRU speed) and the SNR of each ramp acquisition, M21 to M30.
@@ -206,9 +215,9 @@ def assess_after_each(events: Sequence[dict[str, Any]]) -> dict[int, dict[str, A
 # ---------------------------------------------------------------------------
 
 
-def stable_sequence(seed: int) -> list[np.ndarray]:
+def stable_sequence(seed: int, depth: float = 0.0) -> list[np.ndarray]:
     return [
-        synthesize_measurement(index, seed=seed, fault_free=True)
+        synthesize_measurement(index, seed=seed, stationary_depth=depth)
         for index in range(1, SEQUENCE_LENGTH + 1)
     ]
 
@@ -241,6 +250,23 @@ def fault_free_runs() -> dict[str, list[dict[int, dict[str, Any]]]]:
         ]
         for family, sequences in families.items()
     }
+
+
+def reference_line_runs() -> list[dict[int, dict[str, Any]]]:
+    """Every assessment of the sequences whose BPFO line is present at
+    REFERENCE_LINE_DEPTH from the first acquisition on."""
+    rpm = float(NOMINAL_RPM)
+    return [
+        assess_after_each(
+            ledger_events(
+                stable_sequence(seed, REFERENCE_LINE_DEPTH),
+                FS,
+                [rpm] * SEQUENCE_LENGTH,
+                rpm,
+            )
+        )
+        for seed in STABLE_SEEDS
+    ]
 
 
 def bpfo_ramp_events() -> list[dict[str, Any]]:
@@ -360,6 +386,7 @@ def report() -> None:
         json.dumps(
             {
                 "fault_free": {family: tally(r) for family, r in runs.items()},
+                "reference_line": tally(reference_line_runs()),
                 "bpfo_ramp": timeline(assess_after_each(bpfo_ramp_events())),
                 "rolling_element_ramp": timeline(
                     assess_after_each(rolling_element_ramp_events())
@@ -401,8 +428,9 @@ def test_ae7_no_fault_free_assessment_is_driven_by_bearing_evidence(
     assert stats["assessments"] == FAULT_FREE_SEQUENCES * (
         SEQUENCE_LENGTH - REFERENCE_WINDOW
     )
-    # Every assessment classified the evidence against the reference: the
-    # harness measures the current rule, not a legacy or unavailable basis.
+    # Every assessment classified the evidence against the reference. On these
+    # families the matcher supports no line, so this checks its specificity
+    # through the ledger; the reference-line family exercises the band.
     bases = {
         evidence["basis"]
         for run in runs
@@ -410,12 +438,41 @@ def test_ae7_no_fault_free_assessment_is_driven_by_bearing_evidence(
         for evidence in result["assessed"]["evidence"].values()
     }
     assert bases == {"reference_relative"}
-    for key in ("assessments", "overall", "sequences_with_persistent_change"):
+    for key in (
+        "assessments",
+        "overall",
+        "sequences_with_persistent_change",
+        "persistent_change_drivers",
+    ):
         record_property(key, json.dumps(stats[key]))
     assert stats["evidence_driven"] == [], (
         f"{family}: assessments driven by bearing evidence (sequence, "
         f"acquisition, drivers): {stats['evidence_driven']}"
     )
+    assert stats["evidence_classes_other_than_no_change"] == {}
+
+
+@pytest.fixture(scope="module")
+def reference_line() -> list[dict[int, dict[str, Any]]]:
+    return reference_line_runs()
+
+
+def test_ae8_a_line_the_reference_already_shows_is_not_counted(reference_line):
+    """The BPFO line is supported in the reference and in the later
+    acquisitions, at the same depth: it reaches the reference band, never
+    rises above it, and no assessment is driven by bearing evidence."""
+    stats = tally(reference_line)
+    assert stats["assessments"] == FAULT_FREE_SEQUENCES * (
+        SEQUENCE_LENGTH - REFERENCE_WINDOW
+    )
+    assert stats["evidence_driven"] == [], stats["evidence_driven"]
+    assert stats["evidence_classes_other_than_no_change"] == {}
+    for run in reference_line:
+        for n, result in run.items():
+            presence = result["observed"]["evidence_presence"]["BPFO"]
+            assert presence["present_in_last_k"] > 0, n
+            assert presence["reference_present"] > 0, n
+            assert presence["relative_present_in_last_k"] == 0, n
 
 
 def test_ae7_bpfo_persists_within_three_acquisitions_of_its_onset(bpfo_ramp):

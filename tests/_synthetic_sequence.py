@@ -31,7 +31,7 @@ companion, exactly as an adapter would write it.
 import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import numpy as np
 
@@ -163,7 +163,7 @@ def _amplitude_and_depth(
 
 
 def synthesize_measurement(
-    index: int, *, seed: int = DEFAULT_SEED, fault_free: bool = False
+    index: int, *, seed: int = DEFAULT_SEED, stationary_depth: Optional[float] = None
 ) -> np.ndarray:
     """Build the waveform of measurement *index* (unit ``g``, float64, 1-D).
 
@@ -174,8 +174,10 @@ def synthesize_measurement(
     Args:
         index: 1-based measurement index (M01 is 1).
         seed: Sequence seed; the measurement uses ``default_rng(seed + index)``.
-        fault_free: Build every index with the ``stable`` recipe (no spike,
-            no ramp), for fault-free sequences.
+        stationary_depth: When given, build every index with the ``stable``
+            amplitude (no spike, no ramp) and this BPFO modulation depth:
+            0.0 for a fault-free sequence, above 0 for a line present from
+            the first measurement on.
 
     Returns:
         Array of ``SAMPLES_PER_MEASUREMENT`` samples at ``FS`` Hz.
@@ -185,8 +187,10 @@ def synthesize_measurement(
     """
     _check_index(index)
     rng = np.random.default_rng(seed + index)
-    kind = STABLE if fault_free else EXPECTED_KIND[index]
+    kind = EXPECTED_KIND[index] if stationary_depth is None else STABLE
     amplitude, depth = _amplitude_and_depth(index, rng, kind)
+    if stationary_depth is not None:
+        depth = stationary_depth
     t = np.arange(SAMPLES_PER_MEASUREMENT) / FS
     modulation = 1.0 + depth * (
         _MODULATION_FUNDAMENTAL * np.sin(2 * np.pi * BPFO_6205_1800 * t)
