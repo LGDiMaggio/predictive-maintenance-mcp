@@ -206,6 +206,27 @@ def bearing_block(
     }
 
 
+def state_block(**labels: tuple[str, float]) -> dict[str, Any]:
+    """A bearing block as algorithm version 2 records it: every catalog label
+    absent at the quiet envelope amplitude of :func:`bearing_block`, unless
+    *labels* gives its (state, envelope_amplitude). A significant tested line
+    (supported, unconfirmed or shared) is detected with a magnitude."""
+    block = bearing_block()
+    for label, entry in block["labels"].items():
+        state, envelope = labels.get(label, ("absent", entry["envelope_amplitude"]))
+        significant = state in ("supported", "unconfirmed", "shared")
+        entry.update(
+            state=state,
+            line_frequency_hz=entry["expected_hz"],
+            level_db=12.0 if significant else None,
+            detected=significant,
+            magnitude=120.0 if significant else None,
+            evidence_strength="moderate" if state == "supported" else "none",
+            envelope_amplitude=envelope,
+        )
+    return block
+
+
 def snapshot_event(
     index: int,
     *,
@@ -220,17 +241,23 @@ def snapshot_event(
     point_version: Optional[int] = 1,
     missing: Optional[dict[str, Any]] = None,
     machine_group: int = 2,
+    algorithm_version: Optional[int] = 1,
+    sampling_rate: float = 10000.0,
+    num_samples: Optional[int] = 20000,
 ) -> dict[str, Any]:
     measurement_id = measurement_id or mid(index)
+    effective: dict[str, Any] = {"sampling_rate": sampling_rate}
+    if num_samples is not None:
+        effective["num_samples"] = num_samples
     payload = {
         "snapshot_id": short_id(measurement_id, processing, context_digest),
         "measurement_id": measurement_id,
         "measurement_point_id": POINT,
         "processing": {
             "processing_id": processing,
-            "algorithm_version": 1,
+            "algorithm_version": algorithm_version,
             "params": {"tolerance_pct": 5.0},
-            "effective": {"sampling_rate": 10000.0},
+            "effective": effective,
             "provenance": {"pipeline_version": "0.0.0"},
         },
         "context_digest": context_digest,
@@ -329,17 +356,22 @@ def series_events(
     unit_of: Any = None,
     start: int = 1,
     placeholder_digests: bool = False,
+    algorithm_version: Optional[int] = 1,
+    capture_of: Any = None,
 ) -> list[dict[str, Any]]:
     """Point declaration plus one measurement and one snapshot per value.
 
     ``rms`` is the value itself; peak, 1x and ISO velocity are proportional
     to it; the bearing block is quiet unless ``bearing_of(index)`` says
-    otherwise, so every amplitude indicator classifies alike. Every
-    snapshot carries the ``context_digest`` the snapshot code computes for
-    its declaration and the point, as a recorded snapshot does; with
-    ``placeholder_digests`` it carries ``"ctx"`` instead, which never
-    matches the current context, so every slot reads as stale.
+    otherwise (from algorithm version 2 a :func:`state_block`), so every
+    amplitude indicator classifies alike. Every snapshot carries the
+    ``context_digest`` the snapshot code computes for its declaration and
+    the point, as a recorded snapshot does; with ``placeholder_digests`` it
+    carries ``"ctx"`` instead, which never matches the current context, so
+    every slot reads as stale. ``capture_of(index)`` gives a snapshot's
+    (sampling_rate, num_samples); the default is 2 s at 10 kHz.
     """
+    quiet = state_block if algorithm_version and algorithm_version >= 2 else None
     point = point_event() if with_point else None
     events: list[dict[str, Any]] = [point] if point is not None else []
     for offset, value in enumerate(values):
@@ -353,6 +385,9 @@ def series_events(
             unit=unit,
         )
         events.append(measurement)
+        sampling_rate, num_samples = (
+            capture_of(index) if capture_of else (10000.0, 20000)
+        )
         events.append(
             snapshot_event(
                 index,
@@ -361,10 +396,17 @@ def series_events(
                 unit=unit,
                 one_x=0.1 * value if with_one_x else None,
                 iso_velocity=0.3 * value if with_iso else None,
-                bearing=bearing_of(index) if bearing_of else bearing_block(),
+                bearing=(
+                    bearing_of(index)
+                    if bearing_of
+                    else (quiet() if quiet else bearing_block())
+                ),
                 context_digest=(
                     "ctx" if placeholder_digests else digest_of(measurement, point)
                 ),
+                algorithm_version=algorithm_version,
+                sampling_rate=sampling_rate,
+                num_samples=num_samples,
             )
         )
     return events
@@ -937,63 +979,150 @@ class TestClassification:
         }
 
 
-class TestBearingEvidence:
-    @staticmethod
-    def evidence(present_indices: set[int]):
-        def bearing_of(index: int) -> dict[str, Any]:
-            if index in present_indices:
-                return bearing_block(True, 120.0, 0.5, strength="high")
-            return bearing_block()
+def current_events(values: Sequence[float], **kwargs: Any) -> list[dict[str, Any]]:
+    """:func:`series_events` on the current lineage, recorded as algorithm
+    version 2 records it: a valid current-lineage fixture."""
+    return series_events(
+        values, processing=processing_id(), algorithm_version=2, **kwargs
+    )
 
-        return bearing_of
+
+def supported_at(indices: set[int], envelope: float = 5.0, label: str = "BPFO"):
+    """``bearing_of``: *label* supported at *envelope* in the slots
+    *indices*, every label absent at its quiet amplitude elsewhere."""
+
+    def bearing_of(index: int) -> dict[str, Any]:
+        if index in indices:
+            return state_block(**{label: ("supported", envelope)})
+        return state_block()
+
+    return bearing_of
+
+
+class TestBearingEvidence:
+    """The bearing evidence per label (KTD15, KTD21). On the current lineage
+    a slot carries evidence when the label's state is supported AND its
+    ``envelope_<label>`` value is above the reference band; the raw presence
+    the snapshots record stays reported. The tests of that rule use valid
+    current-lineage fixtures (:func:`current_events`); the version 1
+    fixtures on LINEAGE_A keep the legacy and version-dispatch tests: an
+    earlier lineage's evidence is reported as recorded, never classified."""
 
     def test_present_in_four_of_the_last_five_is_persistent(self):
-        events = series_events(STABLE * 2, bearing_of=self.evidence({16, 18, 19, 20}))
+        events = current_events(STABLE * 2, bearing_of=supported_at({16, 18, 19, 20}))
         result = assess(view_of(events))
         presence = result["observed"]["evidence_presence"]["BPFO"]
         assert presence["present_in_last_k"] == 4
         assert presence["k"] == 5
         assert presence["presence"] == [True, False, True, True, True]
-        assert presence["latest_evidence_strength"] == "high"
+        assert presence["latest_evidence_strength"] == "moderate"
+        assert presence["relative_presence"] == [True, False, True, True, True]
+        assert presence["relative_present_in_last_k"] == 4
+        assert presence["relative_k"] == 5
+        assert presence["reference_present"] == 0
         evidence = result["assessed"]["evidence"]["BPFO"]
+        assert evidence["basis"] == "reference_relative"
+        assert evidence["algorithm_version"] == 2
         assert evidence["persistent"] is True
         assert evidence["consecutive"] == 3
         assert evidence["classification"] == "persistent_change"
-        assert "4 of the last 5" in evidence["criterion"]
+        assert evidence["criterion"] == (
+            "supported bearing evidence above the reference band in 4 of the "
+            "last 5 acquisitions, 3 consecutive"
+        )
         assert result["assessed"]["classification"] == "persistent_change"
-        assert result["assessed"]["indicators_driving"] == ["evidence_BPFO"]
-        # The onset is the start of the run that made the evidence persistent.
+        # Relative presence needs the envelope line above its band, so the
+        # envelope indicator drives with the evidence.
+        assert result["assessed"]["indicators_driving"] == [
+            "envelope_BPFO",
+            "evidence_BPFO",
+        ]
+        # The onset is the start of the run that made the change persistent.
         assert result["assessed"]["onset_measurement_id"] == mid(18)
         assert "diagnose_vibration" in result["suggested_verification"]
 
+    def test_the_evidence_alone_drives_after_its_run_returned_inside_the_band(self):
+        """Three consecutive relative presences persist for the evidence rule
+        once the envelope is back inside its band (an isolated episode for
+        the amplitude rule): the evidence alone drives, the onset is the
+        run's start and the verification confirms the bearing evidence."""
+        events = current_events(STABLE * 2, bearing_of=supported_at({16, 17, 18}))
+        result = assess(view_of(events))
+        envelope = result["derived"]["per_indicator"]["envelope_BPFO"]
+        assert envelope["classification"] == "isolated_episode"
+        evidence = result["assessed"]["evidence"]["BPFO"]
+        assert evidence["classification"] == "persistent_change"
+        assert result["assessed"]["indicators_driving"] == ["evidence_BPFO"]
+        assert result["assessed"]["onset_measurement_id"] == mid(16)
+        assert result["suggested_verification"] == (
+            "Confirm the bearing evidence with diagnose_vibration on the latest "
+            "measurement and on a reference measurement."
+        )
+
     def test_present_once_is_reported_but_not_persistent(self):
-        events = series_events(STABLE * 2, bearing_of=self.evidence({18}))
+        events = current_events(STABLE * 2, bearing_of=supported_at({18}))
         result = assess(view_of(events))
         presence = result["observed"]["evidence_presence"]["BPFO"]
         assert presence["present_in_last_k"] == 1
+        assert presence["relative_present_in_last_k"] == 1
         evidence = result["assessed"]["evidence"]["BPFO"]
         assert evidence["persistent"] is False
         assert evidence["classification"] == "isolated_episode"
         assert result["assessed"]["classification"] == "isolated_episode"
 
-    def test_detection_without_magnitude_is_not_presence(self):
-        def bearing_of(index: int) -> dict[str, Any]:
-            if index >= 16:
-                return bearing_block(True, None, 0.5, strength="low")
-            return bearing_block()
+    def test_present_in_the_latest_only_is_an_unconfirmed_single_acquisition(self):
+        events = current_events(STABLE * 2, bearing_of=supported_at({20}))
+        result = assess(view_of(events))
+        evidence = result["assessed"]["evidence"]["BPFO"]
+        assert evidence["classification"] == "unconfirmed_single_acquisition"
+        assert evidence["persistent"] is False
+        assert evidence["consecutive"] == 1
+        assert evidence["criterion"] == (
+            "supported bearing evidence above the reference band in the latest "
+            "acquisition only (1 of the last 5 acquisitions)"
+        )
+        assert result["assessed"]["classification"] == (
+            "unconfirmed_single_acquisition"
+        )
+        assert "evidence_BPFO" in result["assessed"]["indicators_driving"]
+        assert result["suggested_verification"] == (
+            "Repeat the measurement in the same operating conditions."
+        )
 
-        result = assess(view_of(series_events(STABLE * 2, bearing_of=bearing_of)))
-        assert result["observed"]["evidence_presence"]["BPFO"]["present_in_last_k"] == 0
-        assert result["assessed"]["evidence"]["BPFO"]["persistent"] is False
+    def test_a_supported_line_inside_the_reference_band_is_not_counted(self):
+        """KTD15: a supported line whose envelope amplitude stays inside the
+        reference band is reported as raw presence and classified no change."""
+        events = current_events(
+            STABLE * 2, bearing_of=supported_at(set(range(11, 21)), envelope=0.5)
+        )
+        result = assess(view_of(events))
+        presence = result["observed"]["evidence_presence"]["BPFO"]
+        assert presence["present_in_last_k"] == 5
+        assert presence["relative_presence"] == [False] * 5
+        assert presence["relative_present_in_last_k"] == 0
+        evidence = result["assessed"]["evidence"]["BPFO"]
+        assert (evidence["classification"], evidence["persistent"]) == (
+            "no_change",
+            False,
+        )
+        assert evidence["criterion"] == (
+            "no supported bearing evidence above the reference band in the last "
+            "5 acquisitions"
+        )
         assert result["assessed"]["classification"] == "no_change"
+        assert result["assessed"]["criterion"] == (
+            "latest acquisition inside the band (mean +/- max(3 sigma, 25%)) of "
+            "every amplitude indicator and no supported bearing evidence above "
+            "the reference band"
+        )
 
     def test_emerging_line_has_a_defined_envelope_band_and_classifies(self):
         def bearing_of(index: int) -> dict[str, Any]:
             if index >= 18:
-                return bearing_block(True, 120.0, 5.0, strength="high")
-            return bearing_block(False, None, 0.5 + 0.01 * (index % 3))
+                return state_block(BPFO=("supported", 5.0))
+            return state_block(BPFO=("absent", 0.5 + 0.01 * (index % 3)))
 
-        result = assess(view_of(series_events(STABLE * 2, bearing_of=bearing_of)))
+        result = assess(view_of(current_events(STABLE * 2, bearing_of=bearing_of)))
         stats = result["observed"]["reference_statistics"]["envelope_BPFO"]
         assert stats["band"]["half_width"] > 0
         assert stats["band"]["degenerate"] is False
@@ -1010,6 +1139,51 @@ class TestBearingEvidence:
             "classification"
         ] == ("no_change")
 
+    @pytest.mark.parametrize(
+        "state, persistent", [("supported", True), ("unconfirmed", False)]
+    )
+    def test_from_version_2_presence_is_a_supported_state(self, state, persistent):
+        """From algorithm version 2 a snapshot records the evidence state, and
+        only a supported line is presence: an unconfirmed line in the last five
+        slots, detected with a magnitude above the band, is none."""
+
+        def bearing_of(index: int) -> dict[str, Any]:
+            if index >= 16:
+                return state_block(BPFO=(state, 5.0))
+            return state_block()
+
+        result = assess(view_of(current_events(STABLE * 2, bearing_of=bearing_of)))
+        presence = result["observed"]["evidence_presence"]["BPFO"]
+        assert presence["present_in_last_k"] == (5 if persistent else 0)
+        assert result["assessed"]["evidence"]["BPFO"]["persistent"] is persistent
+
+    def test_ae8_a_declared_baseline_showing_the_line_is_no_change(self):
+        """AE8: the members of a declared baseline already show a supported
+        BPFI line; the later acquisitions show it at the same envelope
+        amplitude. BPFI is not counted, its raw presence is reported (in the
+        reference too), and the baseline is quoted as declared by its
+        declarer, not as verified healthy."""
+        events = current_events(
+            STABLE * 2, bearing_of=lambda index: state_block(BPFI=("supported", 0.4))
+        ) + [baseline_event([1, 2, 3, 4, 5])]
+        result = assess(view_of(events))
+        reference = result["reference"]
+        assert reference["kind"] == "declared_baseline"
+        assert reference["message"].startswith(
+            "declared healthy baseline (declared by L. Rossi on "
+        )
+        assert "verified" not in reference["message"]
+        presence = result["observed"]["evidence_presence"]["BPFI"]
+        assert presence["present_in_last_k"] == 5
+        assert presence["reference_present"] == 5
+        assert presence["relative_present_in_last_k"] == 0
+        evidence = result["assessed"]["evidence"]["BPFI"]
+        assert evidence["classification"] == "no_change"
+        assert "evidence_BPFI" not in result["assessed"]["indicators_driving"]
+        assert result["assessed"]["classification"] == "no_change"
+
+    # -- Version 1 fixtures: legacy evidence and the version dispatch --------
+
     @staticmethod
     def at_version(
         events: list[dict[str, Any]], version: Optional[int]
@@ -1025,25 +1199,22 @@ class TestBearingEvidence:
             rebuilt.append(event)
         return rebuilt
 
-    @pytest.mark.parametrize(
-        "state, persistent", [("supported", True), ("unconfirmed", False)]
-    )
-    def test_from_version_2_presence_is_a_supported_state(self, state, persistent):
-        """From algorithm version 2 a snapshot records the evidence state, and
-        only a supported line is presence: an unconfirmed line in the last five
-        slots, detected with a magnitude, is none."""
+    def test_detection_without_magnitude_is_not_presence(self):
+        """The version 1 rule: a detection without a magnitude is no
+        presence. The lineage is not the current one, so the evidence is
+        reported as recorded and not classified."""
 
         def bearing_of(index: int) -> dict[str, Any]:
-            block = bearing_block(index >= 16, 120.0 if index >= 16 else None)
-            for label, entry in block["labels"].items():
-                entry["state"] = state if label == "BPFO" and index >= 16 else "absent"
-            return block
+            if index >= 16:
+                return bearing_block(True, None, 0.5, strength="low")
+            return bearing_block()
 
-        events = self.at_version(series_events(STABLE * 2, bearing_of=bearing_of), 2)
-        result = assess(view_of(events))
-        presence = result["observed"]["evidence_presence"]["BPFO"]
-        assert presence["present_in_last_k"] == (5 if persistent else 0)
-        assert result["assessed"]["evidence"]["BPFO"]["persistent"] is persistent
+        result = assess(view_of(series_events(STABLE * 2, bearing_of=bearing_of)))
+        assert result["observed"]["evidence_presence"]["BPFO"]["present_in_last_k"] == 0
+        evidence = result["assessed"]["evidence"]["BPFO"]
+        assert (evidence["basis"], evidence["classification"]) == ("legacy", None)
+        assert evidence["persistent"] is None
+        assert result["assessed"]["classification"] == "no_change"
 
     @pytest.mark.parametrize("version", [1, None])
     def test_a_version_1_snapshot_keeps_its_recorded_rule(self, version):
@@ -1061,6 +1232,247 @@ class TestBearingEvidence:
         )
         result = assess(view_of(events))
         assert result["observed"]["evidence_presence"]["BPFO"]["present_in_last_k"] == 5
+
+    @pytest.mark.parametrize(
+        "processing, version",
+        [(LINEAGE_A, 1), ("health_snapshot/2+cccccccccccccccc", 2)],
+    )
+    def test_ae12_an_earlier_lineage_reports_its_evidence_as_recorded(
+        self, processing, version
+    ):
+        """AE12 (evidence part), KTD21: on a lineage other than the current
+        one the bearing evidence is reported exactly as recorded, marked
+        legacy with the recorded algorithm version, not classified against
+        the reference and never among the drivers; the amplitude indicators
+        are still classified, and only the opening lineage sentence names
+        the re-processing call."""
+
+        def bearing_of(index: int) -> dict[str, Any]:
+            if index < 16:
+                return state_block() if version == 2 else bearing_block()
+            if version == 2:
+                return state_block(BPFO=("supported", 0.5))
+            return bearing_block(True, 120.0, 0.5, strength="high")
+
+        events = series_events(
+            STABLE * 2,
+            processing=processing,
+            algorithm_version=version,
+            bearing_of=bearing_of,
+        )
+        view = view_of(events)
+        recorded = canonical_json(view)
+        result = assess(view)
+        assert canonical_json(view) == recorded
+
+        presence = result["observed"]["evidence_presence"]["BPFO"]
+        assert presence["presence"] == [True] * 5
+        assert presence["latest_evidence_strength"] == (
+            "high" if version == 1 else "moderate"
+        )
+        assert [
+            presence[key]
+            for key in (
+                "relative_presence",
+                "relative_present_in_last_k",
+                "relative_k",
+                "reference_present",
+            )
+        ] == [None] * 4
+        assert result["assessed"]["evidence"]["BPFO"] == {
+            "classification": None,
+            "persistent": None,
+            "consecutive": None,
+            "present_in_last_k": 5,
+            "k": 5,
+            "relative_present_in_last_k": None,
+            "relative_k": None,
+            "basis": "legacy",
+            "algorithm_version": version,
+            "criterion": (
+                f"legacy, algorithm version {version}: bearing evidence as "
+                f"recorded in 5 of the last 5 acquisitions, not classified "
+                f"against the reference"
+            ),
+        }
+        assessed = result["assessed"]
+        assert not any(
+            name.startswith("evidence_") for name in assessed["indicators_driving"]
+        )
+        assert assessed["classification"] == "no_change"
+        assert assessed["criterion"] == (
+            "latest acquisition inside the band (mean +/- max(3 sigma, 25%)) of "
+            "every amplitude indicator; bearing evidence of BPFO, BPFI, BSF, FTF "
+            f"not classified (legacy, algorithm version {version})"
+        )
+        assert {"rms", "envelope_BPFO"} <= set(result["derived"]["per_indicator"])
+        assert result["message"].count(REPROCESS_CALL) == 1
+        assert "no supported bearing evidence" not in result["message"]
+
+
+class TestCaptureComparison:
+    """Decision B: the envelope indicators and the bearing evidence compare
+    only the slots whose capture (sampling rate, and duration as
+    num_samples / sampling_rate) lies within the sampling-rate tolerance
+    (1%) of the reference median. A slot outside it is left out and listed
+    with its reasons; too few comparable reference slots, or a latest slot
+    left out, make them unavailable, never absent. The amplitude rules keep
+    every slot."""
+
+    @pytest.mark.parametrize(
+        "capture, reasons",
+        [
+            ((10000.0, 40000), ["capture_duration_differs"]),
+            ((12000.0, 24000), ["sampling_rate_differs"]),
+            ((10000.0, None), ["capture_not_recorded"]),
+        ],
+    )
+    def test_a_slot_with_another_capture_is_left_out_and_listed(self, capture, reasons):
+        rate, samples = capture
+        events = current_events(
+            STABLE * 2,
+            bearing_of=supported_at(set(range(16, 21))),
+            capture_of=lambda index: capture if index == 18 else (10000.0, 20000),
+        )
+        result = assess(view_of(events))
+        assert result["observed"]["capture_comparison"] == {
+            "reference_sampling_rate_hz": 10000.0,
+            "reference_duration_s": 2.0,
+            "tolerance_pct": 1.0,
+            "excluded": [
+                {
+                    "measurement_id": mid(18),
+                    "acquired_at": acquired(18),
+                    "in_reference": False,
+                    "sampling_rate_hz": rate,
+                    "duration_s": None if samples is None else samples / rate,
+                    "reasons": reasons,
+                }
+            ],
+            "excluded_truncated": False,
+        }
+        presence = result["observed"]["evidence_presence"]["BPFO"]
+        # The raw presence keeps every slot; the left-out slot is not compared.
+        assert presence["presence"] == [True] * 5
+        assert presence["relative_presence"] == [True, True, None, True, True]
+        assert (presence["relative_present_in_last_k"], presence["relative_k"]) == (
+            4,
+            4,
+        )
+        evidence = result["assessed"]["evidence"]["BPFO"]
+        assert evidence["classification"] == "persistent_change"
+        assert evidence["criterion"] == (
+            "supported bearing evidence above the reference band in 4 of the "
+            "last 4 compared acquisitions, 4 consecutive (1 of the last 5 "
+            "acquisitions not compared: capture differs from the reference)"
+        )
+        # The amplitude rules keep the slot.
+        assert result["observed"]["acquisitions_assessed"] == 10
+        assert result["derived"]["exceedance_runs"]["rms"] == [False] * 5
+
+    def test_a_reference_slot_with_another_capture_leaves_the_envelope_band(self):
+        events = current_events(
+            STABLE * 2,
+            capture_of=lambda index: (
+                (10000.0, 40000) if index == 3 else (10000.0, 20000)
+            ),
+        )
+        result = assess(view_of(events))
+        stats = result["observed"]["reference_statistics"]
+        assert stats["envelope_BPFO"]["n"] == 9
+        assert stats["rms"]["n"] == 10
+        excluded = result["observed"]["capture_comparison"]["excluded"]
+        assert [(e["measurement_id"], e["in_reference"]) for e in excluded] == [
+            (mid(3), True)
+        ]
+        assert result["assessed"]["evidence"]["BPFO"]["basis"] == "reference_relative"
+
+    def test_too_few_comparable_reference_captures_make_the_evidence_unavailable(
+        self,
+    ):
+        """Ten reference durations from 1.0 to 1.9 s: none lies within 1% of
+        their median (1.45 s). The envelope indicators and the bearing
+        evidence are unavailable, the raw presence stays reported, and the
+        amplitude rules are untouched."""
+
+        def capture_of(index: int) -> tuple[float, int]:
+            if index <= 10:
+                return 10000.0, 10000 + 1000 * (index - 1)
+            return 10000.0, 14500
+
+        events = current_events(
+            STABLE * 2,
+            bearing_of=supported_at(set(range(16, 21))),
+            capture_of=capture_of,
+        )
+        result = assess(view_of(events))
+        reason = (
+            "fewer than 3 reference acquisitions have a capture comparable with "
+            "the reference (see capture_comparison)"
+        )
+        observed = result["observed"]
+        assert observed["indicators_unavailable"]["envelope_BPFO"] == {
+            "missing_in": 10,
+            "of": 20,
+            "reason": reason,
+        }
+        assert "envelope_BPFO" not in observed["reference_statistics"]
+        assert observed["reference_statistics"]["rms"]["n"] == 10
+        presence = observed["evidence_presence"]["BPFO"]
+        assert presence["present_in_last_k"] == 5
+        assert presence["relative_presence"] is None
+        assert presence["reference_present"] == 0
+        evidence = result["assessed"]["evidence"]["BPFO"]
+        assert (evidence["basis"], evidence["classification"]) == (
+            "unavailable",
+            None,
+        )
+        assert evidence["persistent"] is None
+        assert evidence["criterion"] == (
+            f"reference-relative bearing evidence unavailable: {reason}"
+        )
+        assessed = result["assessed"]
+        assert assessed["indicators_driving"] == []
+        assert assessed["classification"] == "no_change"
+        assert assessed["criterion"] == (
+            "latest acquisition inside the band (mean +/- max(3 sigma, 25%)) of "
+            "every amplitude indicator; reference-relative bearing evidence of "
+            "BPFO, BPFI, BSF, FTF unavailable"
+        )
+        assert result["derived"]["per_indicator"]["rms"]["classification"] == (
+            "no_change"
+        )
+
+    def test_a_latest_acquisition_with_another_capture_makes_the_evidence_unavailable(
+        self,
+    ):
+        events = current_events(
+            STABLE * 2,
+            bearing_of=supported_at(set(range(16, 21))),
+            capture_of=lambda index: (
+                (10000.0, 40000) if index == 20 else (10000.0, 20000)
+            ),
+        )
+        result = assess(view_of(events))
+        reason = (
+            "the capture of the latest acquisition differs from the reference "
+            "(see capture_comparison)"
+        )
+        assert result["observed"]["indicators_unavailable"]["envelope_BPFO"] == {
+            "missing_in": 1,
+            "of": 20,
+            "reason": reason,
+        }
+        evidence = result["assessed"]["evidence"]["BPFO"]
+        assert (evidence["basis"], evidence["classification"]) == (
+            "unavailable",
+            None,
+        )
+        assert evidence["present_in_last_k"] == 5
+        assert not any(
+            name.startswith(("evidence_", "envelope_"))
+            for name in result["assessed"]["indicators_driving"]
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -1663,9 +2075,10 @@ class TestLineageSentence:
     """With nothing stale, an assessment on a lineage other than the current
     one opens with the lineage clause as a sentence and names the
     re-processing call when re-processing can compute the current snapshots.
-    The sentence discloses the lineage used; it corrects nothing: the
-    snapshots of that lineage are scored exactly as they would be on the
-    current one, recorded rule included."""
+    The sentence discloses the lineage used: the amplitude indicators of that
+    lineage are scored exactly as they would be on the current one, and its
+    bearing evidence is reported as recorded, outside the classification
+    (KTD21)."""
 
     def test_a_non_current_lineage_opens_with_the_sentence_and_the_call(self):
         result = assess(view_of(series_events(STABLE + [1.0])))
@@ -1690,18 +2103,38 @@ class TestLineageSentence:
         assert "was recorded later and is the one assessed" not in result["message"]
         assert REPROCESS_CALL not in result["message"]
 
-    def test_the_sentence_is_a_disclosure_and_changes_no_classification(self):
+    def test_the_sentence_changes_no_amplitude_classification(self):
         """The same view on a non-current and on the current lineage: every
-        block but the lineage and the message's opening sentence is equal."""
+        block but the lineage and the bearing evidence is equal; the evidence
+        is legacy on the earlier lineage and reference-relative on the
+        current one, and the messages differ by the opening sentence and the
+        criterion's evidence clause only."""
         earlier = assess(view_of(series_events(STABLE + [1.0])))
-        current = assess(
-            view_of(series_events(STABLE + [1.0], processing=processing_id()))
-        )
-        for key in set(earlier) - {"lineage", "message"}:
+        current = assess(view_of(current_events(STABLE + [1.0])))
+        for key in set(earlier) - {"lineage", "message", "observed", "assessed"}:
             assert earlier[key] == current[key], key
+        for block, evidence_keys in (
+            ("observed", {"evidence_presence"}),
+            ("assessed", {"evidence", "criterion"}),
+        ):
+            for key in set(earlier[block]) - evidence_keys:
+                assert earlier[block][key] == current[block][key], (block, key)
+        assert {e["basis"] for e in earlier["assessed"]["evidence"].values()} == {
+            "legacy"
+        }
+        assert {e["basis"] for e in current["assessed"]["evidence"].values()} == {
+            "reference_relative"
+        }
+        legacy = (
+            "; bearing evidence of BPFO, BPFI, BSF, FTF not classified (legacy, "
+            "algorithm version 1)"
+        )
+        relative = " and no supported bearing evidence above the reference band"
         assert split_lineage_sentence(
             earlier["message"], older_lineage_clause(11, 11, 11)
-        ) == current["message"].replace(CURRENT_LINEAGE, LINEAGE_A)
+        ) == current["message"].replace(CURRENT_LINEAGE, LINEAGE_A).replace(
+            relative, legacy
+        )
 
 
 class TestStaleEvidence:
@@ -2502,6 +2935,7 @@ class TestContract:
             "latest_measurement_id",
             "latest_acquired_at",
             "evidence_presence",
+            "capture_comparison",
             "indicators_unavailable",
             "acquisitions_assessed",
             "slots_assessed",
