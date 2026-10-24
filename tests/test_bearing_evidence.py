@@ -684,3 +684,231 @@ class TestUsableBandAndFrequencyRange:
         assert "no further line is tested for it at these settings" in (
             result["outcome_reason"]
         )
+
+
+#: The per-check fields kept from the earlier tolerance match, now derived
+#: from the state and the counted lines.
+KEPT_FIELDS = (
+    "detected",
+    "detected_frequency_hz",
+    "magnitude",
+    "deviation_pct",
+    "harmonics_detected",
+    "evidence_strength",
+)
+
+#: Amplitude of every line ``_with_line`` places at power 400.
+LINE_AMPLITUDE = 20.0
+
+
+def _kept(check: dict) -> dict:
+    return {key: check[key] for key in KEPT_FIELDS}
+
+
+def _not_detected() -> dict:
+    return {
+        "detected": False,
+        "detected_frequency_hz": None,
+        "magnitude": None,
+        "deviation_pct": None,
+        "harmonics_detected": [],
+        "evidence_strength": "none",
+    }
+
+
+class TestPerCheckFields:
+    """The kept per-check fields follow the state of each hypothesis.
+
+    ``detected`` is true when the line tested is significant (a local
+    maximum strictly inside its window, above its threshold), whatever the
+    later state; ``detected_frequency_hz``, ``magnitude`` and
+    ``deviation_pct`` describe that line, deviation relative to the line
+    tested; ``harmonics_detected`` lists the counted harmonics anchored at
+    it (sidebands and the 1 x BSF line only in ``corroboration``);
+    ``evidence_strength`` is "none" for absent and not-testable hypotheses,
+    "low" for unconfirmed and shared ones, and "moderate" (one counted
+    line) or "high" (two or more) only for supported ones. Each spectrum is
+    seeded exponential noise with lines of power 400 placed by hand, on a
+    0.1 Hz grid up to 400 Hz, a 6205 at 1797 rpm (shaft 29.95 Hz)."""
+
+    SHAFT_HZ = 29.95
+
+    def _evaluate(self, lines, seed, hypotheses, *, df=0.1, bins=4000, cage_hz=None):
+        freqs, mags = _noise_spectrum(FAULT_FREE_SEED + seed, bins=bins, df=df)
+        for line_hz in lines:
+            mags = _with_line(freqs, mags, line_hz, power=400.0)
+        return evaluate_hypotheses(
+            freqs, mags, hypotheses, shaft_hz=self.SHAFT_HZ, cage_hz=cage_hz
+        )["checks"]
+
+    def test_supported_with_one_harmonic_is_moderate(self):
+        (check,) = self._evaluate(
+            [107.4, 214.8], 4700, [Hypothesis("BPFO", 107.4, "outer_race")]
+        )
+
+        assert check["state"] == "supported"
+        assert _kept(check) == {
+            "detected": True,
+            "detected_frequency_hz": 107.4,
+            "magnitude": LINE_AMPLITUDE,
+            "deviation_pct": 0.0,
+            "harmonics_detected": [
+                {
+                    "harmonic": 2,
+                    "expected_hz": 214.8,
+                    "detected_hz": 214.8,
+                    "magnitude": LINE_AMPLITUDE,
+                }
+            ],
+            "evidence_strength": "moderate",
+        }
+
+    def test_supported_with_two_harmonics_is_high(self):
+        (check,) = self._evaluate(
+            [107.4, 214.8, 322.2], 4701, [Hypothesis("BPFO", 107.4, "outer_race")]
+        )
+
+        assert check["state"] == "supported"
+        assert check["evidence_strength"] == "high"
+        assert [h["harmonic"] for h in check["harmonics_detected"]] == [2, 3]
+
+    def test_a_sideband_counts_for_the_strength_but_is_no_harmonic(self):
+        """An inner-race line corroborated by its upper shaft-rate sideband
+        only."""
+        (check,) = self._evaluate(
+            [162.2, 162.2 + self.SHAFT_HZ],
+            4702,
+            [Hypothesis("BPFI", 162.2, "inner_race")],
+        )
+
+        assert check["state"] == "supported"
+        assert [c["kind"] for c in check["corroboration"] if c["counted"]] == [
+            "sideband"
+        ]
+        assert (check["evidence_strength"], check["harmonics_detected"]) == (
+            "moderate",
+            [],
+        )
+
+    def test_the_rolling_element_deviation_is_relative_to_twice_the_ball_spin(self):
+        """BSF 70.58 Hz: the line tested is 141.16 Hz; a line at 141.2 Hz with
+        its 1 x BSF line at 70.6 Hz."""
+        (check,) = self._evaluate(
+            [141.2, 70.6], 4703, [Hypothesis("BSF", 70.58, "ball")], cage_hz=11.93
+        )
+
+        assert check["state"] == "supported"
+        assert _kept(check) == {
+            "detected": True,
+            "detected_frequency_hz": 141.2,
+            "magnitude": LINE_AMPLITUDE,
+            "deviation_pct": round((141.2 - 141.16) / 141.16 * 100.0, 2),
+            "harmonics_detected": [],
+            "evidence_strength": "moderate",
+        }
+
+    def test_an_uncorroborated_line_is_detected_and_low(self):
+        (check,) = self._evaluate(
+            [107.4], 4704, [Hypothesis("BPFO", 107.4, "outer_race")]
+        )
+
+        assert (check["state"], check["state_reason"]) == (
+            "unconfirmed",
+            "no_corroboration",
+        )
+        assert _kept(check) == {
+            "detected": True,
+            "detected_frequency_hz": 107.4,
+            "magnitude": LINE_AMPLITUDE,
+            "deviation_pct": 0.0,
+            "harmonics_detected": [],
+            "evidence_strength": "low",
+        }
+
+    def test_a_line_at_a_shaft_order_is_detected_and_low_and_credits_nothing(self):
+        """A line at the fourth shaft order with its 2x, the eighth: neither
+        counts."""
+        (check,) = self._evaluate(
+            [4 * self.SHAFT_HZ, 8 * self.SHAFT_HZ],
+            4705,
+            [Hypothesis("BPFO", 4 * self.SHAFT_HZ, "outer_race")],
+        )
+
+        assert check["state_reason"] == "line_at_shaft_order"
+        assert (check["detected"], check["evidence_strength"]) == (True, "low")
+        assert check["harmonics_detected"] == []
+
+    def test_a_shared_line_is_detected_and_low(self):
+        """A declared frequency at 140 Hz also claims the 2 x BSF line."""
+        checks = self._evaluate(
+            [141.16, 70.58],
+            4706,
+            [Hypothesis("BSF", 70.58, "ball"), Hypothesis("X", 140.0, None)],
+            cage_hz=11.93,
+        )
+
+        for check in checks:
+            assert check["state"] == "shared"
+            assert (check["detected"], check["evidence_strength"]) == (True, "low")
+
+    def test_a_held_back_cage_keeps_its_counted_harmonic_and_is_low(self):
+        """Rule (g): a lone cage with its 2x, next to a significant
+        rolling-element line, is unconfirmed; its 2x stays a counted
+        harmonic, and the strength says the state."""
+        cage, ball = self._evaluate(
+            [11.93, 23.86, 141.16],
+            4707,
+            [Hypothesis("FTF", 11.93, "cage"), Hypothesis("BSF", 70.58, "ball")],
+            cage_hz=11.93,
+        )
+
+        assert cage["state_reason"] == "rolling_element_line_present"
+        assert (cage["detected"], cage["evidence_strength"]) == (True, "low")
+        assert [h["harmonic"] for h in cage["harmonics_detected"]] == [2]
+        assert (ball["state"], ball["evidence_strength"]) == ("unconfirmed", "low")
+
+    def test_no_significant_line_is_not_detected(self):
+        (check,) = self._evaluate([], 4708, [Hypothesis("BPFO", 107.4, "outer_race")])
+
+        assert check["state"] == "absent"
+        assert _kept(check) == _not_detected()
+
+    def test_an_untestable_line_is_not_detected(self):
+        """At 1 Hz resolution a window at 11.93 Hz +/- 5 % holds one bin."""
+        (check,) = self._evaluate(
+            [11.0, 12.0], 4709, [Hypothesis("FTF", 11.93, "cage")], df=1.0, bins=3000
+        )
+
+        assert check["state"] == "not_testable"
+        assert _kept(check) == _not_detected()
+
+
+class TestSeveralTypesStep:
+    def test_several_bearing_types_compare_first_then_inspect_alike(self):
+        """Two supported races (BPFO with its 2x, BPFI with its upper
+        shaft-rate sideband): a comparable measurement first, then an
+        inspection of both races with equal priority."""
+        freqs, mags = _noise_spectrum(FAULT_FREE_SEED + 4404)
+        for line_hz in (107.4, 214.8, 162.2, 162.2 + 29.95):
+            mags = _with_line(freqs, mags, line_hz, power=400.0)
+
+        result = evaluate_hypotheses(
+            freqs,
+            mags,
+            [
+                Hypothesis("BPFO", 107.4, "outer_race"),
+                Hypothesis("BPFI", 162.2, "inner_race"),
+            ],
+            shaft_hz=29.95,
+            cage_hz=None,
+        )
+
+        assert result["outcome"] == "several_types"
+        assert result["next_step"] in (
+            "Compare with an earlier measurement of the same machine under comparable "
+            f"conditions, and inspect {races} with equal priority."
+            for races in (
+                "the outer race and the inner race",
+                "the inner race and the outer race",
+            )
+        )

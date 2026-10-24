@@ -1,5 +1,5 @@
 {
-  "1": {
+  "2": {
     "cases": {
       "catalog_bearing_group2_rigid": {
         "declaration": {
@@ -26,63 +26,46 @@
                 "deviation_pct": null,
                 "envelope_amplitude": 7.532374608011829,
                 "envelope_peak_hz": 159.0,
-                "evidence_strength": "low",
+                "evidence_strength": "none",
                 "expected_hz": 162.46,
-                "harmonics_detected": [
-                  {
-                    "detected_hz": 323.0,
-                    "expected_hz": 324.92,
-                    "harmonic": 2,
-                    "magnitude": 9.82357
-                  }
-                ],
-                "magnitude": null
+                "harmonics_detected": [],
+                "level_db": 7.12,
+                "line_frequency_hz": 162.46,
+                "magnitude": null,
+                "state": "absent"
               },
               "BPFO": {
                 "detected": true,
                 "deviation_pct": 0.43,
                 "envelope_amplitude": 1734.2108118334522,
                 "envelope_peak_hz": 108.0,
-                "evidence_strength": "high",
+                "evidence_strength": "moderate",
                 "expected_hz": 107.54,
                 "harmonics_detected": [
                   {
                     "detected_hz": 215.0,
-                    "expected_hz": 215.08,
+                    "expected_hz": 216.0,
                     "harmonic": 2,
-                    "magnitude": 741.12761
-                  },
-                  {
-                    "detected_hz": 323.0,
-                    "expected_hz": 322.62,
-                    "harmonic": 3,
-                    "magnitude": 9.82357
-                  },
-                  {
-                    "detected_hz": 431.0,
-                    "expected_hz": 430.16,
-                    "harmonic": 4,
-                    "magnitude": 9.555077
+                    "magnitude": 741.1276099637921
                   }
                 ],
-                "magnitude": 1734.210812
+                "level_db": 55.66,
+                "line_frequency_hz": 107.54,
+                "magnitude": 1734.2108118334522,
+                "state": "supported"
               },
               "BSF": {
-                "detected": true,
-                "deviation_pct": -3.82,
-                "envelope_amplitude": 10.32659049235357,
-                "envelope_peak_hz": 68.0,
-                "evidence_strength": "moderate",
+                "detected": false,
+                "deviation_pct": null,
+                "envelope_amplitude": 6.2776375969327995,
+                "envelope_peak_hz": 145.0,
+                "evidence_strength": "none",
                 "expected_hz": 70.7,
-                "harmonics_detected": [
-                  {
-                    "detected_hz": 215.0,
-                    "expected_hz": 212.1,
-                    "harmonic": 3,
-                    "magnitude": 741.12761
-                  }
-                ],
-                "magnitude": 10.32659
+                "harmonics_detected": [],
+                "level_db": 5.14,
+                "line_frequency_hz": 141.4,
+                "magnitude": null,
+                "state": "absent"
               },
               "FTF": {
                 "detected": false,
@@ -92,7 +75,10 @@
                 "evidence_strength": "none",
                 "expected_hz": 11.95,
                 "harmonics_detected": [],
-                "magnitude": null
+                "level_db": null,
+                "line_frequency_hz": 11.95,
+                "magnitude": null,
+                "state": "not_testable"
               }
             },
             "shaft_hz": 30.0,
@@ -142,7 +128,7 @@
             "unit": "g"
           },
           "processing": {
-            "algorithm_version": 1,
+            "algorithm_version": 2,
             "effective": {
               "envelope_band_hz": [
                 500.0,
@@ -154,12 +140,14 @@
             },
             "params": {
               "envelope_band_policy": "default",
+              "false_alarm_probability_per_check": 0.01,
+              "false_alarm_probability_per_corroborating_line": 0.01,
               "fft_segment_s": 1.0,
               "num_harmonics": 3,
               "one_x_tolerance_pct": 5.0,
               "tolerance_pct": 5.0
             },
-            "processing_id": "health_snapshot/1+09700c336464a0ff",
+            "processing_id": "health_snapshot/2+dcbb50a52f4e19d8",
             "provenance": {
               "numpy_version": "0.0.0",
               "pipeline_version": "0.0.0",
@@ -201,63 +189,46 @@
                 "deviation_pct": null,
                 "envelope_amplitude": 7.532374608011829,
                 "envelope_peak_hz": 159.0,
-                "evidence_strength": "low",
+                "evidence_strength": "none",
                 "expected_hz": 162.46,
-                "harmonics_detected": [
-                  {
-                    "detected_hz": 323.0,
-                    "expected_hz": 324.92,
-                    "harmonic": 2,
-                    "magnitude": 9.82357
-                  }
-                ],
-                "magnitude": null
+                "harmonics_detected": [],
+                "level_db": 7.12,
+                "line_frequency_hz": 162.46,
+                "magnitude": null,
+                "state": "absent"
               },
               "BPFO": {
                 "detected": true,
                 "deviation_pct": 0.43,
                 "envelope_amplitude": 1734.2108118334522,
                 "envelope_peak_hz": 108.0,
-                "evidence_strength": "high",
+                "evidence_strength": "moderate",
                 "expected_hz": 107.54,
                 "harmonics_detected": [
                   {
                     "detected_hz": 215.0,
-                    "expected_hz": 215.08,
+                    "expected_hz": 216.0,
                     "harmonic": 2,
-                    "magnitude": 741.12761
-                  },
-                  {
-                    "detected_hz": 323.0,
-                    "expected_hz": 322.62,
-                    "harmonic": 3,
-                    "magnitude": 9.82357
-                  },
-                  {
-                    "detected_hz": 431.0,
-                    "expected_hz": 430.16,
-                    "harmonic": 4,
-                    "magnitude": 9.555077
+                    "magnitude": 741.1276099637921
                   }
                 ],
-                "magnitude": 1734.210812
+                "level_db": 55.66,
+                "line_frequency_hz": 107.54,
+                "magnitude": 1734.2108118334522,
+                "state": "supported"
               },
               "BSF": {
-                "detected": true,
-                "deviation_pct": -3.82,
-                "envelope_amplitude": 10.32659049235357,
-                "envelope_peak_hz": 68.0,
-                "evidence_strength": "moderate",
+                "detected": false,
+                "deviation_pct": null,
+                "envelope_amplitude": 6.2776375969327995,
+                "envelope_peak_hz": 145.0,
+                "evidence_strength": "none",
                 "expected_hz": 70.7,
-                "harmonics_detected": [
-                  {
-                    "detected_hz": 215.0,
-                    "expected_hz": 212.1,
-                    "harmonic": 3,
-                    "magnitude": 741.12761
-                  }
-                ],
-                "magnitude": 10.32659
+                "harmonics_detected": [],
+                "level_db": 5.14,
+                "line_frequency_hz": 141.4,
+                "magnitude": null,
+                "state": "absent"
               },
               "FTF": {
                 "detected": false,
@@ -267,7 +238,10 @@
                 "evidence_strength": "none",
                 "expected_hz": 11.95,
                 "harmonics_detected": [],
-                "magnitude": null
+                "level_db": null,
+                "line_frequency_hz": 11.95,
+                "magnitude": null,
+                "state": "not_testable"
               }
             },
             "shaft_hz": 30.0,
@@ -322,7 +296,7 @@
             "unit": "g"
           },
           "processing": {
-            "algorithm_version": 1,
+            "algorithm_version": 2,
             "effective": {
               "envelope_band_hz": [
                 500.0,
@@ -334,12 +308,14 @@
             },
             "params": {
               "envelope_band_policy": "default",
+              "false_alarm_probability_per_check": 0.01,
+              "false_alarm_probability_per_corroborating_line": 0.01,
               "fft_segment_s": 1.0,
               "num_harmonics": 3,
               "one_x_tolerance_pct": 5.0,
               "tolerance_pct": 5.0
             },
-            "processing_id": "health_snapshot/1+09700c336464a0ff",
+            "processing_id": "health_snapshot/2+dcbb50a52f4e19d8",
             "provenance": {
               "numpy_version": "0.0.0",
               "pipeline_version": "0.0.0",
@@ -399,7 +375,7 @@
           },
           "one_x": null,
           "processing": {
-            "algorithm_version": 1,
+            "algorithm_version": 2,
             "effective": {
               "envelope_band_hz": [
                 500.0,
@@ -411,12 +387,14 @@
             },
             "params": {
               "envelope_band_policy": "default",
+              "false_alarm_probability_per_check": 0.01,
+              "false_alarm_probability_per_corroborating_line": 0.01,
               "fft_segment_s": 1.0,
               "num_harmonics": 3,
               "one_x_tolerance_pct": 5.0,
               "tolerance_pct": 5.0
             },
-            "processing_id": "health_snapshot/1+09700c336464a0ff",
+            "processing_id": "health_snapshot/2+dcbb50a52f4e19d8",
             "provenance": {
               "numpy_version": "0.0.0",
               "pipeline_version": "0.0.0",
@@ -428,7 +406,7 @@
         }
       }
     },
-    "processing_id": "health_snapshot/1+09700c336464a0ff",
+    "processing_id": "health_snapshot/2+dcbb50a52f4e19d8",
     "provenance_overrides": {
       "numpy_version": "0.0.0",
       "pipeline_version": "0.0.0",

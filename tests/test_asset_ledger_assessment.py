@@ -1010,6 +1010,58 @@ class TestBearingEvidence:
             "classification"
         ] == ("no_change")
 
+    @staticmethod
+    def at_version(
+        events: list[dict[str, Any]], version: Optional[int]
+    ) -> list[dict[str, Any]]:
+        """The same events with every snapshot recorded under algorithm
+        *version*."""
+        rebuilt = []
+        for event in events:
+            if event["event_type"] == EVENT_HEALTH_SNAPSHOT_COMPUTED:
+                payload = json.loads(canonical_json(event["payload"]))
+                payload["processing"]["algorithm_version"] = version
+                event = make_event(EVENT_HEALTH_SNAPSHOT_COMPUTED, ASSET, payload)
+            rebuilt.append(event)
+        return rebuilt
+
+    @pytest.mark.parametrize(
+        "state, persistent", [("supported", True), ("unconfirmed", False)]
+    )
+    def test_from_version_2_presence_is_a_supported_state(self, state, persistent):
+        """From algorithm version 2 a snapshot records the evidence state, and
+        only a supported line is presence: an unconfirmed line in the last five
+        slots, detected with a magnitude, is none."""
+
+        def bearing_of(index: int) -> dict[str, Any]:
+            block = bearing_block(index >= 16, 120.0 if index >= 16 else None)
+            for label, entry in block["labels"].items():
+                entry["state"] = state if label == "BPFO" and index >= 16 else "absent"
+            return block
+
+        events = self.at_version(series_events(STABLE * 2, bearing_of=bearing_of), 2)
+        result = assess(view_of(events))
+        presence = result["observed"]["evidence_presence"]["BPFO"]
+        assert presence["present_in_last_k"] == (5 if persistent else 0)
+        assert result["assessed"]["evidence"]["BPFO"]["persistent"] is persistent
+
+    @pytest.mark.parametrize("version", [1, None])
+    def test_a_version_1_snapshot_keeps_its_recorded_rule(self, version):
+        """A version 1 snapshot, or one that records no integer version, is
+        never read with the newer rule: the same detected line with a
+        magnitude is presence, whatever a state key."""
+
+        def bearing_of(index: int) -> dict[str, Any]:
+            block = bearing_block(index >= 16, 120.0 if index >= 16 else None)
+            block["labels"]["BPFO"]["state"] = "unconfirmed"
+            return block
+
+        events = self.at_version(
+            series_events(STABLE * 2, bearing_of=bearing_of), version
+        )
+        result = assess(view_of(events))
+        assert result["observed"]["evidence_presence"]["BPFO"]["present_in_last_k"] == 5
+
 
 # ---------------------------------------------------------------------------
 # Comparability (AE3, AE4) and slots
@@ -1186,12 +1238,17 @@ class TestLineage:
 
     def test_current_context_leaves_no_stale_snapshot(self):
         """Snapshots carrying the digest the current point declaration
-        produces are not stale: no count and no re-processing suggestion."""
+        produces are not stale: no count and no re-processing suggestion. The
+        fixture's lineage is not the current one, so the message opens with
+        the lineage sentence, which names the call; nothing after it does."""
         result = assess(view_of(series_events(STABLE + [1.0])))
         assert result["status"] == "assessed"
         assert result["lineage"]["stale_context"] == 0
         assert "previous declaration" not in result["message"]
-        assert REPROCESS_CALL not in result["message"]
+        rest = split_lineage_sentence(
+            result["message"], older_lineage_clause(11, 11, 11)
+        )
+        assert REPROCESS_CALL not in rest
         # The placeholder digest never matches the current context: every
         # evaluated slot counts as stale.
         placeholder = assess(
@@ -1570,6 +1627,21 @@ def recorded_later_clause() -> str:
     )
 
 
+def as_sentence(clause: str) -> str:
+    """A lineage clause of the stale sentence (``"; this assessment ..."``)
+    as the sentence that opens a message with nothing stale."""
+    text = clause.removeprefix("; ")
+    return text[0].upper() + text[1:]
+
+
+def split_lineage_sentence(message: str, clause: str) -> str:
+    """The rest of *message* after its opening lineage sentence, which must
+    be *clause* as a sentence."""
+    sentence = as_sentence(clause) + ". "
+    assert message.startswith(sentence), message
+    return message[len(sentence) :]
+
+
 #: The action a declaration that does not resolve needs.
 CORRECTED_DECLARATION = (
     "ask the user to correct the measurement object of the companion and "
@@ -1587,11 +1659,59 @@ def blocked_clause(total: int, counts: str) -> str:
     )
 
 
+class TestLineageSentence:
+    """With nothing stale, an assessment on a lineage other than the current
+    one opens with the lineage clause as a sentence and names the
+    re-processing call when re-processing can compute the current snapshots.
+    The sentence discloses the lineage used; it corrects nothing: the
+    snapshots of that lineage are scored exactly as they would be on the
+    current one, recorded rule included."""
+
+    def test_a_non_current_lineage_opens_with_the_sentence_and_the_call(self):
+        result = assess(view_of(series_events(STABLE + [1.0])))
+        assert (
+            result["lineage"]["is_current"],
+            result["lineage"]["stale_context"],
+        ) == (
+            False,
+            0,
+        )
+        sentence = as_sentence(older_lineage_clause(11, 11, 11))
+        assert result["message"].startswith(sentence + ". ")
+        assert result["message"].count(REPROCESS_CALL) == 1
+        assert REPROCESS_CALL == reprocess_call(ASSET, POINT)
+
+    def test_the_current_lineage_carries_no_lineage_sentence(self):
+        result = assess(
+            view_of(series_events(STABLE + [1.0], processing=processing_id()))
+        )
+        assert result["lineage"]["is_current"] is True
+        assert "This assessment uses lineage" not in result["message"]
+        assert "was recorded later and is the one assessed" not in result["message"]
+        assert REPROCESS_CALL not in result["message"]
+
+    def test_the_sentence_is_a_disclosure_and_changes_no_classification(self):
+        """The same view on a non-current and on the current lineage: every
+        block but the lineage and the message's opening sentence is equal."""
+        earlier = assess(view_of(series_events(STABLE + [1.0])))
+        current = assess(
+            view_of(series_events(STABLE + [1.0], processing=processing_id()))
+        )
+        for key in set(earlier) - {"lineage", "message"}:
+            assert earlier[key] == current[key], key
+        assert split_lineage_sentence(
+            earlier["message"], older_lineage_clause(11, 11, 11)
+        ) == current["message"].replace(CURRENT_LINEAGE, LINEAGE_A)
+
+
 class TestStaleEvidence:
     """When stale_context is above 0 the message opens with how many slots
     were scored under a previous declaration, then the message the same view
     would carry with nothing stale; the re-processing call is named only
-    when re-processing writes something for the evaluated slots."""
+    when re-processing writes something for the evaluated slots. With
+    nothing stale, a lineage that is not the current one opens the message
+    with the same lineage clause as a sentence; with stale slots the stale
+    sentence carries that clause instead."""
 
     def test_redeclared_point_counts_every_evaluated_slot_as_stale(self):
         """A re-declaration changing the resolved context (machine group)
@@ -1607,11 +1727,12 @@ class TestStaleEvidence:
         assert result["lineage"]["stale_context"] == 11
         current = assess(view_of(events + recomputed(events, point_v2)))
         assert current["lineage"]["stale_context"] == 0
+        clause = older_lineage_clause(11, 11, 11)
         assert result["message"] == (
             stale_opening(11, 11)
-            + older_lineage_clause(11, 11, 11)
+            + clause
             + ". "
-            + current["message"]
+            + split_lineage_sentence(current["message"], clause)
         )
         assert result["suggested_verification"] == STALE_VERIFICATION
 
@@ -1721,14 +1842,19 @@ class TestStaleEvidence:
         current = assess(view_of(events + older + recomputed(events, point)))
         assert current["lineage"]["processing_id"] == LINEAGE_A
         assert current["lineage"]["stale_context"] == 0
+        clause = (
+            recorded_later_clause()
+            + ", so re-processing has nothing to write on lineage "
+            + f"{CURRENT_LINEAGE} for the evaluated slots"
+        )
         assert result["message"] == (
             stale_opening(11, 11)
-            + recorded_later_clause()
-            + ", so re-processing has nothing to write on lineage "
-            + f"{CURRENT_LINEAGE} for the evaluated slots. "
-            + current["message"]
+            + clause
+            + ". "
+            + split_lineage_sentence(current["message"], clause)
         )
         assert REPROCESS_CALL not in result["message"]
+        assert REPROCESS_CALL not in current["message"]
 
     def test_nothing_to_write_ignores_measurements_outside_the_evaluated_set(self):
         """A non-comparable measurement without a current-lineage snapshot is

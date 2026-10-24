@@ -1535,7 +1535,7 @@ What changed on P-101 motor_de_h since the reference?
 - Four to ten: the reference is provisional (the earliest acquisitions, all but the latest) and `statistics_quality` is `relative_only` (up to five members) or `provisional` (six to nine).
 - From eleven: the first ten comparable acquisitions form the window (`statistics_quality` `full`) and every later acquisition is assessed against it.
 
-An assessed response has three blocks. `observed` holds the reference statistics and band per indicator (`rms`, `peak`, `one_x`, `iso_velocity` and the envelope amplitude at each expected bearing fault frequency, `envelope_BPFO` and so on), the latest values and the presence of bearing evidence over the last five acquisitions. `derived` holds the deltas, the exceedance runs, the drift regressions and the classification of each indicator with its criterion. `assessed` is the verdict:
+An assessed response has three blocks. `observed` holds the reference statistics and band per indicator (`rms`, `peak`, `one_x`, `iso_velocity` and the envelope amplitude at each tested bearing line, twice the ball spin frequency for the rolling element, `envelope_BPFO` and so on), the latest values and the presence of bearing evidence over the last five acquisitions. `derived` holds the deltas, the exceedance runs, the drift regressions and the classification of each indicator with its criterion. `assessed` is the verdict:
 
 ```json
 {

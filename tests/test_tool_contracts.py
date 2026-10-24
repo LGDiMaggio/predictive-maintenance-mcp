@@ -127,6 +127,15 @@ Fixture history:
   the bearing vocabulary alone. Both on check_bearing_faults and
   diagnose_vibration.
   Generated under mcp 2.3.0 and pydantic 2.12.0 (uv.lock).
+- Per-check bearing fields (2026-10-23, T1 PR D): regenerated intentionally:
+  descriptions only, no property, enum value or type changed. The six
+  per-check fields detected, detected_frequency_hz, magnitude,
+  deviation_pct, harmonics_detected and evidence_strength describe their
+  derivation from the significance-tested evidence instead of a legacy
+  tolerance match; state, line_frequency_hz, outcome and the claim's basis
+  no longer contrast them with it. Both on check_bearing_faults and
+  diagnose_vibration.
+  Generated under mcp 2.3.0 and pydantic 2.12.0 (uv.lock).
 """
 
 from __future__ import annotations

@@ -437,7 +437,8 @@ async def assess_asset_change(
     declarer cited), else the first reference_measurements comparable
     acquisitions of the point, reported as a relative comparison whose
     health is not declared. For every amplitude indicator (rms, peak, 1x,
-    ISO velocity, envelope amplitude at each bearing fault frequency) the
+    ISO velocity, envelope amplitude at each tested bearing line, twice the
+    ball spin frequency for the rolling element) the
     reference band is mean plus or minus max(3 sigma, 25 percent) and the
     post-reference acquisitions are classified as no_change,
     isolated_episode, unconfirmed_single_acquisition or persistent_change

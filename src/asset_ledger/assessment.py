@@ -928,15 +928,29 @@ def _indicator_order(names: set[str]) -> list[str]:
     return ordered
 
 
+#: First snapshot algorithm version whose bearing labels record the
+#: significance-tested ``state`` (``snapshot.ALGORITHM_VERSION`` history).
+_STATE_EVIDENCE_VERSION = 2
+
+
 def _evidence_present(snapshot: dict[str, Any], label: str) -> bool:
-    """Bearing evidence counts as present only with ``detected`` True AND a
-    numeric ``magnitude`` (the analyzer can report a detection with no
-    magnitude on an empty envelope)."""
+    """Whether the snapshot records bearing evidence for *label*.
+
+    A snapshot of algorithm version 2 or later records the evidence state:
+    present only when it is ``supported`` (a significant line of its own,
+    corroborated by a counted line its kinematics predict). An earlier
+    snapshot is read with the rule it was recorded under, never with the
+    newer one: ``detected`` True AND a numeric ``magnitude`` (that analyzer
+    could report a detection with no magnitude on an empty envelope).
+    """
     bearing = snapshot.get("bearing")
     labels = bearing.get("labels") if isinstance(bearing, dict) else None
     block = labels.get(label) if isinstance(labels, dict) else None
     if not isinstance(block, dict):
         return False
+    version = (snapshot.get("processing") or {}).get("algorithm_version")
+    if isinstance(version, int) and version >= _STATE_EVIDENCE_VERSION:
+        return bool(block.get("state") == "supported")
     return bool(block.get("detected")) and _number(block.get("magnitude")) is not None
 
 
@@ -1781,7 +1795,6 @@ def _stale_evidence(
     touch the chosen lineage's snapshots, and when the assessment moves to
     the current lineage.
     """
-    named = actionable if call is not None else 0
     verb = "was" if stale == 1 else "were"
     text = (
         f"{stale} of the {covered} evaluated acquisition slots {verb} scored "
@@ -1789,14 +1802,50 @@ def _stale_evidence(
         f"or the measurement, so this verdict does not reflect the current "
         f"declaration yet"
     )
+    if chosen != current:
+        return (
+            text
+            + "; "
+            + _earlier_lineage(
+                covered=covered,
+                chosen=chosen,
+                current=current,
+                missing=missing,
+                actionable=actionable,
+                call=call,
+                blocked=blocked,
+                listed=listed,
+                members=members,
+            )
+        )
+    if actionable and call is not None:
+        text += f"; {call} attempts to recompute them {_REPROCESS_CAVEAT}"
+    return text + _blocked_clause(blocked, current, listed=listed, members=members)
+
+
+def _earlier_lineage(
+    *,
+    covered: int,
+    chosen: str,
+    current: str,
+    missing: int,
+    actionable: int,
+    call: Optional[str],
+    blocked: _BlockedByCode,
+    listed: bool,
+    members: frozenset[str],
+) -> str:
+    """The clause (without its period) that says the assessment uses the
+    lineage *chosen*, not the *current* one, and names the re-processing
+    *call* when it can compute the current snapshots of *actionable*
+    evaluated slots; the *blocked* ones are counted as in the stale-evidence
+    sentence (*listed*, *members*). It continues that sentence, or opens the
+    message on its own."""
+    named = actionable if call is not None else 0
     tail = _blocked_clause(blocked, current, listed=listed, members=members)
-    if chosen == current:
-        if named:
-            text += f"; {call} attempts to recompute them {_REPROCESS_CAVEAT}"
-        return text + tail
     if missing:
-        text += (
-            f"; this assessment uses lineage {chosen} because {missing} of the "
+        text = (
+            f"this assessment uses lineage {chosen} because {missing} of the "
             f"{covered} evaluated slots still lack a snapshot of the current "
             f"lineage {current}, re-processing writes lineage {current} only "
             f"and leaves the {chosen} snapshots unchanged, and the assessment "
@@ -1809,8 +1858,8 @@ def _stale_evidence(
                 f"{_REPROCESS_CAVEAT}"
             )
         return text + tail
-    text += (
-        f"; every evaluated slot already has a snapshot of the current lineage "
+    text = (
+        f"every evaluated slot already has a snapshot of the current lineage "
         f"{current}, but lineage {chosen} was recorded later and is the one "
         f"assessed"
     )
@@ -2339,7 +2388,7 @@ def assess_change(
         f"{len(sequence)} post-reference acquisition(s): {criterion}. Reference: "
         f"{reference_text}. Lineage {chosen}."
     )
-    if stale_context:
+    if stale_context or chosen != current_processing:
         actionable, stale_blocked = _split_blocked(
             (
                 slot
@@ -2349,8 +2398,12 @@ def assess_change(
             point,
             reprocess,
         )
-        message = (
-            _stale_evidence(
+        listed = reprocess is not None and all(
+            m in reprocess.blocked for ids in stale_blocked.values() for m in ids
+        )
+        members = _baseline_ids(view, measurement_point_id)
+        if stale_context:
+            opening = _stale_evidence(
                 stale=stale_context,
                 covered=len(evaluated),
                 chosen=chosen,
@@ -2359,17 +2412,28 @@ def assess_change(
                 actionable=actionable,
                 call=call,
                 blocked=stale_blocked,
-                listed=reprocess is not None
-                and all(
-                    m in reprocess.blocked
-                    for ids in stale_blocked.values()
-                    for m in ids
-                ),
-                members=_baseline_ids(view, measurement_point_id),
+                listed=listed,
+                members=members,
             )
-            + ". "
-            + message
-        )
+        else:
+            # A disclosure, not a correction: the snapshots of another
+            # lineage, such as those of an earlier algorithm version, are
+            # scored as recorded (version 1 bearing evidence by its recorded
+            # rule, see _evidence_present) and still enter the
+            # classification; the sentence only says which lineage that is.
+            opening = _earlier_lineage(
+                covered=len(evaluated),
+                chosen=chosen,
+                current=current_processing,
+                missing=missing_for_current,
+                actionable=actionable,
+                call=call,
+                blocked=stale_blocked,
+                listed=listed,
+                members=members,
+            )
+            opening = opening[0].upper() + opening[1:]
+        message = opening + ". " + message
 
     return {
         "status": "assessed",

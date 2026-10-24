@@ -1,18 +1,17 @@
 """
 Bearing fault detection functions.
 
-Checks envelope spectrum peaks against expected bearing fault frequencies
-(BPFO, BPFI, BSF, FTF) with tolerance matching, harmonic detection,
-and evidence-strength rating (derived from detected peaks/harmonics,
-never presented as a probability).
-
-Every check also carries the fields of :mod:`.bearing_evidence` (per-check
-``state``, line level and corroboration; per-summary ``outcome``,
-``candidates`` and ``evidence_policy``), computed on the same envelope
-spectrum. The summary's ``claim`` (:mod:`.bearing_claims`) says what the
-check may state from that evidence, and ``most_likely_fault``,
-``most_likely_fault_canonical`` and ``overall_assessment`` follow it. The
-older per-check fields keep their values for now.
+Tests the envelope spectrum at expected bearing fault frequencies (BPFO,
+BPFI, BSF, FTF, or any declared label) with :mod:`.bearing_evidence`, on one
+envelope spectrum per check: per-check ``state``, line level and
+corroboration, and per-summary ``outcome``, ``candidates`` and
+``evidence_policy``. The per-check ``detected``, ``detected_frequency_hz``,
+``magnitude``, ``deviation_pct``, ``harmonics_detected`` and
+``evidence_strength`` derive from that evidence (a count of corroborating
+lines of one spectrum, never a probability). The summary's ``claim``
+(:mod:`.bearing_claims`) says what the check may state from that evidence,
+and ``most_likely_fault``, ``most_likely_fault_canonical`` and
+``overall_assessment`` follow it.
 """
 
 import logging
@@ -31,7 +30,6 @@ from .bearing_claims import (
 from .bearing_evidence import Hypothesis, evaluate_hypotheses
 from ..signal_processing.spectral import (
     envelope_spectrum_arrays,
-    envelope_top_peaks,
     resolve_envelope_band,
 )
 from ..signal_validation import (
@@ -73,7 +71,7 @@ def check_bearing_fault_peak(
     num_harmonics: int = 3,
     envelope_freq_range: Optional[tuple[float, float]] = None,
 ) -> dict:
-    """Check if envelope spectrum has a peak near an expected fault frequency.
+    """Test the envelope spectrum for a line at one expected fault frequency.
 
     Args:
         signal: 1D vibration signal.
@@ -114,10 +112,6 @@ def check_bearing_fault_peak(
     return check
 
 
-#: Envelope peaks the tolerance matching of the older per-check fields reads.
-_MATCHED_PEAKS = 50
-
-
 def _check_on_one_spectrum(
     signal: np.ndarray,
     fs: float,
@@ -145,43 +139,33 @@ def _check_on_one_spectrum(
     """
     # Every bearing verdict passes through here, so corrupt input is refused
     # before the envelope: a NaN envelope, or a zero, negative or NaN expected
-    # frequency, matches no peak and the summary would read "Bearing appears
-    # healthy"; an infinite expected frequency matches every peak. Each
-    # frequency is validated before the spectrum it would first be used on,
-    # which keeps the order of refusals of one spectrum per frequency.
+    # frequency, would leave no line to test and read as no indication; an
+    # infinite expected frequency has no window. The first frequency is
+    # validated before the envelope band and spectrum, the others after, as
+    # when the spectrum was computed once per frequency.
     signal = validate_signal_and_fs(signal, fs)
-    peaks = None
-    checks = []
-    for label, expected_freq in expected:
+    (first_label, first_freq), *others = expected
+    validate_expected_frequency(
+        first_freq, label=first_label, remedy=_PEAK_FREQUENCY_REMEDY
+    )
+    band = resolve_envelope_band(fs, envelope_freq_range)
+    # The band as the filter realizes it (an upper edge at Nyquist sits 1 Hz
+    # below it, see envelope_spectrum_arrays).
+    band_width = min(band[1], fs / 2.0 - 1.0) - band[0]
+    if spectrum is None:
+        freqs, mags = envelope_spectrum_arrays(signal, fs, band)
+    else:
+        freqs, mags = spectrum
+    for label, expected_freq in others:
         validate_expected_frequency(
             expected_freq, label=label, remedy=_PEAK_FREQUENCY_REMEDY
         )
-        if peaks is None:
-            band = resolve_envelope_band(fs, envelope_freq_range)
-            # The band as the filter realizes it (an upper edge at Nyquist
-            # sits 1 Hz below it, see envelope_spectrum_arrays).
-            band_width = min(band[1], fs / 2.0 - 1.0) - band[0]
-            if spectrum is None:
-                freqs, mags = envelope_spectrum_arrays(signal, fs, band)
-            else:
-                freqs, mags = spectrum
-            peaks = envelope_top_peaks(freqs, mags, fs / len(signal), _MATCHED_PEAKS)
-        checks.append(
-            _match_peaks(
-                peaks,
-                expected_freq,
-                label,
-                bearing_id,
-                signal_id,
-                tolerance_pct,
-                num_harmonics,
-            )
-        )
 
+    hypotheses = _hypotheses(expected)
     evidence = evaluate_hypotheses(
         freqs,
         mags,
-        _hypotheses(expected),
+        hypotheses,
         shaft_hz=shaft_hz,
         cage_hz=cage_hz,
         num_harmonics=num_harmonics,
@@ -189,8 +173,19 @@ def _check_on_one_spectrum(
         catalog=catalog,
         envelope_band_hz=band_width,
     )
-    for check, fields in zip(checks, evidence["checks"]):
-        check.update({k: v for k, v in fields.items() if k != "fault_type"})
+    checks = [
+        {
+            "signal_id": signal_id,
+            "bearing_id": bearing_id,
+            "fault_type": h.label,
+            "fault_type_canonical": h.canonical,
+            "expected_frequency_hz": round(expected_freq, 2),
+            **fields,
+        }
+        for h, (_, expected_freq), fields in zip(
+            hypotheses, expected, evidence["checks"]
+        )
+    ]
     return checks, evidence
 
 
@@ -238,77 +233,6 @@ def _summary_evidence(
             )
         },
         "claim": claim,
-    }
-
-
-def _match_peaks(
-    peaks: list[dict],
-    expected_freq: float,
-    fault_type: str,
-    bearing_id: Optional[str],
-    signal_id: str,
-    tolerance_pct: float,
-    num_harmonics: int,
-) -> dict:
-    """The older per-check fields: tolerance matching on the peak list."""
-    tolerance = expected_freq * tolerance_pct / 100.0
-
-    # Search for fundamental
-    detected = False
-    detected_freq = None
-    detected_mag = None
-    deviation = None
-
-    for p in peaks:
-        freq = p["frequency_hz"]
-        if abs(freq - expected_freq) <= tolerance:
-            detected = True
-            detected_freq = freq
-            detected_mag = p["magnitude"]
-            deviation = (freq - expected_freq) / expected_freq * 100.0
-            break
-
-    # Check harmonics
-    harmonics = []
-    for h in range(2, num_harmonics + 2):
-        harmonic_freq = expected_freq * h
-        harmonic_tol = harmonic_freq * tolerance_pct / 100.0
-        for p in peaks:
-            if abs(p["frequency_hz"] - harmonic_freq) <= harmonic_tol:
-                harmonics.append(
-                    {
-                        "harmonic": h,
-                        "expected_hz": round(harmonic_freq, 2),
-                        "detected_hz": round(p["frequency_hz"], 2),
-                        "magnitude": round(p["magnitude"], 6),
-                    }
-                )
-                break
-
-    # Evidence-strength rating from detected fundamental + harmonics.
-    if detected and len(harmonics) >= 2:
-        evidence_strength = "high"
-    elif detected and len(harmonics) >= 1:
-        evidence_strength = "moderate"
-    elif detected:
-        evidence_strength = "moderate"
-    elif len(harmonics) > 0:
-        evidence_strength = "low"
-    else:
-        evidence_strength = "none"
-
-    return {
-        "signal_id": signal_id,
-        "bearing_id": bearing_id,
-        "fault_type": fault_type,
-        "fault_type_canonical": FAULT_TYPE_CANONICAL.get(fault_type.upper()),
-        "expected_frequency_hz": round(expected_freq, 2),
-        "detected": detected,
-        "detected_frequency_hz": round(detected_freq, 2) if detected_freq else None,
-        "magnitude": round(detected_mag, 6) if detected_mag else None,
-        "deviation_pct": round(deviation, 2) if deviation is not None else None,
-        "harmonics_detected": harmonics,
-        "evidence_strength": evidence_strength,
     }
 
 

@@ -14,7 +14,6 @@ from predictive_maintenance_mcp.diagnostics.bearing_analyzer import (
     check_frequency_set,
     lookup_bearing_and_compute,
 )
-from tools.audit.report import KNOWN_DEFECT_PREFIX
 
 
 class TestBearingCatalog:
@@ -84,15 +83,6 @@ class TestCheckBearingFaultPeak:
         assert result["evidence_strength"] in ("high", "moderate")
         assert abs(result["detected_frequency_hz"] - bpfo) < bpfo * 0.05
 
-    @pytest.mark.xfail(
-        strict=True,
-        raises=AssertionError,
-        reason=(
-            f"{KNOWN_DEFECT_PREFIX} bearing-harmonics-without-fundamental: T1 M8: "
-            "harmonic windows are searched without a fundamental, so a "
-            "frequency with no line gets 'low' evidence"
-        ),
-    )
     def test_no_detection_wrong_frequency(self, signal_with_bpfo):
         """The modulation has lines at BPFO and 2 x BPFO only (it stays
         positive, so the envelope adds none), so 250 Hz +/- 3 % holds no line

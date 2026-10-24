@@ -11,9 +11,10 @@ about whether the numbers are right.
 
 Since T1 PR C every bearing sentence, badge and action follows the check's
 claim (``diagnostics.bearing_claims``) and the central matcher's per-line
-states; the legacy per-check fields (``detected``, ``evidence_strength``,
-``detected_frequency_hz``, ``magnitude``, ``deviation_pct``,
-``harmonics_detected``) drive nothing. The scenario tests at the end run the
+states; the per-check fields derived from those states (``detected``,
+``evidence_strength``, ``detected_frequency_hz``, ``magnitude``,
+``deviation_pct``, ``harmonics_detected``) drive nothing. The scenario tests
+at the end run the
 engine on signals whose content is known by construction
 (``tests/_bearing_scenarios.py``) and on the bundled MFPT and golden
 recordings.
