@@ -449,10 +449,13 @@ async def assess_asset_change(
     amplitude at its tested line is above the reference band. The envelope
     indicators and the bearing evidence compare only acquisitions whose
     sampling rate and capture duration are within 1 percent of the
-    reference median and list the others with their reasons. Evidence of an
-    earlier lineage is reported as legacy and not classified; evidence that
-    cannot be classified is reported as unavailable, never as absent. The
-    overall verdict is the most severe. Every
+    reference median and list the others with their reasons in
+    observed.capture_comparison. Evidence of an earlier lineage is reported
+    as legacy and not classified; evidence that cannot be classified is
+    reported as unavailable, never as absent. The overall verdict is the
+    most severe across the amplitude indicators and the classified bearing
+    evidence; legacy and unavailable evidence is not part of it, and each
+    label's basis is in assessed.evidence. Every
     comparability qualification is reported and non-comparable
     acquisitions are listed, never silently dropped. The result carries at
     most one suggested_verification, no list of recommendations.

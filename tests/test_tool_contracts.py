@@ -141,7 +141,13 @@ Fixture history:
   changed (observed and assessed are free-form objects). On
   assess_asset_change, observed names the raw and reference-relative
   presence, reference_present and capture_comparison, and assessed names
-  the evidence basis (reference_relative, legacy or unavailable).
+  the evidence basis (reference_relative, legacy or unavailable). Review
+  follow-up, regenerated again in the same PR: the same two descriptions
+  only. observed states which fields are null for each basis and that
+  reference_present counts out of reference.count; assessed states the null
+  fields of legacy and unavailable evidence, that the current algorithm's
+  evidence is unavailable until re-processing on an earlier lineage, and
+  what algorithm_version holds.
   Generated under mcp 2.3.0 and pydantic 2.12.0 (uv.lock).
 """
 
