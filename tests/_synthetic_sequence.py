@@ -140,13 +140,15 @@ def acquired_at(index: int) -> str:
     return (FIRST_ACQUIRED_AT + (index - 1) * ACQUISITION_INTERVAL).isoformat()
 
 
-def _amplitude_and_depth(index: int, rng: np.random.Generator) -> tuple[float, float]:
-    """Return the carrier amplitude and modulation depth of measurement *index*.
+def _amplitude_and_depth(
+    index: int, rng: np.random.Generator, kind: str
+) -> tuple[float, float]:
+    """Return the carrier amplitude and modulation depth of measurement *index*
+    of *kind*.
 
     Stable measurements consume one uniform draw from *rng* for their jitter;
     the spike and the ramp are fully determined by the index.
     """
-    kind = EXPECTED_KIND[index]
     if kind == ISOLATED_SPIKE:
         return SPIKE_AMPLITUDE, 0.0
     if kind == PROGRESSIVE:
@@ -160,7 +162,9 @@ def _amplitude_and_depth(index: int, rng: np.random.Generator) -> tuple[float, f
     return 1.0 + jitter, 0.0
 
 
-def synthesize_measurement(index: int, *, seed: int = DEFAULT_SEED) -> np.ndarray:
+def synthesize_measurement(
+    index: int, *, seed: int = DEFAULT_SEED, fault_free: bool = False
+) -> np.ndarray:
     """Build the waveform of measurement *index* (unit ``g``, float64, 1-D).
 
     Pure function with no I/O, in the spirit of ``golden_signals()``: a 3 kHz
@@ -170,6 +174,8 @@ def synthesize_measurement(index: int, *, seed: int = DEFAULT_SEED) -> np.ndarra
     Args:
         index: 1-based measurement index (M01 is 1).
         seed: Sequence seed; the measurement uses ``default_rng(seed + index)``.
+        fault_free: Build every index with the ``stable`` recipe (no spike,
+            no ramp), for fault-free sequences.
 
     Returns:
         Array of ``SAMPLES_PER_MEASUREMENT`` samples at ``FS`` Hz.
@@ -179,7 +185,8 @@ def synthesize_measurement(index: int, *, seed: int = DEFAULT_SEED) -> np.ndarra
     """
     _check_index(index)
     rng = np.random.default_rng(seed + index)
-    amplitude, depth = _amplitude_and_depth(index, rng)
+    kind = STABLE if fault_free else EXPECTED_KIND[index]
+    amplitude, depth = _amplitude_and_depth(index, rng, kind)
     t = np.arange(SAMPLES_PER_MEASUREMENT) / FS
     modulation = 1.0 + depth * (
         _MODULATION_FUNDAMENTAL * np.sin(2 * np.pi * BPFO_6205_1800 * t)
