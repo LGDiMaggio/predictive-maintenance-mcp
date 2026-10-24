@@ -1021,15 +1021,24 @@ class TestBearingEvidence:
         assert presence["relative_k"] == 5
         assert presence["reference_present"] == 0
         evidence = result["assessed"]["evidence"]["BPFO"]
-        assert evidence["basis"] == "reference_relative"
-        assert evidence["algorithm_version"] == 2
         assert evidence["persistent"] is True
         assert evidence["consecutive"] == 3
         assert evidence["classification"] == "persistent_change"
-        assert evidence["criterion"] == (
-            "supported bearing evidence above the reference band in 4 of the "
-            "last 5 acquisitions, 3 consecutive"
-        )
+        assert evidence == {
+            "classification": "persistent_change",
+            "persistent": True,
+            "consecutive": 3,
+            "present_in_last_k": 4,
+            "k": 5,
+            "relative_present_in_last_k": 4,
+            "relative_k": 5,
+            "basis": "reference_relative",
+            "algorithm_version": 2,
+            "criterion": (
+                "supported bearing evidence above the reference band in 4 of the "
+                "last 5 acquisitions, 3 consecutive"
+            ),
+        }
         assert result["assessed"]["classification"] == "persistent_change"
         # Relative presence needs the envelope line above its band, so the
         # envelope indicator drives with the evidence.
@@ -1107,7 +1116,8 @@ class TestBearingEvidence:
         )
         assert evidence["criterion"] == (
             "no supported bearing evidence above the reference band in the last "
-            "5 acquisitions"
+            "5 acquisitions (the line is supported in 5 of the last 5 "
+            "acquisitions)"
         )
         assert result["assessed"]["classification"] == "no_change"
         assert result["assessed"]["criterion"] == (
@@ -1292,7 +1302,8 @@ class TestBearingEvidence:
             "criterion": (
                 f"legacy, algorithm version {version}: bearing evidence as "
                 f"recorded in 5 of the last 5 acquisitions, not classified "
-                f"against the reference"
+                f"against the reference; current-algorithm bearing evidence "
+                f"unavailable until re-processing"
             ),
         }
         assessed = result["assessed"]
@@ -1303,11 +1314,24 @@ class TestBearingEvidence:
         assert assessed["criterion"] == (
             "latest acquisition inside the band (mean +/- max(3 sigma, 25%)) of "
             "every amplitude indicator; bearing evidence of BPFO, BPFI, BSF, FTF "
-            f"not classified (legacy, algorithm version {version})"
+            f"not classified (legacy, algorithm version {version}); "
+            "current-algorithm bearing evidence unavailable until re-processing"
         )
         assert {"rms", "envelope_BPFO"} <= set(result["derived"]["per_indicator"])
         assert result["message"].count(REPROCESS_CALL) == 1
         assert "no supported bearing evidence" not in result["message"]
+
+    def test_ae12_legacy_evidence_is_named_when_an_amplitude_indicator_drives(self):
+        """With an amplitude driver on an earlier lineage, the criterion still
+        says the bearing evidence was not classified and why."""
+        result = assess(view_of(series_events(STABLE + [SPIKE])))
+        assessed = result["assessed"]
+        assert "rms" in assessed["indicators_driving"]
+        assert assessed["criterion"].endswith(
+            "; bearing evidence of BPFO, BPFI, BSF, FTF not classified (legacy, "
+            "algorithm version 1); current-algorithm bearing evidence "
+            "unavailable until re-processing"
+        )
 
 
 class TestCaptureComparison:
@@ -1363,9 +1387,18 @@ class TestCaptureComparison:
         assert evidence["classification"] == "persistent_change"
         assert evidence["criterion"] == (
             "supported bearing evidence above the reference band in 4 of the "
-            "last 4 compared acquisitions, 4 consecutive (1 of the last 5 "
-            "acquisitions not compared: capture differs from the reference)"
+            "last 4 compared acquisitions, 4 consecutive (the line is supported "
+            "in 5 of the last 5 acquisitions; 1 of the last 5 not compared: "
+            "capture differs from the reference)"
         )
+        # The envelope exceedance runs stay aligned with the last five slots.
+        assert result["derived"]["exceedance_runs"]["envelope_BPFO"] == [
+            True,
+            True,
+            None,
+            True,
+            True,
+        ]
         # The amplitude rules keep the slot: rms reads exactly as on the same
         # acquisitions with one capture.
         uniform = assess(
@@ -1388,34 +1421,181 @@ class TestCaptureComparison:
             for e in excluded
         ] == [(mid(18), None, None, ["capture_not_recorded"])]
 
-    def test_an_envelope_missing_in_one_slot_makes_that_label_unavailable(self):
-        """A slot whose bearing block lacks FTF leaves envelope_FTF without a
-        band: FTF's evidence is unavailable, with the missing count, while
-        the other labels are classified; the criterion names both."""
+    @staticmethod
+    def without_envelope(
+        indices: set[int], bearing_of: Any = None, label: str = "BPFO"
+    ) -> Any:
+        """``bearing_of`` with *label*'s envelope amplitude not recorded in the
+        slots *indices*."""
 
-        def bearing_of(index: int) -> dict[str, Any]:
-            block = state_block()
-            if index == 3:
-                del block["labels"]["FTF"]
+        def wrapped(index: int) -> dict[str, Any]:
+            block = bearing_of(index) if bearing_of else state_block()
+            if index in indices:
+                block["labels"][label]["envelope_amplitude"] = None
             return block
 
-        result = assess(view_of(current_events(STABLE * 2, bearing_of=bearing_of)))
-        evidence = result["assessed"]["evidence"]
-        assert evidence["BPFO"]["basis"] == "reference_relative"
-        assert (evidence["FTF"]["basis"], evidence["FTF"]["classification"]) == (
+        return wrapped
+
+    def test_an_envelope_missing_in_a_reference_slot_leaves_the_band_to_the_others(
+        self,
+    ):
+        """KTD15 per slot: the envelope indicator is unavailable (its own
+        rule), but the evidence band comes from the nine reference slots that
+        record the value, and a supported line above it is classified."""
+        events = current_events(
+            STABLE * 2,
+            bearing_of=self.without_envelope({3}, supported_at(set(range(16, 21)))),
+        )
+        result = assess(view_of(events))
+        assert result["observed"]["indicators_unavailable"]["envelope_BPFO"] == {
+            "missing_in": 1,
+            "of": 20,
+            "reason": None,
+        }
+        evidence = result["assessed"]["evidence"]["BPFO"]
+        assert (evidence["basis"], evidence["classification"]) == (
+            "reference_relative",
+            "persistent_change",
+        )
+        assert result["assessed"]["indicators_driving"] == ["evidence_BPFO"]
+
+    def test_an_envelope_missing_in_a_window_slot_is_not_compared(self):
+        events = current_events(
+            STABLE * 2,
+            bearing_of=self.without_envelope({18}, supported_at(set(range(16, 21)))),
+        )
+        result = assess(view_of(events))
+        presence = result["observed"]["evidence_presence"]["BPFO"]
+        assert presence["relative_presence"] == [True, True, None, True, True]
+        evidence = result["assessed"]["evidence"]["BPFO"]
+        assert evidence["criterion"] == (
+            "supported bearing evidence above the reference band in 4 of the "
+            "last 4 compared acquisitions, 4 consecutive (the line is supported "
+            "in 5 of the last 5 acquisitions; 1 of the last 5 not compared: no "
+            "envelope amplitude recorded)"
+        )
+
+    def test_an_envelope_missing_in_the_latest_slot_makes_the_label_unavailable(
+        self,
+    ):
+        events = current_events(
+            STABLE * 2,
+            bearing_of=self.without_envelope({20}, supported_at(set(range(16, 21)))),
+        )
+        evidence = assess(view_of(events))["assessed"]["evidence"]
+        assert (evidence["BPFO"]["basis"], evidence["BPFO"]["classification"]) == (
             "unavailable",
             None,
         )
-        assert evidence["FTF"]["criterion"] == (
-            "reference-relative bearing evidence unavailable: envelope_FTF is "
+        assert evidence["BPFO"]["criterion"] == (
+            "reference-relative bearing evidence unavailable: envelope_BPFO is "
             "missing in 1 of the 20 evaluated acquisitions"
         )
-        assert result["assessed"]["criterion"] == (
-            "latest acquisition inside the band (mean +/- max(3 sigma, 25%)) of "
-            "every amplitude indicator; no supported bearing evidence above the "
-            "reference band for BPFO, BPFI, BSF; reference-relative bearing "
-            "evidence of FTF unavailable"
+        assert evidence["BPFI"]["basis"] == "reference_relative"
+
+    def test_a_missing_envelope_and_a_left_out_capture_count_against_all_slots(self):
+        """indicators_unavailable counts the slots without a value against
+        every evaluated slot, whatever the capture comparison leaves out."""
+        events = current_events(
+            STABLE * 2,
+            bearing_of=self.without_envelope({12}),
+            capture_of=lambda index: (
+                (10000.0, 40000) if index == 14 else (10000.0, 20000)
+            ),
         )
+        result = assess(view_of(events))
+        assert result["observed"]["indicators_unavailable"]["envelope_BPFO"] == {
+            "missing_in": 1,
+            "of": 20,
+            "reason": None,
+        }
+        assert result["assessed"]["evidence"]["BPFO"]["basis"] == "reference_relative"
+
+    def test_too_few_reference_slots_recording_the_envelope_make_it_unavailable(
+        self,
+    ):
+        events = current_events(
+            STABLE * 2,
+            bearing_of=self.without_envelope(set(range(1, 9))),
+        )
+        evidence = assess(view_of(events))["assessed"]["evidence"]["BPFO"]
+        assert (evidence["basis"], evidence["classification"]) == (
+            "unavailable",
+            None,
+        )
+        assert evidence["criterion"] == (
+            "reference-relative bearing evidence unavailable: envelope_BPFO is "
+            "missing in 8 of the 20 evaluated acquisitions"
+        )
+
+    @pytest.mark.parametrize(
+        "durations, available",
+        [
+            # median 1.995 s: 1.99, 2.0 and 2.01 lie within 1%.
+            ([1.0, 1.2, 1.4, 1.6, 1.99, 2.0, 2.01, 2.6, 2.8, 3.0], True),
+            # median 2.0 s: only 1.99 and 2.01 lie within 1%.
+            ([1.0, 1.2, 1.4, 1.6, 1.99, 2.01, 2.4, 2.6, 2.8, 3.0], False),
+        ],
+    )
+    def test_three_comparable_reference_captures_are_enough(self, durations, available):
+        """The boundary of MIN_REFERENCE_MEASUREMENTS comparable captures."""
+
+        def capture_of(index: int) -> tuple[float, int]:
+            if index <= 10:
+                return 10000.0, int(round(durations[index - 1] * 10000))
+            return 10000.0, 20000
+
+        result = assess(view_of(current_events(STABLE * 2, capture_of=capture_of)))
+        stats = result["observed"]["reference_statistics"]
+        if available:
+            assert stats["envelope_BPFO"]["n"] == 3
+        else:
+            assert "envelope_BPFO" not in stats
+            assert result["observed"]["indicators_unavailable"]["envelope_BPFO"][
+                "reason"
+            ].startswith("fewer than 3 reference acquisitions")
+
+    def test_no_reference_capture_recorded_compares_nothing(self):
+        """Without a recorded reference capture there is no median: every
+        reference slot is left out, and a later slot that records one is not
+        compared against a missing value."""
+        events = current_events(
+            STABLE * 2,
+            capture_of=lambda index: (
+                (10000.0, None) if index <= 10 else (10000.0, 20000)
+            ),
+        )
+        result = assess(view_of(events))
+        capture = result["observed"]["capture_comparison"]
+        assert capture["reference_duration_s"] is None
+        assert [e["measurement_id"] for e in capture["excluded"]] == [
+            mid(i) for i in range(1, 11)
+        ]
+        assert result["assessed"]["evidence"]["BPFO"]["basis"] == "unavailable"
+
+    def test_onset_skips_a_left_out_slot(self):
+        """The onset is the first compared slot of the evidence run, and of an
+        envelope run, never a left-out slot."""
+        evidence_run = current_events(
+            STABLE * 2,
+            bearing_of=supported_at({17, 18, 19}),
+            capture_of=lambda index: (
+                (10000.0, 40000) if index == 16 else (10000.0, 20000)
+            ),
+        )
+        result = assess(view_of(evidence_run))
+        assert result["assessed"]["indicators_driving"] == ["evidence_BPFO"]
+        assert result["assessed"]["onset_measurement_id"] == mid(17)
+        envelope_run = current_events(
+            STABLE * 2,
+            bearing_of=supported_at(set(range(16, 21))),
+            capture_of=lambda index: (
+                (10000.0, 40000) if index == 12 else (10000.0, 20000)
+            ),
+        )
+        result = assess(view_of(envelope_run))
+        assert result["assessed"]["indicators_driving"][0] == "envelope_BPFO"
+        assert result["assessed"]["onset_measurement_id"] == mid(16)
 
     def test_no_bearing_block_says_the_evidence_was_not_computed(self):
         result = assess(
@@ -1530,6 +1710,40 @@ class TestCaptureComparison:
             name.startswith(("evidence_", "envelope_"))
             for name in result["assessed"]["indicators_driving"]
         )
+        # The verdict says how to make them comparable again.
+        assert result["assessed"]["classification"] == "no_change"
+        assert result["suggested_verification"] == (
+            "Repeat the measurement with the sampling rate and capture duration "
+            "of the reference (observed.capture_comparison gives both), so that "
+            "the envelope indicators and the bearing evidence can be compared "
+            "with the reference."
+        )
+
+    def test_the_vocabularies_cover_every_emitted_value(self):
+        """Every basis and capture reason the payload carries is in its
+        exported vocabulary."""
+        events = current_events(
+            STABLE * 2,
+            capture_of=lambda index: {
+                16: (12000.0, 24000),
+                17: (10000.0, 40000),
+                18: (10000.0, None),
+            }.get(index, (10000.0, 20000)),
+        )
+        current = assess(view_of(events))
+        legacy = assess(view_of(series_events(STABLE * 2)))
+        reasons = {
+            reason
+            for entry in current["observed"]["capture_comparison"]["excluded"]
+            for reason in entry["reasons"]
+        }
+        assert reasons == set(assessment.CAPTURE_EXCLUSION_CODES)
+        bases = {
+            entry["basis"]
+            for result in (current, legacy)
+            for entry in result["assessed"]["evidence"].values()
+        }
+        assert bases <= set(assessment.EVIDENCE_BASES)
 
 
 # ---------------------------------------------------------------------------
@@ -2184,7 +2398,8 @@ class TestLineageSentence:
         }
         legacy = (
             "; bearing evidence of BPFO, BPFI, BSF, FTF not classified (legacy, "
-            "algorithm version 1)"
+            "algorithm version 1); current-algorithm bearing evidence "
+            "unavailable until re-processing"
         )
         relative = " and no supported bearing evidence above the reference band"
         assert split_lineage_sentence(

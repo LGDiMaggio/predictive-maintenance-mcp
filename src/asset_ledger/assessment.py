@@ -1273,6 +1273,12 @@ def _classify_series(
 #: tested line is above the reference band of ``envelope_<label>``.
 _RELATIVE_EVIDENCE = "supported bearing evidence above the reference band"
 
+#: What the qualification of an earlier lineage's evidence says of the
+#: current algorithm's (R23).
+_UNTIL_REPROCESSED = (
+    "current-algorithm bearing evidence unavailable until re-processing"
+)
+
 
 def _legacy_text(version: Optional[int]) -> str:
     recorded = "not recorded" if version is None else str(version)
@@ -1280,33 +1286,38 @@ def _legacy_text(version: Optional[int]) -> str:
 
 
 def _evidence_summary(
-    evidence: dict[str, dict[str, Any]], version: Optional[int]
+    evidence: dict[str, dict[str, Any]],
+    version: Optional[int],
+    *,
+    driving: bool,
 ) -> str:
-    """The default criterion's clause on the bearing *evidence* per label.
-    Evidence that was not classified (legacy or unavailable) is named as
-    such, never stated as absent."""
+    """The criterion's clause on the bearing *evidence* per label. Evidence
+    that was not classified (legacy or unavailable) is named as such, never
+    stated as absent, whether or not an indicator is *driving* the verdict;
+    without a driver the clause also covers the classified labels."""
     if not evidence:
-        return "; bearing evidence not computed"
+        return "" if driving else "; bearing evidence not computed"
     classified, legacy, unavailable = (
         [label for label, entry in evidence.items() if entry["basis"] == basis]
         for basis in EVIDENCE_BASES
     )
-    if not legacy and not unavailable:
-        return f" and no {_RELATIVE_EVIDENCE}"
     parts: list[str] = []
-    if classified:
-        parts.append(f"no {_RELATIVE_EVIDENCE} for {', '.join(classified)}")
+    if not driving:
+        if not legacy and not unavailable:
+            return f" and no {_RELATIVE_EVIDENCE}"
+        if classified:
+            parts.append(f"no {_RELATIVE_EVIDENCE} for {', '.join(classified)}")
     if legacy:
         parts.append(
             f"bearing evidence of {', '.join(legacy)} not classified "
-            f"({_legacy_text(version)})"
+            f"({_legacy_text(version)}); {_UNTIL_REPROCESSED}"
         )
     if unavailable:
         parts.append(
             f"reference-relative bearing evidence of {', '.join(unavailable)} "
             f"unavailable"
         )
-    return "; " + "; ".join(parts)
+    return "; " + "; ".join(parts) if parts else ""
 
 
 def _label_evidence(
@@ -1335,8 +1346,9 @@ def _label_evidence(
     indicator's *missing* entry; neither is a negative result. Otherwise
     the basis is ``reference_relative``: a slot carries evidence when its
     raw presence holds and its ``envelope_<label>`` value is above the
-    reference band; a slot in *left_out* (capture not comparable) is not
-    compared, and :func:`_classify_evidence` runs on the compared slots.
+    reference band; a slot in *left_out* (capture not comparable) or
+    without an ``envelope_<label>`` value is not compared, and
+    :func:`_classify_evidence` runs on the compared slots.
     """
     if not current:
         basis = "legacy"
@@ -1374,7 +1386,7 @@ def _label_evidence(
         assessed["criterion"] = (
             f"{_legacy_text(version)}: bearing evidence as recorded in "
             f"{raw_count} of the last {len(raw)} acquisitions, not classified "
-            f"against the reference"
+            f"against the reference; {_UNTIL_REPROCESSED}"
         )
         return presence, assessed, None
     presence["reference_present"] = sum(
@@ -1395,28 +1407,46 @@ def _label_evidence(
 
     mean = float(stats["mean"])
     half = float(stats["band"]["half_width"])
-    relative: list[Optional[bool]] = [
-        (
-            None
-            if s["measurement_id"] in left_out
-            else present
-            and _side(float(values[s["measurement_id"]][name]), mean, half) == "above"
-        )
-        for s, present in zip(window, raw)
-    ]
+    left = 0
+    unrecorded = 0
+    relative: list[Optional[bool]] = []
+    for slot, present in zip(window, raw):
+        value = _number(values[slot["measurement_id"]].get(name))
+        if slot["measurement_id"] in left_out:
+            left += 1
+            relative.append(None)
+        elif value is None:
+            unrecorded += 1
+            relative.append(None)
+        else:
+            relative.append(present and _side(value, mean, half) == "above")
     compared = [(s, r) for s, r in zip(window, relative) if r is not None]
-    not_compared = len(window) - len(compared)
     verdict = _classify_evidence(
         [bool(r) for _, r in compared],
         params,
-        acquisitions="compared acquisitions" if not_compared else "acquisitions",
+        acquisitions=(
+            "compared acquisitions" if len(compared) < len(window) else "acquisitions"
+        ),
     )
-    criterion = verdict["criterion"]
-    if not_compared:
-        criterion += (
-            f" ({not_compared} of the last {len(window)} acquisitions not "
-            f"compared: capture differs from the reference)"
+    notes: list[str] = []
+    if raw_count > verdict["present_in_last_k"]:
+        notes.append(
+            f"the line is supported in {raw_count} of the last {len(raw)} "
+            f"acquisitions"
         )
+    if left:
+        notes.append(
+            f"{left} of the last {len(window)} not compared: capture differs "
+            f"from the reference"
+        )
+    if unrecorded:
+        notes.append(
+            f"{unrecorded} of the last {len(window)} not compared: no envelope "
+            f"amplitude recorded"
+        )
+    criterion = verdict["criterion"]
+    if notes:
+        criterion += f" ({'; '.join(notes)})"
     presence.update(
         relative_presence=relative,
         relative_present_in_last_k=verdict["present_in_last_k"],
@@ -2169,17 +2199,27 @@ def _earlier_lineage(
     return text + tail
 
 
+#: The verification of an assessment whose latest acquisition was left out
+#: of the envelope indicators and the bearing evidence for its capture.
+_CAPTURE_VERIFICATION = (
+    "Repeat the measurement with the sampling rate and capture duration of the "
+    "reference (observed.capture_comparison gives both), so that the envelope "
+    "indicators and the bearing evidence can be compared with the reference."
+)
+
+
 def _verification(
     classification: str,
     coincides: Sequence[str],
     evidence_driven: bool,
     *,
     stale: bool = False,
+    latest_capture_differs: bool = False,
 ) -> Optional[str]:
     if stale:
         return _STALE_EVIDENCE_VERIFICATION
     if classification == "no_change" or classification == "isolated_episode":
-        return None
+        return _CAPTURE_VERIFICATION if latest_capture_differs else None
     if coincides:
         return (
             "Check whether the onset coincides with the "
@@ -2508,7 +2548,7 @@ def assess_change(
                     reason = entry.get("reason")
             unavailable[name] = {
                 "missing_in": len(missing_in),
-                "of": len(slots_used),
+                "of": len(evaluated),
                 "reason": reason,
             }
         else:
@@ -2575,7 +2615,18 @@ def assess_change(
             "exceeds": verdict["sides"][-1] is not None,
             "side": verdict["sides"][-1],
         }
-        exceedance_runs[name] = verdict["exceedance_runs"]
+        # Aligned with the last K slots; None for a slot left out (capture).
+        side_of = dict(
+            zip((s["measurement_id"] for s in used(sequence, name)), verdict["sides"])
+        )
+        exceedance_runs[name] = [
+            (
+                side_of[s["measurement_id"]] is not None
+                if s["measurement_id"] in side_of
+                else None
+            )
+            for s in sequence[-params.last_k :]
+        ]
         drift[name] = verdict["drift"]
 
     iso_change: Optional[dict[str, Any]] = None
@@ -2624,6 +2675,30 @@ def assess_change(
         snapshots[latest_slot["measurement_id"]].get("processing") or {}
     ).get("algorithm_version")
     lineage_version = recorded_version if isinstance(recorded_version, int) else None
+
+    def evidence_band(name: str) -> Optional[dict[str, Any]]:
+        """The reference band of *name* for the bearing evidence: the
+        indicator's own band, or, when the indicator is unavailable because
+        some slot lacks its value, the band of the comparable reference slots
+        that record it, provided at least MIN_REFERENCE_MEASUREMENTS do and
+        the latest slot records it; None otherwise (unavailable)."""
+        if name in reference_statistics:
+            own: dict[str, Any] = reference_statistics[name]
+            return own
+        if (
+            capture_gap is not None
+            or values[latest_slot["measurement_id"]].get(name) is None
+        ):
+            return None
+        recorded = [
+            float(values[s["measurement_id"]][name])
+            for s in comparable(reference_slots)
+            if values[s["measurement_id"]].get(name) is not None
+        ]
+        if len(recorded) < MIN_REFERENCE_MEASUREMENTS:
+            return None
+        return _band(recorded, params)
+
     evidence_presence: dict[str, Any] = {}
     evidence_assessed: dict[str, Any] = {}
     evidence_onsets: dict[str, Optional[dict[str, Any]]] = {}
@@ -2638,7 +2713,7 @@ def assess_change(
             reference_slots=reference_slots,
             snapshots=snapshots,
             values=values,
-            stats=reference_statistics.get(name),
+            stats=evidence_band(name),
             left_out=capture_left_out,
             params=params,
         )
@@ -2666,12 +2741,12 @@ def assess_change(
     if driving:
         criterion = "; ".join(
             f"{name}: {text}" for name, cls, text in candidates if cls == overall
-        )
+        ) + _evidence_summary(evidence_assessed, lineage_version, driving=True)
     else:
         criterion = (
             f"latest acquisition inside the band ({_band_text(params)}) of every "
             f"amplitude indicator"
-            + _evidence_summary(evidence_assessed, lineage_version)
+            + _evidence_summary(evidence_assessed, lineage_version, driving=False)
         )
 
     direction: Optional[str] = None
@@ -2747,10 +2822,10 @@ def assess_change(
                 members=members,
             )
         else:
-            # The sentence says which lineage is assessed: its amplitude
-            # indicators are classified as recorded, and its bearing evidence
-            # is reported as recorded with basis "legacy", outside the
-            # overall classification (KTD21).
+            # The sentence names the lineage assessed. Its amplitude indicators
+            # are classified as recorded; its bearing evidence is legacy,
+            # outside the overall classification, and the criterion says so
+            # (_evidence_summary, KTD21).
             opening = _earlier_lineage(
                 covered=len(evaluated),
                 chosen=chosen,
@@ -2824,7 +2899,12 @@ def assess_change(
         },
         "comparability": comparability,
         "suggested_verification": _verification(
-            overall, coincides, evidence_driven, stale=bool(stale_context)
+            overall,
+            coincides,
+            evidence_driven,
+            stale=bool(stale_context),
+            latest_capture_differs=bool(labels)
+            and latest_slot["measurement_id"] in capture_left_out,
         ),
         "message": message,
     }
