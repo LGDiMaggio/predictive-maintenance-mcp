@@ -101,7 +101,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   line; the envelope indicators and the bearing evidence compare only
   acquisitions whose sampling rate and capture duration are within 1
   percent of the reference median, and list the others with their
-  reasons; bearing evidence of an earlier lineage is reported as recorded,
+  reasons; an acquisition not compared is unknown, never counted as
+  absent, and interrupts consecutive presence of bearing evidence;
+  bearing evidence of an earlier lineage is reported as recorded,
   marked legacy with its algorithm version, and is neither classified nor
   counted in the overall verdict; evidence that cannot be classified is
   reported as unavailable, never as absent; snapshots are compared only within one

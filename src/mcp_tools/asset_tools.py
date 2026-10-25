@@ -450,7 +450,9 @@ async def assess_asset_change(
     indicators and the bearing evidence compare only acquisitions whose
     sampling rate and capture duration are within 1 percent of the
     reference median and list the others with their reasons in
-    observed.capture_comparison. Evidence of an earlier lineage is reported
+    observed.capture_comparison; an acquisition not compared is unknown,
+    never counted as absent, and interrupts consecutive presence of bearing
+    evidence. Evidence of an earlier lineage is reported
     as legacy and not classified; evidence that cannot be classified is
     reported as unavailable, never as absent. The overall verdict is the
     most severe across the amplitude indicators and the classified bearing

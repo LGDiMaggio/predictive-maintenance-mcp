@@ -147,7 +147,10 @@ Fixture history:
   reference_present counts out of reference.count; assessed states the null
   fields of legacy and unavailable evidence, that the current algorithm's
   evidence is unavailable until re-processing on an earlier lineage, and
-  what algorithm_version holds.
+  what algorithm_version holds. Owner decision B1, regenerated again in the
+  same PR: one description only (assessed), no property, enum value or type
+  changed; it says that an acquisition not compared is unknown, never
+  counted as absent, and interrupts consecutive presence.
   Generated under mcp 2.3.0 and pydantic 2.12.0 (uv.lock).
 """
 
