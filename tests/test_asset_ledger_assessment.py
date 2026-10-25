@@ -1088,7 +1088,8 @@ class TestBearingEvidence:
         assert evidence["consecutive"] == 1
         assert evidence["criterion"] == (
             "supported bearing evidence above the reference band in the latest "
-            "acquisition only (1 of the last 5 acquisitions)"
+            "acquisition without persistence: 1 consecutive, 1 of the last 5 "
+            "acquisitions"
         )
         assert result["assessed"]["classification"] == (
             "unconfirmed_single_acquisition"
@@ -1384,12 +1385,17 @@ class TestCaptureComparison:
             4,
         )
         evidence = result["assessed"]["evidence"]["BPFO"]
-        assert evidence["classification"] == "persistent_change"
+        # The left-out slot interrupts the run: two runs of two, no persistence.
+        assert (evidence["classification"], evidence["consecutive"]) == (
+            "unconfirmed_single_acquisition",
+            2,
+        )
         assert evidence["criterion"] == (
-            "supported bearing evidence above the reference band in 4 of the "
-            "last 4 compared acquisitions, 4 consecutive (the line is supported "
-            "in 5 of the last 5 acquisitions; 1 of the last 5 not compared: "
-            "capture differs from the reference)"
+            "supported bearing evidence above the reference band in the latest "
+            "acquisition without persistence: 2 consecutive, 4 of the 4 "
+            "acquisitions compared among the last 5 (the line is supported in 5 "
+            "of the last 5 acquisitions; 1 of the last 5 not compared: capture "
+            "differs from the reference)"
         )
         # The envelope exceedance runs stay aligned with the last five slots.
         assert result["derived"]["exceedance_runs"]["envelope_BPFO"] == [
@@ -1469,10 +1475,98 @@ class TestCaptureComparison:
         assert presence["relative_presence"] == [True, True, None, True, True]
         evidence = result["assessed"]["evidence"]["BPFO"]
         assert evidence["criterion"] == (
-            "supported bearing evidence above the reference band in 4 of the "
-            "last 4 compared acquisitions, 4 consecutive (the line is supported "
-            "in 5 of the last 5 acquisitions; 1 of the last 5 not compared: no "
+            "supported bearing evidence above the reference band in the latest "
+            "acquisition without persistence: 2 consecutive, 4 of the 4 "
+            "acquisitions compared among the last 5 (the line is supported in 5 "
+            "of the last 5 acquisitions; 1 of the last 5 not compared: no "
             "envelope amplitude recorded)"
+        )
+
+    @pytest.mark.parametrize("cause", ["capture", "envelope"])
+    def test_a_slot_not_compared_interrupts_a_run(self, cause):
+        """Decision B1: absent, present, not compared, present, present is no
+        persistence. The slot not compared is unknown, neither presence nor
+        absence; the last five slots, their ids, the raw counts and the
+        exclusion are all kept."""
+        bearing_of = supported_at({17, 18, 19, 20})
+        if cause == "envelope":
+            bearing_of = self.without_envelope({18}, bearing_of)
+        events = current_events(
+            STABLE * 2,
+            bearing_of=bearing_of,
+            capture_of=lambda index: (
+                (10000.0, 40000)
+                if cause == "capture" and index == 18
+                else (10000.0, 20000)
+            ),
+        )
+        result = assess(view_of(events))
+        reason = (
+            "capture differs from the reference"
+            if cause == "capture"
+            else "no envelope amplitude recorded"
+        )
+        observed = result["observed"]
+        assert [s["measurement_id"] for s in observed["measurement_ids_assessed"]] == [
+            mid(i) for i in range(16, 21)
+        ]
+        presence = observed["evidence_presence"]["BPFO"]
+        assert presence["presence"] == [False, True, True, True, True]
+        assert presence["present_in_last_k"] == 4
+        assert presence["relative_presence"] == [False, True, None, True, True]
+        assert (presence["relative_present_in_last_k"], presence["relative_k"]) == (
+            3,
+            4,
+        )
+        evidence = result["assessed"]["evidence"]["BPFO"]
+        assert (
+            evidence["classification"],
+            evidence["persistent"],
+            evidence["consecutive"],
+        ) == ("unconfirmed_single_acquisition", False, 2)
+        assert evidence["criterion"] == (
+            "supported bearing evidence above the reference band in the latest "
+            "acquisition without persistence: 2 consecutive, 3 of the 4 "
+            "acquisitions compared among the last 5 (the line is supported in 4 "
+            f"of the last 5 acquisitions; 1 of the last 5 not compared: {reason})"
+        )
+        excluded = [
+            e["measurement_id"] for e in observed["capture_comparison"]["excluded"]
+        ]
+        assert excluded == ([mid(18)] if cause == "capture" else [])
+
+    @pytest.mark.parametrize("cause", ["capture", "envelope"])
+    def test_a_slot_not_compared_is_never_counted_as_absent(self, cause):
+        """With no evidence in the compared slots, the criteria name the
+        compared acquisitions, never the slot that was not compared."""
+        bearing_of = supported_at({18}, envelope=0.5)
+        if cause == "envelope":
+            bearing_of = self.without_envelope({18}, bearing_of)
+        events = current_events(
+            STABLE * 2,
+            bearing_of=bearing_of,
+            capture_of=lambda index: (
+                (10000.0, 40000)
+                if cause == "capture" and index == 18
+                else (10000.0, 20000)
+            ),
+        )
+        result = assess(view_of(events))
+        reason = (
+            "capture differs from the reference"
+            if cause == "capture"
+            else "no envelope amplitude recorded"
+        )
+        evidence = result["assessed"]["evidence"]["BPFO"]
+        assert evidence["classification"] == "no_change"
+        assert evidence["criterion"] == (
+            "no supported bearing evidence above the reference band in the 4 "
+            "acquisitions compared among the last 5 (the line is supported in 1 "
+            f"of the last 5 acquisitions; 1 of the last 5 not compared: {reason})"
+        )
+        assert result["assessed"]["criterion"].endswith(
+            "and no supported bearing evidence above the reference band in the "
+            "acquisitions compared"
         )
 
     def test_an_envelope_missing_in_the_latest_slot_makes_the_label_unavailable(

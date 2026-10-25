@@ -72,7 +72,9 @@ Vocabulary of the assessment
       always reported. On the current lineage the label is classified
       (``basis`` ``reference_relative``) on its reference-relative
       presence: supported AND ``envelope_<label>`` above the reference
-      band, on the compared slots. On another lineage it is reported as
+      band. A slot not compared (capture left out, or no envelope value)
+      is unknown, never negative, and interrupts a run of consecutive
+      presence; the last K slots are never backfilled. On another lineage it is reported as
       recorded (``legacy``, with the algorithm version), never classified
       and never a driver; on the current lineage without a reference band
       for ``envelope_<label>`` it is ``unavailable``. Neither is a negative
@@ -1294,19 +1296,27 @@ def _evidence_summary(
     """The criterion's clause on the bearing *evidence* per label. Evidence
     that was not classified (legacy or unavailable) is named as such, never
     stated as absent, whether or not an indicator is *driving* the verdict;
-    without a driver the clause also covers the classified labels."""
+    without a driver the clause also covers the classified labels, limited
+    to the acquisitions compared when one of their slots was not."""
     if not evidence:
         return "" if driving else "; bearing evidence not computed"
     classified, legacy, unavailable = (
         [label for label, entry in evidence.items() if entry["basis"] == basis]
         for basis in EVIDENCE_BASES
     )
+    where = (
+        " in the acquisitions compared"
+        if any(
+            evidence[label]["relative_k"] < evidence[label]["k"] for label in classified
+        )
+        else ""
+    )
     parts: list[str] = []
     if not driving:
         if not legacy and not unavailable:
-            return f" and no {_RELATIVE_EVIDENCE}"
+            return f" and no {_RELATIVE_EVIDENCE}{where}"
         if classified:
-            parts.append(f"no {_RELATIVE_EVIDENCE} for {', '.join(classified)}")
+            parts.append(f"no {_RELATIVE_EVIDENCE} for {', '.join(classified)}{where}")
     if legacy:
         parts.append(
             f"bearing evidence of {', '.join(legacy)} not classified "
@@ -1347,8 +1357,8 @@ def _label_evidence(
     the basis is ``reference_relative``: a slot carries evidence when its
     raw presence holds and its ``envelope_<label>`` value is above the
     reference band; a slot in *left_out* (capture not comparable) or
-    without an ``envelope_<label>`` value is not compared, and
-    :func:`_classify_evidence` runs on the compared slots.
+    without an ``envelope_<label>`` value is not compared (None), which
+    :func:`_classify_evidence` treats as unknown and as the end of a run.
     """
     if not current:
         basis = "legacy"
@@ -1420,14 +1430,7 @@ def _label_evidence(
             relative.append(None)
         else:
             relative.append(present and _side(value, mean, half) == "above")
-    compared = [(s, r) for s, r in zip(window, relative) if r is not None]
-    verdict = _classify_evidence(
-        [bool(r) for _, r in compared],
-        params,
-        acquisitions=(
-            "compared acquisitions" if len(compared) < len(window) else "acquisitions"
-        ),
-    )
+    verdict = _classify_evidence(relative, params)
     notes: list[str] = []
     if raw_count > verdict["present_in_last_k"]:
         notes.append(
@@ -1450,29 +1453,30 @@ def _label_evidence(
     presence.update(
         relative_presence=relative,
         relative_present_in_last_k=verdict["present_in_last_k"],
-        relative_k=verdict["k"],
+        relative_k=verdict["compared"],
     )
     assessed.update(
         classification=verdict["classification"],
         persistent=verdict["persistent"],
         consecutive=verdict["consecutive"],
         relative_present_in_last_k=verdict["present_in_last_k"],
-        relative_k=verdict["k"],
+        relative_k=verdict["compared"],
         criterion=criterion,
     )
     offset = verdict["onset_offset"]
-    return presence, assessed, None if offset is None else compared[offset][0]
+    return presence, assessed, None if offset is None else window[offset]
 
 
 def _classify_evidence(
-    presence: Sequence[bool],
-    params: AssessmentParams,
-    *,
-    acquisitions: str,
+    presence: Sequence[Optional[bool]], params: AssessmentParams
 ) -> dict[str, Any]:
     """Classify one bearing label from its reference-relative presence over
-    the compared slots among the last K (see :func:`_label_evidence`);
-    *acquisitions* names them in the criterion.
+    the last K slots (see :func:`_label_evidence`).
+
+    A slot that was not compared (None) is unknown, not negative: it counts
+    neither as presence nor as absence, and it interrupts a run, so
+    consecutive presence never bridges it. The criterion names the compared
+    slots apart from the last K whenever one was not compared.
 
     ``onset_offset`` is the index (within *presence*) of the first slot of
     the last run of presence: where the current evidence started."""
@@ -1488,37 +1492,35 @@ def _classify_evidence(
             run = 0
         longest = max(longest, run)
     count = sum(1 for present in presence if present)
+    compared = sum(1 for present in presence if present is not None)
     persistent = longest >= params.persistence_consecutive
     latest = bool(presence[-1]) if presence else False
+    scope = (
+        f"the last {len(presence)} acquisitions"
+        if compared == len(presence)
+        else f"the {compared} acquisitions compared among the last {len(presence)}"
+    )
     if persistent:
         classification = "persistent_change"
-        criterion = (
-            f"{_RELATIVE_EVIDENCE} in {count} of the last {len(presence)} "
-            f"{acquisitions}, {longest} consecutive"
-        )
+        criterion = f"{_RELATIVE_EVIDENCE} in {count} of {scope}, {longest} consecutive"
     elif latest:
         classification = "unconfirmed_single_acquisition"
         criterion = (
-            f"{_RELATIVE_EVIDENCE} in the latest acquisition only "
-            f"({count} of the last {len(presence)} {acquisitions})"
+            f"{_RELATIVE_EVIDENCE} in the latest acquisition without persistence: "
+            f"{run} consecutive, {count} of {scope}"
         )
     elif count:
         classification = "isolated_episode"
-        criterion = (
-            f"{_RELATIVE_EVIDENCE} in {count} of the last {len(presence)} "
-            f"{acquisitions} but not in the latest"
-        )
+        criterion = f"{_RELATIVE_EVIDENCE} in {count} of {scope} but not in the latest"
     else:
         classification = "no_change"
-        criterion = (
-            f"no {_RELATIVE_EVIDENCE} in the last {len(presence)} {acquisitions}"
-        )
+        criterion = f"no {_RELATIVE_EVIDENCE} in {scope}"
     return {
         "classification": classification,
         "criterion": criterion,
         "persistent": persistent,
         "present_in_last_k": count,
-        "k": len(presence),
+        "compared": compared,
         "consecutive": longest,
         "latest_present": latest,
         "onset_offset": onset_offset,
