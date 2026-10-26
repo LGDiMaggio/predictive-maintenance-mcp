@@ -59,13 +59,18 @@ Vocabulary of the assessment
       zero). For the ISO velocity, with machine group and support type
       known, a change beyond 25% of the B/C boundary is reported too.
     * **Capture comparison**: the envelope amplitude grows with the record
-      length, so the envelope indicators and the bearing evidence use only
-      the slots whose sampling rate and capture duration (``num_samples /
-      sampling_rate`` in the snapshot's ``effective`` block) lie within the
-      sampling-rate tolerance of the reference medians; the others are
-      listed under ``capture_comparison`` with their reasons. Fewer than
-      three comparable reference slots, or a latest slot left out, make the
-      envelope indicators and the bearing evidence unavailable.
+      length, so a slot whose sampling rate or capture duration
+      (``num_samples / sampling_rate`` in the snapshot's ``effective``
+      block) lies outside the sampling-rate tolerance of the reference
+      medians, or is not recorded, is listed under ``capture_comparison``
+      with its reasons. For
+      an ``envelope_<label>`` indicator such a slot is an unusable
+      observation under the whole-history availability rule, like a missing
+      value: one anywhere in the evaluated history makes the indicator
+      unavailable, with no series joined across it and no older slot taking
+      its place. The bearing evidence does not compare it (per slot, see
+      below); fewer than three comparable reference slots, or a latest slot
+      left out, make the bearing evidence unavailable.
     * **Bearing evidence**: per bearing label over the last K slots, the
       raw presence the snapshots record (from algorithm version 2 the
       ``supported`` state, earlier the rule it was recorded under) is
@@ -101,7 +106,7 @@ clock. Two identical views give byte-identical canonical payloads.
 import logging
 import math
 from datetime import datetime, timezone
-from typing import Any, Iterable, NamedTuple, Optional, Sequence
+from typing import Any, Callable, Iterable, NamedTuple, Optional, Sequence
 
 import numpy as np
 
@@ -1032,10 +1037,11 @@ def _capture_comparison(
     The reference capture is the median sampling rate and the median
     capture duration of the reference slots; a slot whose sampling rate or
     duration differs from it by more than the sampling-rate tolerance of
-    the comparability thresholds, or that does not record both, is left
-    out of the envelope indicators and the bearing evidence (the envelope
-    amplitude grows with the record length) and listed with its reasons.
-    Returns the payload block and the ids of the slots left out.
+    the comparability thresholds, or that does not record both, is listed
+    with its reasons (the envelope amplitude grows with the record length).
+    Returns the payload block and the ids of those slots: the bearing
+    evidence does not compare them, and each one makes the envelope
+    indicators unavailable while it is in the evaluated history.
     """
     tolerance = params.thresholds.sampling_rate_tolerance_pct
     captures = {
@@ -1335,7 +1341,7 @@ def _label_evidence(
     *,
     current: bool,
     version: Optional[int],
-    missing: dict[str, Any],
+    reason: Callable[[str], str],
     window: Sequence[dict[str, Any]],
     reference_slots: Sequence[dict[str, Any]],
     snapshots: dict[str, dict[str, Any]],
@@ -1352,8 +1358,9 @@ def _label_evidence(
     (:func:`_evidence_present`). Not on the *current* lineage the basis is
     ``legacy``: the recorded evidence of an earlier lineage, not
     classified. On it without a reference band for ``envelope_<label>``
-    (*stats* None) the basis is ``unavailable``, with the reason of that
-    indicator's *missing* entry; neither is a negative result. Otherwise
+    (*stats* None) the basis is ``unavailable``, with the *reason* the
+    caller gives for that indicator's name; neither is a negative result.
+    Otherwise
     the basis is ``reference_relative``: a slot carries evidence when its
     raw presence holds and its ``envelope_<label>`` value is above the
     reference band; a slot in *left_out* (capture not comparable) or
@@ -1406,12 +1413,8 @@ def _label_evidence(
     )
     name = f"{ENVELOPE_INDICATOR_PREFIX}{label}"
     if stats is None:
-        reason = missing.get("reason") or (
-            f"{name} is missing in {missing.get('missing_in')} of the "
-            f"{missing.get('of')} evaluated acquisitions"
-        )
         assessed["criterion"] = (
-            f"reference-relative bearing evidence unavailable: {reason}"
+            f"reference-relative bearing evidence unavailable: {reason(name)}"
         )
         return presence, assessed, None
 
@@ -1440,7 +1443,7 @@ def _label_evidence(
     if left:
         notes.append(
             f"{left} of the last {len(window)} not compared: capture differs "
-            f"from the reference"
+            f"from the reference or is not recorded"
         )
     if unrecorded:
         notes.append(
@@ -2202,12 +2205,37 @@ def _earlier_lineage(
 
 
 #: The verification of an assessment whose latest acquisition was left out
-#: of the envelope indicators and the bearing evidence for its capture.
+#: of the bearing evidence for its capture (the envelope indicators stay
+#: unavailable while that acquisition is in the evaluated history).
 _CAPTURE_VERIFICATION = (
     "Repeat the measurement with the sampling rate and capture duration of the "
-    "reference (observed.capture_comparison gives both), so that the envelope "
-    "indicators and the bearing evidence can be compared with the reference."
+    "reference (observed.capture_comparison gives both), so that the bearing "
+    "evidence can be compared with the reference."
 )
+
+#: The verification of an assessment whose envelope indicators are
+#: unavailable because a post-reference acquisition other than the latest was
+#: left out for its capture (owner decision of 2026-10-26: no segment-aware
+#: rule, the acquisition must leave the evaluated history).
+_ENVELOPE_HISTORY_VERIFICATION = (
+    "The envelope indicators stay unavailable while an acquisition listed in "
+    "observed.capture_comparison is in the evaluated history: assess with "
+    "acquired_since after the listed post-reference acquisitions to compare "
+    "them with the reference (a listed reference acquisition keeps them "
+    "unavailable)."
+)
+
+
+def _unavailable_summary(names: Sequence[str]) -> str:
+    """The criterion's clause naming the amplitude indicators that were not
+    assessed, so that a verdict never reads as covering them."""
+    if not names:
+        return ""
+    noun = "amplitude indicator" if len(names) == 1 else "amplitude indicators"
+    return (
+        f"; {noun} {', '.join(names)} unavailable (see "
+        f"observed.indicators_unavailable)"
+    )
 
 
 def _verification(
@@ -2217,11 +2245,14 @@ def _verification(
     *,
     stale: bool = False,
     latest_capture_differs: bool = False,
+    envelope_history_excluded: bool = False,
 ) -> Optional[str]:
     if stale:
         return _STALE_EVIDENCE_VERIFICATION
     if classification == "no_change" or classification == "isolated_episode":
-        return _CAPTURE_VERIFICATION if latest_capture_differs else None
+        if latest_capture_differs:
+            return _CAPTURE_VERIFICATION
+        return _ENVELOPE_HISTORY_VERIFICATION if envelope_history_excluded else None
     if coincides:
         return (
             "Check whether the onset coincides with the "
@@ -2484,8 +2515,9 @@ def assess_change(
     ordered_names = _indicator_order(names)
     latest_slot = sequence[-1]
 
-    # The envelope indicators (and the bearing evidence) use only the slots
-    # whose capture is comparable with the reference's.
+    # A slot whose capture differs from the reference's is an unusable
+    # observation for the envelope indicators (whole history, like a missing
+    # value) and is not compared by the bearing evidence (per slot).
     capture, capture_left_out = _capture_comparison(
         reference_slots, evaluated, snapshots, params
     )
@@ -2493,11 +2525,7 @@ def assess_change(
     def comparable(slots: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
         return [s for s in slots if s["measurement_id"] not in capture_left_out]
 
-    def used(slots: Sequence[dict[str, Any]], name: str) -> list[dict[str, Any]]:
-        if name.startswith(ENVELOPE_INDICATOR_PREFIX):
-            return comparable(slots)
-        return list(slots)
-
+    # Why the reference-relative bearing evidence cannot be classified at all.
     capture_gap: Optional[str] = None
     if len(comparable(reference_slots)) < MIN_REFERENCE_MEASUREMENTS:
         capture_gap = (
@@ -2507,49 +2535,69 @@ def assess_change(
     elif latest_slot["measurement_id"] in capture_left_out:
         capture_gap = (
             "the capture of the latest acquisition differs from the reference "
-            "(see capture_comparison)"
+            "or is not recorded (see capture_comparison)"
         )
 
+    def missing_of(name: str) -> list[str]:
+        """The evaluated slots without a value of *name*."""
+        return [
+            s["measurement_id"]
+            for s in evaluated
+            if values[s["measurement_id"]].get(name) is None
+        ]
+
+    def recorded_reason(missing: Sequence[str], block: Optional[str]) -> Optional[str]:
+        """The reason the snapshot of the first slot in *missing* records for
+        its missing *block*, if any."""
+        if block is None or not missing:
+            return None
+        entry = (snapshots[missing[0]].get("missing") or {}).get(block)
+        reason: Optional[str] = entry.get("reason") if isinstance(entry, dict) else None
+        return reason
+
+    def missing_count(name: str, missing: Sequence[str]) -> str:
+        return (
+            f"{name} is missing in {len(missing)} of the {len(evaluated)} "
+            f"evaluated acquisitions"
+        )
+
+    # An indicator is available only when every evaluated slot has a usable
+    # value; for an envelope indicator a slot left out for its capture is not
+    # a usable value.
     available: list[str] = []
     unavailable: dict[str, Any] = {}
     for name in ordered_names:
-        slots_used = used(evaluated, name)
-        missing_in = [
-            s["measurement_id"]
-            for s in slots_used
-            if values[s["measurement_id"]].get(name) is None
-        ]
-        if (
-            not missing_in
-            and capture_gap
-            and name.startswith(ENVELOPE_INDICATOR_PREFIX)
-        ):
-            unavailable[name] = {
-                "missing_in": len(evaluated) - len(slots_used),
-                "of": len(evaluated),
-                "reason": capture_gap,
-            }
-        elif missing_in:
-            reason = None
+        envelope = name.startswith(ENVELOPE_INDICATOR_PREFIX)
+        excluded_in = (
+            [
+                s["measurement_id"]
+                for s in evaluated
+                if s["measurement_id"] in capture_left_out
+            ]
+            if envelope
+            else []
+        )
+        missing_in = missing_of(name)
+        if excluded_in or missing_in:
             block = (
                 "one_x"
                 if name == "one_x"
                 else (
-                    "iso"
-                    if name == "iso_velocity"
-                    else (
-                        "bearing"
-                        if name.startswith(ENVELOPE_INDICATOR_PREFIX)
-                        else None
-                    )
+                    "iso" if name == "iso_velocity" else "bearing" if envelope else None
                 )
             )
-            if block is not None:
-                entry = (snapshots[missing_in[0]].get("missing") or {}).get(block)
-                if isinstance(entry, dict):
-                    reason = entry.get("reason")
+            reason = recorded_reason(missing_in, block)
+            if excluded_in:
+                parts = [
+                    f"the capture of {len(excluded_in)} of the {len(evaluated)} "
+                    f"evaluated acquisitions differs from the reference or is not "
+                    f"recorded (see capture_comparison)"
+                ]
+                if missing_in:
+                    parts.append(reason or missing_count(name, missing_in))
+                reason = "; ".join(parts)
             unavailable[name] = {
-                "missing_in": len(missing_in),
+                "missing_in": len(set(excluded_in) | set(missing_in)),
                 "of": len(evaluated),
                 "reason": reason,
             }
@@ -2585,13 +2633,8 @@ def assess_change(
     drift: dict[str, Any] = {}
     latest: dict[str, Any] = {}
     for name in available:
-        ref_values = [
-            float(values[s["measurement_id"]][name])
-            for s in used(reference_slots, name)
-        ]
-        seq_values = [
-            float(values[s["measurement_id"]][name]) for s in used(sequence, name)
-        ]
+        ref_values = [float(values[s["measurement_id"]][name]) for s in reference_slots]
+        seq_values = [float(values[s["measurement_id"]][name]) for s in sequence]
         stats = _band(ref_values, params)
         stats["unit"] = unit_of(name)
         reference_statistics[name] = stats
@@ -2617,18 +2660,7 @@ def assess_change(
             "exceeds": verdict["sides"][-1] is not None,
             "side": verdict["sides"][-1],
         }
-        # Aligned with the last K slots; None for a slot left out (capture).
-        side_of = dict(
-            zip((s["measurement_id"] for s in used(sequence, name)), verdict["sides"])
-        )
-        exceedance_runs[name] = [
-            (
-                side_of[s["measurement_id"]] is not None
-                if s["measurement_id"] in side_of
-                else None
-            )
-            for s in sequence[-params.last_k :]
-        ]
+        exceedance_runs[name] = verdict["exceedance_runs"]
         drift[name] = verdict["drift"]
 
     iso_change: Optional[dict[str, Any]] = None
@@ -2681,9 +2713,10 @@ def assess_change(
     def evidence_band(name: str) -> Optional[dict[str, Any]]:
         """The reference band of *name* for the bearing evidence: the
         indicator's own band, or, when the indicator is unavailable because
-        some slot lacks its value, the band of the comparable reference slots
-        that record it, provided at least MIN_REFERENCE_MEASUREMENTS do and
-        the latest slot records it; None otherwise (unavailable)."""
+        some evaluated slot lacks its value or has a differing capture, the
+        band of the comparable reference slots that record it, provided at
+        least MIN_REFERENCE_MEASUREMENTS do and the latest slot is comparable
+        and records it; None otherwise (unavailable)."""
         if name in reference_statistics:
             own: dict[str, Any] = reference_statistics[name]
             return own
@@ -2701,6 +2734,15 @@ def assess_change(
             return None
         return _band(recorded, params)
 
+    def evidence_unavailable_reason(name: str) -> str:
+        """Why the evidence band of *name* cannot be built: the capture gap,
+        else the snapshot's reason for a missing envelope value, else the
+        count of evaluated slots without one."""
+        if capture_gap is not None:
+            return capture_gap
+        missing = missing_of(name)
+        return recorded_reason(missing, "bearing") or missing_count(name, missing)
+
     evidence_presence: dict[str, Any] = {}
     evidence_assessed: dict[str, Any] = {}
     evidence_onsets: dict[str, Optional[dict[str, Any]]] = {}
@@ -2710,7 +2752,7 @@ def assess_change(
             label,
             current=chosen == current_processing,
             version=lineage_version,
-            missing=unavailable.get(name) or {},
+            reason=evidence_unavailable_reason,
             window=last_k_slots,
             reference_slots=reference_slots,
             snapshots=snapshots,
@@ -2741,14 +2783,19 @@ def assess_change(
         name for name, cls, _ in candidates if cls == overall and overall != "no_change"
     ]
     if driving:
-        criterion = "; ".join(
-            f"{name}: {text}" for name, cls, text in candidates if cls == overall
-        ) + _evidence_summary(evidence_assessed, lineage_version, driving=True)
+        criterion = (
+            "; ".join(
+                f"{name}: {text}" for name, cls, text in candidates if cls == overall
+            )
+            + _evidence_summary(evidence_assessed, lineage_version, driving=True)
+            + _unavailable_summary(list(unavailable))
+        )
     else:
         criterion = (
             f"latest acquisition inside the band ({_band_text(params)}) of every "
-            f"amplitude indicator"
+            f"{'available ' if unavailable else ''}amplitude indicator"
             + _evidence_summary(evidence_assessed, lineage_version, driving=False)
+            + _unavailable_summary(list(unavailable))
         )
 
     direction: Optional[str] = None
@@ -2769,7 +2816,7 @@ def assess_change(
             verdict = per_indicator[first]
             direction = verdict["direction"]
             if verdict["onset_index"] is not None:
-                onset_slot = used(sequence, first)[int(verdict["onset_index"])]
+                onset_slot = sequence[int(verdict["onset_index"])]
         sudden = any(
             per_indicator[n]["sudden"]
             for n in driving
@@ -2907,6 +2954,10 @@ def assess_change(
             stale=bool(stale_context),
             latest_capture_differs=bool(labels)
             and latest_slot["measurement_id"] in capture_left_out,
+            envelope_history_excluded=any(
+                name.startswith(ENVELOPE_INDICATOR_PREFIX) for name in unavailable
+            )
+            and any(s["measurement_id"] in capture_left_out for s in sequence),
         ),
         "message": message,
     }

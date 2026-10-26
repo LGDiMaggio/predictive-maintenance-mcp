@@ -1335,14 +1335,49 @@ class TestBearingEvidence:
         )
 
 
+def capture_differs(count: int, total: int) -> str:
+    """The unavailable reason of an envelope indicator with *count* of
+    *total* evaluated acquisitions left out for their capture."""
+    return (
+        f"the capture of {count} of the {total} evaluated acquisitions differs "
+        f"from the reference or is not recorded (see capture_comparison)"
+    )
+
+
+#: The overall criterion's clause when every envelope indicator is unavailable.
+ENVELOPE_UNAVAILABLE = (
+    "; amplitude indicators envelope_BPFO, envelope_BPFI, envelope_BSF, "
+    "envelope_FTF unavailable (see observed.indicators_unavailable)"
+)
+
+#: The opening of the overall criterion without a driver when some amplitude
+#: indicator is unavailable.
+INSIDE_AVAILABLE = (
+    "latest acquisition inside the band (mean +/- max(3 sigma, 25%)) of every "
+    "available amplitude indicator"
+)
+
+#: The verification when an older capture keeps the envelope indicators
+#: unavailable.
+ENVELOPE_HISTORY_VERIFICATION = (
+    "The envelope indicators stay unavailable while an acquisition listed in "
+    "observed.capture_comparison is in the evaluated history: assess with "
+    "acquired_since after the listed post-reference acquisitions to compare "
+    "them with the reference (a listed reference acquisition keeps them "
+    "unavailable)."
+)
+
+
 class TestCaptureComparison:
-    """Decision B: the envelope indicators and the bearing evidence compare
-    only the slots whose capture (sampling rate, and duration as
-    num_samples / sampling_rate) lies within the sampling-rate tolerance
-    (1%) of the reference median. A slot outside it is left out and listed
-    with its reasons; too few comparable reference slots, or a latest slot
-    left out, make them unavailable, never absent. The amplitude rules keep
-    every slot."""
+    """Decision B: a slot whose capture (sampling rate, and duration as
+    num_samples / sampling_rate) lies outside the sampling-rate tolerance
+    (1%) of the reference median is listed with its reasons. For the
+    envelope indicators it is an unusable observation under the whole-history
+    availability rule, like a missing value (owner decision of 2026-10-26):
+    one anywhere in the evaluated history makes them unavailable. The bearing
+    evidence does not compare it, per slot (B1, B4); too few comparable
+    reference slots, or a latest slot left out, make the evidence
+    unavailable, never absent. The other amplitude rules keep every slot."""
 
     @pytest.mark.parametrize(
         "capture, reasons",
@@ -1395,16 +1430,15 @@ class TestCaptureComparison:
             "acquisition without persistence: 2 consecutive, 4 of the 4 "
             "acquisitions compared among the last 5 (the line is supported in 5 "
             "of the last 5 acquisitions; 1 of the last 5 not compared: capture "
-            "differs from the reference)"
+            "differs from the reference or is not recorded)"
         )
-        # The envelope exceedance runs stay aligned with the last five slots.
-        assert result["derived"]["exceedance_runs"]["envelope_BPFO"] == [
-            True,
-            True,
-            None,
-            True,
-            True,
-        ]
+        # The envelope indicator has an unusable slot in its history.
+        assert result["observed"]["indicators_unavailable"]["envelope_BPFO"] == {
+            "missing_in": 1,
+            "of": 20,
+            "reason": capture_differs(1, 20),
+        }
+        assert "envelope_BPFO" not in result["derived"]["exceedance_runs"]
         # The amplitude rules keep the slot: rms reads exactly as on the same
         # acquisitions with one capture.
         uniform = assess(
@@ -1502,7 +1536,7 @@ class TestCaptureComparison:
         )
         result = assess(view_of(events))
         reason = (
-            "capture differs from the reference"
+            "capture differs from the reference or is not recorded"
             if cause == "capture"
             else "no envelope amplitude recorded"
         )
@@ -1534,6 +1568,14 @@ class TestCaptureComparison:
             e["measurement_id"] for e in observed["capture_comparison"]["excluded"]
         ]
         assert excluded == ([mid(18)] if cause == "capture" else [])
+        # No spurious envelope-driven persistence from M17, M18 (not compared),
+        # M19, M20: the envelope indicator is unavailable, the verdict follows
+        # the evidence.
+        assert "envelope_BPFO" in observed["indicators_unavailable"]
+        assert result["assessed"]["classification"] == (
+            "unconfirmed_single_acquisition"
+        )
+        assert result["assessed"]["indicators_driving"] == ["evidence_BPFO"]
 
     @pytest.mark.parametrize("cause", ["capture", "envelope"])
     def test_a_slot_not_compared_is_never_counted_as_absent(self, cause):
@@ -1553,7 +1595,7 @@ class TestCaptureComparison:
         )
         result = assess(view_of(events))
         reason = (
-            "capture differs from the reference"
+            "capture differs from the reference or is not recorded"
             if cause == "capture"
             else "no envelope amplitude recorded"
         )
@@ -1564,9 +1606,64 @@ class TestCaptureComparison:
             "acquisitions compared among the last 5 (the line is supported in 1 "
             f"of the last 5 acquisitions; 1 of the last 5 not compared: {reason})"
         )
-        assert result["assessed"]["criterion"].endswith(
-            "and no supported bearing evidence above the reference band in the "
-            "acquisitions compared"
+        # The verdict names the envelope indicators it could not assess.
+        assert result["assessed"]["criterion"] == (
+            f"{INSIDE_AVAILABLE} and no supported bearing evidence above the "
+            "reference band in the acquisitions compared"
+            + (
+                ENVELOPE_UNAVAILABLE
+                if cause == "capture"
+                else "; amplitude indicator envelope_BPFO unavailable (see "
+                "observed.indicators_unavailable)"
+            )
+        )
+
+    def test_a_run_of_three_before_a_slot_not_compared_stays_persistent(self):
+        """The boundary opposite to the interruption: present, present,
+        present, not compared, present keeps the run of three."""
+        result = assess(
+            view_of(
+                current_events(
+                    STABLE * 2,
+                    bearing_of=supported_at(set(range(16, 21))),
+                    capture_of=lambda index: (
+                        (10000.0, 40000) if index == 19 else (10000.0, 20000)
+                    ),
+                )
+            )
+        )
+        evidence = result["assessed"]["evidence"]["BPFO"]
+        assert (evidence["classification"], evidence["consecutive"]) == (
+            "persistent_change",
+            3,
+        )
+        assert result["assessed"]["criterion"] == (
+            "evidence_BPFO: supported bearing evidence above the reference band "
+            "in 4 of the 4 acquisitions compared among the last 5, 3 consecutive "
+            "(the line is supported in 5 of the last 5 acquisitions; 1 of the "
+            "last 5 not compared: capture differs from the reference or is not "
+            "recorded)" + ENVELOPE_UNAVAILABLE
+        )
+
+    def test_mixed_bases_name_the_compared_acquisitions(self):
+        """Classified labels with a slot not compared and an unavailable label
+        in one criterion: each named once, with its own clause."""
+        result = assess(
+            view_of(
+                current_events(
+                    STABLE * 2,
+                    bearing_of=self.without_envelope({20}),
+                    capture_of=lambda index: (
+                        (10000.0, 40000) if index == 18 else (10000.0, 20000)
+                    ),
+                )
+            )
+        )
+        assert result["assessed"]["criterion"] == (
+            f"{INSIDE_AVAILABLE}; no supported bearing evidence above the "
+            "reference band for BPFI, BSF, FTF in the acquisitions compared; "
+            "reference-relative bearing evidence of BPFO unavailable"
+            + ENVELOPE_UNAVAILABLE
         )
 
     def test_an_envelope_missing_in_the_latest_slot_makes_the_label_unavailable(
@@ -1587,9 +1684,36 @@ class TestCaptureComparison:
         )
         assert evidence["BPFI"]["basis"] == "reference_relative"
 
+    def test_a_slot_both_left_out_and_missing_is_counted_once_on_both_surfaces(
+        self,
+    ):
+        """M12 left out for its capture and without an envelope value, M20
+        without one: the indicator and the bearing evidence give the same
+        count of slots without a value, and the slot is counted once."""
+        events = current_events(
+            STABLE * 2,
+            bearing_of=self.without_envelope(
+                {12, 20}, supported_at(set(range(16, 21)))
+            ),
+            capture_of=lambda index: (
+                (10000.0, 40000) if index == 12 else (10000.0, 20000)
+            ),
+        )
+        result = assess(view_of(events))
+        missing = "envelope_BPFO is missing in 2 of the 20 evaluated acquisitions"
+        assert result["observed"]["indicators_unavailable"]["envelope_BPFO"] == {
+            "missing_in": 2,
+            "of": 20,
+            "reason": f"{capture_differs(1, 20)}; {missing}",
+        }
+        assert result["assessed"]["evidence"]["BPFO"]["criterion"] == (
+            f"reference-relative bearing evidence unavailable: {missing}"
+        )
+
     def test_a_missing_envelope_and_a_left_out_capture_count_against_all_slots(self):
-        """indicators_unavailable counts the slots without a value against
-        every evaluated slot, whatever the capture comparison leaves out."""
+        """indicators_unavailable counts the unusable slots (a value missing,
+        a capture left out) against every evaluated slot and names both
+        causes."""
         events = current_events(
             STABLE * 2,
             bearing_of=self.without_envelope({12}),
@@ -1599,9 +1723,15 @@ class TestCaptureComparison:
         )
         result = assess(view_of(events))
         assert result["observed"]["indicators_unavailable"]["envelope_BPFO"] == {
+            "missing_in": 2,
+            "of": 20,
+            "reason": capture_differs(1, 20)
+            + "; envelope_BPFO is missing in 1 of the 20 evaluated acquisitions",
+        }
+        assert result["observed"]["indicators_unavailable"]["envelope_BPFI"] == {
             "missing_in": 1,
             "of": 20,
-            "reason": None,
+            "reason": capture_differs(1, 20),
         }
         assert result["assessed"]["evidence"]["BPFO"]["basis"] == "reference_relative"
 
@@ -1632,7 +1762,9 @@ class TestCaptureComparison:
         ],
     )
     def test_three_comparable_reference_captures_are_enough(self, durations, available):
-        """The boundary of MIN_REFERENCE_MEASUREMENTS comparable captures."""
+        """The boundary of MIN_REFERENCE_MEASUREMENTS comparable captures for
+        the bearing evidence; the envelope indicators are unavailable either
+        way (seven or eight reference captures differ)."""
 
         def capture_of(index: int) -> tuple[float, int]:
             if index <= 10:
@@ -1640,14 +1772,16 @@ class TestCaptureComparison:
             return 10000.0, 20000
 
         result = assess(view_of(current_events(STABLE * 2, capture_of=capture_of)))
-        stats = result["observed"]["reference_statistics"]
+        assert "envelope_BPFO" not in result["observed"]["reference_statistics"]
+        evidence = result["assessed"]["evidence"]["BPFO"]
         if available:
-            assert stats["envelope_BPFO"]["n"] == 3
+            assert evidence["basis"] == "reference_relative"
         else:
-            assert "envelope_BPFO" not in stats
-            assert result["observed"]["indicators_unavailable"]["envelope_BPFO"][
-                "reason"
-            ].startswith("fewer than 3 reference acquisitions")
+            assert evidence["criterion"] == (
+                "reference-relative bearing evidence unavailable: fewer than 3 "
+                "reference acquisitions have a capture comparable with the "
+                "reference (see capture_comparison)"
+            )
 
     def test_no_reference_capture_recorded_compares_nothing(self):
         """Without a recorded reference capture there is no median: every
@@ -1668,8 +1802,9 @@ class TestCaptureComparison:
         assert result["assessed"]["evidence"]["BPFO"]["basis"] == "unavailable"
 
     def test_onset_skips_a_left_out_slot(self):
-        """The onset is the first compared slot of the evidence run, and of an
-        envelope run, never a left-out slot."""
+        """The onset is the first compared slot of the evidence run, never a
+        left-out slot; with an older slot left out, the envelope indicator is
+        unavailable and the evidence run gives the onset."""
         evidence_run = current_events(
             STABLE * 2,
             bearing_of=supported_at({17, 18, 19}),
@@ -1688,7 +1823,8 @@ class TestCaptureComparison:
             ),
         )
         result = assess(view_of(envelope_run))
-        assert result["assessed"]["indicators_driving"][0] == "envelope_BPFO"
+        assert "envelope_BPFO" in result["observed"]["indicators_unavailable"]
+        assert result["assessed"]["indicators_driving"] == ["evidence_BPFO"]
         assert result["assessed"]["onset_measurement_id"] == mid(16)
 
     def test_no_bearing_block_says_the_evidence_was_not_computed(self):
@@ -1701,7 +1837,10 @@ class TestCaptureComparison:
             "every amplitude indicator; bearing evidence not computed"
         )
 
-    def test_a_reference_slot_with_another_capture_leaves_the_envelope_band(self):
+    def test_a_reference_slot_with_another_capture_disables_the_envelope_band(self):
+        """An excluded reference slot makes the envelope indicators unavailable
+        (no band of nine); the bearing evidence builds its own band from the
+        nine comparable reference slots (B4)."""
         events = current_events(
             STABLE * 2,
             capture_of=lambda index: (
@@ -1710,7 +1849,12 @@ class TestCaptureComparison:
         )
         result = assess(view_of(events))
         stats = result["observed"]["reference_statistics"]
-        assert stats["envelope_BPFO"]["n"] == 9
+        assert "envelope_BPFO" not in stats
+        assert result["observed"]["indicators_unavailable"]["envelope_BPFO"] == {
+            "missing_in": 1,
+            "of": 20,
+            "reason": capture_differs(1, 20),
+        }
         assert stats["rms"]["n"] == 10
         excluded = result["observed"]["capture_comparison"]["excluded"]
         assert [(e["measurement_id"], e["in_reference"]) for e in excluded] == [
@@ -1745,7 +1889,7 @@ class TestCaptureComparison:
         assert observed["indicators_unavailable"]["envelope_BPFO"] == {
             "missing_in": 10,
             "of": 20,
-            "reason": reason,
+            "reason": capture_differs(10, 20),
         }
         assert "envelope_BPFO" not in observed["reference_statistics"]
         assert observed["reference_statistics"]["rms"]["n"] == 10
@@ -1766,9 +1910,8 @@ class TestCaptureComparison:
         assert assessed["indicators_driving"] == []
         assert assessed["classification"] == "no_change"
         assert assessed["criterion"] == (
-            "latest acquisition inside the band (mean +/- max(3 sigma, 25%)) of "
-            "every amplitude indicator; reference-relative bearing evidence of "
-            "BPFO, BPFI, BSF, FTF unavailable"
+            f"{INSIDE_AVAILABLE}; reference-relative bearing evidence of "
+            "BPFO, BPFI, BSF, FTF unavailable" + ENVELOPE_UNAVAILABLE
         )
         assert result["derived"]["per_indicator"]["rms"]["classification"] == (
             "no_change"
@@ -1787,31 +1930,174 @@ class TestCaptureComparison:
         result = assess(view_of(events))
         reason = (
             "the capture of the latest acquisition differs from the reference "
-            "(see capture_comparison)"
+            "or is not recorded (see capture_comparison)"
         )
         assert result["observed"]["indicators_unavailable"]["envelope_BPFO"] == {
             "missing_in": 1,
             "of": 20,
-            "reason": reason,
+            "reason": capture_differs(1, 20),
         }
         evidence = result["assessed"]["evidence"]["BPFO"]
         assert (evidence["basis"], evidence["classification"]) == (
             "unavailable",
             None,
         )
+        assert evidence["criterion"] == (
+            f"reference-relative bearing evidence unavailable: {reason}"
+        )
         assert evidence["present_in_last_k"] == 5
         assert not any(
             name.startswith(("evidence_", "envelope_"))
             for name in result["assessed"]["indicators_driving"]
         )
-        # The verdict says how to make them comparable again.
+        # The verdict says how to make the bearing evidence comparable again.
         assert result["assessed"]["classification"] == "no_change"
         assert result["suggested_verification"] == (
             "Repeat the measurement with the sampling rate and capture duration "
             "of the reference (observed.capture_comparison gives both), so that "
-            "the envelope indicators and the bearing evidence can be compared "
-            "with the reference."
+            "the bearing evidence can be compared with the reference."
         )
+
+    @pytest.mark.parametrize(
+        "excluded, evidence_class",
+        [
+            (3, "persistent_change"),  # a reference acquisition
+            (12, "persistent_change"),  # a post-reference one before the last K
+            (18, "unconfirmed_single_acquisition"),  # inside the last K (B1)
+            (20, None),  # the latest (evidence unavailable, B2)
+        ],
+    )
+    def test_an_excluded_acquisition_makes_every_envelope_indicator_unavailable(
+        self, excluded, evidence_class
+    ):
+        """Owner decision of 2026-10-26: an acquisition left out for its
+        capture anywhere in the evaluated history is an unusable observation
+        for the envelope indicators, as a missing value is. They are
+        unavailable, never classified on a series joined across it or
+        backfilled; every other indicator reads exactly as with one capture,
+        and the bearing evidence keeps its per-slot rules."""
+        bearing_of = supported_at(set(range(16, 21)))
+        result = assess(
+            view_of(
+                current_events(
+                    STABLE * 2,
+                    bearing_of=bearing_of,
+                    capture_of=lambda index: (
+                        (10000.0, 40000) if index == excluded else (10000.0, 20000)
+                    ),
+                )
+            )
+        )
+        uniform = assess(view_of(current_events(STABLE * 2, bearing_of=bearing_of)))
+        observed, derived = result["observed"], result["derived"]
+        for label in ("BPFO", "BPFI", "BSF", "FTF"):
+            name = f"envelope_{label}"
+            assert observed["indicators_unavailable"][name] == {
+                "missing_in": 1,
+                "of": 20,
+                "reason": capture_differs(1, 20),
+            }
+            assert name not in observed["reference_statistics"]
+            assert name not in observed["latest"]
+            for block in ("deltas", "drift", "exceedance_runs", "per_indicator"):
+                assert name not in derived[block]
+        for name, stats in uniform["observed"]["reference_statistics"].items():
+            if name.startswith("envelope_"):
+                continue
+            assert observed["reference_statistics"][name] == stats
+            assert observed["latest"][name] == uniform["observed"]["latest"][name]
+            for block in ("deltas", "drift", "exceedance_runs", "per_indicator"):
+                assert derived[block].get(name) == uniform["derived"][block].get(name)
+        assert not any(
+            name.startswith("envelope_")
+            for name in result["assessed"]["indicators_driving"]
+        )
+        assert result["assessed"]["evidence"]["BPFO"]["classification"] == (
+            evidence_class
+        )
+        # The verdict names the envelope indicators it could not assess.
+        assert result["assessed"]["criterion"].endswith(ENVELOPE_UNAVAILABLE)
+        assert result["assessed"]["criterion"] in result["message"]
+
+    def test_not_recorded_capture_makes_the_envelope_indicators_unavailable(self):
+        events = current_events(
+            STABLE * 2,
+            capture_of=lambda index: (
+                (10000.0, None) if index == 15 else (10000.0, 20000)
+            ),
+        )
+        result = assess(view_of(events))
+        assert result["observed"]["capture_comparison"]["excluded"][0]["reasons"] == [
+            "capture_not_recorded"
+        ]
+        assert result["observed"]["indicators_unavailable"]["envelope_BPFO"] == {
+            "missing_in": 1,
+            "of": 20,
+            "reason": capture_differs(1, 20),
+        }
+
+    def test_a_reference_exclusion_is_named_without_a_verification(self):
+        """An envelope rise after a reference acquisition with another capture:
+        no change on the available indicators, the envelope indicators named
+        as unavailable; acquired_since cannot leave a reference acquisition
+        out, so no verification is suggested."""
+        result = assess(
+            view_of(
+                current_events(
+                    STABLE * 2,
+                    bearing_of=lambda index: (
+                        state_block(BPFO=("absent", 5.0))
+                        if index >= 16
+                        else state_block()
+                    ),
+                    capture_of=lambda index: (
+                        (10000.0, 40000) if index == 3 else (10000.0, 20000)
+                    ),
+                )
+            )
+        )
+        assert result["assessed"]["classification"] == "no_change"
+        assert result["assessed"]["criterion"] == (
+            f"{INSIDE_AVAILABLE} and no supported bearing evidence above the "
+            "reference band" + ENVELOPE_UNAVAILABLE
+        )
+        assert result["suggested_verification"] is None
+
+    def test_an_older_exclusion_is_never_joined_across(self):
+        """The envelope above its band from M14 to M30 with M15 left out
+        before the last five: no run of sixteen joined across M15, no older
+        slot taking its place; the indicators are unavailable."""
+        result = assess(
+            view_of(
+                current_events(
+                    STABLE * 3,
+                    bearing_of=lambda index: (
+                        state_block(BPFO=("absent", 5.0))
+                        if index >= 14
+                        else state_block()
+                    ),
+                    capture_of=lambda index: (
+                        (10000.0, 40000) if index == 15 else (10000.0, 20000)
+                    ),
+                )
+            )
+        )
+        assert result["observed"]["indicators_unavailable"]["envelope_BPFO"] == {
+            "missing_in": 1,
+            "of": 30,
+            "reason": capture_differs(1, 30),
+        }
+        assert "envelope_BPFO" not in result["derived"]["per_indicator"]
+        # No change on the available indicators, never presented as covering
+        # the envelope indicators, with the way to assess them again.
+        assessed = result["assessed"]
+        assert assessed["classification"] == "no_change"
+        assert assessed["criterion"] == (
+            f"{INSIDE_AVAILABLE} and no supported bearing evidence above the "
+            "reference band" + ENVELOPE_UNAVAILABLE
+        )
+        assert assessed["criterion"] in result["message"]
+        assert result["suggested_verification"] == ENVELOPE_HISTORY_VERIFICATION
 
     def test_the_vocabularies_cover_every_emitted_value(self):
         """Every basis and capture reason the payload carries is in its
