@@ -27,6 +27,7 @@ the plan's U6 scenarios:
 """
 
 import ast
+import copy
 import json
 import re
 from datetime import datetime, timedelta, timezone
@@ -2129,6 +2130,145 @@ class TestCaptureComparison:
 # ---------------------------------------------------------------------------
 # Comparability (AE3, AE4) and slots
 # ---------------------------------------------------------------------------
+
+
+def without_indicators(
+    events: Sequence[dict[str, Any]], index: int, *names: str
+) -> list[dict[str, Any]]:
+    """*events* with the snapshot of slot *index* recording no value for the
+    indicators *names* (as a non-finite value is recorded)."""
+    out: list[dict[str, Any]] = []
+    for event in events:
+        payload = event["payload"]
+        if event["event_type"] == EVENT_HEALTH_SNAPSHOT_COMPUTED and payload[
+            "measurement_id"
+        ] == mid(index):
+            payload = copy.deepcopy(payload)
+            for name in names:
+                payload["indicators"][name] = None
+            event = make_event(EVENT_HEALTH_SNAPSHOT_COMPUTED, ASSET, payload)
+        out.append(event)
+    return out
+
+
+class TestUnavailableAmplitudeIndicators:
+    """The overall criterion never says inside a band of amplitude
+    indicators that were not compared, and names the unavailable ones; the
+    support indicators are never counted as amplitude indicators. The
+    verdict precedence is unchanged."""
+
+    def test_no_available_amplitude_indicator_is_not_worded_as_inside_a_band(self):
+        """rms and peak not recorded in M13, no 1x or ISO velocity, M12 left
+        out for its capture: no amplitude indicator is compared; the bearing
+        evidence is classified on its own."""
+        events = without_indicators(
+            current_events(
+                STABLE * 2,
+                with_iso=False,
+                with_one_x=False,
+                capture_of=lambda index: (
+                    (10000.0, 40000) if index == 12 else (10000.0, 20000)
+                ),
+            ),
+            13,
+            "rms",
+            "peak",
+        )
+        result = assess(view_of(events))
+        assert result["derived"]["per_indicator"] == {}
+        assert result["assessed"]["criterion"] == (
+            "no amplitude indicator available to compare with the reference; no "
+            "supported bearing evidence above the reference band; amplitude "
+            "indicators rms, peak, one_x, iso_velocity, envelope_BPFO, "
+            "envelope_BPFI, envelope_BSF, envelope_FTF unavailable (see "
+            "observed.indicators_unavailable)"
+        )
+        assert result["assessed"]["criterion"] in result["message"]
+
+    @pytest.mark.parametrize(
+        "bearing_of, latest_capture, evidence_clause",
+        [
+            (
+                None,
+                (10000.0, 40000),
+                "reference-relative bearing evidence of BPFO, BPFI, BSF, FTF "
+                "unavailable; amplitude indicators rms, peak, one_x, iso_velocity, "
+                "envelope_BPFO, envelope_BPFI, envelope_BSF, envelope_FTF",
+            ),
+            (
+                lambda index: None,
+                (10000.0, 20000),
+                "bearing evidence not computed; amplitude indicators rms, peak, "
+                "one_x, iso_velocity",
+            ),
+        ],
+    )
+    def test_nothing_compared_is_named_as_such(
+        self, bearing_of, latest_capture, evidence_clause
+    ):
+        """No amplitude indicator and no classified bearing evidence: the
+        criterion says that nothing was compared; the classification keeps
+        today's precedence."""
+        events = without_indicators(
+            current_events(
+                STABLE * 2,
+                with_iso=False,
+                with_one_x=False,
+                bearing_of=bearing_of,
+                capture_of=lambda index: (
+                    latest_capture if index == 20 else (10000.0, 20000)
+                ),
+            ),
+            13,
+            "rms",
+            "peak",
+        )
+        assessed = assess(view_of(events))["assessed"]
+        assert (assessed["classification"], assessed["indicators_driving"]) == (
+            "no_change",
+            [],
+        )
+        assert assessed["criterion"] == (
+            "no amplitude indicator available to compare with the reference; "
+            f"{evidence_clause} unavailable (see observed.indicators_unavailable)"
+        )
+
+    def test_a_missing_support_indicator_is_not_an_amplitude_indicator(self):
+        events = without_indicators(current_events(STABLE * 2), 13, "crest_factor")
+        result = assess(view_of(events))
+        assert "crest_factor" in result["observed"]["indicators_unavailable"]
+        assert result["assessed"]["criterion"] == (
+            "latest acquisition inside the band (mean +/- max(3 sigma, 25%)) of "
+            "every amplitude indicator and no supported bearing evidence above "
+            "the reference band"
+        )
+
+    def test_an_unrecorded_reference_capture_is_never_said_to_be_given(self):
+        """The reference and the latest acquisition record no capture
+        duration: capture_comparison has no reference duration, and the
+        verification does not say that it gives one."""
+        events = current_events(
+            STABLE * 2,
+            capture_of=lambda index: (
+                (10000.0, None) if index <= 10 or index == 20 else (10000.0, 20000)
+            ),
+        )
+        result = assess(view_of(events))
+        capture = result["observed"]["capture_comparison"]
+        assert (
+            capture["reference_sampling_rate_hz"],
+            capture["reference_duration_s"],
+        ) == (
+            10000.0,
+            None,
+        )
+        assert result["suggested_verification"] == (
+            "The reference capture is not fully recorded "
+            "(observed.capture_comparison lacks the reference sampling rate, the "
+            "reference capture duration or both): a reference whose acquisitions "
+            "record their sampling rate and capture duration is needed before the "
+            "bearing evidence can be compared with the reference."
+        )
 
 
 class TestComparability:

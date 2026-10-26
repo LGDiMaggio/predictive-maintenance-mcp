@@ -2213,6 +2213,16 @@ _CAPTURE_VERIFICATION = (
     "evidence can be compared with the reference."
 )
 
+#: The same verification when the reference does not record its sampling
+#: rate or its capture duration (capture_comparison has null for it).
+_UNRECORDED_REFERENCE_CAPTURE_VERIFICATION = (
+    "The reference capture is not fully recorded (observed.capture_comparison "
+    "lacks the reference sampling rate, the reference capture duration or "
+    "both): a reference whose acquisitions record their sampling rate and "
+    "capture duration is needed before the bearing evidence can be compared "
+    "with the reference."
+)
+
 #: The verification of an assessment whose envelope indicators are
 #: unavailable because a post-reference acquisition other than the latest was
 #: left out for its capture (owner decision of 2026-10-26: no segment-aware
@@ -2245,13 +2255,18 @@ def _verification(
     *,
     stale: bool = False,
     latest_capture_differs: bool = False,
+    reference_capture_recorded: bool = True,
     envelope_history_excluded: bool = False,
 ) -> Optional[str]:
     if stale:
         return _STALE_EVIDENCE_VERIFICATION
     if classification == "no_change" or classification == "isolated_episode":
         if latest_capture_differs:
-            return _CAPTURE_VERIFICATION
+            return (
+                _CAPTURE_VERIFICATION
+                if reference_capture_recorded
+                else _UNRECORDED_REFERENCE_CAPTURE_VERIFICATION
+            )
         return _ENVELOPE_HISTORY_VERIFICATION if envelope_history_excluded else None
     if coincides:
         return (
@@ -2782,21 +2797,29 @@ def assess_change(
     driving = [
         name for name, cls, _ in candidates if cls == overall and overall != "no_change"
     ]
+    # The support indicators are context, never amplitude indicators.
+    amplitude_unavailable = [n for n in unavailable if n not in SUPPORT_INDICATORS]
     if driving:
         criterion = (
             "; ".join(
                 f"{name}: {text}" for name, cls, text in candidates if cls == overall
             )
             + _evidence_summary(evidence_assessed, lineage_version, driving=True)
-            + _unavailable_summary(list(unavailable))
+            + _unavailable_summary(amplitude_unavailable)
         )
     else:
-        criterion = (
-            f"latest acquisition inside the band ({_band_text(params)}) of every "
-            f"{'available ' if unavailable else ''}amplitude indicator"
-            + _evidence_summary(evidence_assessed, lineage_version, driving=False)
-            + _unavailable_summary(list(unavailable))
-        )
+        summary = _evidence_summary(evidence_assessed, lineage_version, driving=False)
+        if per_indicator:
+            opening = (
+                f"latest acquisition inside the band ({_band_text(params)}) of every "
+                f"{'available ' if amplitude_unavailable else ''}amplitude indicator"
+            )
+        else:
+            # No amplitude indicator was compared: never worded as inside a band.
+            opening = "no amplitude indicator available to compare with the reference"
+            if summary.startswith(" and "):
+                summary = "; " + summary[len(" and ") :]
+        criterion = opening + summary + _unavailable_summary(amplitude_unavailable)
 
     direction: Optional[str] = None
     sudden = False
@@ -2954,6 +2977,8 @@ def assess_change(
             stale=bool(stale_context),
             latest_capture_differs=bool(labels)
             and latest_slot["measurement_id"] in capture_left_out,
+            reference_capture_recorded=capture["reference_sampling_rate_hz"] is not None
+            and capture["reference_duration_s"] is not None,
             envelope_history_excluded=any(
                 name.startswith(ENVELOPE_INDICATOR_PREFIX) for name in unavailable
             )
