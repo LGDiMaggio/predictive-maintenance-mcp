@@ -22,16 +22,6 @@ An open-source [MCP](https://modelcontextprotocol.io/) server that turns LLMs in
 
 ---
 
-## See It in Action
-
-<p align="center">
-  <img src="assets/claude_gif.gif" alt="Predictive Maintenance MCP — diagnostic workflow in Claude Desktop" width="720">
-</p>
-
-<p align="center"><em>Full diagnostic workflow: load signal → spectral analysis → fault detection → severity assessment → report generation</em></p>
-
----
-
 ## Choose Your Path
 
 | You are | Start here |
@@ -54,7 +44,7 @@ An open-source [MCP](https://modelcontextprotocol.io/) server that turns LLMs in
 | *"Train an anomaly detector on my healthy baselines, then flag anomalies"* | Trains a model on your normal data, scores new signals, flags outliers for your review |
 | *"What changed on pump P-101 since the baseline?"* | Reads the asset's recorded history, compares the latest acquisitions with the declared reference, and reports each indicator's change with the criterion it applied |
 
-The AI doesn't guess: it calls **41 specialized MCP endpoints** (38 tools + 3 prompts) running locally on your machine. Every signal is referenced by a single `signal_id` handle from load to report. Your data never leaves your infrastructure.
+The AI doesn't guess: it calls **42 specialized MCP endpoints** (39 tools + 3 prompts) running locally on your machine. These counts describe the main branch; tools listed under Unreleased in the [CHANGELOG](CHANGELOG.md) are not yet in the published PyPI package. Every signal is referenced by a single `signal_id` handle from load to report. Your data never leaves your infrastructure.
 
 Full endpoint reference, grouped by category: **[Tool Catalog](docs/TOOL_CATALOG.md)**.
 
@@ -62,9 +52,9 @@ Full endpoint reference, grouped by category: **[Tool Catalog](docs/TOOL_CATALOG
 
 ## Quick Start
 
-One route, from a fresh clone to a first diagnosis in Claude Desktop. You need [Git](https://git-scm.com/) (or the repository ZIP from GitHub, extracted), [uv](https://docs.astral.sh/uv/getting-started/installation/) (it fetches Python 3.11 by itself) and [Claude Desktop](https://claude.ai/download).
+One route, from a fresh clone to a first diagnosis in Claude Desktop. You need [Git](https://git-scm.com/), [uv](https://docs.astral.sh/uv/getting-started/installation/) (it fetches Python 3.11 by itself) and [Claude Desktop](https://claude.ai/download).
 
-**1. Get the repository.** The 20 sample signals ship with it, not with the PyPI package: real bearing measurements from the MathWorks rolling-element bearing dataset, healthy baselines plus inner and outer race faults, each with its companion metadata ([data/README.md](data/README.md)).
+**1. Clone the repository.** The 20 sample signals come with the clone, not with the PyPI package or with the source ZIP and tarball archives generated from this revision: real bearing measurements from the MathWorks rolling-element bearing dataset, healthy baselines plus inner and outer race faults, each with its companion metadata ([data/README.md](data/README.md)).
 
 ```bash
 git clone https://github.com/LGDiMaggio/predictive-maintenance-mcp.git
@@ -166,7 +156,7 @@ The project includes a **plugin for Claude Code** with domain-specific skills th
 ```
 
 <p align="center">
-  <img src="assets/plugin.gif" alt="Claude Code Plugin — skills, agents, and slash commands in action" width="720">
+  <img src="assets/plugin.gif" alt="Animated demo: adding the predictive-maintenance marketplace, installing the plugin and opening its page, which lists its skills and agents" width="720">
 </p>
 
 The plugin adds **8 skills** that activate automatically based on context (bearing-diagnosis, gear-diagnosis, quick-screening, report-generation, anomaly-detection, signal-management, documentation-search, prognostics), **2 agents** that run multi-step diagnostic workflows end-to-end and hand you the evidence (diagnostic-pipeline, signal-explorer), and **3 commands** for quick entry points (`/pm-diagnose`, `/pm-screen`, `/pm-report`).
@@ -182,9 +172,11 @@ All analysis tools generate **interactive HTML reports** you can open in any bro
 <details>
 <summary><b>Report examples</b></summary>
 
-![Envelope Analysis Report](assets/envelope_analysis.png)
+![Example envelope analysis report, generated from a synthetic test signal](assets/envelope_analysis.png)
 
-![ISO Severity Assessment](assets/iso.png)
+![Example ISO 20816-3 severity report, generated from a synthetic test signal](assets/iso.png)
+
+*Both examples were generated from a synthetic test signal with the `generate_test_signal` tool. They show what the reports contain; the Zone A result does not describe a real machine.*
 
 | Report Type | What it shows |
 |-------------|---------------|
@@ -273,7 +265,7 @@ pytest --cov=src --cov-report=html      # with coverage report
 
 ## Roadmap
 
-- [x] 41 MCP endpoints (38 tools, 3 prompts) with modular architecture and a single `signal_id` handle
+- [x] 42 MCP endpoints on the main branch (39 tools, 3 prompts) with modular architecture and a single `signal_id` handle
 - [x] Claude Code plugin (8 skills, 2 agents, 3 commands)
 - [x] 85%+ test coverage enforced in CI, CI/CD on 3 platforms
 - [x] Docker + SSE/HTTP transport for enterprise deployment
@@ -327,11 +319,11 @@ Contributions welcome from **everyone** — not just programmers. Domain experts
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Sample data is CC BY-NC-SA 4.0 (non-commercial); for commercial use, replace with your own machinery data.
+MIT, see [LICENSE](LICENSE). The sample data in `data/` is licensed separately under CC BY-NC-SA 4.0 (non-commercial); its attribution and terms are in [data/LICENSE](data/LICENSE). For commercial use, replace it with your own machinery data.
 
 ## Acknowledgments
 
-[MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) (descended from [FastMCP](https://github.com/jlowin/fastmcp)) · [Model Context Protocol](https://modelcontextprotocol.io/) by Anthropic · Sample data from [MathWorks](https://github.com/mathworks/RollingElementBearingFaultDiagnosis-Data) · Core development assisted by [Claude](https://claude.ai)
+[MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) (descended from [FastMCP](https://github.com/jlowin/fastmcp)) · [Model Context Protocol](https://modelcontextprotocol.io/) by Anthropic · Sample data by Eric Bechhoefer, redistributed by [MathWorks](https://github.com/mathworks/RollingElementBearingFaultDiagnosis-Data) · Core development assisted by [Claude](https://claude.ai)
 
 ---
 

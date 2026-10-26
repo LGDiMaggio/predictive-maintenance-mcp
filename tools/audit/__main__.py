@@ -3,13 +3,15 @@
 Thin by design, like ``benchmarks/cwru/__main__.py``: each check lives in its
 own module and this file only routes to it. Subcommands::
 
-    smoke          stdio protocol smoke harness against a server command
-    package-smoke  build artifact -> fresh venv -> smoke harness
-    upstream       compatibility inventory vs upstream release data
-    floors         constraints pinning runtime deps to their declared floors
-    lock-reqs      uv.lock -> pinned requirements for the vulnerability audit
-    security       pip-audit JSON -> one normalized result, fail closed
-    report         results -> audit report, issue candidates
+    smoke               stdio protocol smoke harness against a server command
+    package-smoke       build artifact -> fresh venv -> smoke harness
+    artifact-licensing  built wheel and sdist, or source archives: MIT license
+                        only, no sample data
+    upstream            compatibility inventory vs upstream release data
+    floors              constraints pinning runtime deps to their declared floors
+    lock-reqs           uv.lock -> pinned requirements for the vulnerability audit
+    security            pip-audit JSON -> one normalized result, fail closed
+    report              results -> audit report, issue candidates
 
 Why the imports are lazy
 ------------------------
@@ -66,6 +68,13 @@ DISPATCH: dict[str, Entry] = {
         "add_arguments",
         "run",
         "build artifact, install into a fresh venv, run the smoke harness",
+    ),
+    "artifact-licensing": Entry(
+        "tools.audit.artifact_licensing",
+        "add_arguments",
+        "run",
+        "check the built wheel and sdist, or source archives: MIT license only, "
+        "no sample data",
     ),
     "upstream": Entry(
         "tools.audit.upstream",

@@ -28,10 +28,17 @@ required_paths = [
     "data/signals/real_test",
     "pyproject.toml",
 ]
+# The sample signals come with a clone of the repository; the source archives
+# and the PyPI package leave them out. The server runs on the operator's own
+# files without them, so step 3 warns instead of failing.
+sample_paths = ["data/signals/real_train", "data/signals/real_test"]
 
 all_exist = True
 for path in required_paths:
     exists = Path(path).exists()
+    if not exists and path in sample_paths:
+        print(f"   [MISSING] {path} (sample signals: see step 3)")
+        continue
     status = "OK " if exists else "MISSING"
     print(f"   [{status}] {path}")
     all_exist = all_exist and exists
@@ -43,14 +50,20 @@ print()
 
 # 3. Check data files
 print("3. Data files:")
-train_files = list(Path("data/signals/real_train").glob("*.csv"))
-test_files = list(Path("data/signals/real_test").glob("*.csv"))
-print(f"   Training signals: {len(train_files)}")
-print(f"   Test signals: {len(test_files)}")
-if len(train_files) + len(test_files) < 20:
-    print("   WARNING: Expected at least 20 signal files")
+if all(Path(path).is_dir() for path in sample_paths):
+    train_files = list(Path("data/signals/real_train").glob("*.csv"))
+    test_files = list(Path("data/signals/real_test").glob("*.csv"))
+    print(f"   Training signals: {len(train_files)}")
+    print(f"   Test signals: {len(test_files)}")
+    if len(train_files) + len(test_files) < 20:
+        print("   WARNING: Expected at least 20 signal files")
+    else:
+        print("   OK")
 else:
-    print("   OK")
+    print("   Sample signals: not found")
+    print("   WARNING: the sample signals come with a clone of the repository:")
+    print("   git clone https://github.com/LGDiMaggio/predictive-maintenance-mcp.git")
+    print("   Your own signal files go in data/signals/.")
 print("   Supported formats: CSV, MAT, WAV, NPY, Parquet")
 print()
 
@@ -89,7 +102,7 @@ resources = list(mcp._resource_manager._resources) + list(
 # Frozen registered surface (tools, resources, prompts). The same numbers are
 # pinned by tests/test_version_alignment.py::test_expected_final_surface;
 # update both together when the registered surface changes.
-EXPECTED_TOOLS, EXPECTED_RESOURCES, EXPECTED_PROMPTS = 38, 0, 3
+EXPECTED_TOOLS, EXPECTED_RESOURCES, EXPECTED_PROMPTS = 39, 0, 3
 EXPECTED_LABEL = f"{EXPECTED_TOOLS}/{EXPECTED_RESOURCES}/{EXPECTED_PROMPTS}"
 
 print("   [OK ] from predictive_maintenance_mcp.server import mcp")

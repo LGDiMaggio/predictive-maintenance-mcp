@@ -14,7 +14,7 @@ This installs the server and all dependencies. You can then run it directly:
 predictive-maintenance-mcp
 ```
 
-> **Note**: The PyPI package does not include sample data. Clone the repository (see below) if you need the bundled vibration signals.
+> **Note**: The PyPI package and the source archives (ZIP or tarball) generated from this revision do not include sample data. Clone the repository (see below) if you need the bundled vibration signals.
 
 ---
 

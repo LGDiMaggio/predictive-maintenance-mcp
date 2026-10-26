@@ -58,6 +58,17 @@ jobs:
           name: dist
           path: dist/
 
+      - name: Check the licensing of the built wheel and sdist
+        run: python -m tools.audit artifact-licensing --dist dist --variant release-py3.11
+
+      # The release commit this run checked out (the tag's): its ZIP and
+      # tarball are what GitHub serves for the tag and Zenodo stores.
+      - name: Check the licensing of the release commit's source archives
+        run: |
+          git archive --format=zip --prefix=predictive-maintenance-mcp/ -o "$RUNNER_TEMP/source.zip" HEAD
+          git archive --format=tar.gz --prefix=predictive-maintenance-mcp/ -o "$RUNNER_TEMP/source.tar.gz" HEAD
+          python -m tools.audit artifact-licensing --archive "$RUNNER_TEMP/source.zip" --archive "$RUNNER_TEMP/source.tar.gz" --variant release-source-archives
+
       - name: Install the wheel into a fresh venv and run the stdio smoke harness
         run: python -m tools.audit package-smoke --dist dist --artifact wheel --variant release-py3.11
 

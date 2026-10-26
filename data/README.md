@@ -30,10 +30,12 @@ Perfect for:
 
 > **Note**: The MCP server reads signal files from the `signals/` directory (supports CSV, MAT, WAV, NPY, Parquet). The `real_bearings/` folder is kept as source archive.
 
+> **Note**: These sample folders are included when cloning the Git repository. Source ZIP and tarball archives generated from this revision, including those used for future GitHub Releases and Zenodo deposits, exclude the sample files. The Python distributions also exclude them.
+
 ## 📊 Dataset Information
 
-**Source**: [MathWorks RollingElementBearingFaultDiagnosis-Data](https://github.com/mathworks/RollingElementBearingFaultDiagnosis-Data)  
-**License**: [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) (Attribution-NonCommercial-ShareAlike 4.0 International)
+**Data owner**: Eric Bechhoefer. **Original source**: [data-acoustics.com bearing data set 2](http://data-acoustics.com/measurements/bearing-faults/bearing-2/), redistributed in [MathWorks RollingElementBearingFaultDiagnosis-Data](https://github.com/mathworks/RollingElementBearingFaultDiagnosis-Data)  
+**License**: [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) (Attribution-NonCommercial-ShareAlike 4.0 International). Scope, attribution and changes: [LICENSE](LICENSE)
 
 ### ⚠️ License Summary
 
@@ -55,8 +57,9 @@ This data is licensed under **CC BY-NC-SA 4.0**, which means:
 When using this data, please cite:
 
 ```
-The MathWorks, Inc. (2023). Rolling Element Bearing Fault Diagnosis Dataset.
-GitHub Repository: https://github.com/mathworks/RollingElementBearingFaultDiagnosis-Data
+Data owner: Eric Bechhoefer
+Source: http://data-acoustics.com/measurements/bearing-faults/bearing-2/
+Redistributed by The MathWorks, Inc.: https://github.com/mathworks/RollingElementBearingFaultDiagnosis-Data
 License: CC BY-NC-SA 4.0
 ```
 
@@ -186,7 +189,7 @@ Each `.csv` signal has a corresponding `*_metadata.json` file containing:
 
 ### For Academic/Research Use ✅
 - ✅ Free to use for learning, research, education
-- ✅ Cite the MathWorks repository in publications
+- ✅ Credit the data owner and the source in publications (see [LICENSE](LICENSE))
 - ✅ Share derivative works under CC BY-NC-SA 4.0
 
 ### For Commercial Use ❌
@@ -196,7 +199,7 @@ Each `.csv` signal has a corresponding `*_metadata.json` file containing:
 ### Recommended Approach for Commercial Projects
 
 1. **Development/Testing**: Use these sample signals freely
-2. **Production Deployment**: Replace with your own vibration data or obtain commercial license from MathWorks
+2. **Production Deployment**: Replace with your own vibration data, or contact the data owner about commercial use (see [LICENSE](LICENSE))
 3. **MCP Server Code**: MIT licensed, use freely in commercial projects
 4. **Sample Data**: For demonstration and educational purposes only
 
@@ -205,8 +208,9 @@ Each `.csv` signal has a corresponding `*_metadata.json` file containing:
 If you use this data in research or publications, please cite:
 
 ```
-The MathWorks, Inc. (2023). Rolling Element Bearing Fault Diagnosis Dataset.
-GitHub Repository: https://github.com/mathworks/RollingElementBearingFaultDiagnosis-Data
+Data owner: Eric Bechhoefer
+Source: http://data-acoustics.com/measurements/bearing-faults/bearing-2/
+Redistributed by The MathWorks, Inc.: https://github.com/mathworks/RollingElementBearingFaultDiagnosis-Data
 License: CC BY-NC-SA 4.0
 ```
 

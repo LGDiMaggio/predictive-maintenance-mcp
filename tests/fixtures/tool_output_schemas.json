@@ -3648,6 +3648,629 @@
     "title": "extract_manual_specsDictOutput",
     "type": "object"
   },
+  "forecast_asset_indicator": {
+    "$defs": {
+      "IndicatorForecastAnchor": {
+        "description": "One projected step with absolute bin times, for quoting dates.",
+        "properties": {
+          "bin_end": {
+            "description": "End of the step's bin, UTC ISO 8601",
+            "title": "Bin End",
+            "type": "string"
+          },
+          "bin_start": {
+            "description": "Start of the step's bin, UTC ISO 8601",
+            "title": "Bin Start",
+            "type": "string"
+          },
+          "p10": {
+            "description": "P10 of the step, in the declared unit",
+            "title": "P10",
+            "type": "number"
+          },
+          "p50": {
+            "description": "P50 (median) of the step, in the declared unit",
+            "title": "P50",
+            "type": "number"
+          },
+          "p90": {
+            "description": "P90 of the step, in the declared unit",
+            "title": "P90",
+            "type": "number"
+          },
+          "step": {
+            "description": "Step number, 1 = the first projected bin",
+            "title": "Step",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "step",
+          "bin_start",
+          "bin_end",
+          "p10",
+          "p50",
+          "p90"
+        ],
+        "title": "IndicatorForecastAnchor",
+        "type": "object"
+      },
+      "IndicatorForecastDeclaration": {
+        "description": "The declaration after defaults, as the projection used it.",
+        "properties": {
+          "aggregation": {
+            "description": "How several values in one bin were combined",
+            "enum": [
+              "mean",
+              "median",
+              "max",
+              "last"
+            ],
+            "title": "Aggregation",
+            "type": "string"
+          },
+          "backend": {
+            "description": "Reference backend requested",
+            "enum": [
+              "naive",
+              "seasonal_naive"
+            ],
+            "title": "Backend",
+            "type": "string"
+          },
+          "horizon_steps": {
+            "description": "Steps requested",
+            "title": "Horizon Steps",
+            "type": "integer"
+          },
+          "indicator": {
+            "description": "What the values measure, as declared",
+            "title": "Indicator",
+            "type": "string"
+          },
+          "quantile_levels": {
+            "description": "Quantile levels returned",
+            "items": {
+              "type": "number"
+            },
+            "title": "Quantile Levels",
+            "type": "array"
+          },
+          "resolution": {
+            "description": "Grid step as declared, for example '1h'",
+            "title": "Resolution",
+            "type": "string"
+          },
+          "resolution_seconds": {
+            "description": "Grid step in seconds",
+            "title": "Resolution Seconds",
+            "type": "integer"
+          },
+          "season_length_steps": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Season in grid steps (seasonal_naive only)",
+            "title": "Season Length Steps"
+          },
+          "unit": {
+            "description": "Unit of the values, as declared",
+            "title": "Unit",
+            "type": "string"
+          }
+        },
+        "required": [
+          "indicator",
+          "unit",
+          "resolution",
+          "resolution_seconds",
+          "aggregation",
+          "horizon_steps",
+          "backend",
+          "season_length_steps",
+          "quantile_levels"
+        ],
+        "title": "IndicatorForecastDeclaration",
+        "type": "object"
+      },
+      "IndicatorForecastHistory": {
+        "description": "Counts for checking the transcription and the quality of the history.",
+        "properties": {
+          "bin_alignment": {
+            "description": "'utc_epoch': bins are floor((instant - 1970-01-01T00:00Z) / step)",
+            "title": "Bin Alignment",
+            "type": "string"
+          },
+          "bins_with_several_points": {
+            "description": "Bins where several values were combined by the aggregation",
+            "title": "Bins With Several Points",
+            "type": "integer"
+          },
+          "difference_lag": {
+            "description": "Lag in steps of the difference pairs the backend uses",
+            "title": "Difference Lag",
+            "type": "integer"
+          },
+          "difference_pairs": {
+            "description": "Pairs of observed bins exactly difference_lag steps apart",
+            "title": "Difference Pairs",
+            "type": "integer"
+          },
+          "empty_bins": {
+            "description": "Bins holding no value; never filled",
+            "title": "Empty Bins",
+            "type": "integer"
+          },
+          "empty_bins_before_last_observed": {
+            "description": "Empty bins immediately before the last observed bin",
+            "title": "Empty Bins Before Last Observed",
+            "type": "integer"
+          },
+          "first_observed_at": {
+            "description": "First instant received, UTC ISO 8601",
+            "title": "First Observed At",
+            "type": "string"
+          },
+          "grid_bins": {
+            "description": "Bins from the first to the last observed bin",
+            "title": "Grid Bins",
+            "type": "integer"
+          },
+          "last_bin_points": {
+            "description": "Values in the last observed bin",
+            "title": "Last Bin Points",
+            "type": "integer"
+          },
+          "last_observed_at": {
+            "description": "Last instant received, UTC ISO 8601",
+            "title": "Last Observed At",
+            "type": "string"
+          },
+          "last_value": {
+            "description": "Last value received",
+            "title": "Last Value",
+            "type": "number"
+          },
+          "max_value": {
+            "description": "Largest value received",
+            "title": "Max Value",
+            "type": "number"
+          },
+          "median_points_per_observed_bin": {
+            "description": "Median number of values per observed bin",
+            "title": "Median Points Per Observed Bin",
+            "type": "number"
+          },
+          "min_value": {
+            "description": "Smallest value received",
+            "title": "Min Value",
+            "type": "number"
+          },
+          "observed_bins": {
+            "description": "Bins holding at least one value",
+            "title": "Observed Bins",
+            "type": "integer"
+          },
+          "raw_points": {
+            "description": "Values received",
+            "title": "Raw Points",
+            "type": "integer"
+          },
+          "zero_difference_share": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Share of those pairs whose values are equal; a high share can indicate held values. None when there are no pairs.",
+            "title": "Zero Difference Share"
+          }
+        },
+        "required": [
+          "raw_points",
+          "first_observed_at",
+          "last_observed_at",
+          "last_value",
+          "min_value",
+          "max_value",
+          "grid_bins",
+          "observed_bins",
+          "empty_bins",
+          "bins_with_several_points",
+          "last_bin_points",
+          "median_points_per_observed_bin",
+          "empty_bins_before_last_observed",
+          "difference_lag",
+          "difference_pairs",
+          "zero_difference_share",
+          "bin_alignment"
+        ],
+        "title": "IndicatorForecastHistory",
+        "type": "object"
+      },
+      "IndicatorForecastProvenance": {
+        "description": "How the numbers were produced, for reproducing or comparing a run.",
+        "properties": {
+          "algorithm_version": {
+            "description": "Version of the numbers; the same inputs give the same numbers within one version",
+            "title": "Algorithm Version",
+            "type": "integer"
+          },
+          "effective_declaration": {
+            "$ref": "#/$defs/IndicatorForecastDeclaration",
+            "description": "The declaration after defaults"
+          },
+          "family": {
+            "description": "Algorithm family, 'indicator_forecast'",
+            "title": "Family",
+            "type": "string"
+          },
+          "input_digest": {
+            "description": "First 16 hex digits of a SHA-256 over the UTC instants, the values, the effective declaration and the algorithm version. Equal digests mean equal inputs.",
+            "title": "Input Digest",
+            "type": "string"
+          },
+          "server_version": {
+            "description": "Server version that produced the result",
+            "title": "Server Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "family",
+          "algorithm_version",
+          "effective_declaration",
+          "input_digest",
+          "server_version"
+        ],
+        "title": "IndicatorForecastProvenance",
+        "type": "object"
+      },
+      "IndicatorForecastWarning": {
+        "description": "A caveat about the data or the projection, with a closed code.",
+        "properties": {
+          "code": {
+            "description": "Closed warning code",
+            "enum": [
+              "stale_history",
+              "observed_after_issued_at",
+              "partial_last_bin",
+              "isolated_origin",
+              "interval_crosses_observed_sign"
+            ],
+            "title": "Code",
+            "type": "string"
+          },
+          "detail": {
+            "description": "Server-authored explanation of this caveat",
+            "title": "Detail",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "detail"
+        ],
+        "title": "IndicatorForecastWarning",
+        "type": "object"
+      }
+    },
+    "description": "Projection of one indicator series, or why its history cannot support one.\n\nA projection of the indicator's values, never a fault detection, a\nfailure probability or a remaining-useful-life estimate.",
+    "properties": {
+      "anchors": {
+        "anyOf": [
+          {
+            "items": {
+              "$ref": "#/$defs/IndicatorForecastAnchor"
+            },
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "First, last and up to two interior steps with absolute bin times (status 'forecast' only)",
+        "title": "Anchors"
+      },
+      "available": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Amount the history provides, in the unit the reason names (difference pairs, bins or steps); 0 for no_variation (status 'insufficient_history' only)",
+        "title": "Available"
+      },
+      "backend": {
+        "description": "Reference backend that ran",
+        "enum": [
+          "naive",
+          "seasonal_naive"
+        ],
+        "title": "Backend",
+        "type": "string"
+      },
+      "forecast_start": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Start of the first projected bin, UTC (status 'forecast' only)",
+        "title": "Forecast Start"
+      },
+      "forecast_steps_already_past": {
+        "description": "Requested steps whose bins ended before issued_at; never negative",
+        "title": "Forecast Steps Already Past",
+        "type": "integer"
+      },
+      "history": {
+        "$ref": "#/$defs/IndicatorForecastHistory",
+        "description": "Counts describing the history"
+      },
+      "horizon_end": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "End of the last projected bin, UTC (status 'forecast' only)",
+        "title": "Horizon End"
+      },
+      "horizon_steps": {
+        "description": "Steps requested",
+        "title": "Horizon Steps",
+        "type": "integer"
+      },
+      "indicator": {
+        "description": "What the values measure, as declared",
+        "title": "Indicator",
+        "type": "string"
+      },
+      "interpretation": {
+        "description": "Fixed server-authored statement of what the result is and is not; quote it",
+        "title": "Interpretation",
+        "type": "string"
+      },
+      "interval_note": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "What the P10-P90 band assumes and does not mean (status 'forecast' only)",
+        "title": "Interval Note"
+      },
+      "issued_at": {
+        "description": "Server clock when the result was made, UTC ISO 8601",
+        "title": "Issued At",
+        "type": "string"
+      },
+      "last_observed_at": {
+        "description": "Last instant received, UTC ISO 8601",
+        "title": "Last Observed At",
+        "type": "string"
+      },
+      "max_supported_horizon_steps": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Most steps the history and the limits allow; a shorter horizon cures only horizon_exceeds_history (status 'insufficient_history' only)",
+        "title": "Max Supported Horizon Steps"
+      },
+      "method_note": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "What the backend's median means by construction (status 'forecast' only)",
+        "title": "Method Note"
+      },
+      "p10": {
+        "anyOf": [
+          {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Nominal P10 per step, step 1 first, at least 6 significant digits (status 'forecast' only)",
+        "title": "P10"
+      },
+      "p50": {
+        "anyOf": [
+          {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "P50 (median) per step, step 1 first, at least 6 significant digits (status 'forecast' only)",
+        "title": "P50"
+      },
+      "p90": {
+        "anyOf": [
+          {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Nominal P90 per step, step 1 first, at least 6 significant digits (status 'forecast' only)",
+        "title": "P90"
+      },
+      "provenance": {
+        "$ref": "#/$defs/IndicatorForecastProvenance",
+        "description": "How the numbers were produced"
+      },
+      "reason": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Server-authored reason (status 'insufficient_history' only)",
+        "title": "Reason"
+      },
+      "reason_code": {
+        "anyOf": [
+          {
+            "enum": [
+              "too_few_difference_pairs",
+              "season_coverage_too_short",
+              "season_phase_unobserved",
+              "no_variation",
+              "horizon_exceeds_history"
+            ],
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Why no projection was made (status 'insufficient_history' only)",
+        "title": "Reason Code"
+      },
+      "remedy": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "What to change in the next call (status 'insufficient_history' only)",
+        "title": "Remedy"
+      },
+      "required": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Amount the method needs, in the same unit as available; 1 for no_variation (status 'insufficient_history' only)",
+        "title": "Required"
+      },
+      "resolution": {
+        "description": "Grid step as declared",
+        "title": "Resolution",
+        "type": "string"
+      },
+      "status": {
+        "description": "'forecast' (P10, P50 and P90 per step) or 'insufficient_history' (no projection; reason_code, available, required and remedy say why and what to change).",
+        "enum": [
+          "forecast",
+          "insufficient_history"
+        ],
+        "title": "Status",
+        "type": "string"
+      },
+      "steps_since_last_observation": {
+        "description": "Whole grid steps from the last observation to issued_at; never negative",
+        "title": "Steps Since Last Observation",
+        "type": "integer"
+      },
+      "unit": {
+        "description": "Unit of the values and quantiles, as declared",
+        "title": "Unit",
+        "type": "string"
+      },
+      "values_meaning": {
+        "description": "What each value and quantile stands for",
+        "title": "Values Meaning",
+        "type": "string"
+      },
+      "warnings": {
+        "description": "Caveats about the data or the projection; empty when none",
+        "items": {
+          "$ref": "#/$defs/IndicatorForecastWarning"
+        },
+        "title": "Warnings",
+        "type": "array"
+      }
+    },
+    "required": [
+      "status",
+      "indicator",
+      "unit",
+      "backend",
+      "resolution",
+      "horizon_steps",
+      "issued_at",
+      "last_observed_at",
+      "steps_since_last_observation",
+      "forecast_steps_already_past",
+      "warnings",
+      "history",
+      "provenance",
+      "interpretation",
+      "values_meaning"
+    ],
+    "title": "IndicatorForecastResult",
+    "type": "object"
+  },
   "generate_diagnostic_report": {
     "additionalProperties": true,
     "title": "generate_diagnostic_reportDictOutput",

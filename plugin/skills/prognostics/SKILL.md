@@ -6,13 +6,15 @@ description: >
   "RUL", "remaining useful life", "prognosis", "prognostics", "failure prediction",
   "time to failure", "degradation onset", "predict failure", "vita utile residua",
   "previsione guasto", "quanto dura", "stima vita", or asks to predict when a
-  component will fail based on vibration data.
+  component will fail based on vibration data. Also use it when the user asks
+  where a condition indicator is heading: "forecast this indicator", "project
+  this trend", "indicator projection", "previsione andamento".
 ---
 
 # Prognostic Assessment (ISO 13374 Block 5)
 
 Screen degradation trends within a recording and estimate Remaining Useful
-Life from repeated measurements over time. Two distinct scopes — do not
+Life from repeated measurements over time. Three distinct scopes; do not
 confuse them:
 
 1. **Within-recording screening** (`analyze_signal_trend`): is this single
@@ -22,6 +24,9 @@ confuse them:
    across MULTIPLE measurements of the same machine taken days/weeks/months
    apart. RUL from a single recording is physically meaningless and the tool
    refuses it.
+3. **Indicator projection** (`forecast_asset_indicator`, not yet released):
+   where one indicator's values are heading over the next hours or days. A
+   projection, NOT a prognosis.
 
 RUL estimates are planning input for the maintenance engineer — never a
 guarantee, never a substitute for engineering judgment.
@@ -131,11 +136,36 @@ Possible statuses:
 Report: trend significance (p-value), fit quality, RUL with its time unit,
 observation horizon, and urgency relative to the next maintenance window.
 
+## Workflow C: Indicator Projection (not a prognosis; unreleased)
+
+Use `forecast_asset_indicator` only when the user asks where an indicator's
+values are heading in the next hours or days. Questions about time to failure,
+remaining life or when to replace a part go to Workflow B. If the connected
+server does not list `forecast_asset_indicator`, tell the user it is not
+available in this server version; do not substitute `estimate_rul` or
+extrapolate by hand.
+
+Call `forecast_asset_indicator(observed_at=["2026-10-20T00:00:00Z", "2026-10-20T01:00:00Z", ...], values=[2.1, 2.2, ...], indicator="velocity RMS", unit="mm/s", resolution="1h", horizon_steps=24)`
+
+- Every instant needs `Z` or a UTC offset; an instant without one is refused.
+  A missing observation is left out, never sent as null, zero or a filled value.
+- The unit and, for `backend="seasonal_naive"`, `season_length_steps` come
+  from what the user states, never from a guess: ask the user.
+- `status="insufficient_history"` gives a reason, the available and required
+  amounts and a remedy; follow the remedy, never pad the series.
+- Quote the `interpretation`, `method_note` and `interval_note` fields. A flat
+  naive median repeats the last bin by construction; it does not mean the
+  indicator will stay stable.
+- Never derive a time to a threshold, a crossing probability or an ISO zone
+  from the projection, and never pass its values to `estimate_rul` or
+  `assess_severity`.
+
 ## Important Notes
 
 - RUL estimates are **extrapolations** — actual failure time depends on
   operating conditions that may change
-- Always use cautious language: "estimated RUL", "projected time to threshold"
+- For RUL results (Workflow B), always use cautious language: "estimated
+  RUL", "projected time to threshold"
 - `fit_r_squared` measures curve fit, not probability of being right
 - A single recording can NEVER produce an RUL — if the user asks, explain why
   and offer Workflow A screening plus a measurement-collection plan

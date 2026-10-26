@@ -79,6 +79,14 @@ POST_U9_ADDITIONS: dict[str, str] = {
         "reprocess=True (not force_reindex) runs one bounded call of a "
         "re-processing sequence over the stale snapshots."
     ),
+    "forecast_asset_indicator": (
+        "Forecast PR 1 (unreleased) — projection of one caller-supplied "
+        "indicator series (ISO 8601 instants with offsets, declared unit and "
+        "resolution) with statistical reference backends, P10/P50/P90 per step. "
+        "New concept: estimate_rul extrapolates to a failure threshold and "
+        "returns a remaining life; this tool returns the indicator's projected "
+        "values and never a threshold, a failure probability or a remaining life."
+    ),
 }
 
 

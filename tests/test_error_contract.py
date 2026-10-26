@@ -223,6 +223,14 @@ FAILURE_CASES = {
         "measurement_point_id": "motor_de_h",
         "last_k": 0,  # below the documented minimum of 1
     },
+    "forecast_asset_indicator": {
+        "observed_at": ["2026-10-01T00:00:00"],  # no timezone: never interpreted
+        "values": [1.0],
+        "indicator": "velocity RMS",
+        "unit": "mm/s",
+        "resolution": "1h",
+        "horizon_steps": 1,
+    },
 }
 
 
@@ -478,6 +486,30 @@ REFUSAL_CASES = [
         "check_bearing_faults",
         {"signal_id": "__not_loaded__", "bearing_id": "6205", "rpm": 0.0},
         "rpm must be positive and finite",
+    ),
+    (
+        "forecast_asset_indicator",
+        {
+            "observed_at": ["2026-10-01T00:00:00Z", "2026-10-01T01:00:00Z"],
+            "values": [1.0, None],
+            "indicator": "velocity RMS",
+            "unit": "mm/s",
+            "resolution": "1h",
+            "horizon_steps": 1,
+        },
+        "omitting its instant",
+    ),
+    (
+        "forecast_asset_indicator",
+        {
+            "observed_at": [f"2026-10-01T{h:02d}:00:00Z" for h in range(20)],
+            "values": [123456.7 + (1e-5 if h % 2 else 0.0) for h in range(20)],
+            "indicator": "energy",
+            "unit": "kWh",
+            "resolution": "1h",
+            "horizon_steps": 1,
+        },
+        "too narrow to report",
     ),
 ]
 
