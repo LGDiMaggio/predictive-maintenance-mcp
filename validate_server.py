@@ -102,7 +102,7 @@ resources = list(mcp._resource_manager._resources) + list(
 # Frozen registered surface (tools, resources, prompts). The same numbers are
 # pinned by tests/test_version_alignment.py::test_expected_final_surface;
 # update both together when the registered surface changes.
-EXPECTED_TOOLS, EXPECTED_RESOURCES, EXPECTED_PROMPTS = 38, 0, 3
+EXPECTED_TOOLS, EXPECTED_RESOURCES, EXPECTED_PROMPTS = 39, 0, 3
 EXPECTED_LABEL = f"{EXPECTED_TOOLS}/{EXPECTED_RESOURCES}/{EXPECTED_PROMPTS}"
 
 print("   [OK ] from predictive_maintenance_mcp.server import mcp")

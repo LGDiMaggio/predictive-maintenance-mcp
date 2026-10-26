@@ -557,3 +557,159 @@ class TestDegradationOnsetMerged:
             overlap_ratio=0.5,
         )
         assert result.onset_threshold_sigma == 10.0
+
+
+# ---------------------------------------------------------------------------
+# forecast_asset_indicator (forecast PR 1, U4)
+# ---------------------------------------------------------------------------
+
+
+def _hourly_series(n=200, seed=5, hours_ago=1):
+    from datetime import datetime, timedelta, timezone
+
+    end = datetime.now(timezone.utc).replace(
+        minute=0, second=0, microsecond=0
+    ) - timedelta(hours=hours_ago)
+    rng = np.random.default_rng(seed)
+    instants = [
+        (end - timedelta(hours=n - 1 - i)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        for i in range(n)
+    ]
+    values = [float(v) for v in np.round(np.cumsum(rng.normal(0, 0.2, n)) + 4.0, 6)]
+    return instants, values
+
+
+class TestForecastAssetIndicator:
+    BASE = dict(indicator="velocity RMS", unit="mm/s", resolution="1h")
+
+    @pytest.mark.asyncio
+    async def test_forecast_result(self, tools, mock_ctx):
+        """Covers AE1."""
+        from predictive_maintenance_mcp.models import IndicatorForecastResult
+
+        obs, vals = _hourly_series(300)
+        result = await tools["forecast_asset_indicator"](
+            ctx=mock_ctx, observed_at=obs, values=vals, horizon_steps=24, **self.BASE
+        )
+        assert isinstance(result, IndicatorForecastResult)
+        assert result.status == "forecast"
+        assert len(result.p10) == len(result.p50) == len(result.p90) == 24
+        assert all(p == float(f"{vals[-1]:.6g}") for p in result.p50)
+        assert result.backend == "naive"
+        assert result.provenance.effective_declaration.aggregation == "mean"
+        assert result.interpretation.startswith("A projection of the indicator")
+
+    @pytest.mark.asyncio
+    async def test_insufficient_history_is_typed(self, tools, mock_ctx):
+        """Covers AE3."""
+        obs, vals = _hourly_series(8)
+        result = await tools["forecast_asset_indicator"](
+            ctx=mock_ctx, observed_at=obs, values=vals, horizon_steps=6, **self.BASE
+        )
+        assert result.status == "insufficient_history"
+        assert result.reason_code == "too_few_difference_pairs"
+        assert (result.available, result.required) == (7, 10)
+        assert result.p50 is None and result.method_note is None
+
+    @pytest.mark.asyncio
+    async def test_horizon_remedy_can_be_run_as_given(self, tools, mock_ctx):
+        obs, vals = _hourly_series(30)
+        first = await tools["forecast_asset_indicator"](
+            ctx=mock_ctx, observed_at=obs, values=vals, horizon_steps=40, **self.BASE
+        )
+        assert first.reason_code == "horizon_exceeds_history"
+        second = await tools["forecast_asset_indicator"](
+            ctx=mock_ctx,
+            observed_at=obs,
+            values=vals,
+            horizon_steps=first.max_supported_horizon_steps,
+            **self.BASE,
+        )
+        assert second.status == "forecast"
+
+    @pytest.mark.asyncio
+    async def test_resolution_remedy_example_works(self, tools, mock_ctx):
+        obs, vals = _hourly_series(48)
+        with pytest.raises(ValueError, match="'10min' or '1h'"):
+            await tools["forecast_asset_indicator"](
+                ctx=mock_ctx,
+                observed_at=obs,
+                values=vals,
+                horizon_steps=6,
+                indicator="velocity RMS",
+                unit="mm/s",
+                resolution="1hr",
+            )
+        result = await tools["forecast_asset_indicator"](
+            ctx=mock_ctx, observed_at=obs, values=vals, horizon_steps=6, **self.BASE
+        )
+        assert result.status == "forecast"
+
+    @pytest.mark.asyncio
+    async def test_seasonal_naive(self, tools, mock_ctx):
+        obs, _ = _hourly_series(96)
+        rng = np.random.default_rng(1)
+        base = np.sin(2 * np.pi * np.arange(24) / 24) * 3 + 20
+        vals = [float(v) for v in np.tile(base, 4) + rng.normal(0, 0.2, 96)]
+        result = await tools["forecast_asset_indicator"](
+            ctx=mock_ctx,
+            observed_at=obs,
+            values=vals,
+            horizon_steps=24,
+            backend="seasonal_naive",
+            season_length_steps=24,
+            **self.BASE,
+        )
+        assert result.status == "forecast"
+        assert result.history.difference_lag == 24
+        assert result.method_note.startswith("Seasonal naive reference")
+
+    @pytest.mark.asyncio
+    async def test_same_call_twice_is_deterministic(self, tools, mock_ctx):
+        obs, vals = _hourly_series(120)
+        a = await tools["forecast_asset_indicator"](
+            ctx=mock_ctx, observed_at=obs, values=vals, horizon_steps=12, **self.BASE
+        )
+        b = await tools["forecast_asset_indicator"](
+            ctx=mock_ctx, observed_at=obs, values=vals, horizon_steps=12, **self.BASE
+        )
+        assert a.p10 == b.p10 and a.p90 == b.p90
+        assert a.provenance.input_digest == b.provenance.input_digest
+
+
+def test_tool_description_states_the_limits_the_code_enforces():
+    """The description hard-codes the caps; this keeps it in step with them."""
+    from predictive_maintenance_mcp.mcp_tools.prognostics_tools import (
+        forecast_asset_indicator,
+    )
+    from predictive_maintenance_mcp.prognostics import indicator_series as s
+    from predictive_maintenance_mcp.prognostics import reference_forecast as rf
+
+    doc = " ".join(forecast_asset_indicator.__doc__.split())
+    assert f"strictly increasing; at most {s.MAX_INPUT_POINTS}." in doc
+    assert f"may span at most {s.MAX_GRID_BINS} bins." in doc
+    assert f"Steps to project, 1 to {s.MAX_HORIZON_STEPS}." in doc
+    assert f"longer than {s.MAX_HORIZON_DURATION.days} days is refused" in doc
+    assert f"Grid step of at most {s.MAX_HORIZON_DURATION.days} days" in doc
+    assert f"at least {rf.MIN_DIFFERENCE_PAIRS} difference pairs" in doc
+    assert rf.MIN_SEASONS_COVERED == 2 and "also needs two full seasons" in doc
+    from predictive_maintenance_mcp.prognostics.indicator_forecast import (
+        MAX_RESULT_BYTES,
+    )
+
+    assert (
+        f"server's conservative {MAX_RESULT_BYTES:,}-byte serialized-output "
+        f"limit is refused. When possible, the refusal suggests" in doc
+    )
+
+
+def test_server_instructions_carry_the_projection_section():
+    """The model-facing guard against reading a projection as a prognosis."""
+    from predictive_maintenance_mcp.prognostics.indicator_forecast import INTERPRETATION
+    from predictive_maintenance_mcp.server import mcp as server
+
+    text = " ".join(server.instructions.split())
+    assert "Indicator projection (not a prognosis):" in text
+    disclaimer = "not a fault detection, a failure probability or a remaining-useful-life estimate"
+    assert disclaimer in text and disclaimer in INTERPRETATION
+    assert "never pass them to estimate_rul or assess_severity" in text

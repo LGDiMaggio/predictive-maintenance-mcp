@@ -1307,6 +1307,243 @@ class TrendAnalysisResult(BaseModel):
     )
 
 
+ForecastBackend = Literal["naive", "seasonal_naive"]
+ForecastAggregation = Literal["mean", "median", "max", "last"]
+ForecastStatus = Literal["forecast", "insufficient_history"]
+ForecastReasonCode = Literal[
+    "too_few_difference_pairs",
+    "season_coverage_too_short",
+    "season_phase_unobserved",
+    "no_variation",
+    "horizon_exceeds_history",
+]
+ForecastWarningCode = Literal[
+    "stale_history",
+    "observed_after_issued_at",
+    "partial_last_bin",
+    "isolated_origin",
+    "interval_crosses_observed_sign",
+]
+
+
+class IndicatorForecastWarning(BaseModel):
+    """A caveat about the data or the projection, with a closed code."""
+
+    code: ForecastWarningCode = Field(description="Closed warning code")
+    detail: str = Field(description="Server-authored explanation of this caveat")
+
+
+class IndicatorForecastAnchor(BaseModel):
+    """One projected step with absolute bin times, for quoting dates."""
+
+    step: int = Field(description="Step number, 1 = the first projected bin")
+    bin_start: str = Field(description="Start of the step's bin, UTC ISO 8601")
+    bin_end: str = Field(description="End of the step's bin, UTC ISO 8601")
+    p10: float = Field(description="P10 of the step, in the declared unit")
+    p50: float = Field(description="P50 (median) of the step, in the declared unit")
+    p90: float = Field(description="P90 of the step, in the declared unit")
+
+
+class IndicatorForecastHistory(BaseModel):
+    """Counts for checking the transcription and the quality of the history."""
+
+    raw_points: int = Field(description="Values received")
+    first_observed_at: str = Field(description="First instant received, UTC ISO 8601")
+    last_observed_at: str = Field(description="Last instant received, UTC ISO 8601")
+    last_value: float = Field(description="Last value received")
+    min_value: float = Field(description="Smallest value received")
+    max_value: float = Field(description="Largest value received")
+    grid_bins: int = Field(description="Bins from the first to the last observed bin")
+    observed_bins: int = Field(description="Bins holding at least one value")
+    empty_bins: int = Field(description="Bins holding no value; never filled")
+    bins_with_several_points: int = Field(
+        description="Bins where several values were combined by the aggregation"
+    )
+    last_bin_points: int = Field(description="Values in the last observed bin")
+    median_points_per_observed_bin: float = Field(
+        description="Median number of values per observed bin"
+    )
+    empty_bins_before_last_observed: int = Field(
+        description="Empty bins immediately before the last observed bin"
+    )
+    difference_lag: int = Field(
+        description="Lag in steps of the difference pairs the backend uses"
+    )
+    difference_pairs: int = Field(
+        description="Pairs of observed bins exactly difference_lag steps apart"
+    )
+    zero_difference_share: Optional[float] = Field(
+        description=(
+            "Share of those pairs whose values are equal; a high share can "
+            "indicate held values. None when there are no pairs."
+        )
+    )
+    bin_alignment: str = Field(
+        description="'utc_epoch': bins are floor((instant - 1970-01-01T00:00Z) / step)"
+    )
+
+
+class IndicatorForecastDeclaration(BaseModel):
+    """The declaration after defaults, as the projection used it."""
+
+    indicator: str = Field(description="What the values measure, as declared")
+    unit: str = Field(description="Unit of the values, as declared")
+    resolution: str = Field(description="Grid step as declared, for example '1h'")
+    resolution_seconds: int = Field(description="Grid step in seconds")
+    aggregation: ForecastAggregation = Field(
+        description="How several values in one bin were combined"
+    )
+    horizon_steps: int = Field(description="Steps requested")
+    backend: ForecastBackend = Field(description="Reference backend requested")
+    season_length_steps: Optional[int] = Field(
+        description="Season in grid steps (seasonal_naive only)"
+    )
+    quantile_levels: list[float] = Field(description="Quantile levels returned")
+
+
+class IndicatorForecastProvenance(BaseModel):
+    """How the numbers were produced, for reproducing or comparing a run."""
+
+    family: str = Field(description="Algorithm family, 'indicator_forecast'")
+    algorithm_version: int = Field(
+        description=(
+            "Version of the numbers; the same inputs give the same numbers "
+            "within one version"
+        )
+    )
+    effective_declaration: IndicatorForecastDeclaration = Field(
+        description="The declaration after defaults"
+    )
+    input_digest: str = Field(
+        description=(
+            "First 16 hex digits of a SHA-256 over the UTC instants, the "
+            "values, the effective declaration and the algorithm version. "
+            "Equal digests mean equal inputs."
+        )
+    )
+    server_version: str = Field(description="Server version that produced the result")
+
+
+class IndicatorForecastResult(BaseModel):
+    """Projection of one indicator series, or why its history cannot support one.
+
+    A projection of the indicator's values, never a fault detection, a
+    failure probability or a remaining-useful-life estimate.
+    """
+
+    status: ForecastStatus = Field(
+        description=(
+            "'forecast' (P10, P50 and P90 per step) or 'insufficient_history' "
+            "(no projection; reason_code, available, required and remedy say "
+            "why and what to change)."
+        )
+    )
+    indicator: str = Field(description="What the values measure, as declared")
+    unit: str = Field(description="Unit of the values and quantiles, as declared")
+    backend: ForecastBackend = Field(description="Reference backend that ran")
+    resolution: str = Field(description="Grid step as declared")
+    horizon_steps: int = Field(description="Steps requested")
+    issued_at: str = Field(
+        description="Server clock when the result was made, UTC ISO 8601"
+    )
+    last_observed_at: str = Field(description="Last instant received, UTC ISO 8601")
+    steps_since_last_observation: int = Field(
+        description="Whole grid steps from the last observation to issued_at; never negative"
+    )
+    forecast_steps_already_past: int = Field(
+        description="Requested steps whose bins ended before issued_at; never negative"
+    )
+    forecast_start: Optional[str] = Field(
+        None,
+        description="Start of the first projected bin, UTC (status 'forecast' only)",
+    )
+    horizon_end: Optional[str] = Field(
+        None, description="End of the last projected bin, UTC (status 'forecast' only)"
+    )
+    p10: Optional[list[float]] = Field(
+        None,
+        description=(
+            "Nominal P10 per step, step 1 first, at least 6 significant digits "
+            "(status 'forecast' only)"
+        ),
+    )
+    p50: Optional[list[float]] = Field(
+        None,
+        description=(
+            "P50 (median) per step, step 1 first, at least 6 significant digits "
+            "(status 'forecast' only)"
+        ),
+    )
+    p90: Optional[list[float]] = Field(
+        None,
+        description=(
+            "Nominal P90 per step, step 1 first, at least 6 significant digits "
+            "(status 'forecast' only)"
+        ),
+    )
+    anchors: Optional[list[IndicatorForecastAnchor]] = Field(
+        None,
+        description=(
+            "First, last and up to two interior steps with absolute bin times "
+            "(status 'forecast' only)"
+        ),
+    )
+    reason_code: Optional[ForecastReasonCode] = Field(
+        None,
+        description="Why no projection was made (status 'insufficient_history' only)",
+    )
+    reason: Optional[str] = Field(
+        None, description="Server-authored reason (status 'insufficient_history' only)"
+    )
+    available: Optional[int] = Field(
+        None,
+        description=(
+            "Amount the history provides, in the unit the reason names (difference "
+            "pairs, bins or steps); 0 for no_variation (status 'insufficient_history' "
+            "only)"
+        ),
+    )
+    required: Optional[int] = Field(
+        None,
+        description=(
+            "Amount the method needs, in the same unit as available; 1 for "
+            "no_variation (status 'insufficient_history' only)"
+        ),
+    )
+    max_supported_horizon_steps: Optional[int] = Field(
+        None,
+        description=(
+            "Most steps the history and the limits allow; a shorter horizon cures "
+            "only horizon_exceeds_history (status 'insufficient_history' only)"
+        ),
+    )
+    remedy: Optional[str] = Field(
+        None,
+        description="What to change in the next call (status 'insufficient_history' only)",
+    )
+    warnings: list[IndicatorForecastWarning] = Field(
+        description="Caveats about the data or the projection; empty when none"
+    )
+    history: IndicatorForecastHistory = Field(
+        description="Counts describing the history"
+    )
+    provenance: IndicatorForecastProvenance = Field(
+        description="How the numbers were produced"
+    )
+    interpretation: str = Field(
+        description="Fixed server-authored statement of what the result is and is not; quote it"
+    )
+    values_meaning: str = Field(description="What each value and quantile stands for")
+    method_note: Optional[str] = Field(
+        None,
+        description="What the backend's median means by construction (status 'forecast' only)",
+    )
+    interval_note: Optional[str] = Field(
+        None,
+        description="What the P10-P90 band assumes and does not mean (status 'forecast' only)",
+    )
+
+
 # ============================================================================
 # Phase 3 Models: Asset Health Ledger
 # ============================================================================

@@ -2,7 +2,7 @@
 
 The complete endpoint reference for the Predictive Maintenance MCP server: every registered MCP tool and guided prompt, grouped by category.
 
-**Total: 41 MCP endpoints, 38 tools and 3 prompts.**
+**Total on the main branch: 42 MCP endpoints, 39 tools and 3 prompts.** Tools listed under Unreleased in the [CHANGELOG](../CHANGELOG.md) are not yet in a published PyPI release; their rows below say so.
 
 ## Signal Lifecycle (5)
 
@@ -60,12 +60,13 @@ The complete endpoint reference for the Predictive Maintenance MCP server: every
 | `generate_feature_comparison_report` | Cross-signal feature comparison |
 | `list_html_reports` | Report management (list all or inspect one) |
 
-## Prognostics (2)
+## Prognostics (3)
 
 | Tool | Description |
 |------|-------------|
 | `analyze_signal_trend` | Within-recording screening: feature trend + degradation onset in one call |
 | `estimate_rul` | Remaining Useful Life from repeated measurements over time (linear, exponential, Kalman) — refuses single-recording extrapolation |
+| `forecast_asset_indicator` | Projection of one indicator series you supply (ISO 8601 instants with an offset, declared unit and resolution) with a naive or seasonal-naive reference method: P10, P50 and P90 per step. A projection only, never a fault finding, a failure probability or a remaining life. Unreleased: main branch only |
 
 ## Decision Support (1)
 
@@ -79,10 +80,10 @@ Measurements whose companion declares a `measurement` object (asset, point, acqu
 
 | Tool | Description |
 |------|-------------|
-| `declare_measurement_point` | Versioned declaration of a point's context: bearing or fault orders, nominal speed, ISO 20816-3 group and support, expected unit, sensor and direction; a re-declaration reports the changed keys and how many recorded measurements need re-processing. Example: `declare_measurement_point(asset_id="P-101", measurement_point_id="motor_de_h", bearing_id="6205", nominal_rpm=1800, machine_group=2, support_type="rigid", expected_signal_unit="g", expected_direction="horizontal")` |
-| `declare_healthy_baseline` | Declares which recorded measurements are the healthy reference of a point, attributed to the declarer; an empty list withdraws it. Example: `declare_healthy_baseline(asset_id="P-101", measurement_point_id="motor_de_h", measurement_ids=["3f2a9c1d8e7b6a50", "b81c2d3e4f5a6978", "c0ffee1234567890"], declared_by="vibration-analyst", note="after bearing replacement")` |
-| `get_asset_history` | Index of the recorded assets (no arguments) or the history of one asset read from its ledger alone: measurements newest first with an indicator preview, point declarations, baselines, integrity. Example: `get_asset_history(asset_id="P-101", max_measurements=20)` |
-| `assess_asset_change` | Change of one point against its reference (declared baseline, or the first comparable acquisitions with health not declared): band per indicator, classification with its criterion, bearing evidence over the last K acquisitions, at most one suggested verification; `reprocess=True` runs one call of a re-processing sequence (at most 10 attempts, 500 file checks and 50 failures per call) and its block gives `sequence_state`. A call without `reprocess_cursor` starts a new re-processing sequence, including the call a message, a remedy or a declaration names, and a named call is an attempt, not a promise: start one only when no sequence of the point has ended in the conversation, after the user took an action a sequence listed, after a load or a declaration changed the point, once after an environment fix, or when the user asks to list the blocked measurements again. While the block gives a `next_call`, make exactly that call; when it gives none, `sequence_state` is `complete` or `exhausted` (the measurements under `needs_action` stay stale until their action is taken). A new sequence attempts again the failures only an attempt finds. Example: `assess_asset_change(asset_id="P-101", measurement_point_id="motor_de_h", last_k=5)`; a `next_call` with a token: `assess_asset_change(asset_id="P-101", measurement_point_id="motor_de_h", reprocess=True, reprocess_cursor=...)` |
+| `declare_measurement_point` | Versioned declaration of a point's context: bearing or fault orders, nominal speed, ISO 20816-3 group and support, expected unit, sensor and direction; a re-declaration reports the changed keys and how many recorded measurements need re-processing. Example: `declare_measurement_point(asset_id="P-101", measurement_point_id="motor_de_h", bearing_id="6205", nominal_rpm=1800, machine_group=2, support_type="rigid", expected_signal_unit="g", expected_direction="horizontal")` Unreleased: main branch only |
+| `declare_healthy_baseline` | Declares which recorded measurements are the healthy reference of a point, attributed to the declarer; an empty list withdraws it. Example: `declare_healthy_baseline(asset_id="P-101", measurement_point_id="motor_de_h", measurement_ids=["3f2a9c1d8e7b6a50", "b81c2d3e4f5a6978", "c0ffee1234567890"], declared_by="vibration-analyst", note="after bearing replacement")` Unreleased: main branch only |
+| `get_asset_history` | Index of the recorded assets (no arguments) or the history of one asset read from its ledger alone: measurements newest first with an indicator preview, point declarations, baselines, integrity. Example: `get_asset_history(asset_id="P-101", max_measurements=20)` Unreleased: main branch only |
+| `assess_asset_change` | Change of one point against its reference (declared baseline, or the first comparable acquisitions with health not declared): band per indicator, classification with its criterion, bearing evidence over the last K acquisitions, at most one suggested verification; `reprocess=True` runs one call of a re-processing sequence (at most 10 attempts, 500 file checks and 50 failures per call) and its block gives `sequence_state`. A call without `reprocess_cursor` starts a new re-processing sequence, including the call a message, a remedy or a declaration names, and a named call is an attempt, not a promise: start one only when no sequence of the point has ended in the conversation, after the user took an action a sequence listed, after a load or a declaration changed the point, once after an environment fix, or when the user asks to list the blocked measurements again. While the block gives a `next_call`, make exactly that call; when it gives none, `sequence_state` is `complete` or `exhausted` (the measurements under `needs_action` stay stale until their action is taken). A new sequence attempts again the failures only an attempt finds. Example: `assess_asset_change(asset_id="P-101", measurement_point_id="motor_de_h", last_k=5)`; a `next_call` with a token: `assess_asset_change(asset_id="P-101", measurement_point_id="motor_de_h", reprocess=True, reprocess_cursor=...)` Unreleased: main branch only |
 
 ## Guided Workflows (3 prompts)
 

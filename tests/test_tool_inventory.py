@@ -81,6 +81,11 @@ Fixture history:
   null), declared after ctx so no positional argument moves; it takes
   precedence over the speed the signal declares. No other tool's schema
   changed; counts unchanged (38/0/3).
+- Indicator projection (2026-10-24, forecast PR 1): regenerated
+  intentionally: ADDITIVE. New tool forecast_asset_indicator (observed_at,
+  values, indicator, unit, resolution, horizon_steps, backend, aggregation,
+  season_length_steps; ctx pinned), declared in tests/test_surface_parity.py
+  POST_U9_ADDITIONS. No existing tool's schema changed; counts 39/0/3.
 
 Snapshot recipe (run from the repo root):
     python -c "from tests.test_tool_inventory import build_inventory, \\

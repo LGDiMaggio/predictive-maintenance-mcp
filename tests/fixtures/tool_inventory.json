@@ -991,6 +991,93 @@
         "type": "object"
       }
     },
+    "forecast_asset_indicator": {
+      "context_kwarg": "ctx",
+      "is_async": true,
+      "parameters": {
+        "properties": {
+          "aggregation": {
+            "default": "mean",
+            "enum": [
+              "mean",
+              "median",
+              "max",
+              "last"
+            ],
+            "title": "Aggregation",
+            "type": "string"
+          },
+          "backend": {
+            "default": "naive",
+            "enum": [
+              "naive",
+              "seasonal_naive"
+            ],
+            "title": "Backend",
+            "type": "string"
+          },
+          "horizon_steps": {
+            "title": "Horizon Steps",
+            "type": "integer"
+          },
+          "indicator": {
+            "title": "Indicator",
+            "type": "string"
+          },
+          "observed_at": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Observed At",
+            "type": "array"
+          },
+          "resolution": {
+            "title": "Resolution",
+            "type": "string"
+          },
+          "season_length_steps": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Season Length Steps"
+          },
+          "unit": {
+            "title": "Unit",
+            "type": "string"
+          },
+          "values": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Values",
+            "type": "array"
+          }
+        },
+        "required": [
+          "observed_at",
+          "values",
+          "indicator",
+          "unit",
+          "resolution",
+          "horizon_steps"
+        ],
+        "title": "forecast_asset_indicatorArguments",
+        "type": "object"
+      }
+    },
     "generate_diagnostic_report": {
       "context_kwarg": "ctx",
       "is_async": true,
