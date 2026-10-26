@@ -1,0 +1,411 @@
+{
+  "files": {
+    "data/real_bearings/test/InnerRaceFault_vload_6.mat": {
+      "sha256": "51ace00de918012668beae944442588004655f40447497944ac63d71b3aa9e64",
+      "sizes": [
+        1124470
+      ]
+    },
+    "data/real_bearings/test/InnerRaceFault_vload_7.mat": {
+      "sha256": "f9b0131045d8b05cd410fb72e8c2db06ee2eab16177cbc09657a63fef3110ef6",
+      "sizes": [
+        1124472
+      ]
+    },
+    "data/real_bearings/test/OuterRaceFault_3.mat": {
+      "sha256": "48fdf58ae0717fed02fbfe44773c15bbd96f3ceab9387fcfbf52b8260fdc3d97",
+      "sizes": [
+        4484607
+      ]
+    },
+    "data/real_bearings/test/OuterRaceFault_vload_6.mat": {
+      "sha256": "ea167417e39b7481a9ea422fdc5f5b67b96d8521f27cf703e46c4f8cbb8cd995",
+      "sizes": [
+        1121355
+      ]
+    },
+    "data/real_bearings/test/OuterRaceFault_vload_7.mat": {
+      "sha256": "38ef59f7fea41d4839d89dd9aa7ad3cab783f2e5f10960e34c81c83d3328105e",
+      "sizes": [
+        1124569
+      ]
+    },
+    "data/real_bearings/test/baseline_3.mat": {
+      "sha256": "d4b7c69d9f9ef4e9e7b4f5e9964c2dd58bc09a2787b3e3d89877ec27400eb003",
+      "sizes": [
+        4477042
+      ]
+    },
+    "data/real_bearings/train/InnerRaceFault_vload_1.mat": {
+      "sha256": "943e1f0ecef2496ee5233063765d40b8a3aab480044b36a9feaa3483e5331db9",
+      "sizes": [
+        1124871
+      ]
+    },
+    "data/real_bearings/train/InnerRaceFault_vload_2.mat": {
+      "sha256": "4e85dc145f230db5b687d032ba94e849d58adb85fd1c00e605efba0bc14edc92",
+      "sizes": [
+        1124681
+      ]
+    },
+    "data/real_bearings/train/InnerRaceFault_vload_3.mat": {
+      "sha256": "f4b100c59db948212f1603112952af332967497db66c6ebe5b4f799ac62dd4bf",
+      "sizes": [
+        1124601
+      ]
+    },
+    "data/real_bearings/train/InnerRaceFault_vload_4.mat": {
+      "sha256": "3826a49dcac630176b82569a0b923ef16fa13db5a667171066ffac62949d498b",
+      "sizes": [
+        1123967
+      ]
+    },
+    "data/real_bearings/train/InnerRaceFault_vload_5.mat": {
+      "sha256": "5eb0c3b88f4abab2d00f17f12170a25e51946adf05ff95ee79844360ccce2e92",
+      "sizes": [
+        1124229
+      ]
+    },
+    "data/real_bearings/train/OuterRaceFault_1.mat": {
+      "sha256": "1a54a9d9ebb95b6ef1f72c4edd347358eedca979cce47992fcf6147b009bb290",
+      "sizes": [
+        4471331
+      ]
+    },
+    "data/real_bearings/train/OuterRaceFault_2.mat": {
+      "sha256": "c177a4092ff22d0a568ee591fbef43b0d07ac57c8527f2ab45cd352313fb712c",
+      "sizes": [
+        4476284
+      ]
+    },
+    "data/real_bearings/train/OuterRaceFault_vload_1.mat": {
+      "sha256": "8a1977da6f1c8dd74c7826b66e75cf9d52e1cdcf6000c1348d1b356a06781af0",
+      "sizes": [
+        1121586
+      ]
+    },
+    "data/real_bearings/train/OuterRaceFault_vload_2.mat": {
+      "sha256": "1883793fc865e10c6ddebe8a8241dd4924bfd4b4fd0ba6284affc697d2b29e6d",
+      "sizes": [
+        1121822
+      ]
+    },
+    "data/real_bearings/train/OuterRaceFault_vload_3.mat": {
+      "sha256": "52410e466c71413e70b9da800d8c1fa4d74ada9bfcf14e45bbe455e1a073296d",
+      "sizes": [
+        1120163
+      ]
+    },
+    "data/real_bearings/train/OuterRaceFault_vload_4.mat": {
+      "sha256": "81b4b1dde9340774c9170633d564fdc08b8a55e38676c3033a8088a0121c6191",
+      "sizes": [
+        1120321
+      ]
+    },
+    "data/real_bearings/train/OuterRaceFault_vload_5.mat": {
+      "sha256": "8f5b43ae668518165cd65fcb3cf30cd9e32e6f69b3c5192b4ebb93ff42c47689",
+      "sizes": [
+        1121183
+      ]
+    },
+    "data/real_bearings/train/baseline_1.mat": {
+      "sha256": "23f63a29f61c398e930fc69221beb729bd931656508fdda41aa63a0809cf4d8f",
+      "sizes": [
+        4477991
+      ]
+    },
+    "data/real_bearings/train/baseline_2.mat": {
+      "sha256": "5949a1330d7846c3052853d6f8248f78398713de43c250e1c978dbf9bdef11b8",
+      "sizes": [
+        4477679
+      ]
+    },
+    "data/signals/real_test/InnerRaceFault_vload_6.csv": {
+      "sha256": "659a011e044be08bb34ccd577caa5e1cb65fda3eb26962e624f3665441db0b16",
+      "sizes": [
+        1514511,
+        1660995
+      ]
+    },
+    "data/signals/real_test/InnerRaceFault_vload_6_metadata.json": {
+      "sha256": "10eddb96145f61aad4c3f7e4330bfe117190dbf746fc55304a5cdd03b3115661",
+      "sizes": [
+        212,
+        224
+      ]
+    },
+    "data/signals/real_test/InnerRaceFault_vload_7.csv": {
+      "sha256": "23fcc51418b54eb3561922d94fe1da7ee9dafed5e66f881bc89d1b5359b8f2fc",
+      "sizes": [
+        1511064,
+        1657548
+      ]
+    },
+    "data/signals/real_test/InnerRaceFault_vload_7_metadata.json": {
+      "sha256": "1e8cd25434d0e216ec1a782d35ebd106d1148a21a59fa081532836943542c428",
+      "sizes": [
+        212,
+        224
+      ]
+    },
+    "data/signals/real_test/OuterRaceFault_3.csv": {
+      "sha256": "85f0777695f8933990caf0019d4738048ce32520fe9ba1a65abe9a64ed7b4db2",
+      "sizes": [
+        6009716,
+        6595652
+      ]
+    },
+    "data/signals/real_test/OuterRaceFault_3_metadata.json": {
+      "sha256": "d55bdbd1a11f349a700120c1923e134baca9c09434f271ea6e83a0d32be5e7f3",
+      "sizes": [
+        212,
+        224
+      ]
+    },
+    "data/signals/real_test/OuterRaceFault_vload_6.csv": {
+      "sha256": "1b227957a0743ae38e972a9b9102a05b6cc5bcea8ab98a50e9c4edf480ebcb8c",
+      "sizes": [
+        1516902,
+        1663386
+      ]
+    },
+    "data/signals/real_test/OuterRaceFault_vload_6_metadata.json": {
+      "sha256": "10eddb96145f61aad4c3f7e4330bfe117190dbf746fc55304a5cdd03b3115661",
+      "sizes": [
+        212,
+        224
+      ]
+    },
+    "data/signals/real_test/OuterRaceFault_vload_7.csv": {
+      "sha256": "c21b539dc528a21e1866c2b79e0f779493cb9b2d2c74f9bbc31df9f4af2caf30",
+      "sizes": [
+        1504957,
+        1651441
+      ]
+    },
+    "data/signals/real_test/OuterRaceFault_vload_7_metadata.json": {
+      "sha256": "1e8cd25434d0e216ec1a782d35ebd106d1148a21a59fa081532836943542c428",
+      "sizes": [
+        212,
+        224
+      ]
+    },
+    "data/signals/real_test/baseline_3.csv": {
+      "sha256": "93a66020b39395b7eb308f847d2930d5feac9799383d6783ccaec724440b2a6f",
+      "sizes": [
+        6013814,
+        6599750
+      ]
+    },
+    "data/signals/real_test/baseline_3_metadata.json": {
+      "sha256": "d55bdbd1a11f349a700120c1923e134baca9c09434f271ea6e83a0d32be5e7f3",
+      "sizes": [
+        212,
+        224
+      ]
+    },
+    "data/signals/real_train/InnerRaceFault_vload_1.csv": {
+      "sha256": "099b670f89573b6745f9019e55a1290ce5a2cd2232d0654168fb1a5bd560454c",
+      "sizes": [
+        1518934,
+        1665418
+      ]
+    },
+    "data/signals/real_train/InnerRaceFault_vload_1_metadata.json": {
+      "sha256": "53f3df1d71f29d3e6baafafe3e7c1b083f9eafada4d1c417e16e912f0c0ce43d",
+      "sizes": [
+        209,
+        220
+      ]
+    },
+    "data/signals/real_train/InnerRaceFault_vload_2.csv": {
+      "sha256": "bebd0908988b182266b11c7db5888c1f4b42f287bac762f2271d20a79c0aa884",
+      "sizes": [
+        1519186,
+        1665670
+      ]
+    },
+    "data/signals/real_train/InnerRaceFault_vload_2_metadata.json": {
+      "sha256": "9a0282f5f31673c050fe1e40d0c7b11e412967aa1251c5ce1655334db6b63017",
+      "sizes": [
+        211,
+        223
+      ]
+    },
+    "data/signals/real_train/InnerRaceFault_vload_3.csv": {
+      "sha256": "7d8eaa105154da94434d45b91209ee0ad73a2ba7013b91aafbc05344626a7cce",
+      "sizes": [
+        1514639,
+        1661123
+      ]
+    },
+    "data/signals/real_train/InnerRaceFault_vload_3_metadata.json": {
+      "sha256": "974bf270280289c87763a7c5fac834895f911226932af0fe17374db777d9a794",
+      "sizes": [
+        212,
+        224
+      ]
+    },
+    "data/signals/real_train/InnerRaceFault_vload_4.csv": {
+      "sha256": "4f2ffd85fe4316f5910a491125feb341610beb607aab66df4963a304bc86a5c4",
+      "sizes": [
+        1515492,
+        1661976
+      ]
+    },
+    "data/signals/real_train/InnerRaceFault_vload_4_metadata.json": {
+      "sha256": "217b866f1fa3d400cbd38e47f8bc451e0d310c699d63f31c6efde87d1ba08e3f",
+      "sizes": [
+        212,
+        224
+      ]
+    },
+    "data/signals/real_train/InnerRaceFault_vload_5.csv": {
+      "sha256": "867a1a857aeb615f789112d29ba3b8500e4880e2140279a815024f5971ccc518",
+      "sizes": [
+        1514350,
+        1660834
+      ]
+    },
+    "data/signals/real_train/InnerRaceFault_vload_5_metadata.json": {
+      "sha256": "c1f7e86e599361f2b9f421f5b800d9cdf8cb8ffb7ce67528e90b3f856a9d6dbf",
+      "sizes": [
+        212,
+        224
+      ]
+    },
+    "data/signals/real_train/OuterRaceFault_1.csv": {
+      "sha256": "5866ee7e9e82f8639237930c2eb61778e26229411eb80cad0c77b295c130bd01",
+      "sizes": [
+        6102011,
+        6687947
+      ]
+    },
+    "data/signals/real_train/OuterRaceFault_1_metadata.json": {
+      "sha256": "d55bdbd1a11f349a700120c1923e134baca9c09434f271ea6e83a0d32be5e7f3",
+      "sizes": [
+        212,
+        224
+      ]
+    },
+    "data/signals/real_train/OuterRaceFault_2.csv": {
+      "sha256": "b5d3a8d622d4f3a176062d1f78903becf599d4d239e68c5c117e1b52bbc46b31",
+      "sizes": [
+        6065358,
+        6651294
+      ]
+    },
+    "data/signals/real_train/OuterRaceFault_2_metadata.json": {
+      "sha256": "d55bdbd1a11f349a700120c1923e134baca9c09434f271ea6e83a0d32be5e7f3",
+      "sizes": [
+        212,
+        224
+      ]
+    },
+    "data/signals/real_train/OuterRaceFault_vload_1.csv": {
+      "sha256": "8ee710a0e2414087ea1cd41bc53f9786109cb468ee07e0f7b23811fe10a432ef",
+      "sizes": [
+        1509216,
+        1655700
+      ]
+    },
+    "data/signals/real_train/OuterRaceFault_vload_1_metadata.json": {
+      "sha256": "f5a7742f7b3215b258bf8096127797566b3f5e4509cb1b24d6d872a3e7eb8b5c",
+      "sizes": [
+        211,
+        223
+      ]
+    },
+    "data/signals/real_train/OuterRaceFault_vload_2.csv": {
+      "sha256": "b00b69fd4cee730bc3d9ba5a77c2a2564ce6094b8bb6477a85f0b17077c015a5",
+      "sizes": [
+        1510783,
+        1657267
+      ]
+    },
+    "data/signals/real_train/OuterRaceFault_vload_2_metadata.json": {
+      "sha256": "9a0282f5f31673c050fe1e40d0c7b11e412967aa1251c5ce1655334db6b63017",
+      "sizes": [
+        211,
+        223
+      ]
+    },
+    "data/signals/real_train/OuterRaceFault_vload_3.csv": {
+      "sha256": "08af0c975a46f333572c422800f9d249b5e9b1f8d8a8c7f4c929d4b6999002c1",
+      "sizes": [
+        1522478,
+        1668962
+      ]
+    },
+    "data/signals/real_train/OuterRaceFault_vload_3_metadata.json": {
+      "sha256": "974bf270280289c87763a7c5fac834895f911226932af0fe17374db777d9a794",
+      "sizes": [
+        212,
+        224
+      ]
+    },
+    "data/signals/real_train/OuterRaceFault_vload_4.csv": {
+      "sha256": "d2ebb6626271dd763f98db5d52f0f93e51f3344caf043d91fa43cb24faa04ab8",
+      "sizes": [
+        1520429,
+        1666913
+      ]
+    },
+    "data/signals/real_train/OuterRaceFault_vload_4_metadata.json": {
+      "sha256": "217b866f1fa3d400cbd38e47f8bc451e0d310c699d63f31c6efde87d1ba08e3f",
+      "sizes": [
+        212,
+        224
+      ]
+    },
+    "data/signals/real_train/OuterRaceFault_vload_5.csv": {
+      "sha256": "3963ec76bfe267665b3e6959064776f52b8e3dd701f5c882125dbe0cb002f54f",
+      "sizes": [
+        1520573,
+        1667057
+      ]
+    },
+    "data/signals/real_train/OuterRaceFault_vload_5_metadata.json": {
+      "sha256": "c1f7e86e599361f2b9f421f5b800d9cdf8cb8ffb7ce67528e90b3f856a9d6dbf",
+      "sizes": [
+        212,
+        224
+      ]
+    },
+    "data/signals/real_train/baseline_1.csv": {
+      "sha256": "6e23d19b5afe75a92a1670ab6cd84c54cece03023ee9cab1f80168ea61a174c6",
+      "sizes": [
+        6029440,
+        6615376
+      ]
+    },
+    "data/signals/real_train/baseline_1_metadata.json": {
+      "sha256": "d55bdbd1a11f349a700120c1923e134baca9c09434f271ea6e83a0d32be5e7f3",
+      "sizes": [
+        212,
+        224
+      ]
+    },
+    "data/signals/real_train/baseline_2.csv": {
+      "sha256": "d28c654f9bc63980dcc4927591ad8eb9e80c29b55c02273f735d6fd5727207b1",
+      "sizes": [
+        6029909,
+        6615845
+      ]
+    },
+    "data/signals/real_train/baseline_2_metadata.json": {
+      "sha256": "d55bdbd1a11f349a700120c1923e134baca9c09434f271ea6e83a0d32be5e7f3",
+      "sizes": [
+        212,
+        224
+      ]
+    }
+  },
+  "license": "CC-BY-NC-SA-4.0",
+  "notice": "data/LICENSE",
+  "roots": [
+    "data/real_bearings",
+    "data/signals/real_test",
+    "data/signals/real_train"
+  ]
+}

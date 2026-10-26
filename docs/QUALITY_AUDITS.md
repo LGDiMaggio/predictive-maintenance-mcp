@@ -24,8 +24,8 @@ This page explains what runs where, which failure scenarios are covered and whic
 |---|---|---|
 | Pull request to, or push to, `main` or `develop` | `tests.yml`, job `test` (Ubuntu, Windows, macOS; Python 3.11 and 3.12) | The full test suite with its coverage gate, including the guard tests listed below and the stdio smoke test of the checkout |
 | | `tests.yml`, jobs `lint`, `type-check`, `format-check` | flake8 syntax and undefined-name errors, mypy against the frozen baseline, Black over `src`, `tests`, `benchmarks` and `tools` |
-| | `tests.yml`, job `package-smoke` (Ubuntu, Python 3.11) | Builds the wheel, installs it into a fresh virtual environment outside the checkout, and runs the stdio smoke harness against the installed console script |
-| Release tag `v*` | `publish.yml`, job `smoke` | The same harness on the exact wheel the build job produced; the TestPyPI and PyPI uploads wait for it |
+| | `tests.yml`, job `package-smoke` (Ubuntu, Python 3.11) | Builds the sdist and the wheel, checks both with `python -m tools.audit artifact-licensing` (MIT license metadata, the MIT `LICENSE` as the only license file, no file from `data/` and no copy of the third-party sample data), installs the wheel into a fresh virtual environment outside the checkout, and runs the stdio smoke harness against the installed console script |
+| Release tag `v*` | `publish.yml`, job `smoke` | The licensing check on the exact sdist and wheel the build job produced, then the harness on that wheel; the TestPyPI and PyPI uploads wait for both |
 | Weekly (Mondays 05:17 UTC), manual (Run workflow), and pull requests that change `.github/workflows/audit.yml` or `tools/audit/` | `audit.yml`, job `suite` | The full test suite at the declared dependency floors (Python 3.11) and at the newest in-range releases (Python 3.11, 3.12 and 3.14) |
 | | `audit.yml`, job `package-smoke` | The wheel on Ubuntu (Python 3.11, 3.13, 3.14), Windows (3.12) and macOS (3.12), and the sdist on Ubuntu (3.12) |
 | | `audit.yml`, job `upstream` | The compatibility inventory against PyPI release data, GitHub releases, and the protocol revisions the installed MCP SDK knows |
@@ -180,7 +180,7 @@ python -m tools.audit report --results .audit/results --expect smoke,upstream --
 `--results` is searched recursively.
 `--expect` lists, comma-separated, the results that must be present: a check id (at least one result of that check), or `check:variant` for one matrix leg. When one is missing the report is incomplete and exits 2.
 Its default is the weekly set of checks (`suite,package-smoke,upstream,security`), which a local run rarely produces in full, so name the checks you actually ran.
-Check ids are `smoke`, `package-smoke`, `upstream`, `security` and `suite`.
+Check ids are `smoke`, `package-smoke`, `upstream`, `security`, `suite` and `artifact-licensing`.
 The weekly workflow names every matrix leg (for example `suite:suite-floors-py3.11` and `package-smoke:wheel-windows-py3.12`), so a leg that failed before uploading its result is reported missing instead of disappearing.
 
 To de-duplicate against existing issues, fetch the issues a maintainer accepted and pass the file (the weekly run also fetches the form-filed issues, to name those nobody accepted yet):

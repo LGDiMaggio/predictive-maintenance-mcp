@@ -1,0 +1,35 @@
+Sample bearing vibration data
+
+This notice covers the files in these directories:
+  data/real_bearings/
+  data/signals/real_train/
+  data/signals/real_test/
+The MIT License in the LICENSE file at the root of this repository does not
+apply to these files.
+
+Data owner: Eric Bechhoefer
+Original source: http://data-acoustics.com/measurements/bearing-faults/bearing-2/
+Redistributed by The MathWorks, Inc. at
+  https://github.com/mathworks/RollingElementBearingFaultDiagnosis-Data
+  That repository holds the first four of the six folders of the original
+  data set, reorganised into a training folder and a test folder.
+
+License: Creative Commons Attribution-NonCommercial-ShareAlike 4.0
+International (CC BY-NC-SA 4.0)
+  https://creativecommons.org/licenses/by-nc-sa/4.0/
+
+Changes made in this repository:
+  data/real_bearings/ holds the MATLAB .mat files of the MathWorks
+  repository, unmodified.
+  data/signals/real_train/ and data/signals/real_test/ hold each recording
+  converted to a CSV file with one column of acceleration values in g, and a
+  JSON file with its sampling rate, signal unit, shaft speed, load, sample
+  count, duration and bearing characteristic frequencies.
+The converted files are shared under the same license, CC BY-NC-SA 4.0.
+
+The data is provided as is, without warranties of any kind; the license
+gives the full terms. Nothing in this notice implies endorsement by the data
+owner or by The MathWorks, Inc.
+
+The license does not permit commercial use. For commercial use of the data,
+contact the data owner, as the MathWorks repository states.

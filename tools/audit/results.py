@@ -91,7 +91,14 @@ RESULT_SCHEMA = "pmm-audit-result/1"
 REPORT_SCHEMA = "pmm-audit-report/1"
 
 #: Which check produced a result.
-CHECK_IDS = ("smoke", "package-smoke", "upstream", "security", "suite")
+CHECK_IDS = (
+    "smoke",
+    "package-smoke",
+    "upstream",
+    "security",
+    "suite",
+    "artifact-licensing",
+)
 
 #: What kind of problem a finding describes.
 CATEGORIES = (
@@ -103,6 +110,7 @@ CATEGORIES = (
     "diagnostic-correctness",
     "security",
     "dependency",
+    "licensing",
 )
 
 SEVERITIES = ("critical", "high", "medium", "low", "info")

@@ -1083,3 +1083,23 @@ class TestPackaging:
             for line in (REPO_ROOT / "MANIFEST.in").read_text("utf-8").splitlines()
         }
         assert "prune data/ledger" in lines
+
+    def test_manifest_prunes_all_of_data_and_includes_none_of_it(self):
+        """Nothing under ``data/`` reaches the sdist, whatever the checkout holds.
+
+        ``tools.audit artifact-licensing`` proves the built sdist; this pins
+        the rule in the file setuptools reads.
+        """
+        lines = [
+            line.split()
+            for line in (REPO_ROOT / "MANIFEST.in").read_text("utf-8").splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        ]
+        assert ["prune", "data"] in lines
+        includes = [
+            " ".join(words)
+            for words in lines
+            if words[0] in ("include", "recursive-include", "graft")
+            and any(arg == "data" or arg.startswith("data/") for arg in words[1:])
+        ]
+        assert includes == []
