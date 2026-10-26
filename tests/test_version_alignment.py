@@ -332,6 +332,99 @@ COUNTED_PROSE_SURFACES: dict[str, Callable[[], str]] = {
     "docs/TOOL_CATALOG.md": lambda: _read("docs/TOOL_CATALOG.md"),
 }
 
+#: Surfaces that describe the main branch: their tool, endpoint, prompt and
+#: resource counts must equal the registered surface.
+MAIN_BRANCH_SURFACES = ["README.md", "plugin/README.md", "docs/TOOL_CATALOG.md"]
+
+#: Surfaces that describe the published package (its PyPI metadata and the
+#: site): they state no tool, endpoint, prompt or resource count, so a count of
+#: the main branch is never read as what a published release contains.
+#: docs/index.html follows the same rule through scan_landing_page_claims.
+RELEASE_FACING_SURFACES = ["pyproject.toml (project.description)", "docs/_config.yml"]
+
+SURFACE_KINDS = ("tools", "endpoints", "prompts", "resources")
+
+#: Any number before a surface noun, with an optional '+', up to two words
+#: between ('40+ MCP tools', '39 diagnostic tools'), matched after HTML tags
+#: are removed ('<strong>42</strong> MCP endpoints'). Release-facing surfaces
+#: must contain none.
+_SURFACE_COUNT_RE = re.compile(
+    r"\b(\d[\d,]*)\+?\s+(?:[\w-]+\s+){0,2}(tools|endpoints|prompts|resources?)\b",
+    re.I,
+)
+
+
+def _surface_count_mentions(text: str) -> list[str]:
+    """Every surface count in *text*, in any of the forms above.
+
+    The raw text is scanned for counts inside attributes (meta descriptions)
+    and the text without tags for counts split by inline markup.
+    """
+    found: list[str] = []
+    for source in (text, re.sub(r"<[^>]+>", "", text)):
+        for m in _SURFACE_COUNT_RE.finditer(source):
+            if m.group(0) not in found:
+                found.append(m.group(0))
+    return found
+
+
+#: Tool names of the latest published release (0.13.0). Update it in the
+#: release that ships the unreleased tools.
+RELEASED_TOOLS = frozenset(
+    {
+        "analyze_envelope",
+        "analyze_fft",
+        "analyze_signal_trend",
+        "analyze_statistics",
+        "assess_severity",
+        "calculate_bearing_characteristic_frequencies",
+        "check_bearing_faults",
+        "clear_signals",
+        "compute_power_spectral_density",
+        "compute_spectrogram_stft",
+        "diagnose_vibration",
+        "estimate_rul",
+        "extract_features_from_signal",
+        "extract_manual_specs",
+        "generate_diagnostic_report",
+        "generate_diagnostic_report_docx",
+        "generate_envelope_report",
+        "generate_feature_comparison_report",
+        "generate_fft_report",
+        "generate_iso_report",
+        "generate_maintenance_recommendations",
+        "generate_pca_visualization_report",
+        "generate_test_signal",
+        "get_signal_info",
+        "list_html_reports",
+        "list_machine_manuals",
+        "list_signals",
+        "load_signal",
+        "plot_signal",
+        "predict_anomalies",
+        "read_manual_excerpt",
+        "search_bearing_catalog",
+        "search_documentation",
+        "train_anomaly_model",
+    }
+)
+
+#: Tools registered on the main branch that no published release contains:
+#: exactly the registered tools outside RELEASED_TOOLS (checked below). The
+#: catalog rows, the CHANGELOG [Unreleased] section and the main-branch
+#: pointer are checked against it.
+UNRELEASED_TOOLS = frozenset(
+    {
+        "declare_measurement_point",
+        "declare_healthy_baseline",
+        "get_asset_history",
+        "assess_asset_change",
+        "forecast_asset_indicator",
+    }
+)
+UNRELEASED_MARKER = "Unreleased: main branch only"
+UNRELEASED_POINTER = "listed under Unreleased in the"
+
 
 @pytest.fixture(scope="module")
 def coverage_minimum() -> int:
@@ -352,8 +445,8 @@ def _claims(text: str, kind: str) -> list[tuple[int, str]]:
 
 
 class TestEndpointCountClaims:
-    @pytest.mark.parametrize("surface", COUNTED_PROSE_SURFACES)
-    @pytest.mark.parametrize("kind", ["tools", "endpoints", "prompts", "resources"])
+    @pytest.mark.parametrize("surface", MAIN_BRANCH_SURFACES)
+    @pytest.mark.parametrize("kind", SURFACE_KINDS)
     def test_surface_claims_match_introspection(self, surface, kind, surface_counts):
         text = COUNTED_PROSE_SURFACES[surface]()
         expected = surface_counts[kind]
@@ -397,15 +490,15 @@ class TestEndpointCountClaims:
             "number was removed or the wording escaped CLAIM_PATTERNS"
         )
 
-    def test_config_and_pyproject_state_the_endpoint_count(self):
-        """Anti-rot for the two newly guarded surfaces: each must keep at
-        least one endpoints claim the guard can recognize."""
-        for surface in ("pyproject.toml (project.description)", "docs/_config.yml"):
-            assert _claims(COUNTED_PROSE_SURFACES[surface](), "endpoints"), (
-                f"{surface}: no recognizable 'N endpoints' claim found — "
-                f"either the count was removed or the wording escaped "
-                f"CLAIM_PATTERNS"
-            )
+    @pytest.mark.parametrize("surface", RELEASE_FACING_SURFACES)
+    def test_release_facing_surfaces_state_no_surface_count(self, surface):
+        """The published package's descriptions carry no count of the main
+        branch's surface: a count there would read as what PyPI ships."""
+        found = _surface_count_mentions(COUNTED_PROSE_SURFACES[surface]())
+        assert found == [], (
+            f"{surface} describes the published package but states {found}; "
+            f"state counts only on the main-branch surfaces"
+        )
 
     def test_tool_catalog_states_its_totals(self):
         """Anti-rot for the migrated catalog page (U2): it must keep a
@@ -436,20 +529,79 @@ class TestEndpointCountClaims:
                 text, kind
             ), f"plugin/README.md: no recognizable '{kind}' count claim"
 
+    @pytest.mark.parametrize("surface", MAIN_BRANCH_SURFACES)
+    def test_main_branch_surfaces_point_to_the_unreleased_tools(self, surface):
+        """A main-branch count is distinguished from what PyPI ships."""
+        assert UNRELEASED_POINTER in COUNTED_PROSE_SURFACES[surface](), (
+            f"{surface}: states main-branch counts without the pointer "
+            f"{UNRELEASED_POINTER!r} to the CHANGELOG's Unreleased section"
+        )
+
     def test_expected_final_surface(self, surface_counts):
         """The current surface, restated here so a surface change makes
         BOTH the inventory test and the doc guards go red together.
 
         v0.10 added generate_diagnostic_report (33 -> 34 tools); the asset
         ledger (U7) added declare_measurement_point, declare_healthy_baseline,
-        get_asset_history and assess_asset_change (34 -> 38 tools). The
+        get_asset_history and assess_asset_change (34 -> 38 tools); forecast
+        PR 1 added forecast_asset_indicator (38 -> 39 tools, unreleased). The
         additions register lives in tests/test_surface_parity.py."""
         assert surface_counts == {
-            "tools": 38,
+            "tools": 39,
             "resources": 0,
             "prompts": 3,
-            "endpoints": 41,
+            "endpoints": 42,
         }
+
+
+@pytest.fixture(scope="module")
+def registered() -> set[str]:
+    mcp = MCPServer("unreleased-tools-guard")
+    register_all(mcp)
+    return set(mcp._tool_manager._tools)
+
+
+class TestUnreleasedTools:
+    """Every tool the main branch has and no published release contains is
+    named as such where tools are listed one by one."""
+
+    def test_every_registered_tool_is_released_or_unreleased(self, registered):
+        """A new tool cannot slip through unclassified, and none is both."""
+        assert not RELEASED_TOOLS & UNRELEASED_TOOLS
+        assert registered == RELEASED_TOOLS | UNRELEASED_TOOLS, {
+            "unclassified": sorted(registered - RELEASED_TOOLS - UNRELEASED_TOOLS),
+            "not registered": sorted((RELEASED_TOOLS | UNRELEASED_TOOLS) - registered),
+        }
+
+    def test_catalog_marks_exactly_the_unreleased_tools(self, registered):
+        rows = dict(
+            re.findall(
+                r"^\| `([a-z_]+)` \|(.*)\|\s*$",
+                _read("docs/TOOL_CATALOG.md"),
+                re.MULTILINE,
+            )
+        )
+        assert UNRELEASED_TOOLS <= set(rows), UNRELEASED_TOOLS - set(rows)
+        wrong = [
+            name
+            for name, cell in rows.items()
+            if name in registered
+            and (UNRELEASED_MARKER in cell) != (name in UNRELEASED_TOOLS)
+        ]
+        assert wrong == [], (
+            f"docs/TOOL_CATALOG.md: the {UNRELEASED_MARKER!r} marker must be on "
+            f"exactly the rows of UNRELEASED_TOOLS; wrong rows: {wrong}"
+        )
+
+    def test_changelog_unreleased_section_names_every_unreleased_tool(self):
+        changelog = _read("CHANGELOG.md")
+        start = changelog.index("## [Unreleased]")
+        section = changelog[start : changelog.index("\n## [", start + 1)]
+        missing = sorted(t for t in UNRELEASED_TOOLS if f"`{t}`" not in section)
+        assert missing == [], (
+            f"CHANGELOG.md [Unreleased] does not name {missing}, so the "
+            f"main-branch pointer to it would be wrong"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -486,15 +638,23 @@ def scan_landing_page_claims(text: str, expected: dict[str, int | str]) -> list[
     valid. Pure function over text so it can be mutation-tested on small
     fixtures (same shape as the CWRU drift guard).
 
-    *expected* carries the introspected surface counts, plugin component
-    counts, the CI coverage minimum under ``"coverage"``, and the package
-    version under ``"version"``.
+    *expected* carries the plugin component counts, the CI coverage minimum
+    under ``"coverage"``, and the package version under ``"version"``. The
+    page describes the published package, so any tool, endpoint, prompt or
+    resource count (SURFACE_KINDS) is itself a finding.
     """
     findings: list[str] = []
 
     # 1. Text claims where the noun sits next to the number (prose, meta/OG/
     #    Twitter descriptions, nested JSON-LD strings — all just text here).
+    for snippet in _surface_count_mentions(text):
+        findings.append(
+            f"states '{snippet}': the landing page describes the published "
+            f"package and states no tool, endpoint, prompt or resource count"
+        )
     for kind in CLAIM_PATTERNS:
+        if kind in SURFACE_KINDS:
+            continue
         for value, snippet in _claims(text, kind):
             if value != expected[kind]:
                 findings.append(
@@ -521,6 +681,11 @@ def scan_landing_page_claims(text: str, expected: dict[str, int | str]) -> list[
             findings.append(
                 f'counter data-target="{raw_value}" labelled {label!r} is not '
                 f"bound to any introspected value — extend _COUNTER_LABEL_KINDS"
+            )
+        elif kind in SURFACE_KINDS:
+            findings.append(
+                f'counter data-target="{raw_value}" labelled {label!r} states a '
+                f"{kind} count; the landing page states none"
             )
         elif int(raw_value) != expected[kind]:
             findings.append(
@@ -567,7 +732,6 @@ class TestLandingPageClaims:
         text = _read("docs/index.html")
         assert _DATA_TARGET_RE.search(text), "no data-target counters found"
         assert _SOFTWARE_VERSION_RE.search(text), "no JSON-LD softwareVersion"
-        assert _claims(text, "endpoints"), "no recognizable endpoints claim"
         assert _claims(text, "skills"), "no recognizable skills claim"
 
 
@@ -587,17 +751,18 @@ _FIXTURE_EXPECTED: dict[str, int | str] = {
 
 #: Minimal page exercising every claim carrier the scanner knows: meta
 #: description, nested JSON-LD strings + softwareVersion, two labelled
-#: counters, plain prose, and a BibTeX block.
+#: counters, plain prose, and a BibTeX block. Like the real page, it states no
+#: tool, endpoint, prompt or resource count.
 _CLEAN_PAGE = """\
 <meta name="description" content="Diagnostics via natural language. \
-37 MCP endpoints, runs locally.">
+Open-source, runs locally.">
 <script type="application/ld+json">
 {"softwareVersion": "0.12.0",
  "featureList": ["Claude Code plugin with 8 skills"],
- "text": "It provides 37 MCP endpoints for vibration analysis."}
+ "text": "It provides MCP tools for vibration analysis."}
 </script>
-<div class="num-val" data-target="37">0</div>
-<div class="num-label">MCP Endpoints</div>
+<div class="num-val" data-target="8">0</div>
+<div class="num-label">Diagnostic Skills</div>
 <div class="num-val" data-target="85">0</div>
 <div class="num-label">%+ Test Coverage (CI Minimum)</div>
 <p>8 skills, 2 autonomous agents, 3 slash commands</p>
@@ -615,16 +780,53 @@ class TestLandingPageScannerMutations:
     def test_one_stale_occurrence_among_correct_ones_goes_red(self):
         """The edge case that matters: ONE stale copy among several correct
         ones must be flagged, and only that one."""
-        mutated = _CLEAN_PAGE.replace("37 MCP endpoints", "52 MCP endpoints", 1)
+        mutated = _CLEAN_PAGE.replace("8 skills", "9 skills", 1)
         findings = scan_landing_page_claims(mutated, _FIXTURE_EXPECTED)
         assert len(findings) == 1, findings
-        assert "52 MCP endpoints" in findings[0]
+        assert "9 skills" in findings[0]
 
-    def test_stale_counter_data_target_goes_red(self):
-        mutated = _CLEAN_PAGE.replace('data-target="37"', 'data-target="52"')
+    @pytest.mark.parametrize(
+        "claim",
+        [
+            "37 MCP endpoints",
+            "34 tools",
+            "3 prompts",
+            "0 resources",
+            "40+ MCP tools",
+            "39 diagnostic tools",
+            "<strong>42</strong> MCP endpoints",
+        ],
+    )
+    def test_any_surface_count_goes_red(self, claim):
+        """Even a count equal to the published one: the page states none."""
+        mutated = _CLEAN_PAGE.replace("runs locally.", f"{claim}, runs locally.")
+        findings = scan_landing_page_claims(mutated, _FIXTURE_EXPECTED)
+        plain = re.sub(r"<[^>]+>", "", claim)
+        assert len(findings) == 1 and plain in findings[0], findings
+
+    @pytest.mark.parametrize("surface", RELEASE_FACING_SURFACES)
+    def test_release_facing_surfaces_go_red_on_other_count_forms(self, surface):
+        for claim in ("40+ MCP tools", "39 diagnostic tools", "<b>42</b> endpoints"):
+            text = COUNTED_PROSE_SURFACES[surface]() + f" {claim}."
+            assert _surface_count_mentions(text), claim
+
+    def test_surface_count_counter_goes_red(self):
+        mutated = _CLEAN_PAGE.replace(
+            '<div class="num-label">Diagnostic Skills</div>',
+            '<div class="num-label">Diagnostic Skills</div>\n'
+            '<div class="num-val" data-target="37">0</div>\n'
+            '<div class="num-label">MCP Endpoints</div>',
+        )
         findings = scan_landing_page_claims(mutated, _FIXTURE_EXPECTED)
         assert any(
-            'data-target="52"' in f and "MCP Endpoints" in f for f in findings
+            'data-target="37"' in f and "MCP Endpoints" in f for f in findings
+        ), findings
+
+    def test_stale_counter_data_target_goes_red(self):
+        mutated = _CLEAN_PAGE.replace('data-target="8"', 'data-target="9"')
+        findings = scan_landing_page_claims(mutated, _FIXTURE_EXPECTED)
+        assert any(
+            'data-target="9"' in f and "Diagnostic Skills" in f for f in findings
         ), findings
 
     def test_stale_coverage_counter_goes_red(self):
@@ -652,12 +854,14 @@ class TestLandingPageScannerMutations:
         assert len(findings) == 2, findings
 
     def test_unrecognized_counter_label_goes_red(self):
-        mutated = _CLEAN_PAGE.replace("MCP Endpoints</div>", "GitHub Stars</div>")
+        mutated = _CLEAN_PAGE.replace("Diagnostic Skills</div>", "GitHub Stars</div>")
         findings = scan_landing_page_claims(mutated, _FIXTURE_EXPECTED)
         assert any("GitHub Stars" in f for f in findings), findings
 
     def test_counter_without_label_goes_red(self):
-        mutated = _CLEAN_PAGE.replace('<div class="num-label">MCP Endpoints</div>', "")
+        mutated = _CLEAN_PAGE.replace(
+            '<div class="num-label">Diagnostic Skills</div>', ""
+        )
         findings = scan_landing_page_claims(mutated, _FIXTURE_EXPECTED)
         assert any("num-label" in f for f in findings), findings
 

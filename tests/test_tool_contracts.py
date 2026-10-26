@@ -136,6 +136,13 @@ Fixture history:
   no longer contrast them with it. Both on check_bearing_faults and
   diagnose_vibration.
   Generated under mcp 2.3.0 and pydantic 2.12.0 (uv.lock).
+- Indicator projection (2026-10-24, forecast PR 1): regenerated
+  intentionally: ADDITIVE. New entry forecast_asset_indicator
+  (IndicatorForecastResult and its nested warning, anchor, history,
+  declaration and provenance models). No existing tool's output schema
+  changed. Review follow-up, regenerated again in the same PR: field
+  descriptions of the new entry only.
+  Generated under mcp 2.3.0 and pydantic 2.12.0 (uv.lock).
 """
 
 from __future__ import annotations

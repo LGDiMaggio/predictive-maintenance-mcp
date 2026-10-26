@@ -276,7 +276,9 @@ mcp = MCPServer(
     - list_signals(scope="memory") shows the loaded signal_ids;
       get_signal_info() exposes metadata including the companion
       source_metadata (rpm, reference frequencies, ...)
-    - Every analysis/diagnosis/report/prognostics tool takes signal_id
+    - Every analysis/diagnosis/report tool takes signal_id; of the
+      prognostics tools, estimate_rul also accepts measured values and
+      forecast_asset_indicator takes only a series passed in the call
     - Do NOT auto-correct or guess file names or ids; if ambiguous, ask
 
     Prognostics (ISO 13374 Block 5):
@@ -285,6 +287,22 @@ mcp = MCPServer(
       signal_ids + timestamps); a single recording is refused
     - Within-recording trend + degradation-onset screening
       (analyze_signal_trend: p-value based direction, post-baseline onset)
+
+    Indicator projection (not a prognosis):
+    - forecast_asset_indicator projects one indicator series the user
+      supplies (ISO 8601 instants with Z or a UTC offset, values, a declared
+      unit and resolution) with a statistical reference method, and returns
+      P10, P50 and P90 per step or a typed insufficient-history result; it
+      reads only the series passed in the call
+    - Quote its interpretation, method_note and interval_note fields: the
+      projection is not a fault detection, a failure probability or a
+      remaining-useful-life estimate, and its band is nominal
+    - Never derive a time to a threshold, a probability of crossing one or
+      an ISO zone from projected values, and never pass them to estimate_rul
+      or assess_severity, which treat every value as a measurement
+    - A flat naive median repeats the last bin by construction; it does not
+      mean the indicator will stay stable
+    - Report the backend that ran and every warning in the result
 
     Severity & Decision Support (ISO 13374 Blocks 4/6):
     - assess_severity: unified ISO 20816-3 severity + alert classification

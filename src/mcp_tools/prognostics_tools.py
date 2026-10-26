@@ -11,6 +11,9 @@ Honest-prognosis contract:
 - ``analyze_signal_trend`` (trend + onset, unified in U9) is a
   within-recording SCREENING tool. It looks at seconds of data inside
   one recording and cannot produce a prognosis.
+- ``forecast_asset_indicator`` projects one caller-supplied indicator
+  series with a statistical reference method. It is a projection of the
+  indicator, not a prognosis, and shares nothing with the RUL path.
 Logging note
 ------------
 Every tool here takes a ``ctx`` parameter it never uses. That is deliberate,
@@ -26,10 +29,14 @@ transport's JSON-RPC channel. Clients no longer receive progress
 notifications; any fact a caller needs is carried by the return value.
 """
 
+import json
 import logging
-from typing import Literal, Optional
+from datetime import datetime, timezone
+from typing import Callable, Literal, Optional
 
 import numpy as np
+import pydantic_core
+from mcp import types
 from mcp.server.mcpserver import MCPServer, Context
 
 from ..signal_processing.features import extract_time_domain_features
@@ -42,7 +49,13 @@ from ..prognostics import (
     detect_degradation_onset,
 )
 from ..prognostics.kalman_rul import estimate_rul_kalman
+from ..prognostics import indicator_forecast
+from ..prognostics.indicator_forecast import forecast_indicator
+from ..signal_validation import InvalidInputError
 from ..models import (
+    ForecastAggregation,
+    ForecastBackend,
+    IndicatorForecastResult,
     RULEstimationResult,
     TrendAnalysisResult,
 )
@@ -465,7 +478,221 @@ async def analyze_signal_trend(
     )
 
 
+async def forecast_asset_indicator(
+    ctx: Context,
+    observed_at: list[str],
+    values: list[Optional[float]],
+    indicator: str,
+    unit: str,
+    resolution: str,
+    horizon_steps: int,
+    backend: ForecastBackend = "naive",
+    aggregation: ForecastAggregation = "mean",
+    season_length_steps: Optional[int] = None,
+) -> IndicatorForecastResult:
+    """Project one condition indicator's future values from its own history.
+
+    Takes an indicator series the caller already has, for example velocity
+    RMS from a data collector or a bearing temperature exported from a
+    historian, and projects it forward on a regular UTC grid with a
+    statistical reference method, returning P10, P50 and P90 per step. It
+    reads nothing the server holds, no signal_id and no asset history: only
+    the series passed in the call. The result is a projection of the
+    indicator, not a fault detection, a failure probability or a
+    remaining-useful-life estimate. Do not pass its values to estimate_rul
+    or assess_severity.
+
+    Args:
+        ctx: MCP context. Unused: see this module's docstring on logging.
+        observed_at: ISO 8601 instants, one per value, each with 'Z' or a
+            UTC offset (for example '2026-10-24T08:00:00Z'), strictly
+            increasing; at most 2048. An instant before 1971 or more than
+            one day after the server clock is refused. A missing
+            observation is expressed by omitting its instant and its value,
+            never by null, zero or an interpolated value.
+        values: The indicator's measured values, one finite number per
+            instant. The schema accepts null only so that the server can
+            refuse it with an explanation.
+        indicator: What the values measure, for example 'velocity RMS'.
+        unit: The unit recorded at the source, for example 'mm/s' or
+            'degC'. Never inferred: ask the user when it is unknown.
+        resolution: Grid step of at most 30 days, a whole number followed
+            by s, min, h, d or w, for example '10min' or '1h'. Bins are
+            aligned to the Unix epoch in UTC, so '1d' bins are UTC days and
+            '1w' bins start on Thursdays; the series may span at most
+            100000 bins.
+        horizon_steps: Steps to project, 1 to 256. A horizon longer than
+            30 days is refused as a call error; a horizon longer than the
+            observed history span (last instant minus first instant)
+            returns insufficient_history with the largest supported
+            horizon.
+        backend: 'naive' (default; repeats the last observed bin) or
+            'seasonal_naive' (repeats the same phase of the declared
+            season).
+        aggregation: How several values in one bin combine: 'mean'
+            (default), 'median', 'max' or 'last'.
+        season_length_steps: Season in grid steps as the user states it,
+            required for 'seasonal_naive' (for example 24 when the user
+            says the pattern repeats daily at '1h') and never inferred;
+            omit it for 'naive'.
+
+    Returns:
+        IndicatorForecastResult with status 'forecast' (quantiles per step,
+        anchor steps with absolute times, warnings, history counts,
+        provenance and fixed interpretation texts) or
+        'insufficient_history' (reason_code, available and required
+        amounts, max_supported_horizon_steps and a remedy). Quote
+        interpretation, method_note and interval_note when reporting a
+        projection. The history needs at least 10 difference pairs;
+        seasonal naive also needs two full seasons. A call whose band is too
+        narrow to report at the level of its values is refused, with a
+        remedy. A forecast result exceeding the server's conservative
+        32,000-byte serialized-output limit is refused. When possible, the
+        refusal suggests a shorter horizon that has been recomputed and
+        checked to fit.
+    """
+    from .. import __version__  # lazy: the package imports this module
+
+    now = datetime.now(timezone.utc)
+
+    def project(steps: int) -> IndicatorForecastResult:
+        return IndicatorForecastResult.model_validate(
+            forecast_indicator(
+                observed_at=observed_at,
+                values=values,
+                indicator=indicator,
+                unit=unit,
+                resolution=resolution,
+                horizon_steps=steps,
+                backend=backend,
+                aggregation=aggregation,
+                season_length_steps=season_length_steps,
+                now=now,
+                server_version=__version__,
+            )
+        )
+
+    result = project(horizon_steps)
+    _refuse_oversized_result(result, horizon_steps, project)
+    return result
+
+
+#: Room for the server metadata newer protocol versions add to a tool result:
+#: from the 2026-07-28 handshake on, a ``_meta`` serverInfo block naming the
+#: server and its version (about 92 bytes for this server). Counted so that no
+#: protocol version receives a result above the budget.
+RESULT_METADATA_ALLOWANCE = 256
+
+#: Room kept when naming a shorter horizon, for what a later call of the same
+#: request adds as the server clock moves on: a stale_history warning in its
+#: longest form and longer step counts (at most 470 bytes measured, even 900
+#: years later at a one-second grid). Without it the named horizon, which sits
+#: within one step of the budget, would be refused again once a bin boundary
+#: passes.
+RETRY_RESERVE = 512
+
+
+def call_tool_result_bytes(result: IndicatorForecastResult) -> int:
+    """Bytes of the CallToolResult that MCPServer builds for this result.
+
+    Built the way mcp 2.0.0 to 2.3.0 build it: the structured content and its
+    indented JSON text copy in one CallToolResult, without null fields. The
+    SDK writes it in two encodings: pydantic's on stdio, SSE and the legacy
+    HTTP transport, and the standard library's on the modern HTTP transport,
+    which escapes every non-ASCII character and writes floats in Python's
+    form. The larger of the two is returned.
+    """
+    text = pydantic_core.to_json(result, fallback=str, indent=2).decode()
+    call = types.CallToolResult(
+        content=[types.TextContent(type="text", text=text)],
+        structured_content=result.model_dump(mode="json", by_alias=True),
+    )
+    pydantic_form = call.model_dump_json(by_alias=True, exclude_none=True)
+    stdlib_form = json.dumps(
+        call.model_dump(mode="json", by_alias=True, exclude_none=True),
+        separators=(",", ":"),
+    )
+    return max(len(pydantic_form.encode()), len(stdlib_form.encode()))
+
+
+def client_result_bytes(result: IndicatorForecastResult) -> int:
+    """Most bytes a client receives for this result, on any protocol version.
+
+    The CallToolResult plus RESULT_METADATA_ALLOWANCE. The JSON-RPC envelope
+    around it, whose size depends on the client's request id, is not counted.
+    """
+    return call_tool_result_bytes(result) + RESULT_METADATA_ALLOWANCE
+
+
+def _refuse_oversized_result(
+    result: IndicatorForecastResult,
+    horizon_steps: int,
+    project: Callable[[int], IndicatorForecastResult],
+) -> None:
+    """Refuse a result over MAX_RESULT_BYTES, naming a horizon checked to fit.
+
+    The shorter horizon is found by recomputing and measuring the result for
+    each candidate, so the one named has itself been measured, with
+    RETRY_RESERVE to spare; nothing is shortened or dropped from the
+    requested result to make it fit. Every candidate is a forecast: a shorter
+    horizon passes the sufficiency and precision checks the requested one
+    passed.
+
+    The binary search finds the longest horizon that fits only when the size
+    grows with the horizon, which is not guaranteed: the isolated_origin
+    warning is carried only up to the number of empty bins before the last
+    observed bin, the stale_history text is longer while every projected step
+    is past, and the anchors move with the horizon. The size can fall across
+    such a horizon, so the horizon named is checked to fit but can be a few
+    steps shorter than the longest that does; the refusal never claims it is
+    the longest. For the same reason, when none of the horizons the search
+    measured fits, a horizon it skipped still can, so that refusal says only
+    that no shorter horizon was verified to fit.
+
+    Raises:
+        InvalidInputError: When the result exceeds the budget.
+    """
+    budget = indicator_forecast.MAX_RESULT_BYTES
+    size = client_result_bytes(result)
+    if size <= budget:
+        return
+    fit: Optional[tuple[int, int]] = None
+    low, high = 1, horizon_steps - 1
+    while low <= high:
+        steps = (low + high) // 2
+        steps_size = client_result_bytes(project(steps))
+        if steps_size <= budget - RETRY_RESERVE:
+            fit, low = (steps, steps_size), steps + 1
+        else:
+            high = steps - 1
+    problem = (
+        f"The result for horizon_steps {horizon_steps} has a conservative "
+        f"serialized size of {size:,} bytes, over the server's {budget:,}-byte "
+        f"output-size limit. The size is an upper bound for the result across "
+        f"the serializations the server supports, so a particular transport may "
+        f"carry fewer bytes for it. Its size depends on the number of forecast "
+        f"steps, the digits needed to represent the quantile bands, and the length "
+        f"of the indicator and unit labels repeated in the response."
+    )
+    kept = (
+        "No quantile values are truncated, further rounded or omitted to fit "
+        "the limit."
+    )
+    if fit is None:
+        raise InvalidInputError(
+            f"{problem} No shorter horizon was verified to fit within the "
+            f"output-size limit for these inputs. If the indicator or unit labels "
+            f"are long, shorten them before retrying. {kept}"
+        )
+    raise InvalidInputError(
+        f"{problem} Call again with horizon_steps of {fit[0]}: that result was "
+        f"recomputed and checked to fit, at a conservative size of {fit[1]:,} "
+        f"bytes. {kept}"
+    )
+
+
 def register(mcp: MCPServer) -> None:
     """Register prognostics MCP tools on *mcp*."""
     mcp.tool()(refusal_boundary(estimate_rul))
     mcp.tool()(refusal_boundary(analyze_signal_trend))
+    mcp.tool()(refusal_boundary(forecast_asset_indicator))

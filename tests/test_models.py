@@ -519,3 +519,21 @@ class TestAnomalyPredictionResult:
         assert restored.anomaly_count == 5
         assert restored.score_percentiles["p50"] == 0.1
         assert restored.worst_segments[0]["segment_index"] == 3
+
+
+def test_indicator_forecast_literals_match_the_forecasting_modules():
+    """Each forecast Literal mirrors the tuple its pure module owns."""
+    from typing import get_args
+
+    from predictive_maintenance_mcp import models
+    from predictive_maintenance_mcp.prognostics import (
+        indicator_forecast,
+        indicator_series,
+        reference_forecast,
+    )
+
+    assert get_args(models.ForecastBackend) == indicator_series.BACKENDS
+    assert get_args(models.ForecastAggregation) == indicator_series.AGGREGATIONS
+    assert get_args(models.ForecastStatus) == indicator_forecast.STATUSES
+    assert get_args(models.ForecastReasonCode) == reference_forecast.REASON_CODES
+    assert get_args(models.ForecastWarningCode) == indicator_forecast.WARNING_CODES
