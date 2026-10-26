@@ -150,7 +150,13 @@ Fixture history:
   what algorithm_version holds. Owner decision B1, regenerated again in the
   same PR: one description only (assessed), no property, enum value or type
   changed; it says that an acquisition not compared is unknown, never
-  counted as absent, and interrupts consecutive presence.
+  counted as absent, and interrupts consecutive presence. Owner decision of
+  2026-10-26 (envelope indicators), regenerated again in the same PR: one
+  description only (observed), no property, enum value or type changed; it
+  says that capture_comparison lists the acquisitions whose capture
+  differs or is not recorded, and that an envelope indicator needs a usable
+  value in every evaluated acquisition, so one missing or listed makes it
+  unavailable while it stays in the evaluated history.
   Generated under mcp 2.3.0 and pydantic 2.12.0 (uv.lock).
 """
 

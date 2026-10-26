@@ -98,11 +98,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   label counts in an acquisition when its evidence state is supported and
   the envelope amplitude at its tested line is above the reference band,
   and the response also gives how many reference acquisitions show the
-  line; the envelope indicators and the bearing evidence compare only
-  acquisitions whose sampling rate and capture duration are within 1
-  percent of the reference median, and list the others with their
-  reasons; an acquisition not compared is unknown, never counted as
-  absent, and interrupts consecutive presence of bearing evidence;
+  line; acquisitions whose sampling rate or capture duration differs
+  from the reference median by more than 1 percent, or is not recorded,
+  are listed with their reasons; such an acquisition, like a missing value, makes an
+  envelope indicator unavailable while it stays in the evaluated
+  history, and the bearing evidence does not compare it: it is unknown,
+  never counted as absent, and interrupts consecutive presence of
+  bearing evidence;
   bearing evidence of an earlier lineage is reported as recorded,
   marked legacy with its algorithm version, and is neither classified nor
   counted in the overall verdict; evidence that cannot be classified is
