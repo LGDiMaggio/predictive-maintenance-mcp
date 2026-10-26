@@ -1608,6 +1608,12 @@ def _reproduction(group: Sequence[Mapping[str, Any]]) -> str:
             "python -m build",
             "python -m tools.audit package-smoke --dist dist --artifact wheel",
         ]
+    elif check == "artifact-licensing" and "archive" in evidence:
+        commands += [
+            "git archive --format=zip --prefix=predictive-maintenance-mcp/ "
+            "-o source.zip HEAD",
+            "python -m tools.audit artifact-licensing --archive source.zip",
+        ]
     elif check == "artifact-licensing":
         commands += [
             "python -m build",

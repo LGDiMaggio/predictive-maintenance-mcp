@@ -32,6 +32,24 @@ What one run checks
 Status: ``error`` when any input is missing, ambiguous or unreadable (no
 evidence is never a pass), ``fail`` on any rule violation, ``pass`` otherwise.
 
+Archive mode
+------------
+``--archive`` (repeatable) checks source archives instead: the zip and the
+tarball GitHub serves for a commit, a tag or a release, which a Zenodo deposit
+stores unchanged, are ``git archive`` output filtered by the committed
+``.gitattributes``. Each archive is checked on its own:
+
+1. It is a readable, non-empty ``.zip`` or ``.tar.gz`` whose members sit under
+   one root folder (``git archive --prefix``, or GitHub's
+   ``<owner>-<repo>-<commit>/``), which is stripped.
+2. Under ``data/`` it holds exactly :data:`ARCHIVE_DATA_FILES`: the notices and
+   the placeholder that keeps ``data/signals/`` in an extracted tree. Rule 3
+   above applies to every member, and no member is a ``.mat`` file.
+3. Its root ``LICENSE`` is its only root license file and passes rule 5.
+4. Its ``.gitattributes`` export-ignores every manifest root, and no member
+   lies under a path it export-ignores, so the archive is proven to come from
+   a revision that excludes the sample data and to have been filtered by it.
+
 The manifest
 ------------
 The manifest is the one place that names the third-party data: its roots, its
@@ -52,14 +70,16 @@ import hashlib
 import json
 import posixpath
 import re
+import stat
 import subprocess
 import tarfile
 import tomllib
 import zipfile
 import zlib
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from email.message import Message
+from functools import partial
 from pathlib import Path
 from typing import Any, Optional, Union
 
@@ -68,23 +88,29 @@ from tools.audit.package_smoke import ArtifactError, find_artifact
 from tools.audit.results import Finding
 
 __all__ = [
+    "ARCHIVE_DATA_FILES",
     "LICENSE_FILE",
     "MANIFEST_RELPATH",
     "MIT_CLASSIFIER",
     "MIT_LICENSE_LINES",
+    "ArchiveLicensingConfig",
     "Artifact",
     "ArtifactLicensingConfig",
     "Manifest",
     "add_arguments",
     "build_manifest",
+    "check_archive",
     "check_artifact",
     "content_hashes",
+    "export_ignored_paths",
     "load_manifest",
     "manifest_entry",
     "mit_license_problem",
     "read_sdist",
+    "read_source_archive",
     "read_wheel",
     "run",
+    "run_archive_licensing",
     "run_artifact_licensing",
     "write_manifest",
 ]
@@ -133,6 +159,17 @@ MIT_CLASSIFIER = "License :: OSI Approved :: MIT License"
 #: File names setuptools ships as license files by default.
 _LICENSE_NAME = r"(?:LICEN[CS]E|COPYING|NOTICE|AUTHORS)[^/]*"
 _DIST_INFO = r"[^/]+\.dist-info"
+
+#: What a source archive holds under data/: the two notices, and the
+#: placeholder that keeps data/signals/ in an extracted tree, where the server
+#: finds its project root (src/config.py) and compose mounts the folder.
+ARCHIVE_DATA_FILES = ("data/LICENSE", "data/README.md", "data/signals/.gitkeep")
+
+GITATTRIBUTES = ".gitattributes"
+
+#: The only export-ignore pattern form the archive mode reads: a plain path
+#: anchored at the repository root, no glob, quote or trailing slash.
+_PLAIN_ANCHORED = re.compile(r"/[^*?\[\]\\!\"\s]*[^*?\[\]\\!\"\s/]")
 
 PathLike = Union[str, Path]
 
@@ -302,6 +339,8 @@ class Artifact:
     ``members`` maps each root-relative path that is not a directory to its
     size. ``candidates`` holds the content of the regular files whose size
     matches a manifest size, ``licenses`` the text of every license file.
+    A source archive (``kind="archive"``) has empty metadata and keeps its
+    root ``.gitattributes`` in ``attributes``.
     """
 
     kind: str
@@ -310,6 +349,7 @@ class Artifact:
     members: dict[str, int] = field(default_factory=dict)
     candidates: dict[str, bytes] = field(default_factory=dict)
     licenses: dict[str, str] = field(default_factory=dict)
+    attributes: Optional[str] = None
 
 
 def _parse_metadata(content: bytes) -> Message:
@@ -425,6 +465,116 @@ def _extract(archive: tarfile.TarFile, member: tarfile.TarInfo) -> bytes:
     return handle.read()
 
 
+def read_source_archive(path: Path, sizes: Iterable[int] = ()) -> Artifact:
+    """Read a source archive's members (root stripped), root license files and
+    ``.gitattributes``.
+
+    Raises:
+        ValueError: When it is not a ``.zip`` or ``.tar.gz``, cannot be read,
+            holds no file, or its members do not share one root folder.
+    """
+    wanted = set(sizes)
+    lowered = path.name.casefold()
+    try:
+        if lowered.endswith(".zip"):
+            return _read_zip_archive(path, wanted)
+        if lowered.endswith((".tar.gz", ".tgz")):
+            return _read_tar_archive(path, wanted)
+    except (
+        zipfile.BadZipFile,
+        tarfile.TarError,
+        OSError,
+        EOFError,
+        zlib.error,
+        UnicodeDecodeError,
+        NotImplementedError,  # an unsupported compression method
+        RuntimeError,  # an encrypted member
+    ) as exc:
+        raise ValueError(
+            f"{path.name} is not a readable source archive: {exc}"
+        ) from None
+    raise ValueError(f"{path.name} is neither a .zip nor a .tar.gz archive")
+
+
+def _archive_root(entries: Sequence[tuple[str, bool]], label: str) -> str:
+    """The one folder every ``(name, is_dir)`` entry sits under."""
+    files = [name for name, is_dir in entries if not is_dir]
+    if not files:
+        raise ValueError(f"{label} holds no files")
+    roots = {name.split("/", 1)[0] for name, _ in entries}
+    if len(roots) != 1 or not all("/" in name for name in files):
+        raise ValueError(f"{label} does not keep its members under one root folder")
+    return roots.pop()
+
+
+def _keep_content(
+    artifact: Artifact,
+    relative: str,
+    size: int,
+    wanted: set[int],
+    read: Callable[[], bytes],
+) -> None:
+    is_attributes = relative == GITATTRIBUTES
+    is_license = re.fullmatch(_LICENSE_NAME, relative) is not None
+    if size not in wanted and not (is_attributes or is_license):
+        return
+    content = read()
+    if size in wanted:
+        artifact.candidates[relative] = content
+    if is_attributes:
+        artifact.attributes = content.decode("utf-8")
+    elif is_license:
+        artifact.licenses[relative] = content.decode("utf-8", errors="replace")
+
+
+def _read_zip_archive(path: Path, wanted: set[int]) -> Artifact:
+    with zipfile.ZipFile(path) as archive:
+        infos = archive.infolist()
+        root = _archive_root(
+            [(info.filename, info.is_dir()) for info in infos], path.name
+        )
+        artifact = Artifact(kind="archive", name=path.name, metadata=Message())
+        for info in infos:
+            relative = info.filename[len(root) + 1 :]
+            if info.is_dir() or not relative:
+                continue
+            artifact.members[relative] = info.file_size
+            # git archive stores a symlink as a member holding its target;
+            # it is listed for the path rules, never hashed.
+            if not stat.S_ISLNK(info.external_attr >> 16):
+                _keep_content(
+                    artifact,
+                    relative,
+                    info.file_size,
+                    wanted,
+                    partial(archive.read, info),
+                )
+    return artifact
+
+
+def _read_tar_archive(path: Path, wanted: set[int]) -> Artifact:
+    with tarfile.open(path, "r:gz") as archive:
+        members = archive.getmembers()
+        root = _archive_root(
+            [(member.name, member.isdir()) for member in members], path.name
+        )
+        artifact = Artifact(kind="archive", name=path.name, metadata=Message())
+        for member in members:
+            relative = member.name[len(root) + 1 :]
+            if member.isdir() or not relative:
+                continue
+            artifact.members[relative] = member.size
+            if member.isfile():
+                _keep_content(
+                    artifact,
+                    relative,
+                    member.size,
+                    wanted,
+                    partial(_extract, archive, member),
+                )
+    return artifact
+
+
 def _finding(
     rule: str,
     subject: str,
@@ -447,8 +597,11 @@ def _finding(
 def _data_path_reason(kind: str, path: str) -> Optional[str]:
     # Compared after normalizing (./data, data//x) and case-folding (Data/ on a
     # case-insensitive file system), the way an installer would resolve it.
-    first = posixpath.normpath(path).split("/", 1)[0].casefold()
+    normalized = posixpath.normpath(path)
+    first = normalized.split("/", 1)[0].casefold()
     if first == "data":
+        if kind == "archive" and normalized in ARCHIVE_DATA_FILES:
+            return None
         return "lies under data/"
     if kind == "wheel" and first.endswith(".data"):
         return "uses the wheel data scheme"
@@ -476,9 +629,23 @@ def _license_metadata_problem(metadata: Message) -> Optional[str]:
     return "; ".join(problems) or None
 
 
+def _source(artifact: Artifact) -> dict[str, str]:
+    """The evidence key naming what was checked; report.py reproduces by it."""
+    key = "archive" if artifact.kind == "archive" else "artifact"
+    return {key: artifact.name}
+
+
+def _label(artifact: Artifact) -> str:
+    """How titles name the artifact: one run checks two source archives."""
+    if artifact.kind == "archive":
+        return f"archive {artifact.name}"
+    return artifact.kind
+
+
 def _data_findings(artifact: Artifact, manifest: Manifest) -> list[Finding]:
     """Members that are, or copy, third-party data (rules 2 and 3)."""
     kind = artifact.kind
+    label = _label(artifact)
     findings: list[Finding] = []
     for path in sorted(artifact.members):
         reason = _data_path_reason(kind, path)
@@ -486,10 +653,10 @@ def _data_findings(artifact: Artifact, manifest: Manifest) -> list[Finding]:
             findings.append(
                 _finding(
                     "third-party-data-path",
-                    f"{kind} member {path}",
-                    f"The {kind} contains {path}, which {reason}",
-                    artifact=artifact.name,
+                    f"{label} member {path}",
+                    f"The {label} contains {path}, which {reason}",
                     member=path,
+                    **_source(artifact),
                 )
             )
             continue
@@ -508,11 +675,11 @@ def _data_findings(artifact: Artifact, manifest: Manifest) -> list[Finding]:
             findings.append(
                 _finding(
                     "third-party-data-content",
-                    f"{kind} member {path}",
-                    f"The {kind} member {path} is a copy of the sample file {match}",
-                    artifact=artifact.name,
+                    f"{label} member {path}",
+                    f"The {label} member {path} is a copy of the sample file {match}",
                     member=path,
                     matches=match,
+                    **_source(artifact),
                 )
             )
     return findings
@@ -597,6 +764,149 @@ def check_artifact(
     return findings
 
 
+def export_ignored_paths(text: str) -> tuple[set[str], list[str]]:
+    """The paths a ``.gitattributes`` text export-ignores, and the lines that
+    touch ``export-ignore`` in a form this check cannot read.
+
+    Only a plain path anchored at the root (``/data/real_bearings``) is read;
+    a glob, an unanchored, quoted or trailing-slash pattern, a value, or a
+    line that unsets the attribute is returned as unreadable, never guessed.
+    """
+    paths: set[str] = set()
+    unreadable: list[str] = []
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        pattern, *attributes = line.split()
+        touching = [
+            attribute
+            for attribute in attributes
+            if attribute.lstrip("-!").split("=", 1)[0] == "export-ignore"
+        ]
+        if not touching:
+            continue
+        if touching != ["export-ignore"] or not _PLAIN_ANCHORED.fullmatch(pattern):
+            unreadable.append(line)
+            continue
+        paths.add(pattern[1:])
+    return paths, unreadable
+
+
+def _attribute_findings(artifact: Artifact, manifest: Manifest) -> list[Finding]:
+    """The archive's own .gitattributes excludes the data, and was applied."""
+    label = _label(artifact)
+    source = _source(artifact)
+    if artifact.attributes is None:
+        return [
+            _finding(
+                "archive-attributes",
+                f"{label} .gitattributes",
+                f"The {label} has no .gitattributes, so no rule of its revision "
+                "excludes the sample data",
+                **source,
+            )
+        ]
+    ignored, unreadable = export_ignored_paths(artifact.attributes)
+    findings: list[Finding] = []
+    if unreadable:
+        findings.append(
+            _finding(
+                "archive-attributes",
+                f"{label} .gitattributes",
+                f"The {label} has export-ignore lines this check cannot read",
+                lines=unreadable,
+                **source,
+            )
+        )
+    uncovered = [root for root in manifest.roots if root not in ignored]
+    if uncovered:
+        findings.append(
+            _finding(
+                "archive-attributes",
+                f"{label} .gitattributes",
+                f"The {label} .gitattributes does not export-ignore "
+                + ", ".join(uncovered),
+                roots=uncovered,
+                **source,
+            )
+        )
+    for path in sorted(ignored):
+        leaked = sorted(
+            member
+            for member in artifact.members
+            if member == path or member.startswith(f"{path}/")
+        )
+        if leaked:
+            findings.append(
+                _finding(
+                    "archive-attributes",
+                    f"{label} export-ignore {path}",
+                    f"The {label} holds {len(leaked)} file(s) under {path}, which "
+                    "its .gitattributes export-ignores",
+                    members=leaked[:20],
+                    **source,
+                )
+            )
+    return findings
+
+
+def check_archive(
+    artifact: Artifact, manifest: Manifest, repo_license: str
+) -> list[Finding]:
+    """Every rule violation in one source archive (rules of the archive mode)."""
+    label = _label(artifact)
+    source = _source(artifact)
+    findings = _data_findings(artifact, manifest)
+
+    missing = [path for path in ARCHIVE_DATA_FILES if path not in artifact.members]
+    if missing:
+        findings.append(
+            _finding(
+                "archive-layout",
+                f"{label} data/ files",
+                f"The {label} lacks " + ", ".join(missing),
+                missing=missing,
+                **source,
+            )
+        )
+
+    problems = []
+    if LICENSE_FILE not in artifact.licenses:
+        problems.append("the LICENSE file is missing")
+    others = sorted(name for name in artifact.licenses if name != LICENSE_FILE)
+    if others:
+        problems.append(f"other license files are present at its root: {others}")
+    if problems:
+        findings.append(
+            _finding(
+                "license-files",
+                f"{label} license files",
+                f"The {label} does not carry LICENSE as its only root license file",
+                problems=problems,
+                **source,
+            )
+        )
+    if LICENSE_FILE in artifact.licenses:
+        text = artifact.licenses[LICENSE_FILE]
+        problem = mit_license_problem(text)
+        if problem is None and _lines(text) != _lines(repo_license):
+            problem = "it differs from the repository LICENSE"
+        if problem is not None:
+            findings.append(
+                _finding(
+                    "license-text",
+                    f"{label} LICENSE",
+                    f"The {label} LICENSE is not the repository's MIT License: "
+                    f"{problem}",
+                    member=LICENSE_FILE,
+                    **source,
+                )
+            )
+
+    return findings + _attribute_findings(artifact, manifest)
+
+
 # ---------------------------------------------------------------------------
 # The run
 # ---------------------------------------------------------------------------
@@ -631,13 +941,11 @@ def _project_version(repo_root: Path) -> Optional[str]:
     return version if isinstance(version, str) else None
 
 
-def run_artifact_licensing(config: ArtifactLicensingConfig) -> results.Result:
-    """Inspect the wheel and the sdist in ``config.dist`` and report."""
-    started_at = results.utc_now()
-    repo_root = Path(config.repo_root)
-    errors: list[Finding] = []
-    facts: dict[str, Any] = {"wheel": None, "sdist": None}
-
+def _reference_inputs(
+    repo_root: Path, errors: list[Finding], facts: dict[str, Any]
+) -> tuple[Optional[Manifest], Optional[str]]:
+    """The data manifest and the repository LICENSE text; each one that cannot
+    be read adds an error instead."""
     manifest: Optional[Manifest] = None
     try:
         manifest = load_manifest(repo_root / MANIFEST_RELPATH)
@@ -659,6 +967,49 @@ def run_artifact_licensing(config: ArtifactLicensingConfig) -> results.Result:
                 f"The repository LICENSE cannot be read: {exc}",
             )
         )
+    return manifest, repo_license
+
+
+def _repo_license_findings(repo_license: str) -> list[Finding]:
+    problem = mit_license_problem(repo_license)
+    if problem is None:
+        return []
+    return [
+        _finding(
+            "license-text",
+            "repository LICENSE",
+            f"The repository LICENSE is not the MIT License alone: {problem}",
+        )
+    ]
+
+
+def _result(
+    variant: Optional[str],
+    started_at: str,
+    facts: dict[str, Any],
+    errors: list[Finding],
+    findings: list[Finding],
+) -> results.Result:
+    status = "error" if errors else ("fail" if findings else "pass")
+    return results.Result(
+        check=CHECK,
+        variant=variant or "local",
+        status=status,
+        started_at=started_at,
+        finished_at=results.utc_now(),
+        environment=results.environment_snapshot(packages=()),
+        facts=facts,
+        findings=sorted(findings, key=lambda item: (item.rule, item.subject)),
+    )
+
+
+def run_artifact_licensing(config: ArtifactLicensingConfig) -> results.Result:
+    """Inspect the wheel and the sdist in ``config.dist`` and report."""
+    started_at = results.utc_now()
+    repo_root = Path(config.repo_root)
+    errors: list[Finding] = []
+    facts: dict[str, Any] = {"wheel": None, "sdist": None}
+    manifest, repo_license = _reference_inputs(repo_root, errors, facts)
 
     project_version: Optional[str] = None
     try:
@@ -693,15 +1044,7 @@ def run_artifact_licensing(config: ArtifactLicensingConfig) -> results.Result:
             }
             for artifact in artifacts
         }
-        problem = mit_license_problem(repo_license)
-        if problem is not None:
-            findings.append(
-                _finding(
-                    "license-text",
-                    "repository LICENSE",
-                    f"The repository LICENSE is not the MIT License alone: {problem}",
-                )
-            )
+        findings += _repo_license_findings(repo_license)
         for artifact in artifacts:
             findings += check_artifact(artifact, manifest, repo_license)
         versions = {
@@ -720,17 +1063,69 @@ def run_artifact_licensing(config: ArtifactLicensingConfig) -> results.Result:
                 )
             )
 
-    status = "error" if errors else ("fail" if findings else "pass")
-    return results.Result(
-        check=CHECK,
-        variant=config.variant or "local",
-        status=status,
-        started_at=started_at,
-        finished_at=results.utc_now(),
-        environment=results.environment_snapshot(packages=()),
-        facts=facts,
-        findings=sorted(findings, key=lambda item: (item.rule, item.subject)),
-    )
+    return _result(config.variant, started_at, facts, errors, findings)
+
+
+@dataclass
+class ArchiveLicensingConfig:
+    """Inputs of one archive-mode run (``--archive``, repeatable)."""
+
+    archives: Sequence[Path]
+    repo_root: Path = REPO_ROOT
+    variant: Optional[str] = None
+
+
+def run_archive_licensing(config: ArchiveLicensingConfig) -> results.Result:
+    """Inspect every source archive in ``config.archives`` and report."""
+    started_at = results.utc_now()
+    archives = [Path(path) for path in config.archives]
+    errors: list[Finding] = []
+    facts: dict[str, Any] = {"archives": [path.name for path in archives]}
+    manifest, repo_license = _reference_inputs(Path(config.repo_root), errors, facts)
+
+    if not archives:
+        errors.append(
+            _error(
+                "artifact-not-found", "source archive", "No source archive was given"
+            )
+        )
+    artifacts: list[Artifact] = []
+    sizes = manifest.sizes if manifest is not None else frozenset()
+    for path in archives:
+        if not path.is_file():
+            errors.append(
+                _error(
+                    "artifact-not-found",
+                    f"archive {path.name}",
+                    f"{path} does not exist",
+                )
+            )
+            continue
+        try:
+            artifacts.append(read_source_archive(path, sizes))
+        except ValueError as exc:
+            errors.append(
+                _error("artifact-unreadable", f"archive {path.name}", str(exc))
+            )
+
+    findings: list[Finding] = list(errors)
+    if not errors and manifest is not None and repo_license is not None:
+        facts["members"] = {
+            artifact.name: len(artifact.members) for artifact in artifacts
+        }
+        facts["export_ignore"] = {
+            artifact.name: (
+                sorted(export_ignored_paths(artifact.attributes)[0])
+                if artifact.attributes is not None
+                else None
+            )
+            for artifact in artifacts
+        }
+        findings += _repo_license_findings(repo_license)
+        for artifact in artifacts:
+            findings += check_archive(artifact, manifest, repo_license)
+
+    return _result(config.variant, started_at, facts, errors, findings)
 
 
 # ---------------------------------------------------------------------------
@@ -740,11 +1135,20 @@ def run_artifact_licensing(config: ArtifactLicensingConfig) -> results.Result:
 
 def add_arguments(parser: argparse.ArgumentParser) -> None:
     """Attach the ``artifact-licensing`` subcommand's flags."""
-    parser.add_argument(
+    inputs = parser.add_mutually_exclusive_group(required=True)
+    inputs.add_argument(
         "--dist",
         type=Path,
-        required=True,
         help="directory holding exactly one wheel and exactly one sdist",
+    )
+    inputs.add_argument(
+        "--archive",
+        type=Path,
+        action="append",
+        help=(
+            "a source archive (.zip or .tar.gz, one root folder) as git archive "
+            "or GitHub writes it; repeatable"
+        ),
     )
     parser.add_argument(
         "--repo-root",
@@ -758,17 +1162,25 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
 
 def run(args: argparse.Namespace) -> int:
     """``artifact-licensing`` subcommand: run, optionally write JSON, summarize."""
-    result = run_artifact_licensing(
-        ArtifactLicensingConfig(
-            dist=args.dist, repo_root=args.repo_root, variant=args.variant
+    if args.archive:
+        result = run_archive_licensing(
+            ArchiveLicensingConfig(
+                archives=tuple(args.archive),
+                repo_root=args.repo_root,
+                variant=args.variant,
+            )
         )
-    )
+        checked = ", ".join(result.facts.get("archives") or [])
+    else:
+        result = run_artifact_licensing(
+            ArtifactLicensingConfig(
+                dist=args.dist, repo_root=args.repo_root, variant=args.variant
+            )
+        )
+        checked = f"{result.facts.get('wheel')}, {result.facts.get('sdist')}"
     if args.json_out is not None:
         results.write_json(result, args.json_out)
-    print(
-        f"{CHECK} {result.status} ({result.variant}): "
-        f"{result.facts.get('wheel')}, {result.facts.get('sdist')}"
-    )
+    print(f"{CHECK} {result.status} ({result.variant}): {checked}")
     for finding in result.findings:
         print(f"  [{finding.severity}] {finding.rule}: {finding.title}")
     return result.exit_code

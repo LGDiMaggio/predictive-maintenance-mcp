@@ -211,6 +211,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The sdist now contains no files from `data/`; the sample signals stay in
   the repository. `LICENSE` now holds only the MIT License, and the license
   and attribution of the sample data are in `data/LICENSE`.
+- **Source archives no longer contain the sample bearing data.** The ZIP
+  and tarball archives generated from this revision onward, which future
+  GitHub Releases and their Zenodo deposits also use, leave out
+  `data/real_bearings/`, `data/signals/real_train/` and
+  `data/signals/real_test/`. A clone of the repository still contains them,
+  and the archives of earlier releases are unchanged. `validate_server.py`
+  and `setup_claude.ps1` report missing samples as a warning and name the
+  clone as the way to get them.
+- The report examples in the README show a synthetic signal.
+- The README and the project page no longer show the Claude Desktop demo
+  recording.
 - **Bearing statements, actions and reports follow a claim block.**
   `check_bearing_faults` and the `bearing_faults` block of
   `diagnose_vibration` carry a new `claim` block (additive): `level`

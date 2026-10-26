@@ -30,6 +30,8 @@ Perfect for:
 
 > **Note**: The MCP server reads signal files from the `signals/` directory (supports CSV, MAT, WAV, NPY, Parquet). The `real_bearings/` folder is kept as source archive.
 
+> **Note**: These sample folders are included when cloning the Git repository. Source ZIP and tarball archives generated from this revision, including those used for future GitHub Releases and Zenodo deposits, exclude the sample files. The Python distributions also exclude them.
+
 ## 📊 Dataset Information
 
 **Data owner**: Eric Bechhoefer. **Original source**: [data-acoustics.com bearing data set 2](http://data-acoustics.com/measurements/bearing-faults/bearing-2/), redistributed in [MathWorks RollingElementBearingFaultDiagnosis-Data](https://github.com/mathworks/RollingElementBearingFaultDiagnosis-Data)  

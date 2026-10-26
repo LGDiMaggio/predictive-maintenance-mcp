@@ -189,14 +189,16 @@ if (Test-Path $claudeConfigFile) {
 }
 
 # -----------------------------------------------------------------------
-# 7. Check data directory
+# 7. Check the sample signals - they come with a clone; the source archives
+#    keep only an empty data\signals\, so check the sample folders themselves
 # -----------------------------------------------------------------------
 $dataDir = "$repoPath\data\signals"
-if (Test-Path $dataDir) {
+$samplesPresent = (Test-Path "$dataDir\real_train") -and (Test-Path "$dataDir\real_test")
+if ($samplesPresent) {
     $csvCount = (Get-ChildItem -Path $dataDir -Recurse -Filter "*.csv" -ErrorAction SilentlyContinue | Measure-Object).Count
     Write-Host "[OK] Data directory OK ($csvCount CSV files)" -ForegroundColor Green
 } else {
-    Write-Host "[!] data\signals\ not found - server will start but no sample signals available." -ForegroundColor Yellow
+    Write-Host "[!] The sample signals are not in this folder: they come with a clone of the repository (git clone https://github.com/LGDiMaggio/predictive-maintenance-mcp.git). The server starts without them and reads your own files from data\signals\." -ForegroundColor Yellow
 }
 
 Write-Host ""
@@ -207,8 +209,13 @@ Write-Host ""
 Write-Host "Next steps:" -ForegroundColor Yellow
 Write-Host "  1. Quit Claude Desktop completely (File > Quit, not just the window)" -ForegroundColor White
 Write-Host "  2. Start Claude Desktop again" -ForegroundColor White
-Write-Host "  3. In a new chat, ask: 'List the available vibration signals' (the 20 included samples should appear)" -ForegroundColor White
-Write-Host "  4. Then try the first prompt from the README Quick Start" -ForegroundColor White
+if ($samplesPresent) {
+    Write-Host "  3. In a new chat, ask: 'List the available vibration signals' (the 20 included samples should appear)" -ForegroundColor White
+    Write-Host "  4. Then try the first prompt from the README Quick Start" -ForegroundColor White
+} else {
+    Write-Host "  3. In a new chat, ask: 'List the available vibration signals' (your own files in data\signals\ should appear)" -ForegroundColor White
+    Write-Host "  4. The example prompts in the README use the bundled sample signals. To try them, clone the Git repository. Alternatively, load your own vibration signals from data/signals/." -ForegroundColor White
+}
 Write-Host ""
 Write-Host "  Python: $pythonExePath" -ForegroundColor Gray
 Write-Host "  Config: $claudeConfigFile" -ForegroundColor Gray

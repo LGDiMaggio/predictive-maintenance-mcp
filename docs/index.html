@@ -317,7 +317,7 @@
     .step-note { font-size: 14px; color: var(--muted); line-height: 1.5; }
 
     /* Demo */
-    .demo-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    .demo-grid { display: grid; grid-template-columns: minmax(0, 860px); justify-content: center; gap: 18px; }
     .demo-fig { margin: 0; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
     .demo-fig figcaption { display: flex; flex-direction: column; gap: 4px; }
     .demo-fig .cap-title { font-family: 'Space Grotesk', sans-serif; font-size: 16px; font-weight: 600; color: var(--ink); }
@@ -477,7 +477,7 @@
     <p class="hero-tagline">Analyze vibration data, detect likely bearing faults, classify risk, and generate maintenance reports through natural-language AI workflows. Raw data never leaves your machine.</p>
     <div class="cta-row">
       <a href="#install" class="btn-primary">Get started</a>
-      <a href="#demo" class="btn-outline">See example diagnosis</a>
+      <a href="#demo" class="btn-outline">View plugin demo</a>
       <a href="https://github.com/LGDiMaggio/predictive-maintenance-mcp" class="link-plain" target="_blank" rel="noopener">★ Star on GitHub</a>
     </div>
     <div class="install-box">
@@ -635,23 +635,16 @@
 <section id="demo">
   <div class="container">
     <div class="section-head">
-      <span class="eyebrow">SEE IT IN ACTION</span>
-      <h2>Real workflows, not marketing slides</h2>
+      <span class="eyebrow">PLUGIN DEMO</span>
+      <h2>Install the plugin from its marketplace</h2>
     </div>
     <div class="demo-grid">
       <figure class="card demo-fig">
         <figcaption>
-          <span class="cap-title">Claude Desktop: conversational diagnostics</span>
-          <span class="cap-sub">Load signal → spectral analysis → fault detection → severity → report</span>
+          <span class="cap-title">Adding the marketplace and installing the plugin</span>
+          <span class="cap-sub">The plugin page then lists the skills and agents it adds</span>
         </figcaption>
-        <img src="https://raw.githubusercontent.com/LGDiMaggio/predictive-maintenance-mcp/main/assets/claude_gif.gif" alt="Animated demo: a full diagnostic conversation in Claude Desktop, from loading a vibration signal to generating a severity report" loading="lazy">
-      </figure>
-      <figure class="card demo-fig">
-        <figcaption>
-          <span class="cap-title">Claude Code plugin: repeatable workflows</span>
-          <span class="cap-sub">Domain skills activate automatically · slash commands for quick checks</span>
-        </figcaption>
-        <img src="https://raw.githubusercontent.com/LGDiMaggio/predictive-maintenance-mcp/main/assets/plugin.gif" alt="Animated demo: Claude Code plugin running diagnostic skills and slash commands on vibration data" loading="lazy">
+        <img src="https://raw.githubusercontent.com/LGDiMaggio/predictive-maintenance-mcp/main/assets/plugin.gif" alt="Animated demo: adding the predictive-maintenance marketplace, installing the plugin and opening its page, which lists its skills and agents" loading="lazy">
       </figure>
     </div>
   </div>

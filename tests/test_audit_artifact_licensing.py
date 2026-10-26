@@ -18,8 +18,14 @@ pins everything that decides the verdict, on synthetic archives:
 * every way of producing no evidence (a missing or extra artifact, an
   unreadable or empty archive, a missing or empty data manifest, an unreadable
   repository ``LICENSE``) ends as ``error``, never ``pass``;
+* the archive mode, on the source archives GitHub serves and Zenodo stores:
+  only the notices and the ``data/signals/`` placeholder under ``data/``, the
+  root ``LICENSE`` alone, and a ``.gitattributes`` that export-ignores every
+  sample folder and was applied, in zip and tarball form, including the real
+  output of ``git archive``;
 * the committed manifest still describes the tracked sample files, and the
-  repository ``LICENSE`` and ``data/LICENSE`` say what the check assumes.
+  repository ``LICENSE``, ``data/LICENSE`` and ``.gitattributes`` say what the
+  check assumes.
 """
 
 import hashlib
@@ -33,7 +39,7 @@ from pathlib import Path
 import pytest
 
 from tools.audit import __main__ as audit_main
-from tools.audit import artifact_licensing, results
+from tools.audit import artifact_licensing, report, results
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -639,6 +645,386 @@ class TestNoEvidence:
 
 
 # ---------------------------------------------------------------------------
+# Source archives (archive mode)
+# ---------------------------------------------------------------------------
+
+ARCHIVE_ROOT = "predictive-maintenance-mcp"
+
+#: The export-ignore lines for the roots of the test manifest in _repo().
+ATTRIBUTES = (
+    "/data/real_bearings export-ignore\n/data/signals/real_train export-ignore\n"
+)
+
+
+def _archive_files(members=None, attributes=ATTRIBUTES, license_text=None) -> dict:
+    files = {
+        "LICENSE": (license_text or _mit()).encode(),
+        ".gitattributes": attributes.encode() if attributes is not None else None,
+        "README.md": b"# Predictive Maintenance MCP\n",
+        f"src/{NAME}/__init__.py": b"",
+        "data/LICENSE": b"Sample bearing vibration data\n",
+        "data/README.md": b"# Real Bearing Vibration Dataset\n",
+        "data/signals/.gitkeep": b"",
+    }
+    files.update(members or {})
+    return {name: content for name, content in files.items() if content is not None}
+
+
+def _source_zip(path: Path, root=ARCHIVE_ROOT, links=(), **files) -> Path:
+    """A zip as git archive writes one: a root folder, then every member."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    prefix = f"{root}/" if root else ""
+    with zipfile.ZipFile(path, "w") as archive:
+        if root:
+            archive.writestr(zipfile.ZipInfo(prefix), b"")
+        for name, content in _archive_files(**files).items():
+            archive.writestr(f"{prefix}{name}", content)
+        for name, target in links:
+            info = zipfile.ZipInfo(f"{prefix}{name}")
+            info.external_attr = 0o120777 << 16
+            archive.writestr(info, target)
+    return path
+
+
+def _source_tar(path: Path, root=ARCHIVE_ROOT, **files) -> Path:
+    """A tarball as git archive writes one: a root folder, then every member."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    prefix = f"{root}/" if root else ""
+    with tarfile.open(path, "w:gz") as archive:
+        if root:
+            directory = tarfile.TarInfo(root)
+            directory.type = tarfile.DIRTYPE
+            archive.addfile(directory)
+        for name, content in _archive_files(**files).items():
+            info = tarfile.TarInfo(f"{prefix}{name}")
+            info.size = len(content)
+            archive.addfile(info, io.BytesIO(content))
+    return path
+
+
+ARCHIVE_WRITERS = {
+    "zip": (_source_zip, "source.zip"),
+    "tar.gz": (_source_tar, "source.tar.gz"),
+}
+
+
+def _source_archive(tmp_path: Path, fmt: str, **files) -> Path:
+    writer, name = ARCHIVE_WRITERS[fmt]
+    return writer(tmp_path / "archives" / name, **files)
+
+
+def _run_archives(tmp_path: Path, *archives, repo=None) -> results.Result:
+    config = artifact_licensing.ArchiveLicensingConfig(
+        archives=archives, repo_root=repo or _repo(tmp_path)
+    )
+    return artifact_licensing.run_archive_licensing(config)
+
+
+@pytest.fixture(params=sorted(ARCHIVE_WRITERS))
+def fmt(request):
+    """Every archive rule holds for the zip and for the tarball."""
+    return request.param
+
+
+class TestSourceArchives:
+    def test_a_clean_archive_passes(self, tmp_path, fmt):
+        result = _run_archives(tmp_path, _source_archive(tmp_path, fmt))
+        assert (result.status, result.findings) == ("pass", [])
+        assert result.facts["export_ignore"] == {
+            f"source.{fmt}": ["data/real_bearings", "data/signals/real_train"]
+        }
+
+    def test_both_formats_pass_together(self, tmp_path):
+        result = _run_archives(
+            tmp_path,
+            _source_archive(tmp_path, "zip"),
+            _source_archive(tmp_path, "tar.gz"),
+        )
+        assert result.status == "pass"
+        assert sorted(result.facts["members"]) == ["source.tar.gz", "source.zip"]
+
+    def test_a_sample_file_fails_and_names_the_archive(self, tmp_path, fmt):
+        archive = _source_archive(tmp_path, fmt, members={SAMPLE_CSV_PATH: SAMPLE_CSV})
+        result = _run_archives(tmp_path, archive)
+        assert result.status == "fail"
+        paths = [f for f in result.findings if f.rule == "third-party-data-path"]
+        assert [f.evidence["member"] for f in paths] == [SAMPLE_CSV_PATH]
+        assert paths[0].evidence["archive"] == archive.name
+        assert archive.name in paths[0].title
+        # The export-ignore rule was not applied either.
+        assert "archive-attributes" in _rules(result)
+
+    def test_a_new_dataset_folder_fails_even_outside_the_manifest_roots(
+        self, tmp_path, fmt
+    ):
+        archive = _source_archive(
+            tmp_path, fmt, members={"data/other_dataset/x.csv": b"1\n"}
+        )
+        result = _run_archives(tmp_path, archive)
+        assert (result.status, _rules(result)) == ("fail", {"third-party-data-path"})
+
+    @pytest.mark.parametrize("newline", [b"\n", b"\r\n"], ids=["lf", "crlf"])
+    def test_a_renamed_copy_of_a_sample_fails_on_content(self, tmp_path, fmt, newline):
+        copy = SAMPLE_CSV.replace(b"\n", newline)
+        archive = _source_archive(
+            tmp_path, fmt, members={"tests/fixtures/copy.csv": copy}
+        )
+        result = _run_archives(tmp_path, archive)
+        assert (result.status, _rules(result)) == ("fail", {"third-party-data-content"})
+        assert result.findings[0].evidence["member"] == "tests/fixtures/copy.csv"
+
+    def test_a_mat_file_outside_data_fails(self, tmp_path, fmt):
+        archive = _source_archive(tmp_path, fmt, members={"assets/x.mat": b"MAT"})
+        result = _run_archives(tmp_path, archive)
+        assert (result.status, _rules(result)) == ("fail", {"third-party-data-path"})
+
+    def test_a_case_variant_of_an_allowed_data_file_fails(self, tmp_path, fmt):
+        archive = _source_archive(tmp_path, fmt, members={"Data/README.md": b"x"})
+        result = _run_archives(tmp_path, archive)
+        assert (result.status, _rules(result)) == ("fail", {"third-party-data-path"})
+
+    def test_a_link_under_data_fails_without_being_read(self, tmp_path):
+        archive = _source_zip(
+            tmp_path / "archives" / "source.zip",
+            links=[("data/signals/real_test", "../../README.md")],
+        )
+        result = _run_archives(tmp_path, archive)
+        assert (result.status, _rules(result)) == ("fail", {"third-party-data-path"})
+
+    @pytest.mark.parametrize("missing", artifact_licensing.ARCHIVE_DATA_FILES)
+    def test_a_missing_notice_or_placeholder_fails(self, tmp_path, fmt, missing):
+        archive = _source_archive(tmp_path, fmt, members={missing: None})
+        result = _run_archives(tmp_path, archive)
+        assert (result.status, _rules(result)) == ("fail", {"archive-layout"})
+        assert result.findings[0].evidence["missing"] == [missing]
+
+    def test_a_missing_root_license_fails(self, tmp_path, fmt):
+        archive = _source_archive(tmp_path, fmt, members={"LICENSE": None})
+        result = _run_archives(tmp_path, archive)
+        assert (result.status, _rules(result)) == ("fail", {"license-files"})
+
+    @pytest.mark.parametrize("name", ["COPYING", "NOTICE", "LICENSE-DATA"])
+    def test_a_second_root_license_file_fails(self, tmp_path, fmt, name):
+        archive = _source_archive(tmp_path, fmt, members={name: b"CC BY-NC-SA"})
+        result = _run_archives(tmp_path, archive)
+        assert (result.status, _rules(result)) == ("fail", {"license-files"})
+
+    def test_the_data_note_under_the_mit_text_fails(self, tmp_path, fmt):
+        archive = _source_archive(tmp_path, fmt, license_text=_mit() + DATA_NOTE)
+        result = _run_archives(tmp_path, archive)
+        assert (result.status, _rules(result)) == ("fail", {"license-text"})
+
+    def test_an_mit_license_that_is_not_the_repositorys_fails(self, tmp_path, fmt):
+        """A valid MIT text with another copyright line passes the template, so
+        only the comparison with the repository LICENSE catches it."""
+        other = _mit("Copyright (c) 2025 Someone Else")
+        assert artifact_licensing.mit_license_problem(other) is None
+        archive = _source_archive(tmp_path, fmt, license_text=other)
+        result = _run_archives(tmp_path, archive)
+        assert (result.status, _rules(result)) == ("fail", {"license-text"})
+
+    def test_an_archive_without_gitattributes_fails(self, tmp_path, fmt):
+        archive = _source_archive(tmp_path, fmt, attributes=None)
+        result = _run_archives(tmp_path, archive)
+        assert (result.status, _rules(result)) == ("fail", {"archive-attributes"})
+
+    def test_attributes_that_leave_a_manifest_root_out_fail(self, tmp_path, fmt):
+        archive = _source_archive(
+            tmp_path, fmt, attributes="/data/real_bearings export-ignore\n"
+        )
+        result = _run_archives(tmp_path, archive)
+        assert (result.status, _rules(result)) == ("fail", {"archive-attributes"})
+        assert result.findings[0].evidence["roots"] == ["data/signals/real_train"]
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            "/data/real_bearings/** export-ignore",
+            "data/real_bearings export-ignore",
+            "/data/real_bearings/ export-ignore",
+            "/data/real_bearings -export-ignore",
+        ],
+        ids=["glob", "unanchored", "trailing-slash", "unset"],
+    )
+    def test_an_export_ignore_line_it_cannot_read_fails(self, tmp_path, fmt, line):
+        attributes = f"{ATTRIBUTES}{line}\n"
+        archive = _source_archive(tmp_path, fmt, attributes=attributes)
+        result = _run_archives(tmp_path, archive)
+        assert (result.status, _rules(result)) == ("fail", {"archive-attributes"})
+        assert result.findings[0].evidence["lines"] == [line]
+
+    def test_files_under_an_export_ignored_path_fail(self, tmp_path, fmt):
+        """An archive server that ignored .gitattributes is caught by the
+        attributes rule even where the content rule has no hash to match."""
+        attributes = f"{ATTRIBUTES}/assets/demo.gif export-ignore\n"
+        archive = _source_archive(
+            tmp_path, fmt, attributes=attributes, members={"assets/demo.gif": b"GIF89a"}
+        )
+        result = _run_archives(tmp_path, archive)
+        assert (result.status, _rules(result)) == ("fail", {"archive-attributes"})
+        assert result.findings[0].evidence["members"] == ["assets/demo.gif"]
+
+
+class TestExportIgnoredPaths:
+    def test_reads_plain_anchored_paths_and_skips_other_attributes(self):
+        text = (
+            "# comment\n\n*.py text eol=lf\n"
+            "/data/real_bearings export-ignore\n"
+            "/assets/a.gif export-ignore binary\n"
+        )
+        paths, unreadable = artifact_licensing.export_ignored_paths(text)
+        assert (paths, unreadable) == ({"data/real_bearings", "assets/a.gif"}, [])
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            '"/data/real bearings" export-ignore',
+            "/data/*.mat export-ignore",
+            "/data/x export-ignore=1",
+            "/data/x !export-ignore",
+        ],
+        ids=["quoted", "wildcard", "value", "unspecified"],
+    )
+    def test_returns_lines_it_cannot_read(self, line):
+        assert artifact_licensing.export_ignored_paths(line) == (set(), [line])
+
+
+class TestSourceArchiveErrors:
+    def test_no_archive_is_an_error(self, tmp_path):
+        result = _run_archives(tmp_path)
+        assert (result.status, _rules(result)) == ("error", {"artifact-not-found"})
+
+    def test_a_missing_archive_is_an_error(self, tmp_path):
+        result = _run_archives(tmp_path, tmp_path / "absent.zip")
+        assert (result.status, _rules(result)) == ("error", {"artifact-not-found"})
+
+    def test_an_unknown_format_is_an_error(self, tmp_path):
+        path = tmp_path / "source.7z"
+        path.write_bytes(b"7z")
+        result = _run_archives(tmp_path, path)
+        assert (result.status, _rules(result)) == ("error", {"artifact-unreadable"})
+
+    def test_a_truncated_archive_is_an_error(self, tmp_path, fmt):
+        archive = _source_archive(tmp_path, fmt)
+        archive.write_bytes(archive.read_bytes()[:40])
+        result = _run_archives(tmp_path, archive)
+        assert (result.status, _rules(result)) == ("error", {"artifact-unreadable"})
+
+    def test_an_archive_without_one_root_folder_is_an_error(self, tmp_path, fmt):
+        writer, name = ARCHIVE_WRITERS[fmt]
+        archive = writer(tmp_path / "archives" / name, root="")
+        result = _run_archives(tmp_path, archive)
+        assert (result.status, _rules(result)) == ("error", {"artifact-unreadable"})
+
+    def test_an_archive_with_two_root_folders_is_an_error(self, tmp_path):
+        path = _source_zip(tmp_path / "archives" / "source.zip")
+        with zipfile.ZipFile(path, "a") as archive:
+            archive.writestr("second-root/README.md", b"x")
+        result = _run_archives(tmp_path, path)
+        assert (result.status, _rules(result)) == ("error", {"artifact-unreadable"})
+
+    def test_an_archive_with_no_file_is_an_error(self, tmp_path):
+        path = tmp_path / "source.zip"
+        with zipfile.ZipFile(path, "w") as archive:
+            archive.writestr(zipfile.ZipInfo(f"{ARCHIVE_ROOT}/"), b"")
+        result = _run_archives(tmp_path, path)
+        assert (result.status, _rules(result)) == ("error", {"artifact-unreadable"})
+
+    def test_an_unusable_manifest_is_an_error(self, tmp_path):
+        repo = _repo(tmp_path, manifest=None)
+        result = _run_archives(tmp_path, _source_archive(tmp_path, "zip"), repo=repo)
+        assert (result.status, _rules(result)) == ("error", {"manifest-unusable"})
+
+    def test_one_unreadable_archive_makes_the_run_an_error(self, tmp_path):
+        good = _source_archive(tmp_path, "zip")
+        bad = _source_archive(tmp_path, "tar.gz")
+        bad.write_bytes(b"not a tarball")
+        result = _run_archives(tmp_path, good, bad)
+        assert (result.status, _rules(result)) == ("error", {"artifact-unreadable"})
+
+
+def _git(repo: Path, *args: str) -> None:
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=test",
+            "-c",
+            "user.email=test@example.invalid",
+            "-c",
+            "commit.gpgsign=false",
+            "-c",
+            "core.autocrlf=false",
+            *args,
+        ],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+
+
+class TestRealGitArchive:
+    """The rules against what git itself writes, not a hand-built archive."""
+
+    @pytest.fixture
+    def worktree(self, tmp_path):
+        work = tmp_path / "work"
+        for name, content in _archive_files(
+            members={SAMPLE_CSV_PATH: SAMPLE_CSV, SAMPLE_MAT_PATH: SAMPLE_MAT}
+        ).items():
+            path = work / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(content)
+        try:
+            _git(work, "init", "--quiet")
+            _git(work, "add", "--all")
+            _git(work, "commit", "--quiet", "-m", "fixture")
+        except (OSError, subprocess.CalledProcessError) as exc:
+            pytest.fail(f"this test needs git: {exc}")
+        return work
+
+    @pytest.mark.parametrize("fmt", ["zip", "tar.gz"])
+    def test_export_ignore_keeps_the_samples_out_of_both_formats(
+        self, tmp_path, worktree, fmt
+    ):
+        out = tmp_path / f"source.{fmt}"
+        _git(
+            worktree,
+            "archive",
+            f"--format={fmt}",
+            f"--prefix={ARCHIVE_ROOT}/",
+            "-o",
+            str(out),
+            "HEAD",
+        )
+        result = _run_archives(tmp_path, out)
+        assert (result.status, result.findings) == ("pass", [])
+
+    def test_without_the_attributes_the_samples_are_caught(self, tmp_path, worktree):
+        _git(worktree, "rm", "--quiet", ".gitattributes")
+        _git(worktree, "commit", "--quiet", "-m", "drop the attributes")
+        out = tmp_path / "source.zip"
+        _git(
+            worktree,
+            "archive",
+            "--format=zip",
+            f"--prefix={ARCHIVE_ROOT}/",
+            "-o",
+            str(out),
+            "HEAD",
+        )
+        result = _run_archives(tmp_path, out)
+        assert result.status == "fail"
+        assert _rules(result) == {"third-party-data-path", "archive-attributes"}
+        members = {
+            f.evidence["member"]
+            for f in result.findings
+            if f.rule == "third-party-data-path"
+        }
+        assert members == {SAMPLE_CSV_PATH, SAMPLE_MAT_PATH}
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -690,6 +1076,86 @@ class TestCli:
             ]
         )
         assert code == 2
+
+    def test_the_archive_mode_checks_every_archive_given(self, tmp_path, capsys):
+        out = tmp_path / "archives.json"
+        code = audit_main.main(
+            [
+                "artifact-licensing",
+                "--archive",
+                str(_source_archive(tmp_path, "zip")),
+                "--archive",
+                str(_source_archive(tmp_path, "tar.gz")),
+                "--repo-root",
+                str(_repo(tmp_path)),
+                "--json-out",
+                str(out),
+            ]
+        )
+        assert code == 0
+        doc = json.loads(out.read_text(encoding="utf-8"))
+        results.validate_result(doc)
+        assert doc["facts"]["archives"] == ["source.zip", "source.tar.gz"]
+        assert "pass (local): source.zip, source.tar.gz" in capsys.readouterr().out
+
+    def test_a_failing_archive_exits_1_and_names_it(self, tmp_path, capsys):
+        archive = _source_archive(
+            tmp_path, "tar.gz", members={SAMPLE_CSV_PATH: SAMPLE_CSV}
+        )
+        code = audit_main.main(
+            [
+                "artifact-licensing",
+                "--archive",
+                str(archive),
+                "--repo-root",
+                str(_repo(tmp_path)),
+            ]
+        )
+        assert code == 1
+        assert (
+            f"archive source.tar.gz contains {SAMPLE_CSV_PATH}"
+            in capsys.readouterr().out
+        )
+
+    @pytest.mark.parametrize("both", [True, False], ids=["both", "neither"])
+    def test_exactly_one_of_dist_and_archive_is_accepted(self, tmp_path, both):
+        args = ["artifact-licensing", "--repo-root", str(_repo(tmp_path))]
+        if both:
+            args += ["--dist", str(tmp_path), "--archive", str(tmp_path / "a.zip")]
+        with pytest.raises(SystemExit) as exc:
+            audit_main.main(args)
+        assert exc.value.code == 2
+
+
+class TestReportReproduction:
+    """An audit issue built from a licensing finding reproduces it the way the
+    finding was produced: the archive mode for an archive, a build otherwise."""
+
+    @staticmethod
+    def _reproduction(evidence: dict) -> str:
+        group = [
+            {
+                "rule": "third-party-data-path",
+                "evidence": evidence,
+                "checks": ["artifact-licensing"],
+            }
+        ]
+        return report._reproduction(group)
+
+    def test_an_archive_finding_is_reproduced_with_git_archive(self):
+        text = self._reproduction({"archive": "source.zip", "member": SAMPLE_CSV_PATH})
+        assert (
+            "git archive --format=zip --prefix=predictive-maintenance-mcp/ "
+            "-o source.zip HEAD"
+        ) in text
+        assert "python -m tools.audit artifact-licensing --archive source.zip" in text
+        assert "--dist" not in text
+
+    def test_a_wheel_or_sdist_finding_is_reproduced_with_a_build(self):
+        text = self._reproduction({"artifact": SDIST_NAME, "member": SAMPLE_CSV_PATH})
+        assert "python -m build" in text
+        assert "python -m tools.audit artifact-licensing --dist dist" in text
+        assert "--archive" not in text
 
 
 # ---------------------------------------------------------------------------
@@ -755,9 +1221,43 @@ class TestRepository:
             path
             for path in _tracked(["data"])
             if not path.startswith(roots)
-            and path not in ("data/LICENSE", "data/README.md")
+            and path not in artifact_licensing.ARCHIVE_DATA_FILES
         ]
         assert uncovered == []
+
+    def test_the_export_ignore_paths_are_exactly_the_manifest_roots(self, manifest):
+        """The source archives leave out every sample folder, and only those."""
+        text = (REPO_ROOT / ".gitattributes").read_text(encoding="utf-8")
+        paths, unreadable = artifact_licensing.export_ignored_paths(text)
+        assert unreadable == []
+        assert paths == set(manifest["roots"])
+
+    def test_git_reads_the_export_ignore_rules_as_the_check_does(self, manifest):
+        """What git archive applies, asked of git itself: each root is
+        export-ignored, and the notices and the placeholder are not."""
+        paths = [*manifest["roots"], *artifact_licensing.ARCHIVE_DATA_FILES]
+        try:
+            proc = subprocess.run(
+                ["git", "check-attr", "export-ignore", "--", *paths],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                check=True,
+                text=True,
+            )
+        except (OSError, subprocess.CalledProcessError) as exc:
+            pytest.fail(f"this check needs a Git checkout: {exc}")
+        # Each line reads "<path>: export-ignore: <set|unspecified|...>".
+        state = {}
+        for line in proc.stdout.splitlines():
+            path, _attribute, value = line.rsplit(": ", 2)
+            state[path] = value
+        assert state == {
+            **{root: "set" for root in manifest["roots"]},
+            **{path: "unspecified" for path in artifact_licensing.ARCHIVE_DATA_FILES},
+        }
+
+    def test_the_placeholder_that_keeps_data_signals_in_an_archive_exists(self):
+        assert (REPO_ROOT / "data" / "signals" / ".gitkeep").is_file()
 
     def test_the_repository_license_is_the_mit_text_with_its_copyright_line(self):
         text = (REPO_ROOT / "LICENSE").read_text(encoding="utf-8")

@@ -1,0 +1,6 @@
+# Source archives (git archive, the GitHub ZIP and tarball downloads, and the
+# Zenodo deposit of a release) leave out the third-party sample data; a clone
+# keeps it. The paths are the roots in tools/audit/third_party_data.json.
+/data/real_bearings export-ignore
+/data/signals/real_train export-ignore
+/data/signals/real_test export-ignore
