@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`forecast_asset_indicator`: a projection of one indicator series you
+  supply.** It takes ISO 8601 instants, each with `Z` or a UTC offset, and
+  their values, with a declared unit, resolution and horizon. It bins them
+  onto a regular UTC grid without interpolating anything and returns P10,
+  P50 and P90 per step from a naive or seasonal-naive reference method. When
+  the history cannot support the band, it returns a typed
+  `insufficient_history` result with the reason and a remedy. The result
+  says it is a projection of the indicator, not a fault detection, a failure
+  probability or a remaining-useful-life estimate. P10 and P90 are nominal
+  under the method's no-trend assumption, and their coverage on a given
+  series is not validated. The limits are provisional: at most 2048 points,
+  256 steps, 30 days of horizon, and never more horizon than observed
+  history. No new dependency. Not yet in a published release.
 - **Significance-tested bearing evidence next to the existing bearing check
   fields.** `check_bearing_faults` and `diagnose_vibration` now return, for
   each checked frequency, whether the record could test its line and, if it
