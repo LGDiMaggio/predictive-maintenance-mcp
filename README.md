@@ -22,16 +22,6 @@ An open-source [MCP](https://modelcontextprotocol.io/) server that turns LLMs in
 
 ---
 
-## See It in Action
-
-<p align="center">
-  <img src="assets/claude_gif.gif" alt="Predictive Maintenance MCP — diagnostic workflow in Claude Desktop" width="720">
-</p>
-
-<p align="center"><em>Full diagnostic workflow: load signal → spectral analysis → fault detection → severity assessment → report generation</em></p>
-
----
-
 ## Choose Your Path
 
 | You are | Start here |
@@ -62,9 +52,9 @@ Full endpoint reference, grouped by category: **[Tool Catalog](docs/TOOL_CATALOG
 
 ## Quick Start
 
-One route, from a fresh clone to a first diagnosis in Claude Desktop. You need [Git](https://git-scm.com/) (or the repository ZIP from GitHub, extracted), [uv](https://docs.astral.sh/uv/getting-started/installation/) (it fetches Python 3.11 by itself) and [Claude Desktop](https://claude.ai/download).
+One route, from a fresh clone to a first diagnosis in Claude Desktop. You need [Git](https://git-scm.com/), [uv](https://docs.astral.sh/uv/getting-started/installation/) (it fetches Python 3.11 by itself) and [Claude Desktop](https://claude.ai/download).
 
-**1. Get the repository.** The 20 sample signals ship with it, not with the PyPI package: real bearing measurements from the MathWorks rolling-element bearing dataset, healthy baselines plus inner and outer race faults, each with its companion metadata ([data/README.md](data/README.md)).
+**1. Clone the repository.** The 20 sample signals come with the clone, not with the PyPI package or with the source ZIP and tarball archives generated from this revision: real bearing measurements from the MathWorks rolling-element bearing dataset, healthy baselines plus inner and outer race faults, each with its companion metadata ([data/README.md](data/README.md)).
 
 ```bash
 git clone https://github.com/LGDiMaggio/predictive-maintenance-mcp.git
@@ -166,7 +156,7 @@ The project includes a **plugin for Claude Code** with domain-specific skills th
 ```
 
 <p align="center">
-  <img src="assets/plugin.gif" alt="Claude Code Plugin — skills, agents, and slash commands in action" width="720">
+  <img src="assets/plugin.gif" alt="Animated demo: adding the predictive-maintenance marketplace, installing the plugin and opening its page, which lists its skills and agents" width="720">
 </p>
 
 The plugin adds **8 skills** that activate automatically based on context (bearing-diagnosis, gear-diagnosis, quick-screening, report-generation, anomaly-detection, signal-management, documentation-search, prognostics), **2 agents** that run multi-step diagnostic workflows end-to-end and hand you the evidence (diagnostic-pipeline, signal-explorer), and **3 commands** for quick entry points (`/pm-diagnose`, `/pm-screen`, `/pm-report`).
@@ -182,9 +172,11 @@ All analysis tools generate **interactive HTML reports** you can open in any bro
 <details>
 <summary><b>Report examples</b></summary>
 
-![Envelope Analysis Report](assets/envelope_analysis.png)
+![Example envelope analysis report, generated from a synthetic test signal](assets/envelope_analysis.png)
 
-![ISO Severity Assessment](assets/iso.png)
+![Example ISO 20816-3 severity report, generated from a synthetic test signal](assets/iso.png)
+
+*Both examples were generated from a synthetic test signal with the `generate_test_signal` tool. They show what the reports contain; the Zone A result does not describe a real machine.*
 
 | Report Type | What it shows |
 |-------------|---------------|

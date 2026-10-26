@@ -320,6 +320,38 @@ def test_no_release_upload_runs_before_the_artifacts_licensing_is_checked(workfl
     )
 
 
+ARCHIVE_COMMANDS = (
+    "git archive --format=zip --prefix=predictive-maintenance-mcp/ "
+    '-o "$RUNNER_TEMP/source.zip" HEAD',
+    "git archive --format=tar.gz --prefix=predictive-maintenance-mcp/ "
+    '-o "$RUNNER_TEMP/source.tar.gz" HEAD',
+    "python -m tools.audit artifact-licensing "
+    '--archive "$RUNNER_TEMP/source.zip" --archive "$RUNNER_TEMP/source.tar.gz"',
+)
+
+
+def test_the_pull_request_package_smoke_job_checks_both_source_archive_formats(
+    workflow,
+):
+    """The checked-out commit's ZIP and tarball, as GitHub and Zenodo get them."""
+    script = job_script(workflow, "package-smoke")
+    for command in ARCHIVE_COMMANDS:
+        assert command in script
+
+
+def test_no_release_upload_runs_before_the_source_archives_licensing_is_checked(
+    workflows,
+):
+    """The smoke job every upload waits for archives the release commit it
+    checked out, in both formats, and checks them."""
+    publish = workflows["publish.yml"]
+    smoke = publish["jobs"]["smoke"]
+    assert any("actions/checkout" in step.get("uses", "") for step in smoke["steps"])
+    script = job_script(publish, "smoke")
+    for command in ARCHIVE_COMMANDS:
+        assert command in script
+
+
 def test_no_release_upload_runs_before_the_wheel_is_smoke_tested(workflows):
     """The TestPyPI upload waits for the smoke job, and PyPI waits for TestPyPI,
     so a wheel that does not install and start never reaches either index."""

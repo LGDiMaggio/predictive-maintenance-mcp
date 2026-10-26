@@ -170,6 +170,16 @@ jobs:
       run: |
         python -m tools.audit artifact-licensing --dist dist --variant pr-ubuntu-py3.11
 
+    # Blocking. GitHub's source ZIP and tarball, and the Zenodo deposit of a
+    # release, are git archive output of a commit filtered by its
+    # .gitattributes: both formats of the checked-out commit must hold no
+    # sample data, only the notices and the data/signals/ placeholder.
+    - name: Check the licensing of the source archives
+      run: |
+        git archive --format=zip --prefix=predictive-maintenance-mcp/ -o "$RUNNER_TEMP/source.zip" HEAD
+        git archive --format=tar.gz --prefix=predictive-maintenance-mcp/ -o "$RUNNER_TEMP/source.tar.gz" HEAD
+        python -m tools.audit artifact-licensing --archive "$RUNNER_TEMP/source.zip" --archive "$RUNNER_TEMP/source.tar.gz" --variant pr-source-archives
+
     # Blocking. Every other job runs the checkout; this one installs the built
     # wheel into a fresh venv outside it and runs the stdio smoke harness
     # against the installed console script, which is what a user gets.
