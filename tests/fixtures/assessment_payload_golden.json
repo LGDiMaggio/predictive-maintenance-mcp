@@ -2,40 +2,56 @@
   "declared_baseline": {
     "assessed": {
       "classification": "no_change",
-      "criterion": "latest acquisition inside the band (mean +/- max(3 sigma, 25%)) of every amplitude indicator and no bearing evidence persistence",
+      "criterion": "latest acquisition inside the band (mean +/- max(3 sigma, 25%)) of every amplitude indicator; bearing evidence of BPFO, BPFI, BSF, FTF not classified (legacy, algorithm version 1); current-algorithm bearing evidence unavailable until re-processing",
       "direction": null,
       "evidence": {
         "BPFI": {
-          "classification": "no_change",
-          "consecutive": 0,
-          "criterion": "no bearing evidence in the last 5 acquisitions",
+          "algorithm_version": 1,
+          "basis": "legacy",
+          "classification": null,
+          "consecutive": null,
+          "criterion": "legacy, algorithm version 1: bearing evidence as recorded in 0 of the last 5 acquisitions, not classified against the reference; current-algorithm bearing evidence unavailable until re-processing",
           "k": 5,
-          "persistent": false,
-          "present_in_last_k": 0
+          "persistent": null,
+          "present_in_last_k": 0,
+          "relative_k": null,
+          "relative_present_in_last_k": null
         },
         "BPFO": {
-          "classification": "no_change",
-          "consecutive": 0,
-          "criterion": "no bearing evidence in the last 5 acquisitions",
+          "algorithm_version": 1,
+          "basis": "legacy",
+          "classification": null,
+          "consecutive": null,
+          "criterion": "legacy, algorithm version 1: bearing evidence as recorded in 0 of the last 5 acquisitions, not classified against the reference; current-algorithm bearing evidence unavailable until re-processing",
           "k": 5,
-          "persistent": false,
-          "present_in_last_k": 0
+          "persistent": null,
+          "present_in_last_k": 0,
+          "relative_k": null,
+          "relative_present_in_last_k": null
         },
         "BSF": {
-          "classification": "no_change",
-          "consecutive": 0,
-          "criterion": "no bearing evidence in the last 5 acquisitions",
+          "algorithm_version": 1,
+          "basis": "legacy",
+          "classification": null,
+          "consecutive": null,
+          "criterion": "legacy, algorithm version 1: bearing evidence as recorded in 0 of the last 5 acquisitions, not classified against the reference; current-algorithm bearing evidence unavailable until re-processing",
           "k": 5,
-          "persistent": false,
-          "present_in_last_k": 0
+          "persistent": null,
+          "present_in_last_k": 0,
+          "relative_k": null,
+          "relative_present_in_last_k": null
         },
         "FTF": {
-          "classification": "no_change",
-          "consecutive": 0,
-          "criterion": "no bearing evidence in the last 5 acquisitions",
+          "algorithm_version": 1,
+          "basis": "legacy",
+          "classification": null,
+          "consecutive": null,
+          "criterion": "legacy, algorithm version 1: bearing evidence as recorded in 0 of the last 5 acquisitions, not classified against the reference; current-algorithm bearing evidence unavailable until re-processing",
           "k": 5,
-          "persistent": false,
-          "present_in_last_k": 0
+          "persistent": null,
+          "present_in_last_k": 0,
+          "relative_k": null,
+          "relative_present_in_last_k": null
         }
       },
       "indicators_driving": [],
@@ -389,9 +405,16 @@
       "stale_context": 0
     },
     "measurement_point_id": "motor_de_h",
-    "message": "This assessment uses lineage health_snapshot/1+aaaaaaaaaaaaaaaa because 30 of the 30 evaluated slots still lack a snapshot of the current lineage health_snapshot/2+dcbb50a52f4e19d8, re-processing writes lineage health_snapshot/2+dcbb50a52f4e19d8 only and leaves the health_snapshot/1+aaaaaaaaaaaaaaaa snapshots unchanged, and the assessment moves to health_snapshot/2+dcbb50a52f4e19d8 once every evaluated slot has one; assess_asset_change(asset_id='P-101', measurement_point_id='motor_de_h', reprocess=True) attempts to compute the 30 missing or outdated health_snapshot/2+dcbb50a52f4e19d8 snapshot(s) of the evaluated slots in bounded batches across the point's stale measurements, and a measurement it cannot re-process keeps its previous snapshot (the reprocess block gives the reason). no change at motor_de_h of P-101 over 25 post-reference acquisition(s): latest acquisition inside the band (mean +/- max(3 sigma, 25%)) of every amplitude indicator and no bearing evidence persistence. Reference: declared healthy baseline (declared by L. Rossi on 2026-03-01T00:00:00+00:00). Lineage health_snapshot/1+aaaaaaaaaaaaaaaa.",
+    "message": "This assessment uses lineage health_snapshot/1+aaaaaaaaaaaaaaaa because 30 of the 30 evaluated slots still lack a snapshot of the current lineage health_snapshot/2+dcbb50a52f4e19d8, re-processing writes lineage health_snapshot/2+dcbb50a52f4e19d8 only and leaves the health_snapshot/1+aaaaaaaaaaaaaaaa snapshots unchanged, and the assessment moves to health_snapshot/2+dcbb50a52f4e19d8 once every evaluated slot has one; assess_asset_change(asset_id='P-101', measurement_point_id='motor_de_h', reprocess=True) attempts to compute the 30 missing or outdated health_snapshot/2+dcbb50a52f4e19d8 snapshot(s) of the evaluated slots in bounded batches across the point's stale measurements, and a measurement it cannot re-process keeps its previous snapshot (the reprocess block gives the reason). no change at motor_de_h of P-101 over 25 post-reference acquisition(s): latest acquisition inside the band (mean +/- max(3 sigma, 25%)) of every amplitude indicator; bearing evidence of BPFO, BPFI, BSF, FTF not classified (legacy, algorithm version 1); current-algorithm bearing evidence unavailable until re-processing. Reference: declared healthy baseline (declared by L. Rossi on 2026-03-01T00:00:00+00:00). Lineage health_snapshot/1+aaaaaaaaaaaaaaaa.",
     "observed": {
       "acquisitions_assessed": 25,
+      "capture_comparison": {
+        "excluded": [],
+        "excluded_truncated": false,
+        "reference_duration_s": 2.0,
+        "reference_sampling_rate_hz": 10000.0,
+        "tolerance_pct": 1.0
+      },
       "evidence_presence": {
         "BPFI": {
           "k": 5,
@@ -403,7 +426,11 @@
             false,
             false
           ],
-          "present_in_last_k": 0
+          "present_in_last_k": 0,
+          "reference_present": null,
+          "relative_k": null,
+          "relative_presence": null,
+          "relative_present_in_last_k": null
         },
         "BPFO": {
           "k": 5,
@@ -415,7 +442,11 @@
             false,
             false
           ],
-          "present_in_last_k": 0
+          "present_in_last_k": 0,
+          "reference_present": null,
+          "relative_k": null,
+          "relative_presence": null,
+          "relative_present_in_last_k": null
         },
         "BSF": {
           "k": 5,
@@ -427,7 +458,11 @@
             false,
             false
           ],
-          "present_in_last_k": 0
+          "present_in_last_k": 0,
+          "reference_present": null,
+          "relative_k": null,
+          "relative_presence": null,
+          "relative_present_in_last_k": null
         },
         "FTF": {
           "k": 5,
@@ -439,7 +474,11 @@
             false,
             false
           ],
-          "present_in_last_k": 0
+          "present_in_last_k": 0,
+          "reference_present": null,
+          "relative_k": null,
+          "relative_presence": null,
+          "relative_present_in_last_k": null
         }
       },
       "indicators_unavailable": {},
@@ -664,40 +703,56 @@
   "ramp_with_rpm_gaps": {
     "assessed": {
       "classification": "persistent_change",
-      "criterion": "rms: 7 consecutive acquisitions outside the band (mean +/- max(3 sigma, 25%)); peak: 7 consecutive acquisitions outside the band (mean +/- max(3 sigma, 25%)); one_x: 7 consecutive acquisitions outside the band (mean +/- max(3 sigma, 25%)); iso_velocity: 7 consecutive acquisitions outside the band (mean +/- max(3 sigma, 25%))",
+      "criterion": "rms: 7 consecutive acquisitions outside the band (mean +/- max(3 sigma, 25%)); peak: 7 consecutive acquisitions outside the band (mean +/- max(3 sigma, 25%)); one_x: 7 consecutive acquisitions outside the band (mean +/- max(3 sigma, 25%)); iso_velocity: 7 consecutive acquisitions outside the band (mean +/- max(3 sigma, 25%)); bearing evidence of BPFO, BPFI, BSF, FTF not classified (legacy, algorithm version 1); current-algorithm bearing evidence unavailable until re-processing",
       "direction": "increase",
       "evidence": {
         "BPFI": {
-          "classification": "no_change",
-          "consecutive": 0,
-          "criterion": "no bearing evidence in the last 5 acquisitions",
+          "algorithm_version": 1,
+          "basis": "legacy",
+          "classification": null,
+          "consecutive": null,
+          "criterion": "legacy, algorithm version 1: bearing evidence as recorded in 0 of the last 5 acquisitions, not classified against the reference; current-algorithm bearing evidence unavailable until re-processing",
           "k": 5,
-          "persistent": false,
-          "present_in_last_k": 0
+          "persistent": null,
+          "present_in_last_k": 0,
+          "relative_k": null,
+          "relative_present_in_last_k": null
         },
         "BPFO": {
-          "classification": "no_change",
-          "consecutive": 0,
-          "criterion": "no bearing evidence in the last 5 acquisitions",
+          "algorithm_version": 1,
+          "basis": "legacy",
+          "classification": null,
+          "consecutive": null,
+          "criterion": "legacy, algorithm version 1: bearing evidence as recorded in 0 of the last 5 acquisitions, not classified against the reference; current-algorithm bearing evidence unavailable until re-processing",
           "k": 5,
-          "persistent": false,
-          "present_in_last_k": 0
+          "persistent": null,
+          "present_in_last_k": 0,
+          "relative_k": null,
+          "relative_present_in_last_k": null
         },
         "BSF": {
-          "classification": "no_change",
-          "consecutive": 0,
-          "criterion": "no bearing evidence in the last 5 acquisitions",
+          "algorithm_version": 1,
+          "basis": "legacy",
+          "classification": null,
+          "consecutive": null,
+          "criterion": "legacy, algorithm version 1: bearing evidence as recorded in 0 of the last 5 acquisitions, not classified against the reference; current-algorithm bearing evidence unavailable until re-processing",
           "k": 5,
-          "persistent": false,
-          "present_in_last_k": 0
+          "persistent": null,
+          "present_in_last_k": 0,
+          "relative_k": null,
+          "relative_present_in_last_k": null
         },
         "FTF": {
-          "classification": "no_change",
-          "consecutive": 0,
-          "criterion": "no bearing evidence in the last 5 acquisitions",
+          "algorithm_version": 1,
+          "basis": "legacy",
+          "classification": null,
+          "consecutive": null,
+          "criterion": "legacy, algorithm version 1: bearing evidence as recorded in 0 of the last 5 acquisitions, not classified against the reference; current-algorithm bearing evidence unavailable until re-processing",
           "k": 5,
-          "persistent": false,
-          "present_in_last_k": 0
+          "persistent": null,
+          "present_in_last_k": 0,
+          "relative_k": null,
+          "relative_present_in_last_k": null
         }
       },
       "indicators_driving": [
@@ -1062,9 +1117,16 @@
       "stale_context": 0
     },
     "measurement_point_id": "motor_de_h",
-    "message": "This assessment uses lineage health_snapshot/1+aaaaaaaaaaaaaaaa because 30 of the 30 evaluated slots still lack a snapshot of the current lineage health_snapshot/2+dcbb50a52f4e19d8, re-processing writes lineage health_snapshot/2+dcbb50a52f4e19d8 only and leaves the health_snapshot/1+aaaaaaaaaaaaaaaa snapshots unchanged, and the assessment moves to health_snapshot/2+dcbb50a52f4e19d8 once every evaluated slot has one; assess_asset_change(asset_id='P-101', measurement_point_id='motor_de_h', reprocess=True) attempts to compute the 30 missing or outdated health_snapshot/2+dcbb50a52f4e19d8 snapshot(s) of the evaluated slots in bounded batches across the point's stale measurements, and a measurement it cannot re-process keeps its previous snapshot (the reprocess block gives the reason). persistent change (increase) at motor_de_h of P-101 over 20 post-reference acquisition(s): rms: 7 consecutive acquisitions outside the band (mean +/- max(3 sigma, 25%)); peak: 7 consecutive acquisitions outside the band (mean +/- max(3 sigma, 25%)); one_x: 7 consecutive acquisitions outside the band (mean +/- max(3 sigma, 25%)); iso_velocity: 7 consecutive acquisitions outside the band (mean +/- max(3 sigma, 25%)). Reference: health of the reference measurements not declared; relative comparison against the first 10 acquisition slot(s) of the point; qualified slots inside the reference: rpm_not_declared (2). Lineage health_snapshot/1+aaaaaaaaaaaaaaaa.",
+    "message": "This assessment uses lineage health_snapshot/1+aaaaaaaaaaaaaaaa because 30 of the 30 evaluated slots still lack a snapshot of the current lineage health_snapshot/2+dcbb50a52f4e19d8, re-processing writes lineage health_snapshot/2+dcbb50a52f4e19d8 only and leaves the health_snapshot/1+aaaaaaaaaaaaaaaa snapshots unchanged, and the assessment moves to health_snapshot/2+dcbb50a52f4e19d8 once every evaluated slot has one; assess_asset_change(asset_id='P-101', measurement_point_id='motor_de_h', reprocess=True) attempts to compute the 30 missing or outdated health_snapshot/2+dcbb50a52f4e19d8 snapshot(s) of the evaluated slots in bounded batches across the point's stale measurements, and a measurement it cannot re-process keeps its previous snapshot (the reprocess block gives the reason). persistent change (increase) at motor_de_h of P-101 over 20 post-reference acquisition(s): rms: 7 consecutive acquisitions outside the band (mean +/- max(3 sigma, 25%)); peak: 7 consecutive acquisitions outside the band (mean +/- max(3 sigma, 25%)); one_x: 7 consecutive acquisitions outside the band (mean +/- max(3 sigma, 25%)); iso_velocity: 7 consecutive acquisitions outside the band (mean +/- max(3 sigma, 25%)); bearing evidence of BPFO, BPFI, BSF, FTF not classified (legacy, algorithm version 1); current-algorithm bearing evidence unavailable until re-processing. Reference: health of the reference measurements not declared; relative comparison against the first 10 acquisition slot(s) of the point; qualified slots inside the reference: rpm_not_declared (2). Lineage health_snapshot/1+aaaaaaaaaaaaaaaa.",
     "observed": {
       "acquisitions_assessed": 20,
+      "capture_comparison": {
+        "excluded": [],
+        "excluded_truncated": false,
+        "reference_duration_s": 2.0,
+        "reference_sampling_rate_hz": 10000.0,
+        "tolerance_pct": 1.0
+      },
       "evidence_presence": {
         "BPFI": {
           "k": 5,
@@ -1076,7 +1138,11 @@
             false,
             false
           ],
-          "present_in_last_k": 0
+          "present_in_last_k": 0,
+          "reference_present": null,
+          "relative_k": null,
+          "relative_presence": null,
+          "relative_present_in_last_k": null
         },
         "BPFO": {
           "k": 5,
@@ -1088,7 +1154,11 @@
             false,
             false
           ],
-          "present_in_last_k": 0
+          "present_in_last_k": 0,
+          "reference_present": null,
+          "relative_k": null,
+          "relative_presence": null,
+          "relative_present_in_last_k": null
         },
         "BSF": {
           "k": 5,
@@ -1100,7 +1170,11 @@
             false,
             false
           ],
-          "present_in_last_k": 0
+          "present_in_last_k": 0,
+          "reference_present": null,
+          "relative_k": null,
+          "relative_presence": null,
+          "relative_present_in_last_k": null
         },
         "FTF": {
           "k": 5,
@@ -1112,7 +1186,11 @@
             false,
             false
           ],
-          "present_in_last_k": 0
+          "present_in_last_k": 0,
+          "reference_present": null,
+          "relative_k": null,
+          "relative_presence": null,
+          "relative_present_in_last_k": null
         }
       },
       "indicators_unavailable": {},
@@ -1336,40 +1414,56 @@
   "spike": {
     "assessed": {
       "classification": "unconfirmed_single_acquisition",
-      "criterion": "rms: latest acquisition outside the band (mean +/- max(3 sigma, 25%)) without persistence: 1 consecutive, 1 of last 1 on the same side, drift not computable; peak: latest acquisition outside the band (mean +/- max(3 sigma, 25%)) without persistence: 1 consecutive, 1 of last 1 on the same side, drift not computable; one_x: latest acquisition outside the band (mean +/- max(3 sigma, 25%)) without persistence: 1 consecutive, 1 of last 1 on the same side, drift not computable; iso_velocity: latest acquisition outside the band (mean +/- max(3 sigma, 25%)) without persistence: 1 consecutive, 1 of last 1 on the same side, drift not computable",
+      "criterion": "rms: latest acquisition outside the band (mean +/- max(3 sigma, 25%)) without persistence: 1 consecutive, 1 of last 1 on the same side, drift not computable; peak: latest acquisition outside the band (mean +/- max(3 sigma, 25%)) without persistence: 1 consecutive, 1 of last 1 on the same side, drift not computable; one_x: latest acquisition outside the band (mean +/- max(3 sigma, 25%)) without persistence: 1 consecutive, 1 of last 1 on the same side, drift not computable; iso_velocity: latest acquisition outside the band (mean +/- max(3 sigma, 25%)) without persistence: 1 consecutive, 1 of last 1 on the same side, drift not computable; bearing evidence of BPFO, BPFI, BSF, FTF not classified (legacy, algorithm version 1); current-algorithm bearing evidence unavailable until re-processing",
       "direction": "increase",
       "evidence": {
         "BPFI": {
-          "classification": "no_change",
-          "consecutive": 0,
-          "criterion": "no bearing evidence in the last 1 acquisitions",
+          "algorithm_version": 1,
+          "basis": "legacy",
+          "classification": null,
+          "consecutive": null,
+          "criterion": "legacy, algorithm version 1: bearing evidence as recorded in 0 of the last 1 acquisitions, not classified against the reference; current-algorithm bearing evidence unavailable until re-processing",
           "k": 1,
-          "persistent": false,
-          "present_in_last_k": 0
+          "persistent": null,
+          "present_in_last_k": 0,
+          "relative_k": null,
+          "relative_present_in_last_k": null
         },
         "BPFO": {
-          "classification": "no_change",
-          "consecutive": 0,
-          "criterion": "no bearing evidence in the last 1 acquisitions",
+          "algorithm_version": 1,
+          "basis": "legacy",
+          "classification": null,
+          "consecutive": null,
+          "criterion": "legacy, algorithm version 1: bearing evidence as recorded in 0 of the last 1 acquisitions, not classified against the reference; current-algorithm bearing evidence unavailable until re-processing",
           "k": 1,
-          "persistent": false,
-          "present_in_last_k": 0
+          "persistent": null,
+          "present_in_last_k": 0,
+          "relative_k": null,
+          "relative_present_in_last_k": null
         },
         "BSF": {
-          "classification": "no_change",
-          "consecutive": 0,
-          "criterion": "no bearing evidence in the last 1 acquisitions",
+          "algorithm_version": 1,
+          "basis": "legacy",
+          "classification": null,
+          "consecutive": null,
+          "criterion": "legacy, algorithm version 1: bearing evidence as recorded in 0 of the last 1 acquisitions, not classified against the reference; current-algorithm bearing evidence unavailable until re-processing",
           "k": 1,
-          "persistent": false,
-          "present_in_last_k": 0
+          "persistent": null,
+          "present_in_last_k": 0,
+          "relative_k": null,
+          "relative_present_in_last_k": null
         },
         "FTF": {
-          "classification": "no_change",
-          "consecutive": 0,
-          "criterion": "no bearing evidence in the last 1 acquisitions",
+          "algorithm_version": 1,
+          "basis": "legacy",
+          "classification": null,
+          "consecutive": null,
+          "criterion": "legacy, algorithm version 1: bearing evidence as recorded in 0 of the last 1 acquisitions, not classified against the reference; current-algorithm bearing evidence unavailable until re-processing",
           "k": 1,
-          "persistent": false,
-          "present_in_last_k": 0
+          "persistent": null,
+          "present_in_last_k": 0,
+          "relative_k": null,
+          "relative_present_in_last_k": null
         }
       },
       "indicators_driving": [
@@ -1696,9 +1790,16 @@
       "stale_context": 0
     },
     "measurement_point_id": "motor_de_h",
-    "message": "This assessment uses lineage health_snapshot/1+aaaaaaaaaaaaaaaa because 11 of the 11 evaluated slots still lack a snapshot of the current lineage health_snapshot/2+dcbb50a52f4e19d8, re-processing writes lineage health_snapshot/2+dcbb50a52f4e19d8 only and leaves the health_snapshot/1+aaaaaaaaaaaaaaaa snapshots unchanged, and the assessment moves to health_snapshot/2+dcbb50a52f4e19d8 once every evaluated slot has one; assess_asset_change(asset_id='P-101', measurement_point_id='motor_de_h', reprocess=True) attempts to compute the 11 missing or outdated health_snapshot/2+dcbb50a52f4e19d8 snapshot(s) of the evaluated slots in bounded batches across the point's stale measurements, and a measurement it cannot re-process keeps its previous snapshot (the reprocess block gives the reason). unconfirmed single acquisition (increase) at motor_de_h of P-101 over 1 post-reference acquisition(s): rms: latest acquisition outside the band (mean +/- max(3 sigma, 25%)) without persistence: 1 consecutive, 1 of last 1 on the same side, drift not computable; peak: latest acquisition outside the band (mean +/- max(3 sigma, 25%)) without persistence: 1 consecutive, 1 of last 1 on the same side, drift not computable; one_x: latest acquisition outside the band (mean +/- max(3 sigma, 25%)) without persistence: 1 consecutive, 1 of last 1 on the same side, drift not computable; iso_velocity: latest acquisition outside the band (mean +/- max(3 sigma, 25%)) without persistence: 1 consecutive, 1 of last 1 on the same side, drift not computable. Reference: health of the reference measurements not declared; relative comparison against the first 10 acquisition slot(s) of the point. Lineage health_snapshot/1+aaaaaaaaaaaaaaaa.",
+    "message": "This assessment uses lineage health_snapshot/1+aaaaaaaaaaaaaaaa because 11 of the 11 evaluated slots still lack a snapshot of the current lineage health_snapshot/2+dcbb50a52f4e19d8, re-processing writes lineage health_snapshot/2+dcbb50a52f4e19d8 only and leaves the health_snapshot/1+aaaaaaaaaaaaaaaa snapshots unchanged, and the assessment moves to health_snapshot/2+dcbb50a52f4e19d8 once every evaluated slot has one; assess_asset_change(asset_id='P-101', measurement_point_id='motor_de_h', reprocess=True) attempts to compute the 11 missing or outdated health_snapshot/2+dcbb50a52f4e19d8 snapshot(s) of the evaluated slots in bounded batches across the point's stale measurements, and a measurement it cannot re-process keeps its previous snapshot (the reprocess block gives the reason). unconfirmed single acquisition (increase) at motor_de_h of P-101 over 1 post-reference acquisition(s): rms: latest acquisition outside the band (mean +/- max(3 sigma, 25%)) without persistence: 1 consecutive, 1 of last 1 on the same side, drift not computable; peak: latest acquisition outside the band (mean +/- max(3 sigma, 25%)) without persistence: 1 consecutive, 1 of last 1 on the same side, drift not computable; one_x: latest acquisition outside the band (mean +/- max(3 sigma, 25%)) without persistence: 1 consecutive, 1 of last 1 on the same side, drift not computable; iso_velocity: latest acquisition outside the band (mean +/- max(3 sigma, 25%)) without persistence: 1 consecutive, 1 of last 1 on the same side, drift not computable; bearing evidence of BPFO, BPFI, BSF, FTF not classified (legacy, algorithm version 1); current-algorithm bearing evidence unavailable until re-processing. Reference: health of the reference measurements not declared; relative comparison against the first 10 acquisition slot(s) of the point. Lineage health_snapshot/1+aaaaaaaaaaaaaaaa.",
     "observed": {
       "acquisitions_assessed": 1,
+      "capture_comparison": {
+        "excluded": [],
+        "excluded_truncated": false,
+        "reference_duration_s": 2.0,
+        "reference_sampling_rate_hz": 10000.0,
+        "tolerance_pct": 1.0
+      },
       "evidence_presence": {
         "BPFI": {
           "k": 1,
@@ -1706,7 +1807,11 @@
           "presence": [
             false
           ],
-          "present_in_last_k": 0
+          "present_in_last_k": 0,
+          "reference_present": null,
+          "relative_k": null,
+          "relative_presence": null,
+          "relative_present_in_last_k": null
         },
         "BPFO": {
           "k": 1,
@@ -1714,7 +1819,11 @@
           "presence": [
             false
           ],
-          "present_in_last_k": 0
+          "present_in_last_k": 0,
+          "reference_present": null,
+          "relative_k": null,
+          "relative_presence": null,
+          "relative_present_in_last_k": null
         },
         "BSF": {
           "k": 1,
@@ -1722,7 +1831,11 @@
           "presence": [
             false
           ],
-          "present_in_last_k": 0
+          "present_in_last_k": 0,
+          "reference_present": null,
+          "relative_k": null,
+          "relative_presence": null,
+          "relative_present_in_last_k": null
         },
         "FTF": {
           "k": 1,
@@ -1730,7 +1843,11 @@
           "presence": [
             false
           ],
-          "present_in_last_k": 0
+          "present_in_last_k": 0,
+          "reference_present": null,
+          "relative_k": null,
+          "relative_presence": null,
+          "relative_present_in_last_k": null
         }
       },
       "indicators_unavailable": {},
@@ -1924,40 +2041,56 @@
   "stable": {
     "assessed": {
       "classification": "no_change",
-      "criterion": "latest acquisition inside the band (mean +/- max(3 sigma, 25%)) of every amplitude indicator and no bearing evidence persistence",
+      "criterion": "latest acquisition inside the band (mean +/- max(3 sigma, 25%)) of every amplitude indicator; bearing evidence of BPFO, BPFI, BSF, FTF not classified (legacy, algorithm version 1); current-algorithm bearing evidence unavailable until re-processing",
       "direction": null,
       "evidence": {
         "BPFI": {
-          "classification": "no_change",
-          "consecutive": 0,
-          "criterion": "no bearing evidence in the last 1 acquisitions",
+          "algorithm_version": 1,
+          "basis": "legacy",
+          "classification": null,
+          "consecutive": null,
+          "criterion": "legacy, algorithm version 1: bearing evidence as recorded in 0 of the last 1 acquisitions, not classified against the reference; current-algorithm bearing evidence unavailable until re-processing",
           "k": 1,
-          "persistent": false,
-          "present_in_last_k": 0
+          "persistent": null,
+          "present_in_last_k": 0,
+          "relative_k": null,
+          "relative_present_in_last_k": null
         },
         "BPFO": {
-          "classification": "no_change",
-          "consecutive": 0,
-          "criterion": "no bearing evidence in the last 1 acquisitions",
+          "algorithm_version": 1,
+          "basis": "legacy",
+          "classification": null,
+          "consecutive": null,
+          "criterion": "legacy, algorithm version 1: bearing evidence as recorded in 0 of the last 1 acquisitions, not classified against the reference; current-algorithm bearing evidence unavailable until re-processing",
           "k": 1,
-          "persistent": false,
-          "present_in_last_k": 0
+          "persistent": null,
+          "present_in_last_k": 0,
+          "relative_k": null,
+          "relative_present_in_last_k": null
         },
         "BSF": {
-          "classification": "no_change",
-          "consecutive": 0,
-          "criterion": "no bearing evidence in the last 1 acquisitions",
+          "algorithm_version": 1,
+          "basis": "legacy",
+          "classification": null,
+          "consecutive": null,
+          "criterion": "legacy, algorithm version 1: bearing evidence as recorded in 0 of the last 1 acquisitions, not classified against the reference; current-algorithm bearing evidence unavailable until re-processing",
           "k": 1,
-          "persistent": false,
-          "present_in_last_k": 0
+          "persistent": null,
+          "present_in_last_k": 0,
+          "relative_k": null,
+          "relative_present_in_last_k": null
         },
         "FTF": {
-          "classification": "no_change",
-          "consecutive": 0,
-          "criterion": "no bearing evidence in the last 1 acquisitions",
+          "algorithm_version": 1,
+          "basis": "legacy",
+          "classification": null,
+          "consecutive": null,
+          "criterion": "legacy, algorithm version 1: bearing evidence as recorded in 0 of the last 1 acquisitions, not classified against the reference; current-algorithm bearing evidence unavailable until re-processing",
           "k": 1,
-          "persistent": false,
-          "present_in_last_k": 0
+          "persistent": null,
+          "present_in_last_k": 0,
+          "relative_k": null,
+          "relative_present_in_last_k": null
         }
       },
       "indicators_driving": [],
@@ -2279,9 +2412,16 @@
       "stale_context": 0
     },
     "measurement_point_id": "motor_de_h",
-    "message": "This assessment uses lineage health_snapshot/1+aaaaaaaaaaaaaaaa because 11 of the 11 evaluated slots still lack a snapshot of the current lineage health_snapshot/2+dcbb50a52f4e19d8, re-processing writes lineage health_snapshot/2+dcbb50a52f4e19d8 only and leaves the health_snapshot/1+aaaaaaaaaaaaaaaa snapshots unchanged, and the assessment moves to health_snapshot/2+dcbb50a52f4e19d8 once every evaluated slot has one; assess_asset_change(asset_id='P-101', measurement_point_id='motor_de_h', reprocess=True) attempts to compute the 11 missing or outdated health_snapshot/2+dcbb50a52f4e19d8 snapshot(s) of the evaluated slots in bounded batches across the point's stale measurements, and a measurement it cannot re-process keeps its previous snapshot (the reprocess block gives the reason). no change at motor_de_h of P-101 over 1 post-reference acquisition(s): latest acquisition inside the band (mean +/- max(3 sigma, 25%)) of every amplitude indicator and no bearing evidence persistence. Reference: health of the reference measurements not declared; relative comparison against the first 10 acquisition slot(s) of the point. Lineage health_snapshot/1+aaaaaaaaaaaaaaaa.",
+    "message": "This assessment uses lineage health_snapshot/1+aaaaaaaaaaaaaaaa because 11 of the 11 evaluated slots still lack a snapshot of the current lineage health_snapshot/2+dcbb50a52f4e19d8, re-processing writes lineage health_snapshot/2+dcbb50a52f4e19d8 only and leaves the health_snapshot/1+aaaaaaaaaaaaaaaa snapshots unchanged, and the assessment moves to health_snapshot/2+dcbb50a52f4e19d8 once every evaluated slot has one; assess_asset_change(asset_id='P-101', measurement_point_id='motor_de_h', reprocess=True) attempts to compute the 11 missing or outdated health_snapshot/2+dcbb50a52f4e19d8 snapshot(s) of the evaluated slots in bounded batches across the point's stale measurements, and a measurement it cannot re-process keeps its previous snapshot (the reprocess block gives the reason). no change at motor_de_h of P-101 over 1 post-reference acquisition(s): latest acquisition inside the band (mean +/- max(3 sigma, 25%)) of every amplitude indicator; bearing evidence of BPFO, BPFI, BSF, FTF not classified (legacy, algorithm version 1); current-algorithm bearing evidence unavailable until re-processing. Reference: health of the reference measurements not declared; relative comparison against the first 10 acquisition slot(s) of the point. Lineage health_snapshot/1+aaaaaaaaaaaaaaaa.",
     "observed": {
       "acquisitions_assessed": 1,
+      "capture_comparison": {
+        "excluded": [],
+        "excluded_truncated": false,
+        "reference_duration_s": 2.0,
+        "reference_sampling_rate_hz": 10000.0,
+        "tolerance_pct": 1.0
+      },
       "evidence_presence": {
         "BPFI": {
           "k": 1,
@@ -2289,7 +2429,11 @@
           "presence": [
             false
           ],
-          "present_in_last_k": 0
+          "present_in_last_k": 0,
+          "reference_present": null,
+          "relative_k": null,
+          "relative_presence": null,
+          "relative_present_in_last_k": null
         },
         "BPFO": {
           "k": 1,
@@ -2297,7 +2441,11 @@
           "presence": [
             false
           ],
-          "present_in_last_k": 0
+          "present_in_last_k": 0,
+          "reference_present": null,
+          "relative_k": null,
+          "relative_presence": null,
+          "relative_present_in_last_k": null
         },
         "BSF": {
           "k": 1,
@@ -2305,7 +2453,11 @@
           "presence": [
             false
           ],
-          "present_in_last_k": 0
+          "present_in_last_k": 0,
+          "reference_present": null,
+          "relative_k": null,
+          "relative_presence": null,
+          "relative_present_in_last_k": null
         },
         "FTF": {
           "k": 1,
@@ -2313,7 +2465,11 @@
           "presence": [
             false
           ],
-          "present_in_last_k": 0
+          "present_in_last_k": 0,
+          "reference_present": null,
+          "relative_k": null,
+          "relative_presence": null,
+          "relative_present_in_last_k": null
         }
       },
       "indicators_unavailable": {},

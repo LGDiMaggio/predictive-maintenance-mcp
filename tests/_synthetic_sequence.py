@@ -31,7 +31,7 @@ companion, exactly as an adapter would write it.
 import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import numpy as np
 
@@ -140,13 +140,15 @@ def acquired_at(index: int) -> str:
     return (FIRST_ACQUIRED_AT + (index - 1) * ACQUISITION_INTERVAL).isoformat()
 
 
-def _amplitude_and_depth(index: int, rng: np.random.Generator) -> tuple[float, float]:
-    """Return the carrier amplitude and modulation depth of measurement *index*.
+def _amplitude_and_depth(
+    index: int, rng: np.random.Generator, kind: str
+) -> tuple[float, float]:
+    """Return the carrier amplitude and modulation depth of measurement *index*
+    of *kind*.
 
     Stable measurements consume one uniform draw from *rng* for their jitter;
     the spike and the ramp are fully determined by the index.
     """
-    kind = EXPECTED_KIND[index]
     if kind == ISOLATED_SPIKE:
         return SPIKE_AMPLITUDE, 0.0
     if kind == PROGRESSIVE:
@@ -160,7 +162,9 @@ def _amplitude_and_depth(index: int, rng: np.random.Generator) -> tuple[float, f
     return 1.0 + jitter, 0.0
 
 
-def synthesize_measurement(index: int, *, seed: int = DEFAULT_SEED) -> np.ndarray:
+def synthesize_measurement(
+    index: int, *, seed: int = DEFAULT_SEED, stationary_depth: Optional[float] = None
+) -> np.ndarray:
     """Build the waveform of measurement *index* (unit ``g``, float64, 1-D).
 
     Pure function with no I/O, in the spirit of ``golden_signals()``: a 3 kHz
@@ -170,6 +174,10 @@ def synthesize_measurement(index: int, *, seed: int = DEFAULT_SEED) -> np.ndarra
     Args:
         index: 1-based measurement index (M01 is 1).
         seed: Sequence seed; the measurement uses ``default_rng(seed + index)``.
+        stationary_depth: When given, build every index with the ``stable``
+            amplitude (no spike, no ramp) and this BPFO modulation depth:
+            0.0 for a fault-free sequence, above 0 for a line present from
+            the first measurement on.
 
     Returns:
         Array of ``SAMPLES_PER_MEASUREMENT`` samples at ``FS`` Hz.
@@ -179,7 +187,10 @@ def synthesize_measurement(index: int, *, seed: int = DEFAULT_SEED) -> np.ndarra
     """
     _check_index(index)
     rng = np.random.default_rng(seed + index)
-    amplitude, depth = _amplitude_and_depth(index, rng)
+    kind = EXPECTED_KIND[index] if stationary_depth is None else STABLE
+    amplitude, depth = _amplitude_and_depth(index, rng, kind)
+    if stationary_depth is not None:
+        depth = stationary_depth
     t = np.arange(SAMPLES_PER_MEASUREMENT) / FS
     modulation = 1.0 + depth * (
         _MODULATION_FUNDAMENTAL * np.sin(2 * np.pi * BPFO_6205_1800 * t)

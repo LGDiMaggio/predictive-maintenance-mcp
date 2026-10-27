@@ -72,7 +72,8 @@ POST_U9_ADDITIONS: dict[str, str] = {
     "assess_asset_change": (
         "Asset ledger U7 — change of one point against its reference across "
         "acquisitions over time (band per indicator, classification with its "
-        "criterion, bearing evidence over the last K). New concept: "
+        "criterion, bearing evidence against the reference over the last K). "
+        "New concept: "
         "estimate_rul and analyze_signal_trend take explicit series or one "
         "recording; this one reads the ledger and needs only asset and point. "
         "reprocess=True (not force_reindex) runs one bounded call of a "

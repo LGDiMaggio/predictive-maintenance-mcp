@@ -143,6 +143,28 @@ Fixture history:
   changed. Review follow-up, regenerated again in the same PR: field
   descriptions of the new entry only.
   Generated under mcp 2.3.0 and pydantic 2.12.0 (uv.lock).
+- Reference-relative ledger evidence (2026-10-24, T1 PR E): regenerated
+  intentionally: two descriptions only, no property, enum value or type
+  changed (observed and assessed are free-form objects). On
+  assess_asset_change, observed names the raw and reference-relative
+  presence, reference_present and capture_comparison, and assessed names
+  the evidence basis (reference_relative, legacy or unavailable). Review
+  follow-up, regenerated again in the same PR: the same two descriptions
+  only. observed states which fields are null for each basis and that
+  reference_present counts out of reference.count; assessed states the null
+  fields of legacy and unavailable evidence, that the current algorithm's
+  evidence is unavailable until re-processing on an earlier lineage, and
+  what algorithm_version holds. Owner decision B1, regenerated again in the
+  same PR: one description only (assessed), no property, enum value or type
+  changed; it says that an acquisition not compared is unknown, never
+  counted as absent, and interrupts consecutive presence. Owner decision of
+  2026-10-26 (envelope indicators), regenerated again in the same PR: one
+  description only (observed), no property, enum value or type changed; it
+  says that capture_comparison lists the acquisitions whose capture
+  differs or is not recorded, and that an envelope indicator needs a usable
+  value in every evaluated acquisition, so one missing or listed makes it
+  unavailable while it stays in the evaluated history.
+  Generated under mcp 2.3.0 and pydantic 2.12.0 (uv.lock).
 """
 
 from __future__ import annotations
