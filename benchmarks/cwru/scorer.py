@@ -232,7 +232,7 @@ def fault_hit(check: Mapping[str, Any]) -> bool:
     Returns:
         True when the fault hits on this record.
     """
-    return check.get("state") == HIT_STATE
+    return bool(check.get("state") == HIT_STATE)
 
 
 def _rank_sort_key(
