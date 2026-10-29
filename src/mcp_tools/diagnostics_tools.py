@@ -1351,12 +1351,18 @@ async def check_bearing_faults(
       catalog or non-bearing checks such as a gearbox GMF
       (e.g. {"GMF": 350.0}). Labels BPFO/BPFI/BSF/FTF map to the
       canonical fault vocabulary; other labels have no canonical form.
+      A BSF value is the ball spin frequency, as the catalog and
+      calculate_bearing_characteristic_frequencies compute it: the
+      rolling-element line is tested at twice it (line_frequency_hz), so a
+      published rolling-element defect frequency that is already doubled
+      must not be passed as BSF.
     - explicit geometry: num_balls + ball_diameter_mm + pitch_diameter_mm
       (+ contact_angle_deg) — frequencies computed from user-provided
       geometry (out-of-catalog path).
 
-    Each check reports fault_type_canonical (outer_race / inner_race /
-    ball / cage) alongside the acronym.
+    Each check names the hypothesis it tests (fault_type_canonical:
+    outer_race / inner_race / ball / cage, alongside the acronym), whatever
+    its state: the name alone is not a finding.
 
     Args:
         ctx: MCP context. Unused — see this module's docstring on logging.
@@ -1370,14 +1376,28 @@ async def check_bearing_faults(
         ball_diameter_mm: Ball/roller diameter Bd in mm.
         pitch_diameter_mm: Pitch circle diameter Pd in mm.
         contact_angle_deg: Contact angle in degrees (default 0.0).
-        tolerance_pct: Frequency matching tolerance in percent (default 5).
+        tolerance_pct: Half-width of each fundamental search window, in
+            percent of its line frequency (default 5). A check repeated with
+            another value is a new test: the false-alarm budget applies to
+            one check, not to repeated checks.
 
     Returns:
         BearingFaultsSummary with one check per expected frequency, the
         claim, the overall assessment that follows it, most_likely_fault and
         its canonical form, set only when the claim is
         single_spectrum_evidence, and the provenance of the expected
-        frequencies (`source`).
+        frequencies (`source`). outcome is no_indication, inconclusive,
+        indicated or several_types; claim.level (withheld, qualified or
+        single_spectrum_evidence), not outcome, decides what may be said
+        about a fault type, and an indicated outcome can carry a qualified
+        claim. outcome_reason and next_step describe the evidence outcome
+        before the claim: when claim.level is not single_spectrum_evidence,
+        do not relay them to name a fault type or a single element. Neither
+        an outcome nor a claim level confirms a fault, and no_indication is
+        not evidence that the bearing is free of defects. Each check's
+        evidence_strength ('none', 'low', 'moderate' or 'high') grades lines
+        of one envelope spectrum: it is not a probability. candidates are
+        listed by level, which does not rank them.
 
     Raises:
         ValueError: If not exactly one route is given, if the geometry is
@@ -1813,7 +1833,7 @@ async def diagnose_vibration(
     """Full integrated diagnosis: FFT + PSD + STFT + bearing faults + ISO severity.
 
     Comprehensive vibration diagnostic pipeline. Loads signal from repository,
-    runs all analyses, and synthesizes results into an actionable report.
+    runs all analyses, and combines their results into one diagnosis.
     The ISO severity block uses ISO 20816-3 machine group/support type
     (zone boundaries from ISO 10816-3:2009, provenance noted in output).
 
@@ -1865,6 +1885,19 @@ async def diagnose_vibration(
             Optional: the point's declaration, then 2.
         support_type: 'rigid' or 'flexible'. Optional: the point's
             declaration, then 'rigid'.
+
+    Returns:
+        DiagnosisResult. overall_diagnosis and recommendations are server
+        sentences: quote them, never restate them more strongly. The bearing
+        sentence ("Bearing analysis: ...") and the "Bearing" entries of
+        recommendations follow bearing_faults.claim; those entries are
+        confirmation, comparison, inspection, repeat or acquisition steps,
+        never a replacement, and there are none when the claim asks for
+        none. evidence_strength ('none', 'weak', 'moderate' or 'strong')
+        counts the findings of the analyses that ran, the ISO zone among
+        them, and a bearing finding once: it is not a confidence score or a
+        probability, it does not identify or confirm a fault type, and
+        'none' does not establish that the machine is healthy.
 
     Raises:
         ValueError: If an explicit rpm is not a positive finite number, if

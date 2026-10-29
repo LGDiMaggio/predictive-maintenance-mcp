@@ -460,7 +460,21 @@ async def assess_asset_change(
     most severe across the available amplitude indicators and the classified
     bearing evidence; unavailable indicators and legacy or unavailable
     evidence are not part of it and are named in the criterion, and each
-    label's basis is in assessed.evidence. Every
+    label's basis is in assessed.evidence. On every basis,
+    present_in_last_k and latest_evidence_strength are the raw presence and
+    the per-check grade the snapshots recorded, under the lineage's own
+    algorithm version; neither is the classification. For
+    reference_relative evidence quote relative_present_in_last_k of
+    relative_k and its classification against the reference band; a
+    no_change classification is not evidence that the bearing is free of
+    defects. For legacy and unavailable evidence quote the criterion: it is
+    not classified, never absent, and never evidence of no fault or of no
+    change; a legacy presence or grade, recorded by an earlier algorithm,
+    is never current evidence for a fault type. A persistent_change driven
+    by an evidence_<label> indicator is supported bearing evidence above
+    the reference band in the acquisitions its criterion counts, not a
+    confirmed fault.
+    Every
     comparability qualification is reported and non-comparable
     acquisitions are listed, never silently dropped. The result carries at
     most one suggested_verification, no list of recommendations.

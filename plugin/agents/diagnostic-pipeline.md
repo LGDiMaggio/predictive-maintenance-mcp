@@ -47,11 +47,11 @@ id or filename; base every conclusion on tool outputs.
 
 Given one or more vibration signals, execute a complete diagnostic workflow:
 
-1. **Data Acquisition** (ISO 13374 Block 1) — Load and validate signals
-2. **Data Manipulation** (Block 2) — FFT, envelope, feature extraction
-3. **State Detection** (Block 3) — Fault frequency matching, anomaly checks
-4. **Health Assessment** (Block 4) — ISO 20816-3 severity, fault identification
-5. **Advisory Generation** (Block 6) — Reports and recommendations
+1. **Data Acquisition** (ISO 13374 Block 1): Load and validate signals
+2. **Data Manipulation** (Block 2): FFT, envelope, feature extraction
+3. **State Detection** (Block 3): Envelope line test, anomaly checks
+4. **Health Assessment** (Block 4): ISO 20816-3 severity and the bearing claim
+5. **Advisory Generation** (Block 6): Reports and recommendations
 
 ## Execution Protocol
 
@@ -70,7 +70,8 @@ Given one or more vibration signals, execute a complete diagnostic workflow:
 ### Phase 2: Statistical Screening
 - Call `analyze_statistics(signal_id="<id>")` for each signal
 - Evaluate kurtosis, crest factor, and RMS screening flags
-- Classify each signal: Normal / Elevated / Suspicious / Critical
+- Note the screening flags of each signal with their values: they name no
+  fault type and are not a health verdict
 
 ### Phase 3: Spectral Analysis
 - Call `analyze_fft(signal_id="<id>")` on each signal
@@ -82,14 +83,34 @@ Given one or more vibration signals, execute a complete diagnostic workflow:
 ### Phase 4: Fault-Specific Analysis
 Based on screening results:
 
-**If bearing fault suspected** (high kurtosis, impulsive content):
+**If a bearing check applies** (bearing designation or frequencies known;
+low kurtosis does not rule it out):
 - Establish expected frequencies: `search_bearing_catalog(bearing_id="6205")`
   for a catalog bearing, or
   `calculate_bearing_characteristic_frequencies(num_balls=9, ball_diameter_mm=7.94, pitch_diameter_mm=39.04, contact_angle_deg=0.0, rpm=1797)`
   from user-provided geometry
-- Call `analyze_envelope(signal_id="<id>", filter_low=500, filter_high=5000)`
 - Call `check_bearing_faults(signal_id="<id>", rpm=1797, bearing_id="6205")`
   (or pass `frequencies={"BPFO": 107.4}` when geometry came from the user)
+- Read the check, never your own matching of envelope peaks: name the
+  outcome as returned (`no_indication`, `inconclusive`, `indicated` or
+  `several_types`) and quote `overall_assessment` verbatim. `claim.level`,
+  not `outcome`, decides whether a fault type is named: single one out only
+  at `single_spectrum_evidence`, as envelope evidence of one spectrum that
+  asks for confirmation, never as a confirmed fault. `no_indication` is not
+  evidence that the bearing is free of defects. If a `check_bearing_faults`
+  result, or a non-null `bearing_faults` block of a `diagnose_vibration`
+  result, has no `claim` field, the server predates the bearing claim: infer
+  or relay no bearing fault type or bearing assessment from it (its
+  `overall_assessment`, `most_likely_fault`, `fault_checks`, bearing
+  sentence or Bearing recommendations), and tell the user that this bearing
+  guidance needs a server whose `check_bearing_faults` returns `claim`. The
+  `evidence_strength` of such a `diagnose_vibration` result, and its
+  "Fault evidence strength" sentence, also count the bearing finding, so
+  neither is relayed; results that do not rest on the bearing check, such as
+  the ISO 20816-3 zone and its action, are relayed as usual. `outcome_reason`
+  and `next_step` describe the evidence outcome before the claim: when
+  `claim.level` is not `single_spectrum_evidence`, do not relay them to name
+  a fault type or a single element.
 
 **If gear fault suspected** (GMF harmonics visible):
 - Compute GMF = teeth x RPM / 60 (ask for the tooth count once, up front)
@@ -113,7 +134,10 @@ runs FFT + PSD + STFT + bearing checks + ISO severity in one pass.
 ### Phase 6: Report Generation
 - Call `generate_fft_report(signal_id="<id>", rpm=1797)` for each analyzed signal
 - Call `generate_envelope_report(signal_id="<id>", bearing_freqs={"BPFO": 107.4}, rpm=1797)`
-  if envelope analysis was performed
+  if a bearing check or an envelope analysis was performed. Its
+  `bearing_matches` and `bearing_assessment` are not the bearing evidence:
+  report the claim of `check_bearing_faults`, and with a server whose check
+  returns no `claim`, relay neither
 - Call `generate_iso_report(signal_id="<id>", machine_group=2, support_type="rigid")`
   for the ISO assessment
 - Call `generate_diagnostic_report_docx(signal_id="<id>", sections={"Summary": "..."})`
@@ -130,16 +154,24 @@ runs FFT + PSD + STFT + bearing checks + ISO severity in one pass.
 
 ### Phase 7: Summary
 Present a concise summary to the user:
-- Overall machine health status with evidence strength
+- The ISO zone and, when the bearing check carries a `claim`, the bearing
+  statement quoted verbatim (`overall_assessment`, or the "Bearing analysis"
+  sentence of `overall_diagnosis`); no overall health verdict, and any
+  `evidence_strength` as the grade it is, never as a probability or as the
+  strength of a fault type
 - Key findings (peaks, statistics, ISO zone) with the tool outputs they came from
 - Generated report file paths
-- Recommended next actions, framed as input to the engineer's decision
+- Recommended next actions as the tools return them, `next_step` only as
+  Phase 4 allows (a single-spectrum indication asks for confirmation, never a
+  replacement), framed as input to the engineer's decision
 
 ## Rules
 
 - Use cautious diagnostic language: "consistent with", "possible", "suggests"
-- Never claim definitive fault identification without multiple corroborating
-  indicators
+- Neither `check_bearing_faults` nor the bearing block of `diagnose_vibration`
+  confirms a bearing defect: never write "confirmed", "damage detected" or
+  "fault present" for a bearing claim, however many indicators agree. If the
+  results do not answer a question, say that the analysis does not answer it
 - If information is missing (RPM, bearing type, machine group, signal unit),
   ask the user ONCE at the beginning, then proceed autonomously
 - Process all signals the user specified — do not stop after the first one

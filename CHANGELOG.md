@@ -300,6 +300,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The tolerance match over the 50 largest envelope peaks is removed. Before
   1.0 this is a behavior change of published fields: the next release bumps
   MINOR, per the project's pre-1.0 rule.
+- **Model-facing guidance follows the bearing claim and the ledger evidence
+  basis.** The server instructions, the `diagnose_bearing` prompt, the
+  `check_bearing_faults` description and the plugin's bearing-diagnosis
+  skill, `/pm-diagnose` command and diagnostic-pipeline agent name a
+  bearing fault type only as the check's claim does and name the check's
+  outcome as returned; none of them asks the model to match envelope peaks
+  itself. The `diagnose_bearing` prompt and the three plugin bearing
+  workflows no longer call `analyze_envelope`: `check_bearing_faults` is
+  their bearing evidence, and `analyze_envelope` remains available for
+  exploratory spectrum analysis. The guidance, the `diagnose_vibration`
+  description included, describes the per-check and the per-diagnosis
+  `evidence_strength` as the grades they are. The `assess_asset_change`
+  description reads ledger bearing evidence by its basis
+  (`reference_relative`, `legacy`, `unavailable`), and the
+  `generate_maintenance_recommendations` description says that
+  `fault_types` must not be taken from bearing evidence this server
+  reports. The `check_bearing_faults` description states that a `BSF`
+  value is the ball spin frequency and that the rolling-element line is
+  tested at twice it. The `diagnose_bearing` prompt asks for the
+  operating speed before the bearing check. With a server whose
+  `check_bearing_faults` returns no `claim`, the plugin workflows relay no
+  bearing fault type or bearing assessment and say why. Plugin version
+  1.2.0.
 - **`diagnose_vibration`: `rpm`, `machine_group` and `support_type` are
   now optional** (additive; calls that pass them behave as before).
   Precedence: the explicit argument, then the `rpm` declared in the

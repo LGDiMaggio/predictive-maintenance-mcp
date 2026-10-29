@@ -26,10 +26,10 @@ def diagnose_bearing(
     Guided workflow for bearing diagnostics with ISO 20816-3 compliance.
 
     Evidence-based policy:
-    - Envelope peaks at characteristic frequencies are PRIMARY indicators (strong evidence)
-    - Statistical indicators (CF>6, Kurtosis>6) are SECONDARY/confirmatory
+    - The bearing evidence is the envelope line test of check_bearing_faults: its outcome (no_indication, inconclusive, indicated or several_types) and its claim, never your own matching of envelope peaks
+    - Statistical indicators (CF, Kurtosis) are screening context: they name no fault type and never raise the claim
     - What may be said about a fault type follows the server's bearing claim (claim.level of check_bearing_faults); a single-spectrum indication asks for confirmation, never for bearing replacement
-    - Additional high CF or Kurtosis reinforces the diagnosis but is not strictly required if envelope evidence is clear
+    - No outcome confirms a fault, and no_indication is not evidence that the bearing is free of defects
 
     **ISO 20816-3 Defaults** (use if user doesn't specify):
     - machine_group = 2 (medium-sized machines, 15-300 kW, most common)
@@ -91,8 +91,8 @@ def diagnose_bearing(
     - "baseline" in an id ≠ healthy signal
 
     **BASE DIAGNOSIS EXCLUSIVELY ON:**
-    1. Envelope spectrum peaks matching BPFO/BPFI/BSF/FTF (±5% tolerance)
-    2. Statistical indicators (CF, Kurtosis) as SECONDARY confirmation
+    1. The outcome and claim of check_bearing_faults (STEP 4), never your own matching of envelope peaks
+    2. Statistical indicators (CF, Kurtosis) as screening context only: they never raise the claim
     3. ISO 20816-3 zone measurement
 
     **IF THE ID CONTRADICTS ANALYSIS:**
@@ -126,9 +126,11 @@ def diagnose_bearing(
          load call — never guessed from amplitude; ASK USER if unknown
 
        CRITICAL RULE: The sampling rate comes from the stored signal metadata
-       (get_signal_info(signal_id="{signal_id}") shows it). If it is missing
-       OR if bearing frequencies (BPFO/BPFI/BSF/FTF) are NOT PROVIDED and no
-       bearing designation is known:
+       (get_signal_info(signal_id="{signal_id}") shows it). If it is missing,
+       OR no operating speed is provided or declared in the signal's metadata
+       (the measured speed, never estimated), OR bearing frequencies
+       (BPFO/BPFI/BSF/FTF) are NOT PROVIDED and no bearing designation is
+       known:
        → STOP and ASK USER for these parameters before proceeding.
        → Explain: "Cannot perform bearing diagnosis without [missing parameters]."
 
@@ -178,10 +180,10 @@ def diagnose_bearing(
     Call: analyze_statistics(signal_id="{signal_id}")
     Report: RMS, Crest Factor, Kurtosis (excess), Skewness in bullet points.
 
-    Interpretation flags (SECONDARY indicators):
-    • CF > 6 or Kurtosis > 6 → Strong impulsiveness (supports bearing fault hypothesis)
-    • CF 4-6 or Kurtosis 3-6 → Moderate impulsiveness (weak support)
-    • CF < 4 and Kurtosis < 3 → Low impulsiveness (but envelope may still show faults)
+    Interpretation flags (screening only: they name no fault type and never raise the bearing claim):
+    • CF > 6 or Kurtosis > 6 → Strong impulsiveness
+    • CF 4-6 or Kurtosis 3-6 → Moderate impulsiveness
+    • CF < 4 and Kurtosis < 3 → Low impulsiveness (the envelope line test in STEP 4 still runs)
 
     ⚠️ Do NOT diagnose from statistics alone. Proceed to envelope analysis.
 
@@ -204,19 +206,17 @@ def diagnose_bearing(
     STEP 4 — ENVELOPE ANALYSIS (PRIMARY DIAGNOSTIC EVIDENCE)
     ═══════════════════════════════════════════════════════════════════════════════
 
-    Call: analyze_envelope(signal_id="{signal_id}", filter_low=500, filter_high=5000, num_peaks=10)
-
-    Expected frequencies (±5% tolerance):
-    {chr(10).join(f'  • {ref}' for ref in freq_refs) if freq_refs else '  (User must provide BPFO, BPFI, BSF, FTF)'}
-
-    Examine envelope spectrum peaks:
-    1. Check if ANY peak falls within ±5% of expected frequencies
-    2. Check for harmonics: 2×BPFO, 3×BPFO, 2×BPFI, etc.
-    3. List top 5-10 peaks with frequencies and magnitudes
-
-    Systematic check (when rpm is known):
     Call: check_bearing_faults(signal_id="{signal_id}", rpm={rpm if rpm else '<rpm>'}, frequencies={bearing_freqs_dict if freq_refs else freqs_placeholder})
     (Or pass bearing_id="<designation>" for a catalog bearing instead of frequencies.)
+
+    Declared frequencies:
+    {chr(10).join(f'  • {ref}' for ref in freq_refs) if freq_refs else '  (User must provide BPFO, BPFI, BSF, FTF)'}
+
+    The check tests the line at each declared frequency against the local
+    noise floor of one envelope spectrum, then the further lines its
+    kinematics predict. A BSF value is the ball spin frequency: the
+    rolling-element line is tested at twice it (line_frequency_hz).
+    STEP 5 reads its outcome and claim.
 
     Optional visualization:
     Call: generate_envelope_report(signal_id="{signal_id}", filter_low=500, filter_high=5000, max_freq=500, bearing_freqs={bearing_freqs_dict if freq_refs else freqs_placeholder}{rpm_kwarg})
@@ -245,14 +245,20 @@ def diagnose_bearing(
        claim: when claim.level is not single_spectrum_evidence, do not relay
        them to name a fault type or a single element.
 
-    B) IF envelope shows ambiguous/borderline peaks:
-       → "Possible [fault type] - envelope peak near [frequency] but [state issue: weak magnitude, no harmonics, etc.]"
-       → Recommend: retake measurement, higher resolution, trending
+    B) Name the outcome as returned: no_indication, inconclusive, indicated
+       or several_types. claim.level, not outcome, decides whether a fault
+       type is named: an indicated outcome can carry a qualified claim.
+       Never report no_indication as "healthy" or "no fault": quote its
+       overall_assessment verbatim; no_indication is not evidence that the
+       bearing is free of defects.
 
-    C) IF no envelope peaks at characteristic frequencies:
-       → "No clear bearing fault signatures detected"
-       → IF stats are elevated: "High impulsiveness without bearing-specific frequencies suggests [other cause: impacts, looseness, etc.]"
-       → IF ISO zone C/D: "Elevated vibration without bearing signatures - check alignment, balance, structural issues"
+    C) Statistics, the ISO zone and lines you read in a report never raise
+       the claim. When claim.level is withheld:
+       → IF statistics are elevated: report their values; they do not
+         identify a source
+       → IF ISO zone C/D: "Broadband vibration is elevated (Zone [C/D]), and
+         the envelope evidence names no bearing fault type, so bearing and
+         non-bearing sources both remain possible."
 
     ═══════════════════════════════════════════════════════════════════════════════
     STEP 6 — RECOMMENDATIONS
@@ -260,10 +266,10 @@ def diagnose_bearing(
 
     Based on diagnosis + ISO zone (ONLY use these recommendations - DO NOT invent others):
     • Single-spectrum indication (any zone) → Confirm it: compare with a comparable earlier measurement or inspect the element the claim names; never request bearing replacement from envelope evidence
-    • Qualified or withheld claim (any zone) → Only the claim's actions as the server renders them (the "Bearing" entries of diagnose_vibration's recommendations, quoted verbatim): a comparable earlier, repeated or longer measurement first, or inspection of every candidate alike; none when it renders none
+    • Qualified or withheld claim (any zone) → No action on a single element. Relay the next_step of check_bearing_faults only as STEP 5 A allows; if diagnose_vibration ran on this signal, quote the "Bearing" entries of its recommendations verbatim (the claim's actions: a comparable earlier, repeated or longer measurement first, or inspection of every candidate alike; none when it renders none)
     • Zone C/D → Also the zone action, whatever the bearing claim
-    • No fault + Zone C/D → Investigate other causes: alignment, balance, looseness, foundation
-    • No fault + Zone A/B → Continue routine monitoring
+    • Withheld claim + Zone C/D → The zone action; bearing and non-bearing sources (such as alignment, balance, looseness or foundation) both remain possible
+    • Withheld claim + Zone A/B → The next_step of check_bearing_faults only as STEP 5 A allows, else continue routine monitoring; this is not evidence that the bearing is free of defects
 
     Optionally formalize the zone action:
     Call: generate_maintenance_recommendations(severity_zone="A")
@@ -276,8 +282,8 @@ def diagnose_bearing(
     unless they appear in tool outputs. Do NOT invent troubleshooting steps beyond those listed above.
 
     Always cite:
-    - Which envelope peaks were found (frequency, magnitude, harmonics)
-    - Statistical values (CF, Kurtosis) and how they support/contradict
+    - The bearing claim (claim.level, with overall_assessment quoted) and the outcome as returned
+    - Statistical values (CF, Kurtosis) as screening context, never as support for a fault type
     - ISO zone and severity
     - Specific tool outputs used
 

@@ -215,18 +215,13 @@ mcp = MCPServer(
       list_html_reports(file_name=...) to read one report's metadata
       without consuming tokens
 
-    Documentation Search (RAG):
-    - Use search_documentation() to find relevant passages in manuals and catalogs
-    - Prefer search_documentation() over read_manual_excerpt() for targeted queries
-    - Use read_manual_excerpt() only when you need to read consecutive pages
-
     Evidence-based inference policy (hard rules):
     1) Do NOT infer fault type from filenames, paths, or user-provided labels. Treat filenames as opaque identifiers.
     2) Do NOT make diagnostic claims based solely on statistical parameters (RMS/CF/Kurtosis). Use them for screening only.
-    3) Bearing fault identification (inner/outer/ball/cage) must be supported by frequency-domain evidence (envelope peaks at characteristic frequencies) and at least one additional indicator (e.g., high kurtosis or distinct harmonics). If this corroboration is missing, mark the result as "inconclusive" and recommend further analysis.
-    4) Use cautious language: say "possible" or "consistent with" when evidence is partial; say "confirmed" only if multiple independent analyses agree.
+    3) Single out a bearing fault type only at claim.level 'single_spectrum_evidence'; quote overall_assessment. Never independently match envelope peaks or promote the server's returned claim level based on statistics, harmonics, or other analyses. Name the outcome as returned: 'no_indication', 'inconclusive', 'indicated', 'several_types'.
+    4) Neither check_bearing_faults nor the bearing block of diagnose_vibration confirms a bearing defect: say 'consistent with', never 'confirmed', 'damage detected' or 'fault present' for bearing claims. Finding nothing ('no_indication', 'no_change', 'none') is not health; 'legacy' or 'unavailable' ledger evidence is unclassified, not absent or negative.
     5) Always cite which analyses and thresholds support each conclusion. If data or parameters are missing, ask for them instead of guessing.
-    6) NEVER suggest parameters, thresholds, or recommendations not explicitly provided in tool outputs or prompt workflows. Do NOT invent frequency ranges, filter settings, or maintenance actions. Only use guidance from STEP 6 of diagnostic prompts.
+    6) NEVER suggest parameters, thresholds or actions not in a tool output or prompt workflow. A bearing indication asks for confirmation, never a replacement.
 
     Report authorship policy (who is allowed to assert):
     - generate_diagnostic_report returns a 'statements' list containing every
@@ -238,12 +233,16 @@ mcp = MCPServer(
       mandatory provenance caveat; reproduce both, and never paraphrase or
       drop the caveat.
     - This server publishes NO confidence score and NO probability of
-      correctness. 'evidence_strength' is a count of independent
-      corroborating findings, not a confidence — render it as such, and never
-      convert it into a percentage, a probability, or a "confidence: high"
-      style label.
+      correctness. 'evidence_strength' is not a percentage, probability or
+      confidence: per check it grades lines of one envelope spectrum; per
+      diagnosis it counts findings and names no fault type.
     - If a question is not answered by the returned statements, say the
       analysis does not answer it. Do not fill the gap.
+
+    Documentation Search (RAG):
+    - Use search_documentation() to find relevant passages in manuals and catalogs
+    - Prefer search_documentation() over read_manual_excerpt() for targeted queries
+    - Use read_manual_excerpt() only when you need to read consecutive pages
 
     Signal unit policy (CRITICAL - declared units only, never guessed):
     - ISO 20816-3 severity verdicts on stored signals require a DECLARED unit:

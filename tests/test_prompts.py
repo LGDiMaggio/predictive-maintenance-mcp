@@ -128,9 +128,10 @@ class TestDiagnoseBearingPrompt:
             "relay them to name a fault type or a single element."
         ) in flat
         assert (
-            "Qualified or withheld claim (any zone) → Only the claim's actions as "
-            'the server renders them (the "Bearing" entries of '
-            "diagnose_vibration's recommendations, quoted verbatim)"
+            "Qualified or withheld claim (any zone) → No action on a single "
+            "element. Relay the next_step of check_bearing_faults only as STEP 5 "
+            "A allows; if diagnose_vibration ran on this signal, quote the "
+            '"Bearing" entries of its recommendations verbatim'
         ) in flat
 
     def test_envelope_report_gets_the_speed_the_prompt_was_given(self, prompts):
