@@ -538,6 +538,25 @@ class TestDriftGuardOnTheRealRepo:
         counts = drift_guard.check_publication()  # must not raise
         assert set(counts) == {str(path) for path in drift_guard.DEFAULT_DOCUMENT_PATHS}
 
+    def test_baseline_figures_bind_to_the_baselines(self):
+        """The documents present the ungraded stratum as the normal
+        baselines. Its outcome classes would also count any fault record
+        whose grade is not transcribed, so no slot may read them, and the
+        committed artifact must hold no fault record there."""
+        for document in drift_guard.DEFAULT_DOCUMENT_PATHS:
+            section = drift_guard.extract_section(
+                document.read_text(encoding="utf-8"), document.name
+            )
+            assert section is not None, document.name
+            paths = [
+                slot.key_path
+                for slot in drift_guard.extract_slots(section, document.name)
+            ]
+            assert not [p for p in paths if p.startswith("strata.ungraded.outcomes")]
+        results = drift_guard.load_results(drift_guard.DEFAULT_RESULTS_PATH)
+        ungraded = results["strata"]["ungraded"]  # type: ignore[index]
+        assert ungraded["n_faulted"] == 0  # type: ignore[index]
+
     def test_default_paths_agree_with_the_rest_of_the_benchmark(self):
         """drift_guard stays stdlib-only, so its path constants are local
         duplicates -- pinned here against the canonical ones so the two
@@ -559,13 +578,13 @@ class TestDriftGuardOnTheRealRepo:
 #: benchmark number by construction. Flagged unconditionally.
 _FRACTION_RE = re.compile(r"\b\d+\s*/\s*\d+\b")
 
-#: A record count written out, like ``3 of the 4``: the same claim as a
-#: fraction, flagged unconditionally for the same reason.
-_COUNT_OF_RE = re.compile(r"\b\d+\s+of\s+(?:the\s+)?\d+\b", re.I)
+#: A record count written out, like ``3 of the 4`` or ``3 out of 4``: the
+#: same claim as a fraction, flagged unconditionally for the same reason.
+_COUNT_OF_RE = re.compile(r"\b\d+\s+(?:out\s+)?of\s+(?:the\s+)?\d+\b", re.I)
 
-#: A percentage. Flagged only near benchmark-result vocabulary (below), so
-#: legitimate non-benchmark percentages stay green.
-_PCT_RE = re.compile(r"\b\d+(?:\.\d+)?\s*%")
+#: A percentage, as ``%`` or as the word. Flagged only near benchmark-result
+#: vocabulary (below), so legitimate non-benchmark percentages stay green.
+_PCT_RE = re.compile(r"\b\d+(?:\.\d+)?\s*(?:%|percent\b)", re.I)
 
 #: Result-shaped vocabulary that turns a nearby percentage into a benchmark
 #: claim, including the names of the metrics the scorer reports. Deliberately
@@ -576,8 +595,9 @@ _PCT_RE = re.compile(r"\b\d+(?:\.\d+)?\s*%")
 _BENCHMARK_VOCAB_RE = re.compile(
     r"\b(accurac\w*|detection|detected|classif\w*|diagnos\w*|"
     r"false[- ]positive\w*|false indication\w*|strat(?:um|a)|CWRU|"
-    r"supported|indicat\w*|precision|sensitiv\w*|specificit\w*|"
-    r"false[- ]alarm\w*|candidates?|outcomes?)\b",
+    r"support\w*|indicat\w*|precision|sensitiv\w*|specificit\w*|"
+    r"false[- ]alarm\w*|candidates?|outcomes?|named|end[- ]to[- ]end|"
+    r"baselines?|alerts?|hits?)\b",
     re.I,
 )
 
@@ -753,6 +773,12 @@ class TestUnguardedBenchmarkNumbers:
             ("The false-alarm rate was 75 % on the baselines.", "75 %"),
             ("The labelled fault was supported on 98 % of records.", "98 %"),
             ("It listed the labelled fault among its candidates on 90.9 %.", "90.9 %"),
+            ("The check named the labelled fault on 90 % of records.", "90 %"),
+            ("Wrong-type support reached 100 % on the headline.", "100 %"),
+            ("End-to-end it was correct on 77 % of the records.", "77 %"),
+            ("On the baselines 75 % gave a bearing alert.", "75 %"),
+            ("The labelled fault hit on 98 % of the records.", "98 %"),
+            ("75 percent of the baselines listed candidates.", "75 percent"),
         ],
     )
     def test_metric_vocabulary_near_a_percentage_goes_red(self, sentence, number):
@@ -760,11 +786,18 @@ class TestUnguardedBenchmarkNumbers:
         findings = scan_unguarded_benchmark_numbers(sentence + "\n")
         assert len(findings) == 1 and number in findings[0], findings
 
-    def test_written_out_record_count_goes_red_without_vocabulary(self):
-        findings = scan_unguarded_benchmark_numbers(
-            "3 of the 4 baselines listed bearing candidates.\n"
-        )
-        assert len(findings) == 1 and "3 of the 4" in findings[0], findings
+    @pytest.mark.parametrize(
+        "sentence, count",
+        [
+            ("3 of the 4 baselines listed bearing candidates.", "3 of the 4"),
+            ("3 out of 4 baselines listed bearing candidates.", "3 out of 4"),
+        ],
+    )
+    def test_written_out_record_count_goes_red_without_vocabulary(
+        self, sentence, count
+    ):
+        findings = scan_unguarded_benchmark_numbers(sentence + "\n")
+        assert len(findings) == 1 and count in findings[0], findings
 
     def test_nominal_budget_is_masked_and_pinned_to_the_engine(self):
         """The methodology's per-check budget is a nominal parameter, not a

@@ -543,6 +543,9 @@ def _criteria() -> dict[str, Any]:
             "significant (detected == true), whether or not the hypothesis "
             "is supported."
         ),
+        "label_supported": (
+            "On a fault record, the labelled fault meets the hit criterion."
+        ),
         "outcome_classes": {
             "indicated_correct": (
                 "Outcome 'indicated' with the labelled fault as its single "
@@ -585,6 +588,10 @@ def _criteria() -> dict[str, Any]:
         "wrong_type_support": (
             "On a fault record, a fault other than the labelled one meets the "
             "hit criterion."
+        ),
+        "confusion": (
+            "On every record of the group, the fault type the check names "
+            "(most_likely_fault), or none, against the labelled fault type."
         ),
         "normals": (
             "On the normal baselines, counts of each outcome kind, of named "

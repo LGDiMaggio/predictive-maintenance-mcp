@@ -1083,6 +1083,27 @@ class TestMetadataAndWrite:
             "outer_race": "BPFO",
         }
 
+    def test_every_reported_metric_has_its_definition(self):
+        """The methodology says every definition is recorded in the
+        criteria block: each metric family of a group has an entry there
+        (the outcome classes and the secondary ranking under their own
+        keys)."""
+        labeled = (_labeled("cwru_001", 97, "normal"),)
+        results = _score(labeled, {"cwru_001": _outcome("cwru_001")})
+        families = set(results["headline"]) - {
+            "strata_included",
+            "n_records",
+            "n_faulted",
+            "n_normal",
+        }
+        covered_elsewhere = {
+            "outcomes": "outcome_classes",
+            "classification": "ranking_rule",
+            "end_to_end": "ranking_rule",
+        }
+        for family in sorted(families):
+            assert covered_elsewhere.get(family, family) in results["criteria"], family
+
     def test_write_results_is_the_canonical_atomic_write(self, tmp_path):
         labeled = (_labeled("cwru_001", 97, "normal"),)
         results = _score(labeled, {"cwru_001": _outcome("cwru_001")})
