@@ -38,9 +38,9 @@ An open-source [MCP](https://modelcontextprotocol.io/) server that turns LLMs in
 
 | You say | The AI does |
 |---------|-------------|
-| *"Is this bearing healthy?"* | Loads the signal, runs spectral analysis, surfaces matching fault-frequency evidence, cites the ISO 20816-3 severity zone |
+| *"What does the vibration say about this bearing?"* | Loads the signal, tests each characteristic fault line against the noise floor of the envelope spectrum, reports what the evidence is consistent with and what it cannot exclude, cites the ISO 20816-3 severity zone |
 | *"Generate a full diagnostic report"* | Produces an interactive HTML report with charts, fault markers, and server-authored severity wording |
-| *"Extract specs from test_pump_manual.pdf and diagnose the signal"* | Reads the equipment manual, looks up the bearing model, calculates expected fault frequencies, flags which ones the signal actually shows |
+| *"Extract specs from test_pump_manual.pdf and diagnose the signal"* | Reads the equipment manual, looks up the bearing model, calculates expected fault frequencies, tests each of them in the signal's envelope spectrum |
 | *"Train an anomaly detector on my healthy baselines, then flag anomalies"* | Trains a model on your normal data, scores new signals, flags outliers for your review |
 | *"What changed on pump P-101 since the baseline?"* | Reads the asset's recorded history, compares the latest acquisitions with the declared reference, and reports each indicator's change with the criterion it applied |
 
@@ -115,7 +115,7 @@ The file name carries the fault label, but the server never reads names. Ask whi
 
 ## Benchmark
 
-A blind, reproducible diagnostic-accuracy benchmark on the public
+A blind, reproducible benchmark of the bearing check on the public
 [CWRU Bearing Data Center](https://engineering.case.edu/bearingdatacenter)
 dataset (12 kHz drive-end subset: 60 fault records + 4 normal baselines).
 Fault labels never reach the system under test — signals enter under opaque
@@ -127,11 +127,10 @@ undiagnosable by any classical method are reported separately instead of
 inflating or deflating the headline.
 
 <!-- cwru-benchmark:start -->
-On records the reference study grades clearly diagnosable (Y1+Y2, <!-- slot: headline.n_records -->44<!-- /slot --> records):
-characteristic fault frequency detected on <!-- slot: headline.frequency_detection.hits -->44<!-- /slot -->/<!-- slot: headline.frequency_detection.total -->44<!-- /slot -->,
-correct fault ranked first on <!-- slot: headline.classification.correct -->34<!-- /slot -->/<!-- slot: headline.classification.total -->44<!-- /slot --> (<!-- slot: headline.classification.rate pct1 -->77.3<!-- /slot -->%),
-and <!-- slot: strata.Y1.classification.correct -->9<!-- /slot -->/<!-- slot: strata.Y1.classification.total -->9<!-- /slot --> on the textbook-signature (Y1) stratum.
-On the <!-- slot: strata.ungraded.false_positives.total_normal -->4<!-- /slot --> healthy baselines, <!-- slot: strata.ungraded.false_positives.records_with_any -->2<!-- /slot --> records raised a false indication under the same criterion.
+On the records the reference study grades clearly diagnosable (Y1+Y2, <!-- slot: headline.n_records -->44<!-- /slot --> records), the line tested for the labelled fault stood above the local noise floor on <!-- slot: headline.frequency_detection.hits -->44<!-- /slot -->/<!-- slot: headline.frequency_detection.total -->44<!-- /slot -->, and the labelled fault was supported, with a further line of its own, on <!-- slot: headline.label_supported.count -->44<!-- /slot -->/<!-- slot: headline.label_supported.total -->44<!-- /slot -->.
+Another fault type was supported as well on <!-- slot: headline.wrong_type_support.records -->44<!-- /slot -->/<!-- slot: headline.wrong_type_support.total -->44<!-- /slot -->; the check listed several types, the labelled one among them, on <!-- slot: headline.outcomes.several_types_with_label -->44<!-- /slot -->/<!-- slot: headline.outcomes.total -->44<!-- /slot --> and singled out no fault type on <!-- slot: headline.named_fault.none -->44<!-- /slot -->/<!-- slot: headline.named_fault.total -->44<!-- /slot -->.
+The labelled fault was the first candidate listed, by level over the noise floor, on <!-- slot: headline.strongest_candidate.correct -->40<!-- /slot -->/<!-- slot: headline.strongest_candidate.total -->44<!-- /slot --> (<!-- slot: strata.Y1.strongest_candidate.correct -->9<!-- /slot -->/<!-- slot: strata.Y1.strongest_candidate.total -->9<!-- /slot --> on the textbook-signature Y1 stratum); that order is not a ranking of likelihood, and the check names no fault from it.
+Of the <!-- slot: strata.ungraded.normals.total -->4<!-- /slot --> normal baselines, <!-- slot: strata.ungraded.normals.no_indication -->1<!-- /slot --> gave no indication and <!-- slot: strata.ungraded.normals.bearing_alert -->3<!-- /slot --> listed bearing candidates, <!-- slot: strata.ungraded.normals.named_fault -->1<!-- /slot --> of them singling out one fault type: counts on these recordings, not a specificity rate.
 <!-- cwru-benchmark:end -->
 
 The numbers above are read from the committed, re-runnable artifact

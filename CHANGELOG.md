@@ -323,6 +323,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `check_bearing_faults` returns no `claim`, the plugin workflows relay no
   bearing fault type or bearing assessment and say why. Plugin version
   1.2.0.
+- **The CWRU benchmark reports what the bearing check tells a user, with
+  denominators.** The scorer counts a hit for a fault type when the check
+  supports it (a significant line of its own with a further line its
+  kinematics predict), on the fault records and the normal baselines
+  alike; the separate 2x ball-spin leg is removed. Per stratum,
+  `results.json` holds the check's outcome read against the label, the
+  precision of an indicated outcome, how often the labelled fault is the
+  first candidate listed, the fault type the check names, sensitivity,
+  support for other fault types and a confusion table, and on the normal
+  baselines counts, with no rate other than the precision of an indicated
+  outcome. The scorer's own ranking stays only as a secondary offline
+  scoring analysis, not a ranking the server produces, on the fault records
+  only; its per-record `classification_correct` and `end_to_end_correct`
+  are null on the baselines. The benchmark's diagnostic performance
+  figures, including the secondary ranking, are not directly comparable
+  with those published in earlier releases because the hit criterion and
+  scoring semantics changed. In `results.json`, the
+  `false_positives` blocks, the per-record `false_positive` flag and the
+  `criteria.harmonic_leg` and `criteria.hit_evidence_levels` keys are
+  removed; the `normals` counts, the per-record `outcome_class` and
+  `bearing_alert` and `criteria.hit_state` replace them. Every outcome
+  records the evidence and claim policy versions it was measured under,
+  and the scorer refuses an outcomes file from another version. The CWRU
+  artifacts are re-measured, and the README and the benchmark methodology
+  publish the new numbers.
 - **`diagnose_vibration`: `rpm`, `machine_group` and `support_type` are
   now optional** (additive; calls that pass them behave as before).
   Precedence: the explicit argument, then the `rpm` declared in the

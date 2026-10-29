@@ -73,9 +73,11 @@ Outcome schema (per opaque id):
   unit, ISO group/support, sample count).
 - ``bearing`` — the scorer's input: per-fault ``fault_checks`` keyed by
   acronym (BPFO/BPFI/BSF/FTF) with the raw analyzer fields
-  (``detected``, ``evidence_strength``, ``detected_frequency_hz``,
-  ``harmonics_detected``, ...), plus ``most_likely_fault`` (context —
-  the scorer computes its own ranking) and the catalog citation.
+  (``detected``, ``evidence_strength``, ``state``, ``level_db``,
+  ``harmonics_detected``, ...); the summary a user sees (``outcome``,
+  ``candidates``, ``claim_level``, ``most_likely_fault``); the
+  ``evidence_policy_version`` and ``claim_policy_version`` the result
+  was produced under; and the catalog citation.
 - ``iso_severity`` — status/zone context (never scored).
 - ``anomaly_detection`` — always :data:`EXCLUDED_ANOMALY_MARKER`.
 """
@@ -203,6 +205,14 @@ _CHECK_FIELDS: tuple[str, ...] = (
     "deviation_pct",
     "harmonics_detected",
     "evidence_strength",
+    "state",
+    "state_reason",
+    "line_frequency_hz",
+    "line_peak_hz",
+    "line_amplitude",
+    "level_db",
+    "threshold_db",
+    "shared_with",
 )
 
 
@@ -253,9 +263,12 @@ def _extract_bearing_subset(bearing: Mapping[str, Any]) -> dict[str, Any]:
             ``check_all_bearing_faults`` via ``diagnose_vibration``.
 
     Returns:
-        Per-fault checks keyed by acronym plus the context fields
-        (shaft/characteristic frequencies, ``most_likely`` summary,
-        catalog citation).
+        Per-fault checks keyed by acronym plus the summary a user sees
+        (``outcome``, the supported ``candidates`` in the analyzer's
+        order, the claim level and the ``most_likely`` fault the claim
+        names), the evidence and claim policy versions the result was
+        produced under, and the context fields (shaft/characteristic
+        frequencies, catalog citation).
     """
     fault_checks: dict[str, dict[str, Any]] = {}
     for check in bearing["fault_checks"]:
@@ -266,6 +279,11 @@ def _extract_bearing_subset(bearing: Mapping[str, Any]) -> dict[str, Any]:
         "shaft_frequency_hz": bearing["shaft_frequency_hz"],
         "bearing_frequencies": bearing["bearing_frequencies"],
         "fault_checks": fault_checks,
+        "outcome": bearing["outcome"],
+        "candidates": [str(c["fault_type"]) for c in bearing["candidates"]],
+        "claim_level": bearing["claim"]["level"],
+        "claim_policy_version": bearing["claim"]["policy_version"],
+        "evidence_policy_version": bearing["evidence_policy"]["version"],
         "most_likely_fault": bearing["most_likely_fault"],
         "most_likely_fault_canonical": bearing["most_likely_fault_canonical"],
         "source": bearing["source"],
