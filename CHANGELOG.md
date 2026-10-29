@@ -336,8 +336,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   outcome. The scorer's own ranking stays only as a secondary offline
   scoring analysis, not a ranking the server produces, on the fault records
   only; its per-record `classification_correct` and `end_to_end_correct`
-  are null on the baselines. No figure, the secondary ranking included, is
-  comparable with those of earlier releases. In `results.json`, the
+  are null on the baselines. The benchmark's diagnostic performance
+  figures, including the secondary ranking, are not directly comparable
+  with those published in earlier releases because the hit criterion and
+  scoring semantics changed. In `results.json`, the
   `false_positives` blocks, the per-record `false_positive` flag and the
   `criteria.harmonic_leg` and `criteria.hit_evidence_levels` keys are
   removed; the `normals` counts, the per-record `outcome_class` and

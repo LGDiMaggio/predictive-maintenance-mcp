@@ -584,8 +584,8 @@ def _criteria() -> dict[str, Any]:
             "on the fault records as the labelled type, another type, or none."
         ),
         "sensitivity": (
-            "On a fault record, a bearing alert: outcome 'indicated' or "
-            "'several_types'."
+            "On a fault record, the check lists at least one bearing "
+            "candidate: outcome 'indicated' or 'several_types'."
         ),
         "wrong_type_support": (
             "On a fault record, a fault other than the labelled one meets the "
