@@ -44,15 +44,17 @@ What users see, per stratum, each as a count over its denominator:
   fault, and of each supported fault type. They are counts on the
   recordings measured, never a rate.
 
-Secondary ranking, kept as ``classification`` (also reported as
-``end_to_end``) on the fault records only: among the faults meeting the
-hit criterion, rank by evidence tier (``high`` before ``moderate``),
-then fundamental peak ``magnitude`` descending, then absolute
-``deviation_pct`` ascending, then the fixed BPFO, BPFI, BSF, FTF order.
-Classification is correct when the ranked-first fault maps to the label
-(``inner_race`` -> BPFI, ``ball`` -> BSF, ``outer_race`` -> BPFO; the
-outer-race position does not change the frequency). The check itself
-names no type on this ranking.
+Secondary offline scoring analysis, kept as ``classification`` (also
+reported as ``end_to_end``) on the fault records only. It is not a
+ranking the server produces or reports, and its values are not
+comparable with the classification figures of earlier benchmark
+versions. Among the faults meeting the hit criterion, rank by evidence
+tier (``high`` before ``moderate``), then fundamental peak ``magnitude``
+descending, then absolute ``deviation_pct`` ascending, then the fixed
+BPFO, BPFI, BSF, FTF order. Classification is correct when the
+ranked-first fault maps to the label (``inner_race`` -> BPFI, ``ball``
+-> BSF, ``outer_race`` -> BPFO; the outer-race position does not change
+the frequency). The check itself names no type on this ranking.
 
 Stratification: Smith & Randall 2015 grades Y1/Y2 (expected detectable,
 the ONLY strata feeding the headline aggregate), P1/P2 (partial), N1/N2
@@ -599,14 +601,16 @@ def _criteria() -> dict[str, Any]:
             "recordings measured, never a rate."
         ),
         "ranking_rule": (
-            "Secondary metric (classification, also reported as end_to_end). "
-            "Among faults meeting the hit criterion: evidence tier (high "
-            "before moderate), then fundamental peak magnitude descending, "
-            "then absolute deviation_pct ascending, then the fixed "
-            "BPFO/BPFI/BSF/FTF order. Classification is correct when the "
-            "ranked-first fault maps to the label; it is computed on the "
-            "fault records only. The check itself names no type on this "
-            "ranking."
+            "Secondary offline scoring analysis (classification, also "
+            "reported as end_to_end), not a ranking the server produces or "
+            "reports. Among faults meeting the hit criterion: evidence tier "
+            "(high before moderate), then fundamental peak magnitude "
+            "descending, then absolute deviation_pct ascending, then the "
+            "fixed BPFO/BPFI/BSF/FTF order. Classification is correct when "
+            "the ranked-first fault maps to the label; it is computed on the "
+            "fault records only. Its values are not comparable with the "
+            "classification figures of earlier benchmark versions. The check "
+            "itself names no type on this ranking."
         ),
         "label_to_check_key": dict(LABEL_TO_CHECK_KEY),
         "policy_versions": {
