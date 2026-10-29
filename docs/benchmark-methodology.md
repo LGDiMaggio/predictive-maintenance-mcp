@@ -125,7 +125,11 @@ alarm.
   outcome counts as indicated with another fault, and a several-types outcome
   as without the label.
 - **Precision of "indicated"**: indicated outcomes whose single candidate is
-  the labelled fault, over every indicated outcome of the stratum.
+  the labelled fault, over every indicated outcome of the stratum. On a normal
+  baseline no fault is labelled, so an indicated outcome there is never
+  counted as correct. A stratum with no indicated outcome has no precision:
+  it is published with both counts at zero, never as a percentage, and
+  `results.json` records its rate as null.
 - **Named fault**: the fault type the check names, `most_likely_fault`, which
   it sets only when its claim level is `single_spectrum_evidence`: the
   labelled one, another one, or none. No other claim level names a single
@@ -140,11 +144,15 @@ alarm.
 - **Normal baselines**: counts of no indication, inconclusive, candidates
   listed and a single fault type named, under the same criterion, and of each
   fault type supported. They are counts on these recordings, never a rate.
-- **Classification (secondary)**: the earlier scorer's ranking of the
-  supported fault types (evidence grade, then fundamental magnitude, then
-  frequency deviation, then a fixed order), now under the hit criterion above
-  and on the fault records only, so its values are not comparable with those
-  published before. The check itself names no fault from it.
+- **Classification (secondary)**: a secondary offline scoring analysis kept
+  from the earlier scorer, not a ranking the server produces or reports. It
+  ranks the supported fault types (evidence grade, then fundamental
+  magnitude, then frequency deviation, then a fixed order) and counts a
+  record as correct when the first-ranked type is the labelled one. It is
+  computed on the fault records only and under the hit criterion above, so
+  its values are not comparable with the classification figures published
+  before this change. The check names no fault from it, and it is recorded
+  only in `results.json`, not published in this document or the README.
 - The full criterion and every definition are also recorded in the results
   artifact (`criteria` block) for audit.
 

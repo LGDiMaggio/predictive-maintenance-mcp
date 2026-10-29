@@ -333,11 +333,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   first candidate listed, the fault type the check names, sensitivity,
   support for other fault types and a confusion table, and on the normal
   baselines counts, with no rate other than the precision of an indicated
-  outcome. The earlier ranking stays as a secondary metric on the fault
-  records only; its per-record `classification_correct` and
-  `end_to_end_correct` are null on the baselines. No figure is comparable
-  with those of earlier releases. In `results.json`, the `false_positives`
-  blocks, the per-record `false_positive` flag and the
+  outcome. The scorer's own ranking stays only as a secondary offline
+  scoring analysis, not a ranking the server produces, on the fault records
+  only; its per-record `classification_correct` and `end_to_end_correct`
+  are null on the baselines. No figure, the secondary ranking included, is
+  comparable with those of earlier releases. In `results.json`, the
+  `false_positives` blocks, the per-record `false_positive` flag and the
   `criteria.harmonic_leg` and `criteria.hit_evidence_levels` keys are
   removed; the `normals` counts, the per-record `outcome_class` and
   `bearing_alert` and `criteria.hit_state` replace them. Every outcome
