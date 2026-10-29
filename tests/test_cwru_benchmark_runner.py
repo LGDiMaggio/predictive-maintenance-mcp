@@ -176,7 +176,8 @@ class TestRunnerHappyPath:
         assert bpfo["evidence_strength"] in {"moderate", "high"}
         assert bpfo["detected_frequency_hz"] is not None
 
-        # Every fault check mirrors the raw analyzer fields exactly.
+        # Every fault check mirrors the raw analyzer fields exactly,
+        # including the significance-tested evidence fields.
         for check in direct["fault_checks"]:
             mirrored = out["bearing"]["fault_checks"][check["fault_type"]]
             for field in (
@@ -188,16 +189,34 @@ class TestRunnerHappyPath:
                 "deviation_pct",
                 "harmonics_detected",
                 "evidence_strength",
+                "state",
+                "state_reason",
+                "line_frequency_hz",
+                "line_peak_hz",
+                "line_amplitude",
+                "level_db",
+                "threshold_db",
+                "shared_with",
             ):
                 assert mirrored[field] == check[field], field
+        assert bpfo["state"] == "supported"
 
-        # most_likely carried as context, matching the analyzer summary.
-        assert out["bearing"]["most_likely_fault"] == direct["most_likely_fault"]
+        # The summary the user sees: outcome, candidates in the analyzer's
+        # order, the claim level, and the policy versions behind them.
+        bearing = out["bearing"]
+        assert bearing["outcome"] == direct["outcome"]
+        assert bearing["candidates"] == [c["fault_type"] for c in direct["candidates"]]
+        assert bearing["claim_level"] == direct["claim"]["level"]
+        assert bearing["claim_policy_version"] == direct["claim"]["policy_version"]
         assert (
-            out["bearing"]["most_likely_fault_canonical"]
+            bearing["evidence_policy_version"] == direct["evidence_policy"]["version"]
+        )
+        assert bearing["most_likely_fault"] == direct["most_likely_fault"]
+        assert (
+            bearing["most_likely_fault_canonical"]
             == direct["most_likely_fault_canonical"]
         )
-        assert out["bearing"]["shaft_frequency_hz"] == direct["shaft_frequency_hz"]
+        assert bearing["shaft_frequency_hz"] == direct["shaft_frequency_hz"]
 
     def test_marker_constant_has_the_documented_value(self):
         assert dict(runner.EXCLUDED_ANOMALY_MARKER) == {
