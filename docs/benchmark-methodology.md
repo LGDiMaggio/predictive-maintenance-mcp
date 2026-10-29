@@ -128,8 +128,8 @@ alarm.
   the labelled fault, over every indicated outcome of the stratum.
 - **Named fault**: the fault type the check names, `most_likely_fault`, which
   it sets only when its claim level is `single_spectrum_evidence`: the
-  labelled one, another one, or none. It is the only single fault type a user
-  is shown.
+  labelled one, another one, or none. No other claim level names a single
+  fault type.
 - **Strongest candidate**: on a fault record, the labelled fault is the first
   candidate the check lists. The check lists its candidates by level over the
   noise floor; that order is not a ranking of likelihood and names no fault.
@@ -142,9 +142,10 @@ alarm.
   fault type supported. They are counts on these recordings, never a rate.
 - **Classification (secondary)**: the earlier scorer's ranking of the
   supported fault types (evidence grade, then fundamental magnitude, then
-  frequency deviation, then a fixed order), kept for comparison. The check
-  itself names no fault from it.
-- The full criterion and every definition are embedded verbatim in the results
+  frequency deviation, then a fixed order), now under the hit criterion above
+  and on the fault records only, so its values are not comparable with those
+  published before. The check itself names no fault from it.
+- The full criterion and every definition are also recorded in the results
   artifact (`criteria` block) for audit.
 
 ## Stratification
@@ -160,7 +161,7 @@ in a visible *ungraded* stratum.
 - **Headline numbers cover Y1+Y2 only** — records the reference study found
   clearly diagnosable by classical methods.
 - **N1/N2 records are reported separately, never silently excluded and never
-  counted in headline accuracy**: the reference study itself could not
+  counted in the headline**: the reference study itself could not
   diagnose them with any method, so scoring them as plain failures would
   misrepresent any pipeline — honest reporting shows them as their own line.
 
@@ -179,7 +180,7 @@ labelled fault supported <!-- slot: headline.label_supported.count -->44<!-- /sl
 another fault type supported as well <!-- slot: headline.wrong_type_support.records -->44<!-- /slot -->/<!-- slot: headline.wrong_type_support.total -->44<!-- /slot -->,
 several types listed with the labelled fault among them <!-- slot: headline.outcomes.several_types_with_label -->44<!-- /slot -->/<!-- slot: headline.outcomes.total -->44<!-- /slot -->,
 no single fault type named <!-- slot: headline.named_fault.none -->44<!-- /slot -->/<!-- slot: headline.named_fault.total -->44<!-- /slot -->,
-labelled fault first among the candidates <!-- slot: headline.strongest_candidate.correct -->40<!-- /slot -->/<!-- slot: headline.strongest_candidate.total -->44<!-- /slot --> (<!-- slot: headline.strongest_candidate.rate pct1 -->90.9<!-- /slot -->%).
+labelled fault first among the candidates <!-- slot: headline.strongest_candidate.correct -->40<!-- /slot -->/<!-- slot: headline.strongest_candidate.total -->44<!-- /slot -->.
 
 Evidence per stratum (fault records):
 
@@ -201,6 +202,18 @@ Outcome against the label (fault records):
 | P2 | <!-- slot: strata.P2.outcomes.indicated_correct -->0<!-- /slot --> | <!-- slot: strata.P2.outcomes.indicated_wrong -->1<!-- /slot --> | <!-- slot: strata.P2.outcomes.several_types_with_label -->3<!-- /slot --> | <!-- slot: strata.P2.outcomes.several_types_without_label -->0<!-- /slot --> | <!-- slot: strata.P2.outcomes.inconclusive -->1<!-- /slot --> | <!-- slot: strata.P2.outcomes.no_indication -->0<!-- /slot --> |
 | N1 | <!-- slot: strata.N1.outcomes.indicated_correct -->0<!-- /slot --> | <!-- slot: strata.N1.outcomes.indicated_wrong -->2<!-- /slot --> | <!-- slot: strata.N1.outcomes.several_types_with_label -->6<!-- /slot --> | <!-- slot: strata.N1.outcomes.several_types_without_label -->2<!-- /slot --> | <!-- slot: strata.N1.outcomes.inconclusive -->0<!-- /slot --> | <!-- slot: strata.N1.outcomes.no_indication -->0<!-- /slot --> |
 
+Precision of an indicated outcome and sensitivity:
+
+| Stratum | Indicated with the labelled fault, of all indicated | Bearing alert, of all fault records |
+|---|---|---|
+| Y1+Y2 (headline) | <!-- slot: headline.indicated_precision.correct -->0<!-- /slot -->/<!-- slot: headline.indicated_precision.total -->0<!-- /slot --> | <!-- slot: headline.sensitivity.alerts -->44<!-- /slot -->/<!-- slot: headline.sensitivity.total -->44<!-- /slot --> |
+| Y1 | <!-- slot: strata.Y1.indicated_precision.correct -->0<!-- /slot -->/<!-- slot: strata.Y1.indicated_precision.total -->0<!-- /slot --> | <!-- slot: strata.Y1.sensitivity.alerts -->9<!-- /slot -->/<!-- slot: strata.Y1.sensitivity.total -->9<!-- /slot --> |
+| Y2 | <!-- slot: strata.Y2.indicated_precision.correct -->0<!-- /slot -->/<!-- slot: strata.Y2.indicated_precision.total -->0<!-- /slot --> | <!-- slot: strata.Y2.sensitivity.alerts -->35<!-- /slot -->/<!-- slot: strata.Y2.sensitivity.total -->35<!-- /slot --> |
+| P1 | <!-- slot: strata.P1.indicated_precision.correct -->0<!-- /slot -->/<!-- slot: strata.P1.indicated_precision.total -->0<!-- /slot --> | <!-- slot: strata.P1.sensitivity.alerts -->1<!-- /slot -->/<!-- slot: strata.P1.sensitivity.total -->1<!-- /slot --> |
+| P2 | <!-- slot: strata.P2.indicated_precision.correct -->0<!-- /slot -->/<!-- slot: strata.P2.indicated_precision.total -->1<!-- /slot --> | <!-- slot: strata.P2.sensitivity.alerts -->4<!-- /slot -->/<!-- slot: strata.P2.sensitivity.total -->5<!-- /slot --> |
+| N1 | <!-- slot: strata.N1.indicated_precision.correct -->0<!-- /slot -->/<!-- slot: strata.N1.indicated_precision.total -->2<!-- /slot --> | <!-- slot: strata.N1.sensitivity.alerts -->10<!-- /slot -->/<!-- slot: strata.N1.sensitivity.total -->10<!-- /slot --> |
+| Ungraded (normal baselines) | <!-- slot: strata.ungraded.indicated_precision.correct -->0<!-- /slot -->/<!-- slot: strata.ungraded.indicated_precision.total -->1<!-- /slot --> | not applicable |
+
 **Normal baselines** (<!-- slot: strata.ungraded.normals.total -->4<!-- /slot --> records, counts only):
 <!-- slot: strata.ungraded.normals.no_indication -->1<!-- /slot --> no indication,
 <!-- slot: strata.ungraded.normals.inconclusive -->0<!-- /slot --> inconclusive,
@@ -215,15 +228,15 @@ reported as counts only: four recordings of one test rig cannot support a
 false-alarm or specificity rate.
 
 Reading the results: when more than one fault type is supported, the check
-lists them as candidates and singles none out. A single envelope spectrum
-cannot tell which of them is present: lines of different fault types can
-coincide through the bearing's kinematics (on the 6205, the third outer-race
-harmonic and the second inner-race harmonic lie within one percent of each
-other), and the reference study reports inner-race and outer-race components
-on many of the ball-fault records. A single-record indication therefore asks
-for confirmation, and the order in which the candidates are listed, by level
-over the noise floor, is reported here as a measurement, not as a basis for
-naming a fault.
+lists them as candidates and singles none out. Each of them has lines of its
+own, since a line that falls where another fault type also predicts one
+supports neither (on the 6205, the third outer-race harmonic and the second
+inner-race harmonic lie within one percent of each other), and one spectrum
+cannot tell which of them, or how many, are present: the reference study
+reports inner-race and outer-race components on many of the ball-fault
+records. A single-record indication therefore asks for confirmation, and the
+order in which the candidates are listed, by level over the noise floor, is
+reported here as a measurement, not as a basis for naming a fault.
 
 ## Honest-benchmarking notes
 
