@@ -323,6 +323,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `check_bearing_faults` returns no `claim`, the plugin workflows relay no
   bearing fault type or bearing assessment and say why. Plugin version
   1.2.0.
+- **The CWRU benchmark reports what the bearing check tells a user, with
+  denominators.** The scorer counts a fault type as found when the check
+  supports it (a significant line of its own with a further line its
+  kinematics predict), on the fault records and the normal baselines
+  alike; the separate 2x ball-spin leg is removed. Per stratum,
+  `results.json` holds the check's outcome read against the label, the
+  precision of an indicated outcome, how often the labelled fault is the
+  first candidate listed, the fault type the check names, sensitivity,
+  support for other fault types and a confusion table, and on the normal
+  baselines counts, never a rate. The earlier ranking stays as a secondary
+  metric. Every outcome records the evidence and claim policy versions it
+  was measured under, and the scorer refuses an outcomes file from another
+  version. The CWRU artifacts are re-measured, and the README and the
+  benchmark methodology publish the new numbers.
 - **`diagnose_vibration`: `rpm`, `machine_group` and `support_type` are
   now optional** (additive; calls that pass them behave as before).
   Precedence: the explicit argument, then the `rpm` declared in the

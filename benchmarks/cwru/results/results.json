@@ -1,55 +1,139 @@
 {
   "criteria": {
-    "harmonic_leg": {
-      "fault": "BSF",
-      "harmonic": 2
-    },
-    "hit_criterion": "A fault hits when its check has detected == true AND evidence_strength in {'high', 'moderate'}; BSF (ball) ONLY additionally hits when harmonic 2 is present in the BSF check's harmonics_detected (CWRU's published rolling-element factor is 2xBSF). The identical criterion counts detections on faulted records and false positives on normal baselines.",
-    "hit_evidence_levels": [
-      "high",
-      "moderate"
-    ],
+    "frequency_detection": "On a fault record, the labelled fault's tested line is significant (detected == true), whether or not the hypothesis is supported.",
+    "hit_criterion": "A fault hits when its check's state is 'supported': a significant line of its own with at least one counted corroborating line, shared with no other hypothesis. The identical criterion is applied to the fault records and to the normal baselines. The check tests the rolling-element line at twice the ball spin frequency itself, so no fault has a harmonic leg.",
+    "hit_state": "supported",
+    "indicated_precision": "Indicated outcomes whose single candidate is the labelled fault, over every indicated outcome of the group.",
     "label_to_check_key": {
       "ball": "BSF",
       "inner_race": "BPFI",
       "outer_race": "BPFO"
     },
-    "ranking_rule": "Among faults meeting the hit criterion: evidence tier (high > moderate > harmonic-only) first, then fundamental peak magnitude descending (a harmonic-only hit uses the 2x entry's magnitude), then absolute deviation_pct ascending, then fixed BPFO/BPFI/BSF/FTF order as the final deterministic tie-break. Classification is correct when the ranked-first fault maps to the label; a normal record is correct when no fault meets the criterion."
+    "named_fault": "The fault type the check names: most_likely_fault, which it sets only when its claim level is 'single_spectrum_evidence'. Counted on the fault records as the labelled type, another type, or none.",
+    "normals": "On the normal baselines, counts of each outcome kind, of named faults and of each supported fault type: counts on the recordings measured, never a rate.",
+    "outcome_classes": {
+      "inconclusive": "Outcome 'inconclusive'.",
+      "indicated_correct": "Outcome 'indicated' with the labelled fault as its single candidate.",
+      "indicated_wrong": "Outcome 'indicated' with another fault as its single candidate; on a normal baseline, every indicated outcome.",
+      "no_indication": "Outcome 'no_indication'.",
+      "several_types_with_label": "Outcome 'several_types' with the labelled fault among the candidates.",
+      "several_types_without_label": "Outcome 'several_types' without the labelled fault among the candidates; on a normal baseline, every several-types outcome."
+    },
+    "policy_versions": {
+      "claim": 1,
+      "evidence": 1
+    },
+    "ranking_rule": "Secondary metric (classification, also reported as end_to_end). Among faults meeting the hit criterion: evidence tier (high before moderate), then fundamental peak magnitude descending, then absolute deviation_pct ascending, then the fixed BPFO/BPFI/BSF/FTF order. Classification is correct when the ranked-first fault maps to the label; a normal record is correct when no fault meets the criterion. The check itself names no type on this ranking.",
+    "sensitivity": "On a fault record, a bearing alert: outcome 'indicated' or 'several_types'.",
+    "strongest_candidate": "On a fault record, the labelled fault is the first of the check's candidates. The check lists its candidates by level over the noise floor; that order does not rank which type is more likely.",
+    "wrong_type_support": "On a fault record, a fault other than the labelled one meets the hit criterion."
   },
   "headline": {
     "classification": {
-      "correct": 34,
-      "rate": 0.772727273,
+      "correct": 40,
+      "rate": 0.909090909,
       "total": 44
     },
-    "end_to_end": {
-      "correct": 34,
-      "rate": 0.772727273,
-      "total": 44
-    },
-    "false_positives": {
-      "per_fault_counts": {
+    "confusion": {
+      "ball": {
         "BPFI": 0,
         "BPFO": 0,
         "BSF": 0,
-        "FTF": 0
+        "FTF": 0,
+        "none": 7
       },
-      "rate": null,
-      "records_with_any": 0,
-      "total_normal": 0
+      "inner_race": {
+        "BPFI": 0,
+        "BPFO": 0,
+        "BSF": 0,
+        "FTF": 0,
+        "none": 12
+      },
+      "normal": {
+        "BPFI": 0,
+        "BPFO": 0,
+        "BSF": 0,
+        "FTF": 0,
+        "none": 0
+      },
+      "outer_race": {
+        "BPFI": 0,
+        "BPFO": 0,
+        "BSF": 0,
+        "FTF": 0,
+        "none": 25
+      }
+    },
+    "end_to_end": {
+      "correct": 40,
+      "rate": 0.909090909,
+      "total": 44
     },
     "frequency_detection": {
       "hits": 44,
       "rate": 1.0,
       "total": 44
     },
+    "indicated_precision": {
+      "correct": 0,
+      "rate": null,
+      "total": 0
+    },
+    "label_supported": {
+      "count": 44,
+      "rate": 1.0,
+      "total": 44
+    },
     "n_faulted": 44,
     "n_normal": 0,
     "n_records": 44,
+    "named_fault": {
+      "correct": 0,
+      "none": 44,
+      "total": 44,
+      "wrong": 0
+    },
+    "normals": {
+      "bearing_alert": 0,
+      "inconclusive": 0,
+      "named_fault": 0,
+      "no_indication": 0,
+      "supported_counts": {
+        "BPFI": 0,
+        "BPFO": 0,
+        "BSF": 0,
+        "FTF": 0
+      },
+      "total": 0
+    },
+    "outcomes": {
+      "inconclusive": 0,
+      "indicated_correct": 0,
+      "indicated_wrong": 0,
+      "no_indication": 0,
+      "several_types_with_label": 44,
+      "several_types_without_label": 0,
+      "total": 44
+    },
+    "sensitivity": {
+      "alerts": 44,
+      "rate": 1.0,
+      "total": 44
+    },
     "strata_included": [
       "Y1",
       "Y2"
-    ]
+    ],
+    "strongest_candidate": {
+      "correct": 40,
+      "rate": 0.909090909,
+      "total": 44
+    },
+    "wrong_type_support": {
+      "rate": 1.0,
+      "records": 44,
+      "total": 44
+    }
   },
   "known_anomalies_flagged": {
     "classification": {
@@ -57,38 +141,110 @@
       "rate": 1.0,
       "total": 2
     },
+    "confusion": {
+      "ball": {
+        "BPFI": 0,
+        "BPFO": 0,
+        "BSF": 0,
+        "FTF": 0,
+        "none": 0
+      },
+      "inner_race": {
+        "BPFI": 0,
+        "BPFO": 0,
+        "BSF": 0,
+        "FTF": 0,
+        "none": 0
+      },
+      "normal": {
+        "BPFI": 0,
+        "BPFO": 0,
+        "BSF": 0,
+        "FTF": 0,
+        "none": 0
+      },
+      "outer_race": {
+        "BPFI": 0,
+        "BPFO": 0,
+        "BSF": 0,
+        "FTF": 0,
+        "none": 2
+      }
+    },
     "end_to_end": {
       "correct": 2,
       "rate": 1.0,
       "total": 2
-    },
-    "false_positives": {
-      "per_fault_counts": {
-        "BPFI": 0,
-        "BPFO": 0,
-        "BSF": 0,
-        "FTF": 0
-      },
-      "rate": null,
-      "records_with_any": 0,
-      "total_normal": 0
     },
     "frequency_detection": {
       "hits": 2,
       "rate": 1.0,
       "total": 2
     },
+    "indicated_precision": {
+      "correct": 0,
+      "rate": null,
+      "total": 0
+    },
+    "label_supported": {
+      "count": 2,
+      "rate": 1.0,
+      "total": 2
+    },
     "n_faulted": 2,
     "n_normal": 0,
     "n_records": 2,
+    "named_fault": {
+      "correct": 0,
+      "none": 2,
+      "total": 2,
+      "wrong": 0
+    },
+    "normals": {
+      "bearing_alert": 0,
+      "inconclusive": 0,
+      "named_fault": 0,
+      "no_indication": 0,
+      "supported_counts": {
+        "BPFI": 0,
+        "BPFO": 0,
+        "BSF": 0,
+        "FTF": 0
+      },
+      "total": 0
+    },
+    "outcomes": {
+      "inconclusive": 0,
+      "indicated_correct": 0,
+      "indicated_wrong": 0,
+      "no_indication": 0,
+      "several_types_with_label": 2,
+      "several_types_without_label": 0,
+      "total": 2
+    },
     "record_ids": [
       "cwru_045",
       "cwru_050"
-    ]
+    ],
+    "sensitivity": {
+      "alerts": 2,
+      "rate": 1.0,
+      "total": 2
+    },
+    "strongest_candidate": {
+      "correct": 2,
+      "rate": 1.0,
+      "total": 2
+    },
+    "wrong_type_support": {
+      "rate": 1.0,
+      "records": 2,
+      "total": 2
+    }
   },
   "measurement_provenance": {
-    "date": "2026-08-20T16:21:36+00:00",
-    "git_describe": "v0.13.0-18-gf755388",
+    "date": "2026-10-29T09:57:31+00:00",
+    "git_describe": "v0.13.0-157-g0b682ef",
     "numpy_version": "2.3.3",
     "pipeline_version": "0.13.0",
     "platform": "Windows-10-10.0.26200-SP0",
@@ -97,8 +253,8 @@
   },
   "metadata": {
     "dataset_subset": "CWRU 12 kHz drive-end fault group + normal baselines (v1)",
-    "date": "2026-08-20T16:27:12+00:00",
-    "git_describe": "v0.13.0-19-g3fe533a",
+    "date": "2026-10-29T09:57:30+00:00",
+    "git_describe": "v0.13.0-157-g0b682ef",
     "numpy_version": "2.3.3",
     "pipeline_version": "0.13.0",
     "platform": "Windows-10-10.0.26200-SP0",
@@ -107,24 +263,49 @@
   },
   "records": {
     "cwru_001": {
+      "bearing_alert": true,
+      "candidates": [
+        "BPFI",
+        "BSF",
+        "FTF",
+        "BPFO"
+      ],
+      "claim_level": "qualified",
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFI",
       "false_positive": null,
       "fault_hits": {
         "BPFI": true,
-        "BPFO": false,
-        "BSF": false,
-        "FTF": false
+        "BPFO": true,
+        "BSF": true,
+        "FTF": true
       },
       "frequency_detection_hit": true,
       "known_anomalies": false,
+      "label_supported": true,
+      "label_type": "inner_race",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_with_label",
       "ranked_first": "BPFI",
-      "stratum": "Y2"
+      "stratum": "Y2",
+      "strongest_candidate": "BPFI",
+      "strongest_candidate_correct": true,
+      "wrong_type_supported": true
     },
     "cwru_002": {
-      "classification_correct": true,
-      "end_to_end_correct": true,
+      "bearing_alert": true,
+      "candidates": [
+        "BPFI",
+        "BPFO",
+        "FTF",
+        "BSF"
+      ],
+      "claim_level": "qualified",
+      "classification_correct": false,
+      "end_to_end_correct": false,
       "expected_fault": "BSF",
       "false_positive": null,
       "fault_hits": {
@@ -135,10 +316,25 @@
       },
       "frequency_detection_hit": true,
       "known_anomalies": false,
-      "ranked_first": "BSF",
-      "stratum": "N1"
+      "label_supported": true,
+      "label_type": "ball",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_with_label",
+      "ranked_first": "FTF",
+      "stratum": "N1",
+      "strongest_candidate": "BPFI",
+      "strongest_candidate_correct": false,
+      "wrong_type_supported": true
     },
     "cwru_003": {
+      "bearing_alert": true,
+      "candidates": [
+        "BPFO",
+        "BPFI"
+      ],
+      "claim_level": "qualified",
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFO",
@@ -146,15 +342,32 @@
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
-        "BSF": true,
-        "FTF": true
+        "BSF": false,
+        "FTF": false
       },
       "frequency_detection_hit": true,
       "known_anomalies": false,
+      "label_supported": true,
+      "label_type": "outer_race",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_with_label",
       "ranked_first": "BPFO",
-      "stratum": "Y1"
+      "stratum": "Y1",
+      "strongest_candidate": "BPFO",
+      "strongest_candidate_correct": true,
+      "wrong_type_supported": true
     },
     "cwru_004": {
+      "bearing_alert": true,
+      "candidates": [
+        "BPFO",
+        "BPFI",
+        "FTF",
+        "BSF"
+      ],
+      "claim_level": "qualified",
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFO",
@@ -167,10 +380,26 @@
       },
       "frequency_detection_hit": true,
       "known_anomalies": false,
+      "label_supported": true,
+      "label_type": "outer_race",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_with_label",
       "ranked_first": "BPFO",
-      "stratum": "Y2"
+      "stratum": "Y2",
+      "strongest_candidate": "BPFO",
+      "strongest_candidate_correct": true,
+      "wrong_type_supported": true
     },
     "cwru_005": {
+      "bearing_alert": true,
+      "candidates": [
+        "BPFO",
+        "BPFI",
+        "FTF"
+      ],
+      "claim_level": "qualified",
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFO",
@@ -178,15 +407,31 @@
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
-        "BSF": true,
+        "BSF": false,
         "FTF": true
       },
       "frequency_detection_hit": true,
       "known_anomalies": false,
+      "label_supported": true,
+      "label_type": "outer_race",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_with_label",
       "ranked_first": "BPFO",
-      "stratum": "Y1"
+      "stratum": "Y1",
+      "strongest_candidate": "BPFO",
+      "strongest_candidate_correct": true,
+      "wrong_type_supported": true
     },
     "cwru_006": {
+      "bearing_alert": true,
+      "candidates": [
+        "BPFI",
+        "BSF",
+        "FTF"
+      ],
+      "claim_level": "qualified",
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFI",
@@ -195,16 +440,32 @@
         "BPFI": true,
         "BPFO": false,
         "BSF": true,
-        "FTF": false
+        "FTF": true
       },
       "frequency_detection_hit": true,
       "known_anomalies": false,
+      "label_supported": true,
+      "label_type": "inner_race",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_with_label",
       "ranked_first": "BPFI",
-      "stratum": "Y2"
+      "stratum": "Y2",
+      "strongest_candidate": "BPFI",
+      "strongest_candidate_correct": true,
+      "wrong_type_supported": true
     },
     "cwru_007": {
-      "classification_correct": true,
-      "end_to_end_correct": true,
+      "bearing_alert": true,
+      "candidates": [
+        "BPFI",
+        "BPFO",
+        "BSF"
+      ],
+      "claim_level": "qualified",
+      "classification_correct": false,
+      "end_to_end_correct": false,
       "expected_fault": "BSF",
       "false_positive": null,
       "fault_hits": {
@@ -215,10 +476,26 @@
       },
       "frequency_detection_hit": true,
       "known_anomalies": false,
-      "ranked_first": "BSF",
-      "stratum": "N1"
+      "label_supported": true,
+      "label_type": "ball",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_with_label",
+      "ranked_first": "BPFI",
+      "stratum": "N1",
+      "strongest_candidate": "BPFI",
+      "strongest_candidate_correct": false,
+      "wrong_type_supported": true
     },
     "cwru_008": {
+      "bearing_alert": true,
+      "candidates": [
+        "BPFO",
+        "BPFI",
+        "FTF"
+      ],
+      "claim_level": "qualified",
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFO",
@@ -226,15 +503,32 @@
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
-        "BSF": true,
+        "BSF": false,
         "FTF": true
       },
       "frequency_detection_hit": true,
       "known_anomalies": false,
+      "label_supported": true,
+      "label_type": "outer_race",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_with_label",
       "ranked_first": "BPFO",
-      "stratum": "Y1"
+      "stratum": "Y1",
+      "strongest_candidate": "BPFO",
+      "strongest_candidate_correct": true,
+      "wrong_type_supported": true
     },
     "cwru_009": {
+      "bearing_alert": true,
+      "candidates": [
+        "BPFO",
+        "BPFI",
+        "FTF",
+        "BSF"
+      ],
+      "claim_level": "qualified",
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFO",
@@ -247,12 +541,29 @@
       },
       "frequency_detection_hit": true,
       "known_anomalies": false,
+      "label_supported": true,
+      "label_type": "outer_race",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_with_label",
       "ranked_first": "BPFO",
-      "stratum": "Y2"
+      "stratum": "Y2",
+      "strongest_candidate": "BPFO",
+      "strongest_candidate_correct": true,
+      "wrong_type_supported": true
     },
     "cwru_010": {
-      "classification_correct": false,
-      "end_to_end_correct": false,
+      "bearing_alert": true,
+      "candidates": [
+        "BPFO",
+        "BPFI",
+        "BSF",
+        "FTF"
+      ],
+      "claim_level": "qualified",
+      "classification_correct": true,
+      "end_to_end_correct": true,
       "expected_fault": "BPFO",
       "false_positive": null,
       "fault_hits": {
@@ -263,10 +574,26 @@
       },
       "frequency_detection_hit": true,
       "known_anomalies": false,
-      "ranked_first": "BPFI",
-      "stratum": "Y2"
+      "label_supported": true,
+      "label_type": "outer_race",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_with_label",
+      "ranked_first": "BPFO",
+      "stratum": "Y2",
+      "strongest_candidate": "BPFO",
+      "strongest_candidate_correct": true,
+      "wrong_type_supported": true
     },
     "cwru_011": {
+      "bearing_alert": true,
+      "candidates": [
+        "BPFI",
+        "BSF",
+        "FTF"
+      ],
+      "claim_level": "qualified",
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFI",
@@ -274,15 +601,32 @@
       "fault_hits": {
         "BPFI": true,
         "BPFO": false,
-        "BSF": false,
-        "FTF": false
+        "BSF": true,
+        "FTF": true
       },
       "frequency_detection_hit": true,
       "known_anomalies": false,
+      "label_supported": true,
+      "label_type": "inner_race",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_with_label",
       "ranked_first": "BPFI",
-      "stratum": "Y2"
+      "stratum": "Y2",
+      "strongest_candidate": "BPFI",
+      "strongest_candidate_correct": true,
+      "wrong_type_supported": true
     },
     "cwru_012": {
+      "bearing_alert": true,
+      "candidates": [
+        "BPFI",
+        "BPFO",
+        "FTF",
+        "BSF"
+      ],
+      "claim_level": "qualified",
       "classification_correct": false,
       "end_to_end_correct": false,
       "expected_fault": "BSF",
@@ -295,10 +639,25 @@
       },
       "frequency_detection_hit": true,
       "known_anomalies": false,
-      "ranked_first": "BPFO",
-      "stratum": "N1"
+      "label_supported": true,
+      "label_type": "ball",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_with_label",
+      "ranked_first": "BPFI",
+      "stratum": "N1",
+      "strongest_candidate": "BPFI",
+      "strongest_candidate_correct": false,
+      "wrong_type_supported": true
     },
     "cwru_013": {
+      "bearing_alert": true,
+      "candidates": [
+        "BPFO",
+        "BPFI"
+      ],
+      "claim_level": "qualified",
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFO",
@@ -306,31 +665,64 @@
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
-        "BSF": true,
-        "FTF": true
+        "BSF": false,
+        "FTF": false
       },
       "frequency_detection_hit": true,
       "known_anomalies": false,
+      "label_supported": true,
+      "label_type": "outer_race",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_with_label",
       "ranked_first": "BPFO",
-      "stratum": "Y1"
+      "stratum": "Y1",
+      "strongest_candidate": "BPFO",
+      "strongest_candidate_correct": true,
+      "wrong_type_supported": true
     },
     "cwru_014": {
+      "bearing_alert": true,
+      "candidates": [
+        "BPFO",
+        "FTF",
+        "BSF"
+      ],
+      "claim_level": "qualified",
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFO",
       "false_positive": null,
       "fault_hits": {
-        "BPFI": true,
+        "BPFI": false,
         "BPFO": true,
         "BSF": true,
         "FTF": true
       },
       "frequency_detection_hit": true,
       "known_anomalies": false,
+      "label_supported": true,
+      "label_type": "outer_race",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_with_label",
       "ranked_first": "BPFO",
-      "stratum": "Y2"
+      "stratum": "Y2",
+      "strongest_candidate": "BPFO",
+      "strongest_candidate_correct": true,
+      "wrong_type_supported": true
     },
     "cwru_015": {
+      "bearing_alert": true,
+      "candidates": [
+        "BPFO",
+        "BPFI",
+        "BSF",
+        "FTF"
+      ],
+      "claim_level": "qualified",
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFO",
@@ -343,26 +735,60 @@
       },
       "frequency_detection_hit": true,
       "known_anomalies": false,
+      "label_supported": true,
+      "label_type": "outer_race",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_with_label",
       "ranked_first": "BPFO",
-      "stratum": "Y2"
+      "stratum": "Y2",
+      "strongest_candidate": "BPFO",
+      "strongest_candidate_correct": true,
+      "wrong_type_supported": true
     },
     "cwru_016": {
+      "bearing_alert": true,
+      "candidates": [
+        "BPFI",
+        "BSF",
+        "FTF",
+        "BPFO"
+      ],
+      "claim_level": "qualified",
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFI",
       "false_positive": null,
       "fault_hits": {
         "BPFI": true,
-        "BPFO": false,
+        "BPFO": true,
         "BSF": true,
-        "FTF": false
+        "FTF": true
       },
       "frequency_detection_hit": true,
       "known_anomalies": false,
+      "label_supported": true,
+      "label_type": "inner_race",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_with_label",
       "ranked_first": "BPFI",
-      "stratum": "Y2"
+      "stratum": "Y2",
+      "strongest_candidate": "BPFI",
+      "strongest_candidate_correct": true,
+      "wrong_type_supported": true
     },
     "cwru_017": {
+      "bearing_alert": true,
+      "candidates": [
+        "BPFI",
+        "FTF",
+        "BSF",
+        "BPFO"
+      ],
+      "claim_level": "qualified",
       "classification_correct": false,
       "end_to_end_correct": false,
       "expected_fault": "BSF",
@@ -375,10 +801,26 @@
       },
       "frequency_detection_hit": true,
       "known_anomalies": false,
-      "ranked_first": "FTF",
-      "stratum": "Y2"
+      "label_supported": true,
+      "label_type": "ball",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_with_label",
+      "ranked_first": "BPFI",
+      "stratum": "Y2",
+      "strongest_candidate": "BPFI",
+      "strongest_candidate_correct": false,
+      "wrong_type_supported": true
     },
     "cwru_018": {
+      "bearing_alert": true,
+      "candidates": [
+        "BPFO",
+        "BPFI",
+        "FTF"
+      ],
+      "claim_level": "qualified",
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFO",
@@ -386,31 +828,64 @@
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
-        "BSF": true,
+        "BSF": false,
         "FTF": true
       },
       "frequency_detection_hit": true,
       "known_anomalies": false,
+      "label_supported": true,
+      "label_type": "outer_race",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_with_label",
       "ranked_first": "BPFO",
-      "stratum": "Y1"
+      "stratum": "Y1",
+      "strongest_candidate": "BPFO",
+      "strongest_candidate_correct": true,
+      "wrong_type_supported": true
     },
     "cwru_019": {
+      "bearing_alert": true,
+      "candidates": [
+        "BPFO",
+        "FTF",
+        "BSF"
+      ],
+      "claim_level": "qualified",
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFO",
       "false_positive": null,
       "fault_hits": {
-        "BPFI": true,
+        "BPFI": false,
         "BPFO": true,
         "BSF": true,
         "FTF": true
       },
       "frequency_detection_hit": true,
       "known_anomalies": false,
+      "label_supported": true,
+      "label_type": "outer_race",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_with_label",
       "ranked_first": "BPFO",
-      "stratum": "Y2"
+      "stratum": "Y2",
+      "strongest_candidate": "BPFO",
+      "strongest_candidate_correct": true,
+      "wrong_type_supported": true
     },
     "cwru_020": {
+      "bearing_alert": true,
+      "candidates": [
+        "BPFO",
+        "BPFI",
+        "BSF",
+        "FTF"
+      ],
+      "claim_level": "qualified",
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFO",
@@ -423,10 +898,27 @@
       },
       "frequency_detection_hit": true,
       "known_anomalies": false,
+      "label_supported": true,
+      "label_type": "outer_race",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_with_label",
       "ranked_first": "BPFO",
-      "stratum": "Y2"
+      "stratum": "Y2",
+      "strongest_candidate": "BPFO",
+      "strongest_candidate_correct": true,
+      "wrong_type_supported": true
     },
     "cwru_021": {
+      "bearing_alert": true,
+      "candidates": [
+        "BPFI",
+        "BPFO",
+        "FTF",
+        "BSF"
+      ],
+      "claim_level": "qualified",
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFI",
@@ -439,26 +931,54 @@
       },
       "frequency_detection_hit": true,
       "known_anomalies": false,
+      "label_supported": true,
+      "label_type": "inner_race",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_with_label",
       "ranked_first": "BPFI",
-      "stratum": "Y2"
+      "stratum": "Y2",
+      "strongest_candidate": "BPFI",
+      "strongest_candidate_correct": true,
+      "wrong_type_supported": true
     },
     "cwru_022": {
+      "bearing_alert": false,
+      "candidates": [],
+      "claim_level": "withheld",
       "classification_correct": false,
       "end_to_end_correct": false,
       "expected_fault": "BSF",
       "false_positive": null,
       "fault_hits": {
         "BPFI": false,
-        "BPFO": true,
-        "BSF": true,
-        "FTF": true
+        "BPFO": false,
+        "BSF": false,
+        "FTF": false
       },
       "frequency_detection_hit": true,
       "known_anomalies": false,
-      "ranked_first": "FTF",
-      "stratum": "P2"
+      "label_supported": false,
+      "label_type": "ball",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "inconclusive",
+      "outcome_class": "inconclusive",
+      "ranked_first": null,
+      "stratum": "P2",
+      "strongest_candidate": null,
+      "strongest_candidate_correct": false,
+      "wrong_type_supported": false
     },
     "cwru_023": {
+      "bearing_alert": true,
+      "candidates": [
+        "BPFI",
+        "BSF",
+        "BPFO"
+      ],
+      "claim_level": "qualified",
       "classification_correct": false,
       "end_to_end_correct": false,
       "expected_fault": "BPFO",
@@ -467,14 +987,30 @@
         "BPFI": true,
         "BPFO": true,
         "BSF": true,
-        "FTF": true
+        "FTF": false
       },
       "frequency_detection_hit": true,
       "known_anomalies": false,
+      "label_supported": true,
+      "label_type": "outer_race",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_with_label",
       "ranked_first": "BPFI",
-      "stratum": "Y2"
+      "stratum": "Y2",
+      "strongest_candidate": "BPFI",
+      "strongest_candidate_correct": false,
+      "wrong_type_supported": true
     },
     "cwru_024": {
+      "bearing_alert": true,
+      "candidates": [
+        "BPFI",
+        "BPFO",
+        "BSF"
+      ],
+      "claim_level": "qualified",
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFI",
@@ -483,30 +1019,61 @@
         "BPFI": true,
         "BPFO": true,
         "BSF": true,
-        "FTF": true
+        "FTF": false
       },
       "frequency_detection_hit": true,
       "known_anomalies": false,
+      "label_supported": true,
+      "label_type": "inner_race",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_with_label",
       "ranked_first": "BPFI",
-      "stratum": "Y2"
+      "stratum": "Y2",
+      "strongest_candidate": "BPFI",
+      "strongest_candidate_correct": true,
+      "wrong_type_supported": true
     },
     "cwru_025": {
+      "bearing_alert": true,
+      "candidates": [
+        "FTF",
+        "BSF"
+      ],
+      "claim_level": "qualified",
       "classification_correct": false,
       "end_to_end_correct": false,
       "expected_fault": "BSF",
       "false_positive": null,
       "fault_hits": {
         "BPFI": false,
-        "BPFO": true,
+        "BPFO": false,
         "BSF": true,
         "FTF": true
       },
       "frequency_detection_hit": true,
       "known_anomalies": false,
+      "label_supported": true,
+      "label_type": "ball",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_with_label",
       "ranked_first": "FTF",
-      "stratum": "P2"
+      "stratum": "P2",
+      "strongest_candidate": "FTF",
+      "strongest_candidate_correct": false,
+      "wrong_type_supported": true
     },
     "cwru_026": {
+      "bearing_alert": true,
+      "candidates": [
+        "BPFI",
+        "FTF",
+        "BPFO"
+      ],
+      "claim_level": "qualified",
       "classification_correct": false,
       "end_to_end_correct": false,
       "expected_fault": "BPFO",
@@ -519,10 +1086,26 @@
       },
       "frequency_detection_hit": true,
       "known_anomalies": false,
+      "label_supported": true,
+      "label_type": "outer_race",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_with_label",
       "ranked_first": "BPFI",
-      "stratum": "P2"
+      "stratum": "P2",
+      "strongest_candidate": "BPFI",
+      "strongest_candidate_correct": false,
+      "wrong_type_supported": true
     },
     "cwru_027": {
+      "bearing_alert": true,
+      "candidates": [
+        "BPFI",
+        "BPFO",
+        "BSF"
+      ],
+      "claim_level": "qualified",
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFI",
@@ -531,30 +1114,60 @@
         "BPFI": true,
         "BPFO": true,
         "BSF": true,
-        "FTF": true
+        "FTF": false
       },
       "frequency_detection_hit": true,
       "known_anomalies": false,
+      "label_supported": true,
+      "label_type": "inner_race",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_with_label",
       "ranked_first": "BPFI",
-      "stratum": "Y2"
+      "stratum": "Y2",
+      "strongest_candidate": "BPFI",
+      "strongest_candidate_correct": true,
+      "wrong_type_supported": true
     },
     "cwru_028": {
+      "bearing_alert": true,
+      "candidates": [
+        "FTF"
+      ],
+      "claim_level": "single_spectrum_evidence",
       "classification_correct": false,
       "end_to_end_correct": false,
       "expected_fault": "BSF",
       "false_positive": null,
       "fault_hits": {
         "BPFI": false,
-        "BPFO": true,
-        "BSF": true,
+        "BPFO": false,
+        "BSF": false,
         "FTF": true
       },
-      "frequency_detection_hit": true,
+      "frequency_detection_hit": false,
       "known_anomalies": false,
+      "label_supported": false,
+      "label_type": "ball",
+      "named_correct": false,
+      "named_fault": "FTF",
+      "outcome": "indicated",
+      "outcome_class": "indicated_wrong",
       "ranked_first": "FTF",
-      "stratum": "P2"
+      "stratum": "P2",
+      "strongest_candidate": "FTF",
+      "strongest_candidate_correct": false,
+      "wrong_type_supported": true
     },
     "cwru_029": {
+      "bearing_alert": true,
+      "candidates": [
+        "FTF",
+        "BPFI",
+        "BPFO"
+      ],
+      "claim_level": "qualified",
       "classification_correct": false,
       "end_to_end_correct": false,
       "expected_fault": "BPFO",
@@ -562,15 +1175,31 @@
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
-        "BSF": true,
+        "BSF": false,
         "FTF": true
       },
       "frequency_detection_hit": true,
       "known_anomalies": false,
+      "label_supported": true,
+      "label_type": "outer_race",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_with_label",
       "ranked_first": "FTF",
-      "stratum": "P1"
+      "stratum": "P1",
+      "strongest_candidate": "FTF",
+      "strongest_candidate_correct": false,
+      "wrong_type_supported": true
     },
     "cwru_030": {
+      "bearing_alert": true,
+      "candidates": [
+        "BPFI",
+        "BPFO",
+        "BSF"
+      ],
+      "claim_level": "qualified",
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFI",
@@ -579,46 +1208,91 @@
         "BPFI": true,
         "BPFO": true,
         "BSF": true,
-        "FTF": true
+        "FTF": false
       },
       "frequency_detection_hit": true,
       "known_anomalies": false,
+      "label_supported": true,
+      "label_type": "inner_race",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_with_label",
       "ranked_first": "BPFI",
-      "stratum": "Y2"
+      "stratum": "Y2",
+      "strongest_candidate": "BPFI",
+      "strongest_candidate_correct": true,
+      "wrong_type_supported": true
     },
     "cwru_031": {
+      "bearing_alert": true,
+      "candidates": [
+        "FTF",
+        "BSF"
+      ],
+      "claim_level": "qualified",
       "classification_correct": false,
       "end_to_end_correct": false,
       "expected_fault": "BSF",
       "false_positive": null,
       "fault_hits": {
         "BPFI": false,
-        "BPFO": true,
+        "BPFO": false,
         "BSF": true,
         "FTF": true
       },
       "frequency_detection_hit": true,
       "known_anomalies": false,
+      "label_supported": true,
+      "label_type": "ball",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_with_label",
       "ranked_first": "FTF",
-      "stratum": "P2"
+      "stratum": "P2",
+      "strongest_candidate": "FTF",
+      "strongest_candidate_correct": false,
+      "wrong_type_supported": true
     },
     "cwru_032": {
+      "bearing_alert": true,
+      "candidates": [
+        "BPFI"
+      ],
+      "claim_level": "single_spectrum_evidence",
       "classification_correct": false,
       "end_to_end_correct": false,
       "expected_fault": "BPFO",
       "false_positive": null,
       "fault_hits": {
         "BPFI": true,
-        "BPFO": true,
-        "BSF": true,
-        "FTF": true
+        "BPFO": false,
+        "BSF": false,
+        "FTF": false
       },
-      "frequency_detection_hit": true,
+      "frequency_detection_hit": false,
       "known_anomalies": false,
+      "label_supported": false,
+      "label_type": "outer_race",
+      "named_correct": false,
+      "named_fault": "BPFI",
+      "outcome": "indicated",
+      "outcome_class": "indicated_wrong",
       "ranked_first": "BPFI",
-      "stratum": "N1"
+      "stratum": "N1",
+      "strongest_candidate": "BPFI",
+      "strongest_candidate_correct": false,
+      "wrong_type_supported": true
     },
     "cwru_033": {
+      "bearing_alert": true,
+      "candidates": [
+        "BPFI",
+        "FTF",
+        "BSF"
+      ],
+      "claim_level": "qualified",
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFI",
@@ -631,26 +1305,58 @@
       },
       "frequency_detection_hit": true,
       "known_anomalies": false,
+      "label_supported": true,
+      "label_type": "inner_race",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_with_label",
       "ranked_first": "BPFI",
-      "stratum": "Y1"
+      "stratum": "Y1",
+      "strongest_candidate": "BPFI",
+      "strongest_candidate_correct": true,
+      "wrong_type_supported": true
     },
     "cwru_034": {
+      "bearing_alert": true,
+      "candidates": [
+        "BPFI",
+        "BSF"
+      ],
+      "claim_level": "qualified",
       "classification_correct": false,
       "end_to_end_correct": false,
       "expected_fault": "BSF",
       "false_positive": null,
       "fault_hits": {
         "BPFI": true,
-        "BPFO": true,
+        "BPFO": false,
         "BSF": true,
         "FTF": false
       },
       "frequency_detection_hit": true,
       "known_anomalies": false,
+      "label_supported": true,
+      "label_type": "ball",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_with_label",
       "ranked_first": "BPFI",
-      "stratum": "Y2"
+      "stratum": "Y2",
+      "strongest_candidate": "BPFI",
+      "strongest_candidate_correct": false,
+      "wrong_type_supported": true
     },
     "cwru_035": {
+      "bearing_alert": true,
+      "candidates": [
+        "BPFO",
+        "BSF",
+        "BPFI",
+        "FTF"
+      ],
+      "claim_level": "qualified",
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFO",
@@ -663,10 +1369,27 @@
       },
       "frequency_detection_hit": true,
       "known_anomalies": false,
+      "label_supported": true,
+      "label_type": "outer_race",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_with_label",
       "ranked_first": "BPFO",
-      "stratum": "Y2"
+      "stratum": "Y2",
+      "strongest_candidate": "BPFO",
+      "strongest_candidate_correct": true,
+      "wrong_type_supported": true
     },
     "cwru_036": {
+      "bearing_alert": true,
+      "candidates": [
+        "BPFO",
+        "BSF",
+        "BPFI",
+        "FTF"
+      ],
+      "claim_level": "qualified",
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFO",
@@ -679,12 +1402,29 @@
       },
       "frequency_detection_hit": true,
       "known_anomalies": false,
+      "label_supported": true,
+      "label_type": "outer_race",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_with_label",
       "ranked_first": "BPFO",
-      "stratum": "Y2"
+      "stratum": "Y2",
+      "strongest_candidate": "BPFO",
+      "strongest_candidate_correct": true,
+      "wrong_type_supported": true
     },
     "cwru_037": {
-      "classification_correct": false,
-      "end_to_end_correct": false,
+      "bearing_alert": true,
+      "candidates": [
+        "BPFO",
+        "BSF",
+        "BPFI",
+        "FTF"
+      ],
+      "claim_level": "qualified",
+      "classification_correct": true,
+      "end_to_end_correct": true,
       "expected_fault": "BPFO",
       "false_positive": null,
       "fault_hits": {
@@ -695,10 +1435,27 @@
       },
       "frequency_detection_hit": true,
       "known_anomalies": false,
-      "ranked_first": "FTF",
-      "stratum": "Y2"
+      "label_supported": true,
+      "label_type": "outer_race",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_with_label",
+      "ranked_first": "BPFO",
+      "stratum": "Y2",
+      "strongest_candidate": "BPFO",
+      "strongest_candidate_correct": true,
+      "wrong_type_supported": true
     },
     "cwru_038": {
+      "bearing_alert": true,
+      "candidates": [
+        "BPFI",
+        "BPFO",
+        "FTF",
+        "BSF"
+      ],
+      "claim_level": "qualified",
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFI",
@@ -711,10 +1468,26 @@
       },
       "frequency_detection_hit": true,
       "known_anomalies": false,
+      "label_supported": true,
+      "label_type": "inner_race",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_with_label",
       "ranked_first": "BPFI",
-      "stratum": "Y1"
+      "stratum": "Y1",
+      "strongest_candidate": "BPFI",
+      "strongest_candidate_correct": true,
+      "wrong_type_supported": true
     },
     "cwru_039": {
+      "bearing_alert": true,
+      "candidates": [
+        "BPFI",
+        "BPFO",
+        "BSF"
+      ],
+      "claim_level": "qualified",
       "classification_correct": false,
       "end_to_end_correct": false,
       "expected_fault": "BSF",
@@ -727,10 +1500,27 @@
       },
       "frequency_detection_hit": true,
       "known_anomalies": false,
+      "label_supported": true,
+      "label_type": "ball",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_with_label",
       "ranked_first": "BPFI",
-      "stratum": "Y2"
+      "stratum": "Y2",
+      "strongest_candidate": "BPFI",
+      "strongest_candidate_correct": false,
+      "wrong_type_supported": true
     },
     "cwru_040": {
+      "bearing_alert": true,
+      "candidates": [
+        "BPFO",
+        "BSF",
+        "BPFI",
+        "FTF"
+      ],
+      "claim_level": "qualified",
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFO",
@@ -743,10 +1533,27 @@
       },
       "frequency_detection_hit": true,
       "known_anomalies": false,
+      "label_supported": true,
+      "label_type": "outer_race",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_with_label",
       "ranked_first": "BPFO",
-      "stratum": "Y2"
+      "stratum": "Y2",
+      "strongest_candidate": "BPFO",
+      "strongest_candidate_correct": true,
+      "wrong_type_supported": true
     },
     "cwru_041": {
+      "bearing_alert": true,
+      "candidates": [
+        "BPFO",
+        "BSF",
+        "BPFI",
+        "FTF"
+      ],
+      "claim_level": "qualified",
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFO",
@@ -759,10 +1566,27 @@
       },
       "frequency_detection_hit": true,
       "known_anomalies": false,
+      "label_supported": true,
+      "label_type": "outer_race",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_with_label",
       "ranked_first": "BPFO",
-      "stratum": "Y2"
+      "stratum": "Y2",
+      "strongest_candidate": "BPFO",
+      "strongest_candidate_correct": true,
+      "wrong_type_supported": true
     },
     "cwru_042": {
+      "bearing_alert": true,
+      "candidates": [
+        "BPFO",
+        "BSF",
+        "BPFI",
+        "FTF"
+      ],
+      "claim_level": "qualified",
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFO",
@@ -775,26 +1599,57 @@
       },
       "frequency_detection_hit": true,
       "known_anomalies": false,
+      "label_supported": true,
+      "label_type": "outer_race",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_with_label",
       "ranked_first": "BPFO",
-      "stratum": "Y2"
+      "stratum": "Y2",
+      "strongest_candidate": "BPFO",
+      "strongest_candidate_correct": true,
+      "wrong_type_supported": true
     },
     "cwru_043": {
+      "bearing_alert": true,
+      "candidates": [
+        "BPFI",
+        "FTF",
+        "BSF"
+      ],
+      "claim_level": "qualified",
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFI",
       "false_positive": null,
       "fault_hits": {
         "BPFI": true,
-        "BPFO": true,
+        "BPFO": false,
         "BSF": true,
         "FTF": true
       },
       "frequency_detection_hit": true,
       "known_anomalies": false,
+      "label_supported": true,
+      "label_type": "inner_race",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_with_label",
       "ranked_first": "BPFI",
-      "stratum": "Y1"
+      "stratum": "Y1",
+      "strongest_candidate": "BPFI",
+      "strongest_candidate_correct": true,
+      "wrong_type_supported": true
     },
     "cwru_044": {
+      "bearing_alert": true,
+      "candidates": [
+        "BPFI",
+        "BPFO"
+      ],
+      "claim_level": "qualified",
       "classification_correct": false,
       "end_to_end_correct": false,
       "expected_fault": "BSF",
@@ -802,15 +1657,32 @@
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
-        "BSF": true,
-        "FTF": true
+        "BSF": false,
+        "FTF": false
       },
-      "frequency_detection_hit": true,
+      "frequency_detection_hit": false,
       "known_anomalies": false,
+      "label_supported": false,
+      "label_type": "ball",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_without_label",
       "ranked_first": "BPFO",
-      "stratum": "N1"
+      "stratum": "N1",
+      "strongest_candidate": "BPFI",
+      "strongest_candidate_correct": false,
+      "wrong_type_supported": true
     },
     "cwru_045": {
+      "bearing_alert": true,
+      "candidates": [
+        "BPFO",
+        "BSF",
+        "BPFI",
+        "FTF"
+      ],
+      "claim_level": "qualified",
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFO",
@@ -823,10 +1695,27 @@
       },
       "frequency_detection_hit": true,
       "known_anomalies": true,
+      "label_supported": true,
+      "label_type": "outer_race",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_with_label",
       "ranked_first": "BPFO",
-      "stratum": "Y2"
+      "stratum": "Y2",
+      "strongest_candidate": "BPFO",
+      "strongest_candidate_correct": true,
+      "wrong_type_supported": true
     },
     "cwru_046": {
+      "bearing_alert": true,
+      "candidates": [
+        "BPFO",
+        "BSF",
+        "BPFI",
+        "FTF"
+      ],
+      "claim_level": "qualified",
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFO",
@@ -839,10 +1728,26 @@
       },
       "frequency_detection_hit": true,
       "known_anomalies": false,
+      "label_supported": true,
+      "label_type": "outer_race",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_with_label",
       "ranked_first": "BPFO",
-      "stratum": "Y2"
+      "stratum": "Y2",
+      "strongest_candidate": "BPFO",
+      "strongest_candidate_correct": true,
+      "wrong_type_supported": true
     },
     "cwru_047": {
+      "bearing_alert": true,
+      "candidates": [
+        "BPFO",
+        "BPFI",
+        "FTF"
+      ],
+      "claim_level": "qualified",
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFO",
@@ -850,47 +1755,93 @@
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
-        "BSF": true,
+        "BSF": false,
         "FTF": true
       },
       "frequency_detection_hit": true,
       "known_anomalies": false,
+      "label_supported": true,
+      "label_type": "outer_race",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_with_label",
       "ranked_first": "BPFO",
-      "stratum": "Y2"
+      "stratum": "Y2",
+      "strongest_candidate": "BPFO",
+      "strongest_candidate_correct": true,
+      "wrong_type_supported": true
     },
     "cwru_048": {
+      "bearing_alert": true,
+      "candidates": [
+        "BPFI",
+        "FTF",
+        "BPFO"
+      ],
+      "claim_level": "qualified",
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFI",
       "false_positive": null,
       "fault_hits": {
         "BPFI": true,
-        "BPFO": false,
-        "BSF": true,
+        "BPFO": true,
+        "BSF": false,
         "FTF": true
       },
       "frequency_detection_hit": true,
       "known_anomalies": false,
+      "label_supported": true,
+      "label_type": "inner_race",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_with_label",
       "ranked_first": "BPFI",
-      "stratum": "Y1"
+      "stratum": "Y1",
+      "strongest_candidate": "BPFI",
+      "strongest_candidate_correct": true,
+      "wrong_type_supported": true
     },
     "cwru_049": {
+      "bearing_alert": true,
+      "candidates": [
+        "BPFI"
+      ],
+      "claim_level": "single_spectrum_evidence",
       "classification_correct": false,
       "end_to_end_correct": false,
       "expected_fault": "BSF",
       "false_positive": null,
       "fault_hits": {
         "BPFI": true,
-        "BPFO": true,
-        "BSF": true,
+        "BPFO": false,
+        "BSF": false,
         "FTF": false
       },
-      "frequency_detection_hit": true,
+      "frequency_detection_hit": false,
       "known_anomalies": false,
+      "label_supported": false,
+      "label_type": "ball",
+      "named_correct": false,
+      "named_fault": "BPFI",
+      "outcome": "indicated",
+      "outcome_class": "indicated_wrong",
       "ranked_first": "BPFI",
-      "stratum": "N1"
+      "stratum": "N1",
+      "strongest_candidate": "BPFI",
+      "strongest_candidate_correct": false,
+      "wrong_type_supported": true
     },
     "cwru_050": {
+      "bearing_alert": true,
+      "candidates": [
+        "BPFO",
+        "BPFI",
+        "FTF"
+      ],
+      "claim_level": "qualified",
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFO",
@@ -898,15 +1849,31 @@
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
-        "BSF": true,
+        "BSF": false,
         "FTF": true
       },
       "frequency_detection_hit": true,
       "known_anomalies": true,
+      "label_supported": true,
+      "label_type": "outer_race",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_with_label",
       "ranked_first": "BPFO",
-      "stratum": "Y2"
+      "stratum": "Y2",
+      "strongest_candidate": "BPFO",
+      "strongest_candidate_correct": true,
+      "wrong_type_supported": true
     },
     "cwru_051": {
+      "bearing_alert": true,
+      "candidates": [
+        "BPFO",
+        "BSF",
+        "BPFI"
+      ],
+      "claim_level": "qualified",
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFO",
@@ -915,14 +1882,30 @@
         "BPFI": true,
         "BPFO": true,
         "BSF": true,
-        "FTF": true
+        "FTF": false
       },
       "frequency_detection_hit": true,
       "known_anomalies": false,
+      "label_supported": true,
+      "label_type": "outer_race",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_with_label",
       "ranked_first": "BPFO",
-      "stratum": "Y2"
+      "stratum": "Y2",
+      "strongest_candidate": "BPFO",
+      "strongest_candidate_correct": true,
+      "wrong_type_supported": true
     },
     "cwru_052": {
+      "bearing_alert": true,
+      "candidates": [
+        "BPFO",
+        "BPFI",
+        "FTF"
+      ],
+      "claim_level": "qualified",
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFO",
@@ -930,15 +1913,32 @@
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
-        "BSF": true,
+        "BSF": false,
         "FTF": true
       },
       "frequency_detection_hit": true,
       "known_anomalies": false,
+      "label_supported": true,
+      "label_type": "outer_race",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_with_label",
       "ranked_first": "BPFO",
-      "stratum": "Y2"
+      "stratum": "Y2",
+      "strongest_candidate": "BPFO",
+      "strongest_candidate_correct": true,
+      "wrong_type_supported": true
     },
     "cwru_053": {
+      "bearing_alert": true,
+      "candidates": [
+        "BPFO",
+        "BPFI",
+        "BSF",
+        "FTF"
+      ],
+      "claim_level": "qualified",
       "classification_correct": false,
       "end_to_end_correct": false,
       "expected_fault": "BPFI",
@@ -951,12 +1951,29 @@
       },
       "frequency_detection_hit": true,
       "known_anomalies": false,
+      "label_supported": true,
+      "label_type": "inner_race",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_with_label",
       "ranked_first": "BPFO",
-      "stratum": "N1"
+      "stratum": "N1",
+      "strongest_candidate": "BPFO",
+      "strongest_candidate_correct": false,
+      "wrong_type_supported": true
     },
     "cwru_054": {
-      "classification_correct": false,
-      "end_to_end_correct": false,
+      "bearing_alert": true,
+      "candidates": [
+        "BSF",
+        "BPFO",
+        "FTF",
+        "BPFI"
+      ],
+      "claim_level": "qualified",
+      "classification_correct": true,
+      "end_to_end_correct": true,
       "expected_fault": "BSF",
       "false_positive": null,
       "fault_hits": {
@@ -967,10 +1984,25 @@
       },
       "frequency_detection_hit": true,
       "known_anomalies": false,
-      "ranked_first": "FTF",
-      "stratum": "Y2"
+      "label_supported": true,
+      "label_type": "ball",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_with_label",
+      "ranked_first": "BSF",
+      "stratum": "Y2",
+      "strongest_candidate": "BSF",
+      "strongest_candidate_correct": true,
+      "wrong_type_supported": true
     },
     "cwru_055": {
+      "bearing_alert": true,
+      "candidates": [
+        "BPFO",
+        "BPFI"
+      ],
+      "claim_level": "qualified",
       "classification_correct": false,
       "end_to_end_correct": false,
       "expected_fault": "BPFI",
@@ -979,30 +2011,61 @@
         "BPFI": true,
         "BPFO": true,
         "BSF": false,
-        "FTF": true
+        "FTF": false
       },
       "frequency_detection_hit": true,
       "known_anomalies": false,
+      "label_supported": true,
+      "label_type": "inner_race",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_with_label",
       "ranked_first": "BPFO",
-      "stratum": "N1"
+      "stratum": "N1",
+      "strongest_candidate": "BPFO",
+      "strongest_candidate_correct": false,
+      "wrong_type_supported": true
     },
     "cwru_056": {
-      "classification_correct": false,
-      "end_to_end_correct": false,
+      "bearing_alert": true,
+      "candidates": [
+        "BSF",
+        "BPFO",
+        "FTF"
+      ],
+      "claim_level": "qualified",
+      "classification_correct": true,
+      "end_to_end_correct": true,
       "expected_fault": "BSF",
       "false_positive": null,
       "fault_hits": {
-        "BPFI": true,
+        "BPFI": false,
         "BPFO": true,
         "BSF": true,
         "FTF": true
       },
       "frequency_detection_hit": true,
       "known_anomalies": false,
-      "ranked_first": "BPFO",
-      "stratum": "Y2"
+      "label_supported": true,
+      "label_type": "ball",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_with_label",
+      "ranked_first": "BSF",
+      "stratum": "Y2",
+      "strongest_candidate": "BSF",
+      "strongest_candidate_correct": true,
+      "wrong_type_supported": true
     },
     "cwru_057": {
+      "bearing_alert": true,
+      "candidates": [
+        "BPFO",
+        "BPFI"
+      ],
+      "claim_level": "qualified",
       "classification_correct": false,
       "end_to_end_correct": false,
       "expected_fault": "BPFI",
@@ -1015,106 +2078,179 @@
       },
       "frequency_detection_hit": true,
       "known_anomalies": false,
+      "label_supported": true,
+      "label_type": "inner_race",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_with_label",
       "ranked_first": "BPFO",
-      "stratum": "N1"
+      "stratum": "N1",
+      "strongest_candidate": "BPFO",
+      "strongest_candidate_correct": false,
+      "wrong_type_supported": true
     },
     "cwru_058": {
-      "classification_correct": false,
-      "end_to_end_correct": false,
+      "bearing_alert": true,
+      "candidates": [
+        "BSF",
+        "BPFO",
+        "BPFI"
+      ],
+      "claim_level": "qualified",
+      "classification_correct": true,
+      "end_to_end_correct": true,
       "expected_fault": "BSF",
       "false_positive": null,
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
         "BSF": true,
-        "FTF": true
+        "FTF": false
       },
       "frequency_detection_hit": true,
       "known_anomalies": false,
-      "ranked_first": "BPFI",
-      "stratum": "Y2"
+      "label_supported": true,
+      "label_type": "ball",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_with_label",
+      "ranked_first": "BSF",
+      "stratum": "Y2",
+      "strongest_candidate": "BSF",
+      "strongest_candidate_correct": true,
+      "wrong_type_supported": true
     },
     "cwru_059": {
+      "bearing_alert": true,
+      "candidates": [
+        "BPFO",
+        "FTF",
+        "BSF"
+      ],
+      "claim_level": "qualified",
       "classification_correct": false,
       "end_to_end_correct": false,
       "expected_fault": "BPFI",
       "false_positive": null,
       "fault_hits": {
-        "BPFI": true,
+        "BPFI": false,
         "BPFO": true,
-        "BSF": false,
+        "BSF": true,
         "FTF": true
       },
       "frequency_detection_hit": true,
       "known_anomalies": false,
+      "label_supported": false,
+      "label_type": "inner_race",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_without_label",
       "ranked_first": "BPFO",
-      "stratum": "N1"
+      "stratum": "N1",
+      "strongest_candidate": "BPFO",
+      "strongest_candidate_correct": false,
+      "wrong_type_supported": true
     },
     "cwru_060": {
-      "classification_correct": false,
-      "end_to_end_correct": false,
+      "bearing_alert": true,
+      "candidates": [
+        "BSF",
+        "BPFO",
+        "FTF"
+      ],
+      "claim_level": "qualified",
+      "classification_correct": true,
+      "end_to_end_correct": true,
       "expected_fault": "BSF",
       "false_positive": null,
       "fault_hits": {
-        "BPFI": true,
+        "BPFI": false,
         "BPFO": true,
         "BSF": true,
         "FTF": true
       },
       "frequency_detection_hit": true,
       "known_anomalies": false,
-      "ranked_first": "FTF",
-      "stratum": "Y2"
+      "label_supported": true,
+      "label_type": "ball",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_with_label",
+      "ranked_first": "BSF",
+      "stratum": "Y2",
+      "strongest_candidate": "BSF",
+      "strongest_candidate_correct": true,
+      "wrong_type_supported": true
     },
     "cwru_061": {
+      "bearing_alert": false,
+      "candidates": [],
+      "claim_level": "withheld",
+      "classification_correct": true,
+      "end_to_end_correct": true,
+      "expected_fault": null,
+      "false_positive": false,
+      "fault_hits": {
+        "BPFI": false,
+        "BPFO": false,
+        "BSF": false,
+        "FTF": false
+      },
+      "frequency_detection_hit": null,
+      "known_anomalies": false,
+      "label_supported": null,
+      "label_type": "normal",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "no_indication",
+      "outcome_class": "no_indication",
+      "ranked_first": null,
+      "stratum": "ungraded",
+      "strongest_candidate": null,
+      "strongest_candidate_correct": null,
+      "wrong_type_supported": null
+    },
+    "cwru_062": {
+      "bearing_alert": true,
+      "candidates": [
+        "BPFO",
+        "BPFI"
+      ],
+      "claim_level": "qualified",
       "classification_correct": false,
       "end_to_end_correct": false,
       "expected_fault": null,
       "false_positive": true,
       "fault_hits": {
-        "BPFI": false,
-        "BPFO": false,
-        "BSF": true,
-        "FTF": false
-      },
-      "frequency_detection_hit": null,
-      "known_anomalies": false,
-      "ranked_first": "BSF",
-      "stratum": "ungraded"
-    },
-    "cwru_062": {
-      "classification_correct": true,
-      "end_to_end_correct": true,
-      "expected_fault": null,
-      "false_positive": false,
-      "fault_hits": {
-        "BPFI": false,
-        "BPFO": false,
+        "BPFI": true,
+        "BPFO": true,
         "BSF": false,
         "FTF": false
       },
       "frequency_detection_hit": null,
       "known_anomalies": false,
-      "ranked_first": null,
-      "stratum": "ungraded"
+      "label_supported": null,
+      "label_type": "normal",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_without_label",
+      "ranked_first": "BPFO",
+      "stratum": "ungraded",
+      "strongest_candidate": "BPFO",
+      "strongest_candidate_correct": null,
+      "wrong_type_supported": null
     },
     "cwru_063": {
-      "classification_correct": true,
-      "end_to_end_correct": true,
-      "expected_fault": null,
-      "false_positive": false,
-      "fault_hits": {
-        "BPFI": false,
-        "BPFO": false,
-        "BSF": false,
-        "FTF": false
-      },
-      "frequency_detection_hit": null,
-      "known_anomalies": false,
-      "ranked_first": null,
-      "stratum": "ungraded"
-    },
-    "cwru_064": {
+      "bearing_alert": true,
+      "candidates": [
+        "BPFO"
+      ],
+      "claim_level": "single_spectrum_evidence",
       "classification_correct": false,
       "end_to_end_correct": false,
       "expected_fault": null,
@@ -1127,41 +2263,153 @@
       },
       "frequency_detection_hit": null,
       "known_anomalies": false,
+      "label_supported": null,
+      "label_type": "normal",
+      "named_correct": null,
+      "named_fault": "BPFO",
+      "outcome": "indicated",
+      "outcome_class": "indicated_wrong",
       "ranked_first": "BPFO",
-      "stratum": "ungraded"
+      "stratum": "ungraded",
+      "strongest_candidate": "BPFO",
+      "strongest_candidate_correct": null,
+      "wrong_type_supported": null
+    },
+    "cwru_064": {
+      "bearing_alert": true,
+      "candidates": [
+        "BPFO",
+        "BPFI"
+      ],
+      "claim_level": "qualified",
+      "classification_correct": false,
+      "end_to_end_correct": false,
+      "expected_fault": null,
+      "false_positive": true,
+      "fault_hits": {
+        "BPFI": true,
+        "BPFO": true,
+        "BSF": false,
+        "FTF": false
+      },
+      "frequency_detection_hit": null,
+      "known_anomalies": false,
+      "label_supported": null,
+      "label_type": "normal",
+      "named_correct": null,
+      "named_fault": null,
+      "outcome": "several_types",
+      "outcome_class": "several_types_without_label",
+      "ranked_first": "BPFI",
+      "stratum": "ungraded",
+      "strongest_candidate": "BPFO",
+      "strongest_candidate_correct": null,
+      "wrong_type_supported": null
     }
   },
   "strata": {
     "N1": {
       "classification": {
-        "correct": 2,
-        "rate": 0.2,
+        "correct": 0,
+        "rate": 0.0,
         "total": 10
+      },
+      "confusion": {
+        "ball": {
+          "BPFI": 1,
+          "BPFO": 0,
+          "BSF": 0,
+          "FTF": 0,
+          "none": 4
+        },
+        "inner_race": {
+          "BPFI": 0,
+          "BPFO": 0,
+          "BSF": 0,
+          "FTF": 0,
+          "none": 4
+        },
+        "normal": {
+          "BPFI": 0,
+          "BPFO": 0,
+          "BSF": 0,
+          "FTF": 0,
+          "none": 0
+        },
+        "outer_race": {
+          "BPFI": 1,
+          "BPFO": 0,
+          "BSF": 0,
+          "FTF": 0,
+          "none": 0
+        }
       },
       "end_to_end": {
-        "correct": 2,
-        "rate": 0.2,
+        "correct": 0,
+        "rate": 0.0,
         "total": 10
       },
-      "false_positives": {
-        "per_fault_counts": {
+      "frequency_detection": {
+        "hits": 7,
+        "rate": 0.7,
+        "total": 10
+      },
+      "indicated_precision": {
+        "correct": 0,
+        "rate": 0.0,
+        "total": 2
+      },
+      "label_supported": {
+        "count": 6,
+        "rate": 0.6,
+        "total": 10
+      },
+      "n_faulted": 10,
+      "n_normal": 0,
+      "n_records": 10,
+      "named_fault": {
+        "correct": 0,
+        "none": 8,
+        "total": 10,
+        "wrong": 2
+      },
+      "normals": {
+        "bearing_alert": 0,
+        "inconclusive": 0,
+        "named_fault": 0,
+        "no_indication": 0,
+        "supported_counts": {
           "BPFI": 0,
           "BPFO": 0,
           "BSF": 0,
           "FTF": 0
         },
-        "rate": null,
-        "records_with_any": 0,
-        "total_normal": 0
+        "total": 0
       },
-      "frequency_detection": {
-        "hits": 10,
+      "outcomes": {
+        "inconclusive": 0,
+        "indicated_correct": 0,
+        "indicated_wrong": 2,
+        "no_indication": 0,
+        "several_types_with_label": 6,
+        "several_types_without_label": 2,
+        "total": 10
+      },
+      "sensitivity": {
+        "alerts": 10,
         "rate": 1.0,
         "total": 10
       },
-      "n_faulted": 10,
-      "n_normal": 0,
-      "n_records": 10
+      "strongest_candidate": {
+        "correct": 0,
+        "rate": 0.0,
+        "total": 10
+      },
+      "wrong_type_support": {
+        "rate": 1.0,
+        "records": 10,
+        "total": 10
+      }
     },
     "N2": {
       "classification": {
@@ -1169,30 +2417,102 @@
         "rate": null,
         "total": 0
       },
+      "confusion": {
+        "ball": {
+          "BPFI": 0,
+          "BPFO": 0,
+          "BSF": 0,
+          "FTF": 0,
+          "none": 0
+        },
+        "inner_race": {
+          "BPFI": 0,
+          "BPFO": 0,
+          "BSF": 0,
+          "FTF": 0,
+          "none": 0
+        },
+        "normal": {
+          "BPFI": 0,
+          "BPFO": 0,
+          "BSF": 0,
+          "FTF": 0,
+          "none": 0
+        },
+        "outer_race": {
+          "BPFI": 0,
+          "BPFO": 0,
+          "BSF": 0,
+          "FTF": 0,
+          "none": 0
+        }
+      },
       "end_to_end": {
         "correct": 0,
         "rate": null,
         "total": 0
-      },
-      "false_positives": {
-        "per_fault_counts": {
-          "BPFI": 0,
-          "BPFO": 0,
-          "BSF": 0,
-          "FTF": 0
-        },
-        "rate": null,
-        "records_with_any": 0,
-        "total_normal": 0
       },
       "frequency_detection": {
         "hits": 0,
         "rate": null,
         "total": 0
       },
+      "indicated_precision": {
+        "correct": 0,
+        "rate": null,
+        "total": 0
+      },
+      "label_supported": {
+        "count": 0,
+        "rate": null,
+        "total": 0
+      },
       "n_faulted": 0,
       "n_normal": 0,
-      "n_records": 0
+      "n_records": 0,
+      "named_fault": {
+        "correct": 0,
+        "none": 0,
+        "total": 0,
+        "wrong": 0
+      },
+      "normals": {
+        "bearing_alert": 0,
+        "inconclusive": 0,
+        "named_fault": 0,
+        "no_indication": 0,
+        "supported_counts": {
+          "BPFI": 0,
+          "BPFO": 0,
+          "BSF": 0,
+          "FTF": 0
+        },
+        "total": 0
+      },
+      "outcomes": {
+        "inconclusive": 0,
+        "indicated_correct": 0,
+        "indicated_wrong": 0,
+        "no_indication": 0,
+        "several_types_with_label": 0,
+        "several_types_without_label": 0,
+        "total": 0
+      },
+      "sensitivity": {
+        "alerts": 0,
+        "rate": null,
+        "total": 0
+      },
+      "strongest_candidate": {
+        "correct": 0,
+        "rate": null,
+        "total": 0
+      },
+      "wrong_type_support": {
+        "rate": null,
+        "records": 0,
+        "total": 0
+      }
     },
     "P1": {
       "classification": {
@@ -1200,30 +2520,102 @@
         "rate": 0.0,
         "total": 1
       },
+      "confusion": {
+        "ball": {
+          "BPFI": 0,
+          "BPFO": 0,
+          "BSF": 0,
+          "FTF": 0,
+          "none": 0
+        },
+        "inner_race": {
+          "BPFI": 0,
+          "BPFO": 0,
+          "BSF": 0,
+          "FTF": 0,
+          "none": 0
+        },
+        "normal": {
+          "BPFI": 0,
+          "BPFO": 0,
+          "BSF": 0,
+          "FTF": 0,
+          "none": 0
+        },
+        "outer_race": {
+          "BPFI": 0,
+          "BPFO": 0,
+          "BSF": 0,
+          "FTF": 0,
+          "none": 1
+        }
+      },
       "end_to_end": {
         "correct": 0,
         "rate": 0.0,
         "total": 1
-      },
-      "false_positives": {
-        "per_fault_counts": {
-          "BPFI": 0,
-          "BPFO": 0,
-          "BSF": 0,
-          "FTF": 0
-        },
-        "rate": null,
-        "records_with_any": 0,
-        "total_normal": 0
       },
       "frequency_detection": {
         "hits": 1,
         "rate": 1.0,
         "total": 1
       },
+      "indicated_precision": {
+        "correct": 0,
+        "rate": null,
+        "total": 0
+      },
+      "label_supported": {
+        "count": 1,
+        "rate": 1.0,
+        "total": 1
+      },
       "n_faulted": 1,
       "n_normal": 0,
-      "n_records": 1
+      "n_records": 1,
+      "named_fault": {
+        "correct": 0,
+        "none": 1,
+        "total": 1,
+        "wrong": 0
+      },
+      "normals": {
+        "bearing_alert": 0,
+        "inconclusive": 0,
+        "named_fault": 0,
+        "no_indication": 0,
+        "supported_counts": {
+          "BPFI": 0,
+          "BPFO": 0,
+          "BSF": 0,
+          "FTF": 0
+        },
+        "total": 0
+      },
+      "outcomes": {
+        "inconclusive": 0,
+        "indicated_correct": 0,
+        "indicated_wrong": 0,
+        "no_indication": 0,
+        "several_types_with_label": 1,
+        "several_types_without_label": 0,
+        "total": 1
+      },
+      "sensitivity": {
+        "alerts": 1,
+        "rate": 1.0,
+        "total": 1
+      },
+      "strongest_candidate": {
+        "correct": 0,
+        "rate": 0.0,
+        "total": 1
+      },
+      "wrong_type_support": {
+        "rate": 1.0,
+        "records": 1,
+        "total": 1
+      }
     },
     "P2": {
       "classification": {
@@ -1231,30 +2623,102 @@
         "rate": 0.0,
         "total": 5
       },
+      "confusion": {
+        "ball": {
+          "BPFI": 0,
+          "BPFO": 0,
+          "BSF": 0,
+          "FTF": 1,
+          "none": 3
+        },
+        "inner_race": {
+          "BPFI": 0,
+          "BPFO": 0,
+          "BSF": 0,
+          "FTF": 0,
+          "none": 0
+        },
+        "normal": {
+          "BPFI": 0,
+          "BPFO": 0,
+          "BSF": 0,
+          "FTF": 0,
+          "none": 0
+        },
+        "outer_race": {
+          "BPFI": 0,
+          "BPFO": 0,
+          "BSF": 0,
+          "FTF": 0,
+          "none": 1
+        }
+      },
       "end_to_end": {
         "correct": 0,
         "rate": 0.0,
         "total": 5
       },
-      "false_positives": {
-        "per_fault_counts": {
+      "frequency_detection": {
+        "hits": 4,
+        "rate": 0.8,
+        "total": 5
+      },
+      "indicated_precision": {
+        "correct": 0,
+        "rate": 0.0,
+        "total": 1
+      },
+      "label_supported": {
+        "count": 3,
+        "rate": 0.6,
+        "total": 5
+      },
+      "n_faulted": 5,
+      "n_normal": 0,
+      "n_records": 5,
+      "named_fault": {
+        "correct": 0,
+        "none": 4,
+        "total": 5,
+        "wrong": 1
+      },
+      "normals": {
+        "bearing_alert": 0,
+        "inconclusive": 0,
+        "named_fault": 0,
+        "no_indication": 0,
+        "supported_counts": {
           "BPFI": 0,
           "BPFO": 0,
           "BSF": 0,
           "FTF": 0
         },
-        "rate": null,
-        "records_with_any": 0,
-        "total_normal": 0
+        "total": 0
       },
-      "frequency_detection": {
-        "hits": 5,
-        "rate": 1.0,
+      "outcomes": {
+        "inconclusive": 1,
+        "indicated_correct": 0,
+        "indicated_wrong": 1,
+        "no_indication": 0,
+        "several_types_with_label": 3,
+        "several_types_without_label": 0,
         "total": 5
       },
-      "n_faulted": 5,
-      "n_normal": 0,
-      "n_records": 5
+      "sensitivity": {
+        "alerts": 4,
+        "rate": 0.8,
+        "total": 5
+      },
+      "strongest_candidate": {
+        "correct": 0,
+        "rate": 0.0,
+        "total": 5
+      },
+      "wrong_type_support": {
+        "rate": 0.8,
+        "records": 4,
+        "total": 5
+      }
     },
     "Y1": {
       "classification": {
@@ -1262,92 +2726,308 @@
         "rate": 1.0,
         "total": 9
       },
+      "confusion": {
+        "ball": {
+          "BPFI": 0,
+          "BPFO": 0,
+          "BSF": 0,
+          "FTF": 0,
+          "none": 0
+        },
+        "inner_race": {
+          "BPFI": 0,
+          "BPFO": 0,
+          "BSF": 0,
+          "FTF": 0,
+          "none": 4
+        },
+        "normal": {
+          "BPFI": 0,
+          "BPFO": 0,
+          "BSF": 0,
+          "FTF": 0,
+          "none": 0
+        },
+        "outer_race": {
+          "BPFI": 0,
+          "BPFO": 0,
+          "BSF": 0,
+          "FTF": 0,
+          "none": 5
+        }
+      },
       "end_to_end": {
         "correct": 9,
         "rate": 1.0,
         "total": 9
-      },
-      "false_positives": {
-        "per_fault_counts": {
-          "BPFI": 0,
-          "BPFO": 0,
-          "BSF": 0,
-          "FTF": 0
-        },
-        "rate": null,
-        "records_with_any": 0,
-        "total_normal": 0
       },
       "frequency_detection": {
         "hits": 9,
         "rate": 1.0,
         "total": 9
       },
+      "indicated_precision": {
+        "correct": 0,
+        "rate": null,
+        "total": 0
+      },
+      "label_supported": {
+        "count": 9,
+        "rate": 1.0,
+        "total": 9
+      },
       "n_faulted": 9,
       "n_normal": 0,
-      "n_records": 9
-    },
-    "Y2": {
-      "classification": {
-        "correct": 25,
-        "rate": 0.714285714,
-        "total": 35
+      "n_records": 9,
+      "named_fault": {
+        "correct": 0,
+        "none": 9,
+        "total": 9,
+        "wrong": 0
       },
-      "end_to_end": {
-        "correct": 25,
-        "rate": 0.714285714,
-        "total": 35
-      },
-      "false_positives": {
-        "per_fault_counts": {
+      "normals": {
+        "bearing_alert": 0,
+        "inconclusive": 0,
+        "named_fault": 0,
+        "no_indication": 0,
+        "supported_counts": {
           "BPFI": 0,
           "BPFO": 0,
           "BSF": 0,
           "FTF": 0
         },
-        "rate": null,
-        "records_with_any": 0,
-        "total_normal": 0
+        "total": 0
+      },
+      "outcomes": {
+        "inconclusive": 0,
+        "indicated_correct": 0,
+        "indicated_wrong": 0,
+        "no_indication": 0,
+        "several_types_with_label": 9,
+        "several_types_without_label": 0,
+        "total": 9
+      },
+      "sensitivity": {
+        "alerts": 9,
+        "rate": 1.0,
+        "total": 9
+      },
+      "strongest_candidate": {
+        "correct": 9,
+        "rate": 1.0,
+        "total": 9
+      },
+      "wrong_type_support": {
+        "rate": 1.0,
+        "records": 9,
+        "total": 9
+      }
+    },
+    "Y2": {
+      "classification": {
+        "correct": 31,
+        "rate": 0.885714286,
+        "total": 35
+      },
+      "confusion": {
+        "ball": {
+          "BPFI": 0,
+          "BPFO": 0,
+          "BSF": 0,
+          "FTF": 0,
+          "none": 7
+        },
+        "inner_race": {
+          "BPFI": 0,
+          "BPFO": 0,
+          "BSF": 0,
+          "FTF": 0,
+          "none": 8
+        },
+        "normal": {
+          "BPFI": 0,
+          "BPFO": 0,
+          "BSF": 0,
+          "FTF": 0,
+          "none": 0
+        },
+        "outer_race": {
+          "BPFI": 0,
+          "BPFO": 0,
+          "BSF": 0,
+          "FTF": 0,
+          "none": 20
+        }
+      },
+      "end_to_end": {
+        "correct": 31,
+        "rate": 0.885714286,
+        "total": 35
       },
       "frequency_detection": {
         "hits": 35,
         "rate": 1.0,
         "total": 35
       },
+      "indicated_precision": {
+        "correct": 0,
+        "rate": null,
+        "total": 0
+      },
+      "label_supported": {
+        "count": 35,
+        "rate": 1.0,
+        "total": 35
+      },
       "n_faulted": 35,
       "n_normal": 0,
-      "n_records": 35
+      "n_records": 35,
+      "named_fault": {
+        "correct": 0,
+        "none": 35,
+        "total": 35,
+        "wrong": 0
+      },
+      "normals": {
+        "bearing_alert": 0,
+        "inconclusive": 0,
+        "named_fault": 0,
+        "no_indication": 0,
+        "supported_counts": {
+          "BPFI": 0,
+          "BPFO": 0,
+          "BSF": 0,
+          "FTF": 0
+        },
+        "total": 0
+      },
+      "outcomes": {
+        "inconclusive": 0,
+        "indicated_correct": 0,
+        "indicated_wrong": 0,
+        "no_indication": 0,
+        "several_types_with_label": 35,
+        "several_types_without_label": 0,
+        "total": 35
+      },
+      "sensitivity": {
+        "alerts": 35,
+        "rate": 1.0,
+        "total": 35
+      },
+      "strongest_candidate": {
+        "correct": 31,
+        "rate": 0.885714286,
+        "total": 35
+      },
+      "wrong_type_support": {
+        "rate": 1.0,
+        "records": 35,
+        "total": 35
+      }
     },
     "ungraded": {
       "classification": {
-        "correct": 2,
-        "rate": 0.5,
+        "correct": 1,
+        "rate": 0.25,
         "total": 4
       },
-      "end_to_end": {
-        "correct": 2,
-        "rate": 0.5,
-        "total": 4
-      },
-      "false_positives": {
-        "per_fault_counts": {
+      "confusion": {
+        "ball": {
+          "BPFI": 0,
+          "BPFO": 0,
+          "BSF": 0,
+          "FTF": 0,
+          "none": 0
+        },
+        "inner_race": {
+          "BPFI": 0,
+          "BPFO": 0,
+          "BSF": 0,
+          "FTF": 0,
+          "none": 0
+        },
+        "normal": {
           "BPFI": 0,
           "BPFO": 1,
-          "BSF": 1,
-          "FTF": 0
+          "BSF": 0,
+          "FTF": 0,
+          "none": 3
         },
-        "rate": 0.5,
-        "records_with_any": 2,
-        "total_normal": 4
+        "outer_race": {
+          "BPFI": 0,
+          "BPFO": 0,
+          "BSF": 0,
+          "FTF": 0,
+          "none": 0
+        }
+      },
+      "end_to_end": {
+        "correct": 1,
+        "rate": 0.25,
+        "total": 4
       },
       "frequency_detection": {
         "hits": 0,
         "rate": null,
         "total": 0
       },
+      "indicated_precision": {
+        "correct": 0,
+        "rate": 0.0,
+        "total": 1
+      },
+      "label_supported": {
+        "count": 0,
+        "rate": null,
+        "total": 0
+      },
       "n_faulted": 0,
       "n_normal": 4,
-      "n_records": 4
+      "n_records": 4,
+      "named_fault": {
+        "correct": 0,
+        "none": 0,
+        "total": 0,
+        "wrong": 0
+      },
+      "normals": {
+        "bearing_alert": 3,
+        "inconclusive": 0,
+        "named_fault": 1,
+        "no_indication": 1,
+        "supported_counts": {
+          "BPFI": 2,
+          "BPFO": 3,
+          "BSF": 0,
+          "FTF": 0
+        },
+        "total": 4
+      },
+      "outcomes": {
+        "inconclusive": 0,
+        "indicated_correct": 0,
+        "indicated_wrong": 1,
+        "no_indication": 1,
+        "several_types_with_label": 0,
+        "several_types_without_label": 2,
+        "total": 4
+      },
+      "sensitivity": {
+        "alerts": 0,
+        "rate": null,
+        "total": 0
+      },
+      "strongest_candidate": {
+        "correct": 0,
+        "rate": null,
+        "total": 0
+      },
+      "wrong_type_support": {
+        "rate": null,
+        "records": 0,
+        "total": 0
+      }
     }
   }
 }

@@ -1,23 +1,26 @@
 # CWRU Diagnostic Benchmark — Methodology
 
 This document describes how the benchmark in [`benchmarks/cwru/`](../benchmarks/cwru/)
-measures the diagnostic accuracy of this server's **deterministic signal-processing
-pipeline** on the Case Western Reserve University (CWRU) Bearing Data Center
-dataset, and how to reproduce every published number.
+measures what the bearing check of this server's **deterministic signal-processing
+pipeline** reports on the Case Western Reserve University (CWRU) Bearing Data
+Center dataset, and how to reproduce every published number.
 
-The benchmark measures the evidence the tool surfaces to an expert — detected
-characteristic frequencies, their evidence strength, and a ranked fault
-indication. It does not position the tool as an autonomous diagnostician, and
-it does not measure LLM orchestration: only the deterministic pipeline
-(`diagnose_vibration` called as a library function) is under test.
+The benchmark measures the evidence the tool surfaces to an expert: the lines
+at the characteristic frequencies that stand above the local noise floor, the
+outcome of the check, and the fault type its claim names, if any. It does not
+position the tool as an autonomous diagnostician, and it does not measure LLM
+orchestration: only the deterministic pipeline (`diagnose_vibration` called as
+a library function) is under test.
 
 ---
 
 ## What is measured
 
-- **System under test**: envelope-based bearing analysis + characteristic-frequency
-  matching (`check_all_bearing_faults` inside `diagnose_vibration`), called
-  deterministically with operational context only.
+- **System under test**: the envelope line test of `check_all_bearing_faults`
+  inside `diagnose_vibration`, called deterministically with operational
+  context only. Each characteristic line is tested against the local noise
+  floor of one envelope spectrum, then the further lines its kinematics
+  predict, and the check reports an outcome and a claim from that evidence.
 - **Out of scope**: the anomaly-detection stage (its models are not versioned in
   the repository, so including it would break reproducibility — the runner
   replaces its output with a constant
@@ -75,38 +78,73 @@ Fault labels are never visible to the system under test:
 ## Operational metric definitions
 
 Analyzer parameters in effect (pinned here so a future default change cannot
-silently change benchmark semantics): frequency tolerance **±5 %**
-(`tolerance_pct=5.0`), up to **3 harmonics** checked per fault frequency
-(`num_harmonics=3`), envelope demodulation band **500–5000 Hz** — the
-fs-dependent default resolves to the same band for both the 12 kHz fault
-records and the 48 kHz baselines, so detection and false-positive metrics run
-in a comparable band (noise floors still differ with fs; treat cross-group
-comparisons accordingly. Signal unit is taken as *g* per community convention;
-CWRU does not state units explicitly — this assumption does not affect scored
-metrics, which are frequency-based).
+silently change benchmark semantics): a fundamental search window of **±5 %**
+of each line frequency (`tolerance_pct=5.0`), harmonics **2× to 4×** tested as
+corroborating lines (`num_harmonics=3`), and the envelope demodulation band
+**500 to 5000 Hz**. The fs-dependent default resolves to the same band for
+both the 12 kHz fault records and the 48 kHz baselines, so the fault records
+and the baselines are tested in a comparable band (noise floors still differ
+with fs; treat cross-group comparisons accordingly). Signal unit is taken as
+*g* per community convention; CWRU does not state units explicitly. This
+assumption does not affect the scored metrics, which rest on line frequencies
+and levels over the noise floor.
 
-**Hit criterion** (one rule, applied identically everywhere): a fault *hits*
-when its characteristic frequency is `detected` with evidence strength
-*high* or *moderate*; **ball faults additionally** hit when the 2× harmonic of
-the classical BSF appears among the detected harmonics. CWRU publishes the
-ball "rolling element" factor as 2×BSF (a ball defect strikes both races per
-revolution of the ball); the analyzer computes classical BSF from geometry and
-caps harmonic-only findings below the detection threshold, so the 2× leg reads
-the raw per-fault fields. The **same criterion** — harmonic leg included —
-counts detections on faulted records and false positives on baselines: no
-asymmetry between what earns a hit and what earns a false alarm.
+**Statistical policy.** The line test is an ordered-statistic CFAR test on the
+envelope spectrum. Each complete check has a nominal family-wise false-alarm
+budget of 1 % (`false_alarm_probability_per_check`), split evenly over the
+hypotheses it can test and over the bins of each search window (Bonferroni).
+The budget is nominal: it holds under the stated assumptions, chiefly
+approximately exponential bin power under a stationary random envelope, and it
+does not cover deterministic non-bearing lines (shaft harmonics, mains, gear
+mesh), non-stationary records, or repeated checks of the same machine. It is
+not the benchmark's false-alarm rate and not a specificity. The full
+assumptions and exclusions are in the `evidence_policy` block of every check
+result. The evidence and claim policy versions are recorded in every outcome
+and in the results' `criteria.policy_versions`; the scorer refuses an outcomes
+file measured under another version.
 
-- **Frequency detection**: on a faulted record, the labeled fault meets the hit
+**Hit criterion** (one rule, applied identically everywhere): a fault type
+*hits* when its check is *supported*: a line of its own stands above the local
+noise floor and at least one further line its kinematics predict is counted,
+neither of them shared with another fault type. CWRU publishes the ball
+"rolling element" factor as 2×BSF (a ball defect strikes both races once per
+spin revolution); the check tests the rolling-element line at twice the ball
+spin frequency itself, so no fault type gets a separate harmonic leg. The
+**same criterion** counts supported fault types on the fault records and on
+the baselines: no asymmetry between what earns a hit and what earns a false
+alarm.
+
+- **Frequency detection**: on a fault record, the line tested for the labelled
+  fault stands above the local noise floor, whether or not it is supported.
+- **Label supported**: on a fault record, the labelled fault meets the hit
   criterion.
-- **Classification**: the scorer ranks all faults meeting the criterion
-  (evidence tier, then fundamental magnitude, then frequency deviation, with a
-  fixed order as final tie-break) and scores correct when the top-ranked fault
-  maps to the label. The pipeline's own `most_likely` summary is deliberately
-  not consumed (it cannot express a 2×-harmonic-only ball detection). A normal
-  record is correct when no fault meets the criterion.
-- **False positives**: on the 4 normal baselines, any fault meeting the same
-  hit criterion.
-- The full criterion and ranking rule are embedded verbatim in the results
+- **Outcome against the label**: the check's outcome (`indicated`,
+  `several_types`, `inconclusive`, `no_indication`) read against the label:
+  indicated with the labelled fault or with another one, several types with or
+  without the labelled fault among the candidates. On a baseline, an indicated
+  outcome counts as indicated with another fault, and a several-types outcome
+  as without the label.
+- **Precision of "indicated"**: indicated outcomes whose single candidate is
+  the labelled fault, over every indicated outcome of the stratum.
+- **Named fault**: the fault type the check names, `most_likely_fault`, which
+  it sets only when its claim level is `single_spectrum_evidence`: the
+  labelled one, another one, or none. It is the only single fault type a user
+  is shown.
+- **Strongest candidate**: on a fault record, the labelled fault is the first
+  candidate the check lists. The check lists its candidates by level over the
+  noise floor; that order is not a ranking of likelihood and names no fault.
+- **Sensitivity**: on a fault record, the check lists at least one candidate
+  (outcome `indicated` or `several_types`).
+- **Wrong-type support**: on a fault record, a fault type other than the
+  labelled one meets the hit criterion.
+- **Normal baselines**: counts of no indication, inconclusive, candidates
+  listed and a single fault type named, under the same criterion, and of each
+  fault type supported. They are counts on these recordings, never a rate.
+- **Classification (secondary)**: the earlier scorer's ranking of the
+  supported fault types (evidence grade, then fundamental magnitude, then
+  frequency deviation, then a fixed order), kept for comparison. The check
+  itself names no fault from it.
+- The full criterion and every definition are embedded verbatim in the results
   artifact (`criteria` block) for audit.
 
 ## Stratification
@@ -136,34 +174,56 @@ and drift-guarded by CI).
 <!-- cwru-benchmark:start -->
 
 **Headline (Y1+Y2 strata, <!-- slot: headline.n_records -->44<!-- /slot --> records):**
-frequency detection <!-- slot: headline.frequency_detection.hits -->44<!-- /slot -->/<!-- slot: headline.frequency_detection.total -->44<!-- /slot --> (<!-- slot: headline.frequency_detection.rate pct1 -->100.0<!-- /slot -->%),
-fault classification <!-- slot: headline.classification.correct -->34<!-- /slot -->/<!-- slot: headline.classification.total -->44<!-- /slot --> (<!-- slot: headline.classification.rate pct1 -->77.3<!-- /slot -->%).
+line tested for the labelled fault above the noise floor <!-- slot: headline.frequency_detection.hits -->44<!-- /slot -->/<!-- slot: headline.frequency_detection.total -->44<!-- /slot -->,
+labelled fault supported <!-- slot: headline.label_supported.count -->44<!-- /slot -->/<!-- slot: headline.label_supported.total -->44<!-- /slot -->,
+another fault type supported as well <!-- slot: headline.wrong_type_support.records -->44<!-- /slot -->/<!-- slot: headline.wrong_type_support.total -->44<!-- /slot -->,
+several types listed with the labelled fault among them <!-- slot: headline.outcomes.several_types_with_label -->44<!-- /slot -->/<!-- slot: headline.outcomes.total -->44<!-- /slot -->,
+no single fault type named <!-- slot: headline.named_fault.none -->44<!-- /slot -->/<!-- slot: headline.named_fault.total -->44<!-- /slot -->,
+labelled fault first among the candidates <!-- slot: headline.strongest_candidate.correct -->40<!-- /slot -->/<!-- slot: headline.strongest_candidate.total -->44<!-- /slot --> (<!-- slot: headline.strongest_candidate.rate pct1 -->90.9<!-- /slot -->%).
 
-| Stratum (Smith & Randall 2015) | Records | Frequency detection | Classification |
-|---|---|---|---|
-| Y1 — clearly diagnosable, classic signature | <!-- slot: strata.Y1.n_records -->9<!-- /slot --> | <!-- slot: strata.Y1.frequency_detection.hits -->9<!-- /slot -->/<!-- slot: strata.Y1.frequency_detection.total -->9<!-- /slot --> | <!-- slot: strata.Y1.classification.correct -->9<!-- /slot -->/<!-- slot: strata.Y1.classification.total -->9<!-- /slot --> (<!-- slot: strata.Y1.classification.rate pct0 -->100<!-- /slot -->%) |
-| Y2 — clearly diagnosable, non-classic | <!-- slot: strata.Y2.n_records -->35<!-- /slot --> | <!-- slot: strata.Y2.frequency_detection.hits -->35<!-- /slot -->/<!-- slot: strata.Y2.frequency_detection.total -->35<!-- /slot --> | <!-- slot: strata.Y2.classification.correct -->25<!-- /slot -->/<!-- slot: strata.Y2.classification.total -->35<!-- /slot --> (<!-- slot: strata.Y2.classification.rate pct1 -->71.4<!-- /slot -->%) |
-| P1 — partially diagnosable | <!-- slot: strata.P1.n_records -->1<!-- /slot --> | <!-- slot: strata.P1.frequency_detection.hits -->1<!-- /slot -->/<!-- slot: strata.P1.frequency_detection.total -->1<!-- /slot --> | <!-- slot: strata.P1.classification.correct -->0<!-- /slot -->/<!-- slot: strata.P1.classification.total -->1<!-- /slot --> |
-| P2 — partially diagnosable, smeared | <!-- slot: strata.P2.n_records -->5<!-- /slot --> | <!-- slot: strata.P2.frequency_detection.hits -->5<!-- /slot -->/<!-- slot: strata.P2.frequency_detection.total -->5<!-- /slot --> | <!-- slot: strata.P2.classification.correct -->0<!-- /slot -->/<!-- slot: strata.P2.classification.total -->5<!-- /slot --> |
-| N1 — not diagnosable by the reference study | <!-- slot: strata.N1.n_records -->10<!-- /slot --> | <!-- slot: strata.N1.frequency_detection.hits -->10<!-- /slot -->/<!-- slot: strata.N1.frequency_detection.total -->10<!-- /slot --> | <!-- slot: strata.N1.classification.correct -->2<!-- /slot -->/<!-- slot: strata.N1.classification.total -->10<!-- /slot --> |
+Evidence per stratum (fault records):
 
-**Normal baselines** (<!-- slot: strata.ungraded.false_positives.total_normal -->4<!-- /slot --> records):
-<!-- slot: strata.ungraded.false_positives.records_with_any -->2<!-- /slot --> raised at least one false indication
-(<!-- slot: strata.ungraded.false_positives.per_fault_counts.BPFO -->1<!-- /slot --> outer-race, <!-- slot: strata.ungraded.false_positives.per_fault_counts.BSF -->1<!-- /slot --> ball) under the same hit criterion used for detection.
+| Stratum (Smith & Randall 2015) | Records | Line above the floor | Label supported | Another type supported | Labelled fault first candidate |
+|---|---|---|---|---|---|
+| Y1, clearly diagnosable, classic signature | <!-- slot: strata.Y1.n_records -->9<!-- /slot --> | <!-- slot: strata.Y1.frequency_detection.hits -->9<!-- /slot -->/<!-- slot: strata.Y1.frequency_detection.total -->9<!-- /slot --> | <!-- slot: strata.Y1.label_supported.count -->9<!-- /slot -->/<!-- slot: strata.Y1.label_supported.total -->9<!-- /slot --> | <!-- slot: strata.Y1.wrong_type_support.records -->9<!-- /slot -->/<!-- slot: strata.Y1.wrong_type_support.total -->9<!-- /slot --> | <!-- slot: strata.Y1.strongest_candidate.correct -->9<!-- /slot -->/<!-- slot: strata.Y1.strongest_candidate.total -->9<!-- /slot --> |
+| Y2, clearly diagnosable, non-classic | <!-- slot: strata.Y2.n_records -->35<!-- /slot --> | <!-- slot: strata.Y2.frequency_detection.hits -->35<!-- /slot -->/<!-- slot: strata.Y2.frequency_detection.total -->35<!-- /slot --> | <!-- slot: strata.Y2.label_supported.count -->35<!-- /slot -->/<!-- slot: strata.Y2.label_supported.total -->35<!-- /slot --> | <!-- slot: strata.Y2.wrong_type_support.records -->35<!-- /slot -->/<!-- slot: strata.Y2.wrong_type_support.total -->35<!-- /slot --> | <!-- slot: strata.Y2.strongest_candidate.correct -->31<!-- /slot -->/<!-- slot: strata.Y2.strongest_candidate.total -->35<!-- /slot --> |
+| P1, partially diagnosable | <!-- slot: strata.P1.n_records -->1<!-- /slot --> | <!-- slot: strata.P1.frequency_detection.hits -->1<!-- /slot -->/<!-- slot: strata.P1.frequency_detection.total -->1<!-- /slot --> | <!-- slot: strata.P1.label_supported.count -->1<!-- /slot -->/<!-- slot: strata.P1.label_supported.total -->1<!-- /slot --> | <!-- slot: strata.P1.wrong_type_support.records -->1<!-- /slot -->/<!-- slot: strata.P1.wrong_type_support.total -->1<!-- /slot --> | <!-- slot: strata.P1.strongest_candidate.correct -->0<!-- /slot -->/<!-- slot: strata.P1.strongest_candidate.total -->1<!-- /slot --> |
+| P2, partially diagnosable, smeared | <!-- slot: strata.P2.n_records -->5<!-- /slot --> | <!-- slot: strata.P2.frequency_detection.hits -->4<!-- /slot -->/<!-- slot: strata.P2.frequency_detection.total -->5<!-- /slot --> | <!-- slot: strata.P2.label_supported.count -->3<!-- /slot -->/<!-- slot: strata.P2.label_supported.total -->5<!-- /slot --> | <!-- slot: strata.P2.wrong_type_support.records -->4<!-- /slot -->/<!-- slot: strata.P2.wrong_type_support.total -->5<!-- /slot --> | <!-- slot: strata.P2.strongest_candidate.correct -->0<!-- /slot -->/<!-- slot: strata.P2.strongest_candidate.total -->5<!-- /slot --> |
+| N1, not diagnosable by the reference study | <!-- slot: strata.N1.n_records -->10<!-- /slot --> | <!-- slot: strata.N1.frequency_detection.hits -->7<!-- /slot -->/<!-- slot: strata.N1.frequency_detection.total -->10<!-- /slot --> | <!-- slot: strata.N1.label_supported.count -->6<!-- /slot -->/<!-- slot: strata.N1.label_supported.total -->10<!-- /slot --> | <!-- slot: strata.N1.wrong_type_support.records -->10<!-- /slot -->/<!-- slot: strata.N1.wrong_type_support.total -->10<!-- /slot --> | <!-- slot: strata.N1.strongest_candidate.correct -->0<!-- /slot -->/<!-- slot: strata.N1.strongest_candidate.total -->10<!-- /slot --> |
+
+Outcome against the label (fault records):
+
+| Stratum | Indicated, labelled fault | Indicated, another fault | Several types with the label | Several types without it | Inconclusive | No indication |
+|---|---|---|---|---|---|---|
+| Y1 | <!-- slot: strata.Y1.outcomes.indicated_correct -->0<!-- /slot --> | <!-- slot: strata.Y1.outcomes.indicated_wrong -->0<!-- /slot --> | <!-- slot: strata.Y1.outcomes.several_types_with_label -->9<!-- /slot --> | <!-- slot: strata.Y1.outcomes.several_types_without_label -->0<!-- /slot --> | <!-- slot: strata.Y1.outcomes.inconclusive -->0<!-- /slot --> | <!-- slot: strata.Y1.outcomes.no_indication -->0<!-- /slot --> |
+| Y2 | <!-- slot: strata.Y2.outcomes.indicated_correct -->0<!-- /slot --> | <!-- slot: strata.Y2.outcomes.indicated_wrong -->0<!-- /slot --> | <!-- slot: strata.Y2.outcomes.several_types_with_label -->35<!-- /slot --> | <!-- slot: strata.Y2.outcomes.several_types_without_label -->0<!-- /slot --> | <!-- slot: strata.Y2.outcomes.inconclusive -->0<!-- /slot --> | <!-- slot: strata.Y2.outcomes.no_indication -->0<!-- /slot --> |
+| P1 | <!-- slot: strata.P1.outcomes.indicated_correct -->0<!-- /slot --> | <!-- slot: strata.P1.outcomes.indicated_wrong -->0<!-- /slot --> | <!-- slot: strata.P1.outcomes.several_types_with_label -->1<!-- /slot --> | <!-- slot: strata.P1.outcomes.several_types_without_label -->0<!-- /slot --> | <!-- slot: strata.P1.outcomes.inconclusive -->0<!-- /slot --> | <!-- slot: strata.P1.outcomes.no_indication -->0<!-- /slot --> |
+| P2 | <!-- slot: strata.P2.outcomes.indicated_correct -->0<!-- /slot --> | <!-- slot: strata.P2.outcomes.indicated_wrong -->1<!-- /slot --> | <!-- slot: strata.P2.outcomes.several_types_with_label -->3<!-- /slot --> | <!-- slot: strata.P2.outcomes.several_types_without_label -->0<!-- /slot --> | <!-- slot: strata.P2.outcomes.inconclusive -->1<!-- /slot --> | <!-- slot: strata.P2.outcomes.no_indication -->0<!-- /slot --> |
+| N1 | <!-- slot: strata.N1.outcomes.indicated_correct -->0<!-- /slot --> | <!-- slot: strata.N1.outcomes.indicated_wrong -->2<!-- /slot --> | <!-- slot: strata.N1.outcomes.several_types_with_label -->6<!-- /slot --> | <!-- slot: strata.N1.outcomes.several_types_without_label -->2<!-- /slot --> | <!-- slot: strata.N1.outcomes.inconclusive -->0<!-- /slot --> | <!-- slot: strata.N1.outcomes.no_indication -->0<!-- /slot --> |
+
+**Normal baselines** (<!-- slot: strata.ungraded.normals.total -->4<!-- /slot --> records, counts only):
+<!-- slot: strata.ungraded.normals.no_indication -->1<!-- /slot --> no indication,
+<!-- slot: strata.ungraded.normals.inconclusive -->0<!-- /slot --> inconclusive,
+<!-- slot: strata.ungraded.outcomes.several_types_without_label -->2<!-- /slot --> several types listed,
+<!-- slot: strata.ungraded.outcomes.indicated_wrong -->1<!-- /slot --> indicated, with a single fault type named on <!-- slot: strata.ungraded.normals.named_fault -->1<!-- /slot -->;
+supported on the baselines: outer race <!-- slot: strata.ungraded.normals.supported_counts.BPFO -->3<!-- /slot -->, inner race <!-- slot: strata.ungraded.normals.supported_counts.BPFI -->2<!-- /slot -->, ball <!-- slot: strata.ungraded.normals.supported_counts.BSF -->0<!-- /slot -->, cage <!-- slot: strata.ungraded.normals.supported_counts.FTF -->0<!-- /slot -->.
 
 <!-- cwru-benchmark:end -->
 
-Counts are always published alongside rates: with only 4 baseline records the
-false-positive rate has 25-percentage-point granularity, and rates alone would
-overstate the precision of the measurement.
+Counts are always published with their denominators. The normal baselines are
+reported as counts only: four recordings of one test rig cannot support a
+false-alarm or specificity rate.
 
-Reading the strata: on records the reference study found clearly diagnosable
-with a classic signature (Y1), the pipeline identifies the correct fault every
-time. Frequency-level energy at the labeled fault frequency is detectable on
-every fault record in the subset; naming the *correct* fault first is the
-discriminating metric, and it degrades exactly where the reference study says
-records get hard — most residual misclassifications sit in the ball-fault and
-0.028″ records that Smith & Randall could not diagnose with any method.
+Reading the results: when more than one fault type is supported, the check
+lists them as candidates and singles none out. A single envelope spectrum
+cannot tell which of them is present: lines of different fault types can
+coincide through the bearing's kinematics (on the 6205, the third outer-race
+harmonic and the second inner-race harmonic lie within one percent of each
+other), and the reference study reports inner-race and outer-race components
+on many of the ball-fault records. A single-record indication therefore asks
+for confirmation, and the order in which the candidates are listed, by level
+over the noise floor, is reported here as a measurement, not as a basis for
+naming a fault.
 
 ## Honest-benchmarking notes
 
@@ -177,6 +237,11 @@ records get hard — most residual misclassifications sit in the ball-fault and
 - **The reference grading is itself per-method.** Using the best-across-methods
   grade makes the Y1/Y2 strata a *ceiling* claim about record diagnosability,
   which is the conservative direction for headline reporting.
+- **The baselines are counts, not a specificity.** Four recordings of one rig
+  show how the check behaved on them; they do not estimate how often it would
+  list candidates on healthy machines in general, and the nominal budget of
+  the check is not such an estimate either. Only validation on further
+  datasets can state a real-world specificity.
 
 ## Determinism and reproducibility
 
