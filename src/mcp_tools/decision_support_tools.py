@@ -70,8 +70,9 @@ async def generate_maintenance_recommendations(
             tool. They may represent independently established faults (for
             example by inspection) or explicitly requested scenarios, and
             must not be a type taken from an envelope indication of
-            check_bearing_faults or diagnose_vibration. None for zone-only
-            advice.
+            check_bearing_faults or diagnose_vibration, or from any other
+            bearing evidence this server reports (such as
+            assess_asset_change). None for zone-only advice.
 
     Returns:
         Formatted string listing all maintenance recommendations.

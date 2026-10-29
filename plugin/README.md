@@ -6,6 +6,13 @@ Industrial-grade predictive maintenance skills, agents, and workflows for Claude
 
 The `predictive-maintenance-mcp` MCP server must be installed and connected. See the [installation guide](https://github.com/LGDiMaggio/predictive-maintenance-mcp/blob/main/INSTALL.md) for setup instructions.
 
+The bearing workflows read the `claim` and `outcome` fields of
+`check_bearing_faults`. With a server that does not return them (0.13.0 and
+earlier), the workflows relay no bearing fault type or bearing assessment, no
+evidence strength of a diagnosis that ran the bearing check and no bearing
+matches of an envelope report; they say why, and relay results that do not
+rest on the bearing check, such as the ISO 20816-3 zone, as usual.
+
 ## Installation
 
 ### From Marketplace
