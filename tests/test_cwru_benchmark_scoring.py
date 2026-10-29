@@ -5,18 +5,21 @@ small synthetic labeled-record set (never the real 64-record tables), so
 every rate asserted here can be checked by counting on paper. Coverage:
 
 - happy path: hand-computed per-stratum counts AND rates reproduced
-  exactly (3 of 4 Y1 hits);
+  exactly, one Y1 record per outcome;
 - N1/N2 land in their own strata and never move headline (Y1/Y2)
   accuracy;
-- the BSF harmonic leg: harmonic 2 present hits despite
-  ``detected=False`` / low evidence; no harmonic 2 misses;
-- symmetry: the SAME criterion counts false positives on normal
-  baselines (harmonic leg included; low/none evidence does not count);
-- classification ranking (documented rule: evidence tier high >
-  moderate > harmonic-only, then magnitude descending, then
-  |deviation_pct| ascending, then fixed BPFO/BPFI/BSF/FTF order) —
-  ranked-first equal to the label is correct, a stronger wrong fault is
-  incorrect;
+- the hit criterion is a supported hypothesis: a significant line
+  alone, a shared line or a 2x BSF harmonic is not a hit;
+- the normal baselines are counted under the same criterion, as counts
+  (no indication, inconclusive, bearing alert, named fault), never as a
+  rate;
+- the secondary classification ranking among supported faults
+  (evidence tier high > moderate, then magnitude descending, then
+  |deviation_pct| ascending, then fixed BPFO/BPFI/BSF/FTF order);
+- what users see (AE9): the outcome distribution, the precision of
+  "indicated", the strongest candidate, the fault the claim names and
+  the confusion table, every rate with its denominator;
+- outcomes measured under another evidence or claim policy are refused;
 - ungraded and known-anomalies reporting lines;
 - fail-closed refusals: missing/extra/non-ok outcome ids named, empty
   outcomes, empty labels, malformed ok outcome, unknown metadata key;
@@ -40,6 +43,8 @@ import predictive_maintenance_mcp
 from benchmarks.cwru import runner, scorer
 from benchmarks.cwru.__main__ import main
 from benchmarks.cwru.records import LabeledRecord, LabelRecord, OpsRecord
+from predictive_maintenance_mcp.diagnostics.bearing_claims import CLAIM_POLICY_VERSION
+from predictive_maintenance_mcp.diagnostics.bearing_evidence import EVIDENCE_POLICY
 
 #: Deterministic metadata for every score_results call in this file —
 #: the varying values (date, git describe, platform) are pinned so no
@@ -102,6 +107,14 @@ def _check(fault_key: str, **overrides: Any) -> dict[str, Any]:
         "deviation_pct": None,
         "harmonics_detected": [],
         "evidence_strength": "none",
+        "state": "absent",
+        "state_reason": "no_significant_line",
+        "line_frequency_hz": 100.0,
+        "line_peak_hz": 100.0,
+        "line_amplitude": 0.01,
+        "level_db": 3.0,
+        "threshold_db": 20.0,
+        "shared_with": [],
     }
     base.update(overrides)
     return base
@@ -117,25 +130,62 @@ def _harmonic(order: int = 2, magnitude: float = 0.01) -> dict[str, Any]:
     }
 
 
-def _detected(evidence: str = "moderate", **overrides: Any) -> dict[str, Any]:
-    """Check overrides for a detected fundamental at *evidence*."""
+def _supported(evidence: str = "moderate", **overrides: Any) -> dict[str, Any]:
+    """Check overrides for a supported hypothesis at *evidence*."""
     values: dict[str, Any] = {
         "detected": True,
         "detected_frequency_hz": 100.0,
         "magnitude": 0.5,
         "deviation_pct": 0.5,
         "evidence_strength": evidence,
+        "state": "supported",
+        "state_reason": "corroborated",
+        "level_db": 30.0,
     }
     values.update(overrides)
     return values
+
+
+def _significant(state: str = "unconfirmed", **overrides: Any) -> dict[str, Any]:
+    """Check overrides for a significant line that is not supported."""
+    values: dict[str, Any] = {
+        "detected": True,
+        "detected_frequency_hz": 100.0,
+        "magnitude": 0.5,
+        "deviation_pct": 0.5,
+        "evidence_strength": "low",
+        "state": state,
+        "state_reason": "no_corroboration" if state == "unconfirmed" else "line_shared",
+        "level_db": 25.0,
+    }
+    values.update(overrides)
+    return values
+
+
+#: The policy versions the engine produces today; a hand-built outcome
+#: carries them unless a test overrides one.
+EVIDENCE_VERSION = EVIDENCE_POLICY["version"]
+CLAIM_VERSION = CLAIM_POLICY_VERSION
 
 
 def _outcome(
     opaque_id: str,
     checks: Optional[dict[str, dict[str, Any]]] = None,
     status: str = "ok",
+    *,
+    outcome: Optional[str] = None,
+    candidates: Optional[list[str]] = None,
+    claim_level: Optional[str] = None,
+    named: Optional[str] = None,
+    evidence_policy_version: Any = EVIDENCE_VERSION,
+    claim_policy_version: Any = CLAIM_VERSION,
 ) -> dict[str, Any]:
-    """A hand-built runner outcome (only the fields the scorer reads)."""
+    """A hand-built runner outcome (only the fields the scorer reads).
+
+    The summary follows the checks unless a test sets it: candidates are
+    the supported hypotheses by level, the outcome follows their count,
+    and the claim names the single candidate of an indicated outcome.
+    """
     if status != runner.OUTCOME_STATUS_OK:
         return {
             "signal_id": opaque_id,
@@ -145,10 +195,34 @@ def _outcome(
     fault_checks = {
         key: _check(key, **(checks or {}).get(key, {})) for key in scorer.FAULT_KEYS
     }
+    if candidates is None:
+        supported = [
+            k for k in scorer.FAULT_KEYS if fault_checks[k]["state"] == "supported"
+        ]
+        candidates = sorted(supported, key=lambda k: -fault_checks[k]["level_db"])
+    if outcome is None:
+        outcome = {0: "no_indication", 1: "indicated"}.get(
+            len(candidates), "several_types"
+        )
+    if claim_level is None:
+        claim_level = {
+            "indicated": "single_spectrum_evidence",
+            "several_types": "qualified",
+        }.get(outcome, "withheld")
+    if named is None and claim_level == "single_spectrum_evidence":
+        named = candidates[0]
     return {
         "signal_id": opaque_id,
         "status": runner.OUTCOME_STATUS_OK,
-        "bearing": {"fault_checks": fault_checks},
+        "bearing": {
+            "fault_checks": fault_checks,
+            "outcome": outcome,
+            "candidates": candidates,
+            "claim_level": claim_level,
+            "most_likely_fault": named,
+            "evidence_policy_version": evidence_policy_version,
+            "claim_policy_version": claim_policy_version,
+        },
     }
 
 
@@ -167,7 +241,7 @@ class TestHappyPath:
 
     @pytest.fixture
     def scored(self) -> dict[str, Any]:
-        """4 Y1 faulted records (3 hits) + 1 clean ungraded normal."""
+        """4 Y1 faulted records (one per outcome) + 1 clean ungraded normal."""
         labeled = (
             _labeled("cwru_001", 105, "inner_race", grade="Y1"),
             _labeled("cwru_002", 118, "outer_race", grade="Y1"),
@@ -176,22 +250,24 @@ class TestHappyPath:
             _labeled("cwru_005", 97, "normal"),
         )
         outcomes = {
-            # Hit: BPFI detected, high evidence.
-            "cwru_001": _outcome("cwru_001", {"BPFI": _detected("high")}),
-            # Hit: BPFO detected, moderate evidence.
-            "cwru_002": _outcome("cwru_002", {"BPFO": _detected("moderate")}),
-            # Hit via the harmonic leg only: BSF not detected, low
-            # evidence, harmonic 2 present.
-            "cwru_003": _outcome(
-                "cwru_003",
+            # Indicated, correct: BPFI alone is supported and named.
+            "cwru_001": _outcome("cwru_001", {"BPFI": _supported("high")}),
+            # Several types, the label among them and the strongest.
+            "cwru_002": _outcome(
+                "cwru_002",
                 {
-                    "BSF": {
-                        "evidence_strength": "low",
-                        "harmonics_detected": [_harmonic(order=2)],
-                    }
+                    "BPFO": _supported("high", level_db=30.0),
+                    "BPFI": _supported("moderate", level_db=20.0),
                 },
             ),
-            # Miss: nothing found anywhere.
+            # Inconclusive: the BSF line is significant but unconfirmed.
+            # A 2x harmonic no longer makes a ball hit.
+            "cwru_003": _outcome(
+                "cwru_003",
+                {"BSF": _significant(harmonics_detected=[_harmonic(order=2)])},
+                outcome="inconclusive",
+            ),
+            # No indication: nothing significant anywhere.
             "cwru_004": _outcome("cwru_004"),
             # Clean normal baseline.
             "cwru_005": _outcome("cwru_005"),
@@ -205,16 +281,39 @@ class TestHappyPath:
         assert y1["n_normal"] == 0
         # Counts always published alongside rates.
         assert y1["frequency_detection"] == {"hits": 3, "total": 4, "rate": 0.75}
-        assert y1["classification"] == {"correct": 3, "total": 4, "rate": 0.75}
-        assert y1["end_to_end"] == {"correct": 3, "total": 4, "rate": 0.75}
+        assert y1["label_supported"] == {"count": 2, "total": 4, "rate": 0.5}
+        assert y1["classification"] == {"correct": 2, "total": 4, "rate": 0.5}
+        assert y1["end_to_end"] == {"correct": 2, "total": 4, "rate": 0.5}
 
-    def test_normal_lands_in_ungraded_with_no_false_positive(self, scored):
+    def test_y1_user_visible_outcome_hand_computed(self, scored):
+        y1 = scored["strata"]["Y1"]
+        assert y1["outcomes"] == {
+            "indicated_correct": 1,
+            "indicated_wrong": 0,
+            "several_types_with_label": 1,
+            "several_types_without_label": 0,
+            "inconclusive": 1,
+            "no_indication": 1,
+            "total": 4,
+        }
+        assert y1["indicated_precision"] == {"correct": 1, "total": 1, "rate": 1.0}
+        assert y1["strongest_candidate"] == {"correct": 2, "total": 4, "rate": 0.5}
+        assert y1["named_fault"] == {"correct": 1, "wrong": 0, "none": 3, "total": 4}
+        assert y1["sensitivity"] == {"alerts": 2, "total": 4, "rate": 0.5}
+        assert y1["wrong_type_support"] == {"records": 1, "total": 4, "rate": 0.25}
+
+    def test_normal_lands_in_ungraded_as_counts(self, scored):
         ungraded = scored["strata"]["ungraded"]
         assert ungraded["n_records"] == 1
         assert ungraded["n_normal"] == 1
-        assert ungraded["false_positives"]["records_with_any"] == 0
-        assert ungraded["false_positives"]["total_normal"] == 1
-        assert ungraded["false_positives"]["rate"] == 0.0
+        assert ungraded["normals"] == {
+            "total": 1,
+            "no_indication": 1,
+            "inconclusive": 0,
+            "bearing_alert": 0,
+            "named_fault": 0,
+            "supported_counts": {"BPFO": 0, "BPFI": 0, "BSF": 0, "FTF": 0},
+        }
         assert ungraded["classification"] == {"correct": 1, "total": 1, "rate": 1.0}
 
     def test_headline_covers_exactly_y1_y2(self, scored):
@@ -222,19 +321,36 @@ class TestHappyPath:
         assert headline["strata_included"] == ["Y1", "Y2"]
         # Only the 4 Y1 records — the ungraded normal is not headline.
         assert headline["n_records"] == 4
-        assert headline["classification"] == {"correct": 3, "total": 4, "rate": 0.75}
+        assert headline["classification"] == {"correct": 2, "total": 4, "rate": 0.5}
+        assert headline["outcomes"]["total"] == 4
 
     def test_per_record_table_rows(self, scored):
         records = scored["records"]
         assert set(records) == {f"cwru_00{i}" for i in range(1, 6)}
-        assert records["cwru_001"]["ranked_first"] == "BPFI"
-        assert records["cwru_001"]["classification_correct"] is True
-        assert records["cwru_003"]["ranked_first"] == "BSF"
-        assert records["cwru_003"]["frequency_detection_hit"] is True
+        first = records["cwru_001"]
+        assert first["ranked_first"] == "BPFI"
+        assert first["classification_correct"] is True
+        assert first["outcome_class"] == "indicated_correct"
+        assert first["named_fault"] == "BPFI"
+        assert first["named_correct"] is True
+        second = records["cwru_002"]
+        assert second["outcome_class"] == "several_types_with_label"
+        assert second["strongest_candidate"] == "BPFO"
+        assert second["strongest_candidate_correct"] is True
+        assert second["wrong_type_supported"] is True
+        assert second["bearing_alert"] is True
+        third = records["cwru_003"]
+        assert third["ranked_first"] is None
+        assert third["frequency_detection_hit"] is True
+        assert third["label_supported"] is False
+        assert third["outcome_class"] == "inconclusive"
         assert records["cwru_004"]["ranked_first"] is None
         assert records["cwru_004"]["classification_correct"] is False
-        assert records["cwru_005"]["expected_fault"] is None
-        assert records["cwru_005"]["false_positive"] is False
+        normal = records["cwru_005"]
+        assert normal["expected_fault"] is None
+        assert normal["outcome_class"] == "no_indication"
+        assert normal["named_correct"] is None
+        assert normal["strongest_candidate_correct"] is None
         for row in records.values():
             assert row["end_to_end_correct"] is row["classification_correct"]
 
@@ -245,6 +361,8 @@ class TestHappyPath:
         assert p1["n_records"] == 0
         assert p1["frequency_detection"] == {"hits": 0, "total": 0, "rate": None}
         assert p1["classification"]["rate"] is None
+        assert p1["indicated_precision"] == {"correct": 0, "total": 0, "rate": None}
+        assert p1["sensitivity"]["rate"] is None
 
 
 # ---------------------------------------------------------------------------
@@ -262,7 +380,7 @@ class TestStratification:
             _labeled("cwru_003", 130, "inner_race", grade="N2"),
         )
         outcomes = {
-            "cwru_001": _outcome("cwru_001", {"BPFI": _detected("high")}),
+            "cwru_001": _outcome("cwru_001", {"BPFI": _supported("high")}),
             "cwru_002": _outcome("cwru_002"),  # miss — known-hard
             "cwru_003": _outcome("cwru_003"),  # miss — known-hard
         }
@@ -285,7 +403,7 @@ class TestStratification:
 
     def test_null_grade_lands_in_ungraded_stratum(self):
         labeled = (_labeled("cwru_001", 105, "outer_race", grade=None),)
-        outcomes = {"cwru_001": _outcome("cwru_001", {"BPFO": _detected("high")})}
+        outcomes = {"cwru_001": _outcome("cwru_001", {"BPFO": _supported("high")})}
         results = _score(labeled, outcomes)
         assert results["records"]["cwru_001"]["stratum"] == "ungraded"
         assert results["strata"]["ungraded"]["frequency_detection"]["hits"] == 1
@@ -293,120 +411,151 @@ class TestStratification:
 
 
 # ---------------------------------------------------------------------------
-# Harmonic leg: BSF-only, harmonic 2 exactly
+# Hit criterion: a supported hypothesis, nothing weaker
 # ---------------------------------------------------------------------------
 
 
-class TestHarmonicLeg:
-    """2xBSF alignment: harmonic 2 hits for BSF and for nothing else."""
+class TestHitCriterion:
+    """A fault hits only when its state is supported: a significant line
+    alone, a shared line or a 2x harmonic is not a hit."""
 
-    def test_ball_harmonic_two_hits_despite_low_evidence(self):
+    def test_significant_but_unconfirmed_label_is_detected_not_supported(self):
+        labeled = (_labeled("cwru_001", 105, "inner_race", grade="Y1"),)
+        outcomes = {
+            "cwru_001": _outcome(
+                "cwru_001",
+                {"BPFI": _significant("unconfirmed")},
+                outcome="inconclusive",
+            )
+        }
+        row = _score(labeled, outcomes)["records"]["cwru_001"]
+        assert row["frequency_detection_hit"] is True
+        assert row["label_supported"] is False
+        assert row["fault_hits"]["BPFI"] is False
+        assert row["ranked_first"] is None
+        assert row["classification_correct"] is False
+
+    def test_shared_line_is_not_a_hit(self):
+        labeled = (_labeled("cwru_001", 118, "outer_race", grade="Y1"),)
+        outcomes = {
+            "cwru_001": _outcome(
+                "cwru_001",
+                {
+                    "BPFO": _significant("shared", shared_with=["BPFI"]),
+                    "BPFI": _significant("shared", shared_with=["BPFO"]),
+                },
+                outcome="inconclusive",
+            )
+        }
+        row = _score(labeled, outcomes)["records"]["cwru_001"]
+        assert row["fault_hits"] == {
+            "BPFO": False,
+            "BPFI": False,
+            "BSF": False,
+            "FTF": False,
+        }
+        assert row["wrong_type_supported"] is False
+
+    def test_ball_harmonic_two_alone_is_not_a_hit(self):
+        """The 2x BSF leg is gone: the engine itself tests the
+        rolling-element line at twice the spin frequency."""
         labeled = (_labeled("cwru_001", 118, "ball", grade="Y1"),)
         outcomes = {
             "cwru_001": _outcome(
                 "cwru_001",
                 {
                     "BSF": {
-                        "detected": False,
                         "evidence_strength": "low",
                         "harmonics_detected": [_harmonic(order=2)],
                     }
                 },
             )
         }
-        results = _score(labeled, outcomes)
-        row = results["records"]["cwru_001"]
-        assert row["frequency_detection_hit"] is True
+        row = _score(labeled, outcomes)["records"]["cwru_001"]
+        assert row["frequency_detection_hit"] is False
+        assert row["fault_hits"]["BSF"] is False
+        assert row["classification_correct"] is False
+
+    def test_supported_ball_is_a_hit(self):
+        labeled = (_labeled("cwru_001", 118, "ball", grade="Y1"),)
+        outcomes = {"cwru_001": _outcome("cwru_001", {"BSF": _supported("moderate")})}
+        row = _score(labeled, outcomes)["records"]["cwru_001"]
+        assert row["fault_hits"]["BSF"] is True
         assert row["ranked_first"] == "BSF"
         assert row["classification_correct"] is True
 
-    def test_ball_without_harmonic_two_misses(self):
-        """Energy at an unrelated frequency, no 2x harmonic: a miss."""
-        labeled = (_labeled("cwru_001", 118, "ball", grade="Y1"),)
-        outcomes = {
-            "cwru_001": _outcome(
-                "cwru_001",
-                {
-                    # A 3rd harmonic alone is NOT the leg's membership test.
-                    "BSF": {"harmonics_detected": [_harmonic(order=3)]},
-                    # An unrelated detection elsewhere does not help ball.
-                    "BPFO": _detected("moderate"),
-                },
-            )
-        }
-        results = _score(labeled, outcomes)
-        row = results["records"]["cwru_001"]
-        assert row["frequency_detection_hit"] is False
-        assert row["ranked_first"] == "BPFO"
-        assert row["classification_correct"] is False
-
-    def test_harmonic_leg_is_bsf_only(self):
-        """A 2x harmonic on FTF is not a hit — no other fault has the leg."""
-        labeled = (_labeled("cwru_001", 97, "normal"),)
-        outcomes = {
-            "cwru_001": _outcome(
-                "cwru_001",
-                {"FTF": {"harmonics_detected": [_harmonic(order=2)]}},
-            )
-        }
-        results = _score(labeled, outcomes)
-        assert results["records"]["cwru_001"]["false_positive"] is False
-
 
 # ---------------------------------------------------------------------------
-# Symmetry: the SAME criterion counts false positives on normals
+# Normal baselines: counts under the same criterion, never a rate
 # ---------------------------------------------------------------------------
 
 
-class TestSymmetryOnNormals:
-    """No asymmetry: whatever detects a fault also counts as an FP."""
+class TestNormalBaselines:
+    """The criterion that counts a hit on a fault record counts it on a
+    normal baseline too, and the normals are reported as counts."""
 
-    def test_normal_with_bsf_harmonic_two_is_false_positive(self):
+    def test_inconclusive_normal_is_counted_apart_from_alerts(self):
         labeled = (_labeled("cwru_001", 97, "normal"),)
         outcomes = {
             "cwru_001": _outcome(
                 "cwru_001",
-                {"BSF": {"harmonics_detected": [_harmonic(order=2)]}},
+                {"BPFO": _significant("unconfirmed")},
+                outcome="inconclusive",
             )
         }
         results = _score(labeled, outcomes)
         row = results["records"]["cwru_001"]
-        assert row["false_positive"] is True
-        assert row["classification_correct"] is False
-        fp = results["strata"]["ungraded"]["false_positives"]
-        assert fp["records_with_any"] == 1
-        assert fp["rate"] == 1.0
-        assert fp["per_fault_counts"] == {"BPFO": 0, "BPFI": 0, "BSF": 1, "FTF": 0}
-
-    def test_normal_with_moderate_detection_is_false_positive(self):
-        labeled = (_labeled("cwru_001", 97, "normal"),)
-        outcomes = {"cwru_001": _outcome("cwru_001", {"BPFI": _detected("moderate")})}
-        results = _score(labeled, outcomes)
-        assert results["records"]["cwru_001"]["false_positive"] is True
-        fp = results["strata"]["ungraded"]["false_positives"]
-        assert fp["per_fault_counts"]["BPFI"] == 1
-
-    def test_normal_with_low_or_none_evidence_is_not_false_positive(self):
-        labeled = (_labeled("cwru_001", 97, "normal"),)
-        outcomes = {
-            "cwru_001": _outcome(
-                "cwru_001",
-                {
-                    # detected but sub-moderate evidence: below criterion.
-                    "BPFO": {
-                        "detected": True,
-                        "detected_frequency_hz": 100.0,
-                        "evidence_strength": "low",
-                    },
-                    # harmonic 3 only, no fundamental: below criterion.
-                    "BSF": {"harmonics_detected": [_harmonic(order=3)]},
-                },
-            )
-        }
-        results = _score(labeled, outcomes)
-        row = results["records"]["cwru_001"]
+        assert row["outcome_class"] == "inconclusive"
+        assert row["bearing_alert"] is False
         assert row["false_positive"] is False
         assert row["classification_correct"] is True
+        normals = results["strata"]["ungraded"]["normals"]
+        assert normals["inconclusive"] == 1
+        assert normals["bearing_alert"] == 0
+        assert normals["named_fault"] == 0
+
+    def test_named_type_on_a_normal_is_an_alert_and_a_named_fault(self):
+        labeled = (_labeled("cwru_001", 97, "normal"),)
+        outcomes = {"cwru_001": _outcome("cwru_001", {"BPFO": _supported("moderate")})}
+        results = _score(labeled, outcomes)
+        row = results["records"]["cwru_001"]
+        assert row["outcome_class"] == "indicated_wrong"
+        assert row["named_fault"] == "BPFO"
+        assert row["false_positive"] is True
+        assert row["classification_correct"] is False
+        assert results["strata"]["ungraded"]["normals"] == {
+            "total": 1,
+            "no_indication": 0,
+            "inconclusive": 0,
+            "bearing_alert": 1,
+            "named_fault": 1,
+            "supported_counts": {"BPFO": 1, "BPFI": 0, "BSF": 0, "FTF": 0},
+        }
+
+    def test_several_types_on_a_normal_is_an_alert_without_a_named_fault(self):
+        labeled = (_labeled("cwru_001", 97, "normal"),)
+        outcomes = {
+            "cwru_001": _outcome(
+                "cwru_001",
+                {
+                    "BPFO": _supported("moderate"),
+                    "BPFI": _supported("moderate", level_db=20.0),
+                },
+            )
+        }
+        results = _score(labeled, outcomes)
+        row = results["records"]["cwru_001"]
+        assert row["outcome_class"] == "several_types_without_label"
+        assert row["named_fault"] is None
+        normals = results["strata"]["ungraded"]["normals"]
+        assert normals["bearing_alert"] == 1
+        assert normals["named_fault"] == 0
+        assert normals["supported_counts"] == {"BPFO": 1, "BPFI": 1, "BSF": 0, "FTF": 0}
+
+    def test_normals_carry_counts_and_no_rate(self):
+        labeled = (_labeled("cwru_001", 97, "normal"),)
+        results = _score(labeled, {"cwru_001": _outcome("cwru_001")})
+        assert "rate" not in results["strata"]["ungraded"]["normals"]
 
 
 # ---------------------------------------------------------------------------
@@ -415,9 +564,9 @@ class TestSymmetryOnNormals:
 
 
 class TestClassificationRanking:
-    """Rule: evidence tier (high > moderate > harmonic-only), then
-    magnitude descending, then |deviation_pct| ascending, then fixed
-    BPFO/BPFI/BSF/FTF order."""
+    """Secondary ranking among supported faults: evidence tier (high >
+    moderate), then magnitude descending, then |deviation_pct| ascending,
+    then fixed BPFO/BPFI/BSF/FTF order."""
 
     def test_ranked_first_equal_to_label_is_correct(self):
         labeled = (_labeled("cwru_001", 105, "inner_race", grade="Y1"),)
@@ -425,8 +574,8 @@ class TestClassificationRanking:
             "cwru_001": _outcome(
                 "cwru_001",
                 {
-                    "BPFI": _detected("high"),
-                    "BPFO": _detected("moderate"),  # weaker tier
+                    "BPFI": _supported("high"),
+                    "BPFO": _supported("moderate"),  # weaker tier
                 },
             )
         }
@@ -442,8 +591,8 @@ class TestClassificationRanking:
             "cwru_001": _outcome(
                 "cwru_001",
                 {
-                    "BPFI": _detected("moderate"),
-                    "BPFO": _detected("high"),  # stronger, wrong
+                    "BPFI": _supported("moderate"),
+                    "BPFO": _supported("high"),  # stronger, wrong
                 },
             )
         }
@@ -460,8 +609,8 @@ class TestClassificationRanking:
             "cwru_001": _outcome(
                 "cwru_001",
                 {
-                    "BPFI": _detected("moderate", magnitude=0.4),
-                    "BPFO": _detected("moderate", magnitude=0.9),
+                    "BPFI": _supported("moderate", magnitude=0.4),
+                    "BPFO": _supported("moderate", magnitude=0.9),
                 },
             )
         }
@@ -480,8 +629,8 @@ class TestClassificationRanking:
             "cwru_001": _outcome(
                 "cwru_001",
                 {
-                    "BPFI": _detected("moderate", magnitude=0.5, deviation_pct=0.3),
-                    "BPFO": _detected("moderate", magnitude=0.5, deviation_pct=-2.0),
+                    "BPFI": _supported("moderate", magnitude=0.5, deviation_pct=0.3),
+                    "BPFO": _supported("moderate", magnitude=0.5, deviation_pct=-2.0),
                 },
             )
         }
@@ -501,8 +650,8 @@ class TestClassificationRanking:
                 {
                     # Identical checks: _detected defaults share
                     # magnitude and deviation_pct exactly.
-                    "BPFI": _detected("moderate"),
-                    "BSF": _detected("moderate"),
+                    "BPFI": _supported("moderate"),
+                    "BSF": _supported("moderate"),
                 },
             )
         }
@@ -515,22 +664,155 @@ class TestClassificationRanking:
         assert row["frequency_detection_hit"] is True
         assert row["classification_correct"] is False
 
-    def test_detected_fundamental_outranks_harmonic_only(self):
-        labeled = (_labeled("cwru_001", 118, "ball", grade="Y1"),)
+
+# ---------------------------------------------------------------------------
+# What users see: outcome, precision of indicated, candidates, named fault
+# ---------------------------------------------------------------------------
+
+
+class TestUserVisibleOutcome:
+    """AE9 scenarios on hand-built outcomes; every rate has its denominator."""
+
+    def test_several_types_with_the_label_among_the_candidates(self):
+        labeled = (_labeled("cwru_001", 105, "inner_race", grade="Y2"),)
         outcomes = {
             "cwru_001": _outcome(
                 "cwru_001",
                 {
-                    "BSF": {"harmonics_detected": [_harmonic(order=2)]},
-                    "BPFI": _detected("moderate"),
+                    "BPFO": _supported("high", level_db=35.0),
+                    "BPFI": _supported("moderate", level_db=25.0),
                 },
             )
         }
         results = _score(labeled, outcomes)
         row = results["records"]["cwru_001"]
-        assert row["frequency_detection_hit"] is True  # harmonic leg
-        assert row["ranked_first"] == "BPFI"  # primary leg outranks
-        assert row["classification_correct"] is False
+        assert row["outcome_class"] == "several_types_with_label"
+        assert row["strongest_candidate"] == "BPFO"
+        assert row["strongest_candidate_correct"] is False
+        assert row["named_fault"] is None
+        y2 = results["strata"]["Y2"]
+        assert y2["outcomes"]["several_types_with_label"] == 1
+        assert y2["named_fault"] == {"correct": 0, "wrong": 0, "none": 1, "total": 1}
+        assert y2["indicated_precision"] == {"correct": 0, "total": 0, "rate": None}
+        assert y2["sensitivity"] == {"alerts": 1, "total": 1, "rate": 1.0}
+        assert y2["wrong_type_support"] == {"records": 1, "total": 1, "rate": 1.0}
+
+    def test_wrong_indicated_on_a_partial_stratum_record(self):
+        labeled = (
+            _labeled("cwru_001", 105, "inner_race", grade="P2"),
+            _labeled("cwru_002", 118, "outer_race", grade="P2"),
+        )
+        outcomes = {
+            "cwru_001": _outcome("cwru_001", {"BPFO": _supported("moderate")}),
+            "cwru_002": _outcome("cwru_002", {"BPFO": _supported("moderate")}),
+        }
+        results = _score(labeled, outcomes)
+        assert results["records"]["cwru_001"]["outcome_class"] == "indicated_wrong"
+        assert results["records"]["cwru_001"]["named_correct"] is False
+        p2 = results["strata"]["P2"]
+        assert p2["indicated_precision"] == {"correct": 1, "total": 2, "rate": 0.5}
+        assert p2["named_fault"] == {"correct": 1, "wrong": 1, "none": 0, "total": 2}
+        # A partial stratum never enters the headline.
+        assert results["headline"]["n_records"] == 0
+
+    def test_qualified_indicated_names_no_fault(self):
+        """An indicated outcome under a qualified claim names no type: the
+        user is told the readings it cannot exclude, not one fault."""
+        labeled = (_labeled("cwru_001", 118, "outer_race", grade="Y1"),)
+        outcomes = {
+            "cwru_001": _outcome(
+                "cwru_001", {"BPFO": _supported("moderate")}, claim_level="qualified"
+            )
+        }
+        results = _score(labeled, outcomes)
+        row = results["records"]["cwru_001"]
+        assert row["outcome_class"] == "indicated_correct"
+        assert row["claim_level"] == "qualified"
+        assert row["named_fault"] is None
+        assert results["strata"]["Y1"]["named_fault"]["none"] == 1
+
+    def test_confusion_table_counts_named_type_against_label(self):
+        labeled = (
+            _labeled("cwru_001", 105, "inner_race", grade="Y1"),
+            _labeled("cwru_002", 118, "outer_race", grade="Y1"),
+            _labeled("cwru_003", 97, "normal"),
+        )
+        outcomes = {
+            "cwru_001": _outcome("cwru_001", {"BPFO": _supported("moderate")}),
+            "cwru_002": _outcome("cwru_002", {"BPFO": _supported("moderate")}),
+            "cwru_003": _outcome("cwru_003", {"BPFO": _supported("moderate")}),
+        }
+        results = _score(labeled, outcomes)
+        y1 = results["strata"]["Y1"]["confusion"]
+        assert y1["inner_race"] == {"BPFO": 1, "BPFI": 0, "BSF": 0, "FTF": 0, "none": 0}
+        assert y1["outer_race"]["BPFO"] == 1
+        assert sum(y1["ball"].values()) == 0
+        assert results["strata"]["ungraded"]["confusion"]["normal"]["BPFO"] == 1
+
+    def test_every_rate_carries_its_denominator(self):
+        labeled = (
+            _labeled("cwru_001", 105, "inner_race", grade="Y1"),
+            _labeled("cwru_002", 97, "normal"),
+        )
+        outcomes = {
+            "cwru_001": _outcome("cwru_001", {"BPFI": _supported("high")}),
+            "cwru_002": _outcome("cwru_002"),
+        }
+        results = _score(labeled, outcomes)
+        found = []
+
+        def walk(node: Any, path: str) -> None:
+            if isinstance(node, dict):
+                if "rate" in node:
+                    found.append(path)
+                    assert "total" in node, path
+                for key, value in node.items():
+                    walk(value, f"{path}.{key}")
+
+        walk(results["strata"], "strata")
+        walk(results["headline"], "headline")
+        assert found
+
+
+# ---------------------------------------------------------------------------
+# Policy versions: outcomes measured under another policy are refused
+# ---------------------------------------------------------------------------
+
+
+class TestPolicyVersions:
+    """The scorer refuses outcomes measured under another evidence or claim
+    policy than the engine's current one."""
+
+    @staticmethod
+    def _pair(**versions: Any) -> tuple[tuple[LabeledRecord, ...], dict]:
+        labeled = (_labeled("cwru_001", 105, "inner_race", grade="Y1"),)
+        outcomes = {
+            "cwru_001": _outcome("cwru_001", {"BPFI": _supported("high")}, **versions)
+        }
+        return labeled, outcomes
+
+    def test_current_versions_are_scored_and_recorded(self):
+        labeled, outcomes = self._pair()
+        results = _score(labeled, outcomes)
+        assert results["criteria"]["policy_versions"] == {
+            "evidence": EVIDENCE_VERSION,
+            "claim": CLAIM_VERSION,
+        }
+
+    @pytest.mark.parametrize(
+        "field", ["evidence_policy_version", "claim_policy_version"]
+    )
+    def test_an_old_policy_version_is_refused(self, field):
+        labeled, outcomes = self._pair(**{field: 0})
+        with pytest.raises(ValueError, match="cwru_001") as excinfo:
+            _score(labeled, outcomes)
+        assert "python -m benchmarks.cwru" in str(excinfo.value)
+
+    def test_an_outcome_without_policy_versions_is_refused(self):
+        labeled, outcomes = self._pair()
+        del outcomes["cwru_001"]["bearing"]["evidence_policy_version"]
+        with pytest.raises(ValueError, match="cwru_001"):
+            _score(labeled, outcomes)
 
 
 # ---------------------------------------------------------------------------
@@ -553,8 +835,8 @@ class TestKnownAnomalies:
             _labeled("cwru_002", 118, "inner_race", grade="Y1"),
         )
         outcomes = {
-            "cwru_001": _outcome("cwru_001", {"BPFI": _detected("high")}),
-            "cwru_002": _outcome("cwru_002", {"BPFI": _detected("high")}),
+            "cwru_001": _outcome("cwru_001", {"BPFI": _supported("high")}),
+            "cwru_002": _outcome("cwru_002", {"BPFI": _supported("high")}),
         }
         results = _score(labeled, outcomes)
 
@@ -589,7 +871,7 @@ class TestFailClosed:
             _labeled("cwru_002", 97, "normal"),
         )
         outcomes = {
-            "cwru_001": _outcome("cwru_001", {"BPFI": _detected("high")}),
+            "cwru_001": _outcome("cwru_001", {"BPFI": _supported("high")}),
             "cwru_002": _outcome("cwru_002"),
         }
         return labeled, outcomes
@@ -687,7 +969,7 @@ class TestMetadataAndWrite:
 
     def test_pinned_metadata_makes_serialization_deterministic(self):
         labeled = (_labeled("cwru_001", 105, "ball", grade="Y2"),)
-        outcomes = {"cwru_001": _outcome("cwru_001", {"BSF": _detected("moderate")})}
+        outcomes = {"cwru_001": _outcome("cwru_001", {"BSF": _supported("moderate")})}
         first = runner.serialize_outcomes(_score(labeled, outcomes))
         second = runner.serialize_outcomes(_score(labeled, outcomes))
         assert first == second
@@ -696,8 +978,9 @@ class TestMetadataAndWrite:
         labeled = (_labeled("cwru_001", 97, "normal"),)
         results = _score(labeled, {"cwru_001": _outcome("cwru_001")})
         criteria = results["criteria"]
-        assert criteria["harmonic_leg"] == {"fault": "BSF", "harmonic": 2}
-        assert criteria["hit_evidence_levels"] == ["high", "moderate"]
+        assert criteria["hit_state"] == "supported"
+        assert "harmonic_leg" not in criteria
+        assert list(criteria["outcome_classes"]) == list(scorer.OUTCOME_CLASSES)
         assert criteria["label_to_check_key"] == {
             "inner_race": "BPFI",
             "ball": "BSF",
@@ -734,7 +1017,7 @@ class TestScoreCLI:
             _labeled("cwru_002", 97, "normal"),
         )
         outcomes = {
-            "cwru_001": _outcome("cwru_001", {"BPFI": _detected("high")}),
+            "cwru_001": _outcome("cwru_001", {"BPFI": _supported("high")}),
             "cwru_002": _outcome("cwru_002"),
         }
         outcomes_path = tmp_path / "outcomes.json"
@@ -775,7 +1058,7 @@ class TestScoreCLI:
             _labeled("cwru_002", 97, "normal"),
         )
         outcomes = {
-            "cwru_001": _outcome("cwru_001", {"BPFI": _detected("high")}),
+            "cwru_001": _outcome("cwru_001", {"BPFI": _supported("high")}),
             "cwru_002": _outcome("cwru_002"),
         }
         provenance = {
@@ -814,7 +1097,7 @@ class TestScoreCLI:
             _labeled("cwru_001", 105, "inner_race", grade="Y1"),
             _labeled("cwru_002", 97, "normal"),
         )
-        outcomes = {"cwru_001": _outcome("cwru_001", {"BPFI": _detected("high")})}
+        outcomes = {"cwru_001": _outcome("cwru_001", {"BPFI": _supported("high")})}
         outcomes_path = tmp_path / "outcomes.json"
         results_path = tmp_path / "results.json"
         runner.write_outcomes(outcomes, outcomes_path)
@@ -961,7 +1244,7 @@ class TestMeasurementProvenance:
             _labeled("cwru_002", 97, "normal"),
         )
         outcomes = {
-            "cwru_001": _outcome("cwru_001", {"BPFI": _detected("high")}),
+            "cwru_001": _outcome("cwru_001", {"BPFI": _supported("high")}),
             "cwru_002": _outcome("cwru_002"),
         }
         return labeled, outcomes

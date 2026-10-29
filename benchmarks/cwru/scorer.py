@@ -4,56 +4,69 @@ This module is the benchmark's SOLE label reader (origin acceptance
 example AE3): downloader, importer, and runner parse only the ops view,
 while the scorer joins the runner's outcomes with ``labels.json``
 through :func:`benchmarks.cwru.records.label_view` and emits
-``results.json`` — the single source of truth every published number
+``results.json``, the single source of truth every published number
 must trace to (AE4).
 
-Hit criterion (the methodology's operational core, applied IDENTICALLY
-to detection on faulted records and to false-positive counting on the
-normal baselines — the symmetry is load-bearing for credibility):
+Hit criterion, applied identically to the fault records and to the
+normal baselines: a fault hits on a record when its check's ``state`` is
+``"supported"``, a significant line of its own with at least one counted
+corroborating line, shared with no other hypothesis. The check tests the
+rolling-element line at twice the ball spin frequency itself, so no
+fault has a harmonic leg.
 
-- A fault hits on a record when its check has ``detected == True`` AND
-  ``evidence_strength`` in ``{"high", "moderate"}`` (the analyzer's
-  vocabulary is high/moderate/low/none; a detected fundamental is never
-  rated below moderate).
-- BSF (ball) ONLY additionally hits when harmonic 2 is present in the
-  BSF check's ``harmonics_detected`` — an entry whose ``"harmonic"``
-  field equals 2. CWRU's published "rolling element" factor (4.7135) is
-  2xBSF, and the analyzer caps harmonic-only findings at
-  ``detected=False`` / evidence ``"low"``, so this leg must read the
-  raw per-fault fields. No other fault gets a harmonic leg.
+What users see, per stratum, each as a count over its denominator:
 
-Classification ranking (the scorer computes its own record-level
-ranking from the raw per-fault fields; it never consumes the analyzer's
-``most_likely``, which structurally cannot name BSF on 2x-only
-evidence): among the faults meeting the hit criterion, rank by
+- ``frequency_detection``: on a fault record, the labelled fault's
+  tested line is significant (``detected``);
+- ``label_supported``: on a fault record, the labelled fault meets the
+  hit criterion;
+- ``outcomes``: the check's outcome against the label (indicated with
+  the labelled fault, indicated with another, several types with the
+  labelled fault among the candidates, several types without it,
+  inconclusive, no indication);
+- ``indicated_precision``: indicated outcomes whose single candidate is
+  the labelled fault, over every indicated outcome (a normal baseline's
+  indicated outcome is never correct);
+- ``strongest_candidate``: on a fault record, the labelled fault is the
+  first candidate the check lists (it lists them by level over the
+  noise floor, an order that does not rank which type is more likely);
+- ``named_fault``: on a fault record, the fault type the check names
+  (``most_likely_fault``, set only when its claim level is
+  ``single_spectrum_evidence``) is the labelled one, another one, or
+  none;
+- ``sensitivity``: on a fault record, a bearing alert (outcome
+  indicated or several types);
+- ``wrong_type_support``: on a fault record, a fault other than the
+  labelled one meets the hit criterion;
+- ``confusion``: the named fault type against the labelled fault type;
+- ``normals``: on the normal baselines, counts of no indication,
+  inconclusive, bearing alert and named fault, and of each supported
+  fault type. They are counts on the recordings measured, never a rate.
 
-1. evidence tier — ``high`` (3) > ``moderate`` (2) > harmonic-only (1);
-2. fundamental peak ``magnitude``, descending (a harmonic-only hit uses
-   the 2x harmonic entry's magnitude; a missing magnitude sorts last);
-3. absolute ``deviation_pct``, ascending (missing sorts last);
-4. fixed BPFO, BPFI, BSF, FTF order as the final deterministic
-   tie-break.
+Secondary ranking, kept as ``classification`` (also reported as
+``end_to_end``): among the faults meeting the hit criterion, rank by
+evidence tier (``high`` before ``moderate``), then fundamental peak
+``magnitude`` descending, then absolute ``deviation_pct`` ascending,
+then the fixed BPFO, BPFI, BSF, FTF order. Classification is correct
+when the ranked-first fault maps to the label (``inner_race`` -> BPFI,
+``ball`` -> BSF, ``outer_race`` -> BPFO; the outer-race position does
+not change the frequency); a normal record is correct when no fault
+meets the criterion. The check itself names no type on this ranking.
 
-Classification is correct when the ranked-first fault maps to the label
-(``inner_race`` -> BPFI, ``ball`` -> BSF, ``outer_race`` -> BPFO — the
-outer-race position does not change the frequency); a normal record is
-correct when NO fault meets the criterion. End-to-end is the
-record-level verdict (fault present + type) from the same fields —
-numerically the classification metric, reported under both names per
-stratum, as the plan requires.
-
-Stratification: Smith & Randall 2015 grades Y1/Y2 (expected detectable
-— the ONLY strata feeding the headline aggregate), P1/P2 (partial),
-N1/N2 (known-hard, reported separately, NEVER in headline accuracy),
-plus ``"ungraded"`` for records whose grade is not yet transcribed.
-Records with documented ``known_anomalies`` get their own reported
-line, flagged, never excluded from their stratum.
+Stratification: Smith & Randall 2015 grades Y1/Y2 (expected detectable,
+the ONLY strata feeding the headline aggregate), P1/P2 (partial), N1/N2
+(known-hard, reported separately, NEVER in the headline), plus
+``"ungraded"`` for the normal baselines and any record whose grade is
+not transcribed. Records with documented ``known_anomalies`` get their
+own reported line, flagged, never excluded from their stratum.
 
 Fail closed: empty outcomes, an empty label view, a missing or extra
-opaque id, or any non-``"ok"`` outcome refuses with the offending ids
-named — a partial or degenerate input must never masquerade as a score
-(never a 100%/0% report). Counts are always published alongside rates;
-a rate over zero records is ``None``, never a fabricated percentage.
+opaque id, any non-``"ok"`` outcome, or an outcome measured under an
+evidence or claim policy version other than the engine's current one
+refuses with the offending ids named. A partial, degenerate or stale
+input must never masquerade as a score. Counts are always published
+alongside rates; a rate over zero records is ``None``, never a
+fabricated percentage.
 """
 
 from __future__ import annotations
@@ -64,6 +77,9 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Optional
 
+from predictive_maintenance_mcp.diagnostics.bearing_claims import CLAIM_POLICY_VERSION
+from predictive_maintenance_mcp.diagnostics.bearing_evidence import EVIDENCE_POLICY
+
 from benchmarks.cwru import runner
 from benchmarks.cwru.records import LabeledRecord, label_view
 
@@ -71,12 +87,12 @@ __all__ = [
     "DATASET_SUBSET",
     "DEFAULT_RESULTS_PATH",
     "FAULT_KEYS",
-    "HARMONIC_LEG_FAULT",
-    "HARMONIC_LEG_ORDER",
     "HEADLINE_STRATA",
-    "HIT_EVIDENCE_LEVELS",
+    "HIT_STATE",
     "LABEL_TO_CHECK_KEY",
+    "LABEL_TYPES",
     "METADATA_KEYS",
+    "OUTCOME_CLASSES",
     "STRATA",
     "collect_metadata",
     "fault_hit",
@@ -99,17 +115,22 @@ DATASET_SUBSET: str = "CWRU 12 kHz drive-end fault group + normal baselines (v1)
 #: as the ranking's final deterministic tie-break.
 FAULT_KEYS: tuple[str, ...] = ("BPFO", "BPFI", "BSF", "FTF")
 
-#: Evidence levels that satisfy the primary leg of the hit criterion
-#: (the analyzer vocabulary is high/moderate/low/none).
-HIT_EVIDENCE_LEVELS: frozenset[str] = frozenset({"high", "moderate"})
+#: The evidence state that makes a hit, on fault records and normal
+#: baselines alike.
+HIT_STATE: str = "supported"
 
-#: The ONLY fault with a harmonic leg: CWRU's published "rolling
-#: element" factor is 2xBSF, so a 2x-harmonic-only finding is a hit for
-#: BSF and for no other fault.
-HARMONIC_LEG_FAULT: str = "BSF"
+#: Outcomes that raise a bearing alert.
+_ALERT_OUTCOMES: frozenset[str] = frozenset({"indicated", "several_types"})
 
-#: Harmonic order the harmonic leg tests for (the 2x entry).
-HARMONIC_LEG_ORDER: int = 2
+#: The check's outcome read against the label, in reporting order.
+OUTCOME_CLASSES: tuple[str, ...] = (
+    "indicated_correct",
+    "indicated_wrong",
+    "several_types_with_label",
+    "several_types_without_label",
+    "inconclusive",
+    "no_indication",
+)
 
 #: Label fault_type -> expected fault-check key. ``normal`` is absent on
 #: purpose: a normal record expects NO fault to meet the criterion. The
@@ -118,9 +139,17 @@ LABEL_TO_CHECK_KEY: Mapping[str, str] = MappingProxyType(
     {"inner_race": "BPFI", "ball": "BSF", "outer_race": "BPFO"}
 )
 
+#: Rows of the confusion table: the labelled fault types and the normal
+#: baselines. Every row is always present so the schema is stable.
+LABEL_TYPES: tuple[str, ...] = ("inner_race", "ball", "outer_race", "normal")
+
+#: Columns of the confusion table: the named fault type, or none.
+_NAMED_COLUMNS: tuple[str, ...] = (*FAULT_KEYS, "none")
+
 #: Every reporting stratum, in order: S&R 2015 grades plus the visible
-#: bucket for not-yet-transcribed grades. All are always present in the
-#: results (zero counts, null rates) so the schema is stable.
+#: bucket for the baselines and not-yet-transcribed grades. All are always
+#: present in the results (zero counts, null rates) so the schema is
+#: stable.
 STRATA: tuple[str, ...] = ("Y1", "Y2", "P1", "P2", "N1", "N2", "ungraded")
 
 #: Strata feeding the headline aggregate. N1/N2 (known-hard) and the
@@ -131,12 +160,25 @@ HEADLINE_STRATA: tuple[str, ...] = ("Y1", "Y2")
 #: tests stay deterministic (date, git describe, platform vary by run).
 METADATA_KEYS: frozenset[str] = frozenset({*runner.PROVENANCE_KEYS, "dataset_subset"})
 
-#: Ranking tiers for the primary (detected + evidence) leg.
-_EVIDENCE_TIER: Mapping[str, int] = MappingProxyType({"high": 3, "moderate": 2})
+#: Secondary-ranking tiers of a supported hypothesis's evidence grade.
+_EVIDENCE_TIER: Mapping[str, int] = MappingProxyType({"high": 2, "moderate": 1})
 
-#: Ranking tier for a harmonic-only BSF hit — below every primary-leg
-#: tier: a detected fundamental always outranks a 2x-only finding.
-_HARMONIC_ONLY_TIER: int = 1
+#: The policy versions an outcome must carry: the engine's current ones.
+_CURRENT_POLICY: Mapping[str, Any] = MappingProxyType(
+    {
+        "evidence_policy_version": EVIDENCE_POLICY["version"],
+        "claim_policy_version": CLAIM_POLICY_VERSION,
+    }
+)
+
+#: Summary fields every scored outcome must carry next to its checks.
+_SUMMARY_KEYS: tuple[str, ...] = (
+    "outcome",
+    "candidates",
+    "claim_level",
+    "most_likely_fault",
+    *_CURRENT_POLICY,
+)
 
 
 def collect_metadata(overrides: Optional[Mapping[str, str]] = None) -> dict[str, str]:
@@ -178,61 +220,25 @@ def collect_metadata(overrides: Optional[Mapping[str, str]] = None) -> dict[str,
     }
 
 
-def _harmonic_leg_entry(check: Mapping[str, Any]) -> Optional[Mapping[str, Any]]:
-    """Return the check's 2x-harmonic entry, or ``None`` when absent.
-
-    Membership test for the harmonic leg, defined from the analyzer's
-    ``harmonics_detected`` shape: a list of dicts, each carrying an
-    integer ``"harmonic"`` order (2, 3, ...) plus expected/detected
-    frequency and magnitude. The leg fires exactly when an entry's
-    order equals :data:`HARMONIC_LEG_ORDER`.
-
-    Args:
-        check: One fault check's raw analyzer fields.
-
-    Returns:
-        The matching harmonic entry, or ``None``.
-    """
-    harmonics = check.get("harmonics_detected") or []
-    for entry in harmonics:
-        if isinstance(entry, Mapping) and entry.get("harmonic") == HARMONIC_LEG_ORDER:
-            return entry
-    return None
-
-
-def _primary_leg_hits(check: Mapping[str, Any]) -> bool:
-    """The primary leg: detected fundamental with evidence >= moderate."""
-    return (
-        bool(check.get("detected"))
-        and check.get("evidence_strength") in HIT_EVIDENCE_LEVELS
-    )
-
-
-def fault_hit(fault_key: str, check: Mapping[str, Any]) -> bool:
+def fault_hit(check: Mapping[str, Any]) -> bool:
     """Apply the symmetric hit criterion to one fault check.
 
-    The SAME criterion counts detections on faulted records and false
-    positives on normal baselines — see the module docstring for the
-    full definition.
+    The SAME criterion counts hits on fault records and on normal
+    baselines: the check's evidence state is supported.
 
     Args:
-        fault_key: The check's key (BPFO/BPFI/BSF/FTF).
         check: The check's raw analyzer fields from the outcome.
 
     Returns:
         True when the fault hits on this record.
     """
-    if _primary_leg_hits(check):
-        return True
-    if fault_key == HARMONIC_LEG_FAULT:
-        return _harmonic_leg_entry(check) is not None
-    return False
+    return check.get("state") == HIT_STATE
 
 
 def _rank_sort_key(
     fault_key: str, check: Mapping[str, Any]
 ) -> tuple[int, float, float, int]:
-    """Sort key implementing the documented ranking rule (min = strongest).
+    """Sort key of the secondary ranking (min = strongest).
 
     Args:
         fault_key: The check's key (must meet the hit criterion).
@@ -242,42 +248,33 @@ def _rank_sort_key(
         ``(-tier, -magnitude, |deviation|, fixed-order index)`` so that
         ``min()`` picks the strongest fault per the module docstring.
     """
-    if _primary_leg_hits(check):
-        tier = _EVIDENCE_TIER[str(check.get("evidence_strength"))]
-        magnitude = check.get("magnitude")
-        deviation = check.get("deviation_pct")
-    else:
-        # Harmonic-only leg (BSF): rank by the 2x entry's magnitude.
-        tier = _HARMONIC_ONLY_TIER
-        entry = _harmonic_leg_entry(check)
-        magnitude = entry.get("magnitude") if entry is not None else None
-        deviation = None
+    tier = _EVIDENCE_TIER.get(str(check.get("evidence_strength")), 0)
+    magnitude = check.get("magnitude")
+    deviation = check.get("deviation_pct")
     magnitude_key = float(magnitude) if magnitude is not None else float("-inf")
     deviation_key = abs(float(deviation)) if deviation is not None else float("inf")
     return (-tier, -magnitude_key, deviation_key, FAULT_KEYS.index(fault_key))
 
 
-def _fault_checks_of(
-    opaque_id: str, outcome: Mapping[str, Any]
-) -> Mapping[str, Mapping[str, Any]]:
-    """Extract and structurally validate an outcome's fault checks.
+def _bearing_of(opaque_id: str, outcome: Mapping[str, Any]) -> Mapping[str, Any]:
+    """Extract and structurally validate an outcome's bearing block.
 
     Args:
         opaque_id: The record the outcome belongs to (for errors).
         outcome: One ``status: "ok"`` runner outcome.
 
     Returns:
-        The per-fault checks, guaranteed to carry all of
-        :data:`FAULT_KEYS`.
+        The bearing block, guaranteed to carry all of :data:`FAULT_KEYS`
+        in ``fault_checks`` and every summary field the scorer reads.
 
     Raises:
-        ValueError: When the bearing block or any fault check is
-            missing/malformed — the outcome cannot be scored, so the
-            refusal names the record and the re-run remedy.
+        ValueError: When the bearing block, a fault check or a summary
+            field is missing or malformed — the outcome cannot be scored,
+            so the refusal names the record and the re-run remedy.
     """
     bearing = outcome.get("bearing")
     checks = bearing.get("fault_checks") if isinstance(bearing, Mapping) else None
-    if not isinstance(checks, Mapping):
+    if not isinstance(bearing, Mapping) or not isinstance(checks, Mapping):
         raise ValueError(
             f"Outcome for record '{opaque_id}' carries no "
             f"bearing.fault_checks block — it cannot be scored. Re-run "
@@ -292,56 +289,144 @@ def _fault_checks_of(
             f"be scored. Re-run the measurement (python -m benchmarks.cwru "
             f"run) so every outcome carries all four checks."
         )
-    return {key: checks[key] for key in FAULT_KEYS}
+    absent = [key for key in _SUMMARY_KEYS if key not in bearing]
+    if absent:
+        raise ValueError(
+            f"Outcome for record '{opaque_id}' is missing the summary "
+            f"field(s) {absent} — it was measured by an earlier runner and "
+            f"cannot be scored. Re-run the measurement (python -m "
+            f"benchmarks.cwru all) so every outcome carries them."
+        )
+    return bearing
+
+
+def _assert_current_policy(outcomes: Mapping[str, Mapping[str, Any]]) -> None:
+    """Refuse outcomes measured under another evidence or claim policy.
+
+    Args:
+        outcomes: Runner outcomes keyed by opaque id.
+
+    Raises:
+        ValueError: Naming every record whose recorded policy versions
+            differ from the engine's current ones, grouped by the versions
+            recorded, with the re-run remedy. An outcome with no bearing
+            block is left to the structural check, which names it.
+    """
+    current = dict(_CURRENT_POLICY)
+    stale: dict[str, list[str]] = {}
+    for opaque_id in sorted(outcomes):
+        bearing = outcomes[opaque_id].get("bearing")
+        if not isinstance(bearing, Mapping):
+            continue
+        recorded = {key: bearing.get(key) for key in current}
+        if recorded != current:
+            stale.setdefault(str(recorded), []).append(opaque_id)
+    if stale:
+        groups = "; ".join(
+            f"{ids} recorded {versions}" for versions, ids in stale.items()
+        )
+        raise ValueError(
+            f"Refusing to score outcomes measured under another policy than "
+            f"the engine's current {current}: {groups}. Re-measure with "
+            f"python -m benchmarks.cwru all, so every published number "
+            f"describes what the engine reports today."
+        )
+
+
+def _outcome_class(
+    outcome: str, candidates: Sequence[str], expected: Optional[str]
+) -> str:
+    """Read the check's outcome against the label (one of OUTCOME_CLASSES)."""
+    if outcome == "indicated":
+        correct = expected is not None and list(candidates) == [expected]
+        return "indicated_correct" if correct else "indicated_wrong"
+    if outcome == "several_types":
+        with_label = expected is not None and expected in candidates
+        return (
+            "several_types_with_label" if with_label else "several_types_without_label"
+        )
+    if outcome in ("inconclusive", "no_indication"):
+        return outcome
+    raise ValueError(
+        f"Unknown check outcome {outcome!r} — the scorer reads "
+        f"indicated, several_types, inconclusive and no_indication. "
+        f"Update the scorer together with the engine's outcome vocabulary."
+    )
 
 
 def _score_record(labeled: LabeledRecord, outcome: Mapping[str, Any]) -> dict[str, Any]:
-    """Score one record: hits, ranking, and the per-metric verdicts.
+    """Score one record: hits, what the user sees, and the verdicts.
 
     Args:
         labeled: The record's ops metadata joined with its label.
         outcome: The record's ``status: "ok"`` runner outcome.
 
     Returns:
-        The per-record results row (stratum, flags, per-fault hits,
-        ranked-first fault, and hit/miss per metric family).
+        The per-record results row (stratum, flags, per-fault hits, the
+        check's outcome and candidates, the fault it names, and hit/miss
+        per metric family; fault-record fields are ``None`` on normals).
 
     Raises:
         ValueError: Propagated from structural validation.
     """
-    checks = _fault_checks_of(labeled.ops.opaque_id, outcome)
-    hits = {key: fault_hit(key, checks[key]) for key in FAULT_KEYS}
+    bearing = _bearing_of(labeled.ops.opaque_id, outcome)
+    checks = bearing["fault_checks"]
+    hits = {key: fault_hit(checks[key]) for key in FAULT_KEYS}
     hitting = [key for key in FAULT_KEYS if hits[key]]
     ranked_first = (
         min(hitting, key=lambda key: _rank_sort_key(key, checks[key]))
         if hitting
         else None
     )
+    candidates = [str(candidate) for candidate in bearing["candidates"]]
+    strongest = candidates[0] if candidates else None
+    named = bearing["most_likely_fault"]
+    check_outcome = str(bearing["outcome"])
 
     expected = LABEL_TO_CHECK_KEY.get(labeled.label.fault_type)
     if expected is None:
         # Normal baseline: correct means NO fault meets the criterion;
-        # any hit is a false positive under the same criterion.
+        # the fault-record verdicts do not apply.
         frequency_detection_hit: Optional[bool] = None
+        label_supported: Optional[bool] = None
         false_positive: Optional[bool] = bool(hitting)
         classification_correct = not hitting
+        strongest_correct: Optional[bool] = None
+        named_correct: Optional[bool] = None
+        wrong_type_supported: Optional[bool] = None
     else:
-        frequency_detection_hit = hits[expected]
+        frequency_detection_hit = bool(checks[expected].get("detected"))
+        label_supported = hits[expected]
         false_positive = None
         classification_correct = ranked_first == expected
+        strongest_correct = strongest == expected
+        named_correct = named == expected if named is not None else None
+        wrong_type_supported = any(hits[key] for key in FAULT_KEYS if key != expected)
 
     return {
         "stratum": labeled.grade_stratum,
         "known_anomalies": bool(labeled.label.known_anomalies),
+        "label_type": labeled.label.fault_type,
         "expected_fault": expected,
         "fault_hits": hits,
         "ranked_first": ranked_first,
         "frequency_detection_hit": frequency_detection_hit,
+        "label_supported": label_supported,
         "classification_correct": classification_correct,
         # End-to-end is the record-level verdict (fault present + type)
         # from the same fields — kept as its own reported key per plan.
         "end_to_end_correct": classification_correct,
         "false_positive": false_positive,
+        "outcome": check_outcome,
+        "outcome_class": _outcome_class(check_outcome, candidates, expected),
+        "claim_level": bearing["claim_level"],
+        "candidates": candidates,
+        "strongest_candidate": strongest,
+        "strongest_candidate_correct": strongest_correct,
+        "named_fault": named,
+        "named_correct": named_correct,
+        "wrong_type_supported": wrong_type_supported,
+        "bearing_alert": check_outcome in _ALERT_OUTCOMES,
     }
 
 
@@ -350,12 +435,17 @@ def _rate(count: int, total: int) -> Optional[float]:
     return count / total if total else None
 
 
+def _fraction(name: str, count: int, total: int) -> dict[str, Any]:
+    """A count with its denominator and rate, under the given count name."""
+    return {name: count, "total": total, "rate": _rate(count, total)}
+
+
 def _aggregate(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     """Aggregate per-record rows into counts AND rates per metric family.
 
-    Counts are always published alongside rates (with n=4 baselines a
-    rate alone invites statistical critique); an empty denominator
-    yields a ``None`` rate.
+    Counts are always published alongside rates; an empty denominator
+    yields a ``None`` rate. The normal baselines are reported as counts
+    only.
 
     Args:
         rows: Per-record results rows (from :func:`_score_record`).
@@ -365,38 +455,75 @@ def _aggregate(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     """
     faulted = [row for row in rows if row["expected_fault"] is not None]
     normal = [row for row in rows if row["expected_fault"] is None]
-    frequency_hits = sum(1 for row in faulted if row["frequency_detection_hit"])
+    indicated = [row for row in rows if row["outcome"] == "indicated"]
     classification = sum(1 for row in rows if row["classification_correct"])
     end_to_end = sum(1 for row in rows if row["end_to_end_correct"])
-    fp_records = sum(1 for row in normal if row["false_positive"])
-    per_fault_counts = {
-        key: sum(1 for row in normal if row["fault_hits"][key]) for key in FAULT_KEYS
+    confusion = {
+        label: {column: 0 for column in _NAMED_COLUMNS} for label in LABEL_TYPES
     }
+    for row in rows:
+        confusion[row["label_type"]][row["named_fault"] or "none"] += 1
     return {
         "n_records": len(rows),
         "n_faulted": len(faulted),
         "n_normal": len(normal),
-        "frequency_detection": {
-            "hits": frequency_hits,
+        "frequency_detection": _fraction(
+            "hits",
+            sum(1 for row in faulted if row["frequency_detection_hit"]),
+            len(faulted),
+        ),
+        "label_supported": _fraction(
+            "count", sum(1 for row in faulted if row["label_supported"]), len(faulted)
+        ),
+        "outcomes": {
+            **{
+                name: sum(1 for row in rows if row["outcome_class"] == name)
+                for name in OUTCOME_CLASSES
+            },
+            "total": len(rows),
+        },
+        "indicated_precision": _fraction(
+            "correct",
+            sum(1 for row in indicated if row["outcome_class"] == "indicated_correct"),
+            len(indicated),
+        ),
+        "strongest_candidate": _fraction(
+            "correct",
+            sum(1 for row in faulted if row["strongest_candidate_correct"]),
+            len(faulted),
+        ),
+        "named_fault": {
+            "correct": sum(1 for row in faulted if row["named_correct"] is True),
+            "wrong": sum(1 for row in faulted if row["named_correct"] is False),
+            "none": sum(1 for row in faulted if row["named_fault"] is None),
             "total": len(faulted),
-            "rate": _rate(frequency_hits, len(faulted)),
         },
-        "classification": {
-            "correct": classification,
-            "total": len(rows),
-            "rate": _rate(classification, len(rows)),
+        "sensitivity": _fraction(
+            "alerts", sum(1 for row in faulted if row["bearing_alert"]), len(faulted)
+        ),
+        "wrong_type_support": _fraction(
+            "records",
+            sum(1 for row in faulted if row["wrong_type_supported"]),
+            len(faulted),
+        ),
+        "classification": _fraction("correct", classification, len(rows)),
+        "end_to_end": _fraction("correct", end_to_end, len(rows)),
+        "normals": {
+            "total": len(normal),
+            "no_indication": sum(
+                1 for row in normal if row["outcome"] == "no_indication"
+            ),
+            "inconclusive": sum(
+                1 for row in normal if row["outcome"] == "inconclusive"
+            ),
+            "bearing_alert": sum(1 for row in normal if row["bearing_alert"]),
+            "named_fault": sum(1 for row in normal if row["named_fault"] is not None),
+            "supported_counts": {
+                key: sum(1 for row in normal if row["fault_hits"][key])
+                for key in FAULT_KEYS
+            },
         },
-        "end_to_end": {
-            "correct": end_to_end,
-            "total": len(rows),
-            "rate": _rate(end_to_end, len(rows)),
-        },
-        "false_positives": {
-            "records_with_any": fp_records,
-            "total_normal": len(normal),
-            "rate": _rate(fp_records, len(normal)),
-            "per_fault_counts": per_fault_counts,
-        },
+        "confusion": confusion,
     }
 
 
@@ -404,29 +531,83 @@ def _criteria() -> dict[str, Any]:
     """The operational definitions, embedded in the artifact for audit."""
     return {
         "hit_criterion": (
-            "A fault hits when its check has detected == true AND "
-            "evidence_strength in {'high', 'moderate'}; BSF (ball) ONLY "
-            "additionally hits when harmonic 2 is present in the BSF "
-            "check's harmonics_detected (CWRU's published rolling-element "
-            "factor is 2xBSF). The identical criterion counts detections "
-            "on faulted records and false positives on normal baselines."
+            "A fault hits when its check's state is 'supported': a "
+            "significant line of its own with at least one counted "
+            "corroborating line, shared with no other hypothesis. The "
+            "identical criterion is applied to the fault records and to the "
+            "normal baselines. The check tests the rolling-element line at "
+            "twice the ball spin frequency itself, so no fault has a "
+            "harmonic leg."
         ),
-        "hit_evidence_levels": sorted(HIT_EVIDENCE_LEVELS),
-        "harmonic_leg": {
-            "fault": HARMONIC_LEG_FAULT,
-            "harmonic": HARMONIC_LEG_ORDER,
+        "hit_state": HIT_STATE,
+        "frequency_detection": (
+            "On a fault record, the labelled fault's tested line is "
+            "significant (detected == true), whether or not the hypothesis "
+            "is supported."
+        ),
+        "outcome_classes": {
+            "indicated_correct": (
+                "Outcome 'indicated' with the labelled fault as its single "
+                "candidate."
+            ),
+            "indicated_wrong": (
+                "Outcome 'indicated' with another fault as its single "
+                "candidate; on a normal baseline, every indicated outcome."
+            ),
+            "several_types_with_label": (
+                "Outcome 'several_types' with the labelled fault among the "
+                "candidates."
+            ),
+            "several_types_without_label": (
+                "Outcome 'several_types' without the labelled fault among the "
+                "candidates; on a normal baseline, every several-types outcome."
+            ),
+            "inconclusive": "Outcome 'inconclusive'.",
+            "no_indication": "Outcome 'no_indication'.",
         },
+        "indicated_precision": (
+            "Indicated outcomes whose single candidate is the labelled fault, "
+            "over every indicated outcome of the group."
+        ),
+        "strongest_candidate": (
+            "On a fault record, the labelled fault is the first of the "
+            "check's candidates. The check lists its candidates by level over "
+            "the noise floor; that order does not rank which type is more "
+            "likely."
+        ),
+        "named_fault": (
+            "The fault type the check names: most_likely_fault, which it sets "
+            "only when its claim level is 'single_spectrum_evidence'. Counted "
+            "on the fault records as the labelled type, another type, or none."
+        ),
+        "sensitivity": (
+            "On a fault record, a bearing alert: outcome 'indicated' or "
+            "'several_types'."
+        ),
+        "wrong_type_support": (
+            "On a fault record, a fault other than the labelled one meets the "
+            "hit criterion."
+        ),
+        "normals": (
+            "On the normal baselines, counts of each outcome kind, of named "
+            "faults and of each supported fault type: counts on the "
+            "recordings measured, never a rate."
+        ),
         "ranking_rule": (
-            "Among faults meeting the hit criterion: evidence tier (high > "
-            "moderate > harmonic-only) first, then fundamental peak "
-            "magnitude descending (a harmonic-only hit uses the 2x entry's "
-            "magnitude), then absolute deviation_pct ascending, then fixed "
-            "BPFO/BPFI/BSF/FTF order as the final deterministic tie-break. "
-            "Classification is correct when the ranked-first fault maps to "
-            "the label; a normal record is correct when no fault meets the "
-            "criterion."
+            "Secondary metric (classification, also reported as end_to_end). "
+            "Among faults meeting the hit criterion: evidence tier (high "
+            "before moderate), then fundamental peak magnitude descending, "
+            "then absolute deviation_pct ascending, then the fixed "
+            "BPFO/BPFI/BSF/FTF order. Classification is correct when the "
+            "ranked-first fault maps to the label; a normal record is correct "
+            "when no fault meets the criterion. The check itself names no "
+            "type on this ranking."
         ),
         "label_to_check_key": dict(LABEL_TO_CHECK_KEY),
+        "policy_versions": {
+            "evidence": _CURRENT_POLICY["evidence_policy_version"],
+            "claim": _CURRENT_POLICY["claim_policy_version"],
+        },
     }
 
 
@@ -440,8 +621,9 @@ def score_results(
     """Join outcomes with labels and compute the stratified results.
 
     The sole label join of the benchmark: everything upstream is blind.
-    Fails closed on empty or partial input — outcome ids must match the
-    labeled records exactly and every outcome must be ``"ok"``.
+    Fails closed on empty, partial or stale input: outcome ids must match
+    the labeled records exactly, every outcome must be ``"ok"``, and every
+    outcome must carry the engine's current policy versions.
 
     Args:
         outcomes: Runner outcomes keyed by opaque id.
@@ -461,7 +643,8 @@ def score_results(
 
     Raises:
         ValueError: On empty outcomes, an empty label view, duplicate
-            labeled ids, id mismatch or non-ok outcomes (ids named), a
+            labeled ids, id mismatch or non-ok outcomes (ids named),
+            outcomes from another policy version (ids named), a
             structurally unscorable outcome, or a bad metadata override.
     """
     resolved = tuple(labeled) if labeled is not None else label_view()
@@ -489,6 +672,7 @@ def score_results(
     # Fail-closed join gate, reusing the runner's canonical check:
     # missing ids, extra ids, and non-ok outcomes each refuse, named.
     runner.assert_outcomes_complete(outcomes, [record.ops for record in resolved])
+    _assert_current_policy(outcomes)
 
     rows = {
         record.ops.opaque_id: _score_record(record, outcomes[record.ops.opaque_id])
