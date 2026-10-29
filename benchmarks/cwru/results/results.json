@@ -26,7 +26,7 @@
       "evidence": 1
     },
     "ranking_rule": "Secondary offline scoring analysis (classification, also reported as end_to_end), not a ranking the server produces or reports. Among faults meeting the hit criterion: evidence tier (high before moderate), then fundamental peak magnitude descending, then absolute deviation_pct ascending, then the fixed BPFO/BPFI/BSF/FTF order. Classification is correct when the ranked-first fault maps to the label; it is computed on the fault records only. Its values are not comparable with the classification figures of earlier benchmark versions. The check itself names no type on this ranking.",
-    "sensitivity": "On a fault record, a bearing alert: outcome 'indicated' or 'several_types'.",
+    "sensitivity": "On a fault record, the check lists at least one bearing candidate: outcome 'indicated' or 'several_types'.",
     "strongest_candidate": "On a fault record, the labelled fault is the first of the check's candidates. The check lists its candidates by level over the noise floor; that order does not rank which type is more likely.",
     "wrong_type_support": "On a fault record, a fault other than the labelled one meets the hit criterion."
   },
@@ -259,8 +259,8 @@
   },
   "metadata": {
     "dataset_subset": "CWRU 12 kHz drive-end fault group + normal baselines (v1)",
-    "date": "2026-10-29T13:55:25+00:00",
-    "git_describe": "v0.13.0-167-g589762c",
+    "date": "2026-10-29T15:02:55+00:00",
+    "git_describe": "v0.13.0-170-g5328ae0",
     "numpy_version": "2.3.3",
     "pipeline_version": "0.13.0",
     "platform": "Windows-10-10.0.26200-SP0",
