@@ -50,6 +50,7 @@ from scipy.io import savemat
 from benchmarks.cwru import drift_guard, runner, scorer
 from benchmarks.cwru.importer import SIGNAL_UNIT, import_record
 from benchmarks.cwru.records import OpsRecord
+from predictive_maintenance_mcp.diagnostics.bearing_evidence import EVIDENCE_POLICY
 from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -558,19 +559,33 @@ class TestDriftGuardOnTheRealRepo:
 #: benchmark number by construction. Flagged unconditionally.
 _FRACTION_RE = re.compile(r"\b\d+\s*/\s*\d+\b")
 
+#: A record count written out, like ``3 of the 4``: the same claim as a
+#: fraction, flagged unconditionally for the same reason.
+_COUNT_OF_RE = re.compile(r"\b\d+\s+of\s+(?:the\s+)?\d+\b", re.I)
+
 #: A percentage. Flagged only near benchmark-result vocabulary (below), so
 #: legitimate non-benchmark percentages stay green.
 _PCT_RE = re.compile(r"\b\d+(?:\.\d+)?\s*%")
 
 #: Result-shaped vocabulary that turns a nearby percentage into a benchmark
-#: claim. Deliberately narrow — generic words like "benchmark", "fault" or
-#: "coverage" alone are NOT triggers, so the README's CI coverage minimum
-#: ("85%+ test coverage") and the methodology's pinned analyzer tolerance
-#: ("frequency tolerance ±5 %") do not false-positive.
+#: claim, including the names of the metrics the scorer reports. Deliberately
+#: narrow — generic words like "benchmark", "fault" or "coverage" alone are
+#: NOT triggers, so the README's CI coverage minimum ("85%+ test coverage")
+#: and the methodology's pinned analyzer tolerance ("frequency tolerance
+#: ±5 %") do not false-positive.
 _BENCHMARK_VOCAB_RE = re.compile(
     r"\b(accurac\w*|detection|detected|classif\w*|diagnos\w*|"
-    r"false[- ]positive\w*|false indication\w*|strat(?:um|a)|CWRU)\b",
+    r"false[- ]positive\w*|false indication\w*|strat(?:um|a)|CWRU|"
+    r"supported|indicat\w*|precision|sensitiv\w*|specificit\w*|"
+    r"false[- ]alarm\w*|candidates?|outcomes?)\b",
     re.I,
+)
+
+#: The nominal false-alarm budget per check, quoted from the methodology's
+#: statistical-policy paragraph and pinned to the engine's value below.
+_NOMINAL_BUDGET_SNIPPET = (
+    f"budget of {EVIDENCE_POLICY['false_alarm_probability_per_check'] * 100:g} % "
+    f"(`false_alarm_probability_per_check`)"
 )
 
 #: Exact snippets exempt from the sweep. Keep this list SHORT and literal:
@@ -580,6 +595,9 @@ _UNGUARDED_ALLOWLIST = (
     # studies' inflated CWRU accuracies, quoted to explain why they are
     # not comparable — literature context, not a claim about this system.
     "Widely-cited 99–100 %",
+    # docs/benchmark-methodology.md, statistical policy: the engine's
+    # nominal per-check parameter, not a measured result.
+    _NOMINAL_BUDGET_SNIPPET,
 )
 
 #: The two prose documents the sweep covers (the only public surfaces that
@@ -612,7 +630,8 @@ def scan_unguarded_benchmark_numbers(text: str) -> list[str]:
       line numbers survive);
     - the marked section is blanked (numbers inside it are slot-bound and
       validated by the drift guard — not this sweep's business);
-    - any ``N/M`` fraction in the remainder is a finding;
+    - any ``N/M`` fraction or ``N of M`` count in the remainder is a
+      finding;
     - any percentage in the remainder is a finding when benchmark-result
       vocabulary appears within one line of it (percentages with no such
       vocabulary nearby — CI coverage floors, analyzer tolerances — pass).
@@ -625,6 +644,12 @@ def scan_unguarded_benchmark_numbers(text: str) -> list[str]:
         for m in _FRACTION_RE.finditer(line):
             findings.append(
                 f"line {i + 1}: record fraction '{m.group(0)}' outside the "
+                f"cwru-benchmark markers — benchmark numbers must live in "
+                f"slot-bound text inside the marked section"
+            )
+        for m in _COUNT_OF_RE.finditer(line):
+            findings.append(
+                f"line {i + 1}: record count '{m.group(0)}' outside the "
                 f"cwru-benchmark markers — benchmark numbers must live in "
                 f"slot-bound text inside the marked section"
             )
@@ -717,6 +742,43 @@ class TestUnguardedBenchmarkNumbers:
         with_extra = allowlisted_only + "Our detection reached 98.2% there.\n"
         findings = scan_unguarded_benchmark_numbers(with_extra)
         assert len(findings) == 1 and "98.2%" in findings[0], findings
+
+    @pytest.mark.parametrize(
+        "sentence, number",
+        [
+            ("The indicated outcome was correct on 75 % of fault records.", "75 %"),
+            ("On the baselines the check had a specificity of 25 %.", "25 %"),
+            ("Sensitivity reached 100 % on the Y1 and Y2 records.", "100 %"),
+            ("The precision of an indicated outcome was 0 % here.", "0 %"),
+            ("The false-alarm rate was 75 % on the baselines.", "75 %"),
+            ("The labelled fault was supported on 98 % of records.", "98 %"),
+            ("It listed the labelled fault among its candidates on 90.9 %.", "90.9 %"),
+        ],
+    )
+    def test_metric_vocabulary_near_a_percentage_goes_red(self, sentence, number):
+        """The names of the metrics the scorer reports are result vocabulary."""
+        findings = scan_unguarded_benchmark_numbers(sentence + "\n")
+        assert len(findings) == 1 and number in findings[0], findings
+
+    def test_written_out_record_count_goes_red_without_vocabulary(self):
+        findings = scan_unguarded_benchmark_numbers(
+            "3 of the 4 baselines listed bearing candidates.\n"
+        )
+        assert len(findings) == 1 and "3 of the 4" in findings[0], findings
+
+    def test_nominal_budget_is_masked_and_pinned_to_the_engine(self):
+        """The methodology's per-check budget is a nominal parameter, not a
+        result: masked by its exact snippet, which must state the engine's
+        value, while a result percentage beside it is still flagged."""
+        methodology = (REPO_ROOT / "docs" / "benchmark-methodology.md").read_text(
+            encoding="utf-8"
+        )
+        assert _NOMINAL_BUDGET_SNIPPET in methodology
+        masked = f"a nominal family-wise false-alarm {_NOMINAL_BUDGET_SNIPPET}.\n"
+        assert scan_unguarded_benchmark_numbers(masked) == []
+        unmasked = masked + "The false-alarm rate was 2 % on these records.\n"
+        findings = scan_unguarded_benchmark_numbers(unmasked)
+        assert len(findings) == 1 and "2 %" in findings[0], findings
 
 
 # ---------------------------------------------------------------------------

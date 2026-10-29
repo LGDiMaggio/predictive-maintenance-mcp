@@ -310,11 +310,14 @@ class TestHappyPath:
             "total": 1,
             "no_indication": 1,
             "inconclusive": 0,
+            "indicated": 0,
+            "several_types": 0,
             "bearing_alert": 0,
             "named_fault": 0,
             "supported_counts": {"BPFO": 0, "BPFI": 0, "BSF": 0, "FTF": 0},
         }
-        assert ungraded["classification"] == {"correct": 1, "total": 1, "rate": 1.0}
+        # The secondary ranking covers fault records only.
+        assert ungraded["classification"] == {"correct": 0, "total": 0, "rate": None}
 
     def test_headline_covers_exactly_y1_y2(self, scored):
         headline = scored["headline"]
@@ -351,6 +354,7 @@ class TestHappyPath:
         assert normal["outcome_class"] == "no_indication"
         assert normal["named_correct"] is None
         assert normal["strongest_candidate_correct"] is None
+        assert normal["classification_correct"] is None
         for row in records.values():
             assert row["end_to_end_correct"] is row["classification_correct"]
 
@@ -507,8 +511,7 @@ class TestNormalBaselines:
         row = results["records"]["cwru_001"]
         assert row["outcome_class"] == "inconclusive"
         assert row["bearing_alert"] is False
-        assert row["false_positive"] is False
-        assert row["classification_correct"] is True
+        assert row["classification_correct"] is None
         normals = results["strata"]["ungraded"]["normals"]
         assert normals["inconclusive"] == 1
         assert normals["bearing_alert"] == 0
@@ -521,12 +524,13 @@ class TestNormalBaselines:
         row = results["records"]["cwru_001"]
         assert row["outcome_class"] == "indicated_wrong"
         assert row["named_fault"] == "BPFO"
-        assert row["false_positive"] is True
-        assert row["classification_correct"] is False
+        assert row["bearing_alert"] is True
         assert results["strata"]["ungraded"]["normals"] == {
             "total": 1,
             "no_indication": 0,
             "inconclusive": 0,
+            "indicated": 1,
+            "several_types": 0,
             "bearing_alert": 1,
             "named_fault": 1,
             "supported_counts": {"BPFO": 1, "BPFI": 0, "BSF": 0, "FTF": 0},
@@ -549,13 +553,52 @@ class TestNormalBaselines:
         assert row["named_fault"] is None
         normals = results["strata"]["ungraded"]["normals"]
         assert normals["bearing_alert"] == 1
+        assert (normals["several_types"], normals["indicated"]) == (1, 0)
         assert normals["named_fault"] == 0
         assert normals["supported_counts"] == {"BPFO": 1, "BPFI": 1, "BSF": 0, "FTF": 0}
 
-    def test_normals_carry_counts_and_no_rate(self):
+    def test_a_baselines_group_carries_no_rate_but_the_precision(self):
+        """On a group of normal baselines every figure is a count; the only
+        rate is the precision of "indicated", whose denominator is the
+        indicated outcomes and which takes in the baselines as well."""
         labeled = (_labeled("cwru_001", 97, "normal"),)
-        results = _score(labeled, {"cwru_001": _outcome("cwru_001")})
-        assert "rate" not in results["strata"]["ungraded"]["normals"]
+        outcomes = {"cwru_001": _outcome("cwru_001", {"BPFO": _supported("moderate")})}
+        ungraded = _score(labeled, outcomes)["strata"]["ungraded"]
+        rated = []
+
+        def walk(node: Any, path: str) -> None:
+            if isinstance(node, dict):
+                if node.get("rate") is not None:
+                    rated.append(path)
+                for key, value in node.items():
+                    walk(value, f"{path}.{key}" if path else key)
+
+        walk(ungraded, "")
+        assert rated == ["indicated_precision"]
+        assert ungraded["indicated_precision"] == {
+            "correct": 0,
+            "total": 1,
+            "rate": 0.0,
+        }
+        assert ungraded["classification"] == {"correct": 0, "total": 0, "rate": None}
+        assert "rate" not in ungraded["normals"]
+
+    def test_a_fault_record_beside_the_baselines_stays_out_of_their_counts(self):
+        labeled = (
+            _labeled("cwru_001", 97, "normal"),
+            _labeled("cwru_002", 105, "inner_race"),  # grade not transcribed
+        )
+        outcomes = {
+            "cwru_001": _outcome("cwru_001"),
+            "cwru_002": _outcome("cwru_002", {"BPFO": _supported("moderate")}),
+        }
+        ungraded = _score(labeled, outcomes)["strata"]["ungraded"]
+        assert (ungraded["n_faulted"], ungraded["n_normal"]) == (1, 1)
+        assert ungraded["outcomes"]["indicated_wrong"] == 1
+        assert ungraded["normals"]["indicated"] == 0
+        assert ungraded["normals"]["bearing_alert"] == 0
+        assert ungraded["normals"]["no_indication"] == 1
+        assert ungraded["classification"] == {"correct": 0, "total": 1, "rate": 0.0}
 
 
 # ---------------------------------------------------------------------------
@@ -714,6 +757,44 @@ class TestUserVisibleOutcome:
         assert p2["named_fault"] == {"correct": 1, "wrong": 1, "none": 0, "total": 2}
         # A partial stratum never enters the headline.
         assert results["headline"]["n_records"] == 0
+
+    def test_strongest_candidate_follows_the_check_not_the_ranking(self):
+        """The check's first candidate (by level over the floor) and the
+        secondary ranking (by evidence grade) can disagree; each metric
+        reads its own."""
+        labeled = (_labeled("cwru_001", 105, "inner_race", grade="Y1"),)
+        outcomes = {
+            "cwru_001": _outcome(
+                "cwru_001",
+                {
+                    "BPFI": _supported("moderate", level_db=40.0),
+                    "BPFO": _supported("high", level_db=30.0),
+                },
+            )
+        }
+        row = _score(labeled, outcomes)["records"]["cwru_001"]
+        assert row["strongest_candidate"] == "BPFI"
+        assert row["strongest_candidate_correct"] is True
+        assert row["ranked_first"] == "BPFO"
+        assert row["classification_correct"] is False
+
+    def test_several_types_without_the_label_on_a_fault_record(self):
+        labeled = (_labeled("cwru_001", 105, "inner_race", grade="N1"),)
+        outcomes = {
+            "cwru_001": _outcome(
+                "cwru_001",
+                {
+                    "BPFO": _supported("moderate", level_db=30.0),
+                    "BSF": _supported("moderate", level_db=20.0),
+                },
+            )
+        }
+        results = _score(labeled, outcomes)
+        row = results["records"]["cwru_001"]
+        assert row["outcome_class"] == "several_types_without_label"
+        assert row["label_supported"] is False
+        assert row["wrong_type_supported"] is True
+        assert results["strata"]["N1"]["outcomes"]["several_types_without_label"] == 1
 
     def test_qualified_indicated_names_no_fault(self):
         """An indicated outcome under a qualified claim names no type: the
@@ -922,6 +1003,21 @@ class TestFailClosed:
         labeled, outcomes = pair
         del outcomes["cwru_002"]["bearing"]["fault_checks"]["BSF"]
         with pytest.raises(ValueError, match="BSF"):
+            _score(labeled, outcomes)
+
+    @pytest.mark.parametrize(
+        "field", ["outcome", "candidates", "claim_level", "most_likely_fault"]
+    )
+    def test_ok_outcome_missing_a_summary_field_refused(self, pair, field):
+        labeled, outcomes = pair
+        del outcomes["cwru_001"]["bearing"][field]
+        with pytest.raises(ValueError, match=f"cwru_001.*{field}"):
+            _score(labeled, outcomes)
+
+    def test_unknown_check_outcome_refused(self, pair):
+        labeled, outcomes = pair
+        outcomes["cwru_001"]["bearing"]["outcome"] = "withheld"
+        with pytest.raises(ValueError, match="Unknown check outcome 'withheld'"):
             _score(labeled, outcomes)
 
     def test_unknown_metadata_override_refused(self, pair):
@@ -1221,6 +1317,31 @@ class TestCommittedResultsDerivedFromOutcomes:
         """Only the two committed artifacts are read."""
         assert scorer.DEFAULT_RESULTS_PATH.exists()
         assert runner.DEFAULT_OUTCOMES_PATH.exists()
+
+    def test_committed_outcomes_follow_the_published_check_contract(self):
+        """The criteria describe what the check does; the hand-built
+        fixtures above assume it. Pin it on the measured outcomes: the
+        candidates are listed by level over the floor, the outcome follows
+        their count, and a fault type is named only at single-spectrum
+        evidence."""
+        outcomes, _ = scorer.read_outcomes()
+        assert outcomes
+        for opaque_id, outcome in outcomes.items():
+            bearing = outcome["bearing"]
+            levels = [
+                bearing["fault_checks"][key]["level_db"]
+                for key in bearing["candidates"]
+            ]
+            assert levels == sorted(levels, reverse=True), opaque_id
+            count = len(bearing["candidates"])
+            if count == 1:
+                assert bearing["outcome"] == "indicated", opaque_id
+            elif count > 1:
+                assert bearing["outcome"] == "several_types", opaque_id
+            else:
+                assert bearing["outcome"] in ("inconclusive", "no_indication")
+            named_level = bearing["claim_level"] == "single_spectrum_evidence"
+            assert (bearing["most_likely_fault"] is not None) == named_level, opaque_id
 
 
 # ---------------------------------------------------------------------------

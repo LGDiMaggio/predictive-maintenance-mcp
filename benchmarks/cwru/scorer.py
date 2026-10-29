@@ -40,18 +40,19 @@ What users see, per stratum, each as a count over its denominator:
   labelled one meets the hit criterion;
 - ``confusion``: the named fault type against the labelled fault type;
 - ``normals``: on the normal baselines, counts of no indication,
-  inconclusive, bearing alert and named fault, and of each supported
-  fault type. They are counts on the recordings measured, never a rate.
+  inconclusive, indicated, several types, bearing alert and named
+  fault, and of each supported fault type. They are counts on the
+  recordings measured, never a rate.
 
 Secondary ranking, kept as ``classification`` (also reported as
-``end_to_end``): among the faults meeting the hit criterion, rank by
-evidence tier (``high`` before ``moderate``), then fundamental peak
-``magnitude`` descending, then absolute ``deviation_pct`` ascending,
-then the fixed BPFO, BPFI, BSF, FTF order. Classification is correct
-when the ranked-first fault maps to the label (``inner_race`` -> BPFI,
-``ball`` -> BSF, ``outer_race`` -> BPFO; the outer-race position does
-not change the frequency); a normal record is correct when no fault
-meets the criterion. The check itself names no type on this ranking.
+``end_to_end``) on the fault records only: among the faults meeting the
+hit criterion, rank by evidence tier (``high`` before ``moderate``),
+then fundamental peak ``magnitude`` descending, then absolute
+``deviation_pct`` ascending, then the fixed BPFO, BPFI, BSF, FTF order.
+Classification is correct when the ranked-first fault maps to the label
+(``inner_race`` -> BPFI, ``ball`` -> BSF, ``outer_race`` -> BPFO; the
+outer-race position does not change the frequency). The check itself
+names no type on this ranking.
 
 Stratification: Smith & Randall 2015 grades Y1/Y2 (expected detectable,
 the ONLY strata feeding the headline aggregate), P1/P2 (partial), N1/N2
@@ -294,9 +295,9 @@ def _bearing_of(opaque_id: str, outcome: Mapping[str, Any]) -> Mapping[str, Any]
     if absent:
         raise ValueError(
             f"Outcome for record '{opaque_id}' is missing the summary "
-            f"field(s) {absent} — it was measured by an earlier runner and "
-            f"cannot be scored. Re-run the measurement (python -m "
-            f"benchmarks.cwru all) so every outcome carries them."
+            f"field(s) {absent} — it cannot be scored. Re-run the "
+            f"measurement (python -m benchmarks.cwru all) so every outcome "
+            f"carries them."
         )
     return bearing
 
@@ -387,15 +388,13 @@ def _score_record(labeled: LabeledRecord, outcome: Mapping[str, Any]) -> dict[st
     if expected is None:
         frequency_detection_hit: Optional[bool] = None
         label_supported: Optional[bool] = None
-        false_positive: Optional[bool] = bool(hitting)
-        classification_correct = not hitting
+        classification_correct: Optional[bool] = None
         strongest_correct: Optional[bool] = None
         named_correct: Optional[bool] = None
         wrong_type_supported: Optional[bool] = None
     else:
         frequency_detection_hit = bool(checks[expected].get("detected"))
         label_supported = hits[expected]
-        false_positive = None
         classification_correct = ranked_first == expected
         strongest_correct = strongest == expected
         named_correct = named == expected if named is not None else None
@@ -414,7 +413,6 @@ def _score_record(labeled: LabeledRecord, outcome: Mapping[str, Any]) -> dict[st
         # End-to-end is the record-level verdict (fault present + type)
         # from the same fields — kept as its own reported key per plan.
         "end_to_end_correct": classification_correct,
-        "false_positive": false_positive,
         "outcome": check_outcome,
         "outcome_class": _outcome_class(check_outcome, candidates, expected),
         "claim_level": bearing["claim_level"],
@@ -453,8 +451,8 @@ def _aggregate(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     faulted = [row for row in rows if row["expected_fault"] is not None]
     normal = [row for row in rows if row["expected_fault"] is None]
     indicated = [row for row in rows if row["outcome"] == "indicated"]
-    classification = sum(1 for row in rows if row["classification_correct"])
-    end_to_end = sum(1 for row in rows if row["end_to_end_correct"])
+    classification = sum(1 for row in faulted if row["classification_correct"])
+    end_to_end = sum(1 for row in faulted if row["end_to_end_correct"])
     confusion = {
         label: {column: 0 for column in _NAMED_COLUMNS} for label in LABEL_TYPES
     }
@@ -503,16 +501,19 @@ def _aggregate(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
             sum(1 for row in faulted if row["wrong_type_supported"]),
             len(faulted),
         ),
-        "classification": _fraction("correct", classification, len(rows)),
-        "end_to_end": _fraction("correct", end_to_end, len(rows)),
+        "classification": _fraction("correct", classification, len(faulted)),
+        "end_to_end": _fraction("correct", end_to_end, len(faulted)),
         "normals": {
             "total": len(normal),
-            "no_indication": sum(
-                1 for row in normal if row["outcome"] == "no_indication"
-            ),
-            "inconclusive": sum(
-                1 for row in normal if row["outcome"] == "inconclusive"
-            ),
+            **{
+                outcome: sum(1 for row in normal if row["outcome"] == outcome)
+                for outcome in (
+                    "no_indication",
+                    "inconclusive",
+                    "indicated",
+                    "several_types",
+                )
+            },
             "bearing_alert": sum(1 for row in normal if row["bearing_alert"]),
             "named_fault": sum(1 for row in normal if row["named_fault"] is not None),
             "supported_counts": {
@@ -596,9 +597,9 @@ def _criteria() -> dict[str, Any]:
             "before moderate), then fundamental peak magnitude descending, "
             "then absolute deviation_pct ascending, then the fixed "
             "BPFO/BPFI/BSF/FTF order. Classification is correct when the "
-            "ranked-first fault maps to the label; a normal record is correct "
-            "when no fault meets the criterion. The check itself names no "
-            "type on this ranking."
+            "ranked-first fault maps to the label; it is computed on the "
+            "fault records only. The check itself names no type on this "
+            "ranking."
         ),
         "label_to_check_key": dict(LABEL_TO_CHECK_KEY),
         "policy_versions": {
