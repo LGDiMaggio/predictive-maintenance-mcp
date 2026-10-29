@@ -1,9 +1,11 @@
 {
   "criteria": {
+    "confusion": "On every record of the group, the fault type the check names (most_likely_fault), or none, against the labelled fault type.",
     "frequency_detection": "On a fault record, the labelled fault's tested line is significant (detected == true), whether or not the hypothesis is supported.",
     "hit_criterion": "A fault hits when its check's state is 'supported': a significant line of its own with at least one counted corroborating line, shared with no other hypothesis. The identical criterion is applied to the fault records and to the normal baselines. The check tests the rolling-element line at twice the ball spin frequency itself, so no fault has a harmonic leg.",
     "hit_state": "supported",
     "indicated_precision": "Indicated outcomes whose single candidate is the labelled fault, over every indicated outcome of the group.",
+    "label_supported": "On a fault record, the labelled fault meets the hit criterion.",
     "label_to_check_key": {
       "ball": "BSF",
       "inner_race": "BPFI",
@@ -257,8 +259,8 @@
   },
   "metadata": {
     "dataset_subset": "CWRU 12 kHz drive-end fault group + normal baselines (v1)",
-    "date": "2026-10-29T11:16:06+00:00",
-    "git_describe": "v0.13.0-161-g1784e81",
+    "date": "2026-10-29T11:51:18+00:00",
+    "git_describe": "v0.13.0-164-ge206781",
     "numpy_version": "2.3.3",
     "pipeline_version": "0.13.0",
     "platform": "Windows-10-10.0.26200-SP0",
