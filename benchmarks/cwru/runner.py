@@ -195,9 +195,7 @@ PROVENANCE_KEYS: frozenset[str] = frozenset(
 PROVENANCE_MARKER_KEY: str = "_provenance"
 
 #: Per-fault fields copied verbatim from each ``check_all_bearing_faults``
-#: fault check into the outcome (``fault_type`` itself becomes the key):
-#: the line fields plus the significance-tested evidence state the scorer
-#: reads (``state`` "supported" is its hit criterion).
+#: fault check into the outcome (``fault_type`` itself becomes the key).
 _CHECK_FIELDS: tuple[str, ...] = (
     "fault_type_canonical",
     "expected_frequency_hz",

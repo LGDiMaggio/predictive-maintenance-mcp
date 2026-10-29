@@ -141,7 +141,7 @@ LABEL_TO_CHECK_KEY: Mapping[str, str] = MappingProxyType(
 
 #: Rows of the confusion table: the labelled fault types and the normal
 #: baselines. Every row is always present so the schema is stable.
-LABEL_TYPES: tuple[str, ...] = ("inner_race", "ball", "outer_race", "normal")
+LABEL_TYPES: tuple[str, ...] = (*LABEL_TO_CHECK_KEY, "normal")
 
 #: Columns of the confusion table: the named fault type, or none.
 _NAMED_COLUMNS: tuple[str, ...] = (*FAULT_KEYS, "none")
@@ -177,7 +177,6 @@ _SUMMARY_KEYS: tuple[str, ...] = (
     "candidates",
     "claim_level",
     "most_likely_fault",
-    *_CURRENT_POLICY,
 )
 
 
@@ -273,14 +272,16 @@ def _bearing_of(opaque_id: str, outcome: Mapping[str, Any]) -> Mapping[str, Any]
             so the refusal names the record and the re-run remedy.
     """
     bearing = outcome.get("bearing")
-    checks = bearing.get("fault_checks") if isinstance(bearing, Mapping) else None
-    if not isinstance(bearing, Mapping) or not isinstance(checks, Mapping):
+    if not isinstance(bearing, Mapping) or not isinstance(
+        bearing.get("fault_checks"), Mapping
+    ):
         raise ValueError(
             f"Outcome for record '{opaque_id}' carries no "
             f"bearing.fault_checks block — it cannot be scored. Re-run "
             f"the measurement (python -m benchmarks.cwru run) so every "
             f"outcome carries the full bearing subset."
         )
+    checks = bearing["fault_checks"]
     missing = [key for key in FAULT_KEYS if not isinstance(checks.get(key), Mapping)]
     if missing:
         raise ValueError(
@@ -309,21 +310,20 @@ def _assert_current_policy(outcomes: Mapping[str, Mapping[str, Any]]) -> None:
     Raises:
         ValueError: Naming every record whose recorded policy versions
             differ from the engine's current ones, grouped by the versions
-            recorded, with the re-run remedy. An outcome with no bearing
-            block is left to the structural check, which names it.
+            recorded, with the re-run remedy.
     """
     current = dict(_CURRENT_POLICY)
-    stale: dict[str, list[str]] = {}
+    stale: dict[tuple[tuple[str, Any], ...], list[str]] = {}
     for opaque_id in sorted(outcomes):
         bearing = outcomes[opaque_id].get("bearing")
         if not isinstance(bearing, Mapping):
             continue
         recorded = {key: bearing.get(key) for key in current}
         if recorded != current:
-            stale.setdefault(str(recorded), []).append(opaque_id)
+            stale.setdefault(tuple(recorded.items()), []).append(opaque_id)
     if stale:
         groups = "; ".join(
-            f"{ids} recorded {versions}" for versions, ids in stale.items()
+            f"{ids} recorded {dict(versions)}" for versions, ids in stale.items()
         )
         raise ValueError(
             f"Refusing to score outcomes measured under another policy than "
@@ -385,8 +385,6 @@ def _score_record(labeled: LabeledRecord, outcome: Mapping[str, Any]) -> dict[st
 
     expected = LABEL_TO_CHECK_KEY.get(labeled.label.fault_type)
     if expected is None:
-        # Normal baseline: correct means NO fault meets the criterion;
-        # the fault-record verdicts do not apply.
         frequency_detection_hit: Optional[bool] = None
         label_supported: Optional[bool] = None
         false_positive: Optional[bool] = bool(hitting)
@@ -444,8 +442,7 @@ def _aggregate(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     """Aggregate per-record rows into counts AND rates per metric family.
 
     Counts are always published alongside rates; an empty denominator
-    yields a ``None`` rate. The normal baselines are reported as counts
-    only.
+    yields a ``None`` rate.
 
     Args:
         rows: Per-record results rows (from :func:`_score_record`).
