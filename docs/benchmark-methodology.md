@@ -204,8 +204,8 @@ Outcome against the label (fault records):
 **Normal baselines** (<!-- slot: strata.ungraded.normals.total -->4<!-- /slot --> records, counts only):
 <!-- slot: strata.ungraded.normals.no_indication -->1<!-- /slot --> no indication,
 <!-- slot: strata.ungraded.normals.inconclusive -->0<!-- /slot --> inconclusive,
-<!-- slot: strata.ungraded.outcomes.several_types_without_label -->2<!-- /slot --> several types listed,
-<!-- slot: strata.ungraded.outcomes.indicated_wrong -->1<!-- /slot --> indicated, with a single fault type named on <!-- slot: strata.ungraded.normals.named_fault -->1<!-- /slot -->;
+<!-- slot: strata.ungraded.normals.several_types -->2<!-- /slot --> several types listed,
+<!-- slot: strata.ungraded.normals.indicated -->1<!-- /slot --> indicated, with a single fault type named on <!-- slot: strata.ungraded.normals.named_fault -->1<!-- /slot -->;
 supported on the baselines: outer race <!-- slot: strata.ungraded.normals.supported_counts.BPFO -->3<!-- /slot -->, inner race <!-- slot: strata.ungraded.normals.supported_counts.BPFI -->2<!-- /slot -->, ball <!-- slot: strata.ungraded.normals.supported_counts.BSF -->0<!-- /slot -->, cage <!-- slot: strata.ungraded.normals.supported_counts.FTF -->0<!-- /slot -->.
 
 <!-- cwru-benchmark:end -->

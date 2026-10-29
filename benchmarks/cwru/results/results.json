@@ -23,7 +23,7 @@
       "claim": 1,
       "evidence": 1
     },
-    "ranking_rule": "Secondary metric (classification, also reported as end_to_end). Among faults meeting the hit criterion: evidence tier (high before moderate), then fundamental peak magnitude descending, then absolute deviation_pct ascending, then the fixed BPFO/BPFI/BSF/FTF order. Classification is correct when the ranked-first fault maps to the label; a normal record is correct when no fault meets the criterion. The check itself names no type on this ranking.",
+    "ranking_rule": "Secondary metric (classification, also reported as end_to_end). Among faults meeting the hit criterion: evidence tier (high before moderate), then fundamental peak magnitude descending, then absolute deviation_pct ascending, then the fixed BPFO/BPFI/BSF/FTF order. Classification is correct when the ranked-first fault maps to the label; it is computed on the fault records only. The check itself names no type on this ranking.",
     "sensitivity": "On a fault record, a bearing alert: outcome 'indicated' or 'several_types'.",
     "strongest_candidate": "On a fault record, the labelled fault is the first of the check's candidates. The check lists its candidates by level over the noise floor; that order does not rank which type is more likely.",
     "wrong_type_support": "On a fault record, a fault other than the labelled one meets the hit criterion."
@@ -96,8 +96,10 @@
     "normals": {
       "bearing_alert": 0,
       "inconclusive": 0,
+      "indicated": 0,
       "named_fault": 0,
       "no_indication": 0,
+      "several_types": 0,
       "supported_counts": {
         "BPFI": 0,
         "BPFO": 0,
@@ -203,8 +205,10 @@
     "normals": {
       "bearing_alert": 0,
       "inconclusive": 0,
+      "indicated": 0,
       "named_fault": 0,
       "no_indication": 0,
+      "several_types": 0,
       "supported_counts": {
         "BPFI": 0,
         "BPFO": 0,
@@ -253,8 +257,8 @@
   },
   "metadata": {
     "dataset_subset": "CWRU 12 kHz drive-end fault group + normal baselines (v1)",
-    "date": "2026-10-29T09:57:30+00:00",
-    "git_describe": "v0.13.0-157-g0b682ef",
+    "date": "2026-10-29T11:16:06+00:00",
+    "git_describe": "v0.13.0-161-g1784e81",
     "numpy_version": "2.3.3",
     "pipeline_version": "0.13.0",
     "platform": "Windows-10-10.0.26200-SP0",
@@ -274,7 +278,6 @@
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFI",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
@@ -307,7 +310,6 @@
       "classification_correct": false,
       "end_to_end_correct": false,
       "expected_fault": "BSF",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
@@ -338,7 +340,6 @@
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFO",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
@@ -371,7 +372,6 @@
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFO",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
@@ -403,7 +403,6 @@
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFO",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
@@ -435,7 +434,6 @@
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFI",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": true,
         "BPFO": false,
@@ -467,7 +465,6 @@
       "classification_correct": false,
       "end_to_end_correct": false,
       "expected_fault": "BSF",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
@@ -499,7 +496,6 @@
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFO",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
@@ -532,7 +528,6 @@
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFO",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
@@ -565,7 +560,6 @@
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFO",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
@@ -597,7 +591,6 @@
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFI",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": true,
         "BPFO": false,
@@ -630,7 +623,6 @@
       "classification_correct": false,
       "end_to_end_correct": false,
       "expected_fault": "BSF",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
@@ -661,7 +653,6 @@
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFO",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
@@ -693,7 +684,6 @@
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFO",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": false,
         "BPFO": true,
@@ -726,7 +716,6 @@
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFO",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
@@ -759,7 +748,6 @@
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFI",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
@@ -792,7 +780,6 @@
       "classification_correct": false,
       "end_to_end_correct": false,
       "expected_fault": "BSF",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
@@ -824,7 +811,6 @@
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFO",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
@@ -856,7 +842,6 @@
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFO",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": false,
         "BPFO": true,
@@ -889,7 +874,6 @@
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFO",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
@@ -922,7 +906,6 @@
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFI",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
@@ -950,7 +933,6 @@
       "classification_correct": false,
       "end_to_end_correct": false,
       "expected_fault": "BSF",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": false,
         "BPFO": false,
@@ -982,7 +964,6 @@
       "classification_correct": false,
       "end_to_end_correct": false,
       "expected_fault": "BPFO",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
@@ -1014,7 +995,6 @@
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFI",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
@@ -1045,7 +1025,6 @@
       "classification_correct": false,
       "end_to_end_correct": false,
       "expected_fault": "BSF",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": false,
         "BPFO": false,
@@ -1077,7 +1056,6 @@
       "classification_correct": false,
       "end_to_end_correct": false,
       "expected_fault": "BPFO",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
@@ -1109,7 +1087,6 @@
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFI",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
@@ -1139,7 +1116,6 @@
       "classification_correct": false,
       "end_to_end_correct": false,
       "expected_fault": "BSF",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": false,
         "BPFO": false,
@@ -1171,7 +1147,6 @@
       "classification_correct": false,
       "end_to_end_correct": false,
       "expected_fault": "BPFO",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
@@ -1203,7 +1178,6 @@
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFI",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
@@ -1234,7 +1208,6 @@
       "classification_correct": false,
       "end_to_end_correct": false,
       "expected_fault": "BSF",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": false,
         "BPFO": false,
@@ -1264,7 +1237,6 @@
       "classification_correct": false,
       "end_to_end_correct": false,
       "expected_fault": "BPFO",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": true,
         "BPFO": false,
@@ -1296,7 +1268,6 @@
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFI",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": true,
         "BPFO": false,
@@ -1327,7 +1298,6 @@
       "classification_correct": false,
       "end_to_end_correct": false,
       "expected_fault": "BSF",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": true,
         "BPFO": false,
@@ -1360,7 +1330,6 @@
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFO",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
@@ -1393,7 +1362,6 @@
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFO",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
@@ -1426,7 +1394,6 @@
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFO",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
@@ -1459,7 +1426,6 @@
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFI",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
@@ -1491,7 +1457,6 @@
       "classification_correct": false,
       "end_to_end_correct": false,
       "expected_fault": "BSF",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
@@ -1524,7 +1489,6 @@
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFO",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
@@ -1557,7 +1521,6 @@
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFO",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
@@ -1590,7 +1553,6 @@
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFO",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
@@ -1622,7 +1584,6 @@
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFI",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": true,
         "BPFO": false,
@@ -1653,7 +1614,6 @@
       "classification_correct": false,
       "end_to_end_correct": false,
       "expected_fault": "BSF",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
@@ -1686,7 +1646,6 @@
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFO",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
@@ -1719,7 +1678,6 @@
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFO",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
@@ -1751,7 +1709,6 @@
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFO",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
@@ -1783,7 +1740,6 @@
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFI",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
@@ -1813,7 +1769,6 @@
       "classification_correct": false,
       "end_to_end_correct": false,
       "expected_fault": "BSF",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": true,
         "BPFO": false,
@@ -1845,7 +1800,6 @@
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFO",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
@@ -1877,7 +1831,6 @@
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFO",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
@@ -1909,7 +1862,6 @@
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BPFO",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
@@ -1942,7 +1894,6 @@
       "classification_correct": false,
       "end_to_end_correct": false,
       "expected_fault": "BPFI",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
@@ -1975,7 +1926,6 @@
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BSF",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
@@ -2006,7 +1956,6 @@
       "classification_correct": false,
       "end_to_end_correct": false,
       "expected_fault": "BPFI",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
@@ -2038,7 +1987,6 @@
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BSF",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": false,
         "BPFO": true,
@@ -2069,7 +2017,6 @@
       "classification_correct": false,
       "end_to_end_correct": false,
       "expected_fault": "BPFI",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
@@ -2101,7 +2048,6 @@
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BSF",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
@@ -2133,7 +2079,6 @@
       "classification_correct": false,
       "end_to_end_correct": false,
       "expected_fault": "BPFI",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": false,
         "BPFO": true,
@@ -2165,7 +2110,6 @@
       "classification_correct": true,
       "end_to_end_correct": true,
       "expected_fault": "BSF",
-      "false_positive": null,
       "fault_hits": {
         "BPFI": false,
         "BPFO": true,
@@ -2190,10 +2134,9 @@
       "bearing_alert": false,
       "candidates": [],
       "claim_level": "withheld",
-      "classification_correct": true,
-      "end_to_end_correct": true,
+      "classification_correct": null,
+      "end_to_end_correct": null,
       "expected_fault": null,
-      "false_positive": false,
       "fault_hits": {
         "BPFI": false,
         "BPFO": false,
@@ -2221,10 +2164,9 @@
         "BPFI"
       ],
       "claim_level": "qualified",
-      "classification_correct": false,
-      "end_to_end_correct": false,
+      "classification_correct": null,
+      "end_to_end_correct": null,
       "expected_fault": null,
-      "false_positive": true,
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
@@ -2251,10 +2193,9 @@
         "BPFO"
       ],
       "claim_level": "single_spectrum_evidence",
-      "classification_correct": false,
-      "end_to_end_correct": false,
+      "classification_correct": null,
+      "end_to_end_correct": null,
       "expected_fault": null,
-      "false_positive": true,
       "fault_hits": {
         "BPFI": false,
         "BPFO": true,
@@ -2282,10 +2223,9 @@
         "BPFI"
       ],
       "claim_level": "qualified",
-      "classification_correct": false,
-      "end_to_end_correct": false,
+      "classification_correct": null,
+      "end_to_end_correct": null,
       "expected_fault": null,
-      "false_positive": true,
       "fault_hits": {
         "BPFI": true,
         "BPFO": true,
@@ -2376,8 +2316,10 @@
       "normals": {
         "bearing_alert": 0,
         "inconclusive": 0,
+        "indicated": 0,
         "named_fault": 0,
         "no_indication": 0,
+        "several_types": 0,
         "supported_counts": {
           "BPFI": 0,
           "BPFO": 0,
@@ -2479,8 +2421,10 @@
       "normals": {
         "bearing_alert": 0,
         "inconclusive": 0,
+        "indicated": 0,
         "named_fault": 0,
         "no_indication": 0,
+        "several_types": 0,
         "supported_counts": {
           "BPFI": 0,
           "BPFO": 0,
@@ -2582,8 +2526,10 @@
       "normals": {
         "bearing_alert": 0,
         "inconclusive": 0,
+        "indicated": 0,
         "named_fault": 0,
         "no_indication": 0,
+        "several_types": 0,
         "supported_counts": {
           "BPFI": 0,
           "BPFO": 0,
@@ -2685,8 +2631,10 @@
       "normals": {
         "bearing_alert": 0,
         "inconclusive": 0,
+        "indicated": 0,
         "named_fault": 0,
         "no_indication": 0,
+        "several_types": 0,
         "supported_counts": {
           "BPFI": 0,
           "BPFO": 0,
@@ -2788,8 +2736,10 @@
       "normals": {
         "bearing_alert": 0,
         "inconclusive": 0,
+        "indicated": 0,
         "named_fault": 0,
         "no_indication": 0,
+        "several_types": 0,
         "supported_counts": {
           "BPFI": 0,
           "BPFO": 0,
@@ -2891,8 +2841,10 @@
       "normals": {
         "bearing_alert": 0,
         "inconclusive": 0,
+        "indicated": 0,
         "named_fault": 0,
         "no_indication": 0,
+        "several_types": 0,
         "supported_counts": {
           "BPFI": 0,
           "BPFO": 0,
@@ -2928,9 +2880,9 @@
     },
     "ungraded": {
       "classification": {
-        "correct": 1,
-        "rate": 0.25,
-        "total": 4
+        "correct": 0,
+        "rate": null,
+        "total": 0
       },
       "confusion": {
         "ball": {
@@ -2963,9 +2915,9 @@
         }
       },
       "end_to_end": {
-        "correct": 1,
-        "rate": 0.25,
-        "total": 4
+        "correct": 0,
+        "rate": null,
+        "total": 0
       },
       "frequency_detection": {
         "hits": 0,
@@ -2994,8 +2946,10 @@
       "normals": {
         "bearing_alert": 3,
         "inconclusive": 0,
+        "indicated": 1,
         "named_fault": 1,
         "no_indication": 1,
+        "several_types": 2,
         "supported_counts": {
           "BPFI": 2,
           "BPFO": 3,
