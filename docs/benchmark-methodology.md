@@ -204,7 +204,7 @@ Outcome against the label (fault records):
 
 Precision of an indicated outcome and sensitivity:
 
-| Stratum | Indicated with the labelled fault, of all indicated | Bearing alert, of all fault records |
+| Stratum | Indicated with the labelled fault, of all indicated | Candidates listed, of all fault records |
 |---|---|---|
 | Y1+Y2 (headline) | <!-- slot: headline.indicated_precision.correct -->0<!-- /slot -->/<!-- slot: headline.indicated_precision.total -->0<!-- /slot --> | <!-- slot: headline.sensitivity.alerts -->44<!-- /slot -->/<!-- slot: headline.sensitivity.total -->44<!-- /slot --> |
 | Y1 | <!-- slot: strata.Y1.indicated_precision.correct -->0<!-- /slot -->/<!-- slot: strata.Y1.indicated_precision.total -->0<!-- /slot --> | <!-- slot: strata.Y1.sensitivity.alerts -->9<!-- /slot -->/<!-- slot: strata.Y1.sensitivity.total -->9<!-- /slot --> |
@@ -229,10 +229,10 @@ false-alarm or specificity rate.
 
 Reading the results: when more than one fault type is supported, the check
 lists them as candidates and singles none out. Each of them has lines of its
-own, since a line that falls where another fault type also predicts one
-supports neither (on the 6205, the third outer-race harmonic and the second
-inner-race harmonic lie within one percent of each other), and one spectrum
-cannot tell which of them, or how many, are present: the reference study
+own, since a line that falls where another detected fault type also predicts
+one supports neither (on the 6205, the third outer-race harmonic and the
+second inner-race harmonic lie within one percent of each other), and one
+spectrum cannot tell which of them, if any, are present: the reference study
 reports inner-race and outer-race components on many of the ball-fault
 records. A single-record indication therefore asks for confirmation, and the
 order in which the candidates are listed, by level over the noise floor, is
