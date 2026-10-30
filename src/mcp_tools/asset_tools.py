@@ -457,10 +457,15 @@ async def assess_asset_change(
     evidence. Evidence of an earlier lineage is reported
     as legacy and not classified; evidence that cannot be classified is
     reported as unavailable, never as absent. The overall verdict is the
-    most severe across the available amplitude indicators and the classified
-    bearing evidence; unavailable indicators and legacy or unavailable
-    evidence are not part of it and are named in the criterion, and each
-    label's basis is in assessed.evidence. On every basis,
+    most severe across the available rms, peak, 1x and ISO velocity
+    indicators and the classified bearing evidence; unavailable indicators
+    and legacy or unavailable evidence are not part of it and are named in
+    the criterion, and each label's basis is in assessed.evidence. The
+    envelope indicators are classified in derived.per_indicator as context
+    and never drive the verdict: an envelope amplitude at a fault frequency
+    is not bearing evidence on its own, and one whose change the verdict
+    does not count is named in the criterion. A significant drift is
+    reported but makes no change persistent on its own. On every basis,
     present_in_last_k and latest_evidence_strength are the raw presence and
     the per-check grade the snapshots recorded, under the lineage's own
     algorithm version; neither is the classification. For
