@@ -27,6 +27,8 @@ import pytest
 
 from _bearing_scenarios import (
     DEFECT_SEED,
+    DEFECTS_PRESENT,
+    FAULT_FREE,
     FAULT_FREE_SEED,
     FREQUENCIES_6205,
     RPM_6205,
@@ -1191,6 +1193,52 @@ AE13_FORBIDDEN = re.compile(
 )
 AE13_ALLOWED = ("not a confirmed fault", "is not a probability")
 
+#: A false-alarm or specificity figure. AE13 lets a sentence carry one only as
+#: the nominal level or budget of the line test, not attributed to the system,
+#: or to deny that it is the system's rate.
+RATE_TERM = re.compile(r"false[- ]alarms?\b|specificit\w*", re.IGNORECASE)
+RATE_DENIED = re.compile(
+    r"\bnot\b(?:\s+[\w']+){0,2}\s+(?:false[- ]alarm rate|specificit)"
+    r"|\bno false[- ]alarm rate\b",
+    re.IGNORECASE,
+)
+NOMINAL_LEVEL = re.compile(
+    r"\bnominal\b[^.]*\b(?:per[- ]check|one complete check|budget|level)\b",
+    re.IGNORECASE,
+)
+
+#: A sentence that names the cage line, and one that reports a line-test result.
+CAGE_LINE = re.compile(r"\bcage\b|\bFTF\b", re.IGNORECASE)
+CAGE_RESULT = re.compile(
+    r"stands?\b|above the (?:local )?noise floor|\babsent\b|\bsupported\b"
+    r"|corroborat\w*|\bcounted\b|consistent with|\bdetected\b",
+    re.IGNORECASE,
+)
+
+#: The one bearing action of a several-types outcome on the outer and inner
+#: races (claim_actions, approved wording).
+SEVERAL_TYPES_ACTION = (
+    "Bearing 6205: compare with a comparable earlier measurement, and inspect the "
+    "outer race and the inner race with equal priority."
+)
+
+
+def _sentences(text: str) -> list[str]:
+    return [s for s in re.split(r"(?<=\.)\s+", text) if s]
+
+
+def _check_and_pipeline_statements(diagnosis: dict) -> list[str]:
+    """The check's own reason, step and claim, and the pipeline's text."""
+    faults = diagnosis["bearing_faults"]
+    return [
+        faults["outcome_reason"],
+        faults["next_step"],
+        faults["overall_assessment"],
+        diagnosis["overall_diagnosis"],
+        *diagnosis["recommendations"],
+    ]
+
+
 #: What no bearing statement (verdict, bearing section, badges, caption,
 #: counted lines, disagreements, bearing actions) may contain.
 BEARING_FORBIDDEN = re.compile(
@@ -1315,6 +1363,36 @@ def _combined(seed: int = 0) -> np.ndarray:
     )
 
 
+def _order_signal(kind: str) -> np.ndarray:
+    """AE6: an outer-race defect at -15 dB, or the combined defect."""
+    if kind == "combined":
+        return _combined()
+    return defect(
+        "outer",
+        np.random.default_rng((DEFECT_SEED, 40, 0)),
+        FS,
+        10.0,
+        FREQUENCIES_6205,
+        SHAFT_HZ,
+        -15.0,
+    )
+
+
+@pytest.fixture(scope="module")
+def family_scenarios() -> list[dict]:
+    """AE1: one record of each fault-free family, 6205 at 1797 rpm, 1 s at 12 kHz."""
+    return [
+        _scenario(
+            generator(
+                np.random.default_rng((FAULT_FREE_SEED, 11, index)), FS, 1.0, SHAFT_HZ
+            ),
+            FS,
+            RPM_6205,
+        )
+        for index, generator in enumerate(FAULT_FREE.values())
+    ]
+
+
 @pytest.fixture(scope="module")
 def combined_scenario() -> dict:
     """AE4: combined outer- and inner-race defects at -10 dB, 10 s."""
@@ -1423,18 +1501,7 @@ class TestScenarioStatements:
     def test_dict_order_changes_neither_verdict_nor_emphasis(self, kind):
         """AE6: verdict, figure emphasis and fault_canonical agree with the
         outcome in both orders of the frequency dict."""
-        if kind == "combined":
-            signal = _combined()
-        else:
-            signal = defect(
-                "outer",
-                np.random.default_rng((DEFECT_SEED, 40, 0)),
-                FS,
-                10.0,
-                FREQUENCIES_6205,
-                SHAFT_HZ,
-                -15.0,
-            )
+        signal = _order_signal(kind)
         forward = dict(FREQUENCIES_6205)
         backward = dict(reversed(list(FREQUENCIES_6205.items())))
         results = []
@@ -1537,3 +1604,162 @@ class TestScenarioStatements:
 
         assert not offending, offending
         assert not bearing_offending, bearing_offending
+
+    @pytest.mark.parametrize("with_baseline", [False, True])
+    def test_combined_defect_asks_for_one_inspection_of_both_races_alike(
+        self, combined_scenario, combined_baseline, with_baseline
+    ):
+        """AE4 on the advisory's action list: one bearing action, which
+        inspects both races with equal priority after a comparison; no action
+        for one race alone and no replacement."""
+        advisory = build_advisory(
+            combined_scenario["diagnosis"],
+            combined_baseline["diagnosis"] if with_baseline else None,
+        )
+        actions = [r["action"] for r in advisory["recommendations"]]
+        bearing = [
+            a
+            for a in actions
+            if a.startswith("Bearing") or BEARING_MAINTENANCE.search(a)
+        ]
+        one_race = [
+            a
+            for a in actions
+            if a not in bearing and re.search(r"\b(?:outer|inner)[- ]race", a, re.I)
+        ]
+
+        assert bearing == [SEVERAL_TYPES_ACTION], actions
+        assert not one_race, actions
+        assert not [a for a in actions if re.search(r"replac", a, re.I)], actions
+
+    @pytest.mark.parametrize("kind", ["outer", "combined"])
+    def test_check_pipeline_and_advisory_agree_in_both_dict_orders(self, kind):
+        """AE6 across the three surfaces: in both orders of the frequency dict
+        the check's outcome and candidates, the pipeline's diagnosis and
+        actions, and the advisory's verdict and actions are the same, and the
+        pipeline and the advisory name the candidates in the check's order."""
+        signal = _order_signal(kind)
+        forward = dict(FREQUENCIES_6205)
+        backward = dict(reversed(list(FREQUENCIES_6205.items())))
+        surfaces, misordered = [], []
+        for frequencies in (forward, backward):
+            diagnosis = _declared_scenario(signal, FS, frequencies, RPM_6205)[
+                "diagnosis"
+            ]
+            faults = diagnosis["bearing_faults"]
+            advisory = build_advisory(diagnosis)
+            candidates = [c["fault_type"] for c in faults["candidates"]]
+            for text in (
+                diagnosis["overall_diagnosis"],
+                advisory["verdict"]["statement"],
+            ):
+                positions = [text.find(f"({label})") for label in candidates]
+                if -1 in positions or positions != sorted(positions):
+                    misordered.append((candidates, text))
+            surfaces.append(
+                (
+                    faults["outcome"],
+                    candidates,
+                    diagnosis["overall_diagnosis"],
+                    diagnosis["recommendations"],
+                    advisory["verdict"]["statement"],
+                    [r["action"] for r in advisory["recommendations"]],
+                )
+            )
+
+        assert surfaces[0] == surfaces[1]
+        assert not misordered, misordered
+        assert sorted(surfaces[0][1]) == sorted(DEFECTS_PRESENT[kind])
+
+    def test_untestable_cage_line_is_never_presented_as_checked(self, noise_scenarios):
+        """AE10 on the 1 s, 12 kHz records of a 6205 at 1797 rpm: the cage row
+        carries the not-testable badge, the bearing section says the cage line
+        could not be tested, and no sentence of the check, the pipeline, the
+        advisory or the figure that names the cage line reports a test result
+        for it."""
+        offending = []
+        for scenario in noise_scenarios:
+            diagnosis = scenario["diagnosis"]
+            advisory = build_advisory(diagnosis)
+            rows = {
+                r["fault_type"]: r["badge"] for r in advisory["bearing_match"]["rows"]
+            }
+
+            assert rows["FTF"] == "not testable"
+            assert "The cage line (FTF) could not be tested in this record." in (
+                advisory["bearing_match"]["statement"]
+            )
+            texts = [
+                *_check_and_pipeline_statements(diagnosis),
+                *collect_statements(advisory, _figure(scenario)),
+            ]
+            offending += [
+                sentence
+                for text in texts
+                for sentence in _sentences(text)
+                if CAGE_LINE.search(sentence) and CAGE_RESULT.search(sentence)
+            ]
+
+        assert not offending, offending
+
+    def test_no_check_or_pipeline_statement_holds_a_forbidden_phrase(
+        self, family_scenarios, combined_scenario, mfpt_scenario, golden_scenario
+    ):
+        """AE13 on the check's reason, step and claim and on the pipeline's
+        text, over AE1 (one record per fault-free family, with the advisory's
+        statements), AE4, AE5 and AE11."""
+        offending = []
+        for scenario in family_scenarios:
+            advisory = build_advisory(scenario["diagnosis"])
+            texts = [
+                *_check_and_pipeline_statements(scenario["diagnosis"]),
+                *collect_statements(advisory, _figure(scenario)),
+            ]
+            offending += [
+                t for t in texts if _offending(t, AE13_FORBIDDEN, AE13_ALLOWED)
+            ]
+        for scenario in (combined_scenario, mfpt_scenario, golden_scenario):
+            offending += [
+                t
+                for t in _check_and_pipeline_statements(scenario["diagnosis"])
+                if _offending(t, AE13_FORBIDDEN, AE13_ALLOWED)
+            ]
+
+        assert not offending, offending
+
+    def test_no_statement_presents_a_false_alarm_or_specificity_rate_as_the_systems(
+        self, family_scenarios, combined_scenario, mfpt_scenario, golden_scenario
+    ):
+        """AE13: a sentence that mentions a false-alarm or specificity figure
+        gives the nominal level or budget of the line test without attributing
+        it to the system, or denies that it is the system's rate; the check's
+        evidence policy included."""
+        offending = []
+        for scenario in (
+            *family_scenarios,
+            combined_scenario,
+            mfpt_scenario,
+            golden_scenario,
+        ):
+            diagnosis = scenario["diagnosis"]
+            policy = diagnosis["bearing_faults"]["evidence_policy"]
+            texts = [
+                *_check_and_pipeline_statements(diagnosis),
+                *collect_statements(build_advisory(diagnosis), _figure(scenario)),
+                policy["false_alarm_probability_meaning"],
+                *policy["assumptions"],
+                *policy["exclusions"],
+            ]
+            offending += [
+                sentence
+                for text in texts
+                for sentence in _sentences(text)
+                if RATE_TERM.search(sentence)
+                and not RATE_DENIED.search(sentence)
+                and (
+                    not NOMINAL_LEVEL.search(sentence)
+                    or re.search(r"\bsystem", sentence, re.IGNORECASE)
+                )
+            ]
+
+        assert not offending, offending

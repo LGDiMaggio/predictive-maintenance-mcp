@@ -48,6 +48,7 @@ Rules this module follows:
   evidence-field tests of the last sections among them, must keep passing.
 """
 
+import json
 import math
 import re
 from collections import Counter
@@ -190,6 +191,23 @@ def _detected(result: dict) -> list[str]:
 
 def _actions_matching(pattern: re.Pattern, actions) -> list[str]:
     return [a for a in actions if pattern.search(a)]
+
+
+def _in_zone_b(diagnosis: dict) -> dict:
+    """The diagnosis with its assessed ISO block moved to zone B, an acceptable
+    zone, where the advisory states evidence disagreements."""
+    iso = diagnosis["iso_severity"]
+    assert iso["status"] == "assessed", iso
+    return {
+        **diagnosis,
+        "iso_severity": {
+            **iso,
+            "zone": "B",
+            "zone_description": "Acceptable for unrestricted long-term operation.",
+            "severity_level": "Acceptable",
+            "color_code": "yellow",
+        },
+    }
 
 
 def _bar(seeds: int) -> int:
@@ -590,6 +608,76 @@ class TestStatementsAndActions:
             f"records: {wrong[:3]}"
         )
 
+    @pytest.mark.parametrize("family", list(FAULT_FREE))
+    def test_fault_free_family_gets_fault_specific_output_only_where_the_check_names(
+        self, family, record_property
+    ):
+        """AE1 on the surfaces, per family (12 kHz, 1 s, 6205 at 1797 rpm): the
+        pipeline and the advisory give a fault-specific bearing output (a
+        maintenance action, a named fault, an evidence disagreement) only on a
+        record whose check names a type, and such records stay within the B1
+        bound of a 60-record cell. A weak or inconclusive check is never turned
+        into a fault-specific recommendation. The advisory is also built with
+        the record in ISO zone B, so the disagreement branch is reached on
+        every record. The outcome counts are recorded."""
+        index = list(FAULT_FREE).index(family)
+        outcomes: Counter = Counter()
+        unsupported = []
+        for i in range(EVIDENCE_FAULT_FREE_SEEDS):
+            signal = FAULT_FREE[family](
+                _rng((FAULT_FREE_SEED, 10, index, i)), FS, 1.0, SHAFT_HZ
+            )
+            diagnosis = diagnose_vibration(
+                signal,
+                FS,
+                RPM_6205,
+                signal_id=family,
+                bearing_id="6205",
+                signal_unit="g",
+                anomaly_model_name=NO_MODEL,
+            )
+            advisories = (
+                build_advisory(diagnosis),
+                build_advisory(_in_zone_b(diagnosis)),
+            )
+            outcome = diagnosis["bearing_faults"]["outcome"]
+            outcomes[outcome] += 1
+            if outcome in NAMING_OUTCOMES:
+                continue
+            found = {
+                "pipeline actions": _actions_matching(
+                    BEARING_MAINTENANCE, diagnosis["recommendations"]
+                ),
+                "pipeline names": NAMED_FAULT_CLAIM.findall(
+                    diagnosis["overall_diagnosis"]
+                ),
+                "advisory actions": [
+                    action
+                    for advisory in advisories
+                    for action in _actions_matching(
+                        BEARING_MAINTENANCE,
+                        (r["action"] for r in advisory["recommendations"]),
+                    )
+                ],
+                "verdict names": [
+                    advisory["verdict"]["fault_canonical"]
+                    for advisory in advisories
+                    if advisory["verdict"]["fault_canonical"]
+                ],
+                "disagreements": [
+                    entry["statement"]
+                    for advisory in advisories
+                    for entry in advisory["disagreements"]
+                ],
+            }
+            if any(found.values()):
+                unsupported.append((i, outcome, {k: v for k, v in found.items() if v}))
+        record_property("outcomes", json.dumps(dict(outcomes), sort_keys=True))
+        named = sum(outcomes[o] for o in NAMING_OUTCOMES)
+
+        assert not unsupported, unsupported
+        assert named <= _named_allowed(EVIDENCE_FAULT_FREE_SEEDS), dict(outcomes)
+
     def test_uncorroborated_line_is_no_finding_of_the_diagnosis(self, mfpt_baseline):
         text = mfpt_baseline["overall_diagnosis"]
         named = mfpt_baseline["bearing_faults"]["most_likely_fault"]
@@ -839,7 +927,9 @@ class TestEvidenceFaultFree:
     @pytest.mark.slow
     @pytest.mark.parametrize("fs, seconds", EVIDENCE_CONFIGS)
     @pytest.mark.parametrize("family", list(FAULT_FREE))
-    def test_fault_free_family_stays_within_its_bounds(self, family, fs, seconds):
+    def test_fault_free_family_stays_within_its_bounds(
+        self, family, fs, seconds, record_property
+    ):
         """AE1 screen, per family and configuration, never pooled:
 
         - checks with a significant fundamental: at most the binomial bound
@@ -895,6 +985,15 @@ class TestEvidenceFaultFree:
             f"{fired} with a significant fundamental, named {named}, "
             f"structural {structural}, inconclusive reasons {dict(reasons)}"
         )
+        record_property("records", n)
+        record_property(
+            "outcomes",
+            json.dumps(dict(Counter(r["outcome"] for r in results)), sort_keys=True),
+        )
+        record_property(
+            "inconclusive_reasons", json.dumps(dict(reasons), sort_keys=True)
+        )
+        record_property("significant_fundamental", fired)
 
         assert fired <= int(
             binom.ppf(1 - RATE_TEST_LEVEL, n, CHECK_FALSE_ALARM)
@@ -905,7 +1004,7 @@ class TestEvidenceFaultFree:
 
     @pytest.mark.slow
     @pytest.mark.parametrize("family", list(FAULT_FREE))
-    def test_named_outcome_rate_stays_below_its_ceiling(self, family):
+    def test_named_outcome_rate_stays_below_its_ceiling(self, family, record_property):
         """AE1 screen with power, at 12 kHz and 1 s only: 3 000 checks per
         family. A screening test, not a proof of the target: the bound fails
         a rate five times the target with about 88 % power, twice the target
@@ -914,6 +1013,7 @@ class TestEvidenceFaultFree:
         reported."""
         n = NAMED_RATE_CHECKS
         named = structural = sideband_only = 0
+        outcomes: Counter = Counter()
         index = list(FAULT_FREE).index(family)
         for i in range(n):
             result = _catalog_check(
@@ -921,6 +1021,7 @@ class TestEvidenceFaultFree:
                     _rng((FAULT_FREE_SEED, 8, index, i)), FS, 1.0, SHAFT_HZ
                 )
             )
+            outcomes[result["outcome"]] += 1
             if _names_a_type(result):
                 named += 1
                 structural += _named_through(result, STRUCTURE[family], 1.0)
@@ -930,6 +1031,9 @@ class TestEvidenceFaultFree:
                     for c in result["fault_checks"]
                     if c["state"] == "supported"
                 )
+        record_property("checks", n)
+        record_property("outcomes", json.dumps(dict(outcomes), sort_keys=True))
+        record_property("sideband_only_named", sideband_only)
 
         assert named <= _named_allowed(n), (
             f"{family}: {named} of {n} checks name a type ({sideband_only} through "
