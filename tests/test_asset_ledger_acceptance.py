@@ -129,12 +129,12 @@ RAW_SUBSET = (5, 6, 7)
 OUT_OF_ORDER = (5, 3, 1)
 OUT_OF_ORDER_REST = (2, 4, 6, 7, 8, 9, 10, 11)
 
-#: How the three persistence rules of the assessment name themselves in the
-#: criterion (consecutive run, k-of-n on the same side, significant drift).
+#: How the two persistence rules of the assessment name themselves in the
+#: criterion (consecutive run, k-of-n on the same side). A significant drift
+#: is reported in derived.drift but persists nothing on its own.
 RULE_PATTERNS = (
     r"\d+ consecutive acquisitions outside the band",
     r"\d+ of last \d+ acquisitions outside the band on the same side",
-    r"significant drift \(p=",
 )
 
 #: Lineage of the snapshots injected for AE5: the shape of a processing_id

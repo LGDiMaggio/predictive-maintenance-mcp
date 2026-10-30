@@ -11,8 +11,10 @@ the plan's U6 scenarios:
   (a declared baseline citing ``declared_by`` and using only its members),
   AE8 (spike -> unconfirmed, return -> isolated, ramp -> persistent with the
   criterion text and the onset id);
-- acquisition slots (one spike exported three times), the k-of-n and drift
-  persistence rules, a sustained decrease (never "improved"), a reference
+- acquisition slots (one spike exported three times), the k-of-n
+  persistence rule and the drift that is reported but persists nothing on
+  its own, the same rules on the peak alone, a generic verdict that names
+  no bearing fault, a sustained decrease (never "improved"), a reference
   with sigma 0 (the 25% floor), insufficient and provisional histories, the
   requested window (the reference is always used);
 - AE3 (undeclared rpm qualifies and participates), AE4 (a velocity
@@ -245,6 +247,7 @@ def snapshot_event(
     algorithm_version: Optional[int] = 1,
     sampling_rate: float = 10000.0,
     num_samples: Optional[int] = 20000,
+    peak: Optional[float] = None,
 ) -> dict[str, Any]:
     measurement_id = measurement_id or mid(index)
     effective: dict[str, Any] = {"sampling_rate": sampling_rate}
@@ -266,7 +269,7 @@ def snapshot_event(
         "point_declaration_version": point_version,
         "indicators": {
             "rms": rms,
-            "peak": 2.5 * rms,
+            "peak": 2.5 * rms if peak is None else peak,
             "crest_factor": 2.5,
             "kurtosis": -0.2,
             "unit": unit,
@@ -359,11 +362,13 @@ def series_events(
     placeholder_digests: bool = False,
     algorithm_version: Optional[int] = 1,
     capture_of: Any = None,
+    peak_of: Any = None,
 ) -> list[dict[str, Any]]:
     """Point declaration plus one measurement and one snapshot per value.
 
     ``rms`` is the value itself; peak, 1x and ISO velocity are proportional
-    to it; the bearing block is quiet unless ``bearing_of(index)`` says
+    to it (the peak is ``peak_of(index)`` when given); the bearing block is
+    quiet unless ``bearing_of(index)`` says
     otherwise (from algorithm version 2 a :func:`state_block`), so every
     amplitude indicator classifies alike. Every snapshot carries the
     ``context_digest`` the snapshot code computes for its declaration and
@@ -408,6 +413,7 @@ def series_events(
                 algorithm_version=algorithm_version,
                 sampling_rate=sampling_rate,
                 num_samples=num_samples,
+                peak=peak_of(index) if peak_of else None,
             )
         )
     return events
@@ -857,21 +863,40 @@ class TestClassification:
         assert all(c["kept_measurement_id"] == mid(211) for c in collapsed)
         assert all(c["acquired_at"] == acquired(11) for c in collapsed)
 
-    def test_slow_drift_with_the_latest_outside_is_persistent(self):
-        view = view_of(series_events([1.0] * 10 + [1.05, 1.10, 1.15, 1.20, 1.30]))
-        result = assess(view)
-        assert result["assessed"]["classification"] == "persistent_change"
+    def test_slow_drift_with_the_latest_outside_is_unconfirmed_until_it_persists(
+        self,
+    ):
+        """A significant drift is reported as supporting evidence, not as a
+        persistence rule: ending outside the band it leaves the latest
+        acquisition unconfirmed, with the drift in the criterion, until three
+        consecutive acquisitions are outside on the same side."""
+        drift = [1.0] * 10 + [1.05, 1.10, 1.15, 1.20, 1.30]
+        result = assess(view_of(series_events(drift)))
+        assert result["assessed"]["classification"] == "unconfirmed_single_acquisition"
         assert result["assessed"]["direction"] == "increase"
-        assert "significant drift (p=" in result["assessed"]["criterion"]
-        assert "latest value outside the band" in result["assessed"]["criterion"]
-        drift = result["derived"]["drift"]["rms"]
-        assert drift["significant"] is True
-        assert drift["p_value"] < 0.05
-        assert drift["trend_direction"] == "increasing"
-        assert (
-            result["derived"]["per_indicator"]["rms"]["rules"]["consecutive"] is False
-        )
+        criterion = result["assessed"]["criterion"]
+        assert "without persistence: 1 consecutive" in criterion
+        assert "drift p=" in criterion
+        assert "significant drift" not in criterion
+        drift_block = result["derived"]["drift"]["rms"]
+        assert drift_block["significant"] is True
+        assert drift_block["p_value"] < 0.05
+        assert drift_block["trend_direction"] == "increasing"
+        rules = result["derived"]["per_indicator"]["rms"]["rules"]
+        assert (rules["drift"], rules["consecutive"]) == (True, False)
         assert result["assessed"]["onset_measurement_id"] == mid(15)
+        assert result["suggested_verification"] == (
+            "Repeat the measurement in the same operating conditions."
+        )
+
+        second = assess(view_of(series_events(drift + [1.35])))
+        assert second["assessed"]["classification"] == "unconfirmed_single_acquisition"
+        third = assess(view_of(series_events(drift + [1.35, 1.40])))
+        assert third["assessed"]["classification"] == "persistent_change"
+        assert "3 consecutive acquisitions outside the band" in (
+            third["assessed"]["criterion"]
+        )
+        assert third["assessed"]["onset_measurement_id"] == mid(15)
 
     def test_slow_drift_with_the_latest_inside_is_no_change_with_the_drift(self):
         view = view_of(series_events([1.0] * 10 + [1.05, 1.10, 1.15, 1.20, 1.24]))
@@ -923,6 +948,77 @@ class TestClassification:
         assert "healthy" not in text
         assert result["derived"]["deltas"]["rms"]["delta_pct"] == pytest.approx(-30.0)
         assert result["derived"]["deltas"]["rms"]["side"] == "below"
+
+    @pytest.mark.parametrize(
+        "peaks, classification, direction, rule",
+        [
+            ([2.5, 2.5, 4.0, 4.0, 4.0], "persistent_change", "increase", "consecutive"),
+            ([1.5] * 5, "persistent_change", "decrease", "consecutive"),
+            (
+                [4.0, 2.5, 4.0, 4.0, 2.5, 4.0, 4.0],
+                "persistent_change",
+                "increase",
+                "intermittent",
+            ),
+            (
+                [2.6, 2.75, 2.9, 3.05, 3.25],
+                "unconfirmed_single_acquisition",
+                "increase",
+                "drift",
+            ),
+            ([2.5, 4.0, 2.5], "isolated_episode", "increase", None),
+        ],
+    )
+    def test_the_peak_follows_the_same_persistence_rules(
+        self, peaks, classification, direction, rule
+    ):
+        """The peak alone (rms, 1x and ISO velocity stay at the reference):
+        a sustained step or decrease persists at the third consecutive
+        acquisition outside the band, four of the last five on one side
+        persist, a significant drift ending outside stays unconfirmed, and a
+        spike that returned inside is an isolated episode. Its band is
+        [1.88, 3.13] (the 25% floor of the stable reference's 2.5 x rms)."""
+        reference = [2.5 * value for value in STABLE]
+        values = STABLE + [1.0] * len(peaks)
+        result = assess(
+            view_of(series_events(values, peak_of=lambda i: (reference + peaks)[i - 1]))
+        )
+        peak = result["derived"]["per_indicator"]["peak"]
+        assert (peak["classification"], peak["direction"]) == (
+            classification,
+            direction,
+        )
+        if rule is not None:
+            assert peak["rules"][rule] is True
+        if rule == "drift":
+            assert peak["rules"]["consecutive"] is False
+            assert peak["rules"]["intermittent"] is False
+        assessed = result["assessed"]
+        assert assessed["classification"] == classification
+        assert assessed["indicators_driving"] == ["peak"]
+
+    def test_a_generic_verdict_names_no_bearing_fault(self):
+        """A change of the generic indicators alone, on the current lineage
+        with quiet bearing lines, names no bearing label: no envelope or
+        evidence driver, no fault label in the criterion, the message or the
+        verification, which compares spectra instead of confirming bearing
+        evidence."""
+        result = assess(view_of(current_events(STABLE + [1.6] * 5)))
+        assessed = result["assessed"]
+        assert assessed["classification"] == "persistent_change"
+        assert assessed["indicators_driving"]
+        assert set(assessed["indicators_driving"]) <= set(AMPLITUDE_INDICATORS)
+        text = " ".join(
+            (assessed["criterion"], result["message"], result["suggested_verification"])
+        )
+        assert not re.search(
+            r"BPFO|BPFI|BSF|FTF|envelope|bearing fault|race|rolling element|cage",
+            text,
+        ), text
+        assert result["suggested_verification"] == (
+            "Compare the spectrum of the latest measurement with a reference "
+            "measurement (diagnose_vibration) to characterize the change."
+        )
 
     def test_sudden_step_flag(self):
         gradual = assess(view_of(series_events([1.0] * 10 + [1.2, 1.3, 1.4, 1.5, 1.6])))
@@ -1041,12 +1137,13 @@ class TestBearingEvidence:
             ),
         }
         assert result["assessed"]["classification"] == "persistent_change"
-        # Relative presence needs the envelope line above its band, so the
-        # envelope indicator drives with the evidence.
-        assert result["assessed"]["indicators_driving"] == [
-            "envelope_BPFO",
-            "evidence_BPFO",
-        ]
+        # Relative presence needs the envelope line above its band. The
+        # envelope indicator is classified and reported as context; the
+        # bearing evidence alone drives (H2).
+        assert result["derived"]["per_indicator"]["envelope_BPFO"][
+            "classification"
+        ] == ("persistent_change")
+        assert result["assessed"]["indicators_driving"] == ["evidence_BPFO"]
         # The onset is the start of the run that made the change persistent.
         assert result["assessed"]["onset_measurement_id"] == mid(18)
         assert "diagnose_vibration" in result["suggested_verification"]
@@ -1140,16 +1237,159 @@ class TestBearingEvidence:
         assert stats["band"]["degenerate"] is False
         assert stats["unit"] == "g"
         assert result["assessed"]["classification"] == "persistent_change"
-        assert "envelope_BPFO" in result["assessed"]["indicators_driving"]
-        assert "evidence_BPFO" in result["assessed"]["indicators_driving"]
+        assert result["assessed"]["indicators_driving"] == ["evidence_BPFO"]
         assert result["derived"]["per_indicator"]["envelope_BPFO"]["direction"] == (
             "increase"
         )
         assert result["assessed"]["onset_measurement_id"] == mid(18)
+        assert result["suggested_verification"] == (
+            "Confirm the bearing evidence with diagnose_vibration on the latest "
+            "measurement and on a reference measurement."
+        )
         # Quiet labels stay inside their (floor) band.
         assert result["derived"]["per_indicator"]["envelope_BPFI"][
             "classification"
         ] == ("no_change")
+
+    @pytest.mark.parametrize(
+        "loud, classification",
+        [
+            ({18, 19, 20}, "persistent_change"),
+            ({20}, "unconfirmed_single_acquisition"),
+        ],
+    )
+    def test_an_envelope_exceedance_without_bearing_evidence_is_context(
+        self, loud, classification
+    ):
+        """H2: an envelope amplitude at a fault frequency above its band with
+        no supported line is classified and reported, never drives the
+        overall verdict, and the criterion names it instead of claiming that
+        every amplitude indicator is inside its band."""
+
+        def bearing_of(index: int) -> dict[str, Any]:
+            if index in loud:
+                return state_block(BPFO=("absent", 5.0))
+            return state_block()
+
+        result = assess(view_of(current_events(STABLE * 2, bearing_of=bearing_of)))
+        envelope = result["derived"]["per_indicator"]["envelope_BPFO"]
+        assert (envelope["classification"], envelope["direction"]) == (
+            classification,
+            "increase",
+        )
+        assert result["assessed"]["evidence"]["BPFO"]["classification"] == "no_change"
+        assessed = result["assessed"]
+        assert (assessed["classification"], assessed["indicators_driving"]) == (
+            "no_change",
+            [],
+        )
+        assert assessed["criterion"] == (
+            "latest acquisition inside the band (mean +/- max(3 sigma, 25%)) of "
+            "every amplitude indicator except envelope_BPFO and no supported "
+            "bearing evidence above the reference band; envelope_BPFO "
+            f"({classification}) is reported in derived.per_indicator and not "
+            "counted in the overall classification: an envelope amplitude at a "
+            "bearing fault frequency is not bearing evidence on its own"
+        )
+        assert result["suggested_verification"] is None
+
+    def test_an_envelope_change_above_a_generic_verdict_is_named_not_counted(self):
+        """A generic spike in the latest acquisition is an unconfirmed
+        verdict; an envelope indicator persistent without a supported line
+        outranks it but is not counted: the criterion keeps the generic
+        drivers and names the envelope indicator as not counted, and the
+        envelope indicator's own criterion says it is context."""
+
+        def bearing_of(index: int) -> dict[str, Any]:
+            if index >= 18:
+                return state_block(BPFO=("absent", 5.0))
+            return state_block()
+
+        values = STABLE + [1.0] * 9 + [SPIKE]
+        result = assess(view_of(current_events(values, bearing_of=bearing_of)))
+        assessed = result["assessed"]
+        assert assessed["classification"] == "unconfirmed_single_acquisition"
+        assert set(assessed["indicators_driving"]) == set(AMPLITUDE_INDICATORS)
+        assert assessed["criterion"].startswith("rms: latest acquisition outside")
+        assert assessed["criterion"].endswith(
+            "; envelope_BPFO (persistent_change) is reported in "
+            "derived.per_indicator and not counted in the overall classification: "
+            "an envelope amplitude at a bearing fault frequency is not bearing "
+            "evidence on its own"
+        )
+        assert result["suggested_verification"] == (
+            "Repeat the measurement in the same operating conditions."
+        )
+        per_indicator = result["derived"]["per_indicator"]
+        assert per_indicator["envelope_BPFO"]["classification"] == "persistent_change"
+        assert per_indicator["envelope_BPFO"]["criterion"] == (
+            "3 consecutive acquisitions outside the band (mean +/- max(3 sigma, "
+            "25%)); reported as context, not counted in the overall classification"
+        )
+        assert "context" not in per_indicator["rms"]["criterion"]
+
+    def test_a_verdict_driven_by_bearing_evidence_alone(self):
+        """The envelope amplitude leaves its band two acquisitions before the
+        line is supported. The verdict, driven by the bearing evidence alone,
+        takes its onset from the evidence run, not from the earlier envelope
+        exceedance; it reports no direction, because persistent relative
+        presence is not an amplitude trend; and its criterion names the
+        supported evidence and its persistence."""
+
+        def bearing_of(index: int) -> dict[str, Any]:
+            if index >= 18:
+                return state_block(BPFO=("supported", 5.0))
+            if index >= 16:
+                return state_block(BPFO=("absent", 5.0))
+            return state_block()
+
+        result = assess(view_of(current_events(STABLE * 2, bearing_of=bearing_of)))
+        envelope = result["derived"]["per_indicator"]["envelope_BPFO"]
+        assert envelope["classification"] == "persistent_change"
+        assert envelope["criterion"].startswith("5 consecutive acquisitions")
+        assessed = result["assessed"]
+        assert (assessed["classification"], assessed["indicators_driving"]) == (
+            "persistent_change",
+            ["evidence_BPFO"],
+        )
+        assert assessed["direction"] is None
+        assert assessed["onset_measurement_id"] == mid(18)
+        assert assessed["criterion"] == (
+            "evidence_BPFO: supported bearing evidence above the reference band "
+            "in 3 of the last 5 acquisitions, 3 consecutive"
+        )
+        assert result["message"].startswith(
+            f"persistent change at {POINT} of {ASSET} over 10"
+        )
+        assert result["suggested_verification"] == (
+            "Confirm the bearing evidence with diagnose_vibration on the latest "
+            "measurement and on a reference measurement."
+        )
+
+    def test_an_envelope_episode_that_returned_inside_leaves_no_trace_overall(self):
+        """An envelope exceedance without a supported line that returned
+        inside its band stays an isolated episode of the envelope indicator;
+        the overall verdict and its criterion are those of a point whose
+        counted indicators never left their bands."""
+
+        def bearing_of(index: int) -> dict[str, Any]:
+            if index == 16:
+                return state_block(BPFO=("absent", 5.0))
+            return state_block()
+
+        result = assess(view_of(current_events(STABLE * 2, bearing_of=bearing_of)))
+        envelope = result["derived"]["per_indicator"]["envelope_BPFO"]
+        assert envelope["classification"] == "isolated_episode"
+        assessed = result["assessed"]
+        assert (assessed["classification"], assessed["indicators_driving"]) == (
+            "no_change",
+            [],
+        )
+        assert assessed["criterion"] == (
+            "latest acquisition inside the band (mean +/- max(3 sigma, 25%)) of "
+            "every amplitude indicator and no supported bearing evidence above "
+            "the reference band"
+        )
 
     @pytest.mark.parametrize(
         "state, persistent", [("supported", True), ("unconfirmed", False)]
