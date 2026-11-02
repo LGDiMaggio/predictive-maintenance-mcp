@@ -60,7 +60,7 @@ Nothing in it writes to the repository or the issue tracker.
 - Declared dependency floors that no longer install or no longer pass the suite.
 - Breakage caused by upstream releases published between pushes: the weekly newest-resolution suite and package-smoke legs.
 - New MCP SDK minors and majors, new protocol revisions and specification releases, new majors of the scientific stack reachable within the declared ranges, interpreter support splits, and packaging deprecations with a due date: the weekly upstream check.
-- Known vulnerabilities in the locked dependencies and in a freshly resolved install: the weekly security check, which also fails when pip-audit did not check every declared dependency. A tracked vulnerability stays unresolved in the report until it is gone.
+- Known vulnerabilities in the locked dependencies and in a freshly resolved install: the weekly security check. It passes while recording the advisories it finds, and has status `error` when a pip-audit file is missing or unparseable or did not check every declared dependency; the report, not the check, decides whether an advisory makes the weekly verdict red. A tracked vulnerability stays unresolved in the report until it is gone.
 - A matrix leg that produced no result, or a check that could not run to completion: the report is incomplete instead of green.
 - An issue opened or closed by someone outside the project hiding a finding: only issues a maintainer accepted with the `audit-accepted` label track or suppress findings.
 - A workflow gaining a write scope or `write-all`, the weekly audit gaining a secret or an AI provider key, a check made non-blocking with `continue-on-error`, a release upload no longer waiting for the smoke test, or Dependabot losing its rule against MCP SDK major updates.
@@ -73,6 +73,7 @@ Nothing in it writes to the repository or the issue tracker.
 - Optional extras such as `docx`, `pdf`, `ocr` and `vector-search`: no audited environment installs them.
 - Performance targets: no timing is checked.
 - The exact `uv.lock` resolution as a whole. The floors leg pins the runtime dependencies to their declared floors, so transitive pins and some runtime pins differ from the lock. The lock pins are audited for vulnerabilities only.
+- Vulnerabilities in the floors environment. The floors leg installs and tests it, but the security check audits only the lock pins and a fresh resolution.
 - The full test suite on Python 3.13 (installed and smoke-tested weekly only) and on interpreters newer than 3.14.
 - Real MCP host applications, such as Claude Desktop. The harness is an SDK client, not a host.
 - Anything that needs a paid or external AI service.
@@ -265,6 +266,9 @@ When several accepted issues match, an open one wins, then the newest closed one
 Security advisories for the same package share one candidate block, with one marker per advisory.
 Issue titles and bodies are used for marker matching only and are never copied into the report.
 
+`new` means only that no accepted issue tracks the finding under the rules above; it does not mean that the finding first appeared in this run: a finding stays `new` until a maintainer accepts an issue for it.
+To see which findings appeared since an earlier run, compare the fingerprints in the two runs' `audit-report.json` files (the `audit-report` artifact is kept for 90 days).
+
 ### Filing an issue
 
 Nothing is filed automatically.
@@ -283,6 +287,8 @@ The author of an issue can close it too; if an accepted issue is closed in a way
 The report keeps the weekly run red while a check fails or a vulnerability with a fix inside the declared dependency range is present, tracked or not.
 An accepted open issue stops the advisory from being proposed again; it does not turn the run green.
 The run turns green once the advisory no longer appears (for example after the lock is updated past it), or once no fix is installable within the declared range any more.
+Updating the lock does not change the declared floors in `pyproject.toml`: a floor can still admit the affected versions after the run turns green, and raising it is a separate decision under the [Compatibility policy](#compatibility-policy), because it narrows what users can install and changes what the floors leg tests.
+The checks that run on every pull request (`tests.yml`) install from `pyproject.toml`; they check that `uv.lock` agrees with it but never install or audit its pins, so a pull request that changes only the lock gets no vulnerability evidence from them: run the "Quality audit" workflow manually on its branch, or run `lock-reqs` and the commands under [Vulnerability audit](#vulnerability-audit).
 A check that could not run to completion (an upstream source that could not be read, a security normalization error, a leg without a result) makes the report incomplete (exit 2).
 
 ## Compatibility policy
