@@ -87,16 +87,23 @@ Vocabulary of the assessment
     * **Classification** per indicator over the post-reference slots:
       ``persistent_change`` when the last >= 3 slots are outside the band on
       the same side, or at least 4 of the last max(K, 5) slots are outside
-      on the same side (intermittent faults), or a significant drift
-      (``analyze_trend``, p < 0.05) ends with the latest value outside the
-      band; ``isolated_episode`` when an earlier exceedance returned inside
-      and the latest is inside; ``unconfirmed_single_acquisition`` when only
-      the latest is outside; ``no_change`` otherwise; ``sudden`` when a step
-      between consecutive slots exceeds twice the band half-width. The
-      overall classification is the most severe across the amplitude
-      indicators and the classified bearing evidence; crest factor and
-      kurtosis are reported as support only. Direction is ``increase`` or
-      ``decrease``, never "improvement".
+      on the same side (intermittent faults); ``isolated_episode`` when an
+      earlier exceedance returned inside and the latest is inside;
+      ``unconfirmed_single_acquisition`` when the latest is outside without
+      persistence; ``no_change`` otherwise; ``sudden`` when a step between
+      consecutive slots exceeds twice the band half-width. A significant
+      drift (``analyze_trend``, p < 0.05 over the last max(K, 5) values)
+      ending with the latest value outside the band is reported, with its
+      p-value in the criterion, but makes no change persistent on its own.
+      The overall classification is the most severe across rms, peak, 1x,
+      ISO velocity and the classified bearing evidence. The
+      ``envelope_<label>`` indicators are classified and reported as
+      context, never counted in it: an envelope amplitude at a fault
+      frequency is not bearing evidence on its own and reaches the verdict
+      only through its label's evidence; one whose change the overall
+      classification does not count is named in the criterion. Crest
+      factor and kurtosis are reported as support only. Direction is
+      ``increase`` or ``decrease``, never "improvement".
 
 Pure module: it works on the view and on snapshot payloads only. It never
 reads a file, never touches a signal, never takes a lock, never reads the
@@ -1173,28 +1180,24 @@ def _classify_series(
 
     consecutive = last_side is not None and run >= params.persistence_consecutive
     intermittent = k_count >= params.persistence_min_out_of_last
+    # A significant drift agreeing with the latest exceedance is reported as
+    # supporting evidence, never as a persistence rule of its own: fitted on
+    # max(K, 5) values it fires on a single exceedance.
     drift = drift_significant and drift_agrees
 
     classification: str
     direction: Optional[str]
     criterion: str
-    if consecutive or intermittent or drift:
+    if consecutive or intermittent:
         classification = "persistent_change"
         if consecutive:
             direction = _DIRECTION_OF_SIDE[str(last_side)]
             criterion = f"{run} consecutive acquisitions outside the band ({band_text})"
-        elif intermittent:
+        else:
             direction = _DIRECTION_OF_SIDE[k_side]
             criterion = (
                 f"{k_count} of last {len(recent)} acquisitions outside the band "
                 f"on the same side ({band_text})"
-            )
-        else:
-            direction = _DIRECTION_OF_SIDE[str(last_side)]
-            criterion = (
-                f"significant drift (p={p_value:.2g}) over the last "
-                f"{len(recent_values)} acquisitions with the latest value "
-                f"outside the band ({band_text})"
             )
     elif last_side is not None:
         classification = "unconfirmed_single_acquisition"
@@ -2236,6 +2239,31 @@ _ENVELOPE_HISTORY_VERIFICATION = (
 )
 
 
+#: Envelope-indicator classes that show a change the overall classification
+#: does not count; an envelope episode that returned inside is not named.
+_UNCOUNTED_ENVELOPE_CLASSES = ("unconfirmed_single_acquisition", "persistent_change")
+
+#: Closes the criterion of every envelope indicator's own classification.
+_ENVELOPE_CONTEXT = "; reported as context, not counted in the overall classification"
+
+
+def _uncounted_envelope_summary(uncounted: Sequence[tuple[str, str]]) -> str:
+    """The criterion's clause naming the envelope indicators whose change the
+    overall classification does not count, so that a verdict never reads as
+    covering them or as finding a bearing fault through them."""
+    if not uncounted:
+        return ""
+    listed = ", ".join(
+        f"{name} ({classification})" for name, classification in uncounted
+    )
+    verb = "is" if len(uncounted) == 1 else "are"
+    return (
+        f"; {listed} {verb} reported in derived.per_indicator and not counted in "
+        "the overall classification: an envelope amplitude at a bearing fault "
+        "frequency is not bearing evidence on its own"
+    )
+
+
 def _unavailable_summary(names: Sequence[str]) -> str:
     """The criterion's clause naming the amplitude indicators that were not
     assessed, so that a verdict never reads as covering them."""
@@ -2667,6 +2695,8 @@ def assess_change(
             }
             continue
         verdict = _classify_series(seq_values, stats, params, ref_values[-1])
+        if name.startswith(ENVELOPE_INDICATOR_PREFIX):
+            verdict["criterion"] += _ENVELOPE_CONTEXT
         per_indicator[name] = verdict
         deltas[name] = {
             "latest": latest_value,
@@ -2780,11 +2810,21 @@ def assess_change(
         evidence_assessed[label] = evidence
         evidence_onsets[label] = onset
 
-    # Overall: the most severe across amplitude indicators and the
-    # classified evidence.
+    # Overall: the most severe across the counted amplitude indicators and the
+    # classified evidence. An envelope_<label> indicator is classified and
+    # reported as context, never counted: an envelope amplitude at a fault
+    # frequency is not bearing evidence on its own, and it reaches the verdict
+    # only through its label's evidence (supported and above the band).
+    counted: dict[str, Any] = {}
+    envelope_verdicts: dict[str, Any] = {}
+    for name, verdict in per_indicator.items():
+        if name.startswith(ENVELOPE_INDICATOR_PREFIX):
+            envelope_verdicts[name] = verdict
+        else:
+            counted[name] = verdict
     candidates: list[tuple[str, str, str]] = [
         (name, verdict["classification"], verdict["criterion"])
-        for name, verdict in per_indicator.items()
+        for name, verdict in counted.items()
     ] + [
         (f"{EVIDENCE_INDICATOR_PREFIX}{label}", v["classification"], v["criterion"])
         for label, v in evidence_assessed.items()
@@ -2797,6 +2837,12 @@ def assess_change(
     driving = [
         name for name, cls, _ in candidates if cls == overall and overall != "no_change"
     ]
+    uncounted_envelopes = [
+        (name, verdict["classification"])
+        for name, verdict in envelope_verdicts.items()
+        if verdict["classification"] in _UNCOUNTED_ENVELOPE_CLASSES
+        and _SEVERITY[verdict["classification"]] > _SEVERITY[overall]
+    ]
     # The support indicators are context, never amplitude indicators.
     amplitude_unavailable = [n for n in unavailable if n not in SUPPORT_INDICATORS]
     if driving:
@@ -2805,21 +2851,33 @@ def assess_change(
                 f"{name}: {text}" for name, cls, text in candidates if cls == overall
             )
             + _evidence_summary(evidence_assessed, lineage_version, driving=True)
+            + _uncounted_envelope_summary(uncounted_envelopes)
             + _unavailable_summary(amplitude_unavailable)
         )
     else:
         summary = _evidence_summary(evidence_assessed, lineage_version, driving=False)
         if per_indicator:
+            excepted = (
+                f" except {', '.join(name for name, _ in uncounted_envelopes)}"
+                if uncounted_envelopes
+                else ""
+            )
             opening = (
                 f"latest acquisition inside the band ({_band_text(params)}) of every "
-                f"{'available ' if amplitude_unavailable else ''}amplitude indicator"
+                f"{'available ' if amplitude_unavailable else ''}amplitude "
+                f"indicator{excepted}"
             )
         else:
             # No amplitude indicator was compared: never worded as inside a band.
             opening = "no amplitude indicator available to compare with the reference"
             if summary.startswith(" and "):
                 summary = "; " + summary[len(" and ") :]
-        criterion = opening + summary + _unavailable_summary(amplitude_unavailable)
+        criterion = (
+            opening
+            + summary
+            + _uncounted_envelope_summary(uncounted_envelopes)
+            + _unavailable_summary(amplitude_unavailable)
+        )
 
     direction: Optional[str] = None
     sudden = False

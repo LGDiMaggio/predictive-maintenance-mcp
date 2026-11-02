@@ -103,9 +103,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   6.3); the post-reference acquisitions are classified `no_change`,
   `isolated_episode`, `unconfirmed_single_acquisition` or
   `persistent_change` (three consecutive outside the band on the same
-  side, at least four of the last five on the same side, or a
-  significant drift ending outside),
-  with the criterion stated in the response; bearing evidence over the
+  side, or at least four of the last five on the same side; a
+  significant drift ending outside is reported but does not make a
+  change persistent on its own),
+  with the criterion stated in the response; the overall verdict is the
+  most severe across rms, peak, 1x, ISO velocity and the classified
+  bearing evidence, and the envelope amplitude at each tested bearing
+  line is classified and reported as context but never drives it; bearing evidence over the
   last K acquisitions is reported as the snapshots record it and, on the
   current processing lineage, classified against the reference: a bearing
   label counts in an acquisition when its evidence state is supported and

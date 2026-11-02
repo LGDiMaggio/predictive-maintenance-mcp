@@ -8,9 +8,13 @@ ten), as a user calling ``assess_asset_change`` after each load would see it.
 
 - Fault-free: 20 sequences of 30 acquisitions per family, the stable recipe
   of ``tests/_synthetic_sequence.py`` with seeds other than the default and
-  unit white noise. No assessment may be driven by bearing evidence. The
-  amplitude rules' false alarms are counted with their denominators for the
-  pre-release decision D-T1-12; they are measured, not bounded here.
+  unit white noise. No assessment may be driven by bearing evidence. Since
+  the amplitude-rule correction for D-T1-12 (H2), no fault-free assessment
+  may reach persistent change either, in these two families and in the
+  reference-line family below: 0 of 400 assessments and 0 of 20 sequences
+  each, a regression requirement on these fixed seeds, not an estimate of a
+  real-world false-alarm rate. No envelope indicator drives any assessment
+  of the harness; the envelope indicators stay classified and reported.
 - The acceptance ramp (the default sequence, BPFO modulation from M21):
   BPFO evidence reaches persistent change within three acquisitions of its
   onset, the onset included (by M23), and BPFI, BSF and FTF never do.
@@ -20,6 +24,10 @@ ten), as a user calling ``assess_asset_change`` after each load would see it.
   growing linearly from 0.1 to 1.0 of the -10 dB SNR amplitude (as the
   acceptance ramp's depth grows from 0.1 to 1.0). BSF reaches persistent
   change; no other label does.
+- Both ramps (H2): the overall verdict is persistent change at every
+  assessment from the acquisition at which the defect's bearing evidence
+  persists (M23 on the acceptance ramp, M27 on the rolling-element ramp) to
+  the last, with that evidence among the drivers.
 - AE8 on real snapshots: 20 sequences of the stable recipe whose BPFO line
   is present at a constant depth from M01 on, so the reference shows it.
   The line is supported in the later acquisitions, never above the
@@ -61,6 +69,7 @@ from _synthetic_sequence import (
 )
 from predictive_maintenance_mcp.asset_ledger.assessment import (
     CLASSIFICATIONS,
+    ENVELOPE_INDICATOR_PREFIX,
     EVIDENCE_INDICATOR_PREFIX,
     assess_change,
 )
@@ -98,6 +107,13 @@ STABLE_SEEDS = tuple(
 #: AE7: BPFO reaches persistent change within this many acquisitions of its
 #: onset, the onset acquisition included.
 ONSET_ACQUISITIONS = 3
+
+#: H2: the acquisitions from which each ramp's overall verdict persists to
+#: the last, those at which its defect's bearing evidence persists (the
+#: acceptance ramp at its AE7 bar; the rolling-element ramp as measured under
+#: PR E, which AE7 bounds only from below).
+BPFO_RAMP_PERSISTS_FROM = PROGRESSIVE_START + ONSET_ACQUISITIONS - 1
+ROLLING_ELEMENT_RAMP_PERSISTS_FROM = 27
 
 #: AE8: the BPFO modulation depth of the sequences whose line the reference
 #: already shows (the acceptance ramp's depth at M23).
@@ -510,3 +526,104 @@ def test_ae7_rolling_element_ramp_persists_on_bsf_only(rolling_element_ramp):
         if label != "BSF"
     }
     assert persisting == {label: None for label in persisting}, timeline(run)
+
+
+# ---------------------------------------------------------------------------
+# H2: the amplitude rules (D-T1-12)
+# ---------------------------------------------------------------------------
+
+
+def persistent_assessments(
+    runs: Sequence[dict[int, dict[str, Any]]],
+) -> list[tuple[int, int, list[str]]]:
+    """(sequence, acquisition, drivers) of every persistent-change assessment."""
+    return [
+        (sequence, n, result["assessed"]["indicators_driving"])
+        for sequence, run in enumerate(runs)
+        for n, result in sorted(run.items())
+        if result["assessed"]["classification"] == "persistent_change"
+    ]
+
+
+@pytest.mark.parametrize("family", ["stable", "white_noise", "reference_line"])
+def test_h2_no_fault_free_assessment_reaches_persistent_change(
+    fault_free, reference_line, family, record_property
+):
+    """0 of 400 assessments and 0 of 20 sequences in each family: a
+    regression requirement on these fixed seeds, not a false-alarm rate."""
+    runs = reference_line if family == "reference_line" else fault_free[family]
+    assessments = sum(len(run) for run in runs)
+    hits = persistent_assessments(runs)
+    sequences = len({sequence for sequence, _, _ in hits})
+    record_property("persistent_assessments", f"{len(hits)}/{assessments}")
+    record_property("sequences_with_persistent_change", f"{sequences}/{len(runs)}")
+    record_property("overall", json.dumps(tally(runs)["overall"], sort_keys=True))
+    assert (assessments, len(runs)) == (
+        FAULT_FREE_SEQUENCES * (SEQUENCE_LENGTH - REFERENCE_WINDOW),
+        FAULT_FREE_SEQUENCES,
+    )
+    assert hits == [], f"{family}: persistent change (sequence, acquisition, drivers)"
+    assert sequences == 0
+
+
+def test_h2_envelope_indicators_are_reported_and_never_drive(
+    fault_free, reference_line, bpfo_ramp, rolling_element_ramp, record_property
+):
+    """Across every assessment of the harness, no envelope_<label> indicator
+    is among the drivers, and each is still classified in
+    derived.per_indicator; the envelope classifications that are not
+    no_change are counted as reported context."""
+    runs = [
+        *fault_free["stable"],
+        *fault_free["white_noise"],
+        *reference_line,
+        bpfo_ramp,
+        rolling_element_ramp[1],
+    ]
+    driving, unreported = [], []
+    context: Counter[str] = Counter()
+    for index, run in enumerate(runs):
+        for n, result in run.items():
+            names = result["assessed"]["indicators_driving"]
+            if any(name.startswith(ENVELOPE_INDICATOR_PREFIX) for name in names):
+                driving.append((index, n, names))
+            per_indicator = result["derived"]["per_indicator"]
+            for label in BEARING_LABELS:
+                name = f"{ENVELOPE_INDICATOR_PREFIX}{label}"
+                if name not in per_indicator:
+                    unreported.append((index, n, name))
+                elif per_indicator[name]["classification"] != "no_change":
+                    context[per_indicator[name]["classification"]] += 1
+    record_property("envelope_context", json.dumps(dict(context), sort_keys=True))
+    assert driving == []
+    assert unreported == []
+
+
+@pytest.mark.parametrize(
+    "ramp, label, persists_from",
+    [
+        ("bpfo", "BPFO", BPFO_RAMP_PERSISTS_FROM),
+        ("rolling_element", "BSF", ROLLING_ELEMENT_RAMP_PERSISTS_FROM),
+    ],
+)
+def test_h2_each_ramp_persists_overall_to_the_last_acquisition(
+    bpfo_ramp, rolling_element_ramp, ramp, label, persists_from, record_property
+):
+    run = bpfo_ramp if ramp == "bpfo" else rolling_element_ramp[1]
+    first_overall = next(
+        (
+            n
+            for n, result in sorted(run.items())
+            if result["assessed"]["classification"] == "persistent_change"
+        ),
+        None,
+    )
+    record_property("first_overall_persistent", first_overall)
+    late = {n: run[n]["assessed"] for n in range(persists_from, SEQUENCE_LENGTH + 1)}
+    lapses = {
+        n: (assessed["classification"], assessed["indicators_driving"])
+        for n, assessed in late.items()
+        if assessed["classification"] != "persistent_change"
+        or f"{EVIDENCE_INDICATOR_PREFIX}{label}" not in assessed["indicators_driving"]
+    }
+    assert lapses == {}, timeline(run)

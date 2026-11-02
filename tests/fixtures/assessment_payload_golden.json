@@ -280,7 +280,7 @@
       "per_indicator": {
         "envelope_BPFI": {
           "classification": "no_change",
-          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%))",
+          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%)); reported as context, not counted in the overall classification",
           "direction": null,
           "rules": {
             "consecutive": false,
@@ -294,7 +294,7 @@
         },
         "envelope_BPFO": {
           "classification": "no_change",
-          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%))",
+          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%)); reported as context, not counted in the overall classification",
           "direction": null,
           "rules": {
             "consecutive": false,
@@ -308,7 +308,7 @@
         },
         "envelope_BSF": {
           "classification": "no_change",
-          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%))",
+          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%)); reported as context, not counted in the overall classification",
           "direction": null,
           "rules": {
             "consecutive": false,
@@ -322,7 +322,7 @@
         },
         "envelope_FTF": {
           "classification": "no_change",
-          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%))",
+          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%)); reported as context, not counted in the overall classification",
           "direction": null,
           "rules": {
             "consecutive": false,
@@ -992,7 +992,7 @@
       "per_indicator": {
         "envelope_BPFI": {
           "classification": "no_change",
-          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%))",
+          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%)); reported as context, not counted in the overall classification",
           "direction": null,
           "rules": {
             "consecutive": false,
@@ -1006,7 +1006,7 @@
         },
         "envelope_BPFO": {
           "classification": "no_change",
-          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%))",
+          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%)); reported as context, not counted in the overall classification",
           "direction": null,
           "rules": {
             "consecutive": false,
@@ -1020,7 +1020,7 @@
         },
         "envelope_BSF": {
           "classification": "no_change",
-          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%))",
+          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%)); reported as context, not counted in the overall classification",
           "direction": null,
           "rules": {
             "consecutive": false,
@@ -1034,7 +1034,7 @@
         },
         "envelope_FTF": {
           "classification": "no_change",
-          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%))",
+          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%)); reported as context, not counted in the overall classification",
           "direction": null,
           "rules": {
             "consecutive": false,
@@ -1665,7 +1665,7 @@
       "per_indicator": {
         "envelope_BPFI": {
           "classification": "no_change",
-          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%))",
+          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%)); reported as context, not counted in the overall classification",
           "direction": null,
           "rules": {
             "consecutive": false,
@@ -1679,7 +1679,7 @@
         },
         "envelope_BPFO": {
           "classification": "no_change",
-          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%))",
+          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%)); reported as context, not counted in the overall classification",
           "direction": null,
           "rules": {
             "consecutive": false,
@@ -1693,7 +1693,7 @@
         },
         "envelope_BSF": {
           "classification": "no_change",
-          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%))",
+          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%)); reported as context, not counted in the overall classification",
           "direction": null,
           "rules": {
             "consecutive": false,
@@ -1707,7 +1707,7 @@
         },
         "envelope_FTF": {
           "classification": "no_change",
-          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%))",
+          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%)); reported as context, not counted in the overall classification",
           "direction": null,
           "rules": {
             "consecutive": false,
@@ -2287,7 +2287,7 @@
       "per_indicator": {
         "envelope_BPFI": {
           "classification": "no_change",
-          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%))",
+          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%)); reported as context, not counted in the overall classification",
           "direction": null,
           "rules": {
             "consecutive": false,
@@ -2301,7 +2301,7 @@
         },
         "envelope_BPFO": {
           "classification": "no_change",
-          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%))",
+          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%)); reported as context, not counted in the overall classification",
           "direction": null,
           "rules": {
             "consecutive": false,
@@ -2315,7 +2315,7 @@
         },
         "envelope_BSF": {
           "classification": "no_change",
-          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%))",
+          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%)); reported as context, not counted in the overall classification",
           "direction": null,
           "rules": {
             "consecutive": false,
@@ -2329,7 +2329,7 @@
         },
         "envelope_FTF": {
           "classification": "no_change",
-          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%))",
+          "criterion": "every acquisition inside the band (mean +/- max(3 sigma, 25%)); reported as context, not counted in the overall classification",
           "direction": null,
           "rules": {
             "consecutive": false,
