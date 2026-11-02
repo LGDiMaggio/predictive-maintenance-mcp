@@ -43,7 +43,7 @@ Canonical form (schema ``pmm-text-import/1``)::
                     "time_column": null},
       "time_columns": [{"column": 0, "time_unit": "s"}],
       "defaults": {"asset_id": "P-101",
-                   "acquired_at": "2026-08-20T13:42:00+02:00",
+                   "acquired_at": "2026-08-20T11:42:00+00:00",
                    "rpm": "1782", "load": null, "operating_state": null},
       "channels": [
         {"column": 3, "role": "vibration", "quantity": "acceleration",
@@ -73,6 +73,12 @@ Rules of the canonical form:
   signs U+00B5 and U+03BC are refused in tokens (write ``us``).
 - Free text (``sensor_id``, ``operating_state``) follows the measurement
   contract's single free-text rule; ids follow the ledger id grammar.
+- ``acquired_at`` is written in UTC when it declares an offset, as the
+  ledger records it (two spellings of one instant are one interpretation),
+  and stays naive when it declares none.
+- A refusal is an :class:`InterpretationError`: one message, plus every
+  problem typed as missing, unknown key or invalid, so a caller can ask for
+  a missing value instead of parsing the message.
 
 Two scaling rules are narrower than a general unit converter, on purpose: a
 sensitivity is stated per the channel's own unit (``mV/g`` for a channel in
@@ -86,8 +92,8 @@ import hashlib
 import json
 import re
 from collections.abc import Mapping
-from datetime import datetime
-from typing import Any, Callable, Optional
+from datetime import datetime, timezone
+from typing import Any, Callable, NamedTuple, Optional
 
 import numpy as np
 
@@ -129,6 +135,10 @@ __all__ = [
     "IMPORT_FORMAT_KEYS",
     "IMPORT_RAW_MARKER_SAMPLE_FORMAT",
     "normalize_decimal",
+    "PROBLEM_KINDS",
+    "MAX_INTERPRETATION_CHARS",
+    "InterpretationProblem",
+    "InterpretationError",
     "normalize_interpretation",
     "loads_interpretation",
     "config_digest",
@@ -234,7 +244,9 @@ VALUE_STATUSES: tuple[str, ...] = (
 #: Every issue code an inspection, validation, import or replay reports.
 ISSUE_CODES: tuple[str, ...] = (
     # path and file refusals
+    "unsafe_path",
     "path_outside_roots",
+    "not_a_regular_file",
     "unsupported_suffix",
     "file_too_large",
     "binary_content",
@@ -247,6 +259,7 @@ ISSUE_CODES: tuple[str, ...] = (
     "encoding_needs_confirmation",
     "no_numeric_region",
     "not_a_waveform",
+    "region_too_short",
     "field_count_mismatch",
     "duplicate_label",
     "empty_label",
@@ -264,6 +277,7 @@ ISSUE_CODES: tuple[str, ...] = (
     "time_grammar",
     "time_gap",
     "time_reversal",
+    "time_residual",
     "time_off_pattern",
     "time_resolution_insufficient",
     "rate_sources_disagree",
@@ -382,8 +396,11 @@ IMPORT_RAW_MARKER_SAMPLE_FORMAT = "pmm-text-import"
 # ---------------------------------------------------------------------------
 
 #: Lexical caps checked BEFORE any ``Decimal`` conversion, so an extreme
-#: exponent or a very long digit string costs nothing.
-_MAX_DECIMAL_CHARS = 32
+#: exponent or a very long digit string costs nothing. The character cap
+#: admits every canonical form the other two caps allow (the longest,
+#: ``-0.`` with 29 zeros and 20 digits, has 52 characters), so a canonical
+#: interpretation always normalizes to itself.
+_MAX_DECIMAL_CHARS = 64
 _MAX_SIGNIFICANT_DIGITS = 20
 _MAX_ADJUSTED_EXPONENT = 30
 
@@ -393,7 +410,7 @@ _DECIMAL_TOKEN = re.compile(
 
 #: A bounded local context: every signal is trapped and becomes a refusal.
 _DECIMAL_CONTEXT = decimal.Context(
-    prec=40,
+    prec=_MAX_DECIMAL_CHARS,
     rounding=decimal.ROUND_HALF_EVEN,
     Emax=99,
     Emin=-99,
@@ -417,8 +434,9 @@ _DECIMAL_HELP = (
 
 
 def _significant_digits(token: str) -> int:
+    """Digits between the first and the last non-zero digit (at least 1)."""
     mantissa = token.lstrip("+-").split("e")[0].split("E")[0].replace(".", "")
-    stripped = mantissa.lstrip("0")
+    stripped = mantissa.strip("0")
     return len(stripped) if stripped else 1
 
 
@@ -444,7 +462,7 @@ def normalize_decimal(value: object, *, field: str) -> str:
         ``"25600"`` and ``"2.56e4"`` all give ``"25600"``.
 
     Raises:
-        ValueError: For a non-string, a string over 32 characters or 20
+        ValueError: For a non-string, a string over 64 characters or 20
             significant digits, a malformed string, or a magnitude beyond
             ``1e30`` either way; the message names the field. No ``decimal``
             exception escapes.
@@ -511,23 +529,62 @@ def _kind(value: object) -> str:
 
 
 def _shown(value: object) -> str:
-    """A caller value as it may appear in a refusal: short and escaped."""
+    """A caller value as it may appear in a refusal: short, escaped and
+    quoted, with its own quotes escaped so it cannot close the quotation."""
     if isinstance(value, str):
         text, truncated = escape_file_text(value, cap=TOKEN_CHARS)
+        text = text.replace("'", "\\'")
         return f"'{text}{'...' if truncated else ''}'"
     if value is None or isinstance(value, (bool, int, float)):
         return repr(value)
     return _kind(value)
 
 
+#: Kinds of an interpretation problem: a required value that is absent (a
+#: caller can ask for it), a key the contract does not know, or a value given
+#: but not acceptable.
+PROBLEM_KINDS: tuple[str, ...] = ("missing", "unknown_key", "invalid")
+
+
+class InterpretationProblem(NamedTuple):
+    """One problem of a refused interpretation.
+
+    Attributes:
+        path: Dotted path of the field (``channels[0].scaling.dc_policy``).
+        kind: One of :data:`PROBLEM_KINDS`.
+        text: The problem and its remedy, caller values short and escaped.
+    """
+
+    path: str
+    kind: str
+    text: str
+
+
+class InterpretationError(ValueError):
+    """A refused interpretation: one message, plus every problem typed.
+
+    ``str()`` is the one "problem, remedy" message; :attr:`problems` lets a
+    caller tell a missing value it can ask for from an invalid one without
+    parsing the message.
+    """
+
+    def __init__(self, problems: list[InterpretationProblem]) -> None:
+        self.problems: tuple[InterpretationProblem, ...] = tuple(problems)
+        super().__init__(
+            "Invalid import interpretation: "
+            + "; ".join(f"{p.path} {p.text}" for p in self.problems)
+            + f". {_REMEDY}"
+        )
+
+
 class _Problems:
-    """Accumulates "path: problem, remedy" lines; refuses once at the end."""
+    """Accumulates typed problems; refuses once at the end."""
 
     def __init__(self) -> None:
-        self.lines: list[str] = []
+        self.items: list[InterpretationProblem] = []
 
-    def add(self, path: str, text: str) -> None:
-        self.lines.append(f"{path} {text}")
+    def add(self, path: str, text: str, kind: str = "invalid") -> None:
+        self.items.append(InterpretationProblem(path, kind, text))
 
     def collect(self, path: str, value: Any, normalize: Callable[[Any], Any]) -> Any:
         """Apply *normalize*; turn its ValueError into a problem, escaped."""
@@ -539,12 +596,8 @@ class _Problems:
             return None
 
     def raise_if_any(self) -> None:
-        if self.lines:
-            raise ValueError(
-                "Invalid import interpretation: "
-                + "; ".join(self.lines)
-                + f". {_REMEDY}"
-            )
+        if self.items:
+            raise InterpretationError(self.items)
 
 
 def _object(
@@ -560,17 +613,18 @@ def _object(
             path, f"is {_kind(value)}: pass an object with the keys {list(fields)}"
         )
         return None
-    unknown = [key for key in value if key not in fields]
-    if unknown:
-        shown = ", ".join(
-            _shown(key) if isinstance(key, str) else _kind(key) for key in unknown
-        )
-        problems.add(
-            path, f"has unknown key(s) {shown}: the allowed keys are {list(fields)}"
-        )
-    missing = [key for key in fields if key not in defaults and value.get(key) is None]
-    if missing:
-        problems.add(path, f"lacks the required key(s) {missing}")
+    for key in value:
+        if key not in fields:
+            shown = _shown(key) if isinstance(key, str) else _kind(key)
+            problems.add(
+                path,
+                f"has the unknown key {shown}: the allowed keys are {list(fields)}",
+                kind="unknown_key",
+            )
+    for key in fields:
+        if key not in defaults and value.get(key) is None:
+            child = key if path == "interpretation" else f"{path}.{key}"
+            problems.add(child, "is required", kind="missing")
     result: dict[str, Any] = {}
     for key in fields:
         raw = value.get(key)
@@ -753,6 +807,7 @@ def _normalize_time_base(
             problems.add(
                 "time_base.time_column",
                 "is required when time_base.source is 'time_column'",
+                kind="missing",
             )
         elif column is not None and column not in {c["column"] for c in time_columns}:
             problems.add(
@@ -769,19 +824,24 @@ def _normalize_time_base(
 
 
 def _normalize_acquired_at(value: object) -> str:
-    """An ISO 8601 instant in Python's canonical spelling, offset kept."""
+    """An ISO 8601 instant: in UTC when an offset is declared (as the ledger
+    records it, so two spellings of one instant are one interpretation),
+    naive when none is (the ledger flags it ``timezone_declared=false``)."""
     if not isinstance(value, str) or not value.isascii() or len(value) > 64:
         raise ValueError(
             "declare an ASCII ISO 8601 timestamp of at most 64 characters, "
             "such as '2026-08-20T13:42:00+02:00'"
         )
     try:
-        return datetime.fromisoformat(value).isoformat()
+        parsed = datetime.fromisoformat(value)
     except ValueError:
         raise ValueError(
             "not an ISO 8601 timestamp; declare one such as "
             "'2026-08-20T13:42:00+02:00' (an offset or 'Z' declares the timezone)"
         ) from None
+    if parsed.tzinfo is not None and parsed.utcoffset() is not None:
+        return parsed.astimezone(timezone.utc).isoformat()
+    return parsed.isoformat()
 
 
 def _bounded_text(field: str) -> Callable[[Any], str]:
@@ -1013,7 +1073,11 @@ def _normalize_channels(value: object, problems: _Problems) -> list[dict[str, An
         problems.add("channels", f"is {_kind(value)}: pass a list of channel entries")
         return []
     if not value:
-        problems.add("channels", "is empty: select at least one vibration channel")
+        problems.add(
+            "channels",
+            "is empty: select at least one vibration channel",
+            kind="missing",
+        )
         return []
     if len(value) > MAX_FIELDS:
         problems.add("channels", f"lists {len(value)} channels, over {MAX_FIELDS}")
@@ -1063,12 +1127,14 @@ def normalize_interpretation(interpretation: object) -> dict[str, Any]:
     Returns:
         A new dict with every key of the canonical form, in that order:
         defaults filled, decimal strings normalized, ``direction``
-        normalized, ``acquired_at`` in Python's ISO 8601 spelling with its
-        offset (or its absence) kept, and ``channels`` and
-        ``time_columns`` sorted by column.
+        normalized, ``acquired_at`` in UTC when it declares an offset and
+        naive when it does not, and ``channels`` and ``time_columns``
+        sorted by column.
 
     Raises:
-        ValueError: One "problem, remedy" message listing every problem:
+        InterpretationError: A ``ValueError`` whose message lists every
+            problem and whose ``problems`` type each one (missing, unknown
+            key, invalid):
             unknown or missing keys, floats or strings where an integer is
             expected, JSON numbers where a decimal string is expected,
             out-of-vocabulary or non-ASCII tokens, out-of-range line or
@@ -1161,27 +1227,61 @@ def _refuse_constant(name: str) -> Any:
     )
 
 
+#: Largest interpretation text parsed; a real one is a few kilobytes.
+MAX_INTERPRETATION_CHARS = 1 << 20
+
+#: Longest integer literal parsed (line numbers stay below 2**53).
+_MAX_INT_DIGITS = 20
+
+
+def _parse_int(token: str) -> int:
+    if len(token.lstrip("-")) > _MAX_INT_DIGITS:
+        raise ValueError(
+            f"Invalid import interpretation: an integer of {len(token)} "
+            f"characters is out of range. {_REMEDY}"
+        )
+    return int(token)
+
+
 def loads_interpretation(text: str) -> dict[str, Any]:
     """Parse JSON text strictly, then normalize it.
 
     The entry point wherever the server parses the text itself: a key that
     appears twice in one object is refused (the default parser would keep
-    the last value silently), and so are NaN and Infinity.
+    the last value silently), and so are NaN, Infinity, integer literals over
+    20 digits, nesting deeper than the parser can follow, and text over
+    :data:`MAX_INTERPRETATION_CHARS`.
 
     Raises:
-        ValueError: For malformed JSON, a duplicate key, NaN or Infinity, or
-            any refusal of :func:`normalize_interpretation`.
+        ValueError: For a non-string or oversized text, malformed JSON, any
+            of the refusals above, or any refusal of
+            :func:`normalize_interpretation`. No other exception escapes.
     """
+    if not isinstance(text, str):
+        raise ValueError(
+            f"Invalid import interpretation: expected JSON text, got "
+            f"{_kind(text)}. {_REMEDY}"
+        )
+    if len(text) > MAX_INTERPRETATION_CHARS:
+        raise ValueError(
+            f"Invalid import interpretation: {len(text)} characters, over the "
+            f"{MAX_INTERPRETATION_CHARS}-character cap. {_REMEDY}"
+        )
     try:
         parsed = json.loads(
             text,
             object_pairs_hook=_refuse_duplicate_keys,
             parse_constant=_refuse_constant,
+            parse_int=_parse_int,
         )
     except json.JSONDecodeError as exc:
         raise ValueError(
             f"Invalid import interpretation: not valid JSON ({exc.msg} at line "
             f"{exc.lineno}, column {exc.colno}). {_REMEDY}"
+        ) from None
+    except RecursionError:
+        raise ValueError(
+            f"Invalid import interpretation: nested too deeply to parse. {_REMEDY}"
         ) from None
     return normalize_interpretation(parsed)
 

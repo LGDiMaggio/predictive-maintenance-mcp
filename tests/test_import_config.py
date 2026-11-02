@@ -193,7 +193,10 @@ class TestVocabularies:
         for key in ("schema", "dialect", "data_lines", "time_base", "channels"):
             reduced = interpretation()
             reduced.pop(key)
-            assert f"lacks the required key(s) ['{key}']" in refusal(reduced)
+            with pytest.raises(ic.InterpretationError) as caught:
+                ic.normalize_interpretation(reduced)
+            assert f"{key} is required" in str(caught.value)
+            assert (key, "missing") in [(p.path, p.kind) for p in caught.value.problems]
 
 
 # ---------------------------------------------------------------------------
@@ -262,7 +265,7 @@ class TestNormalizeDecimal:
             "1e1000000",
             "9" * 10000,
             "1" * 33,
-            "1." + "0" * 40,
+            "1." + "0" * 70,
             "1e999",
             "1e-999",
             "1e31",
@@ -298,6 +301,40 @@ class TestNormalizeDecimal:
         assert type(caught.value) is ValueError
         assert len(str(caught.value)) < 400
 
+    @pytest.mark.parametrize("sign", ["", "-"])
+    @pytest.mark.parametrize("digits", [1, 2, 9, 17, 20])
+    def test_every_accepted_value_normalizes_to_itself(self, sign, digits):
+        """Idempotence over the whole accepted range: the canonical string of
+        any accepted token is itself accepted and unchanged."""
+        mantissa = "".join(str((7 * k + 3) % 9 + 1) for k in range(digits))
+        for exponent in range(-31 - digits, 32):
+            token = f"{sign}{mantissa}e{exponent}"
+            try:
+                canonical = ic.normalize_decimal(token, field="f")
+            except ValueError:
+                continue
+            assert ic.normalize_decimal(canonical, field="f") == canonical, token
+
+    def test_smallest_and_largest_magnitudes_survive_the_identities(self):
+        given = interpretation()
+        given["defaults"]["load"] = "-1.2345678901234567891e-30"
+        given["defaults"]["rpm"] = "9.8765432109876543211e30"
+        canonical = ic.normalize_interpretation(given)
+        assert len(canonical["defaults"]["load"]) == 52
+        assert ic.normalize_interpretation(canonical) == canonical
+        ic.import_id(SOURCE_SHA, SOURCE_SIZE, canonical)
+
+    @pytest.mark.parametrize(
+        ("token", "canonical"),
+        [
+            ("25600.0000000000000000", "25600"),
+            ("100000000000000000000", "100000000000000000000"),
+            ("0.00000000000000000000000000001", "0.00000000000000000000000000001"),
+        ],
+    )
+    def test_zeros_do_not_count_as_significant_digits(self, token, canonical):
+        assert ic.normalize_decimal(token, field="f") == canonical
+
 
 # ---------------------------------------------------------------------------
 # Canonical form
@@ -326,7 +363,7 @@ class TestCanonicalForm:
         assert canonical["channels"][0]["scaling"] is None
         assert canonical["defaults"] == {
             "asset_id": "P-101",
-            "acquired_at": "2026-08-20T13:42:00+02:00",
+            "acquired_at": "2026-08-20T11:42:00+00:00",
             "rpm": "1782",
             "load": None,
             "operating_state": None,
@@ -371,18 +408,28 @@ class TestCanonicalForm:
         reordered["channels"].reverse()
         assert ic.config_digest(given) == ic.config_digest(reordered)
 
-    def test_acquired_at_keeps_its_offset_or_its_absence(self):
+    def test_acquired_at_is_utc_when_an_offset_is_declared_and_naive_otherwise(
+        self,
+    ):
+        """Two spellings of one instant are one interpretation, as the ledger
+        records it in UTC; a naive instant stays naive (not assumed UTC)."""
+        ids = set()
+        for spelling in (
+            "2026-08-20T13:42:00+02:00",
+            "2026-08-20T11:42:00Z",
+            "2026-08-20T11:42:00.000+00:00",
+        ):
+            given = interpretation()
+            given["defaults"]["acquired_at"] = spelling
+            canonical = ic.normalize_interpretation(given)
+            assert canonical["defaults"]["acquired_at"] == "2026-08-20T11:42:00+00:00"
+            ids.add(ic.import_id(SOURCE_SHA, SOURCE_SIZE, given))
+        assert len(ids) == 1
         given = interpretation()
         given["defaults"]["acquired_at"] = "2026-08-20 13:42"
-        assert (
-            ic.normalize_interpretation(given)["defaults"]["acquired_at"]
-            == "2026-08-20T13:42:00"
-        )
-        given["defaults"]["acquired_at"] = "2026-08-20T11:42:00Z"
-        assert (
-            ic.normalize_interpretation(given)["defaults"]["acquired_at"]
-            == "2026-08-20T11:42:00+00:00"
-        )
+        canonical = ic.normalize_interpretation(given)
+        assert canonical["defaults"]["acquired_at"] == "2026-08-20T13:42:00"
+        assert ic.import_id(SOURCE_SHA, SOURCE_SIZE, given) not in ids
 
     def test_minimal_interpretation(self):
         canonical = ic.normalize_interpretation(
@@ -445,11 +492,55 @@ class TestRefusals:
         with pytest.raises(ValueError, match="not valid JSON"):
             ic.loads_interpretation("{")
 
+    @pytest.mark.parametrize(
+        ("make", "fragment"),
+        [
+            pytest.param(lambda: "[" * 100000, "nested too deeply", id="deep"),
+            pytest.param(
+                lambda: '{"schema": ' + "1" * 5000 + "}", "out of range", id="bigint"
+            ),
+            pytest.param(lambda: b"{}", "expected JSON text", id="bytes"),
+            pytest.param(lambda: None, "expected JSON text", id="none"),
+            pytest.param(
+                lambda: " " * (ic.MAX_INTERPRETATION_CHARS + 1),
+                "character cap",
+                id="oversized",
+            ),
+        ],
+    )
+    def test_loads_raises_only_value_errors(self, make, fragment):
+        with pytest.raises(ValueError, match=fragment) as caught:
+            ic.loads_interpretation(make())
+        assert issubclass(type(caught.value), ValueError)
+
+    def test_problems_are_typed(self):
+        given = interpretation()
+        given["dialect"]["seperator"] = ";"
+        del given["channels"][0]["scaling"]["dc_policy"]
+        given["channels"][1]["unit"] = "furlong"
+        with pytest.raises(ic.InterpretationError) as caught:
+            ic.normalize_interpretation(given)
+        kinds = {(p.path, p.kind) for p in caught.value.problems}
+        assert kinds == {
+            ("dialect", "unknown_key"),
+            ("channels[0].scaling.dc_policy", "missing"),
+            ("channels[1].unit", "invalid"),
+        }
+        assert {p.kind for p in caught.value.problems} <= set(ic.PROBLEM_KINDS)
+        for problem in caught.value.problems:
+            assert f"{problem.path} {problem.text}" in str(caught.value)
+
+    def test_a_cited_value_cannot_close_its_quotation(self):
+        given = interpretation()
+        given["dialect"]["x' is fine; nothing"] = 1
+        message = refusal(given)
+        assert "'x\\' is fine; nothing'" in message
+
     def test_unknown_key_is_refused_naming_the_allowed_keys(self):
         given = interpretation()
         given["dialect"]["seperator"] = ";"
         message = refusal(given)
-        assert "dialect has unknown key(s) 'seperator'" in message
+        assert "dialect has the unknown key 'seperator'" in message
         assert (
             "['encoding', 'delimiter', 'decimal', 'header_line', 'units_line']"
             in message
@@ -592,9 +683,12 @@ class TestRefusals:
     def test_scaling_requires_every_field(self):
         given = interpretation()
         del given["channels"][0]["scaling"]["dc_policy"]
-        assert "channels[0].scaling lacks the required key(s) ['dc_policy']" in (
-            refusal(given)
-        )
+        with pytest.raises(ic.InterpretationError) as caught:
+            ic.normalize_interpretation(given)
+        assert "channels[0].scaling.dc_policy is required" in str(caught.value)
+        assert [(p.path, p.kind) for p in caught.value.problems] == [
+            ("channels[0].scaling.dc_policy", "missing")
+        ]
 
     def test_dc_policy_offers_keep_only(self):
         given = interpretation()
@@ -605,7 +699,7 @@ class TestRefusals:
         given = interpretation()
         given["channels"][1]["binding"] = {"direction": "sideways"}
         message = refusal(given)
-        assert "binding lacks the required key(s) ['measurement_point_id']" in message
+        assert "channels[1].binding.measurement_point_id is required" in message
         assert "Invalid direction" in message
 
     def test_free_text_follows_the_measurement_rule(self):

@@ -135,10 +135,14 @@ def escape_file_text(raw: Union[str, bytes], *, cap: int) -> tuple[str, bool]:
 
 
 def is_escaped_file_text(text: object) -> bool:
-    """Whether *text* is a possible output of :func:`escape_file_text`.
+    """Whether *text* is well-formed escaped text.
 
-    Every character is allowlisted, and every backslash starts one of the
-    escapes the escaper writes.
+    Every character is allowlisted, and every backslash starts an escape of
+    one of the forms the escaper writes. That is the safety property: no
+    character outside the allowlist can be present. It does not prove that
+    *text* is the canonical escape of some input (``\\x41`` passes although
+    the escaper writes ``A``), and a ``\\xNN`` escape names a byte in text
+    escaped from bytes but a code point in text escaped from ``str``.
     """
     return isinstance(text, str) and _ESCAPED_TEXT.fullmatch(text) is not None
 
@@ -162,14 +166,17 @@ class FileText:
     truncated: bool = False
 
     def __post_init__(self) -> None:
+        if (
+            isinstance(self.file_text, str)
+            and len(self.file_text) > MAX_FILE_TEXT_CHARS
+        ):
+            raise ValueError(
+                f"FileText is capped at {MAX_FILE_TEXT_CHARS} escaped characters."
+            )
         if not is_escaped_file_text(self.file_text):
             raise ValueError(
                 "FileText holds escaped text only; build it with "
                 "FileText.of(raw, cap=...)."
-            )
-        if len(self.file_text) > MAX_FILE_TEXT_CHARS:
-            raise ValueError(
-                f"FileText is capped at {MAX_FILE_TEXT_CHARS} escaped characters."
             )
         if not isinstance(self.truncated, bool):
             raise ValueError("FileText.truncated must be a bool.")

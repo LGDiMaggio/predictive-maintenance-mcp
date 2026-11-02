@@ -9,6 +9,7 @@ the test source stays ASCII.
 
 import ast
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -134,6 +135,10 @@ class TestFileText:
     def test_constructor_refuses_over_the_ceiling_and_non_bool_flag(self):
         with pytest.raises(ValueError, match="capped"):
             FileText(file_text="a" * (MAX_FILE_TEXT_CHARS + 1))
+        start = time.perf_counter()
+        with pytest.raises(ValueError, match="capped"):
+            FileText(file_text="a" * 5_000_000)
+        assert time.perf_counter() - start < 0.05
         with pytest.raises(ValueError, match="bool"):
             FileText(file_text="a", truncated=1)
 
