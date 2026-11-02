@@ -41,7 +41,11 @@ from .loaders import (
     load_raw_binary,
     load_signal_data,
 )
-from .measurement import MEASUREMENT_KEY, build_measurement_identity
+from .measurement import (
+    MEASUREMENT_KEY,
+    SIGNAL_UNIT_ALIASES,
+    build_measurement_identity,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -55,12 +59,9 @@ _EXPLICIT_RATE_REMEDY = (
 #: these to be DECLARED (never guessed from signal amplitude).
 VALID_SIGNAL_UNITS: tuple[str, ...] = ("g", "m/s2", "mm/s", "m/s")
 
-#: Accepted spellings mapped to the canonical vocabulary.
-_UNIT_ALIASES: dict[str, str] = {
-    "m/s²": "m/s2",
-    "m/s^2": "m/s2",
-    "mm/sec": "mm/s",
-}
+#: Accepted spellings mapped to the canonical vocabulary (the one table,
+#: defined beside ``UNIT_FAMILIES`` in ``measurement.py``).
+_UNIT_ALIASES: dict[str, str] = SIGNAL_UNIT_ALIASES
 
 
 def normalize_signal_unit(unit: Optional[str]) -> Optional[str]:

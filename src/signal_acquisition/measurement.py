@@ -58,6 +58,7 @@ __all__ = [
     "MAX_FREE_TEXT_CHARS",
     "MAX_LEDGER_ID_CHARS",
     "UNIT_FAMILIES",
+    "SIGNAL_UNIT_ALIASES",
     "WIN32_RESERVED_NAMES",
     "LEDGER_ID_GRAMMAR",
     "MEASUREMENT_ID_HEX_CHARS",
@@ -130,6 +131,16 @@ MAX_LEDGER_ID_CHARS = 100
 UNIT_FAMILIES: dict[str, tuple[str, ...]] = {
     "acceleration": ("g", "m/s2"),
     "velocity": ("mm/s", "m/s"),
+}
+
+#: Accepted spellings of a signal unit, mapped onto the canonical vocabulary
+#: (applied after ``strip().lower()``). The one alias table: the repository's
+#: ``normalize_signal_unit`` and the signal import's unit-token evidence both
+#: read it, so a spelling cannot be accepted on one route and not the other.
+SIGNAL_UNIT_ALIASES: dict[str, str] = {
+    "m/s²": "m/s2",
+    "m/s^2": "m/s2",
+    "mm/sec": "mm/s",
 }
 
 #: Win32 device names. Refused on EVERY operating system, with or without
