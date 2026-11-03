@@ -13,6 +13,7 @@ Locks in the fixes for three vulnerable classes found in the 2026-07-10 audit:
 """
 
 import os
+import time
 from pathlib import Path
 from unittest.mock import AsyncMock
 
@@ -20,6 +21,7 @@ import numpy as np
 import pytest
 from mcp.server.mcpserver import MCPServer
 
+from predictive_maintenance_mcp import config, path_safety
 from predictive_maintenance_mcp.path_safety import (
     _without_extended_prefix,
     resolve_model_paths,
@@ -489,3 +491,380 @@ class TestReExportSingleSourceOfTruth:
             "ModelPaths",
         ):
             assert getattr(_utils, name) is getattr(path_safety, name)
+
+
+# ---------------------------------------------------------------------------
+# Import paths (Signal Import Engine, U3): the lexical gate runs before any
+# operating-system call, the roots come from the data directory and
+# PMM_IMPORT_ROOTS, and every read goes through one verified descriptor.
+# ---------------------------------------------------------------------------
+
+WIN_ROOT = "C:\\pmm\\data"
+POSIX_ROOT = "/srv/pmm/data"
+
+
+@pytest.fixture
+def no_filesystem_calls(monkeypatch):
+    """Every call that could reach a disk, a share or a device fails the
+    test; the list records which was attempted."""
+    attempted: list[str] = []
+
+    def trap(name):
+        def call(*args, **kwargs):
+            attempted.append(name)
+            raise AssertionError(f"{name} reached the operating system")
+
+        return call
+
+    for name in ("stat", "lstat", "open", "scandir", "listdir", "readlink"):
+        monkeypatch.setattr(os, name, trap(f"os.{name}"))
+    monkeypatch.setattr(os.path, "realpath", trap("os.path.realpath"))
+    monkeypatch.setattr(Path, "resolve", trap("Path.resolve"))
+    monkeypatch.setattr(Path, "stat", trap("Path.stat"))
+    return attempted
+
+
+class TestImportPathGate:
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            "\\\\server\\share\\x.csv",
+            "//server/share/x.csv",
+            "\\\\?\\C:\\pmm\\data\\x.csv",
+            "\\\\?\\UNC\\server\\share\\x.csv",
+            "\\\\.\\C:\\pmm\\data\\x.csv",
+            "\\??\\C:\\pmm\\data\\x.csv",
+            "C:\\pmm\\data\\x.csv:hidden",
+            "C:\\pmm\\data\\x.csv::$DATA",
+        ],
+    )
+    def test_network_device_and_stream_forms_make_no_os_call(
+        self, raw, no_filesystem_calls
+    ):
+        start = time.perf_counter()
+        with pytest.raises(path_safety.PathRefused) as caught:
+            path_safety.gate_import_path(raw, [WIN_ROOT], base=WIN_ROOT, windows=True)
+        assert time.perf_counter() - start < 0.05
+        assert caught.value.code == "unsafe_path"
+        assert no_filesystem_calls == []
+
+    @pytest.mark.skipif(os.name != "nt", reason="the host's own path grammar")
+    def test_the_full_open_refuses_a_unc_path_before_any_os_call(
+        self, no_filesystem_calls, tmp_path
+    ):
+        with pytest.raises(path_safety.PathRefused) as caught:
+            path_safety.open_import_file(
+                "\\\\203.0.113.9\\share\\x.csv",
+                [tmp_path],
+                base=tmp_path,
+                max_size=1 << 30,
+            )
+        assert caught.value.code == "unsafe_path"
+        assert no_filesystem_calls == []
+
+    @pytest.mark.parametrize(
+        ("raw", "problem"),
+        [
+            ("C:\\pmm\\data\\x.csv.", "ends with a dot or a space"),
+            ("C:\\pmm\\data\\x.csv ", "ends with a dot or a space"),
+            ("C:\\pmm\\data\\NUL", "device name"),
+            ("C:\\pmm\\data\\com1.csv", "device name"),
+            ("C:\\pmm\\data\\CON .csv", "device name"),
+            ("C:\\pmm\\data\\COM" + chr(0xB9) + ".csv", "device name"),
+            ("C:\\pmm\\data\\conin$.csv", "device name"),
+            ("C:x.csv", "drive-relative"),
+            ("\\pmm\\data\\x.csv", "root-relative"),
+            ("C:\\pmm\\data\\x" + chr(0x202E) + "vsc.csv", "invisible formatting"),
+            ("C:\\pmm\\data\\x\n.csv", "control"),
+        ],
+    )
+    def test_windows_aliases_and_devices_are_refused(self, raw, problem):
+        with pytest.raises(path_safety.PathRefused, match=problem) as caught:
+            path_safety.gate_import_path(raw, [WIN_ROOT], base=WIN_ROOT, windows=True)
+        assert caught.value.code == "unsafe_path"
+        assert chr(0x202E) not in str(caught.value)
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            "C:\\pmm\\data_evil\\x.csv",
+            "C:\\pmm\\x.csv",
+            "C:\\pmm\\data\\..\\x.csv",
+            "D:\\pmm\\data\\x.csv",
+        ],
+    )
+    def test_paths_outside_every_root_are_refused(self, raw):
+        with pytest.raises(path_safety.PathRefused) as caught:
+            path_safety.gate_import_path(raw, [WIN_ROOT], base=WIN_ROOT, windows=True)
+        assert caught.value.code == "path_outside_roots"
+        assert "PMM_IMPORT_ROOTS" in str(caught.value)
+
+    def test_windows_containment_ignores_letter_case_and_slash_direction(self):
+        gated = path_safety.gate_import_path(
+            "c:/PMM/Data/sub/x.CSV", [WIN_ROOT], base=WIN_ROOT, windows=True
+        )
+        assert gated.root == WIN_ROOT
+        assert gated.relative == "sub\\x.CSV"
+
+    def test_relative_paths_join_the_base_and_the_most_specific_root_wins(self):
+        nested = WIN_ROOT + "\\plant"
+        gated = path_safety.gate_import_path(
+            "plant\\pump\\x.csv", [WIN_ROOT, nested], base=WIN_ROOT, windows=True
+        )
+        assert gated.path == "C:\\pmm\\data\\plant\\pump\\x.csv"
+        assert gated.root == nested
+        assert gated.relative == "pump\\x.csv"
+
+    @pytest.mark.parametrize(
+        ("raw", "code"),
+        [
+            ("//host/x.csv", "unsafe_path"),
+            ("/srv/pmm/data/x.csv.", "unsafe_path"),
+            ("/srv/pmm/data/aux.csv", "unsafe_path"),
+            ("/srv/pmm/data/../../../etc/passwd.csv", "path_outside_roots"),
+            ("/srv/pmm/data_evil/x.csv", "path_outside_roots"),
+        ],
+    )
+    def test_posix_grammar(self, raw, code):
+        with pytest.raises(path_safety.PathRefused) as caught:
+            path_safety.gate_import_path(
+                raw, [POSIX_ROOT], base=POSIX_ROOT, windows=False
+            )
+        assert caught.value.code == code
+
+    def test_posix_allows_a_colon_and_a_relative_path(self):
+        gated = path_safety.gate_import_path(
+            "runs/12:30.csv", [POSIX_ROOT], base=POSIX_ROOT, windows=False
+        )
+        assert gated.path == "/srv/pmm/data/runs/12:30.csv"
+
+    @pytest.mark.parametrize("raw", [None, "", "   ", 5, "x" * 5000])
+    def test_non_paths_are_refused(self, raw):
+        with pytest.raises(path_safety.PathRefused) as caught:
+            path_safety.gate_import_path(raw, [WIN_ROOT], base=WIN_ROOT, windows=True)
+        assert caught.value.code == "unsafe_path"
+
+    def test_device_names_cover_the_measurement_ledger_names(self):
+        from predictive_maintenance_mcp.signal_acquisition.measurement import (
+            WIN32_RESERVED_NAMES,
+        )
+
+        assert WIN32_RESERVED_NAMES <= path_safety.WINDOWS_DEVICE_NAMES
+
+    def test_every_refusal_code_is_an_issue_code(self):
+        import ast
+
+        from predictive_maintenance_mcp.signal_acquisition import import_config
+
+        sources = [
+            Path(path_safety.__file__),
+            Path(import_config.__file__).parent / "text_scan.py",
+            Path(import_config.__file__).parent / "text_decoder.py",
+        ]
+        codes = set()
+        for source in sources:
+            for node in ast.walk(ast.parse(source.read_text("utf-8"))):
+                if isinstance(node, ast.Call) and node.args:
+                    func = node.func
+                    name = (
+                        func.attr
+                        if isinstance(func, ast.Attribute)
+                        else getattr(func, "id", "")
+                    )
+                    first = node.args[0]
+                    if name in (
+                        "PathRefused",
+                        "TextScanRefused",
+                        "TextDecodeError",
+                        "refuse",
+                    ) and isinstance(first, ast.Constant):
+                        codes.add(first.value)
+        assert codes, "no refusal code found: the scan is vacuous"
+        assert codes <= set(import_config.ISSUE_CODES), codes - set(
+            import_config.ISSUE_CODES
+        )
+
+
+class TestImportRoots:
+    def test_unset_means_the_data_directory_only(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+        monkeypatch.delenv("PMM_IMPORT_ROOTS", raising=False)
+        assert config.get_import_roots() == (tmp_path,)
+        monkeypatch.setenv("PMM_IMPORT_ROOTS", "   ")
+        assert config.get_import_roots() == (tmp_path,)
+
+    def test_entries_follow_the_data_directory(self, monkeypatch, tmp_path):
+        first, second = tmp_path / "a", tmp_path / "b"
+        monkeypatch.setattr(config, "DATA_DIR", tmp_path / "data")
+        monkeypatch.setenv(
+            "PMM_IMPORT_ROOTS", os.pathsep.join([str(first), str(second)])
+        )
+        assert config.get_import_roots() == (tmp_path / "data", first, second)
+
+    @pytest.mark.parametrize(
+        ("value", "problem"),
+        [
+            ("{a}" + os.pathsep + os.pathsep + "{a}", "empty entry"),
+            ("relative" + os.sep + "dir", "relative"),
+            ("\\\\server\\share", "UNC"),
+            ("//server/share", "UNC"),
+        ],
+    )
+    def test_unsafe_entries_are_refused(self, monkeypatch, tmp_path, value, problem):
+        monkeypatch.setenv("PMM_IMPORT_ROOTS", value.replace("{a}", str(tmp_path)))
+        with pytest.raises(
+            ValueError, match=problem if problem != "relative" else "relative|absolute"
+        ):
+            config.get_import_roots()
+
+    @pytest.mark.skipif(os.name != "nt", reason="Windows root-relative form")
+    def test_a_root_relative_windows_entry_is_refused(self, monkeypatch):
+        monkeypatch.setenv("PMM_IMPORT_ROOTS", "\\pmm\\data")
+        with pytest.raises(ValueError, match="drive"):
+            config.get_import_roots()
+
+
+def _write(root: Path, name: str, data: bytes = b"1;2\n3;4\n") -> Path:
+    path = root / name
+    path.write_bytes(data)
+    return path
+
+
+def _open(root: Path, name: str, max_size: int = 1 << 30) -> path_safety.VerifiedFile:
+    return path_safety.open_import_file(name, [root], base=root, max_size=max_size)
+
+
+class TestOpenImportFile:
+    def test_a_regular_file_opens_and_reads_only_up_to_its_size(self, tmp_path):
+        _write(tmp_path, "pump.csv", b"0123456789")
+        with _open(tmp_path, "pump.csv") as file:
+            assert file.size == 10
+            assert file.read(4, 100) == b"456789"
+            assert file.read(10, 5) == b""
+            assert b"".join(file.iter_chunks(3)) == b"0123456789"
+            assert file.bytes_read == 16
+
+    @pytest.mark.parametrize("name", ["PUMP.CSV", "pump.Txt"])
+    def test_suffix_letter_case_is_ignored(self, tmp_path, name):
+        _write(tmp_path, name)
+        with _open(tmp_path, name) as file:
+            assert file.path.name == name
+
+    @pytest.mark.parametrize("name", ["pump.dat", "pump.json", "pump.csv.gz"])
+    def test_other_suffixes_are_refused_with_the_rename_remedy(self, tmp_path, name):
+        _write(tmp_path, name)
+        with pytest.raises(path_safety.PathRefused) as caught:
+            _open(tmp_path, name)
+        assert caught.value.code == "unsupported_suffix"
+        assert "renamed to .csv" in str(caught.value)
+
+    def test_a_missing_file_is_named(self, tmp_path):
+        with pytest.raises(path_safety.PathRefused) as caught:
+            _open(tmp_path, "absent.csv")
+        assert caught.value.code == "file_not_found"
+
+    def test_a_folder_is_not_a_regular_file(self, tmp_path):
+        (tmp_path / "folder.csv").mkdir()
+        with pytest.raises(path_safety.PathRefused) as caught:
+            _open(tmp_path, "folder.csv")
+        assert caught.value.code == "not_a_regular_file"
+
+    def test_the_size_cap_names_the_size_the_cap_and_the_variable(self, tmp_path):
+        _write(tmp_path, "big.csv", b"x" * 100)
+        with pytest.raises(path_safety.PathRefused) as caught:
+            _open(tmp_path, "big.csv", max_size=99)
+        message = str(caught.value)
+        assert caught.value.code == "file_too_large"
+        assert "100 bytes" in message and "99-byte" in message
+        assert "PMM_MAX_SIGNAL_SIZE" in message
+
+    def test_a_file_that_grows_after_open_is_refused_without_reading_past(
+        self, tmp_path
+    ):
+        path = _write(tmp_path, "growing.csv", b"1;2\n" * 10)
+        with _open(tmp_path, "growing.csv") as file:
+            with path.open("ab") as appender:
+                appender.write(b"5;6\n")
+            seen = b""
+            with pytest.raises(path_safety.PathRefused) as caught:
+                for chunk in file.iter_chunks(16):
+                    seen += chunk
+        assert caught.value.code == "source_changed"
+        assert "export may still be in progress" in str(caught.value)
+        assert seen == b"1;2\n" * 10
+
+    def test_a_file_swapped_between_check_and_open_is_refused(
+        self, tmp_path, monkeypatch
+    ):
+        path = _write(tmp_path, "swap.csv")
+        real_lstat = os.lstat
+
+        def lstat_then_swap(target, *args, **kwargs):
+            seen = real_lstat(target, *args, **kwargs)
+            replacement = tmp_path / "other.tmp"
+            replacement.write_bytes(b"9;9\n")
+            os.replace(replacement, path)
+            return seen
+
+        monkeypatch.setattr(os, "lstat", lstat_then_swap)
+        with pytest.raises(path_safety.PathRefused) as caught:
+            _open(tmp_path, "swap.csv")
+        assert caught.value.code == "source_changed"
+
+    @pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="POSIX FIFO")
+    def test_a_fifo_is_refused_without_blocking(self, tmp_path):
+        os.mkfifo(tmp_path / "pipe.csv")
+        start = time.perf_counter()
+        with pytest.raises(path_safety.PathRefused) as caught:
+            _open(tmp_path, "pipe.csv")
+        assert caught.value.code == "not_a_regular_file"
+        assert time.perf_counter() - start < 1.0
+
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX no-follow open")
+    def test_a_symlink_swapped_in_after_the_check_is_refused_at_open(
+        self, tmp_path, monkeypatch
+    ):
+        path = _write(tmp_path, "link.csv")
+        (tmp_path / "target.csv").write_bytes(b"7;7\n")
+        real_lstat = os.lstat
+
+        def lstat_then_link(target, *args, **kwargs):
+            seen = real_lstat(target, *args, **kwargs)
+            path.unlink()
+            os.symlink(tmp_path / "target.csv", path)
+            return seen
+
+        monkeypatch.setattr(os, "lstat", lstat_then_link)
+        with pytest.raises(path_safety.PathRefused) as caught:
+            _open(tmp_path, "link.csv")
+        assert caught.value.code == "source_changed"
+
+    @pytest.mark.skipif(os.name == "nt", reason="symlinks need privileges on Windows")
+    def test_a_symlink_leading_outside_the_root_is_refused(self, tmp_path):
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (outside / "secret.csv").write_bytes(b"1;2\n")
+        root = tmp_path / "root"
+        root.mkdir()
+        os.symlink(outside / "secret.csv", root / "x.csv")
+        with pytest.raises(path_safety.PathRefused) as caught:
+            _open(root, "x.csv")
+        assert caught.value.code == "path_outside_roots"
+
+    @pytest.mark.skipif(os.name != "nt", reason="Windows 8.3 short names")
+    def test_a_short_name_alias_of_another_extension_is_refused(self, tmp_path):
+        import ctypes
+
+        long_path = _write(tmp_path, "report.csvx")
+        buffer = ctypes.create_unicode_buffer(1024)
+        ctypes.windll.kernel32.GetShortPathNameW(str(long_path), buffer, 1024)
+        short_name = Path(buffer.value).name
+        if (
+            not short_name
+            or short_name == long_path.name
+            or not short_name.upper().endswith(".CSV")
+        ):
+            pytest.skip("8.3 names are not generated on this volume")
+        with pytest.raises(path_safety.PathRefused) as caught:
+            _open(tmp_path, short_name)
+        assert caught.value.code == "unsupported_suffix"

@@ -13,7 +13,11 @@ Covers:
 """
 
 import inspect
+import random
+import re
 import struct
+import time
+import tracemalloc
 
 import pytest
 import numpy as np
@@ -233,6 +237,150 @@ class TestCheckTextBlankRows:
         f = tmp_path / "pump.txt"
         f.write_bytes(content)
         assert check_text_blank_rows(f) is None
+
+    def test_remedy_keyword_replaces_only_the_remedy(self, tmp_path):
+        f = tmp_path / "pump.csv"
+        f.write_bytes(b"1\n\n2\n")
+        with pytest.raises(ValueError) as exc:
+            check_text_blank_rows(f, remedy="read it with inspect_signal_file")
+        assert str(exc.value) == (
+            "File 'pump.csv' has an empty line at line 2 between data lines, "
+            "which is a missing sample " + chr(0x2014) + " read it with "
+            "inspect_signal_file."
+        )
+
+
+def _reference_blank_row_scan(data: bytes, chunk: int) -> "int | None":
+    """The scan as it was before the linear rewrite (plan U3), verbatim in
+    its line-break handling, over in-memory bytes: the first blank line
+    between data lines, or None. Quadratic on long ``\\r`` runs, so only fed
+    small inputs here."""
+    line_break = re.compile(rb"\r*\n|\r")
+    data_byte = re.compile(rb"[^ \t\r\n\x0b\x0c]")
+    blank_line_re = re.compile(rb"\n[ \t\x0b\x0c]*\r?\n")
+    blank_rest = re.compile(rb"[ \t\x0b\x0c]*\r?\n")
+    seen_data = False
+    blank_line = None
+    line_is_blank = False
+    breaks = 0
+    carry = b""
+    offset = 0
+    while True:
+        piece = data[offset : offset + chunk]
+        offset += chunk
+        if piece:
+            joined = carry + piece
+            body = joined.rstrip(b"\r")
+            carry = joined[len(body) :]
+        else:
+            body, carry = carry, b""
+        if b"\r" in body and body.count(b"\r") != body.count(b"\r\n"):
+            body = body.replace(b"\r\n", b"\n").replace(b"\r\n", b"\n")
+            if b"\r\n" in body:
+                body = line_break.sub(b"\n", body)
+            else:
+                body = body.replace(b"\r", b"\n")
+        pos = 0
+        if not seen_data:
+            first = data_byte.search(body)
+            if first is None:
+                breaks += body.count(b"\n")
+            else:
+                breaks += body.count(b"\n", 0, first.start())
+                pos = first.start()
+                seen_data = True
+        if seen_data and blank_line is None:
+            start = pos
+            blank = blank_rest.match(body, pos) if line_is_blank else None
+            if blank is None:
+                blank = blank_line_re.search(body, pos)
+                if blank is not None:
+                    start = blank.start() + 1
+            if blank is not None:
+                blank_line = breaks + body.count(b"\n", pos, start) + 1
+                pos = blank.end()
+            else:
+                breaks += body.count(b"\n", pos)
+                last_break = body.rfind(b"\n", pos)
+                if last_break >= 0:
+                    line_is_blank = data_byte.search(body, last_break + 1) is None
+                elif data_byte.search(body, pos) is not None:
+                    line_is_blank = False
+        if blank_line is not None and data_byte.search(body, pos) is not None:
+            return blank_line
+        if not piece:
+            return None
+
+
+class TestBlankRowScanIsLinear:
+    """The rewrite of plan U3: the scan is linear on long runs of ``\\r``
+    (it retires the ``blank-row-scan-quadratic-on-cr-runs`` tripwire of U1)
+    and refuses exactly what, and where, the old scan refused."""
+
+    REFUSAL = (
+        "File 'cr_run.csv' has an empty line at line 2 between data lines, "
+        "which is a missing sample " + chr(0x2014) + " " + BAD_SAMPLE_REMEDY + "."
+    )
+
+    def test_former_tripwire_passes_with_the_same_refusal(self, tmp_path):
+        """The U1 tripwire's case: 2.07 s before the rewrite, now linear."""
+        path = tmp_path / "cr_run.csv"
+        path.write_bytes(b"1\r\r\r\n" + b"\r" * (64 * 1024) + b"2\n")
+        start = time.perf_counter()
+        with pytest.raises(ValueError) as exc:
+            check_text_blank_rows(path)
+        assert time.perf_counter() - start < 0.25
+        assert str(exc.value) == self.REFUSAL
+
+    @pytest.mark.parametrize(
+        ("prefix", "suffix", "refused"),
+        [
+            (b"1\n", b"2\n", True),
+            (b"1\n2\n", b"", False),
+            (b"1\r\r\r\n2\r\n3\r\r\n", b"4\n", True),
+            (b"1\r\r\r\n2\r\n3\r\r\n", b"\n", False),
+        ],
+        ids=["between-data", "trailing", "mixed-then-between", "mixed-then-trailing"],
+    )
+    def test_16_mib_of_lone_cr_is_linear_and_bounded(
+        self, tmp_path, prefix, suffix, refused
+    ):
+        path = tmp_path / "cr_run.csv"
+        path.write_bytes(prefix + b"\r" * (16 * 1024 * 1024) + suffix)
+        tracemalloc.start()
+        start = time.perf_counter()
+        try:
+            if refused:
+                with pytest.raises(ValueError, match="between data lines"):
+                    check_text_blank_rows(path)
+            else:
+                assert check_text_blank_rows(path) is None
+            elapsed = time.perf_counter() - start
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        assert elapsed < 3.0
+        assert peak < 8 * 1024 * 1024
+
+    @pytest.mark.parametrize("chunk", [1, 2, 3, 5, 1 << 20])
+    def test_same_outcome_and_line_as_the_old_scan(self, tmp_path, monkeypatch, chunk):
+        """Randomized break mixes (lone CR, CRLF, CR runs before LF, blanks,
+        whitespace-only lines), every chunk size: the same refusal at the same
+        physical line as before the rewrite, or the same acceptance."""
+        monkeypatch.setattr(loaders, "_SCAN_CHUNK_BYTES", chunk)
+        rng = random.Random(20261103 + chunk)
+        alphabet = [b"1", b"2", b" ", b"\t", b"\r", b"\r", b"\n", b"\n", b"\r\n"]
+        path = tmp_path / "mix.csv"
+        for case in range(400):
+            data = b"".join(rng.choice(alphabet) for _ in range(rng.randint(0, 30)))
+            path.write_bytes(data)
+            expected = _reference_blank_row_scan(data, chunk)
+            try:
+                check_text_blank_rows(path)
+                got = None
+            except ValueError as exc:
+                got = int(re.search(r"at line (\d+) ", str(exc)).group(1))
+            assert got == expected, (case, data)
 
 
 # ── extract_segment ────────────────────────────────────────────────────────

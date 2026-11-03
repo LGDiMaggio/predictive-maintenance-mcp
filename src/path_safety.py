@@ -17,9 +17,17 @@ the same implementation instead of each rolling — or drifting from — its own
     ``startswith("/data/signals")``. See ``tests/test_security_paths.py``.
 """
 
+import ntpath
+import os
+import posixpath
 import re
+import stat
+import unicodedata
+from collections.abc import Iterator, Sequence
 from pathlib import Path
-from typing import NamedTuple
+from typing import NamedTuple, Optional
+
+from .file_text import LABEL_CHARS, escape_file_text
 
 __all__ = [
     "safe_resolve",
@@ -27,6 +35,13 @@ __all__ = [
     "validate_name_component",
     "resolve_model_paths",
     "ModelPaths",
+    "WINDOWS_DEVICE_NAMES",
+    "IMPORT_SUFFIXES",
+    "PathRefused",
+    "GatedPath",
+    "gate_import_path",
+    "VerifiedFile",
+    "open_import_file",
 ]
 
 
@@ -154,3 +169,369 @@ def resolve_model_paths(models_dir: Path, model_name: str) -> ModelPaths:
         pca=safe_resolve(models_dir, f"{safe}_pca.pkl"),
         metadata=safe_resolve(models_dir, f"{safe}_metadata.json"),
     )
+
+
+# ---------------------------------------------------------------------------
+# Import paths (Signal Import Engine, KTD5): a lexical gate that runs before
+# any operating-system call, then checks on the one open descriptor through
+# which every later read goes.
+# ---------------------------------------------------------------------------
+
+#: Win32 device names. A path component whose stem (before the first dot,
+#: trailing spaces ignored) is one of them names a device on Windows, with or
+#: without an extension, so it is refused in import paths on every operating
+#: system. A superset of ``measurement.WIN32_RESERVED_NAMES`` (the console
+#: names and the superscript port numbers Windows also treats as devices).
+WINDOWS_DEVICE_NAMES: frozenset[str] = frozenset(
+    {"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"}
+    | {f"{port}{digit}" for port in ("COM", "LPT") for digit in "123456789"}
+    | {f"{port}{chr(code)}" for port in ("COM", "LPT") for code in (0xB9, 0xB2, 0xB3)}
+)
+
+#: Suffixes the import reads, compared case-insensitively on the resolved
+#: final name (which also catches a Windows 8.3 alias of another extension).
+IMPORT_SUFFIXES: tuple[str, ...] = (".csv", ".txt")
+
+#: Longest path string the gate considers.
+_MAX_PATH_CHARS = 4096
+
+_CHANGED_REMEDY = (
+    "the file changed while it was being read, so the export may still be in "
+    "progress: wait until it is complete, then validate it again"
+)
+
+
+class PathRefused(ValueError):
+    """An import path refused by the gate or by the open-file checks.
+
+    Attributes:
+        code: The issue code of the import contract (``unsafe_path``,
+            ``path_outside_roots``, ``file_not_found``, ``not_a_regular_file``,
+            ``unsupported_suffix``, ``file_too_large``, ``source_changed``).
+    """
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
+class GatedPath(NamedTuple):
+    """A path that passed the lexical gate (nothing resolved, nothing opened).
+
+    Attributes:
+        path: The lexically normalized absolute path.
+        root: The normalized allowed root that contains it (the most specific
+            one when roots nest).
+        relative: *path* relative to *root*, with the platform separator.
+    """
+
+    path: str
+    root: str
+    relative: str
+
+
+def _quoted(value: str) -> str:
+    text, truncated = escape_file_text(value, cap=LABEL_CHARS)
+    return f"'{text}{'...' if truncated else ''}'"
+
+
+def _unsafe(raw: str, problem: str) -> PathRefused:
+    return PathRefused(
+        "unsafe_path",
+        f"Path {_quoted(raw)} is refused: {problem}. Pass a plain local path "
+        f"to a file under the data directory or a folder listed in "
+        f"PMM_IMPORT_ROOTS (a network share through a mapped drive letter).",
+    )
+
+
+def _comparable(path: str, windows: bool) -> str:
+    return path.replace("/", "\\").lower() if windows else path
+
+
+def gate_import_path(
+    raw: object,
+    roots: Sequence[object],
+    *,
+    base: Optional[object] = None,
+    windows: bool = os.name == "nt",
+) -> GatedPath:
+    """Refuse a dangerous import path before any operating-system call.
+
+    Pure string work: nothing is resolved, stat-ed or opened, so a path that
+    would make the host contact the network or a device (a UNC share, the
+    ``\\\\?\\``, ``\\\\.\\`` or ``\\??\\`` namespaces, a device name) is refused
+    without ever reaching the filesystem. Then the lexically normalized path
+    must lie under one of *roots*.
+
+    Refused on Windows: UNC and namespace prefixes, drive-relative
+    (``C:data.csv``) and root-relative (``\\data.csv``) forms, and any ``:``
+    after the drive (alternate data streams). Refused everywhere: control,
+    format and line-separator characters, a leading ``//``, components that
+    end with a dot or a space (Windows drops them silently, so the name
+    would alias another file) and device names in any component.
+
+    Args:
+        raw: The path as given.
+        roots: The allowed roots (absolute paths).
+        base: Directory a relative *raw* is joined to (the data directory).
+        windows: Apply the Windows path grammar; the default follows the host.
+
+    Returns:
+        The :class:`GatedPath`.
+
+    Raises:
+        PathRefused: ``unsafe_path`` or ``path_outside_roots``.
+    """
+    flavor = ntpath if windows else posixpath
+    if not isinstance(raw, str) or not raw.strip():
+        raise PathRefused("unsafe_path", "Pass the file path as a non-empty string.")
+    if len(raw) > _MAX_PATH_CHARS:
+        raise _unsafe(raw[:40], f"it is {len(raw)} characters long")
+    if any(unicodedata.category(ch) in ("Cc", "Cf", "Zl", "Zp") for ch in raw):
+        raise _unsafe(raw, "it contains control or invisible formatting characters")
+
+    if windows:
+        text = raw.replace("/", "\\")
+        if text.startswith("\\\\"):
+            raise _unsafe(
+                raw, "network shares and the \\\\?\\ and \\\\.\\ forms are not read"
+            )
+        if text.startswith("\\??\\"):
+            raise _unsafe(raw, "the \\??\\ namespace is not read")
+        drive, rest = ntpath.splitdrive(text)
+        if drive and not re.fullmatch(r"[A-Za-z]:", drive):
+            raise _unsafe(raw, "only a drive letter may precede the path")
+        if drive and rest and not rest.startswith("\\"):
+            raise _unsafe(raw, "a drive-relative path (no separator after the drive)")
+        if not drive and text.startswith("\\"):
+            raise _unsafe(raw, "a root-relative path (no drive letter)")
+        if ":" in rest:
+            raise _unsafe(raw, "a ':' after the drive (an alternate data stream)")
+        components = rest.split("\\")
+    else:
+        text = raw
+        if text.startswith("//"):
+            raise _unsafe(raw, "a path starting with '//'")
+        components = text.split("/")
+
+    for component in components:
+        if component in ("", ".", ".."):
+            continue
+        if component.endswith((".", " ")):
+            raise _unsafe(raw, "a path component ends with a dot or a space")
+        if component.split(".")[0].rstrip(" ").upper() in WINDOWS_DEVICE_NAMES:
+            raise _unsafe(raw, "a path component is a Windows device name")
+
+    if not flavor.isabs(text):
+        if base is None:
+            raise _unsafe(raw, "a relative path with no base directory")
+        text = flavor.join(str(base), text)
+    normalized = flavor.normpath(text)
+    if not flavor.isabs(normalized):
+        raise _unsafe(raw, "it does not form an absolute path")
+
+    sep = "\\" if windows else "/"
+    match: Optional[str] = None
+    target = _comparable(normalized, windows)
+    for root in roots:
+        candidate = flavor.normpath(str(root))
+        prefix = _comparable(candidate, windows).rstrip(sep) + sep
+        if target == _comparable(candidate, windows) or target.startswith(prefix):
+            if match is None or len(candidate) > len(match):
+                match = candidate
+    if match is None:
+        raise PathRefused(
+            "path_outside_roots",
+            f"Path {_quoted(raw)} is outside the folders the import reads: the "
+            f"data directory and the folders listed in PMM_IMPORT_ROOTS. Copy "
+            f"the file into one of them, or ask the operator to list its "
+            f"folder in PMM_IMPORT_ROOTS.",
+        )
+    relative = normalized[len(match.rstrip(sep)) :].lstrip(sep)
+    return GatedPath(path=normalized, root=match, relative=relative)
+
+
+class VerifiedFile:
+    """One open, verified descriptor; every read goes through it.
+
+    Reads never go past the size :func:`os.fstat` reported when the file was
+    opened. :meth:`verify_unchanged` probes one byte beyond it and compares a
+    fresh ``fstat``, so a file that grew, shrank or was rewritten while it
+    was read is refused (the export may still be in progress).
+
+    Attributes:
+        path: The resolved path that was opened.
+        size: The size in bytes at open time.
+        bytes_read: Bytes returned by :meth:`read` so far.
+    """
+
+    def __init__(self, fd: int, path: Path, status: os.stat_result) -> None:
+        self._fd: Optional[int] = fd
+        self.path = path
+        self.size = int(status.st_size)
+        self._mtime_ns = status.st_mtime_ns
+        self.bytes_read = 0
+
+    def read(self, offset: int, length: int) -> bytes:
+        """Up to *length* bytes from *offset*, never past :attr:`size`."""
+        end = min(offset + max(length, 0), self.size)
+        if offset >= end:
+            return b""
+        fd = self._require_open()
+        os.lseek(fd, offset, os.SEEK_SET)
+        parts: list[bytes] = []
+        wanted = end - offset
+        while wanted:
+            data = os.read(fd, wanted)
+            if not data:
+                break
+            parts.append(data)
+            wanted -= len(data)
+        result = b"".join(parts)
+        self.bytes_read += len(result)
+        return result
+
+    def iter_chunks(self, chunk_size: int) -> Iterator[bytes]:
+        """Every byte of the file in order, then :meth:`verify_unchanged`."""
+        offset = 0
+        while offset < self.size:
+            data = self.read(offset, chunk_size)
+            if not data:
+                raise PathRefused(
+                    "source_changed",
+                    f"File {_quoted(self.path.name)} became shorter while it "
+                    f"was being read: {_CHANGED_REMEDY}.",
+                )
+            offset += len(data)
+            yield data
+        self.verify_unchanged()
+
+    def verify_unchanged(self) -> None:
+        """Refuse when the file grew past, or changed from, its open state."""
+        fd = self._require_open()
+        os.lseek(fd, self.size, os.SEEK_SET)
+        grew = bool(os.read(fd, 1))
+        now = os.fstat(fd)
+        if grew or now.st_size != self.size or now.st_mtime_ns != self._mtime_ns:
+            raise PathRefused(
+                "source_changed",
+                f"File {_quoted(self.path.name)} changed while it was being "
+                f"read: {_CHANGED_REMEDY}.",
+            )
+
+    def close(self) -> None:
+        if self._fd is not None:
+            os.close(self._fd)
+            self._fd = None
+
+    def _require_open(self) -> int:
+        if self._fd is None:
+            raise ValueError("VerifiedFile is closed.")
+        return self._fd
+
+    def __enter__(self) -> "VerifiedFile":
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        self.close()
+
+
+_OPEN_FLAGS = (
+    os.O_RDONLY
+    | getattr(os, "O_BINARY", 0)
+    | getattr(os, "O_NOFOLLOW", 0)
+    | getattr(os, "O_NONBLOCK", 0)
+)
+
+
+def open_import_file(
+    raw: object,
+    roots: Sequence[object],
+    *,
+    base: Optional[object],
+    max_size: int,
+) -> VerifiedFile:
+    """Gate, resolve, check and open an import file (KTD5, in this order).
+
+    1. :func:`gate_import_path` (no operating-system call before it passes);
+    2. containment again after resolving links (:func:`safe_resolve`);
+    3. the suffix of the resolved final name, ``.csv`` or ``.txt`` in any
+       letter case;
+    4. ``lstat``: a regular file within *max_size*;
+    5. open read-only (no-follow and non-blocking on POSIX) and ``fstat`` the
+       descriptor: still a regular file, the same file the ``lstat`` saw,
+       within *max_size*.
+
+    Returns:
+        The open :class:`VerifiedFile`; the caller closes it.
+
+    Raises:
+        PathRefused: With the code of the failed check.
+    """
+    gated = gate_import_path(raw, roots, base=base)
+    try:
+        resolved = safe_resolve(Path(gated.root), gated.relative)
+    except ValueError:
+        raise PathRefused(
+            "path_outside_roots",
+            f"Path {_quoted(str(raw))} leads outside the folders the import "
+            f"reads once its links are followed. Copy the file into the data "
+            f"directory or a folder listed in PMM_IMPORT_ROOTS.",
+        ) from None
+    name = resolved.name
+    if not name.lower().endswith(IMPORT_SUFFIXES):
+        raise PathRefused(
+            "unsupported_suffix",
+            f"File {_quoted(name)} is not read by the import: it reads .csv and "
+            f".txt files (any letter case). If it is delimited text, import a "
+            f"copy renamed to .csv; the identity follows the bytes, not the name.",
+        )
+    try:
+        seen = os.lstat(resolved)
+    except FileNotFoundError:
+        raise PathRefused(
+            "file_not_found",
+            f"File {_quoted(str(raw))} does not exist; check the path (list_signals "
+            f"shows the files under the data directory).",
+        ) from None
+    if not stat.S_ISREG(seen.st_mode):
+        raise PathRefused(
+            "not_a_regular_file",
+            f"Path {_quoted(name)} is not a regular file (a folder, a link, a "
+            f"pipe or a device); pass the path of the exported file itself.",
+        )
+    _refuse_oversized(name, seen.st_size, max_size)
+    try:
+        fd = os.open(resolved, _OPEN_FLAGS)
+    except OSError:
+        raise PathRefused(
+            "source_changed",
+            f"File {_quoted(name)} could not be opened as the file that was "
+            f"checked (it was replaced, or is a link): {_CHANGED_REMEDY}.",
+        ) from None
+    try:
+        opened = os.fstat(fd)
+        if not stat.S_ISREG(opened.st_mode) or (opened.st_dev, opened.st_ino) != (
+            seen.st_dev,
+            seen.st_ino,
+        ):
+            raise PathRefused(
+                "source_changed",
+                f"File {_quoted(name)} was replaced between its check and its "
+                f"opening: {_CHANGED_REMEDY}.",
+            )
+        _refuse_oversized(name, opened.st_size, max_size)
+    except BaseException:
+        os.close(fd)
+        raise
+    return VerifiedFile(fd, resolved, opened)
+
+
+def _refuse_oversized(name: str, size: int, max_size: int) -> None:
+    if size > max_size:
+        raise PathRefused(
+            "file_too_large",
+            f"File {_quoted(name)} is {size} bytes, over the {max_size}-byte cap; "
+            f"raise the cap via the PMM_MAX_SIGNAL_SIZE environment variable "
+            f"(bytes) if this size is intentional.",
+        )
