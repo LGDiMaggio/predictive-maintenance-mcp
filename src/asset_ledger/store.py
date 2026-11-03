@@ -121,6 +121,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, NamedTuple, Optional, Union
 
+from ..canonical_json import canonical_json, content_hash
 from ..path_safety import safe_resolve
 from ..signal_acquisition.measurement import LEDGER_ID_GRAMMAR, validate_ledger_id
 
@@ -324,40 +325,9 @@ class LedgerReadResult(NamedTuple):
 # Canonical JSON and ids
 # ---------------------------------------------------------------------------
 
-
-def canonical_json(obj: Any) -> str:
-    """Serialize *obj* to compact, key-sorted, ASCII-only JSON.
-
-    ``allow_nan=False`` refuses NaN/Infinity (a ValueError, before any byte
-    touches the disk); ``ensure_ascii=True`` keeps line separators and every
-    non-ASCII character escaped, so a record can never contain a literal
-    0x0A, 0x0D, U+2028 or U+2029.
-
-    Raises:
-        ValueError: For non-finite floats or non-serializable values (``json``
-            reports foreign types such as numpy scalars, sets and datetimes
-            as ``TypeError``; a refused input is a ``ValueError`` everywhere
-            in this package, and the message names the offending type).
-    """
-    try:
-        return json.dumps(
-            obj,
-            sort_keys=True,
-            separators=(",", ":"),
-            allow_nan=False,
-            ensure_ascii=True,
-        )
-    except TypeError as exc:
-        raise ValueError(
-            f"Cannot serialize to canonical JSON: {exc}. Convert numpy scalars "
-            f"with .item(), sets to lists and datetimes to ISO 8601 strings "
-            f"before building the event."
-        ) from exc
-
-
-def content_hash(obj: Any) -> str:
-    """SHA-256 (64 hex chars) of the canonical JSON of *obj*."""
-    return hashlib.sha256(canonical_json(obj).encode("ascii")).hexdigest()
+# ``canonical_json`` and ``content_hash`` are defined in the leaf module
+# ``src/canonical_json.py``, shared with the signal import, and re-exported
+# from here unchanged.
 
 
 def short_id(*parts: str) -> str:

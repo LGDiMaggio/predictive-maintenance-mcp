@@ -1,0 +1,222 @@
+{
+  "cases": {
+    "csv_companion": {
+      "context_digest": "f7d763c91145cf20",
+      "declaration": {
+        "acquired_at": "2026-08-20T11:42:00+00:00",
+        "asset_id": "P-101",
+        "channel_index": 0,
+        "declared_by": "golden-fixture",
+        "direction": "horizontal",
+        "load": 75.0,
+        "measurement_point_id": "motor_de_h",
+        "operating_state": null,
+        "raw_format": null,
+        "rpm": 1782.0,
+        "sampling_rate": 10000.0,
+        "sensor_id": "ACC01",
+        "signal_unit": "g",
+        "timestamp_suspect": false,
+        "timezone_declared": true
+      },
+      "declaration_fingerprint": "f296bdfbe36a9fbdc094053a1838bb233615f0012dab4a4957a0ff9f779562ba",
+      "load_signal": {
+        "companion_warning": null,
+        "duration_s": 2.0,
+        "filepath": "golden/m01.csv",
+        "measurement": {
+          "acquired_at": "2026-08-20T11:42:00+00:00",
+          "asset_id": "P-101",
+          "changed": [],
+          "channel_index": 0,
+          "comparability": {
+            "grade": "comparable",
+            "qualifications": []
+          },
+          "content_sha256": "813878dc027e2dae459c6e0ef20cd1ec5418e63f7d82795f48b6b14b8becc81b",
+          "declaration_version": 1,
+          "declared_by": "golden-fixture",
+          "direction": "horizontal",
+          "ledger_status": "recorded",
+          "load": 75.0,
+          "measurement_id": "6f8846fdcf22fadf",
+          "measurement_point_id": "motor_de_h",
+          "missing": {},
+          "operating_state": null,
+          "processing_id": "<recomputed at test time>",
+          "reason": null,
+          "reattributed_from": null,
+          "rpm": 1782.0,
+          "sensor_id": "ACC01",
+          "size_bytes": 129990,
+          "snapshot_id": "<recomputed at test time>",
+          "snapshot_status": "complete",
+          "timestamp_suspect": false,
+          "timezone_declared": true
+        },
+        "num_samples": 20000,
+        "raw_format": null,
+        "sampling_rate": 10000.0,
+        "shape": [
+          20000
+        ],
+        "signal_id": "golden_m01",
+        "signal_unit": "g",
+        "size_bytes": 160000,
+        "source_metadata": {
+          "measurement": {
+            "acquired_at": "2026-08-20T13:42:00+02:00",
+            "asset_id": "P-101",
+            "declared_by": "golden-fixture",
+            "direction": "horizontal",
+            "load": 75,
+            "measurement_point_id": "motor_de_h",
+            "rpm": 1782,
+            "sensor_id": "ACC01"
+          },
+          "sampling_rate": 10000,
+          "signal_unit": "g"
+        }
+      },
+      "measurement_id": "6f8846fdcf22fadf"
+    },
+    "npy_plain": {
+      "context_digest": null,
+      "declaration": null,
+      "declaration_fingerprint": null,
+      "load_signal": {
+        "companion_warning": null,
+        "duration_s": 1.0,
+        "filepath": "golden/n01.npy",
+        "measurement": null,
+        "num_samples": 5000,
+        "raw_format": null,
+        "sampling_rate": 5000.0,
+        "shape": [
+          5000
+        ],
+        "signal_id": "golden_n01",
+        "signal_unit": "mm/s",
+        "size_bytes": 40000,
+        "source_metadata": {}
+      },
+      "measurement_id": null
+    },
+    "raw_float32_companion": {
+      "context_digest": "19479c346c3d35db",
+      "declaration": {
+        "acquired_at": "2026-08-20T11:42:00+00:00",
+        "asset_id": "P-101",
+        "channel_index": 1,
+        "declared_by": "golden-fixture",
+        "direction": "horizontal",
+        "load": null,
+        "measurement_point_id": "pump_nde_v",
+        "operating_state": "loaded",
+        "raw_format": {
+          "byte_order": "little",
+          "channel_index": 1,
+          "header_offset": 0,
+          "n_channels": 2,
+          "sample_format": "float32",
+          "scale_factor": 0.5
+        },
+        "rpm": null,
+        "sampling_rate": 25600.0,
+        "sensor_id": "ACC01",
+        "signal_unit": "m/s2",
+        "timestamp_suspect": false,
+        "timezone_declared": true
+      },
+      "declaration_fingerprint": "48072c6b4b662ddfb45671db71108caaf14ce735e6eeb4cffa4f11e59ff4e3d5",
+      "load_signal": {
+        "companion_warning": null,
+        "duration_s": 1.0,
+        "filepath": "golden/r01.bin",
+        "measurement": {
+          "acquired_at": "2026-08-20T11:42:00+00:00",
+          "asset_id": "P-101",
+          "changed": [],
+          "channel_index": 1,
+          "comparability": {
+            "grade": "qualified",
+            "qualifications": [
+              {
+                "code": "rpm_not_declared",
+                "detail": "rpm not declared: trend assumes constant regime (declare rpm in the companion to grade speed deviations)"
+              }
+            ]
+          },
+          "content_sha256": "436e01165780e61946c390bca0cfbb1535bc0446b5c720e6fc939732eec9f673",
+          "declaration_version": 1,
+          "declared_by": "golden-fixture",
+          "direction": "horizontal",
+          "ledger_status": "recorded",
+          "load": null,
+          "measurement_id": "c8e5cf75e9e386b9",
+          "measurement_point_id": "pump_nde_v",
+          "missing": {
+            "bearing": {
+              "reason": "rpm not declared: neither the measurement nor the measurement point declares a shaft speed",
+              "remedy": "declare \"rpm\" in the \"measurement\" object of the companion and re-load the file, or declare nominal_rpm for the measurement point via declare_measurement_point and re-process"
+            },
+            "iso": {
+              "reason": "machine group / support type not declared for the measurement point",
+              "remedy": "declare machine_group (1 or 2) and support_type ('rigid' or 'flexible') via declare_measurement_point and re-process"
+            },
+            "one_x": {
+              "reason": "rpm not declared: neither the measurement nor the measurement point declares a shaft speed",
+              "remedy": "declare \"rpm\" in the \"measurement\" object of the companion and re-load the file, or declare nominal_rpm for the measurement point via declare_measurement_point and re-process"
+            }
+          },
+          "operating_state": "loaded",
+          "processing_id": "<recomputed at test time>",
+          "reason": null,
+          "reattributed_from": null,
+          "rpm": null,
+          "sensor_id": "ACC01",
+          "size_bytes": 204800,
+          "snapshot_id": "<recomputed at test time>",
+          "snapshot_status": "partial",
+          "timestamp_suspect": false,
+          "timezone_declared": true
+        },
+        "num_samples": 25600,
+        "raw_format": {
+          "byte_order": "little",
+          "channel_index": 1,
+          "header_offset": 0,
+          "n_channels": 2,
+          "sample_format": "float32",
+          "scale_factor": 0.5
+        },
+        "sampling_rate": 25600.0,
+        "shape": [
+          25600
+        ],
+        "signal_id": "golden_r01_ch1",
+        "signal_unit": "m/s2",
+        "size_bytes": 204800,
+        "source_metadata": {
+          "byte_order": "little",
+          "channel_index": 1,
+          "measurement": {
+            "acquired_at": "2026-08-20T13:42:00+02:00",
+            "asset_id": "P-101",
+            "declared_by": "golden-fixture",
+            "direction": "horizontal",
+            "measurement_point_id": "pump_nde_v",
+            "operating_state": "loaded",
+            "sensor_id": "ACC01"
+          },
+          "n_channels": 2,
+          "sample_format": "float32",
+          "sampling_rate": 25600,
+          "scale_factor": 0.5,
+          "signal_unit": "m/s2"
+        }
+      },
+      "measurement_id": "c8e5cf75e9e386b9"
+    }
+  }
+}
