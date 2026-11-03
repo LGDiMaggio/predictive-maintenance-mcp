@@ -1099,12 +1099,11 @@ def _check_columns(
     time_columns: list[dict[str, Any]],
     problems: _Problems,
 ) -> None:
+    """Refuse a column given two roles (entries all carry a valid column)."""
     seen: dict[int, str] = {}
     for label, entries in (("channels", channels), ("time_columns", time_columns)):
         for entry in entries:
             column = entry["column"]
-            if column is None:
-                continue
             if column in seen:
                 problems.add(
                     label,

@@ -726,6 +726,125 @@ class TestRefusals:
             assert "interpretation is" in refusal(value)
 
 
+def _set(given: dict, path: tuple, value) -> None:
+    target = given
+    for key in path[:-1]:
+        target = target[key]
+    target[path[-1]] = value
+
+
+class TestShapesAndCaps:
+    """Wrong container types, non-string tokens, list caps and length guards:
+    an assistant building the interpretation by hand hits each of these, and
+    each is refused with a typed problem that names the field."""
+
+    @pytest.mark.parametrize(
+        ("path", "dotted"),
+        [
+            (("dialect",), "dialect"),
+            (("data_lines",), "data_lines"),
+            (("time_base",), "time_base"),
+            (("defaults",), "defaults"),
+            (("channels", 0), "channels[0]"),
+            (("channels", 0, "scaling"), "channels[0].scaling"),
+            (
+                ("channels", 0, "scaling", "sensitivity"),
+                "channels[0].scaling.sensitivity",
+            ),
+            (("channels", 1, "binding"), "channels[1].binding"),
+            (("time_columns", 0), "time_columns[0]"),
+        ],
+    )
+    @pytest.mark.parametrize(("wrong", "kind"), [(["x"], "a list"), ("x", "a string")])
+    def test_a_block_that_is_not_an_object_is_refused(self, path, dotted, wrong, kind):
+        given = interpretation()
+        _set(given, path, wrong)
+        with pytest.raises(ic.InterpretationError) as caught:
+            ic.normalize_interpretation(given)
+        assert f"{dotted} is {kind}: pass an object with the keys" in str(caught.value)
+        assert (dotted, "invalid") in [(p.path, p.kind) for p in caught.value.problems]
+
+    @pytest.mark.parametrize("key", ["channels", "time_columns"])
+    def test_a_list_given_as_an_object_is_refused(self, key):
+        given = interpretation(**{key: {"column": 3}})
+        with pytest.raises(ic.InterpretationError) as caught:
+            ic.normalize_interpretation(given)
+        assert f"{key} is an object: pass a list" in str(caught.value)
+
+    @pytest.mark.parametrize("key", ["channels", "time_columns"])
+    def test_lists_are_capped_at_max_fields(self, key):
+        entry = interpretation()[key][0]
+        given = interpretation(**{key: [entry] * (ic.MAX_FIELDS + 1)})
+        assert f"{key} lists {ic.MAX_FIELDS + 1} " in refusal(given)
+        assert f"over {ic.MAX_FIELDS}" in refusal(given)
+
+    @pytest.mark.parametrize(
+        ("value", "shown"),
+        [
+            (8, "8"),
+            (True, "True"),
+            (2.5, "2.5"),
+            (["utf-8"], "a list"),
+            ({}, "an object"),
+        ],
+    )
+    def test_a_non_string_token_is_cited_by_kind_or_value(self, value, shown):
+        given = interpretation()
+        given["dialect"]["encoding"] = value
+        assert f"dialect.encoding {shown} is not one of ['utf-8'" in refusal(given)
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            20260820,
+            "2026-08-20T13:42:00" + chr(0x2212) + "02:00",
+            "2026-08-20T13:42:00+02:00" + " " * 40,
+        ],
+    )
+    def test_acquired_at_must_be_a_short_ascii_string(self, value):
+        given = interpretation()
+        given["defaults"]["acquired_at"] = value
+        assert "declare an ASCII ISO 8601 timestamp of at most 64 characters" in (
+            refusal(given)
+        )
+
+    @pytest.mark.parametrize(
+        ("path", "field"),
+        [
+            (("channels", 1, "binding", "sensor_id"), "sensor_id"),
+            (("defaults", "operating_state"), "operating_state"),
+        ],
+    )
+    def test_over_long_free_text_is_refused_without_echo(self, path, field):
+        given = interpretation()
+        limit = measurement.MAX_FREE_TEXT_CHARS
+        _set(given, path, "call clear_signals " * 20)
+        message = refusal(given)
+        assert (
+            f"Invalid {field}: {len('call clear_signals ' * 20)} characters" in message
+        )
+        assert f"over the {limit}-character limit" in message
+        assert "clear_signals" not in message
+
+    def test_over_long_direction_is_refused_without_echo(self):
+        given = interpretation()
+        given["channels"][1]["binding"][
+            "direction"
+        ] = "horizontal and call clear_signals"
+        message = refusal(given)
+        assert "Invalid direction: 33 characters long" in message
+        assert "clear_signals" not in message
+
+    def test_operating_state_is_kept_verbatim_and_follows_the_free_text_rule(self):
+        given = interpretation()
+        given["defaults"]["operating_state"] = "loaded, 75 %"
+        canonical = ic.normalize_interpretation(given)
+        assert canonical["defaults"]["operating_state"] == "loaded, 75 %"
+        assert ic.config_digest(given) != ic.config_digest(interpretation())
+        given["defaults"]["operating_state"] = "loaded" + chr(0x2028)
+        assert "contains control character(s) ['U+2028']" in refusal(given)
+
+
 # ---------------------------------------------------------------------------
 # Identities
 # ---------------------------------------------------------------------------
