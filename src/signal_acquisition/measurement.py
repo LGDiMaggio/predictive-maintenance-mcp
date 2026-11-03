@@ -882,7 +882,9 @@ def _decimal_text(value: object) -> Optional[decimal.Decimal]:
     ):
         return None
     number = decimal.Decimal(value)  # exact; the grammar bounds the exponent
-    digits = number.as_tuple().digits
+    # Significant digits as the configuration counts them: between the first
+    # and the last non-zero digit ("1480000000000000000000000" has three).
+    digits = "".join(map(str, number.as_tuple().digits)).strip("0")
     if len(digits) > _MAX_DECIMAL_DIGITS:
         return None
     if not number.is_zero() and abs(number.adjusted()) > _MAX_DECIMAL_ADJUSTED:

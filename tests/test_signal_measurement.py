@@ -1333,6 +1333,14 @@ class TestBuildImportIdentity:
         assert f"Invalid rpm {rpm!r}: the import configuration writes it" in message
         assert "not a string" not in message
 
+    def test_a_value_the_configuration_writes_is_accepted(self):
+        """normalize_decimal('1.48e24') writes 25 digits, three of them
+        significant."""
+        block = import_identity(
+            defaults={**DEFAULTS, "rpm": "1480000000000000000000000"}
+        )
+        assert block["rpm"] == 1.48e24
+
     def test_a_number_still_passes_the_shared_rule(self):
         assert import_identity(defaults={**DEFAULTS, "rpm": 1500})["rpm"] == 1500.0
 

@@ -850,12 +850,21 @@ class TestFloat32Detection:
         assert gapped.outcome == "invalid"
         assert finding(gapped, "time_gap").lines == (FIRST_LINE + 1000,)
 
-    def test_a_power_of_two_repr_clock_keeps_full_evidence(self):
+    def test_a_power_of_two_repr_clock_is_float32_and_still_tests_its_steps(self):
+        """n/32768 is exactly a float32 value, so its repr cannot be told from
+        float32 data: no derived rate, but its steps are still tested."""
         result = assess([repr(n / 32768) for n in range(N)])
-        assert not result.float32_values
-        assert result.evidence == "full" and result.proposed_rate_hz == "32768"
+        assert result.float32_values and result.evidence == "duration_only"
+        assert result.outcome == "accepted" and result.proposed_rate_hz is None
         gapped = assess([repr(n / 32768) for n in range(N) if n != 10000])
         assert codes(gapped) == {"time_gap"}
+
+    def test_a_short_significant_digit_print_is_not_mistaken_for_float32(self):
+        """Six significant digits round-trip through float32 whatever they
+        hold, so they are no float32 evidence."""
+        result = assess(["%g" % (n / FS) for n in range(N)])
+        assert not result.float32_values
+        assert result.evidence == "full"
 
     def test_a_frozen_float32_clock_is_no_evidence(self):
         """Past 5000 s a float32 clock no longer advances at 25.6 kHz."""
@@ -896,17 +905,24 @@ class TestPrintRegimes:
     @pytest.mark.parametrize(
         "fs, decimals, evidence", [(FS, 6, "full"), (1000, 3, "partial")]
     )
-    def test_stripped_fixed_decimals_ending_on_a_round_stamp(
+    def test_stripped_decimals_ending_on_a_round_stamp_keep_their_resolution(
         self, fs, decimals, evidence
     ):
+        """A last stamp "10" after "9.999..." reads as a %g row (it lies in a
+        decade above every widest row): the column keeps its grid and
+        evidence and loses only its rate proposal. The other reading would
+        refuse a %g column's legitimate repeated stamps."""
         rows = 10 * fs + 1  # the last stamp is exactly 10 s
         tokens = [t.rstrip("0").rstrip(".") for t in printed(range(rows), fs, decimals)]
         assert tokens[-1] == "10"
         result = assess(tokens)
-        assert result.regime == "fixed_decimals"
+        assert result.regime == "significant_digits"
         assert result.resolution == _fixed(1, decimals)
         assert result.evidence == evidence
         assert_accepted(result)
+        assert result.proposed_rate_hz is None
+        # Without the round last stamp it is plain fixed decimals.
+        assert assess(tokens[:-1]).regime == "fixed_decimals"
 
     def test_a_g_print_across_a_decade_keeps_its_finer_resolution(self):
         stamps = range(int(9.2 * FS), int(10.2 * FS))
@@ -1110,3 +1126,74 @@ class TestScaleBounds:
     ):
         with pytest.raises(ValueError, match="text_decoder"):
             tb.assess_time_base(mantissa, exponent, time_unit="s", first_line=1)
+
+
+class TestSecondReviewRound:
+    """Cases the second review round found (each failed before its fix)."""
+
+    @pytest.mark.parametrize(
+        "write",
+        [
+            lambda v: np.format_float_positional(v, trim="-"),
+            lambda v: str(v),
+        ],
+        ids=["pandas float32 to_csv", "str(np.float32)"],
+    )
+    def test_shortest_float32_reprs_of_a_uniform_clock_are_not_refused(self, write):
+        values = (330.0 + np.arange(N) / FS).astype(np.float32)
+        tokens = [write(v) for v in values]
+        assert tokens[1:3] == ["330.00003", "330.0001"]
+        result = assess(tokens, stated_rate_hz="25600")
+        assert result.float32_values and result.evidence == "duration_only"
+        assert result.outcome == "accepted", result.findings
+
+    @pytest.mark.parametrize("style", ["%.13f", "%.14f", "%.15f"])
+    @pytest.mark.parametrize("start", [20.0, 330.0])
+    def test_float32_clocks_printed_past_12_decimals_derive_no_rate(self, style, start):
+        result = assess([style % float(v) for v in float32_clock(start)])
+        assert result.float32_values
+        assert result.proposed_rate_hz is None and result.fitted_rate_hz is None
+
+    @pytest.mark.parametrize(
+        "start, fs, rows", [(256.56, 65536, 5), (151.36, 12000, 2), (330.0, FS, 50)]
+    )
+    def test_short_float64_reprs_of_float32_values_are_not_refused(
+        self, start, fs, rows
+    ):
+        values = np.float32(start) + np.arange(rows, dtype=np.float32) / np.float32(fs)
+        tokens = [repr(float(v)) for v in values.astype(np.float32)]
+        result = assess(tokens, stated_rate_hz=str(fs))
+        assert result.outcome == "accepted", result.findings
+
+    @pytest.mark.parametrize(
+        "tokens, stated",
+        [
+            (["%.4g" % ((9948 + i) / 10000) for i in range(78)], None),
+            (["%.5g" % ((51200 - 230 + i) / 51200) for i in range(232)], None),
+            (["%.6g" % ((441000 - 122 + i) / 44100) for i in range(125)], None),
+            (["%.4g" % ((200000 - 167 + i) / 20000) for i in range(201)], "20000"),
+            (["%.7e" % ((256000 - 77 + i) / 25600) for i in range(118)], None),
+        ],
+        ids=[
+            "%.4g across 1 s",
+            "%.5g ending 1, 1",
+            "%.6g across 10 s",
+            "%.4g with a stated rate",
+            "%.7e across 10 s",
+        ],
+    )
+    def test_significant_digit_prints_across_a_decade_are_accepted(
+        self, tokens, stated
+    ):
+        result = assess(tokens, stated_rate_hz=stated)
+        assert result.regime == "significant_digits"
+        assert_accepted(result)
+
+    def test_a_short_16_digit_repr_cumulative_sum_is_shortest_repr(self):
+        tokens, t = [], 64962.6
+        for _ in range(10):
+            tokens.append(repr(t))
+            t += 1 / 44100
+        result = assess(tokens, stated_rate_hz="44100")
+        assert result.regime == "shortest_repr"
+        assert_accepted(result)

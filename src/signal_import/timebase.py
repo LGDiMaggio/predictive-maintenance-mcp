@@ -12,23 +12,25 @@ Every bound comes from the printed resolution; there is no free tolerance.
 
 1. *Print regime.* A stamp is ``mantissa * 10**exponent`` (the decoder's
    output, :mod:`..signal_acquisition.text_decoder`). A print whose
-   coarsest rounding is finer than float64 resolution at its largest stamp
-   is ``shortest_repr`` (repr, ``%.17g``): the float summation bound sets
-   the grid, one decade above it. A print with a row cut at its widest
-   significant-digit count above the finest decimal place is
-   ``significant_digits`` (``%e``, ``%g``): each row keeps its own quantum,
-   the rate needs a stated or file-declared basis, and every stamp is
-   checked against it. Anything else is ``fixed_decimals``, trailing zeros
-   stripped or not.
+   coarsest rounding lies within a decade of float64 resolution at its
+   largest stamp, or below it, is ``shortest_repr`` (repr, ``%.17g``): the
+   float summation bound sets the grid, one decade above it. A print with
+   a row cut at its widest significant-digit count above the finest
+   decimal place, or with a short row in a decade above every widest row,
+   is ``significant_digits`` (``%e``, ``%g``): each row keeps its own
+   quantum, the rate needs a stated or file-declared basis, and every
+   stamp is checked against it. Anything else is ``fixed_decimals``,
+   trailing zeros stripped or not.
 2. *Grid.* Stamps become exact int64 ticks of one grid (the finest decimal
    place, the commonest quantum, or the float-bound decade), rounded half
    to even in integer arithmetic. Every stamp has a rounding half-width in
    ticks: half a tick on the grid, more for a coarser quantum or float32
    values.
-3. *Effective resolution.* Stamps that are all float32 values, tested
-   exactly, whose float32 spacing is coarser than the decimals the print
-   actually uses (time accumulated in float32) carry that spacing: evidence
-   ``duration_only``, no derived rate.
+3. *Effective resolution.* Stamps that are all float32 values printed to
+   their own digits (fixed decimals, or a shortest float32 repr), whose
+   float32 spacing is coarser than a decimal place the print uses (time
+   accumulated in float32), carry that spacing: evidence ``duration_only``,
+   no derived rate, step tests kept.
 4. *Reference interval.* ``b`` is the mean of the modal pair of adjacent
    tick steps ``{m, m+1}`` between stamps on the grid, never a fitted slope,
    which absorbs the defect it should find.
@@ -43,8 +45,8 @@ Every bound comes from the printed resolution; there is no free tolerance.
    whatever the rounding.
 7. *Residual.* After the step tests pass, a least-squares line; a stamp
    further than ``b/2`` from it, or than the print-and-fit bound when that
-   is wider, plus its extra rounding, is a timing defect
-   (``time_residual``).
+   is wider, plus its own extra rounding and the widest one (which can pull
+   the line), is a timing defect (``time_residual``).
 8. *Pattern.* Every step a uniform clock can print and every residual
    within the print-and-fit bound (one tick for fixed decimals: half a tick
    of print, half a tick of fit) is uniform; anything else is jitter or
@@ -61,6 +63,17 @@ interval the print's rounding alone allows it; it is checked with
 ``validate_sampling_rate``. It is proposed as a rate only at ``full``
 evidence, outside ``significant_digits``, with no finding at all; even then
 a time column alone never sets the rate (R12): the caller records a basis.
+
+Known limits, both from the print alone:
+
+- A clock whose every stamp lies exactly on a print tie (true instants half
+  a tick off the grid, such as mid-interval stamps) rounds to steps of
+  ``b - 1`` and ``b + 1``: at one or two ticks per sample KTD9's thresholds
+  refuse it, at larger whole-number intervals it reads as off-pattern
+  (strict tripwire ``timebase-print-ties-misread``).
+- float32 values whose spacing is finer than the print but comparable to
+  it cannot be recognized (the print shows no digit beyond float32), so
+  their rounding is read as the clock's.
 
 Memory: the step array (8 bytes per row) and, outside fixed decimals, the
 tick array; the floating-point passes run in chunks of :data:`_CHUNK_ROWS`.
@@ -556,6 +569,7 @@ class _Print:
     grid: int  # power of ten of one tick, in the time unit
     base: float  # rounding of a stamp printed on the grid, in ticks
     quantum: Optional[np.ndarray]  # per-row quantum exponents (significant digits)
+    largest: float  # the largest stamp magnitude
 
 
 def _chunks(rows: int) -> Iterator[tuple[int, int]]:
@@ -586,19 +600,33 @@ def _largest_value(mantissa: np.ndarray, exponent: np.ndarray) -> float:
     return top
 
 
+def _shortest(rows: int, finest: int, top: float) -> _Print:
+    """A float-precision print (shortest repr, ``%.17g``, over-long prints): the
+    float summation bound sets the grid, one decade above it."""
+    bound = (rows + 2) * float(np.spacing(top))
+    grid = max(math.ceil(math.log10(bound)) + 1, finest)
+    return _Print("shortest_repr", grid, 0.5 + bound / 10.0**grid, None, top)
+
+
 def _print_model(mantissa: np.ndarray, exponent: np.ndarray) -> _Print:
     """Step 1 of the module docstring."""
     rows = mantissa.size
     finest = int(exponent.min())
     widest = 0
-    cut = False  # some row has `widest` digits and stops above the finest place
     for lo, hi in _chunks(rows):
-        digits = _digit_counts(mantissa[lo:hi])
-        widest = max(widest, int(digits.max()))
+        widest = max(widest, int(_digit_counts(mantissa[lo:hi]).max()))
+    top = _largest_value(mantissa, exponent)
     if widest == 0:  # every stamp is zero
-        return _Print("fixed_decimals", finest, 0.5, None)
+        return _Print("fixed_decimals", finest, 0.5, None, top)
+    if finest == int(exponent.max()):
+        # One printed place for every stamp: every quantum is that place.
+        if finest < math.log10(float(np.spacing(top))) + 1:
+            return _shortest(rows, finest, top)
+        return _Print("fixed_decimals", finest, 0.5, None, top)
     # Exponents are within int16, and so is every quantum.
     quantum = np.empty(rows, dtype=np.int16)
+    cut = False  # a row has `widest` digits and stops above the finest place
+    widest_lead = highest_lead = -(1 << 20)  # leading-digit exponents
     for lo, hi in _chunks(rows):
         part = mantissa[lo:hi]
         digits = _digit_counts(part)
@@ -606,24 +634,31 @@ def _print_model(mantissa: np.ndarray, exponent: np.ndarray) -> _Print:
         quantum[lo:hi] = np.where(
             part != 0, np.maximum(lead - widest + 1, finest), finest
         )
-        cut = cut or bool(np.any((digits == widest) & (exponent[lo:hi] > finest)))
+        full = digits == widest
+        cut = cut or bool(np.any(full & (exponent[lo:hi] > finest)))
+        widest_lead = max(
+            widest_lead, int(np.max(lead, where=full, initial=-(1 << 20)))
+        )
+        highest_lead = max(
+            highest_lead, int(np.max(lead, where=part != 0, initial=-(1 << 20)))
+        )
     low, high = int(quantum.min()), int(quantum.max())
-    spacing = float(np.spacing(_largest_value(mantissa, exponent)))
-    if high < math.log10(spacing):
-        # Digits beyond float64 precision: the float summation bound sets the
-        # grid, one decade above it (shortest repr, %.17g, over-long prints).
-        bound = (rows + 2) * spacing
-        grid = max(math.ceil(math.log10(bound)) + 1, finest)
-        return _Print("shortest_repr", grid, 0.5 + bound / 10.0**grid, None)
-    if low != high and cut:
+    if high < math.log10(float(np.spacing(top))) + 1:
+        # Digits within a decade of float64 precision, or beyond it.
+        return _shortest(rows, finest, top)
+    if low != high and (cut or highest_lead > widest_lead):
         # A row cut at `widest` significant digits above the finest decimal
-        # place: a significant-digit print. The grid is the commonest quantum.
+        # place, or a short row in a decade above every widest row (%g's
+        # "1" after "0.99999"): a significant-digit print. Read so, a column
+        # that was in fact stripped fixed decimals ending on a round stamp
+        # only loses its rate proposal; read the other way, a %g column
+        # would be refused. The grid is the commonest quantum.
         counts = np.bincount(quantum.astype(np.int64) - low)
         grid = low + int(np.flatnonzero(counts == counts.max())[-1])
-        return _Print("significant_digits", grid, 0.5, quantum)
+        return _Print("significant_digits", grid, 0.5, quantum, top)
     # Fixed decimals, trailing zeros stripped or not: every stamp has the
     # finest place, whatever it printed.
-    return _Print("fixed_decimals", finest, 0.5, None)
+    return _Print("fixed_decimals", finest, 0.5, None, top)
 
 
 def _on_grid(
@@ -660,41 +695,63 @@ def _on_grid(
     return ticks
 
 
-def _float32_spacing(ticks: np.ndarray, grid: int) -> Optional[float]:
+def _float32_spacing(
+    mantissa: np.ndarray, exponent: np.ndarray, top: float
+) -> Optional[float]:
     """The float32 spacing at the largest stamp, when every stamp is a
-    float32 value and that spacing is coarser than the decimals the print
-    actually uses (step 3 of the module docstring).
+    float32 value printed to its own digits and that spacing is coarser than
+    some decimal place the print uses (step 3 of the module docstring).
 
-    The test is exact: with at most 12 decimals and ticks below 2**53, the
-    nearest float32 times ``10**-grid`` and its distance from the tick are
-    exact in float64, so a print that lies exactly half a tick from its
-    float32 value (a tie) is still recognized. Other grids are not tested.
+    A stamp is a float32 value printed to its digits when its nearest
+    float32, rounded to the stamp's own last decimal place, gives the stamp
+    back: so a fixed-decimal print of float32 values and a shortest float32
+    repr (pandas, ``str(np.float32)``) both qualify. With at most 12 decimals
+    and digits below 2**53 the test is exact (a tie is still recognized);
+    otherwise it allows the few float64 units its own arithmetic costs.
     """
-    top = max(int(ticks.max()), -int(ticks.min()))
-    if top == 0 or top >= 1 << 53 or not -12 <= grid <= 0:
-        return None
-    zeros = 18  # decimal zeros every nonzero stamp ends with
-    for lo, hi in _chunks(ticks.size):
-        part = ticks[lo:hi]
-        nonzero = part[part != 0]
-        found = 0
-        while (
-            found < zeros and nonzero.size and not np.any(nonzero % _POW10[found + 1])
-        ):
-            found += 1
-        zeros = min(zeros, found) if nonzero.size else zeros
-        if not zeros:
-            break
-    scale = 10.0**-grid  # exact: at most 10**12
     with np.errstate(over="ignore"):
-        spacing = float(np.spacing(np.float32(top / scale)))
-    if not math.isfinite(spacing) or spacing * scale <= 10.0**zeros:
+        spacing = float(np.spacing(np.float32(top)))
+    if top == 0 or not math.isfinite(spacing):
         return None
-    with np.errstate(over="ignore", invalid="ignore"):
-        for lo, hi in _chunks(ticks.size):
-            exact = ticks[lo:hi].astype(np.float64)
-            nearest = (exact / scale).astype(np.float32).astype(np.float64)
-            if not np.all(np.abs(nearest * scale - exact) <= 0.5):
+    # Only a stamp printing a decimal place finer than its own float32
+    # spacing tells a float32 value from a decimal one: a print of at most
+    # six significant digits round-trips through float32 whatever it holds.
+    # Its place 10**(e + z) (z trailing zeros) is finer when e + z <= c.
+    uses_finer = False
+    with np.errstate(over="ignore", under="ignore", divide="ignore"):
+        for lo, hi in _chunks(mantissa.size):
+            part = mantissa[lo:hi]
+            shift = exponent[lo:hi].astype(np.int64)
+            value = np.abs(part.astype(np.float64) * 10.0**shift).astype(np.float32)
+            own = np.abs(np.spacing(value)).astype(np.float64)
+            coarse = np.ceil(np.log10(np.where(own > 0, own, 1.0))).astype(np.int64) - 1
+            places = coarse - shift + 1
+            divisor = _POW10[np.clip(places, 1, 18)]
+            finer = (
+                (part != 0)
+                & np.isfinite(own)
+                & (places >= 1)
+                & ((places >= 19) | (part % divisor != 0))
+            )
+            if finer.any():
+                uses_finer = True
+                break
+    if not uses_finer:
+        return None
+    with np.errstate(over="ignore", under="ignore", invalid="ignore"):
+        for lo, hi in _chunks(mantissa.size):
+            part = mantissa[lo:hi]
+            shift = exponent[lo:hi].astype(np.float64)
+            exact = (shift >= -12) & (shift <= 0) & (np.abs(part) < (1 << 53))
+            scale = 10.0 ** -np.clip(shift, -12, 0)  # exact where `exact`
+            digits = part.astype(np.float64)
+            nearest = (digits / scale).astype(np.float32).astype(np.float64)
+            back = np.abs(nearest * scale - digits) <= 0.5
+            value = digits * 10.0**shift
+            loose = np.abs(
+                value.astype(np.float32).astype(np.float64) - value
+            ) <= 0.5 * 10.0**shift + 4 * np.spacing(np.abs(value))
+            if not np.all(np.where(exact, back, loose)):
                 return None
     return spacing
 
@@ -710,11 +767,13 @@ class _Column:
 
     Every stamp has a rounding half-width ``base + extra``: ``base`` for a
     stamp printed on the grid; the extra is its own coarser quantum, or its
-    rounding onto the grid when finer (significant digits), plus half its
-    float32 spacing (float32 values).
+    rounding onto the grid when finer (its significant-digit quantum, or for
+    float32 values its own last decimal place), plus half its float32
+    spacing (float32 values).
     """
 
     printed: _Print
+    exponent: np.ndarray  # each stamp's own last decimal place
     ticks: np.ndarray
     steps: np.ndarray
     m: int  # the modal pair is (m, m + 1)
@@ -751,7 +810,9 @@ class _Column:
         return self.first_line + self.rows - 1
 
     def extra(self, lo: int, hi: int) -> "np.ndarray | float":
-        return _extra(self.printed, self.ticks, self.spacing is not None, lo, hi)
+        return _extra(
+            self.printed, self.ticks, self.exponent, self.spacing is not None, lo, hi
+        )
 
     def step_extra(self, lo: int, hi: int) -> "np.ndarray | float":
         """Extra width of steps ``lo`` to ``hi - 1`` (step ``i`` joins rows
@@ -764,15 +825,33 @@ class _Column:
 
 
 def _extra(
-    printed: _Print, ticks: np.ndarray, float32: bool, lo: int, hi: int
+    printed: _Print,
+    ticks: np.ndarray,
+    exponent: np.ndarray,
+    float32: bool,
+    lo: int,
+    hi: int,
 ) -> "np.ndarray | float":
+    """Rows ``lo`` to ``hi - 1``: the rounding beyond ``base``, in ticks.
+
+    A float32 value printed to fewer digits than the grid (a shortest
+    float32 repr) is rounded at its own last place; a float64-precision
+    print (``shortest_repr``) is exact to the float bound already in
+    ``base``, so only the float32 spacing is added to it.
+    """
+    own = None
+    if float32 and printed.regime != "shortest_repr":
+        own = exponent[lo:hi]
+    elif printed.quantum is not None:
+        own = printed.quantum[lo:hi]
     extra: "np.ndarray | float" = 0.0
-    if printed.quantum is not None:
-        shift = printed.quantum[lo:hi].astype(np.float64) - printed.grid
+    if own is not None:
+        shift = own.astype(np.float64) - printed.grid
         power = 10.0**shift
-        extra = np.where(
-            shift > 0, 0.5 * (power - 1), np.where(shift < 0, 0.5 * power, 0.0)
-        )
+        # A coarser place rounds by half of it; a finer one by half of it
+        # plus half a tick onto the grid.
+        half = np.where(shift >= 0, 0.5 * power, 0.5 + 0.5 * power)
+        extra = np.maximum(half - printed.base, 0.0)
     if float32:
         scale = 10.0**-printed.grid
         values = (ticks[lo:hi].astype(np.float64) / scale).astype(np.float32)
@@ -794,16 +873,16 @@ def _column(
         )
     ticks = _on_grid(mantissa, exponent, printed.grid, first_line=first_line)
     steps = np.diff(ticks)
-    spacing = _float32_spacing(ticks, printed.grid)
+    spacing = _float32_spacing(mantissa, exponent, printed.largest)
     largest_extra = 0.0
     clean: Optional[list[np.ndarray]] = None
     if printed.quantum is not None or spacing is not None:
         clean = []
         for lo, hi in _chunks(ticks.size):
-            rows = _extra(printed, ticks, spacing is not None, lo, hi)
+            rows = _extra(printed, ticks, exponent, spacing is not None, lo, hi)
             largest_extra = max(largest_extra, float(np.max(rows)))
         for lo, hi in _chunks(steps.size):
-            rows = _extra(printed, ticks, spacing is not None, lo, hi + 1)
+            rows = _extra(printed, ticks, exponent, spacing is not None, lo, hi + 1)
             assert not isinstance(rows, float)
             clean.append((rows[:-1] + rows[1:]) == 0)
     m, total, count = _modal_pair(
@@ -818,6 +897,7 @@ def _column(
         evidence = "full"
     return _Column(
         printed=printed,
+        exponent=exponent,
         ticks=ticks,
         steps=steps,
         m=m,
@@ -1026,6 +1106,13 @@ def _fit(column: _Column, stated_beta: Optional[float]) -> _Fit:
     centre = (rows - 1) / 2
     spread = rows * (rows * rows - 1) / 12
     residual_bound = max(b / 2, column.tick_bound)
+    # Where stamps carry extra rounding, the fitted line itself can be off by
+    # up to 5/3 of the widest half-width (the Lebesgue constant of a straight-
+    # line least-squares fit, its supremum over every length), beyond the
+    # half tick of fit the clean bound already holds.
+    pull = 0.0
+    if column.largest_extra:
+        pull = 5 / 3 * (column.base + column.largest_extra) - column.base
 
     def deviations() -> Iterator[tuple[int, int, np.ndarray, np.ndarray]]:
         carry = 0
@@ -1057,12 +1144,12 @@ def _fit(column: _Column, stated_beta: Optional[float]) -> _Fit:
         distance = np.abs(residual)
         largest = max(largest, float(distance.max()))
         squares += float((residual * residual).sum())
-        defect = distance > residual_bound + extra
+        defect = distance > residual_bound + extra + pull
         defects += int(defect.sum())
         for i in np.flatnonzero(defect)[: MAX_LISTED_LINES - len(defect_lines)]:
             defect_lines.append(column.first_line + lo + int(i))
             defect_measures.append(float(distance[i]) / b)
-        outside = np.asarray(distance > column.tick_bound + extra)
+        outside = np.asarray(distance > column.tick_bound + extra + pull)
         first = max(lo - 1, 0)
         step_part = steps[first : hi - 1]
         stepped = ~_in_pair(column, step_part, column.step_extra(first, hi - 1))
