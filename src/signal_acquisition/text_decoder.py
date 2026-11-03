@@ -488,7 +488,10 @@ class _Decoder:
         text = ", ".join(where) + ": "
         if token is not None:
             cited = FileText.of(token, cap=TOKEN_CHARS)
-            shown = f"'{cited.file_text}{'...' if cited.truncated else ''}'"
+            # The token's own quotes are escaped, so it cannot close the
+            # quotation and speak in the server's voice.
+            quoted = cited.file_text.replace("'", "\\'")
+            shown = f"'{quoted}{'...' if cited.truncated else ''}'"
             text += f"the value {shown} {problem}"
         else:
             text += problem

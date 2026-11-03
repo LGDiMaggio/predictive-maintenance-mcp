@@ -11,46 +11,53 @@ no wording here suggests it.
 Every bound comes from the printed resolution; there is no free tolerance.
 
 1. *Print regime.* A stamp is ``mantissa * 10**exponent`` (the decoder's
-   output, :mod:`..signal_acquisition.text_decoder`). Each row's rounding
-   quantum is the coarser of the finest printed decimal place and its
-   significant-digit place, which is exact for fixed decimals (trailing
-   zeros stripped or not) and for ``%e``/``%g`` prints alike. One quantum
-   for every row is ``fixed_decimals``; varying quanta are
-   ``significant_digits`` (the rate then needs a stated or file-declared
-   basis), or ``shortest_repr`` when the digits reach float64 precision
-   (16 or more), where the bound is the float summation error instead.
-2. *Grid.* Stamps become exact int64 ticks of one grid: the quantum itself,
-   the coarsest per-row quantum, or the decade at least ten times the float
-   bound. The rounding onto it is exact integer arithmetic.
-3. *Effective resolution.* Stamps that are all float32 values whose float32
-   spacing is coarser than the decimals the print actually uses (time
-   accumulated in float32) carry only that spacing: evidence
-   ``duration_only``.
+   output, :mod:`..signal_acquisition.text_decoder`). A print whose
+   coarsest rounding is finer than float64 resolution at its largest stamp
+   is ``shortest_repr`` (repr, ``%.17g``): the float summation bound sets
+   the grid, one decade above it. A print with a row cut at its widest
+   significant-digit count above the finest decimal place is
+   ``significant_digits`` (``%e``, ``%g``): each row keeps its own quantum,
+   the rate needs a stated or file-declared basis, and every stamp is
+   checked against it. Anything else is ``fixed_decimals``, trailing zeros
+   stripped or not.
+2. *Grid.* Stamps become exact int64 ticks of one grid (the finest decimal
+   place, the commonest quantum, or the float-bound decade), rounded half
+   to even in integer arithmetic. Every stamp has a rounding half-width in
+   ticks: half a tick on the grid, more for a coarser quantum or float32
+   values.
+3. *Effective resolution.* Stamps that are all float32 values, tested
+   exactly, whose float32 spacing is coarser than the decimals the print
+   actually uses (time accumulated in float32) carry that spacing: evidence
+   ``duration_only``, no derived rate.
 4. *Reference interval.* ``b`` is the mean of the modal pair of adjacent
-   tick steps ``{m, m+1}``, never a fitted slope, which absorbs the defect
-   it should find.
+   tick steps ``{m, m+1}`` between stamps on the grid, never a fitted slope,
+   which absorbs the defect it should find.
 5. *Evidence level.* ``full`` when ``b >= 2``; ``partial`` when
    ``1 <= b < 2``; ``duration_only`` when ``b < 1`` or as in 3.
-6. *Steps* (full, partial). A step of ``1.5 b`` or more is a gap
-   (``time_gap``), a step below ``0.5 b`` a duplicate or reversal
-   (``time_reversal``); a step of the modal pair is the reference, never an
-   offence. At ``duration_only`` only a backward step and a total duration
-   that is not positive are refused, since rounding never reverses a clock.
+6. *Steps.* At ``full`` and ``partial``, a step of ``1.5 b`` or more is a
+   gap (``time_gap``) and a step below ``0.5 b`` a duplicate or reversal
+   (``time_reversal``), both widened by any extra rounding of the two
+   stamps; a step of the modal pair is the reference, never an offence. At
+   ``duration_only`` a backward step is a reversal (rounding never reverses
+   a clock), and a step is a gap only when it is longer than 1.5 intervals
+   whatever the rounding.
 7. *Residual.* After the step tests pass, a least-squares line; a stamp
    further than ``b/2`` from it, or than the print-and-fit bound when that
-   is wider, is a timing defect (``time_residual``).
-8. *Pattern.* Every step in ``{m, m+1}`` and every residual within the
-   print-and-fit bound (one tick for fixed decimals: half a tick of print,
-   half a tick of fit) is uniform; anything else is jitter or wander
-   (``time_off_pattern``), which needs a choice of time-base source.
-9. *Rate sources* (R15). A stated rate must predict every stamp within one
-   tick (its own rounding plus the print-and-fit half); a printed preamble
-   rate or interval carries its half-unit interval, and a stated rate must
-   lie inside it; at ``duration_only`` only the total duration is checked,
-   within one effective tick. Any disagreement is ``rate_sources_disagree``.
+   is wider, plus its extra rounding, is a timing defect
+   (``time_residual``).
+8. *Pattern.* Every step a uniform clock can print and every residual
+   within the print-and-fit bound (one tick for fixed decimals: half a tick
+   of print, half a tick of fit) is uniform; anything else is jitter or
+   wander (``time_off_pattern``), which needs a choice of time-base source.
+9. *Rate sources* (R15). A stated rate must predict every stamp within its
+   rounding plus the print-and-fit half; a printed preamble rate or
+   interval carries its half-unit interval, and a stated rate must lie
+   inside it; at ``duration_only`` only the total duration is checked,
+   within one effective tick. Any disagreement is
+   ``rate_sources_disagree``.
 
-The fitted rate is reported with 12 significant digits and a worst-case
-bound from the print rounding alone; it is checked with
+The fitted rate is reported with 12 significant digits and the exact
+interval the print's rounding alone allows it; it is checked with
 ``validate_sampling_rate``. It is proposed as a rate only at ``full``
 evidence, outside ``significant_digits``, with no finding at all; even then
 a time column alone never sets the rate (R12): the caller records a basis.
@@ -133,9 +140,6 @@ MAX_LISTED_LINES = 10
 #: Significant digits of the fitted rate.
 RATE_DIGITS = 12
 
-# A print with this many significant digits is at float64 precision.
-_FLOAT_DIGITS = 16
-
 # Rows per chunk of the floating-point passes.
 _CHUNK_ROWS = 1 << 20
 
@@ -144,6 +148,15 @@ _HISTOGRAM_SPAN = 1 << 20
 
 # Ticks stay within this magnitude, so every difference fits an int64.
 _TICK_LIMIT = 1 << 61
+
+# One tick, in seconds, lies within these powers of ten, so every derived
+# rate is a decimal the configuration can hold (within 1e-30 to 1e30).
+_TICK_EXPONENTS = (-30, 9)
+
+# What the decoder produces: at most 18 digits, a 3-digit exponent less the
+# fraction digits of a 32-byte token.
+_MAX_MANTISSA = 10**18 - 1
+_MAX_EXPONENT = 1100
 
 _POW10 = np.array([10**i for i in range(19)], dtype=np.int64)
 
@@ -346,6 +359,13 @@ class TimeBaseAssessment:
 # ---------------------------------------------------------------------------
 
 
+def _quoted(cited: FileText) -> str:
+    """File text as a refusal cites it: escaped, capped and quoted, with its own
+    quotes escaped so it cannot close the quotation (as `import_config`)."""
+    text = cited.file_text.replace("'", "\\'")
+    return f"'{text}{'...' if cited.truncated else ''}'"
+
+
 def _token_refusal(token: str, line: int, decimal_mark: str) -> TimeBaseRefused:
     stripped = token.strip(" ")
     words = stripped.lower().lstrip("+-")
@@ -369,7 +389,7 @@ def _token_refusal(token: str, line: int, decimal_mark: str) -> TimeBaseRefused:
             f"{TIME_MAX_EXPONENT_DIGITS} digits"
         )
     cited = FileText.of(token, cap=TOKEN_CHARS)
-    shown = f"'{cited.file_text}{'...' if cited.truncated else ''}'"
+    shown = _quoted(cited)
     return TimeBaseRefused(
         "time_grammar",
         f"Line {line}: the time stamp {shown} {problem} \N{EM DASH} {_GRAMMAR_REMEDY}.",
@@ -492,15 +512,11 @@ def _declared_rate(declared: Optional[DeclaredTimeBase]) -> Optional[_Source]:
         raise ValueError(f"time unit {declared.time_unit!r} is not one of {TIME_UNITS}")
     token = declared.token
     cited = FileText.of(token, cap=TOKEN_CHARS) if isinstance(token, str) else None
-    shown = (
-        f"'{cited.file_text}{'...' if cited.truncated else ''}'"
-        if cited
-        else "(not text)"
-    )
+    shown = _quoted(cited) if cited else "(not text)"
     try:
         normalize_decimal(token, field="the declared value")
         with decimal.localcontext(_RATE_CONTEXT):
-            value = Decimal(token)
+            value = Decimal(token)  # validated just above
         if value <= 0:
             raise ValueError("is not above zero")
     except ValueError as exc:
@@ -538,8 +554,8 @@ def _declared_rate(declared: Optional[DeclaredTimeBase]) -> Optional[_Source]:
 class _Print:
     regime: str
     grid: int  # power of ten of one tick, in the time unit
-    quantum: Optional[np.ndarray]  # per-row quantum exponent (significant digits)
-    half: float  # largest rounding of a tick value, in ticks
+    base: float  # rounding of a stamp printed on the grid, in ticks
+    quantum: Optional[np.ndarray]  # per-row quantum exponents (significant digits)
 
 
 def _chunks(rows: int) -> Iterator[tuple[int, int]]:
@@ -553,30 +569,11 @@ def _digit_counts(mantissa: np.ndarray) -> np.ndarray:
     return digits
 
 
-def _print_model(mantissa: np.ndarray, exponent: np.ndarray) -> _Print:
-    rows = mantissa.size
-    finest = int(exponent.min())
-    widest = max(int(_digit_counts(mantissa[lo:hi]).max()) for lo, hi in _chunks(rows))
-    if widest == 0:  # every stamp is zero
-        return _Print("fixed_decimals", finest, None, 0.5)
-    # Exponents are within int16, and so is every quantum.
-    quantum = np.empty(rows, dtype=np.int16)
-    for lo, hi in _chunks(rows):
-        part = mantissa[lo:hi]
-        lead = exponent[lo:hi] + _digit_counts(part) - 1
-        quantum[lo:hi] = np.where(
-            part != 0, np.maximum(lead - widest + 1, finest), finest
-        )
-    low, high = int(quantum.min()), int(quantum.max())
-    if low == high:
-        return _Print("fixed_decimals", high, None, 0.5)
-    if widest < _FLOAT_DIGITS:
-        finer = int(np.max(quantum, where=quantum < high, initial=low))
-        half = 0.5 + 0.5 * 10.0 ** (finer - high)
-        return _Print("significant_digits", high, quantum, half)
+def _largest_value(mantissa: np.ndarray, exponent: np.ndarray) -> float:
+    """The largest stamp magnitude, as a float."""
     top = 0.0
     with np.errstate(over="ignore"):
-        for lo, hi in _chunks(rows):
+        for lo, hi in _chunks(mantissa.size):
             values = (
                 np.abs(mantissa[lo:hi].astype(np.float64)) * 10.0 ** exponent[lo:hi]
             )
@@ -586,9 +583,47 @@ def _print_model(mantissa: np.ndarray, exponent: np.ndarray) -> _Print:
             "time_grammar",
             f"The time stamps reach beyond the float64 range \N{EM DASH} {_GRAMMAR_REMEDY}.",
         )
-    bound = (rows + 2) * float(np.spacing(top))
-    grid = max(math.ceil(math.log10(bound)) + 1, finest) if bound > 0 else finest
-    return _Print("shortest_repr", grid, None, 0.5 + bound / 10.0**grid)
+    return top
+
+
+def _print_model(mantissa: np.ndarray, exponent: np.ndarray) -> _Print:
+    """Step 1 of the module docstring."""
+    rows = mantissa.size
+    finest = int(exponent.min())
+    widest = 0
+    cut = False  # some row has `widest` digits and stops above the finest place
+    for lo, hi in _chunks(rows):
+        digits = _digit_counts(mantissa[lo:hi])
+        widest = max(widest, int(digits.max()))
+    if widest == 0:  # every stamp is zero
+        return _Print("fixed_decimals", finest, 0.5, None)
+    # Exponents are within int16, and so is every quantum.
+    quantum = np.empty(rows, dtype=np.int16)
+    for lo, hi in _chunks(rows):
+        part = mantissa[lo:hi]
+        digits = _digit_counts(part)
+        lead = exponent[lo:hi] + digits - 1
+        quantum[lo:hi] = np.where(
+            part != 0, np.maximum(lead - widest + 1, finest), finest
+        )
+        cut = cut or bool(np.any((digits == widest) & (exponent[lo:hi] > finest)))
+    low, high = int(quantum.min()), int(quantum.max())
+    spacing = float(np.spacing(_largest_value(mantissa, exponent)))
+    if high < math.log10(spacing):
+        # Digits beyond float64 precision: the float summation bound sets the
+        # grid, one decade above it (shortest repr, %.17g, over-long prints).
+        bound = (rows + 2) * spacing
+        grid = max(math.ceil(math.log10(bound)) + 1, finest)
+        return _Print("shortest_repr", grid, 0.5 + bound / 10.0**grid, None)
+    if low != high and cut:
+        # A row cut at `widest` significant digits above the finest decimal
+        # place: a significant-digit print. The grid is the commonest quantum.
+        counts = np.bincount(quantum.astype(np.int64) - low)
+        grid = low + int(np.flatnonzero(counts == counts.max())[-1])
+        return _Print("significant_digits", grid, 0.5, quantum)
+    # Fixed decimals, trailing zeros stripped or not: every stamp has the
+    # finest place, whatever it printed.
+    return _Print("fixed_decimals", finest, 0.5, None)
 
 
 def _on_grid(
@@ -626,10 +661,17 @@ def _on_grid(
 
 
 def _float32_spacing(ticks: np.ndarray, grid: int) -> Optional[float]:
-    """The float32 spacing of the stamps, when they are all float32 values
-    and that spacing is coarser than the decimals the print actually uses."""
+    """The float32 spacing at the largest stamp, when every stamp is a
+    float32 value and that spacing is coarser than the decimals the print
+    actually uses (step 3 of the module docstring).
+
+    The test is exact: with at most 12 decimals and ticks below 2**53, the
+    nearest float32 times ``10**-grid`` and its distance from the tick are
+    exact in float64, so a print that lies exactly half a tick from its
+    float32 value (a tie) is still recognized. Other grids are not tested.
+    """
     top = max(int(ticks.max()), -int(ticks.min()))
-    if top == 0:
+    if top == 0 or top >= 1 << 53 or not -12 <= grid <= 0:
         return None
     zeros = 18  # decimal zeros every nonzero stamp ends with
     for lo, hi in _chunks(ticks.size):
@@ -643,18 +685,149 @@ def _float32_spacing(ticks: np.ndarray, grid: int) -> Optional[float]:
         zeros = min(zeros, found) if nonzero.size else zeros
         if not zeros:
             break
-    tick = 10.0**grid
+    scale = 10.0**-grid  # exact: at most 10**12
     with np.errstate(over="ignore"):
-        spacing = float(np.spacing(np.float32(top * tick)))
-    if not math.isfinite(spacing) or spacing <= tick * 10.0**zeros:
+        spacing = float(np.spacing(np.float32(top / scale)))
+    if not math.isfinite(spacing) or spacing * scale <= 10.0**zeros:
         return None
     with np.errstate(over="ignore", invalid="ignore"):
         for lo, hi in _chunks(ticks.size):
-            values = ticks[lo:hi].astype(np.float64) * tick
-            nearest = values.astype(np.float32).astype(np.float64)
-            if not np.all(np.abs(nearest - values) <= 0.5 * tick):
+            exact = ticks[lo:hi].astype(np.float64)
+            nearest = (exact / scale).astype(np.float32).astype(np.float64)
+            if not np.all(np.abs(nearest * scale - exact) <= 0.5):
                 return None
     return spacing
+
+
+# ---------------------------------------------------------------------------
+# The column on its grid
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class _Column:
+    """One column on its grid, with what every rule reads.
+
+    Every stamp has a rounding half-width ``base + extra``: ``base`` for a
+    stamp printed on the grid; the extra is its own coarser quantum, or its
+    rounding onto the grid when finer (significant digits), plus half its
+    float32 spacing (float32 values).
+    """
+
+    printed: _Print
+    ticks: np.ndarray
+    steps: np.ndarray
+    m: int  # the modal pair is (m, m + 1)
+    reference: Fraction  # b, exact
+    spacing: Optional[float]  # float32 spacing at the largest stamp
+    largest_extra: float
+    evidence: str
+    first_line: int
+    tick_exponent: int  # one tick is 10**tick_exponent seconds
+
+    @property
+    def rows(self) -> int:
+        return int(self.ticks.size)
+
+    @property
+    def b(self) -> float:
+        return float(self.reference)
+
+    @property
+    def base(self) -> float:
+        return self.printed.base
+
+    @property
+    def tick_bound(self) -> float:
+        """Print and fit: one tick for fixed decimals."""
+        return 2 * self.printed.base
+
+    @property
+    def span(self) -> int:
+        return int(self.ticks[-1]) - int(self.ticks[0])
+
+    @property
+    def last_line(self) -> int:
+        return self.first_line + self.rows - 1
+
+    def extra(self, lo: int, hi: int) -> "np.ndarray | float":
+        return _extra(self.printed, self.ticks, self.spacing is not None, lo, hi)
+
+    def step_extra(self, lo: int, hi: int) -> "np.ndarray | float":
+        """Extra width of steps ``lo`` to ``hi - 1`` (step ``i`` joins rows
+        ``i`` and ``i + 1``)."""
+        rows = self.extra(lo, hi + 1)
+        if isinstance(rows, float):
+            return 2 * rows
+        widths: np.ndarray = rows[:-1] + rows[1:]
+        return widths
+
+
+def _extra(
+    printed: _Print, ticks: np.ndarray, float32: bool, lo: int, hi: int
+) -> "np.ndarray | float":
+    extra: "np.ndarray | float" = 0.0
+    if printed.quantum is not None:
+        shift = printed.quantum[lo:hi].astype(np.float64) - printed.grid
+        power = 10.0**shift
+        extra = np.where(
+            shift > 0, 0.5 * (power - 1), np.where(shift < 0, 0.5 * power, 0.0)
+        )
+    if float32:
+        scale = 10.0**-printed.grid
+        values = (ticks[lo:hi].astype(np.float64) / scale).astype(np.float32)
+        extra = extra + 0.5 * np.abs(np.spacing(values)).astype(np.float64) * scale
+    return extra
+
+
+def _column(
+    mantissa: np.ndarray, exponent: np.ndarray, time_unit: str, first_line: int
+) -> _Column:
+    printed = _print_model(mantissa, exponent)
+    tick_exponent = printed.grid + _UNIT_EXPONENT[time_unit]
+    if not _TICK_EXPONENTS[0] <= tick_exponent <= _TICK_EXPONENTS[1]:
+        raise TimeBaseRefused(
+            "time_grammar",
+            f"The time stamps resolve 1e{tick_exponent} s, outside the 1e"
+            f"{_TICK_EXPONENTS[0]} s to 1e{_TICK_EXPONENTS[1]} s the assessment "
+            f"holds \N{EM DASH} {_GRAMMAR_REMEDY}.",
+        )
+    ticks = _on_grid(mantissa, exponent, printed.grid, first_line=first_line)
+    steps = np.diff(ticks)
+    spacing = _float32_spacing(ticks, printed.grid)
+    largest_extra = 0.0
+    clean: Optional[list[np.ndarray]] = None
+    if printed.quantum is not None or spacing is not None:
+        clean = []
+        for lo, hi in _chunks(ticks.size):
+            rows = _extra(printed, ticks, spacing is not None, lo, hi)
+            largest_extra = max(largest_extra, float(np.max(rows)))
+        for lo, hi in _chunks(steps.size):
+            rows = _extra(printed, ticks, spacing is not None, lo, hi + 1)
+            assert not isinstance(rows, float)
+            clean.append((rows[:-1] + rows[1:]) == 0)
+    m, total, count = _modal_pair(
+        steps, None if clean is None else np.concatenate(clean)
+    )
+    reference = Fraction(total, count)
+    if spacing is not None or reference < 1:
+        evidence = "duration_only"
+    elif reference < 2:
+        evidence = "partial"
+    else:
+        evidence = "full"
+    return _Column(
+        printed=printed,
+        ticks=ticks,
+        steps=steps,
+        m=m,
+        reference=reference,
+        spacing=spacing,
+        largest_extra=largest_extra,
+        evidence=evidence,
+        first_line=first_line,
+        tick_exponent=tick_exponent,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -662,9 +835,7 @@ def _float32_spacing(ticks: np.ndarray, grid: int) -> Optional[float]:
 # ---------------------------------------------------------------------------
 
 
-def _modal_pair(steps: np.ndarray) -> tuple[int, int, int]:
-    """``(m, S, C)``: the modal pair ``{m, m+1}`` of steps that occur, the sum
-    and the count of the steps in it; ties go to the smaller ``m``."""
+def _histogram_pair(steps: np.ndarray) -> tuple[int, int, int]:
     low, high = int(steps.min()), int(steps.max())
     if high - low <= _HISTOGRAM_SPAN:
         counts = np.zeros(high - low + 2, dtype=np.int64)
@@ -672,14 +843,28 @@ def _modal_pair(steps: np.ndarray) -> tuple[int, int, int]:
             counts += np.bincount(steps[lo:hi] - low, minlength=counts.size)
         scores = np.where(counts[:-1] > 0, counts[:-1] + counts[1:], -1)
         index = int(np.argmax(scores))
-        m, below, above = low + index, int(counts[index]), int(counts[index + 1])
-    else:
-        values, counts = np.unique(steps, return_counts=True)
-        following = np.zeros(counts.size, dtype=np.int64)
-        adjacent = values[1:] == values[:-1] + 1
-        following[:-1] = np.where(adjacent, counts[1:], 0)
-        index = int(np.argmax(counts + following))
-        m, below, above = int(values[index]), int(counts[index]), int(following[index])
+        return low + index, int(counts[index]), int(counts[index + 1])
+    values, counts = np.unique(steps, return_counts=True)
+    following = np.zeros(counts.size, dtype=np.int64)
+    adjacent = values[1:] == values[:-1] + 1
+    following[:-1] = np.where(adjacent, counts[1:], 0)
+    index = int(np.argmax(counts + following))
+    return int(values[index]), int(counts[index]), int(following[index])
+
+
+def _modal_pair(steps: np.ndarray, clean: Optional[np.ndarray]) -> tuple[int, int, int]:
+    """``(m, S, C)``: the modal pair ``{m, m+1}`` of steps that occur, the sum
+    and the count of the steps in it; ties go to the smaller ``m``.
+
+    Only steps between two stamps printed on the grid count, when there are
+    any (*clean*). A pair of zero steps alone, next to positive steps, is not
+    a coarse print but repeated stamps: the pair is then taken among the
+    positive steps, so the repeats are refused as duplicates.
+    """
+    chosen = steps if clean is None or not clean.any() else steps[clean]
+    m, below, above = _histogram_pair(chosen)
+    if m == 0 and above == 0 and chosen.max() > 0:
+        m, below, above = _histogram_pair(chosen[chosen > 0])
     return m, m * below + (m + 1) * above, below + above
 
 
@@ -693,24 +878,23 @@ class _Offence:
 
 
 def _offending_steps(
-    steps: np.ndarray,
-    test: Callable[[np.ndarray], np.ndarray],
+    column: _Column,
+    test: Callable[[np.ndarray, "np.ndarray | float"], np.ndarray],
     *,
-    first_line: int,
-    reference: Optional[Fraction],
+    measured: bool,
 ) -> _Offence:
     """The steps *test* flags, in chunks; step ``i`` ends at row ``i + 1``."""
     found = _Offence()
     lines: list[int] = []
     measures: list[float] = []
-    for lo, hi in _chunks(steps.size):
-        part = steps[lo:hi]
-        flagged = np.flatnonzero(test(part))
+    for lo, hi in _chunks(column.steps.size):
+        part = column.steps[lo:hi]
+        flagged = np.flatnonzero(test(part, column.step_extra(lo, hi)))
         found.count += int(flagged.size)
         for i in flagged[: MAX_LISTED_LINES - len(lines)]:
-            lines.append(first_line + 1 + lo + int(i))
-            if reference is not None:
-                measures.append(float(Fraction(int(part[i])) / reference))
+            lines.append(column.first_line + 1 + lo + int(i))
+            if measured:
+                measures.append(float(Fraction(int(part[i])) / column.reference))
     found.lines, found.measures = tuple(lines), tuple(measures)
     return found
 
@@ -719,8 +903,104 @@ def _plural(count: int, word: str) -> str:
     return f"{count} {word}" + ("" if count == 1 else "s")
 
 
+def _in_pair(
+    column: _Column, part: np.ndarray, extra: "np.ndarray | float"
+) -> np.ndarray:
+    """Steps a uniform clock can print: the modal pair itself between two
+    stamps on the grid; within one tick of ``b`` widened by the stamps'
+    extra rounding otherwise. A backward step never is."""
+    m, b = column.m, column.b
+    exact = (part == m) | (part == m + 1)
+    widened = (part >= 0) & (part >= b - 1 - extra) & (part <= b + 1 + extra)
+    flagged: np.ndarray = np.where(np.asarray(extra) == 0, exact, widened)
+    return flagged
+
+
+def _step_findings(column: _Column) -> list[TimeFinding]:
+    """Step 6 of the module docstring."""
+    b = column.b
+    if column.evidence == "duration_only":
+        # Rounding never reverses a clock. A gap is refused only when it is
+        # one whatever the rounding: the shortest true step against the
+        # longest true interval (whose estimate float32 rounding may bias).
+        spread = 0.0
+        if column.spacing is not None:
+            spread = column.tick_bound + 2 * column.largest_extra
+        rules = [
+            (
+                "time_reversal",
+                lambda part, extra: part < 0,
+                "earlier than the stamp before",
+                False,
+            )
+        ]
+        if b > 0:
+            rules.insert(
+                0,
+                (
+                    "time_gap",
+                    lambda part, extra: part - (column.tick_bound + extra)
+                    >= 1.5 * (b + spread),
+                    "of more than 1.5 sample intervals whatever the print's "
+                    "rounding: samples are missing",
+                    True,
+                ),
+            )
+    else:
+        # Exact thresholds of integer steps against b = S/C between stamps on
+        # the grid; a step of the modal pair is the reference itself, never
+        # an offence (this only matters at partial evidence, where 1.5 b can
+        # fall below m + 1). A stamp's extra rounding widens both.
+        gap_from = math.ceil(3 * column.reference / 2)
+        reversal_below = math.ceil(column.reference / 2)
+
+        def gap(part: np.ndarray, extra: "np.ndarray | float") -> np.ndarray:
+            flagged: np.ndarray = np.where(
+                np.asarray(extra) == 0, part >= gap_from, part - extra >= 1.5 * b
+            ) & ~_in_pair(column, part, extra)
+            return flagged
+
+        def reversal(part: np.ndarray, extra: "np.ndarray | float") -> np.ndarray:
+            short = np.where(
+                np.asarray(extra) == 0, part < reversal_below, part + extra < 0.5 * b
+            )
+            flagged: np.ndarray = ((part < 0) | short) & ~_in_pair(column, part, extra)
+            return flagged
+
+        rules = [
+            (
+                "time_gap",
+                gap,
+                "of 1.5 sample intervals or more: samples are missing",
+                True,
+            ),
+            (
+                "time_reversal",
+                reversal,
+                "below half a sample interval: a repeated, reordered or restarted "
+                "stamp, or a change of rate",
+                True,
+            ),
+        ]
+    findings = []
+    for code, test, words, measured in rules:
+        offence = _offending_steps(column, test, measured=measured)
+        if offence.count:
+            findings.append(
+                TimeFinding(
+                    code,
+                    offence.count,
+                    offence.lines,
+                    offence.measures,
+                    f"{_plural(offence.count, 'step')} {words}; first at line "
+                    f"{offence.lines[0]}",
+                )
+            )
+    return findings
+
+
 # ---------------------------------------------------------------------------
-# The assessment
+# The fit
 # ---------------------------------------------------------------------------
 
 
@@ -737,25 +1017,15 @@ class _Fit:
     stated_spread: Optional[tuple[float, float]]
 
 
-def _fit(
-    ticks: np.ndarray,
-    steps: np.ndarray,
-    m: int,
-    b: float,
-    *,
-    bound: float,
-    tick_bound: float,
-    first_line: int,
-    tolerance: Optional[np.ndarray],
-    stated_beta: Optional[float],
-) -> _Fit:
+def _fit(column: _Column, stated_beta: Optional[float]) -> _Fit:
     """The least-squares line through the stamps and the residual, pattern
-    and stated-rate tests against it, in chunks. Deviations from ``i * m``
-    are built by an integer running sum (exact, never overflowing), and only
-    the small remainder is floating point."""
-    rows = ticks.size
+    and stated-rate tests against it, in chunks (steps 7 to 9). Deviations
+    from ``i * m`` are built by an integer running sum (exact, never
+    overflowing), and only the small remainder is floating point."""
+    rows, steps, m, b = column.rows, column.steps, column.m, column.b
     centre = (rows - 1) / 2
     spread = rows * (rows * rows - 1) / 12
+    residual_bound = max(b / 2, column.tick_bound)
 
     def deviations() -> Iterator[tuple[int, int, np.ndarray, np.ndarray]]:
         carry = 0
@@ -782,30 +1052,34 @@ def _fit(
     high = -math.inf
     low = math.inf
     for lo, hi, index, error in deviations():
+        extra = column.extra(lo, hi)
         residual = error - level - tilt * (index - centre)
         distance = np.abs(residual)
         largest = max(largest, float(distance.max()))
         squares += float((residual * residual).sum())
-        defect = distance > bound
+        defect = distance > residual_bound + extra
         defects += int(defect.sum())
         for i in np.flatnonzero(defect)[: MAX_LISTED_LINES - len(defect_lines)]:
-            defect_lines.append(first_line + lo + int(i))
+            defect_lines.append(column.first_line + lo + int(i))
             defect_measures.append(float(distance[i]) / b)
-        outside = distance > tick_bound
-        step_part = steps[max(lo - 1, 0) : hi - 1]
-        stepped = (step_part != m) & (step_part != m + 1)
+        outside = np.asarray(distance > column.tick_bound + extra)
+        first = max(lo - 1, 0)
+        step_part = steps[first : hi - 1]
+        stepped = ~_in_pair(column, step_part, column.step_extra(first, hi - 1))
         if lo == 0:
             outside[1:] |= stepped
         else:
             outside |= stepped
         off += int(outside.sum())
         for i in np.flatnonzero(outside)[: MAX_LISTED_LINES - len(off_lines)]:
-            off_lines.append(first_line + lo + int(i))
-        if stated_beta is not None and tolerance is not None:
+            off_lines.append(column.first_line + lo + int(i))
+        if stated_beta is not None:
+            # A stated rate must predict every stamp within its own rounding
+            # plus the print-and-fit half: one tick for fixed decimals.
             predicted = error + index * (b - stated_beta)
-            width = tolerance[lo:hi] if tolerance.size > 1 else tolerance
-            high = max(high, float((predicted - width).max()))
-            low = min(low, float((predicted + width).min()))
+            width = column.tick_bound + extra
+            high = max(high, float(np.max(predicted - width)))
+            low = min(low, float(np.min(predicted + width)))
     return _Fit(
         slope=b + tilt,
         max_residual=largest,
@@ -825,45 +1099,144 @@ def _beta(rate: Decimal, tick_exponent: int) -> Decimal:
         return Decimal(1).scaleb(-tick_exponent) / rate
 
 
-def _ppm(reference: Decimal, other: Decimal) -> float:
+def _ppm(reference: Optional[Decimal], other: Decimal) -> Optional[float]:
+    if reference is None:
+        return None
     with decimal.localcontext(_RATE_CONTEXT):
         return float((other - reference) / reference * 1_000_000)
 
 
-@dataclass(frozen=True)
-class _Column:
-    """One column on its grid, with what every rule reads."""
+def _fit_findings(
+    column: _Column, stated: Optional[_Source]
+) -> tuple[_Fit, Optional[TimeFinding]]:
+    """Steps 7 and 8 of the module docstring, once the step tests passed."""
+    stated_beta = None
+    if stated is not None:
+        stated_beta = float(_beta(stated.rate, column.tick_exponent))
+    fit = _fit(column, stated_beta)
+    b = column.b
+    if fit.defects:
+        return fit, TimeFinding(
+            "time_residual",
+            fit.defects,
+            fit.defect_lines,
+            fit.defect_measures,
+            f"{_plural(fit.defects, 'stamp')} more than half a sample interval from "
+            f"the fitted line (largest {fit.max_residual / b:.3g} intervals): the "
+            f"clock drifts or changes rate; if the column is not the sampling "
+            f"clock, leave it unassessed with a reason",
+        )
+    if fit.off:
+        return fit, TimeFinding(
+            "time_off_pattern",
+            fit.off,
+            fit.off_lines,
+            (),
+            f"{_plural(fit.off, 'stamp')} off a uniform clock (steps from "
+            f"{int(column.steps.min())} to {int(column.steps.max())} ticks against "
+            f"{column.m} and {column.m + 1}; largest residual "
+            f"{fit.max_residual:.3g} ticks, RMS residual {fit.rms_residual:.3g} "
+            f"ticks, bound {column.tick_bound:.3g}): jitter or wander; choose the "
+            f"time-base source",
+        )
+    return fit, None
 
-    printed: _Print
-    ticks: np.ndarray
-    steps: np.ndarray
-    m: int  # the modal pair is (m, m + 1)
-    reference: Fraction  # b, exact
-    spacing: Optional[float]  # float32 spacing, when the values are float32
-    evidence: str
-    first_line: int
-    tick_exponent: int  # one tick is 10**tick_exponent seconds
 
-    @property
-    def rows(self) -> int:
-        return int(self.ticks.size)
+def _fitted_rate(column: _Column, fit: _Fit) -> tuple[str, Optional[_Source]]:
+    """The fitted rate with :data:`RATE_DIGITS` digits, checked with
+    ``validate_sampling_rate``, and the interval the print's rounding alone
+    allows it (None when the rounding could reverse the slope)."""
+    rows = column.rows
+    with decimal.localcontext(_RATE_CONTEXT):
+        one = Decimal(1).scaleb(-column.tick_exponent)
+        slope = Decimal(fit.slope)
+        fitted = one / slope
+        # Worst case of the least-squares slope when every stamp is off by up
+        # to its half-width: half * sum |w_i|, in closed form.
+        weights = Fraction(12 * (rows * rows // 4), rows * (rows * rows - 1))
+        error = Fraction(column.base + column.largest_extra) * weights
+        worst = Decimal(error.numerator) / Decimal(error.denominator)
+        bounds = (
+            (one / (slope + worst), one / (slope - worst)) if slope > worst else None
+        )
+    fitted_text = _with_digits(fitted, RATE_DIGITS, decimal.ROUND_HALF_EVEN)
+    try:
+        validate_sampling_rate(
+            float(fitted_text), name="derived sampling rate", source="the time column"
+        )
+    except InvalidInputError:
+        raise TimeBaseRefused(
+            "time_grammar",
+            f"The time stamps give a sampling rate of {fitted_text} Hz, which is not "
+            f"a usable rate \N{EM DASH} {_GRAMMAR_REMEDY}.",
+        ) from None
+    if bounds is None:
+        return fitted_text, None
+    return fitted_text, _Source("time_column", Decimal(fitted_text), *bounds)
 
-    @property
-    def b(self) -> float:
-        return float(self.reference)
 
-    @property
-    def tick_bound(self) -> float:
-        """Print and fit: one tick for fixed decimals."""
-        return 2 * self.printed.half
+def _column_comparison(
+    column: _Column, fit: Optional[_Fit], own: Optional[_Source], other: _Source
+) -> RateComparison:
+    """The column against one other rate source (step 9)."""
+    if column.evidence == "duration_only":
+        # Only the total duration, within one effective tick: the rounding
+        # of the first and the last stamp.
+        first = column.extra(0, 1)
+        last = column.extra(column.rows - 1, column.rows)
+        tolerance = Decimal(
+            column.tick_bound + float(np.max(first)) + float(np.max(last))
+        )
+        with decimal.localcontext(_RATE_CONTEXT):
+            longest = (column.rows - 1) * _beta(other.low, column.tick_exponent)
+            shortest = (column.rows - 1) * _beta(other.high, column.tick_exponent)
+            consistent = shortest - tolerance <= column.span <= longest + tolerance
+            implied = (
+                Decimal(column.rows - 1).scaleb(-column.tick_exponent) / column.span
+                if column.span > 0
+                else None
+            )
+        return RateComparison(
+            "time_column", other.source, consistent, _ppm(implied, other.rate)
+        )
+    assert fit is not None
+    if other.source == "stated" and fit.stated_spread is not None:
+        high, low = fit.stated_spread
+        consistent = high <= low
+    elif own is None:
+        consistent = True  # the column bounds no rate: nothing to contradict
+    else:
+        consistent = own.low <= other.high and other.low <= own.high
+    fitted = own.rate if own is not None else None
+    return RateComparison(
+        "time_column", other.source, consistent, _ppm(fitted, other.rate)
+    )
 
-    @property
-    def span(self) -> int:
-        return int(self.ticks[-1]) - int(self.ticks[0])
 
-    @property
-    def last_line(self) -> int:
-        return self.first_line + self.rows - 1
+def _disagreement(comparisons: Sequence[RateComparison]) -> Optional[TimeFinding]:
+    disagreements = [c for c in comparisons if not c.consistent]
+    if not disagreements:
+        return None
+    return TimeFinding(
+        "rate_sources_disagree",
+        len(disagreements),
+        (),
+        tuple(c.difference_ppm or 0.0 for c in disagreements),
+        "the rate sources disagree beyond the precision each carries: "
+        + "; ".join(
+            (
+                f"{c.second} lies {c.difference_ppm:+.6g} ppm from {c.first}"
+                if c.difference_ppm is not None
+                else f"{c.second} does not fit {c.first}"
+            )
+            for c in disagreements
+        )
+        + "; choose the time-base source",
+    )
+
+
+def _in_unit(value: Decimal) -> str:
+    return format(value, "f")
 
 
 def _arrays(
@@ -895,260 +1268,18 @@ def _arrays(
             f"base needs at least two \N{EM DASH} widen the data region, or leave "
             f"the column unassessed.",
         )
-    return mantissa.astype(np.int64, copy=False), exponent
-
-
-def _column(
-    mantissa: np.ndarray, exponent: np.ndarray, time_unit: str, first_line: int
-) -> _Column:
-    printed = _print_model(mantissa, exponent)
-    ticks = _on_grid(mantissa, exponent, printed.grid, first_line=first_line)
-    steps = np.diff(ticks)
-    m, total, count = _modal_pair(steps)
-    reference = Fraction(total, count)
-    spacing = _float32_spacing(ticks, printed.grid)
-    if spacing is not None or reference < 1:
-        evidence = "duration_only"
-    elif reference < 2:
-        evidence = "partial"
-    else:
-        evidence = "full"
-    return _Column(
-        printed=printed,
-        ticks=ticks,
-        steps=steps,
-        m=m,
-        reference=reference,
-        spacing=spacing,
-        evidence=evidence,
-        first_line=first_line,
-        tick_exponent=printed.grid + _UNIT_EXPONENT[time_unit],
-    )
-
-
-def _step_findings(column: _Column) -> list[TimeFinding]:
-    """Steps 6 of the module docstring: gaps and reversals, or at
-    ``duration_only`` backward steps and a duration that is not positive."""
-    findings: list[TimeFinding] = []
-    if column.evidence == "duration_only":
-        backward = _offending_steps(
-            column.steps, _negative, first_line=column.first_line, reference=None
-        )
-        if backward.count:
-            findings.append(
-                TimeFinding(
-                    "time_reversal",
-                    backward.count,
-                    backward.lines,
-                    (),
-                    f"{_plural(backward.count, 'stamp')} earlier than the one before, "
-                    f"first at line {backward.lines[0]}",
-                )
-            )
-        elif column.span <= 0:
-            findings.append(
-                TimeFinding(
-                    "time_reversal",
-                    1,
-                    (column.last_line,),
-                    (),
-                    f"the last stamp, line {column.last_line}, is not after the first",
-                )
-            )
-        return findings
-    # Exact thresholds of integer steps against b = S/C. A step of the modal
-    # pair is the reference itself, never an offence (this only matters at
-    # partial evidence, where 1.5 b can fall below m + 1).
-    m = column.m
-    gap_from = math.ceil(3 * column.reference / 2)
-    reversal_below = math.ceil(column.reference / 2)
-    for code, test, words in (
-        (
-            "time_gap",
-            lambda part: (part >= gap_from) & _outside_pair(part, m),
-            "of 1.5 sample intervals or more: samples are missing",
-        ),
-        (
-            "time_reversal",
-            lambda part: (part < reversal_below) & _outside_pair(part, m),
-            "below half a sample interval: a stamp is repeated, reordered or "
-            "restarted",
-        ),
+    # The decoder's own ranges: at most 18 digits, exponents within int16.
+    if (
+        int(mantissa.max()) > _MAX_MANTISSA
+        or int(mantissa.min()) < -_MAX_MANTISSA
+        or int(exponent.max()) > _MAX_EXPONENT
+        or int(exponent.min()) < -_MAX_EXPONENT
     ):
-        offence = _offending_steps(
-            column.steps, test, first_line=column.first_line, reference=column.reference
+        raise ValueError(
+            "mantissa must hold at most 18 digits and exponent lie within "
+            f"+-{_MAX_EXPONENT}, as text_decoder produces them"
         )
-        if offence.count:
-            findings.append(
-                TimeFinding(
-                    code,
-                    offence.count,
-                    offence.lines,
-                    offence.measures,
-                    f"{_plural(offence.count, 'step')} {words}; first at line "
-                    f"{offence.lines[0]}",
-                )
-            )
-    return findings
-
-
-def _negative(part: np.ndarray) -> np.ndarray:
-    flagged: np.ndarray = part < 0
-    return flagged
-
-
-def _outside_pair(part: np.ndarray, m: int) -> np.ndarray:
-    flagged: np.ndarray = (part != m) & (part != m + 1)
-    return flagged
-
-
-def _stated_tolerance(column: _Column) -> np.ndarray:
-    """Per row, how far a stated rate may miss a stamp: the stamp's own
-    rounding plus the print-and-fit half (one tick for fixed decimals)."""
-    printed = column.printed
-    if printed.quantum is None:
-        return np.array([column.tick_bound])
-    finer = printed.quantum < printed.grid
-    tolerance: np.ndarray = (
-        0.5
-        + printed.half
-        + np.where(finer, 0.5 * 10.0 ** (printed.quantum - printed.grid), 0.0)
-    )
-    return tolerance
-
-
-def _fit_findings(
-    column: _Column, stated: Optional[_Source]
-) -> tuple[_Fit, Optional[TimeFinding]]:
-    """Steps 7 and 8 of the module docstring, once the step tests passed."""
-    stated_beta = None
-    tolerance = None
-    if stated is not None:
-        stated_beta = float(_beta(stated.rate, column.tick_exponent))
-        tolerance = _stated_tolerance(column)
-    b = column.b
-    fit = _fit(
-        column.ticks,
-        column.steps,
-        column.m,
-        b,
-        bound=max(b / 2, column.tick_bound),
-        tick_bound=column.tick_bound,
-        first_line=column.first_line,
-        tolerance=tolerance,
-        stated_beta=stated_beta,
-    )
-    if fit.defects:
-        return fit, TimeFinding(
-            "time_residual",
-            fit.defects,
-            fit.defect_lines,
-            fit.defect_measures,
-            f"{_plural(fit.defects, 'stamp')} more than half a sample interval from "
-            f"the fitted line (largest {fit.max_residual / b:.3g} intervals): the "
-            f"clock drifts or changes rate; if the column is not the sampling "
-            f"clock, leave it unassessed with a reason",
-        )
-    if fit.off:
-        return fit, TimeFinding(
-            "time_off_pattern",
-            fit.off,
-            fit.off_lines,
-            (),
-            f"{_plural(fit.off, 'stamp')} off a uniform clock (steps from "
-            f"{int(column.steps.min())} to {int(column.steps.max())} ticks against "
-            f"{column.m} and {column.m + 1}; largest residual "
-            f"{fit.max_residual:.3g} ticks, RMS residual {fit.rms_residual:.3g} "
-            f"ticks, bound {column.tick_bound:.3g}): jitter or wander; choose the "
-            f"time-base source",
-        )
-    return fit, None
-
-
-def _fitted_rate(column: _Column, fit: _Fit) -> tuple[str, str]:
-    """The fitted rate with :data:`RATE_DIGITS` digits and its rounding-only
-    bound, checked with ``validate_sampling_rate``."""
-    rows = column.rows
-    with decimal.localcontext(_RATE_CONTEXT):
-        fitted = Decimal(1).scaleb(-column.tick_exponent) / Decimal(fit.slope)
-        # Worst case of the least-squares slope when every stamp is off by up
-        # to `half` ticks: half * sum |w_i|, in closed form.
-        bound = Fraction(column.printed.half) * Fraction(
-            12 * (rows * rows // 4), rows * (rows * rows - 1)
-        )
-        uncertainty = (
-            fitted
-            * Decimal(bound.numerator)
-            / Decimal(bound.denominator)
-            / Decimal(fit.slope)
-        )
-    fitted_text = _with_digits(fitted, RATE_DIGITS, decimal.ROUND_HALF_EVEN)
-    try:
-        validate_sampling_rate(
-            float(fitted_text), name="derived sampling rate", source="the time column"
-        )
-    except InvalidInputError:
-        raise TimeBaseRefused(
-            "time_grammar",
-            f"The time stamps give a sampling rate of {fitted_text} Hz, which is not "
-            f"a usable rate \N{EM DASH} {_GRAMMAR_REMEDY}.",
-        ) from None
-    return fitted_text, _with_digits(uncertainty, 2, decimal.ROUND_UP)
-
-
-def _column_comparison(
-    column: _Column, fit: Optional[_Fit], own: Optional[_Source], other: _Source
-) -> Optional[RateComparison]:
-    """The column against one other rate source (step 9)."""
-    if column.evidence == "duration_only":
-        # Only the total duration, within one effective tick.
-        effective = Decimal(
-            column.tick_bound
-            + (column.spacing / 10.0**column.printed.grid if column.spacing else 0.0)
-        )
-        longest = (column.rows - 1) * _beta(other.low, column.tick_exponent)
-        shortest = (column.rows - 1) * _beta(other.high, column.tick_exponent)
-        consistent = shortest - effective <= column.span <= longest + effective
-        with decimal.localcontext(_RATE_CONTEXT):
-            implied = (
-                Decimal(column.rows - 1).scaleb(-column.tick_exponent) / column.span
-            )
-        return RateComparison(
-            "time_column", other.source, consistent, _ppm(implied, other.rate)
-        )
-    if fit is None or own is None:
-        return None
-    if other.source == "stated" and fit.stated_spread is not None:
-        # A stated rate must predict every stamp within its tolerance.
-        high, low = fit.stated_spread
-        consistent = high <= low
-    else:
-        consistent = own.low <= other.high and other.low <= own.high
-    return RateComparison(
-        "time_column", other.source, consistent, _ppm(own.rate, other.rate)
-    )
-
-
-def _disagreement(comparisons: Sequence[RateComparison]) -> Optional[TimeFinding]:
-    disagreements = [c for c in comparisons if not c.consistent]
-    if not disagreements:
-        return None
-    return TimeFinding(
-        "rate_sources_disagree",
-        len(disagreements),
-        (),
-        tuple(c.difference_ppm or 0.0 for c in disagreements),
-        "the rate sources disagree beyond the precision each carries: "
-        + "; ".join(
-            f"{c.second} lies {c.difference_ppm or 0.0:+.6g} ppm from {c.first}"
-            for c in disagreements
-        )
-        + "; choose the time-base source",
-    )
-
-
-def _in_unit(value: Decimal) -> str:
-    return format(value, "f")
+    return mantissa.astype(np.int64), exponent.astype(np.int16)
 
 
 def assess_time_base(
@@ -1193,21 +1324,22 @@ def assess_time_base(
         fit, fit_finding = _fit_findings(column, stated)
         if fit_finding is not None:
             findings.append(fit_finding)
-    fitted_text = uncertainty_text = None
+    fitted_text: Optional[str] = None
     own: Optional[_Source] = None
+    uncertainty_text: Optional[str] = None
     if fit is not None:
-        fitted_text, uncertainty_text = _fitted_rate(column, fit)
-        fitted, spread = Decimal(fitted_text), Decimal(uncertainty_text)
-        own = _Source("time_column", fitted, fitted - spread, fitted + spread)
+        fitted_text, own = _fitted_rate(column, fit)
+    if own is not None:
+        with decimal.localcontext(_RATE_CONTEXT):
+            uncertainty = own.high - own.rate  # the wider side of 1 / slope
+        uncertainty_text = _with_digits(uncertainty, 2, decimal.ROUND_UP)
 
     # A column with a finding is no rate evidence: jitter, a gap or a defect
     # needs a choice or a refusal first.
     comparisons = [
-        comparison
+        _column_comparison(column, fit, own, other)
         for other in (file_declared, stated)
         if other is not None and not findings
-        for comparison in [_column_comparison(column, fit, own, other)]
-        if comparison is not None
     ]
     if file_declared is not None and stated is not None:
         comparisons.append(
@@ -1236,6 +1368,7 @@ def assess_time_base(
         and column.evidence == "full"
         and column.printed.regime != "significant_digits"
         and fitted_text is not None
+        and own is not None
     ):
         proposed = normalize_decimal(fitted_text, field="the derived sampling rate")
     resolution = _in_unit(Decimal(1).scaleb(column.printed.grid))

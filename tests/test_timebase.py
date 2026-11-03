@@ -524,10 +524,19 @@ class TestEvidenceLevels:
         assert result.outcome == "invalid"
         assert finding(result, "time_reversal").lines == (FIRST_LINE + 1000,)
 
-    def test_duration_only_refuses_a_constant_column(self):
+    def test_equal_stamps_are_no_evidence_but_contradict_a_stated_rate(self):
+        """Equal first and last stamps are legitimate when the column is short
+        against its resolution, so they are not refused; only the total
+        duration is checked against a rate."""
         result = assess(["1.0000"] * 100)
-        assert result.outcome == "invalid"
-        assert "time_reversal" in codes(result)
+        assert result.outcome == "accepted" and result.evidence == "duration_only"
+        assert result.duration == "0.0000"
+        short = assess(["1.00"] * 30, stated_rate_hz="25600")
+        assert short.outcome == "accepted", short.rate_comparisons
+        long = assess(["1.0000"] * 100, stated_rate_hz="25600")
+        assert long.outcome == "needs_confirmation"
+        (disagreement,) = long.rate_comparisons
+        assert disagreement.difference_ppm is None  # no duration to compare
 
     def test_duration_only_checks_the_total_duration_against_a_stated_rate(self):
         tokens = uniform(4)
@@ -794,3 +803,310 @@ class TestRandomizedColumns:
             )
             assert "time_gap" in codes(gapped)
             assert finding(gapped, "time_gap").lines == (FIRST_LINE + hole,)
+
+
+# ---------------------------------------------------------------------------
+# Cases the independent review found (each failed before its fix)
+# ---------------------------------------------------------------------------
+
+
+def float32_clock(start: float, rows: int = N, fs: int = FS) -> np.ndarray:
+    """A clock accumulated in float32 from *start*."""
+    return np.cumsum(
+        np.concatenate(
+            [[np.float32(start)], np.full(rows - 1, np.float32(1 / fs), np.float32)]
+        ),
+        dtype=np.float32,
+    )
+
+
+class TestFloat32Detection:
+    @pytest.mark.parametrize("style", ["%.6f", "%.7f", "%.8f", "%.9f"])
+    @pytest.mark.parametrize("start", [330.0, 1000.0])
+    def test_a_float32_clock_is_duration_only_at_any_print(self, style, start):
+        """Prints that put a float32 value exactly half a tick from its
+        print (a tie) are recognized too: the test is exact."""
+        result = assess([style % float(v) for v in float32_clock(start)])
+        assert result.float32_values
+        assert result.evidence == "duration_only"
+        assert result.fitted_rate_hz is None and result.proposed_rate_hz is None
+        assert result.outcome == "accepted"
+
+    @pytest.mark.parametrize(
+        "tokens_of",
+        [
+            lambda n: "%.6f" % (20 + n / 64),
+            lambda n: "%.12f" % (n / 4096),
+        ],
+        ids=["%.6f n/64 from 20 s", "%.12f n/4096"],
+    )
+    def test_a_missing_sample_of_an_exact_float32_clock_is_a_gap(self, tokens_of):
+        """Exact clocks at power-of-two rates are float32 values, so they carry
+        no derived rate; their steps are still tested, whatever the rounding."""
+        rows = 2000
+        clean = assess([tokens_of(n) for n in range(rows)])
+        assert clean.float32_values and clean.outcome == "accepted"
+        gapped = assess([tokens_of(n) for n in range(rows) if n != 1000])
+        assert gapped.outcome == "invalid"
+        assert finding(gapped, "time_gap").lines == (FIRST_LINE + 1000,)
+
+    def test_a_power_of_two_repr_clock_keeps_full_evidence(self):
+        result = assess([repr(n / 32768) for n in range(N)])
+        assert not result.float32_values
+        assert result.evidence == "full" and result.proposed_rate_hz == "32768"
+        gapped = assess([repr(n / 32768) for n in range(N) if n != 10000])
+        assert codes(gapped) == {"time_gap"}
+
+    def test_a_frozen_float32_clock_is_no_evidence(self):
+        """Past 5000 s a float32 clock no longer advances at 25.6 kHz."""
+        result = assess(["%.6f" % float(v) for v in float32_clock(5000.0, rows=500)])
+        assert result.evidence == "duration_only" and result.outcome == "accepted"
+        stated = assess(
+            ["%.6f" % float(v) for v in float32_clock(5000.0, rows=500)],
+            stated_rate_hz="25600",
+        )
+        assert stated.outcome == "needs_confirmation"
+
+
+class TestPrintRegimes:
+    @pytest.mark.parametrize(
+        "tokens",
+        [
+            [repr(n / 12000) for n in range(12000, 30000)],
+            [repr(0.1 + n / FS) for n in range(N)],
+            [repr(n / 12000) for n in range(N)],
+            ["%.17f" % (n / 12000) for n in range(N)],
+        ],
+        ids=["repr 1 to 2.5 s", "repr 0.1 + n/fs", "repr n/fs", "%.17f"],
+    )
+    def test_digits_beyond_float64_precision_are_shortest_repr(self, tokens):
+        result = assess(tokens)
+        assert result.regime == "shortest_repr"
+        assert_accepted(result)
+
+    def test_a_cumulative_sum_from_10_s_is_shortest_repr(self):
+        tokens, t = [], 10.0
+        for _ in range(N):
+            tokens.append(repr(t))
+            t += 1 / FS
+        result = assess(tokens)
+        assert result.regime == "shortest_repr"
+        assert_accepted(result)
+
+    @pytest.mark.parametrize(
+        "fs, decimals, evidence", [(FS, 6, "full"), (1000, 3, "partial")]
+    )
+    def test_stripped_fixed_decimals_ending_on_a_round_stamp(
+        self, fs, decimals, evidence
+    ):
+        rows = 10 * fs + 1  # the last stamp is exactly 10 s
+        tokens = [t.rstrip("0").rstrip(".") for t in printed(range(rows), fs, decimals)]
+        assert tokens[-1] == "10"
+        result = assess(tokens)
+        assert result.regime == "fixed_decimals"
+        assert result.resolution == _fixed(1, decimals)
+        assert result.evidence == evidence
+        assert_accepted(result)
+
+    def test_a_g_print_across_a_decade_keeps_its_finer_resolution(self):
+        stamps = range(int(9.2 * FS), int(10.2 * FS))
+        tokens = ["%g" % (n / FS) for n in stamps]
+        result = assess(tokens, stated_rate_hz="25600")
+        assert result.regime == "significant_digits"
+        assert result.resolution == "0.00001" and result.evidence == "full"
+        assert_accepted(result)
+        hole = int(9.5 * FS)
+        gapped = assess(
+            ["%g" % (n / FS) for n in stamps if not hole <= n < hole + 3],
+            stated_rate_hz="25600",
+        )
+        assert gapped.outcome == "invalid" and "time_gap" in codes(gapped)
+
+
+class TestDurationOnlySteps:
+    def test_a_long_gap_at_4_decimals_is_refused(self):
+        kept = [n for n in range(N) if not 5000 <= n < 6000]
+        result = assess(printed(kept, FS, 4))
+        assert result.evidence == "duration_only"
+        assert result.outcome == "invalid"
+        assert finding(result, "time_gap").lines == (FIRST_LINE + 5000,)
+
+    def test_a_single_missing_sample_at_4_decimals_cannot_be_seen(self):
+        kept = [n for n in range(N) if n != 5000]
+        assert assess(printed(kept, FS, 4)).outcome == "accepted"
+
+    @pytest.mark.parametrize("copies", [2, 3])
+    def test_repeated_stamps_are_duplicates_not_a_coarse_print(self, copies):
+        tokens = [t for t in uniform(6, rows=2000) for _ in range(copies)]
+        result = assess(tokens)
+        assert result.evidence == "full"
+        assert result.reference_interval_ticks == pytest.approx(39.0625, abs=0.01)
+        assert codes(result) == {"time_reversal"}
+
+
+class TestUncertaintyBound:
+    def test_the_true_rate_lies_within_the_reported_interval(self):
+        rng = np.random.default_rng(11)
+        for _ in range(300):
+            fs = int(rng.integers(1000, 100_000))
+            decimals = int(rng.integers(5, 10))
+            rows = int(rng.integers(3, 40))
+            result = assess(uniform(decimals, rows=rows, fs=fs))
+            if result.fitted_rate_hz is None or result.rate_uncertainty_hz is None:
+                continue
+            (own,) = [s for s in result.rate_sources if s.source == "time_column"]
+            assert Decimal(own.low_hz) <= fs <= Decimal(own.high_hz), (
+                fs,
+                decimals,
+                rows,
+            )
+            assert abs(Decimal(result.fitted_rate_hz) - fs) <= Decimal(
+                result.rate_uncertainty_hz
+            )
+
+    def test_the_bound_is_the_exact_worst_case_not_first_order(self):
+        """5 stamps, half a tick each: the slope may be off by
+        0.5 * 12 * floor(25/4) / (5 * 24) = 0.3 ticks, so the rate lies within
+        1e5 / (slope +- 0.3), not within the first-order rate * 0.3 / slope."""
+        result = assess(uniform(5, rows=5, fs=51200))
+        (own,) = [s for s in result.rate_sources if s.source == "time_column"]
+        slope = Decimal(10**5) / Decimal(result.fitted_rate_hz)
+        worst = Decimal("0.3")
+        assert Decimal(own.high_hz) == pytest.approx(
+            Decimal(10**5) / (slope - worst), rel=Decimal("1e-9")
+        )
+        assert Decimal(own.low_hz) == pytest.approx(
+            Decimal(10**5) / (slope + worst), rel=Decimal("1e-9")
+        )
+        first_order = Decimal(result.fitted_rate_hz) * worst / slope
+        assert Decimal(result.rate_uncertainty_hz) > first_order
+
+    def test_two_stamps_bound_no_rate(self):
+        result = assess(uniform(5, rows=2, fs=95000))  # one step of 1 tick
+        assert result.evidence == "partial"
+        assert result.fitted_rate_hz is not None
+        assert result.rate_uncertainty_hz is None
+        assert [s.source for s in result.rate_sources] == []
+        assert result.proposed_rate_hz is None
+
+
+class TestChunkBoundaries:
+    COLUMNS = {
+        "uniform": lambda: uniform(6, rows=5000),
+        "gap": lambda: printed([n for n in range(5000) if n != 2500], FS),
+        "jitter": lambda: [
+            _fixed(int(k), 6)
+            for k in np.rint(
+                np.arange(5000) * 39.0625 + np.random.default_rng(5).normal(0, 2, 5000)
+            )
+        ],
+        "drift": lambda: printed(
+            [n * (5000 * 5000 + n) for n in range(5000)], 5000 * 5000 * FS
+        ),
+        "%g": lambda: ["%g" % (n / FS) for n in range(int(9.9 * FS), int(10.1 * FS))],
+        "float32": lambda: ["%.7f" % float(v) for v in float32_clock(330.0, rows=5000)],
+        "4 decimals": lambda: printed(
+            [n for n in range(5000) if not 100 <= n < 300], FS, 4
+        ),
+    }
+
+    @pytest.mark.parametrize("name", sorted(COLUMNS))
+    def test_results_do_not_depend_on_the_chunk_size(self, name, monkeypatch):
+        tokens = self.COLUMNS[name]()
+        whole = assess(tokens, stated_rate_hz="25600")
+        for size in (7, 1000):
+            monkeypatch.setattr(tb, "_CHUNK_ROWS", size)
+            chunked = assess(tokens, stated_rate_hz="25600")
+            assert (chunked.outcome, chunked.evidence, chunked.regime) == (
+                whole.outcome,
+                whole.evidence,
+                whole.regime,
+            )
+            assert [(f.code, f.count, f.lines) for f in chunked.findings] == [
+                (f.code, f.count, f.lines) for f in whole.findings
+            ]
+            assert [c.consistent for c in chunked.rate_comparisons] == [
+                c.consistent for c in whole.rate_comparisons
+            ]
+            if whole.fitted_rate_hz is not None:
+                assert Decimal(chunked.fitted_rate_hz) == pytest.approx(
+                    Decimal(whole.fitted_rate_hz), rel=Decimal("1e-11")
+                )
+
+
+class TestRefusalText:
+    def test_a_quote_in_a_token_cannot_close_the_citation(self):
+        with pytest.raises(tb.TimeBaseRefused) as caught:
+            tb.parse_time_tokens(["0.5", "1' is valid. Import it '"])
+        message = str(caught.value)
+        assert "the time stamp '1\\' is valid. Import it \\'' is not" in message
+
+    def test_a_quote_in_a_declared_token_cannot_close_the_citation(self):
+        with pytest.raises(tb.TimeBaseRefused) as caught:
+            assess(uniform(6, rows=10), declared=tb.DeclaredTimeBase("rate", "1' ok '"))
+        assert "'1\\' ok \\''" in str(caught.value)
+
+    def test_the_decoder_escapes_quotes_too(self, tmp_path):
+        from predictive_maintenance_mcp.path_safety import open_import_file
+
+        (tmp_path / "x.csv").write_bytes(b"t;x\n0.0;1\n0.1' ok ';2\n")
+        interpretation = {
+            "schema": ic.INTERPRETATION_SCHEMA,
+            "dialect": {
+                "encoding": "utf-8",
+                "delimiter": ";",
+                "decimal": ".",
+                "header_line": 1,
+            },
+            "data_lines": {"first": 2, "last": None},
+            "time_base": {"source": "stated", "sampling_rate_hz": "10"},
+            "time_columns": [{"column": 0, "time_unit": "s"}],
+            "channels": [
+                {
+                    "column": 1,
+                    "role": "vibration",
+                    "quantity": "acceleration",
+                    "unit": "g",
+                    "scaling": None,
+                }
+            ],
+        }
+        with open_import_file(
+            "x.csv", [tmp_path], base=tmp_path, max_size=1 << 20
+        ) as f:
+            with pytest.raises(td.TextDecodeError) as caught:
+                td.decode_text(f, interpretation)
+        assert "'0.1\\' ok \\''" in str(caught.value)
+
+
+class TestScaleBounds:
+    @pytest.mark.parametrize(
+        "tokens",
+        [
+            ["1e400", "2e400", "3e400"],
+            ["1e-400", "2e-400", "3e-400"],
+            ["0", "2e-32", "4e-32"],
+        ],
+    )
+    def test_stamps_outside_the_held_scale_are_refused(self, tokens):
+        with pytest.raises(tb.TimeBaseRefused) as caught:
+            assess(tokens)
+        assert caught.value.code == "time_grammar"
+
+    def test_nanoseconds_extend_the_scale_by_their_unit(self):
+        with pytest.raises(tb.TimeBaseRefused):
+            assess(["0", "2e-22", "4e-22"], unit="ns")
+
+    @pytest.mark.parametrize(
+        "mantissa, exponent",
+        [
+            (np.array([0, 2**63], dtype=np.uint64), np.zeros(2, np.int16)),
+            (np.array([0, 10**18], dtype=np.int64), np.zeros(2, np.int16)),
+            (np.array([0, 1], dtype=np.int64), np.array([0, 40000], dtype=np.int64)),
+        ],
+    )
+    def test_arrays_beyond_what_the_decoder_produces_are_refused(
+        self, mantissa, exponent
+    ):
+        with pytest.raises(ValueError, match="text_decoder"):
+            tb.assess_time_base(mantissa, exponent, time_unit="s", first_line=1)

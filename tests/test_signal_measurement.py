@@ -34,6 +34,7 @@ import shutil
 import sys
 import tomllib
 from datetime import datetime, timezone
+from fractions import Fraction
 from pathlib import Path
 from unittest.mock import AsyncMock
 
@@ -1318,17 +1319,39 @@ class TestBuildImportIdentity:
         block = import_identity(defaults={**DEFAULTS, "rpm": "1782.5", "load": "0"})
         assert block["rpm"] == 1782.5 and block["load"] == 0.0
 
-    @pytest.mark.parametrize(
-        "rpm, problem",
-        [
-            ("-5", "Invalid rpm -5.0"),
-            ("abc", "Invalid rpm 'abc'"),
-            ("1e999", "Invalid rpm inf"),
-        ],
-    )
-    def test_bad_rpm_is_refused_by_the_shared_rule(self, rpm, problem):
-        with pytest.raises(ValueError, match=re.escape(problem)):
+    def test_a_negative_rpm_is_refused_by_the_shared_rule(self):
+        with pytest.raises(ValueError, match=re.escape("Invalid rpm -5.0")):
+            import_identity(defaults={**DEFAULTS, "rpm": "-5"})
+
+    @pytest.mark.parametrize("rpm", ["abc", "1e999", "1e-999", "1" * 21, "1 500"])
+    def test_a_string_outside_the_configuration_caps_is_refused_in_import_words(
+        self, rpm
+    ):
+        with pytest.raises(ValueError) as caught:
             import_identity(defaults={**DEFAULTS, "rpm": rpm})
+        message = str(caught.value)
+        assert f"Invalid rpm {rpm!r}: the import configuration writes it" in message
+        assert "not a string" not in message
+
+    def test_a_number_still_passes_the_shared_rule(self):
+        assert import_identity(defaults={**DEFAULTS, "rpm": 1500})["rpm"] == 1500.0
+
+    @pytest.mark.parametrize(
+        "acquired_at", ["9999-12-31T23:00:00-05:00", "0001-01-01T00:00:00+05:00"]
+    )
+    def test_an_instant_beyond_utc_is_a_problem_not_a_crash(self, acquired_at):
+        with pytest.raises(ValueError) as caught:
+            import_identity(defaults={**DEFAULTS, "acquired_at": acquired_at})
+        message = str(caught.value)
+        assert "import configuration, channel 3" in message
+        assert "beyond the instants UTC can hold" in message
+
+    def test_the_companion_route_keeps_its_behaviour_beyond_utc(self):
+        """Unchanged on purpose: the companion route is not part of this unit."""
+        with pytest.raises(OverflowError):
+            validate(
+                {**MINIMAL_MEASUREMENT, "acquired_at": "9999-12-31T23:00:00-05:00"}
+            )
 
     def test_every_problem_is_reported_once_with_the_import_framing(self):
         with pytest.raises(ValueError) as caught:
@@ -1345,6 +1368,19 @@ class TestBuildImportIdentity:
         assert "field(s) ['rpm'] do not belong in the channel's binding" in message
         assert "missing required field(s) acquired_at" in message
         assert message.endswith(m._IMPORT_REMEDY)
+
+    def test_the_missing_remedy_names_the_block_each_field_belongs_in(self):
+        with pytest.raises(ValueError) as caught:
+            import_identity(defaults=None, binding={"measurement_point_id": None})
+        message = str(caught.value)
+        assert (
+            "declare measurement_point_id in the channel's binding, asset_id in the "
+            "binding or in the file-level defaults, and acquired_at in the "
+            "file-level defaults"
+        ) in message
+        # Where it says to put acquired_at, the binding indeed refuses it.
+        with pytest.raises(ValueError, match="do not belong in the channel's binding"):
+            import_identity(binding={**BINDING, "acquired_at": DEFAULTS["acquired_at"]})
 
     def test_a_missing_point_names_where_to_declare_it(self):
         with pytest.raises(
@@ -1496,6 +1532,46 @@ class TestShiftAcquiredAt:
             "0" if not microseconds else f"0.00000{microseconds}"
         )
         assert shift["shift_exact"] is False
+
+    @pytest.mark.parametrize(
+        "offset, rate, exact",
+        [
+            (320000, "25600", "12.5"),
+            (1, "25600", "0.0000390625"),
+            (1, "12000", "1/12000"),
+            (7, "51200", "0.00013671875"),
+            (0, "25600", "0"),
+        ],
+    )
+    def test_the_exact_shift_is_stated(self, offset, rate, exact):
+        shift = m.shift_acquired_at(
+            "2026-08-20T11:42:00+00:00", offset_samples=offset, sampling_rate_hz=rate
+        )
+        assert Fraction(shift["exact_shift_seconds"]) == Fraction(offset) / Fraction(
+            rate
+        )
+        assert shift["exact_shift_seconds"] == exact
+
+    def test_an_instant_with_sub_microsecond_digits_is_not_shifted_exactly(self):
+        shift = m.shift_acquired_at(
+            "2026-08-20T11:42:00.1234567+00:00",
+            offset_samples=25600,
+            sampling_rate_hz="25600",
+        )
+        assert shift["shift_seconds"] == "1"
+        assert shift["shift_exact"] is False
+
+    def test_an_instant_beyond_utc_is_refused(self):
+        with pytest.raises(ValueError, match="beyond the instants UTC can hold"):
+            m.shift_acquired_at(
+                "9999-12-31T23:00:00-05:00", offset_samples=0, sampling_rate_hz="25600"
+            )
+
+    def test_a_trim_past_the_year_9999_names_the_trim(self):
+        with pytest.raises(ValueError, match=r"Invalid trim: .* beyond the year 9999"):
+            m.shift_acquired_at(
+                "9999-12-31T23:59:59+00:00", offset_samples=2, sampling_rate_hz="1"
+            )
 
     def test_a_decimal_rate_is_exact(self):
         shift = m.shift_acquired_at(

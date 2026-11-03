@@ -271,6 +271,7 @@ TRIM_SHIFT_KEYS: tuple[str, ...] = (
     "acquired_at",
     "offset_samples",
     "shift_seconds",
+    "exact_shift_seconds",
     "shift_exact",
 )
 
@@ -320,8 +321,8 @@ _MESSAGES: dict[str, dict[str, str]] = {
         ),
         "missing": (
             "missing required field(s) {missing}: declare measurement_point_id in "
-            "the channel's binding, and asset_id and acquired_at in the binding "
-            "or in the file-level defaults"
+            "the channel's binding, asset_id in the binding or in the file-level "
+            "defaults, and acquired_at in the file-level defaults"
         ),
         "remedy": _IMPORT_REMEDY,
     },
@@ -611,9 +612,15 @@ def _validate_object(
     *,
     now: Optional[datetime],
     problems: list[str],
+    overflow_is_problem: bool = False,
 ) -> dict[str, Any]:
     """The rules of :func:`validate_measurement_declaration`, worded by
-    *messages*; *problems* may already hold problems to report with them."""
+    *messages*; *problems* may already hold problems to report with them.
+
+    An instant that cannot be moved to UTC (the first or last hours of the
+    calendar) makes `datetime` raise `OverflowError`; the import route
+    reports it as a problem, the companion route keeps its behaviour.
+    """
     where = messages["where"].format(source=source)
     if MEASUREMENT_KEY not in container:
         raise ValueError(
@@ -653,11 +660,20 @@ def _validate_object(
                 problems, declaration[field], partial(validate_ledger_id, kind=field)
             )
     if declaration.get("acquired_at") is not None:
-        parsed = _collect(
-            problems,
-            declaration["acquired_at"],
-            partial(normalize_acquired_at, now=now),
-        )
+        try:
+            parsed = _collect(
+                problems,
+                declaration["acquired_at"],
+                partial(normalize_acquired_at, now=now),
+            )
+        except OverflowError:
+            if not overflow_is_problem:
+                raise
+            problems.append(
+                f"Invalid acquired_at {declaration['acquired_at']!r}: the instant "
+                f"lies beyond the instants UTC can hold (years 1 to 9999)"
+            )
+            parsed = None
         if parsed is not None:
             identity["acquired_at"] = parsed[0]
             identity["timezone_declared"] = parsed[1]
@@ -851,17 +867,45 @@ _DECIMAL_TEXT = re.compile(
 _MAX_DECIMAL_TEXT = 64
 
 
-def _decimal_number(value: object) -> object:
-    """A decimal string as a float (the configuration writes rpm and load as
-    decimal strings); anything else unchanged, for the shared number rule
-    to refuse."""
+# The configuration's caps on a decimal string (``import_config``).
+_MAX_DECIMAL_DIGITS = 20
+_MAX_DECIMAL_ADJUSTED = 30
+
+
+def _decimal_text(value: object) -> Optional[decimal.Decimal]:
+    """*value* as an exact decimal when it is a decimal string within the
+    configuration's caps (length, digits, magnitude); else None."""
     if (
-        isinstance(value, str)
-        and len(value) <= _MAX_DECIMAL_TEXT
-        and _DECIMAL_TEXT.fullmatch(value)
+        not isinstance(value, str)
+        or len(value) > _MAX_DECIMAL_TEXT
+        or _DECIMAL_TEXT.fullmatch(value) is None
     ):
-        return float(value)
-    return value
+        return None
+    number = decimal.Decimal(value)  # exact; the grammar bounds the exponent
+    digits = number.as_tuple().digits
+    if len(digits) > _MAX_DECIMAL_DIGITS:
+        return None
+    if not number.is_zero() and abs(number.adjusted()) > _MAX_DECIMAL_ADJUSTED:
+        return None
+    return number
+
+
+def _import_number(field: str, value: object, problems: list[str]) -> object:
+    """rpm or load of an import: the configuration writes a decimal string,
+    which becomes a float for the shared number rule; a string that is not
+    one is refused here, in the import's words."""
+    if not isinstance(value, str):
+        return value
+    number = _decimal_text(value)
+    if number is None:
+        problems.append(
+            f"Invalid {field} {value!r}: the import configuration writes it as a "
+            f"decimal string such as '1480', of at most {_MAX_DECIMAL_DIGITS} "
+            f"significant digits and a magnitude within 1e-"
+            f"{_MAX_DECIMAL_ADJUSTED} to 1e{_MAX_DECIMAL_ADJUSTED}"
+        )
+        return None
+    return float(number)
 
 
 def build_import_identity(
@@ -943,9 +987,16 @@ def build_import_identity(
         )
     for field in ("rpm", "load"):
         if field in merged:
-            merged[field] = _decimal_number(merged[field])
+            merged[field] = _import_number(field, merged[field], problems)
+            if merged[field] is None:
+                del merged[field]
     identity = _validate_object(
-        {MEASUREMENT_KEY: merged}, messages, str(channel), now=now, problems=problems
+        {MEASUREMENT_KEY: merged},
+        messages,
+        str(channel),
+        now=now,
+        problems=problems,
+        overflow_is_problem=True,
     )
     return _bound(identity, content_sha256, size_bytes, channel)
 
@@ -978,15 +1029,34 @@ def binding_collisions(
     return tuple(sorted(collisions))
 
 
+def _exact_seconds(value: Fraction) -> str:
+    """An exact number of seconds: a decimal when it terminates, else p/q."""
+    denominator = value.denominator
+    for prime in (2, 5):
+        while denominator % prime == 0:
+            denominator //= prime
+    if denominator != 1:
+        return f"{value.numerator}/{value.denominator}"
+    with decimal.localcontext(decimal.Context(prec=10_000)):
+        exact = decimal.Decimal(value.numerator) / decimal.Decimal(value.denominator)
+    exact = exact.normalize()
+    return "0" if exact.is_zero() else format(exact, "f")
+
+
+# Fractional seconds beyond the microsecond, which ``fromisoformat`` drops.
+_SUBMICROSECOND = re.compile(r"[.,][0-9]{7,}")
+
+
 def shift_acquired_at(
     acquired_at: str, *, offset_samples: int, sampling_rate_hz: str
 ) -> dict[str, Any]:
     """The acquisition instant of a trimmed range's first sample.
 
     The shift is ``offset_samples / sampling_rate_hz`` seconds, computed
-    exactly; the instant keeps the microsecond resolution of ISO 8601 as
-    Python writes it, so a shift that is not a whole number of microseconds
-    is rounded half to even and reported as not exact.
+    exactly and stated exactly; the instant keeps the microsecond resolution
+    of ISO 8601 as Python writes it, so a shift that is not a whole number
+    of microseconds is applied rounded half to even, and reported as not
+    exact.
 
     Args:
         acquired_at: The instant of the data region's first sample, ISO
@@ -999,56 +1069,61 @@ def shift_acquired_at(
         A dict with exactly ``TRIM_SHIFT_KEYS``: the shifted instant (UTC
         when it declares an offset, naive when it does not),
         *offset_samples*, the applied shift in seconds as a decimal string,
-        and whether that shift equals the exact one.
+        the exact shift (a decimal when it terminates, else ``p/q``), and
+        whether the shifted instant is exactly the stated instant plus the
+        exact shift.
 
     Raises:
         ValueError: For an instant that is not ISO 8601, a negative or
             non-integer offset, a rate that is not a positive decimal
-            string, or a shifted instant beyond the year 9999.
+            string within the configuration's caps, or a shifted instant
+            outside the years 1 to 9999.
     """
     if not isinstance(acquired_at, str):
         raise ValueError(f"Invalid acquired_at {acquired_at!r}: {_ACQUIRED_AT_HELP}.")
     try:
         start = datetime.fromisoformat(acquired_at)
+        if start.tzinfo is not None and start.utcoffset() is not None:
+            start = start.astimezone(timezone.utc)
     except ValueError:
         raise ValueError(
             f"Invalid acquired_at {acquired_at!r}: {_ACQUIRED_AT_HELP}."
         ) from None
-    if start.tzinfo is not None and start.utcoffset() is not None:
-        start = start.astimezone(timezone.utc)
+    except OverflowError:
+        raise ValueError(
+            f"Invalid acquired_at {acquired_at!r}: the instant lies beyond the "
+            f"instants UTC can hold (years 1 to 9999)."
+        ) from None
     if (
         isinstance(offset_samples, bool)
         or not isinstance(offset_samples, int)
-        or (offset_samples < 0)
+        or offset_samples < 0
     ):
         raise ValueError(
             f"Invalid offset_samples {offset_samples!r}: pass the number of samples "
             f"between the data region's start and the first selected sample."
         )
-    rate_ok = (
-        isinstance(sampling_rate_hz, str)
-        and len(sampling_rate_hz) <= _MAX_DECIMAL_TEXT
-        and _DECIMAL_TEXT.fullmatch(sampling_rate_hz) is not None
-    )
-    rate = Fraction(decimal.Decimal(sampling_rate_hz)) if rate_ok else Fraction(0)
-    if rate <= 0:
+    number = _decimal_text(sampling_rate_hz)
+    if number is None or number <= 0:
         raise ValueError(
             f"Invalid sampling_rate_hz {sampling_rate_hz!r}: pass the sampling rate "
             f"as a positive decimal string such as '25600'."
         )
-    exact = Fraction(offset_samples) / rate
+    exact = Fraction(offset_samples) / Fraction(number)
     microseconds = round(exact * 1_000_000)
     try:
         shifted = start + timedelta(microseconds=microseconds)
     except OverflowError:
         raise ValueError(
-            f"Invalid offset_samples {offset_samples!r}: the shifted instant is "
-            f"beyond the year 9999."
+            f"Invalid trim: {offset_samples} samples at {sampling_rate_hz} Hz move "
+            f"the instant {acquired_at!r} beyond the year 9999."
         ) from None
     shift = decimal.Decimal(microseconds).scaleb(-6).normalize()
     return {
         "acquired_at": shifted.isoformat(),
         "offset_samples": offset_samples,
         "shift_seconds": "0" if shift.is_zero() else format(shift, "f"),
-        "shift_exact": exact * 1_000_000 == microseconds,
+        "exact_shift_seconds": _exact_seconds(exact),
+        "shift_exact": exact * 1_000_000 == microseconds
+        and _SUBMICROSECOND.search(acquired_at) is None,
     }
