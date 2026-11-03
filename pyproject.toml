@@ -94,6 +94,7 @@ predictive-maintenance-mcp = "predictive_maintenance_mcp.server:main"
 packages = [
     "predictive_maintenance_mcp",
     "predictive_maintenance_mcp.signal_acquisition",
+    "predictive_maintenance_mcp.signal_import",
     "predictive_maintenance_mcp.signal_processing",
     "predictive_maintenance_mcp.diagnostics",
     "predictive_maintenance_mcp.decision_support",
@@ -105,6 +106,7 @@ packages = [
 [tool.setuptools.package-dir]
 predictive_maintenance_mcp = "src"
 "predictive_maintenance_mcp.signal_acquisition" = "src/signal_acquisition"
+"predictive_maintenance_mcp.signal_import" = "src/signal_import"
 "predictive_maintenance_mcp.signal_processing" = "src/signal_processing"
 "predictive_maintenance_mcp.diagnostics" = "src/diagnostics"
 "predictive_maintenance_mcp.decision_support" = "src/decision_support"
