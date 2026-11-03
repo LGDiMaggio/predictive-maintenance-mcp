@@ -509,6 +509,49 @@ class TestModelImpliedThresholdCrossing:
         assert result.fit_r_squared is None
 
     @pytest.mark.asyncio
+    async def test_kalman_crossing_discloses_the_time_unit(self, tools, mock_ctx):
+        result = await tools["estimate_rul"](
+            ctx=mock_ctx,
+            failure_threshold=CROSSED_THRESHOLD,
+            feature_values=CROSSED_VALUES,
+            timestamps=CROSSED_TIMESTAMPS,
+            method="kalman",
+        )
+        assert result.status == "model_threshold_crossed"
+        assert "change with the time unit chosen for the timestamps" in result.message
+        assert "Compare with method='linear'" in result.message
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("method", ["linear", "exponential"])
+    async def test_fitted_crossings_carry_no_kalman_note(self, tools, mock_ctx, method):
+        result = await tools["estimate_rul"](
+            ctx=mock_ctx,
+            failure_threshold=CROSSED_THRESHOLD,
+            feature_values=CROSSED_VALUES,
+            timestamps=CROSSED_TIMESTAMPS,
+            method=method,
+        )
+        assert "time unit" not in result.message
+
+    @pytest.mark.asyncio
+    async def test_small_scale_modelled_value_stays_at_or_above_the_threshold(
+        self, tools, mock_ctx
+    ):
+        """The reported model value keeps its significant digits on any scale."""
+        result = await tools["estimate_rul"](
+            ctx=mock_ctx,
+            failure_threshold=1.02e-06,
+            feature_values=[v * 1e-7 for v in CROSSED_VALUES],
+            timestamps=CROSSED_TIMESTAMPS,
+        )
+        assert result.status == "model_threshold_crossed"
+        assert result.modelled_current_value >= result.failure_threshold
+        expected = _fitted_at_last(
+            [v * 1e-7 for v in CROSSED_VALUES], CROSSED_TIMESTAMPS
+        )
+        assert result.modelled_current_value == pytest.approx(expected, rel=1e-5)
+
+    @pytest.mark.asyncio
     async def test_observed_exceedance_keeps_its_own_status(self, tools, mock_ctx):
         """The latest measurement at or above the threshold is not a model estimate."""
         result = await tools["estimate_rul"](
@@ -537,6 +580,7 @@ class TestModelImpliedThresholdCrossing:
         assert result.status == "model_not_rising"
         assert result.rul is None and result.modelled_current_value is None
         assert "Kalman filter's rate estimate" in result.message
+        assert "change with the time unit chosen for the timestamps" in result.message
         assert "method='linear'" in result.message
         assert not any(claim in result.message for claim in FORBIDDEN_HEALTH_CLAIMS)
 
@@ -708,7 +752,8 @@ class TestEstimateRULNonFiniteInputs:
         message = str(exc.value)
         assert "feature_values contains 1 non-finite sample(s)" in message
         assert "first at sample index 1" in message
-        assert "remove that measurement and its timestamp" in message
+        assert "ask the user whether to remove that measurement" in message
+        assert "do not drop or fill it in on your own" in message
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("bad", [float("nan"), float("inf")])
@@ -759,7 +804,10 @@ class TestEstimateRULNonFiniteInputs:
                     timestamps=[0.0, 1.0, 2.0],
                     feature_name="kurtosis",
                 )
-            assert "of signal 'nonfinite_1' (measurement 1)" in str(exc.value)
+            assert (
+                "of signal 'nonfinite_1' (measurement at index 1, counting from 0)"
+                in (str(exc.value))
+            )
             assert "not a finite number" in str(exc.value)
         finally:
             for sid in ids:
@@ -781,9 +829,23 @@ class TestExponentialNeedsPositiveValues:
                 method="exponential",
             )
         message = str(exc.value)
-        assert f"measurement 1 is {bad:g}" in message
+        assert f"measurement at index 1 (counting from 0) is {bad:g}" in message
         assert "No measurement is dropped" in message
         assert "method='linear'" in message
+
+    @pytest.mark.asyncio
+    async def test_observed_exceedance_comes_before_the_positivity_rule(
+        self, tools, mock_ctx
+    ):
+        """No fit runs when the latest measurement is already past the threshold."""
+        result = await tools["estimate_rul"](
+            ctx=mock_ctx,
+            failure_threshold=10.0,
+            feature_values=[0.0, 3.0, 8.0, 12.0],
+            timestamps=[0.0, 1.0, 2.0, 3.0],
+            method="exponential",
+        )
+        assert result.status == "threshold_already_exceeded"
 
     @pytest.mark.asyncio
     async def test_linear_still_accepts_non_positive_values(self, tools, mock_ctx):
@@ -795,6 +857,136 @@ class TestExponentialNeedsPositiveValues:
         )
         assert result.status == "estimated"
         assert result.rul == pytest.approx(1.0)
+
+
+class TestEstimateRULKeepsTheEstimatorsNumbers:
+    """The tool's estimates are the public estimators' estimates, unit spacing or not."""
+
+    KALMAN_VALUES = [1.0 + 0.2 * i for i in range(12)]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "step, rul, interval, heuristic, rate",
+        [
+            # Captured from the code before the outcome mapping was added; any
+            # change here moves every Kalman estimate.
+            (1.0, 14.0312, [0.0, 35.4604], 0.2208, 0.199554),
+            (24.0, 336.0016, [0.0, 21255.0912], 0.0, 0.008333),
+        ],
+    )
+    async def test_kalman_estimate_numbers(
+        self, tools, mock_ctx, step, rul, interval, heuristic, rate
+    ):
+        result = await tools["estimate_rul"](
+            ctx=mock_ctx,
+            failure_threshold=6.0,
+            feature_values=self.KALMAN_VALUES,
+            timestamps=[step * i for i in range(12)],
+            method="kalman",
+        )
+        assert result.status == "estimated"
+        assert result.rul == rul
+        assert result.rul_interval_95 == interval
+        assert result.precision_heuristic == heuristic
+        assert result.estimated_rate == rate
+
+    @pytest.mark.asyncio
+    async def test_kalman_estimate_depends_on_time_unit_and_its_interval_on_scale(
+        self, tools, mock_ctx
+    ):
+        """The two dependences the Kalman disclosure states."""
+
+        async def kalman(values, threshold, step):
+            return await tools["estimate_rul"](
+                ctx=mock_ctx,
+                failure_threshold=threshold,
+                feature_values=values,
+                timestamps=[step * i for i in range(12)],
+                method="kalman",
+            )
+
+        days = await kalman(self.KALMAN_VALUES, 6.0, 1.0)
+        hours = await kalman(self.KALMAN_VALUES, 6.0, 24.0)
+        scaled = await kalman([1000.0 * v for v in self.KALMAN_VALUES], 6000.0, 1.0)
+        assert hours.rul / 24.0 != pytest.approx(days.rul, rel=1e-3)
+        assert scaled.rul == days.rul
+        assert scaled.rul_interval_95 != days.rul_interval_95
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "method, values, threshold",
+        [
+            ("linear", [1.0 + 0.2 * i for i in range(12)], 6.0),
+            ("linear", CROSSED_VALUES + [10.1, 10.2], 10.5),
+            ("exponential", [0.5 * 1.2**i for i in range(10)], 20.0),
+            ("exponential", CROSSED_VALUES, 10.0),
+            ("kalman", [1.0 + 0.2 * i for i in range(12)], 6.0),
+            ("kalman", [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 6.0, 4.0], 20.0),
+        ],
+    )
+    async def test_estimated_exactly_when_the_public_estimator_estimates(
+        self, tools, mock_ctx, method, values, threshold
+    ):
+        from predictive_maintenance_mcp.prognostics import (
+            estimate_rul_exponential,
+            estimate_rul_kalman,
+            estimate_rul_linear,
+        )
+
+        timestamps = [float(i) for i in range(len(values))]
+        result = await tools["estimate_rul"](
+            ctx=mock_ctx,
+            failure_threshold=threshold,
+            feature_values=values,
+            timestamps=timestamps,
+            method=method,
+        )
+        if method == "kalman":
+            expected = estimate_rul_kalman(values, threshold, sampling_interval=1.0)
+        elif method == "linear":
+            expected = estimate_rul_linear(values, timestamps, threshold)
+        else:
+            expected = estimate_rul_exponential(values, timestamps, threshold)
+        assert (result.status == "estimated") == (expected is not None)
+        if expected is not None:
+            assert result.rul == round(expected["rul"], 4)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("spread, refused", [(0.09, False), (0.11, True)])
+    async def test_kalman_spacing_tolerance(self, tools, mock_ctx, spread, refused):
+        """Intervals alternate around 1 so that (max - min) / mean equals spread."""
+        steps = [1.0 + spread / 2 if i % 2 else 1.0 - spread / 2 for i in range(11)]
+        timestamps = [0.0]
+        for s in steps:
+            timestamps.append(timestamps[-1] + s)
+        call = tools["estimate_rul"](
+            ctx=mock_ctx,
+            failure_threshold=6.0,
+            feature_values=self.KALMAN_VALUES,
+            timestamps=timestamps,
+            method="kalman",
+        )
+        if refused:
+            with pytest.raises(ValueError, match="uniformly spaced"):
+                await call
+        else:
+            assert (await call).method == "kalman"
+
+    @pytest.mark.asyncio
+    async def test_kalman_level_past_the_threshold_wins_over_a_falling_rate(
+        self, tools, mock_ctx
+    ):
+        values = [5.0, 6.0, 7.0, 8.0, 9.0, 10.5, 10.4, 10.3, 10.2, 10.1, 10.0, 9.9]
+        result = await tools["estimate_rul"](
+            ctx=mock_ctx,
+            failure_threshold=10.0,
+            feature_values=values,
+            timestamps=[float(i) for i in range(len(values))],
+            method="kalman",
+        )
+        assert result.status == "model_threshold_crossed"
+        assert result.rul is None
+        assert "projects no crossing" not in result.message
 
 
 # ---------------------------------------------------------------------------
@@ -970,7 +1162,7 @@ class TestAnalyzeSignalTrendBounds:
     async def test_largest_overlap_bounds_the_segment_count(
         self, tools, repo, mock_ctx
     ):
-        """At 0.9 a segment advances by a tenth of its length, never by one sample."""
+        """At 0.9 a 1000-sample segment advances by about a tenth of its length."""
         result = await tools["analyze_signal_trend"](
             ctx=mock_ctx, signal_id="stationary", overlap_ratio=0.9
         )

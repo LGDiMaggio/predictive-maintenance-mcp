@@ -119,8 +119,14 @@ class TestExponentialRUL:
     def test_exponential_refuses_non_positive_values(self, series, index):
         """A log-linear fit on a subset would hide the dropped measurements."""
         timestamps = [0.0, 1.0, 2.0, 3.0, 4.0]
-        with pytest.raises(ValueError, match=f"measurement {index} is"):
+        with pytest.raises(ValueError, match=f"index {index} \\(counting from 0\\) is"):
             estimate_rul_exponential(series, timestamps, failure_threshold=10.0)
+
+    def test_exponential_refuses_a_value_that_is_not_a_number(self):
+        with pytest.raises(ValueError, match="index 1 \\(counting from 0\\) is nan"):
+            estimate_rul_exponential(
+                [1.0, float("nan"), 2.0], [0.0, 1.0, 2.0], failure_threshold=10.0
+            )
 
     def test_exponential_decay_returns_none(self):
         """Decaying series never reaches an upper threshold."""

@@ -431,9 +431,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   recording's feature is not finite.
 - **The exponential method no longer drops measurements without saying
   so.** It used to fit the positive values only. A zero or negative
-  measurement is now refused with its index, by `estimate_rul` and by the
-  Python function `estimate_rul_exponential`, which returned `None` or fitted
-  the rest.
+  measurement is now refused with its index whenever the curve would be
+  fitted, by `estimate_rul` and by the Python function
+  `estimate_rul_exponential`, which returned `None` or fitted the rest. A
+  latest measurement at or above the threshold is still reported as
+  `threshold_already_exceeded` first.
 - **A bearing that could not be checked is reported as not computed instead
   of being dropped (#84).** `diagnose_vibration` with a `bearing_id` that is
   not in the bearing catalog skipped the bearing check without saying so: the

@@ -76,8 +76,9 @@ def validate_positive_for_exponential(feature_series: Iterable[float]) -> None:
         if not value > 0:
             raise ValueError(
                 "The exponential method fits the logarithm of the values and needs "
-                f"every measurement to be positive, but measurement {index} is "
-                f"{value:g}. No measurement is dropped: use method='linear' or "
+                "every measurement to be positive, but the measurement at index "
+                f"{index} (counting from 0) is {value:g}. No measurement is "
+                "dropped: use method='linear' or "
                 "method='kalman', or pass an indicator that is positive."
             )
 

@@ -1174,7 +1174,8 @@ class RULEstimationResult(BaseModel):
             "increasing trend, but the requested model's rate at the last "
             "measurement is not positive, so it projects no crossing); or "
             "'threshold_already_exceeded' (the latest measurement is at or above "
-            "failure_threshold)."
+            "failure_threshold). For kalman, model_threshold_crossed and "
+            "model_not_rising can change with the time unit of the timestamps."
         )
     )
     method: str = Field(
@@ -1202,11 +1203,11 @@ class RULEstimationResult(BaseModel):
     modelled_current_value: Optional[float] = Field(
         None,
         description=(
-            "Indicator value the model gives at the time of the latest "
-            "measurement: the fitted curve for linear and exponential, the "
-            "filtered level for kalman (only when "
-            "status='model_threshold_crossed'). Compare it with current_value, "
-            "the measured value."
+            "Only when status='model_threshold_crossed': the indicator value the "
+            "model gives at the time of the latest measurement (the fitted curve "
+            "for linear and exponential, the filtered level for kalman, which can "
+            "change with the time unit of the timestamps). Compare it with "
+            "current_value, the measured value."
         ),
     )
     trend_p_value: Optional[float] = Field(
@@ -1251,7 +1252,9 @@ class RULEstimationResult(BaseModel):
         description=(
             "Heuristic in [0,1]: 1 - rul_std/rul, clipped (kalman only). "
             "This is a heuristic, NOT a statistical confidence — do not "
-            "present it as a probability of correctness."
+            "present it as a probability of correctness. It comes from the same "
+            "variance as rul_interval_95 and changes with the time unit and the "
+            "value scale like it."
         ),
     )
     message: str = Field(

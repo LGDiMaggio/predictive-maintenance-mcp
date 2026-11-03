@@ -109,6 +109,13 @@ _WORDING = {
 
 _NOT_HEALTH = "This does not show that the machine is stable or healthy"
 
+# The Kalman filter's gains depend on the spacing of the timestamps, so its
+# outcomes without an estimate carry this note as the estimate's message does.
+_KALMAN_OUTCOME_NOTE = (
+    "The Kalman filter's level and rate can change with the time unit chosen for "
+    "the timestamps, so this outcome can change with it too."
+)
+
 
 class _ModelOutcome(NamedTuple):
     """Where the requested model places the indicator at the last measurement."""
@@ -211,8 +218,9 @@ def _measurement_series_from_signals(
         value = float(feats[feature_name])
         if not math.isfinite(value):
             raise ValueError(
-                f"The {feature_name} of signal '{sid}' (measurement {len(values)}) "
-                f"is {value!r}, not a finite number. Check that recording, or "
+                f"The {feature_name} of signal '{sid}' (measurement at index "
+                f"{len(values)}, counting from 0) is {value!r}, not a finite "
+                "number. Check that recording, or "
                 "choose a feature_name that is defined for it."
             )
         values.append(value)
@@ -398,6 +406,7 @@ async def estimate_rul(
 
     Returns:
         RULEstimationResult with status, rul (only when estimated),
+        modelled_current_value (only when model_threshold_crossed),
         fit_r_squared (goodness of fit — NOT a confidence),
         observation_horizon, and a plain-language message.
     """
@@ -449,16 +458,14 @@ async def estimate_rul(
             values,
             source="feature_values",
             remedy=(
-                "remove that measurement and its timestamp, or replace it with "
-                "the value actually measured"
+                "ask the user whether to remove that measurement and its "
+                "timestamp or to supply the value actually measured; do not drop "
+                "or fill it in on your own"
             ),
         )
     else:
         assert signal_ids is not None
         values = _measurement_series_from_signals(signal_ids, feature_name)
-    if method == "exponential":
-        validate_positive_for_exponential(values)
-
     horizon = t[-1] - t[0]
     current_value = values[-1]
 
@@ -491,6 +498,11 @@ async def estimate_rul(
             **common,
         )
 
+    # The observed exceedance above needs no model; every series that reaches
+    # a fit must be usable by it whole.
+    if method == "exponential":
+        validate_positive_for_exponential(values)
+
     # --- Gate 2: statistically significant increasing trend -------
     trend = analyze_trend(values, timestamps=t, significance_level=TREND_ALPHA)
     p_value = trend["p_value"]
@@ -513,30 +525,35 @@ async def estimate_rul(
         round(outcome.fit_r_squared, 4) if outcome.fit_r_squared is not None else None
     )
     if outcome.crossed:
-        modelled = round(outcome.modelled, 6)
+        # Unrounded: a fixed number of decimals could print a small-scale
+        # value below the threshold it is reported to have reached.
+        modelled = outcome.modelled
+        message = (
+            f"The latest measurement ({current_value:g}) is below the failure "
+            f"threshold you set ({failure_threshold:g}), but "
+            f"{wording.places} places the indicator at {modelled:g} at "
+            "the time of that measurement, at or above the threshold. This is "
+            "a model estimate, not an observed exceedance and not a confirmed "
+            "component failure, so no time to the threshold is estimated. "
+            "Review the latest measurements and the machine's condition now "
+            "rather than waiting for further measurements."
+        )
+        if method == "kalman":
+            message += f" {_KALMAN_OUTCOME_NOTE} Compare with method='linear'."
         return RULEstimationResult(
             status="model_threshold_crossed",
             trend_p_value=p_value,
             fit_r_squared=fit_r2,
             modelled_current_value=modelled,
-            message=(
-                f"The latest measurement ({current_value:g}) is below the failure "
-                f"threshold you set ({failure_threshold:g}), but "
-                f"{wording.places} places the indicator at {modelled:g} at "
-                "the time of that measurement, at or above the threshold. This is "
-                "a model estimate, not an observed exceedance and not a confirmed "
-                "component failure, so no time to the threshold is estimated. "
-                "Review the latest measurements and the machine's condition now "
-                "rather than waiting for further measurements."
-            ),
+            message=message,
             **common,
         )
     if not outcome.rising:
-        follow_up = (
-            "Review the latest measurements."
-            if method == "linear"
-            else "Compare with method='linear' and review the latest measurements."
-        )
+        follow_up = "Compare with method='linear' and review the latest measurements."
+        if method == "linear":
+            follow_up = "Review the latest measurements."
+        elif method == "kalman":
+            follow_up = f"{_KALMAN_OUTCOME_NOTE} {follow_up}"
         return RULEstimationResult(
             status="model_not_rising",
             trend_p_value=p_value,
@@ -639,9 +656,9 @@ async def analyze_signal_trend(
     if not 0.0 <= overlap_ratio <= MAX_OVERLAP_RATIO:
         raise ValueError(
             f"overlap_ratio must be from 0 to {MAX_OVERLAP_RATIO:g}, got "
-            f"{overlap_ratio!r}. Higher values make successive segments nearly "
-            "identical and multiply the computation; use the default 0.5 or a "
-            f"value up to {MAX_OVERLAP_RATIO:g}."
+            f"{overlap_ratio!r}. Above {MAX_OVERLAP_RATIO:g}, successive segments "
+            "are nearly identical and the computation multiplies; use the default "
+            f"0.5 or a value from 0 to {MAX_OVERLAP_RATIO:g}."
         )
     validate_positive_finite(
         onset_threshold_sigma,
