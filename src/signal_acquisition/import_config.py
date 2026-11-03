@@ -246,6 +246,8 @@ ISSUE_CODES: tuple[str, ...] = (
     # path and file refusals
     "unsafe_path",
     "path_outside_roots",
+    "file_not_found",
+    "file_unreadable",
     "not_a_regular_file",
     "unsupported_suffix",
     "file_too_large",

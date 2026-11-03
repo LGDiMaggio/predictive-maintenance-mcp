@@ -1,0 +1,84 @@
+{
+  "european_scaled_with_time": {
+    "channels": {
+      "1": {
+        "count": 3000,
+        "samples_digest": "e455e12fc4ef2ec4a3d1f0ac8660de047ca0e7a9508ca12973b70cf0a7679412"
+      },
+      "2": {
+        "count": 3000,
+        "samples_digest": "6b89fd2e66888cc684c3d242e9db0f070d5c352ee7bc20dedc5fdadeb8d00f06"
+      }
+    },
+    "contract": "pmm-text-decoder/1",
+    "row_count": 3000,
+    "source_sha256": "a3e450cf7d305ec6dd1746c9ac04fa9f1f7699786dc2674606b49bddec836707",
+    "time_columns": {
+      "0": {
+        "exponent": "8a76c5dc723cac04c8c0207e760552f6662cb27adcb98ee481d42b5102b54ffc",
+        "mantissa": "236ac2a79dd357a954cb824f869cf2300b6aecc138a3d09fbad0c289301fcbee"
+      }
+    }
+  },
+  "integers_one_column": {
+    "channels": {
+      "0": {
+        "count": 3000,
+        "samples_digest": "0faa6403c6ae0dc748fdc6dab2cc5a2bf07e7247dd7bff1900bc9757ed8198eb"
+      }
+    },
+    "contract": "pmm-text-decoder/1",
+    "row_count": 3000,
+    "source_sha256": "8426e1fd78dc793230a513ecc84a4951cdd1238e075eb47fffaee97658ecac0e",
+    "time_columns": {}
+  },
+  "repr_17_digits": {
+    "channels": {
+      "0": {
+        "count": 3000,
+        "samples_digest": "d5de4b1a32a80cf301dc2c886c99068202686dd19973e64b2951cc1c3190bada"
+      },
+      "1": {
+        "count": 3000,
+        "samples_digest": "31ba9df2996671ff5deab01f8ce2da41b673d1606b5cd36978948ff0ead20cc2"
+      }
+    },
+    "contract": "pmm-text-decoder/1",
+    "row_count": 3000,
+    "source_sha256": "c3c3eda213d5de787fd69e41ceaa7cc0c331b7d50c31ed62f65bddff7fc54ed7",
+    "time_columns": {}
+  },
+  "trailing_delimiter": {
+    "channels": {
+      "1": {
+        "count": 3000,
+        "samples_digest": "5d3b045883816018d2d88586ef4984d9294953bff39c08bf432f37ef57b178e3"
+      }
+    },
+    "contract": "pmm-text-decoder/1",
+    "row_count": 3000,
+    "source_sha256": "737b00cba7aa4eba2a4555195676570ba1a208a27333d7f1805e5f53eaebd9aa",
+    "time_columns": {
+      "0": {
+        "exponent": "a6bedce1e512d6531cd02fe7a0b72bb64f229cdb254ec48d63308877004e620a",
+        "mantissa": "e8c9ceaf5aacc63c25b4cdd8542592f9d58aff50e3e8fc6c55591d3d8f596562"
+      }
+    }
+  },
+  "whitespace_exponent": {
+    "channels": {
+      "0": {
+        "count": 3000,
+        "samples_digest": "fa832a43e335c74f0dc502dc7fd8b0c277db365d2cea06dcd2a95084bf5f6d5d"
+      },
+      "1": {
+        "count": 3000,
+        "samples_digest": "cd5b6a1746691e80eabeee3315ef61581465c4e9934ce7da46820dbc0b2bbce8"
+      }
+    },
+    "contract": "pmm-text-decoder/1",
+    "row_count": 3000,
+    "source_sha256": "6c6852b99955b5869f56c74b2356eb384b83ba37a4f39290017da59c6a5d43f4",
+    "time_columns": {}
+  }
+}

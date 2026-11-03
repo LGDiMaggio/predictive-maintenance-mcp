@@ -29,3 +29,9 @@ from .repository import (  # noqa: F401
     SignalRepository,
     get_repository,
 )
+from .text_decoder import (  # noqa: F401
+    DECODER_CONTRACT,
+    TextDecodeError,
+    decode_text,
+    get_decoder,
+)

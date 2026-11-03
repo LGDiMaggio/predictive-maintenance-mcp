@@ -30,6 +30,7 @@ import pandas as pd
 from ..config import DATA_DIR, get_max_signal_size
 from ..path_safety import safe_resolve
 from ..signal_validation import BAD_SAMPLE_REMEDY, validate_finite_samples
+from .line_breaks import LineBreakNormalizer
 
 logger = logging.getLogger(__name__)
 
@@ -92,18 +93,16 @@ RAW_SAMPLES_REMEDY = (
     "the declaration is right, " + BAD_SAMPLE_REMEDY
 )
 
-# Blank-row scan (check_text_blank_rows). A run of \r followed by \n is ONE
-# line break (Python's csv module on Windows writes \r\r\n), and a lone \n or
-# \r is one break each. A chunk whose every \r sits right before a \n is
-# scanned as is, with \r\n read as one break; any other chunk is first
-# normalized so that every break is a single \n.
-_LINE_BREAK = re.compile(rb"\r*\n|\r")
+# Blank-row scan (check_text_blank_rows). The line breaks are those of
+# line_breaks.LineBreakNormalizer (a run of \r followed by \n is ONE break,
+# as Python's csv module on Windows writes \r\r\n; a lone \n or \r is one
+# break each), normalized to a single \n in linear time before the scan.
 # Any byte that is not ASCII whitespace makes its line a data line.
 _DATA_BYTE = re.compile(rb"[^ \t\r\n\x0b\x0c]")
 # A whole blank line: its opening break, whitespace, its closing break.
-_BLANK_LINE = re.compile(rb"\n[ \t\x0b\x0c]*\r?\n")
+_BLANK_LINE = re.compile(rb"\n[ \t\x0b\x0c]*\n")
 # The rest of a line that began blank in the previous chunk, up to its break.
-_BLANK_LINE_REST = re.compile(rb"[ \t\x0b\x0c]*\r?\n")
+_BLANK_LINE_REST = re.compile(rb"[ \t\x0b\x0c]*\n")
 # Read size of the scan: memory stays bounded whatever the file size.
 _SCAN_CHUNK_BYTES = 1 << 20
 
@@ -203,7 +202,7 @@ def load_self_describing(path: Path) -> Optional[np.ndarray]:
     return None
 
 
-def check_text_blank_rows(path: Path) -> None:
+def check_text_blank_rows(path: Path, *, remedy: str = BAD_SAMPLE_REMEDY) -> None:
     r"""Refuse a text signal file that has an empty line between data lines.
 
     The CSV reader skips blank lines, so an empty or whitespace-only line in
@@ -215,9 +214,11 @@ def check_text_blank_rows(path: Path) -> None:
     The file is read in binary, in fixed-size chunks, so the scan never
     raises a decoding error (a cp1252 header, for example) and its memory
     stays bounded whatever the file size. A line is blank when it is empty
-    or holds only ASCII whitespace. A run of ``\r`` immediately followed by
-    ``\n`` ends ONE line (Python's ``csv`` module on Windows writes
-    ``\r\r\n``); a lone ``\n`` or ``\r`` ends one line each.
+    or holds only ASCII whitespace. Line breaks are those of
+    :class:`line_breaks.LineBreakNormalizer`: a run of ``\r`` immediately
+    followed by ``\n`` ends ONE line (Python's ``csv`` module on Windows
+    writes ``\r\r\n``); a lone ``\n`` or ``\r`` ends one line each. The scan
+    is linear in the file size, also on long runs of ``\r``.
 
     This is a separate call, not part of :func:`load_self_describing`,
     because the signal store's main route swallows every exception raised
@@ -226,6 +227,8 @@ def check_text_blank_rows(path: Path) -> None:
 
     Args:
         path: Resolved filesystem path of a ``.csv`` or ``.txt`` file.
+        remedy: What the refusal tells the caller to do; defaults to the
+            shared bad-sample remedy (the message is then unchanged).
 
     Raises:
         ValueError: If an empty or whitespace-only line has a data line both
@@ -233,71 +236,69 @@ def check_text_blank_rows(path: Path) -> None:
             line number.
         OSError: If the file cannot be opened or read.
     """
-    seen_data = False  # a data line has started
-    blank_line: Optional[int] = None  # first blank line after the first data line
-    line_is_blank = False  # the line in progress holds only whitespace so far
-    breaks = 0  # line breaks before ``pos``, all chunks included
-    carry = b""
+    scan = _BlankRowScan()
+    normalizer = LineBreakNormalizer()
     with path.open("rb") as fh:
-        while True:
-            chunk = fh.read(_SCAN_CHUNK_BYTES)
-            if chunk:
-                # A trailing run of \r may end in a \n that the next read brings.
-                data = carry + chunk
-                body = data.rstrip(b"\r")
-                carry = data[len(body) :]
+        while chunk := fh.read(_SCAN_CHUNK_BYTES):
+            for piece in normalizer.feed(chunk):
+                scan.feed(piece)
+                scan.refuse_if_missing_sample(path.name, remedy)
+        for piece in normalizer.finish():
+            scan.feed(piece)
+            scan.refuse_if_missing_sample(path.name, remedy)
+
+
+class _BlankRowScan:
+    """State of the blank-row scan over normalized pieces (``\\n`` breaks)."""
+
+    def __init__(self) -> None:
+        self.seen_data = False  # a data line has started
+        self.blank_line: Optional[int] = None  # first blank line after data
+        self.line_is_blank = False  # the line in progress is whitespace so far
+        self.breaks = 0  # line breaks before the current piece's ``pos``
+        self.data_after_blank = False  # a data byte follows the blank line
+
+    def feed(self, body: bytes) -> None:
+        pos = 0
+        if not self.seen_data:
+            first = _DATA_BYTE.search(body)
+            if first is None:
+                self.breaks += body.count(b"\n")
             else:
-                body, carry = carry, b""
-            if b"\r" in body and body.count(b"\r") != body.count(b"\r\n"):
-                # Not plain \r\n breaks: make every break a single \n. Two
-                # plain replaces cover \r\n and \r\r\n (a regex substitution
-                # per line costs ~10x more). A \r still right before a \n
-                # means a longer run, so the regex takes the chunk; with
-                # none, every \r left is a lone break.
-                body = body.replace(b"\r\n", b"\n").replace(b"\r\n", b"\n")
-                if b"\r\n" in body:
-                    body = _LINE_BREAK.sub(b"\n", body)
-                else:
-                    body = body.replace(b"\r", b"\n")
+                self.breaks += body.count(b"\n", 0, first.start())
+                pos = first.start()
+                self.seen_data = True
 
-            pos = 0
-            if not seen_data:
-                first = _DATA_BYTE.search(body)
-                if first is None:
-                    breaks += body.count(b"\n")
-                else:
-                    breaks += body.count(b"\n", 0, first.start())
-                    pos = first.start()
-                    seen_data = True
-
-            if seen_data and blank_line is None:
-                start = pos
-                blank = _BLANK_LINE_REST.match(body, pos) if line_is_blank else None
-                if blank is None:
-                    blank = _BLANK_LINE.search(body, pos)
-                    if blank is not None:
-                        start = blank.start() + 1
+        if self.seen_data and self.blank_line is None:
+            start = pos
+            blank = _BLANK_LINE_REST.match(body, pos) if self.line_is_blank else None
+            if blank is None:
+                blank = _BLANK_LINE.search(body, pos)
                 if blank is not None:
-                    blank_line = breaks + body.count(b"\n", pos, start) + 1
-                    pos = blank.end()
-                else:
-                    breaks += body.count(b"\n", pos)
-                    last_break = body.rfind(b"\n", pos)
-                    if last_break >= 0:
-                        rest = _DATA_BYTE.search(body, last_break + 1)
-                        line_is_blank = rest is None
-                    elif _DATA_BYTE.search(body, pos) is not None:
-                        line_is_blank = False
+                    start = blank.start() + 1
+            if blank is not None:
+                self.blank_line = self.breaks + body.count(b"\n", pos, start) + 1
+                pos = blank.end()
+            else:
+                self.breaks += body.count(b"\n", pos)
+                last_break = body.rfind(b"\n", pos)
+                if last_break >= 0:
+                    rest = _DATA_BYTE.search(body, last_break + 1)
+                    self.line_is_blank = rest is None
+                elif _DATA_BYTE.search(body, pos) is not None:
+                    self.line_is_blank = False
 
-            # Only a data line AFTER the blank line makes it a missing sample.
-            if blank_line is not None and _DATA_BYTE.search(body, pos) is not None:
-                raise ValueError(
-                    f"File '{path.name}' has an empty line at line {blank_line} "
-                    f"between data lines, which is a missing sample — "
-                    f"{BAD_SAMPLE_REMEDY}."
-                )
-            if not chunk:
-                return
+        # Only a data line AFTER the blank line makes it a missing sample.
+        if self.blank_line is not None and _DATA_BYTE.search(body, pos) is not None:
+            self.data_after_blank = True
+
+    def refuse_if_missing_sample(self, name: str, remedy: str) -> None:
+        if self.data_after_blank:
+            raise ValueError(
+                f"File '{name}' has an empty line at line {self.blank_line} "
+                f"between data lines, which is a missing sample — "
+                f"{remedy}."
+            )
 
 
 def load_raw_binary(
