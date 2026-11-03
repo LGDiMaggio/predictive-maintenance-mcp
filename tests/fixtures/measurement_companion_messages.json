@@ -1,0 +1,126 @@
+{
+  "about": "Companion refusal messages of validate_measurement_declaration and build_measurement_identity as produced on origin/main 4fc194b, before source_kind existed. The default companion bundle must keep them byte-identical (Signal Import Engine plan, U6).",
+  "companion_path": "data/run_metadata.json",
+  "now": "2026-09-01T00:00:00+00:00",
+  "cases": {
+    "no_object": {
+      "companion": {
+        "sampling_rate": 1000
+      },
+      "message": "Companion run_metadata.json declares no \"measurement\" object: nothing to validate. Add the object to declare the asset identity of the file (required fields: ['asset_id', 'measurement_point_id', 'acquired_at'])."
+    },
+    "not_a_dict": {
+      "companion": {
+        "measurement": [
+          "P-101"
+        ]
+      },
+      "message": "Invalid \"measurement\" object in companion run_metadata.json: expected a JSON object with the fields ['asset_id', 'measurement_point_id', 'acquired_at', 'rpm', 'load', 'operating_state', 'sensor_id', 'direction', 'declared_by'], got list. Fix the \"measurement\" object and re-load the file, or remove the object to load the file without asset identity."
+    },
+    "not_a_dict_str": {
+      "companion": {
+        "measurement": "P-101"
+      },
+      "message": "Invalid \"measurement\" object in companion run_metadata.json: expected a JSON object with the fields ['asset_id', 'measurement_point_id', 'acquired_at', 'rpm', 'load', 'operating_state', 'sensor_id', 'direction', 'declared_by'], got str. Fix the \"measurement\" object and re-load the file, or remove the object to load the file without asset identity."
+    },
+    "empty": {
+      "companion": {
+        "measurement": {}
+      },
+      "message": "Invalid \"measurement\" object in companion run_metadata.json: missing required field(s) asset_id, measurement_point_id, acquired_at: declare them in the object, e.g. {\"asset_id\": \"P-101\", \"measurement_point_id\": \"motor_de_h\", \"acquired_at\": \"2026-08-20T13:42:00+02:00\"}. Fix the \"measurement\" object and re-load the file, or remove the object to load the file without asset identity."
+    },
+    "unknown_fields": {
+      "companion": {
+        "measurement": {
+          "asset_id": "P-101",
+          "measurement_point_id": "motor_de_h",
+          "acquired_at": "2026-08-20T13:42:00+02:00",
+          "shaft_speed": 25,
+          "Asset": "x"
+        }
+      },
+      "message": "Invalid \"measurement\" object in companion run_metadata.json: unknown field(s) ['Asset', 'shaft_speed']: the object accepts only ['asset_id', 'measurement_point_id', 'acquired_at', 'rpm', 'load', 'operating_state', 'sensor_id', 'direction', 'declared_by']; keep free-form keys at the top level of the companion, where they pass verbatim into source_metadata. Fix the \"measurement\" object and re-load the file, or remove the object to load the file without asset identity."
+    },
+    "missing_point": {
+      "companion": {
+        "measurement": {
+          "asset_id": "P-101",
+          "acquired_at": "2026-08-20T13:42:00+02:00"
+        }
+      },
+      "message": "Invalid \"measurement\" object in companion run_metadata.json: missing required field(s) measurement_point_id: declare them in the object, e.g. {\"asset_id\": \"P-101\", \"measurement_point_id\": \"motor_de_h\", \"acquired_at\": \"2026-08-20T13:42:00+02:00\"}. Fix the \"measurement\" object and re-load the file, or remove the object to load the file without asset identity."
+    },
+    "bad_ids": {
+      "companion": {
+        "measurement": {
+          "asset_id": "NUL",
+          "measurement_point_id": "../x",
+          "acquired_at": "2026-08-20T13:42:00+02:00"
+        }
+      },
+      "message": "Invalid \"measurement\" object in companion run_metadata.json: Invalid asset_id 'NUL': is a Windows reserved device name. A ledger id must start with a letter or digit, use only letters, digits, '_', '-' and '.', end with neither a dot nor a space, have at most 100 characters, and not be a Windows reserved device name (CON, PRN, AUX, NUL, COM1-COM9, LPT1-LPT9, with or without an extension).; Invalid measurement_point_id '../x'. Use only alphanumeric, underscore, hyphen, or dot characters (no path separators). A ledger id must start with a letter or digit, use only letters, digits, '_', '-' and '.', end with neither a dot nor a space, have at most 100 characters, and not be a Windows reserved device name (CON, PRN, AUX, NUL, COM1-COM9, LPT1-LPT9, with or without an extension).. Fix the \"measurement\" object and re-load the file, or remove the object to load the file without asset identity."
+    },
+    "bad_time": {
+      "companion": {
+        "measurement": {
+          "asset_id": "P-101",
+          "measurement_point_id": "motor_de_h",
+          "acquired_at": "yesterday"
+        }
+      },
+      "message": "Invalid \"measurement\" object in companion run_metadata.json: Invalid acquired_at 'yesterday': declare an ISO 8601 timestamp string such as '2026-08-20T13:42:00+02:00' (an offset or 'Z' declares the timezone; without one the instant is ordered as UTC and flagged timezone_declared=false).. Fix the \"measurement\" object and re-load the file, or remove the object to load the file without asset identity."
+    },
+    "bad_numbers": {
+      "companion": {
+        "measurement": {
+          "asset_id": "P-101",
+          "measurement_point_id": "motor_de_h",
+          "acquired_at": "2026-08-20T13:42:00+02:00",
+          "rpm": -3,
+          "load": "75"
+        }
+      },
+      "message": "Invalid \"measurement\" object in companion run_metadata.json: Invalid rpm -3: declare a positive number, or omit the field when unknown.; Invalid load '75': declare a number (e.g. 75), not a string or a flag; omit the field when unknown.. Fix the \"measurement\" object and re-load the file, or remove the object to load the file without asset identity."
+    },
+    "bad_text": {
+      "companion": {
+        "measurement": {
+          "asset_id": "P-101",
+          "measurement_point_id": "motor_de_h",
+          "acquired_at": "2026-08-20T13:42:00+02:00",
+          "sensor_id": "a\nb",
+          "operating_state": "",
+          "declared_by": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        }
+      },
+      "message": "Invalid \"measurement\" object in companion run_metadata.json: Invalid operating_state '': declare a non-empty string of at most 200 characters, or omit the field.; Invalid sensor_id: contains control character(s) ['U+000A']; use plain text on one line.; Invalid declared_by: 201 characters, over the 200-character limit.. Fix the \"measurement\" object and re-load the file, or remove the object to load the file without asset identity."
+    },
+    "bad_direction": {
+      "companion": {
+        "measurement": {
+          "asset_id": "P-101",
+          "measurement_point_id": "motor_de_h",
+          "acquired_at": "2026-08-20T13:42:00+02:00",
+          "direction": "north"
+        }
+      },
+      "message": "Invalid \"measurement\" object in companion run_metadata.json: Invalid direction 'north': declare one of ['horizontal', 'vertical', 'axial', 'x', 'y', 'z'] (aliases {'h': 'horizontal', 'v': 'vertical', 'a': 'axial'} and any letter case are accepted; 'x' and 'horizontal' are different declarations and are never mapped onto each other).. Fix the \"measurement\" object and re-load the file, or remove the object to load the file without asset identity."
+    },
+    "everything": {
+      "companion": {
+        "measurement": {
+          "asset_id": 7,
+          "acquired_at": 3,
+          "rpm": true,
+          "direction": "x-axis",
+          "colour": "red"
+        }
+      },
+      "message": "Invalid \"measurement\" object in companion run_metadata.json: unknown field(s) ['colour']: the object accepts only ['asset_id', 'measurement_point_id', 'acquired_at', 'rpm', 'load', 'operating_state', 'sensor_id', 'direction', 'declared_by']; keep free-form keys at the top level of the companion, where they pass verbatim into source_metadata; missing required field(s) measurement_point_id: declare them in the object, e.g. {\"asset_id\": \"P-101\", \"measurement_point_id\": \"motor_de_h\", \"acquired_at\": \"2026-08-20T13:42:00+02:00\"}; Invalid asset_id 7: must be a string. A ledger id must start with a letter or digit, use only letters, digits, '_', '-' and '.', end with neither a dot nor a space, have at most 100 characters, and not be a Windows reserved device name (CON, PRN, AUX, NUL, COM1-COM9, LPT1-LPT9, with or without an extension).; Invalid acquired_at 3: declare an ISO 8601 timestamp string such as '2026-08-20T13:42:00+02:00' (an offset or 'Z' declares the timezone; without one the instant is ordered as UTC and flagged timezone_declared=false).; Invalid rpm True: declare a positive number (e.g. 1480), not a string or a flag; omit the field when unknown.; Invalid direction 'x-axis': declare one of ['horizontal', 'vertical', 'axial', 'x', 'y', 'z'] (aliases {'h': 'horizontal', 'v': 'vertical', 'a': 'axial'} and any letter case are accepted; 'x' and 'horizontal' are different declarations and are never mapped onto each other).. Fix the \"measurement\" object and re-load the file, or remove the object to load the file without asset identity."
+    }
+  },
+  "bad_channel_index": {
+    "channel_index": -1,
+    "message": "Invalid channel_index -1: the measurement identity needs the 0-based integer index of the decoded channel (0 for single-channel files)."
+  }
+}

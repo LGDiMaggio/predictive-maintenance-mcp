@@ -34,13 +34,25 @@ into ``source_metadata``); inside the object only the fields listed in
 instead of silently dropped. ``sampling_rate`` and ``signal_unit`` stay
 where they are today. Historical top-level keys such as ``shaft_speed``
 (Hz) or ``load`` are never interpreted as measurement fields.
+
+The signal import binds a measurement by the same rules (plan KTD15): one
+channel's binding (measurement point, direction, sensor, an asset override)
+over the import's file-level defaults (asset, acquisition instant, rpm,
+load, operating state), with refusals that name "import configuration,
+channel <index>" instead of a companion (``source_kind="import"``, see
+:data:`SOURCE_KINDS`). Every function takes plain values, never an import
+configuration object, so the module stays a leaf.
 """
 
+import decimal
 import hashlib
 import math
 import os
+import re
 import unicodedata
+from collections.abc import Iterable, Mapping
 from datetime import datetime, timedelta, timezone
+from fractions import Fraction
 from functools import partial
 from pathlib import Path
 from typing import Any, Callable, Optional, Union
@@ -64,6 +76,10 @@ __all__ = [
     "MEASUREMENT_ID_HEX_CHARS",
     "MEASUREMENT_DECLARATION_KEYS",
     "MEASUREMENT_IDENTITY_KEYS",
+    "SOURCE_KINDS",
+    "IMPORT_BINDING_FIELDS",
+    "IMPORT_DEFAULT_FIELDS",
+    "TRIM_SHIFT_KEYS",
     "unit_family",
     "validate_ledger_id",
     "validate_free_text",
@@ -74,6 +90,9 @@ __all__ = [
     "measurement_id_from_digest",
     "compute_measurement_id",
     "build_measurement_identity",
+    "build_import_identity",
+    "binding_collisions",
+    "shift_acquired_at",
 ]
 
 #: Companion key whose presence activates the measurement contract.
@@ -221,6 +240,92 @@ _ACQUIRED_AT_HELP = (
     "(an offset or 'Z' declares the timezone; without one the instant is "
     "ordered as UTC and flagged timezone_declared=false)"
 )
+
+#: Where a declaration comes from: a companion ``<stem>_metadata.json``, or
+#: one channel of a signal import. Each kind selects a whole message bundle
+#: (framing and remedies); the field rules and their messages are shared.
+SOURCE_KINDS: tuple[str, ...] = ("companion", "import")
+
+#: Fields of one import channel's ``binding`` (``asset_id`` overrides the
+#: file-level default for that channel). Equal to the import contract's
+#: binding fields (asserted by test; ``import_config`` is not imported here).
+IMPORT_BINDING_FIELDS: tuple[str, ...] = (
+    "measurement_point_id",
+    "direction",
+    "sensor_id",
+    "asset_id",
+)
+
+#: Fields of an import's file-level ``defaults``, which every bound channel
+#: inherits. Equal to the import contract's ``DECLARATION_DEFAULTS`` keys.
+IMPORT_DEFAULT_FIELDS: tuple[str, ...] = (
+    "asset_id",
+    "acquired_at",
+    "rpm",
+    "load",
+    "operating_state",
+)
+
+#: Keys of :func:`shift_acquired_at`'s result, in order.
+TRIM_SHIFT_KEYS: tuple[str, ...] = (
+    "acquired_at",
+    "offset_samples",
+    "shift_seconds",
+    "shift_exact",
+)
+
+_IMPORT_REMEDY = (
+    "Fix the channel's binding or the file-level defaults in the import "
+    "configuration and validate it again, or remove the channel's binding to "
+    "import the channel without asset identity."
+)
+
+# One bundle per source kind: ``where`` opens every refusal of the object,
+# the others are the problems only the framing can word. The companion
+# bundle is the wording that existed before imports did, byte for byte.
+_MESSAGES: dict[str, dict[str, str]] = {
+    "companion": {
+        "where": 'Invalid "measurement" object in companion {source}: ',
+        "absent": (
+            'Companion {source} declares no "measurement" object: nothing to '
+            "validate. Add the object to declare the asset identity of the "
+            "file (required fields: {required})."
+        ),
+        "not_object": "expected a JSON object with the fields {fields}, got {kind}",
+        "unknown": (
+            "unknown field(s) {unknown}: the object accepts only {fields}; keep "
+            "free-form keys at the top level of the companion, where they pass "
+            "verbatim into source_metadata"
+        ),
+        "missing": (
+            "missing required field(s) {missing}: declare them in the object, "
+            "e.g. {example}"
+        ),
+        "remedy": _REMEDY,
+    },
+    "import": {
+        "where": (
+            "Invalid measurement binding in the import configuration, channel "
+            "{source}: "
+        ),
+        "absent": (
+            "The import configuration binds no measurement to channel {source}: "
+            "nothing to validate. Bind the channel to declare its asset identity "
+            "(required fields: {required})."
+        ),
+        "not_object": "expected an object with the fields {fields}, got {kind}",
+        "unknown": (
+            "unknown field(s) {unknown}: a channel's measurement accepts only "
+            "{fields}"
+        ),
+        "missing": (
+            "missing required field(s) {missing}: declare measurement_point_id in "
+            "the channel's binding, and asset_id and acquired_at in the binding "
+            "or in the file-level defaults"
+        ),
+        "remedy": _IMPORT_REMEDY,
+    },
+}
 
 
 def unit_family(unit: Optional[str]) -> Optional[str]:
@@ -435,11 +540,31 @@ def _collect(problems: list[str], value: Any, normalize: Callable[[Any], Any]) -
         return None
 
 
+def _source(
+    source_kind: str, companion_path: Union[str, Path, None], channel_index: object
+) -> tuple[dict[str, str], str]:
+    """The message bundle of *source_kind* and the source it names."""
+    if source_kind == "companion":
+        if channel_index is not None:
+            raise ValueError(
+                "channel_index names the channel of an import; a companion "
+                "declaration takes none."
+            )
+        return _MESSAGES["companion"], Path(str(companion_path)).name
+    if source_kind == "import":
+        return _MESSAGES["import"], str(_validate_channel_index(channel_index))
+    raise ValueError(
+        f"Invalid source_kind {source_kind!r}: declare one of {list(SOURCE_KINDS)}."
+    )
+
+
 def validate_measurement_declaration(
     companion: dict[str, Any],
-    companion_path: Union[str, Path],
+    companion_path: Union[str, Path, None],
     *,
     now: Optional[datetime] = None,
+    source_kind: str = "companion",
+    channel_index: Optional[int] = None,
 ) -> dict[str, Any]:
     """Validate the companion's ``"measurement"`` object and normalize it.
 
@@ -451,10 +576,18 @@ def validate_measurement_declaration(
     Args:
         companion: The parsed companion dict (the whole file, not the
             object): the object is looked up under ``MEASUREMENT_KEY``.
+            For an import, a dict holding one channel's merged declaration
+            under the same key (see :func:`build_import_identity`).
         companion_path: Path or name of the companion file; only its name
-            appears in messages.
+            appears in messages. Unused for an import.
         now: Reference instant for the timestamp plausibility check (see
             :func:`normalize_acquired_at`).
+        source_kind: ``"companion"`` (the default, with the wording files
+            have always been refused with) or ``"import"``, whose messages
+            name "import configuration, channel <channel_index>" and the
+            configuration fix.
+        channel_index: For an import, the physical column of the channel;
+            None for a companion.
 
     Returns:
         A dict with exactly ``MEASUREMENT_DECLARATION_KEYS``, in that order:
@@ -464,36 +597,50 @@ def validate_measurement_declaration(
     Raises:
         ValueError: If the object is missing, is not a JSON object, has
             unknown fields, lacks a required field, or any field fails its
-            rule.
+            rule; or for an unknown *source_kind*, a *channel_index* given
+            to a companion, or a bad one given to an import.
     """
-    name = Path(str(companion_path)).name
-    if MEASUREMENT_KEY not in companion:
+    messages, source = _source(source_kind, companion_path, channel_index)
+    return _validate_object(companion, messages, source, now=now, problems=[])
+
+
+def _validate_object(
+    container: Mapping[str, Any],
+    messages: dict[str, str],
+    source: str,
+    *,
+    now: Optional[datetime],
+    problems: list[str],
+) -> dict[str, Any]:
+    """The rules of :func:`validate_measurement_declaration`, worded by
+    *messages*; *problems* may already hold problems to report with them."""
+    where = messages["where"].format(source=source)
+    if MEASUREMENT_KEY not in container:
         raise ValueError(
-            f'Companion {name} declares no "measurement" object: nothing to '
-            f"validate. Add the object to declare the asset identity of the "
-            f"file (required fields: {list(REQUIRED_MEASUREMENT_FIELDS)})."
+            messages["absent"].format(
+                source=source, required=list(REQUIRED_MEASUREMENT_FIELDS)
+            )
         )
-    declaration = companion[MEASUREMENT_KEY]
+    declaration = container[MEASUREMENT_KEY]
     if not isinstance(declaration, dict):
+        problem = messages["not_object"].format(
+            fields=list(MEASUREMENT_FIELDS), kind=type(declaration).__name__
+        )
         raise ValueError(
-            f'Invalid "measurement" object in companion {name}: expected a '
-            f"JSON object with the fields {list(MEASUREMENT_FIELDS)}, got "
-            f"{type(declaration).__name__}. {_REMEDY}"
+            where + "; ".join([*problems, problem]) + f". {messages['remedy']}"
         )
 
-    problems: list[str] = []
     unknown = sorted(str(key) for key in declaration if key not in MEASUREMENT_FIELDS)
     if unknown:
         problems.append(
-            f"unknown field(s) {unknown}: the object accepts only "
-            f"{list(MEASUREMENT_FIELDS)}; keep free-form keys at the top level "
-            f"of the companion, where they pass verbatim into source_metadata"
+            messages["unknown"].format(unknown=unknown, fields=list(MEASUREMENT_FIELDS))
         )
     missing = [f for f in REQUIRED_MEASUREMENT_FIELDS if declaration.get(f) is None]
     if missing:
         problems.append(
-            f"missing required field(s) {', '.join(missing)}: declare them in "
-            f"the object, e.g. {_EXAMPLE_OBJECT}"
+            messages["missing"].format(
+                missing=", ".join(missing), example=_EXAMPLE_OBJECT
+            )
         )
 
     identity: dict[str, Any] = {key: None for key in MEASUREMENT_DECLARATION_KEYS}
@@ -538,11 +685,7 @@ def validate_measurement_declaration(
         )
 
     if problems:
-        raise ValueError(
-            f'Invalid "measurement" object in companion {name}: '
-            + "; ".join(problems)
-            + f". {_REMEDY}"
-        )
+        raise ValueError(where + "; ".join(problems) + f". {messages['remedy']}")
     return identity
 
 
@@ -639,11 +782,12 @@ def compute_measurement_id(path: Union[str, Path], channel_index: int) -> str:
 
 def build_measurement_identity(
     companion: dict[str, Any],
-    companion_path: Union[str, Path],
+    companion_path: Union[str, Path, None],
     *,
     signal_path: Union[str, Path],
     channel_index: int,
     now: Optional[datetime] = None,
+    source_kind: str = "companion",
 ) -> dict[str, Any]:
     """Validate the declaration, then bind it to the file: the full block.
 
@@ -659,8 +803,11 @@ def build_measurement_identity(
         companion_path: Companion path or name, for messages.
         signal_path: The signal file whose bytes identify the measurement.
         channel_index: Effective decoded channel (0 unless a multi-channel
-            raw file declared otherwise).
+            raw file declared otherwise); for an import, the physical column.
         now: Reference instant for the timestamp plausibility check.
+        source_kind: The message bundle (see
+            :func:`validate_measurement_declaration`); an import that has
+            already digested the file uses :func:`build_import_identity`.
 
     Returns:
         A dict with exactly ``MEASUREMENT_IDENTITY_KEYS``, in that order:
@@ -671,11 +818,237 @@ def build_measurement_identity(
         ValueError: From the validator, or for a bad *channel_index*.
         FileNotFoundError: If *signal_path* does not exist.
     """
-    identity = validate_measurement_declaration(companion, companion_path, now=now)
+    identity = validate_measurement_declaration(
+        companion,
+        companion_path,
+        now=now,
+        source_kind=source_kind,
+        channel_index=channel_index if source_kind == "import" else None,
+    )
     channel = _validate_channel_index(channel_index)
     content_digest, size_bytes = digest_file(signal_path)
-    identity["measurement_id"] = measurement_id_from_digest(content_digest, channel)
+    return _bound(identity, content_digest, size_bytes, channel)
+
+
+def _bound(
+    identity: dict[str, Any], content_sha256: str, size_bytes: int, channel: int
+) -> dict[str, Any]:
+    """The declaration plus the four file-derived keys."""
+    identity["measurement_id"] = measurement_id_from_digest(content_sha256, channel)
     identity["channel_index"] = channel
-    identity["content_sha256"] = content_digest
+    identity["content_sha256"] = content_sha256
     identity["size_bytes"] = size_bytes
     return identity
+
+
+_SHA256_HEX = re.compile(r"[0-9a-f]{64}")
+
+# A decimal number as the import configuration writes one (a canonical
+# decimal string), bounded before any conversion.
+_DECIMAL_TEXT = re.compile(
+    r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]{1,3})?"
+)
+_MAX_DECIMAL_TEXT = 64
+
+
+def _decimal_number(value: object) -> object:
+    """A decimal string as a float (the configuration writes rpm and load as
+    decimal strings); anything else unchanged, for the shared number rule
+    to refuse."""
+    if (
+        isinstance(value, str)
+        and len(value) <= _MAX_DECIMAL_TEXT
+        and _DECIMAL_TEXT.fullmatch(value)
+    ):
+        return float(value)
+    return value
+
+
+def build_import_identity(
+    defaults: Optional[Mapping[str, Any]],
+    binding: Mapping[str, Any],
+    *,
+    channel_index: int,
+    content_sha256: str,
+    size_bytes: int,
+    now: Optional[datetime] = None,
+) -> dict[str, Any]:
+    """One import channel's identity block, from a file already digested.
+
+    The channel's binding over the import's file-level defaults, validated
+    by the companion's rules with the import bundle (refusals name "import
+    configuration, channel <channel_index>"), then bound through
+    :func:`measurement_id_from_digest`, so the file is never hashed twice.
+    ``rpm`` and ``load`` may be the configuration's decimal strings.
+
+    Args:
+        defaults: The file-level defaults (fields
+            :data:`IMPORT_DEFAULT_FIELDS`, any of them null), or None.
+        binding: The channel's binding (fields
+            :data:`IMPORT_BINDING_FIELDS`); its ``asset_id`` overrides the
+            default.
+        channel_index: Physical 0-based column of the channel.
+        content_sha256: SHA-256 of every byte of the file, 64 hex digits.
+        size_bytes: Size of the file.
+        now: Reference instant for the timestamp plausibility check.
+
+    Returns:
+        A dict with exactly ``MEASUREMENT_IDENTITY_KEYS``, in that order.
+
+    Raises:
+        ValueError: One message with every problem: a field in the wrong
+            block, a field that fails its rule, a missing required field, or
+            a bad *channel_index*, digest or size.
+    """
+    channel = _validate_channel_index(channel_index)
+    if not isinstance(content_sha256, str) or not _SHA256_HEX.fullmatch(content_sha256):
+        raise ValueError(
+            f"Invalid content_sha256 {content_sha256!r}: pass the SHA-256 of the "
+            f"file bytes as 64 lowercase hex digits."
+        )
+    if (
+        isinstance(size_bytes, bool)
+        or not isinstance(size_bytes, int)
+        or size_bytes < 0
+    ):
+        raise ValueError(
+            f"Invalid size_bytes {size_bytes!r}: pass the file size as a "
+            f"non-negative integer."
+        )
+    messages = _MESSAGES["import"]
+    problems: list[str] = []
+    merged: dict[str, Any] = {}
+    for block, fields, value in (
+        ("the file-level defaults", IMPORT_DEFAULT_FIELDS, defaults or {}),
+        ("the channel's binding", IMPORT_BINDING_FIELDS, binding),
+    ):
+        if not isinstance(value, Mapping):
+            problems.append(
+                f"{block} must be an object with the fields {list(fields)}, got "
+                f"{type(value).__name__}"
+            )
+            continue
+        misplaced = sorted(str(key) for key in value if key not in fields)
+        if misplaced:
+            problems.append(
+                f"field(s) {misplaced} do not belong in {block}, which accepts "
+                f"only {list(fields)}"
+            )
+        merged.update(
+            {
+                key: item
+                for key, item in value.items()
+                if key in fields and item is not None
+            }
+        )
+    for field in ("rpm", "load"):
+        if field in merged:
+            merged[field] = _decimal_number(merged[field])
+    identity = _validate_object(
+        {MEASUREMENT_KEY: merged}, messages, str(channel), now=now, problems=problems
+    )
+    return _bound(identity, content_sha256, size_bytes, channel)
+
+
+def binding_collisions(
+    identities: Iterable[Mapping[str, Any]],
+) -> tuple[tuple[int, ...], ...]:
+    """Channels of one import bound to the same measurement.
+
+    Two channels with the same asset, measurement point, direction and
+    sensor would record one measurement twice (KTD15 refuses them; the
+    caller reports ``binding_collision``). The asset is part of the key
+    because a measurement point belongs to an asset.
+
+    Args:
+        identities: Identity blocks of :func:`build_import_identity`.
+
+    Returns:
+        Each group of colliding channel indices, sorted, groups in order of
+        their first channel; empty when every binding is distinct.
+    """
+    groups: dict[tuple[Any, ...], list[int]] = {}
+    for identity in identities:
+        key = tuple(
+            identity[field]
+            for field in ("asset_id", "measurement_point_id", "direction", "sensor_id")
+        )
+        groups.setdefault(key, []).append(identity["channel_index"])
+    collisions = [tuple(sorted(group)) for group in groups.values() if len(group) > 1]
+    return tuple(sorted(collisions))
+
+
+def shift_acquired_at(
+    acquired_at: str, *, offset_samples: int, sampling_rate_hz: str
+) -> dict[str, Any]:
+    """The acquisition instant of a trimmed range's first sample.
+
+    The shift is ``offset_samples / sampling_rate_hz`` seconds, computed
+    exactly; the instant keeps the microsecond resolution of ISO 8601 as
+    Python writes it, so a shift that is not a whole number of microseconds
+    is rounded half to even and reported as not exact.
+
+    Args:
+        acquired_at: The instant of the data region's first sample, ISO
+            8601 (as :func:`normalize_acquired_at` returns it, or naive).
+        offset_samples: Samples between the region's start and the first
+            selected sample.
+        sampling_rate_hz: The sampling rate, a positive decimal string.
+
+    Returns:
+        A dict with exactly ``TRIM_SHIFT_KEYS``: the shifted instant (UTC
+        when it declares an offset, naive when it does not),
+        *offset_samples*, the applied shift in seconds as a decimal string,
+        and whether that shift equals the exact one.
+
+    Raises:
+        ValueError: For an instant that is not ISO 8601, a negative or
+            non-integer offset, a rate that is not a positive decimal
+            string, or a shifted instant beyond the year 9999.
+    """
+    if not isinstance(acquired_at, str):
+        raise ValueError(f"Invalid acquired_at {acquired_at!r}: {_ACQUIRED_AT_HELP}.")
+    try:
+        start = datetime.fromisoformat(acquired_at)
+    except ValueError:
+        raise ValueError(
+            f"Invalid acquired_at {acquired_at!r}: {_ACQUIRED_AT_HELP}."
+        ) from None
+    if start.tzinfo is not None and start.utcoffset() is not None:
+        start = start.astimezone(timezone.utc)
+    if (
+        isinstance(offset_samples, bool)
+        or not isinstance(offset_samples, int)
+        or (offset_samples < 0)
+    ):
+        raise ValueError(
+            f"Invalid offset_samples {offset_samples!r}: pass the number of samples "
+            f"between the data region's start and the first selected sample."
+        )
+    rate_ok = (
+        isinstance(sampling_rate_hz, str)
+        and len(sampling_rate_hz) <= _MAX_DECIMAL_TEXT
+        and _DECIMAL_TEXT.fullmatch(sampling_rate_hz) is not None
+    )
+    rate = Fraction(decimal.Decimal(sampling_rate_hz)) if rate_ok else Fraction(0)
+    if rate <= 0:
+        raise ValueError(
+            f"Invalid sampling_rate_hz {sampling_rate_hz!r}: pass the sampling rate "
+            f"as a positive decimal string such as '25600'."
+        )
+    exact = Fraction(offset_samples) / rate
+    microseconds = round(exact * 1_000_000)
+    try:
+        shifted = start + timedelta(microseconds=microseconds)
+    except OverflowError:
+        raise ValueError(
+            f"Invalid offset_samples {offset_samples!r}: the shifted instant is "
+            f"beyond the year 9999."
+        ) from None
+    shift = decimal.Decimal(microseconds).scaleb(-6).normalize()
+    return {
+        "acquired_at": shifted.isoformat(),
+        "offset_samples": offset_samples,
+        "shift_seconds": "0" if shift.is_zero() else format(shift, "f"),
+        "shift_exact": exact * 1_000_000 == microseconds,
+    }
