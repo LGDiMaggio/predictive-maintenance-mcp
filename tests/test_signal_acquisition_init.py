@@ -35,3 +35,16 @@ class TestSignalAcquisitionImports:
         from predictive_maintenance_mcp.signal_acquisition import SUPPORTED_EXTENSIONS
 
         assert isinstance(SUPPORTED_EXTENSIONS, (list, tuple, set, frozenset))
+
+    def test_import_text_decoder(self):
+        from predictive_maintenance_mcp.signal_acquisition import (
+            DECODER_CONTRACT,
+            TextDecodeError,
+            decode_text,
+            get_decoder,
+        )
+        from predictive_maintenance_mcp.signal_acquisition import text_decoder
+
+        assert get_decoder(DECODER_CONTRACT) is decode_text
+        assert issubclass(TextDecodeError, ValueError)
+        assert decode_text is text_decoder.decode_text
