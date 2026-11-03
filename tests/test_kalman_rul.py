@@ -5,7 +5,11 @@ import math
 import numpy as np
 import pytest
 
-from predictive_maintenance_mcp.prognostics.kalman_rul import estimate_rul_kalman
+from predictive_maintenance_mcp.prognostics.kalman_rul import (
+    estimate_rul_kalman,
+    kalman_degradation_state,
+    kalman_rul_from_state,
+)
 
 
 def _reference_filter_covariance(
@@ -183,3 +187,49 @@ class TestKalmanRUL:
         # must give a measurably different standard deviation.
         assert abs(cov_lr) > 0
         assert result["rul_std"] != pytest.approx(math.sqrt(without_cov), rel=1e-3)
+
+
+class TestKalmanDegradationState:
+    """The filtered state behind every Kalman outcome, including those with no RUL."""
+
+    def test_state_matches_an_independent_filter(self):
+        rng = np.random.default_rng(11)
+        series = [1.0 + 0.3 * t + rng.normal(0, 0.2) for t in range(25)]
+        state = kalman_degradation_state(series, sampling_interval=2.0)
+        x, P = _reference_filter_covariance(series, sampling_interval=2.0)
+        assert state["final_level"] == pytest.approx(float(x[0]))
+        assert state["final_rate"] == pytest.approx(float(x[1]))
+        np.testing.assert_allclose(state["covariance"], P)
+
+    def test_state_reports_a_level_past_the_threshold(self):
+        """The case estimate_rul_kalman answers with None is visible in the state."""
+        series = [6.0, 7.1, 8.0, 9.2, 10.4, 9.7]
+        state = kalman_degradation_state(series)
+        assert state["final_level"] >= 10.0 > series[-1]
+        assert estimate_rul_kalman(series, failure_threshold=10.0) is None
+
+    def test_state_reports_a_falling_rate(self):
+        series = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 6.0, 4.0]
+        state = kalman_degradation_state(series)
+        assert state["final_rate"] < 0
+        assert estimate_rul_kalman(series, failure_threshold=20.0) is None
+
+    def test_too_short_has_no_state(self):
+        assert kalman_degradation_state([1.0, 2.0]) is None
+
+    def test_rul_from_state_extrapolates_the_filtered_level(self):
+        rng = np.random.default_rng(5)
+        series = [0.4 * t + rng.normal(0, 0.2) for t in range(30)]
+        x, _ = _reference_filter_covariance(series)
+        result = kalman_rul_from_state(
+            kalman_degradation_state(series), failure_threshold=40.0
+        )
+        assert result["rul"] == pytest.approx((40.0 - x[0]) / x[1])
+
+    @pytest.mark.parametrize(
+        "level, rate", [(10.0, 0.5), (12.0, 0.5), (5.0, 0.0), (5.0, -0.1)]
+    )
+    def test_no_rul_at_the_threshold_or_without_a_rising_rate(self, level, rate):
+        """The boundaries estimate_rul's own outcome predicates copy."""
+        state = {"final_level": level, "final_rate": rate, "covariance": np.eye(2)}
+        assert kalman_rul_from_state(state, failure_threshold=10.0) is None

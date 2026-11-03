@@ -165,6 +165,16 @@ Fixture history:
   value in every evaluated acquisition, so one missing or listed makes it
   unavailable while it stays in the evaluated history.
   Generated under mcp 2.3.0 and pydantic 2.12.0 (uv.lock).
+- RUL outcomes (2026-11-03): regenerated intentionally: ADDITIVE for
+  estimate_rul, no property removed and no type changed. The status enum
+  gains model_threshold_crossed and model_not_rising, and the result gains
+  modelled_current_value. The status, failure_threshold, rul and
+  rul_interval_95 descriptions change: a non-significant trend carries no
+  health claim, the threshold is a caller-set limit and not an observed
+  failure, and the Kalman band's coverage is not validated and depends on
+  the units. On analyze_signal_trend the root and trend_direction
+  descriptions change: 'stable' is a test outcome only.
+  Generated under mcp 2.3.0 and pydantic 2.12.0 (uv.lock).
 """
 
 from __future__ import annotations

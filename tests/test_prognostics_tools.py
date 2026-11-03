@@ -285,7 +285,7 @@ class TestEstimateRULOutcomes:
 
     @pytest.mark.asyncio
     async def test_flat_series_no_degradation_trend(self, tools, mock_ctx):
-        """A healthy (flat) machine gets a typed outcome, not a RUL number."""
+        """A flat series gets a typed outcome, not a RUL number."""
         result = await tools["estimate_rul"](
             ctx=mock_ctx,
             failure_threshold=4.5,
@@ -295,7 +295,9 @@ class TestEstimateRULOutcomes:
         assert isinstance(result, RULEstimationResult)
         assert result.status == "no_degradation_trend"
         assert result.rul is None
-        assert "No degradation trend" in result.message
+        assert result.trend_p_value is None
+        assert "could not be computed" in result.message
+        assert "every value is 2" in result.message
 
     @pytest.mark.asyncio
     async def test_noisy_stable_series_no_trend(self, tools, mock_ctx):
@@ -420,6 +422,382 @@ class TestEstimateRULOutcomes:
 
 
 # ---------------------------------------------------------------------------
+# estimate_rul — model-implied crossings and outcomes the models disagree on
+# ---------------------------------------------------------------------------
+
+CROSSED_VALUES = [6.0, 7.1, 8.0, 9.2, 10.4, 9.7]
+CROSSED_TIMESTAMPS = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0]
+CROSSED_THRESHOLD = 10.0
+
+FORBIDDEN_HEALTH_CLAIMS = (
+    "appears stable",
+    "stable over",
+    "healthy outcome",
+    "no remaining life",
+)
+
+
+def _fitted_at_last(values, timestamps, log=False):
+    """The fitted curve's value at the last timestamp, computed with numpy."""
+    y = np.log(values) if log else np.asarray(values)
+    slope, intercept = np.polyfit(timestamps, y, 1)
+    fitted = intercept + slope * timestamps[-1]
+    return float(np.exp(fitted)) if log else float(fitted)
+
+
+class TestModelImpliedThresholdCrossing:
+    """The fit or filter at/past the threshold while the latest measurement is below it."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("method", ["linear", "exponential", "kalman"])
+    async def test_released_counterexample_is_a_model_crossing(
+        self, tools, mock_ctx, method
+    ):
+        result = await tools["estimate_rul"](
+            ctx=mock_ctx,
+            failure_threshold=CROSSED_THRESHOLD,
+            feature_values=CROSSED_VALUES,
+            timestamps=CROSSED_TIMESTAMPS,
+            method=method,
+        )
+        assert result.current_value == 9.7 < result.failure_threshold
+        assert result.trend_p_value is not None and result.trend_p_value < 0.01
+        assert result.status == "model_threshold_crossed"
+        assert result.rul is None
+        assert result.rul_interval_95 is None and result.precision_heuristic is None
+        assert result.modelled_current_value >= CROSSED_THRESHOLD
+        message = result.message
+        assert "not an observed exceedance" in message
+        assert "not a confirmed component failure" in message
+        assert "does not reach" not in message
+        assert "collecting" not in message
+        assert "9.7" in message and f"{result.modelled_current_value:g}" in message
+        assert not any(claim in message for claim in FORBIDDEN_HEALTH_CLAIMS)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("method, log", [("linear", False), ("exponential", True)])
+    async def test_modelled_value_is_the_fitted_curve_at_the_last_measurement(
+        self, tools, mock_ctx, method, log
+    ):
+        result = await tools["estimate_rul"](
+            ctx=mock_ctx,
+            failure_threshold=CROSSED_THRESHOLD,
+            feature_values=CROSSED_VALUES,
+            timestamps=CROSSED_TIMESTAMPS,
+            method=method,
+        )
+        expected = _fitted_at_last(CROSSED_VALUES, CROSSED_TIMESTAMPS, log=log)
+        assert result.modelled_current_value == pytest.approx(expected, abs=1e-6)
+
+    @pytest.mark.asyncio
+    async def test_kalman_modelled_value_is_the_filtered_level(self, tools, mock_ctx):
+        from predictive_maintenance_mcp.prognostics.kalman_rul import (
+            kalman_degradation_state,
+        )
+
+        result = await tools["estimate_rul"](
+            ctx=mock_ctx,
+            failure_threshold=CROSSED_THRESHOLD,
+            feature_values=CROSSED_VALUES,
+            timestamps=CROSSED_TIMESTAMPS,
+            method="kalman",
+        )
+        state = kalman_degradation_state(CROSSED_VALUES, sampling_interval=1.0)
+        assert result.modelled_current_value == pytest.approx(
+            state["final_level"], abs=1e-6
+        )
+        assert result.fit_r_squared is None
+
+    @pytest.mark.asyncio
+    async def test_observed_exceedance_keeps_its_own_status(self, tools, mock_ctx):
+        """The latest measurement at or above the threshold is not a model estimate."""
+        result = await tools["estimate_rul"](
+            ctx=mock_ctx,
+            failure_threshold=CROSSED_THRESHOLD,
+            feature_values=CROSSED_VALUES[:-1] + [10.2],
+            timestamps=CROSSED_TIMESTAMPS,
+        )
+        assert result.status == "threshold_already_exceeded"
+        assert result.modelled_current_value is None
+        assert "Inspect the machine now." in result.message
+        assert "not an observed component failure" in result.message
+        assert not any(claim in result.message for claim in FORBIDDEN_HEALTH_CLAIMS)
+
+    @pytest.mark.asyncio
+    async def test_kalman_rate_not_rising(self, tools, mock_ctx):
+        """Significant OLS rise, but the filter's rate at the end is negative."""
+        result = await tools["estimate_rul"](
+            ctx=mock_ctx,
+            failure_threshold=20.0,
+            feature_values=[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 6.0, 4.0],
+            timestamps=[float(i) for i in range(10)],
+            method="kalman",
+        )
+        assert result.trend_p_value is not None and result.trend_p_value < 0.05
+        assert result.status == "model_not_rising"
+        assert result.rul is None and result.modelled_current_value is None
+        assert "Kalman filter's rate estimate" in result.message
+        assert "method='linear'" in result.message
+        assert not any(claim in result.message for claim in FORBIDDEN_HEALTH_CLAIMS)
+
+    @pytest.mark.asyncio
+    async def test_exponential_curve_not_rising(self, tools, mock_ctx):
+        """Significant linear rise, but the log-linear fit slopes down (a near-zero reading)."""
+        values = [1.0, 5.0, 5.0, 2.0, 2.0, 8.0, 0.001, 15.0, 20.0]
+        result = await tools["estimate_rul"](
+            ctx=mock_ctx,
+            failure_threshold=50.0,
+            feature_values=values,
+            timestamps=[float(i) for i in range(len(values))],
+            method="exponential",
+        )
+        assert result.trend_p_value is not None and result.trend_p_value < 0.05
+        assert result.status == "model_not_rising"
+        assert "fitted exponential curve does not rise" in result.message
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("method", ["linear", "exponential", "kalman"])
+    async def test_estimated_results_carry_no_model_value(
+        self, tools, mock_ctx, method
+    ):
+        timestamps = [float(i) for i in range(12)]
+        result = await tools["estimate_rul"](
+            ctx=mock_ctx,
+            failure_threshold=6.0,
+            feature_values=[1.0 + 0.2 * t for t in timestamps],
+            timestamps=timestamps,
+            method=method,
+        )
+        assert result.status == "estimated"
+        assert result.modelled_current_value is None
+
+
+class TestEstimateRULWording:
+    """Messages state what the test supports and keep the threshold apart from failure."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "values",
+        [
+            pytest.param([2.0] * 8, id="slope_test_not_computable"),
+            pytest.param([1.0, 3.0, 4.4], id="not_significant"),
+            pytest.param([5.0 - 0.3 * i for i in range(10)], id="significant_decrease"),
+        ],
+    )
+    async def test_no_trend_outcomes_claim_nothing_about_health(
+        self, tools, mock_ctx, values
+    ):
+        result = await tools["estimate_rul"](
+            ctx=mock_ctx,
+            failure_threshold=10.0,
+            feature_values=values,
+            timestamps=[float(i) for i in range(len(values))],
+        )
+        assert result.status == "no_degradation_trend"
+        message = result.message
+        assert not any(claim in message for claim in FORBIDDEN_HEALTH_CLAIMS), message
+        assert "does not show that the machine is stable or healthy" in message
+        assert message.startswith("No time to the threshold is estimated:")
+
+    @pytest.mark.asyncio
+    async def test_not_significant_states_the_test_and_its_power(self, tools, mock_ctx):
+        result = await tools["estimate_rul"](
+            ctx=mock_ctx,
+            failure_threshold=4.5,
+            feature_values=[1.0, 3.0, 4.4],
+            timestamps=[0.0, 24.0, 48.0],
+        )
+        assert "no statistically significant increasing trend at the 0.05 level" in (
+            result.message
+        )
+        assert "slope p-value = 0.0646" in result.message
+        assert "can miss a real trend" in result.message
+
+    @pytest.mark.asyncio
+    async def test_decrease_names_the_rising_assumption(self, tools, mock_ctx):
+        result = await tools["estimate_rul"](
+            ctx=mock_ctx,
+            failure_threshold=10.0,
+            feature_values=[5.0 - 0.3 * i for i in range(10)],
+            timestamps=[float(i) for i in range(10)],
+        )
+        assert "statistically significant decreasing trend" in result.message
+        assert "assumes an indicator that rises toward its threshold" in result.message
+
+    @pytest.mark.asyncio
+    async def test_estimate_is_time_to_the_threshold_not_to_failure(
+        self, tools, mock_ctx
+    ):
+        timestamps = [float(d) for d in range(0, 30, 3)]
+        result = await tools["estimate_rul"](
+            ctx=mock_ctx,
+            failure_threshold=4.5,
+            feature_values=[1.0 + 0.1 * d for d in timestamps],
+            timestamps=timestamps,
+            time_unit="days",
+        )
+        assert result.status == "estimated"
+        assert result.message.startswith(
+            "Estimated time for the indicator to reach the failure threshold you set:"
+        )
+        assert "not a predicted component failure" in result.message
+        assert not any(claim in result.message for claim in FORBIDDEN_HEALTH_CLAIMS)
+
+    @pytest.mark.asyncio
+    async def test_kalman_estimate_discloses_its_interval_and_unit_dependence(
+        self, tools, mock_ctx
+    ):
+        timestamps = [float(i) for i in range(12)]
+        result = await tools["estimate_rul"](
+            ctx=mock_ctx,
+            failure_threshold=6.0,
+            feature_values=[1.0 + 0.2 * t for t in timestamps],
+            timestamps=timestamps,
+            method="kalman",
+        )
+        assert "empirical coverage is not validated" in result.message
+        assert "time unit" in result.message and "value scale" in result.message
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("method", ["linear", "exponential"])
+    async def test_other_estimates_carry_no_kalman_disclosure(
+        self, tools, mock_ctx, method
+    ):
+        timestamps = [float(i) for i in range(12)]
+        result = await tools["estimate_rul"](
+            ctx=mock_ctx,
+            failure_threshold=6.0,
+            feature_values=[1.0 + 0.2 * t for t in timestamps],
+            timestamps=timestamps,
+            method=method,
+        )
+        assert result.status == "estimated"
+        assert "Kalman" not in result.message
+
+    def test_status_vocabulary_and_descriptions(self):
+        """The schema names every outcome and carries no health claim."""
+        schema = RULEstimationResult.model_json_schema()
+        status = schema["properties"]["status"]
+        assert set(status["enum"]) == {
+            "estimated",
+            "no_degradation_trend",
+            "model_threshold_crossed",
+            "model_not_rising",
+            "threshold_already_exceeded",
+        }
+        assert "healthy" not in status["description"]
+        threshold = schema["properties"]["failure_threshold"]["description"]
+        assert "not an observed component failure" in threshold
+        interval = schema["properties"]["rul_interval_95"]["description"]
+        assert "coverage is not validated" in interval
+
+
+class TestEstimateRULNonFiniteInputs:
+    """NaN and infinity are refused with the index and a remedy, never computed on."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+    async def test_non_finite_value_refused(self, tools, mock_ctx, bad):
+        with pytest.raises(ValueError) as exc:
+            await tools["estimate_rul"](
+                ctx=mock_ctx,
+                failure_threshold=4.5,
+                feature_values=[1.0, bad, 1.4, 1.6],
+                timestamps=[0.0, 24.0, 48.0, 72.0],
+            )
+        message = str(exc.value)
+        assert "feature_values contains 1 non-finite sample(s)" in message
+        assert "first at sample index 1" in message
+        assert "remove that measurement and its timestamp" in message
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("bad", [float("nan"), float("inf")])
+    async def test_non_finite_timestamp_refused(self, tools, mock_ctx, bad):
+        with pytest.raises(ValueError) as exc:
+            await tools["estimate_rul"](
+                ctx=mock_ctx,
+                failure_threshold=4.5,
+                feature_values=[1.0, 1.2, 1.4, 1.6],
+                timestamps=[0.0, bad, 48.0, 72.0],
+            )
+        message = str(exc.value)
+        assert "timestamps contains 1 non-finite sample(s)" in message
+        assert "first at sample index 1" in message
+        assert "finite number in hours" in message
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+    async def test_non_finite_threshold_refused(self, tools, mock_ctx, bad):
+        with pytest.raises(ValueError) as exc:
+            await tools["estimate_rul"](
+                ctx=mock_ctx,
+                failure_threshold=bad,
+                feature_values=[1.0, 1.2, 1.4, 1.6],
+                timestamps=[0.0, 24.0, 48.0, 72.0],
+            )
+        assert f"failure_threshold is {bad!r}, not a finite number" in str(exc.value)
+
+    @pytest.mark.asyncio
+    async def test_non_finite_signal_feature_refused(self, tools, mock_ctx, tmp_path):
+        """A recording whose feature is undefined is refused, naming the recording."""
+        repo = get_repository()
+        ids = []
+        rng = np.random.default_rng(3)
+        for i in range(3):
+            data = np.zeros(1000) if i == 1 else 0.1 * rng.standard_normal(1000)
+            path = tmp_path / f"nonfinite_{i}.csv"
+            pd.DataFrame(data).to_csv(path, index=False, header=False)
+            sid = f"nonfinite_{i}"
+            repo.load_signal(str(path), signal_id=sid, sampling_rate=1000)
+            ids.append(sid)
+        try:
+            with pytest.raises(ValueError) as exc:
+                await tools["estimate_rul"](
+                    ctx=mock_ctx,
+                    failure_threshold=4.5,
+                    signal_ids=ids,
+                    timestamps=[0.0, 1.0, 2.0],
+                    feature_name="kurtosis",
+                )
+            assert "of signal 'nonfinite_1' (measurement 1)" in str(exc.value)
+            assert "not a finite number" in str(exc.value)
+        finally:
+            for sid in ids:
+                repo.clear_signal(sid)
+
+
+class TestExponentialNeedsPositiveValues:
+    """No measurement is dropped to make the log-linear fit possible."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("bad", [0.0, -1.0])
+    async def test_non_positive_measurement_refused(self, tools, mock_ctx, bad):
+        with pytest.raises(ValueError) as exc:
+            await tools["estimate_rul"](
+                ctx=mock_ctx,
+                failure_threshold=4.0,
+                feature_values=[0.5, bad, 1.0, 2.0, 3.0],
+                timestamps=[0.0, 1.0, 2.0, 3.0, 4.0],
+                method="exponential",
+            )
+        message = str(exc.value)
+        assert f"measurement 1 is {bad:g}" in message
+        assert "No measurement is dropped" in message
+        assert "method='linear'" in message
+
+    @pytest.mark.asyncio
+    async def test_linear_still_accepts_non_positive_values(self, tools, mock_ctx):
+        result = await tools["estimate_rul"](
+            ctx=mock_ctx,
+            failure_threshold=4.0,
+            feature_values=[-1.0, 0.0, 1.0, 2.0, 3.0],
+            timestamps=[0.0, 1.0, 2.0, 3.0, 4.0],
+        )
+        assert result.status == "estimated"
+        assert result.rul == pytest.approx(1.0)
+
+
+# ---------------------------------------------------------------------------
 # analyze_signal_trend (within-recording screening)
 # ---------------------------------------------------------------------------
 
@@ -485,6 +863,13 @@ class TestAnalyzeSignalTrend:
         assert result.num_segments > 50
         assert len(result.feature_series) <= 50
         assert result.series_truncated is True
+
+    def test_stable_is_described_as_a_test_outcome_only(self):
+        schema = TrendAnalysisResult.model_json_schema()
+        direction = schema["properties"]["trend_direction"]["description"]
+        assert "could not be computed" in direction
+        assert "does not show that the recording is stationary" in direction
+        assert "screen whether a recording is stationary" not in schema["description"]
 
     @pytest.mark.asyncio
     async def test_signal_not_loaded_names_remedy(self, tools, repo, mock_ctx):
@@ -557,6 +942,51 @@ class TestDegradationOnsetMerged:
             overlap_ratio=0.5,
         )
         assert result.onset_threshold_sigma == 10.0
+
+
+class TestAnalyzeSignalTrendBounds:
+    """Parameters that would multiply the work or make onset meaningless are refused."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("overlap", [1.0, 0.95, 0.91, 0.999, -0.1, float("nan")])
+    async def test_overlap_outside_bounds_refused(self, tools, repo, mock_ctx, overlap):
+        with pytest.raises(ValueError) as exc:
+            await tools["analyze_signal_trend"](
+                ctx=mock_ctx, signal_id="stationary", overlap_ratio=overlap
+            )
+        assert f"overlap_ratio must be from 0 to 0.9, got {overlap!r}." in str(
+            exc.value
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("overlap", [0.0, 0.9])
+    async def test_overlap_at_the_bounds_accepted(self, tools, repo, mock_ctx, overlap):
+        result = await tools["analyze_signal_trend"](
+            ctx=mock_ctx, signal_id="stationary", overlap_ratio=overlap
+        )
+        assert result.num_segments > 0
+
+    @pytest.mark.asyncio
+    async def test_largest_overlap_bounds_the_segment_count(
+        self, tools, repo, mock_ctx
+    ):
+        """At 0.9 a segment advances by a tenth of its length, never by one sample."""
+        result = await tools["analyze_signal_trend"](
+            ctx=mock_ctx, signal_id="stationary", overlap_ratio=0.9
+        )
+        samples, segment_samples = 20000, 1000
+        assert result.num_segments <= 10 * (samples // segment_samples)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("sigma", [0.0, -1.0, float("nan"), float("inf")])
+    async def test_onset_sigma_must_be_positive_and_finite(
+        self, tools, repo, mock_ctx, sigma
+    ):
+        with pytest.raises(ValueError) as exc:
+            await tools["analyze_signal_trend"](
+                ctx=mock_ctx, signal_id="stationary", onset_threshold_sigma=sigma
+            )
+        assert "onset_threshold_sigma must be positive and finite" in str(exc.value)
 
 
 # ---------------------------------------------------------------------------

@@ -31,8 +31,9 @@ notifications; any fact a caller needs is carried by the return value.
 
 import json
 import logging
+import math
 from datetime import datetime, timezone
-from typing import Callable, Literal, Optional
+from typing import Callable, Literal, NamedTuple, Optional
 
 import numpy as np
 import pydantic_core
@@ -42,16 +43,20 @@ from mcp.server.mcpserver import MCPServer, Context
 from ..signal_processing.features import extract_time_domain_features
 from ..signal_acquisition.repository import get_repository
 from ._utils import refusal_boundary, resolve_signal
-from ..prognostics import (
-    estimate_rul_linear,
-    estimate_rul_exponential,
-    analyze_trend,
-    detect_degradation_onset,
+from ..prognostics import analyze_trend, detect_degradation_onset
+from ..prognostics.kalman_rul import kalman_degradation_state, kalman_rul_from_state
+from ..prognostics.rul_estimator import (
+    fit_exponential_degradation,
+    fit_linear_degradation,
+    validate_positive_for_exponential,
 )
-from ..prognostics.kalman_rul import estimate_rul_kalman
 from ..prognostics import indicator_forecast
 from ..prognostics.indicator_forecast import forecast_indicator
-from ..signal_validation import InvalidInputError
+from ..signal_validation import (
+    InvalidInputError,
+    validate_finite_samples,
+    validate_positive_finite,
+)
 from ..models import (
     ForecastAggregation,
     ForecastBackend,
@@ -71,6 +76,50 @@ TREND_ALPHA = 0.05
 # Maximum relative spread of measurement intervals tolerated by the
 # Kalman method (which assumes uniform sampling).
 KALMAN_MAX_SPACING_SPREAD = 0.10
+
+# Largest segment overlap analyze_signal_trend accepts. Nearer 1 a segment
+# advances by a few samples, so the work grows with the sample count rather
+# than with the number of segment lengths in the recording.
+MAX_OVERLAP_RATIO = 0.9
+
+
+class _MethodWording(NamedTuple):
+    """How estimate_rul messages name one method's model."""
+
+    places: str  # subject of "places the indicator at <value>"
+    extrapolates: str  # object of "This extrapolates <...>"
+    not_rising: str  # why the model projects no crossing
+
+
+_FITTED_LINE = "the fitted linear trend"
+_FITTED_CURVE = "the fitted exponential curve"
+_WORDING = {
+    "linear": _MethodWording(
+        _FITTED_LINE, _FITTED_LINE, f"{_FITTED_LINE} does not rise"
+    ),
+    "exponential": _MethodWording(
+        _FITTED_CURVE, _FITTED_CURVE, f"{_FITTED_CURVE} does not rise"
+    ),
+    "kalman": _MethodWording(
+        "the Kalman filter's level estimate",
+        "the Kalman filter's estimated level and rate",
+        "the Kalman filter's rate estimate at the last measurement is not positive",
+    ),
+}
+
+_NOT_HEALTH = "This does not show that the machine is stable or healthy"
+
+
+class _ModelOutcome(NamedTuple):
+    """Where the requested model places the indicator at the last measurement."""
+
+    modelled: float  # fitted curve or filtered level at the last timestamp
+    crossed: bool  # modelled at or above the threshold
+    rising: bool  # the model's rate at the last measurement is positive
+    fit_r_squared: Optional[float]  # None for kalman, which fits no curve
+    rul: Optional[float]  # time to the threshold, when rising and not crossed
+    extra: dict  # method-specific result fields of an estimate
+
 
 _MULTI_MEASURE_ERROR = (
     "RUL estimation requires repeated measurements over time — got {n} "
@@ -159,8 +208,117 @@ def _measurement_series_from_signals(
             raise ValueError(
                 f"Unknown feature '{feature_name}'. Available: {available_feats}"
             )
-        values.append(float(feats[feature_name]))
+        value = float(feats[feature_name])
+        if not math.isfinite(value):
+            raise ValueError(
+                f"The {feature_name} of signal '{sid}' (measurement {len(values)}) "
+                f"is {value!r}, not a finite number. Check that recording, or "
+                "choose a feature_name that is defined for it."
+            )
+        values.append(value)
     return values
+
+
+def _no_trend_message(
+    values: list[float],
+    p_value: Optional[float],
+    direction: str,
+    horizon: float,
+    time_unit: str,
+) -> str:
+    """What the slope test supports when it does not license an estimate."""
+    n = len(values)
+    if p_value is None:
+        cause = (
+            f"every value is {values[0]:g}"
+            if all(v == values[0] for v in values)
+            else "the regression is numerically degenerate"
+        )
+        return (
+            "No time to the threshold is estimated: the slope test could not be "
+            f"computed on these {n} measurements ({cause}), so it shows no trend in "
+            f"either direction. {_NOT_HEALTH}. Re-run estimate_rul as the series grows."
+        )
+    if direction == "decreasing":
+        return (
+            "No time to the threshold is estimated: the measurements show a "
+            f"statistically significant decreasing trend (slope p-value = "
+            f"{p_value:.3g}), away from the failure threshold you set, and "
+            "estimate_rul assumes an indicator that rises toward its threshold. "
+            f"{_NOT_HEALTH}."
+        )
+    return (
+        "No time to the threshold is estimated: the slope test finds no "
+        "statistically significant increasing trend at the "
+        f"{TREND_ALPHA:g} level (slope p-value = {p_value:.3g}) over {n} "
+        f"measurements spanning {horizon:g} {time_unit}. {_NOT_HEALTH}; with "
+        "few or noisy measurements the test can miss a real trend. Re-run "
+        "estimate_rul as the series grows."
+    )
+
+
+def _model_outcome(
+    method: str, values: list[float], t: list[float], failure_threshold: float
+) -> _ModelOutcome:
+    """Fit or filter the series with *method* and place it against the threshold.
+
+    The crossing is decided on each model's own terms (the fitted time to
+    the threshold, or the filtered level), which are the terms the public
+    estimators use, so every estimate keeps their numbers.
+    """
+    if method == "kalman":
+        dts = np.diff(t)
+        mean_dt = float(np.mean(dts))
+        spread = float((np.max(dts) - np.min(dts)) / mean_dt)
+        if spread > KALMAN_MAX_SPACING_SPREAD:
+            raise ValueError(
+                "The kalman method assumes uniformly spaced measurements, "
+                f"but the intervals vary by {spread * 100:.0f}% — use "
+                "method='linear' or 'exponential', or resample the series "
+                "to a regular interval."
+            )
+        state = kalman_degradation_state(values, sampling_interval=mean_dt)
+        estimate = kalman_rul_from_state(state, failure_threshold)
+        extra = {}
+        if estimate is not None:
+            extra = {
+                "rul_interval_95": [round(x, 4) for x in estimate["rul_interval_95"]],
+                "precision_heuristic": round(estimate["precision_heuristic"], 4),
+                "estimated_rate": round(estimate["estimated_rate"], 6),
+            }
+        return _ModelOutcome(
+            modelled=state["final_level"],
+            crossed=state["final_level"] >= failure_threshold,
+            rising=state["final_rate"] > 0,
+            fit_r_squared=None,
+            rul=None if estimate is None else float(estimate["rul"]),
+            extra=extra,
+        )
+
+    fit_series = (
+        fit_linear_degradation if method == "linear" else fit_exponential_degradation
+    )
+    fit = fit_series(values, t, failure_threshold)
+    time_to_crossing = fit["time_to_crossing"]
+    rising = time_to_crossing is not None
+    crossed = (
+        time_to_crossing <= 0
+        if rising
+        else fit["fitted_last_value"] >= failure_threshold
+    )
+    estimated = rising and not crossed
+    return _ModelOutcome(
+        modelled=fit["fitted_last_value"],
+        crossed=crossed,
+        rising=rising,
+        fit_r_squared=fit["fit_r_squared"],
+        rul=float(time_to_crossing) if estimated else None,
+        extra=(
+            {"estimated_rate": round(fit["slope"], 6)}
+            if estimated and method == "linear"
+            else {}
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -195,15 +353,29 @@ async def estimate_rul(
        `feature_name` value.
 
     The degradation indicator is assumed to RISE toward
-    `failure_threshold`. A statistically significant increasing trend
-    (slope p-value < 0.05) is required before any RUL is computed; a
-    flat/insignificant series returns status 'no_degradation_trend'
-    with no RUL number.
+    `failure_threshold`, a limit the caller sets; reaching it is not an
+    observed component failure. A statistically significant increasing
+    trend (slope p-value < 0.05) is required before any RUL is computed.
+    Every value, timestamp and the threshold must be finite numbers, and
+    the exponential method needs every value to be positive: anything
+    else is refused, never dropped.
+
+    Outcomes (status): 'estimated' (time to the threshold computed);
+    'no_degradation_trend' (the slope test found no significant
+    increasing trend, or could not be computed; nothing about the
+    machine's health follows); 'model_threshold_crossed' (the latest
+    measurement is below the threshold, but the fitted model places the
+    indicator at or above it: a model estimate, not an observed
+    exceedance); 'model_not_rising' (a significant rise, but the
+    requested model's rate at the last measurement is not positive);
+    'threshold_already_exceeded' (the latest measurement is at or above
+    the threshold).
 
     Args:
         ctx: MCP context. Unused — see this module's docstring on logging.
-        failure_threshold: Indicator value considered as failure, in the
-            same units as the feature values. No universal default is
+        failure_threshold: Indicator limit, in the same units as the
+            feature values; reaching it is not an observed component
+            failure. No universal default is
             imposed — but when the indicator is broadband VELOCITY RMS
             in mm/s, the standard choice is the ISO 10816-3:2009 zone
             C/D boundary that assess_severity / get_zone_boundaries()
@@ -218,7 +390,9 @@ async def estimate_rul(
         feature_name: Time-domain feature used to reduce each signal
             (default: "rms"). Ignored for feature_values input.
         method: "linear" (default), "exponential", or "kalman"
-            (kalman needs approximately uniform measurement spacing).
+            (kalman needs approximately uniform measurement spacing; its
+            estimate can change with the time unit, and its interval has
+            no validated coverage).
         time_unit: Label for the time axis; RUL and
             observation_horizon are expressed in this unit.
 
@@ -244,23 +418,46 @@ async def estimate_rul(
     if n < 3:
         raise ValueError(_MULTI_MEASURE_ERROR.format(n=n))
 
-    if feature_values is not None:
-        values = [float(v) for v in feature_values]
-    else:
-        assert signal_ids is not None
-        values = _measurement_series_from_signals(signal_ids, feature_name)
+    if not math.isfinite(failure_threshold):
+        raise ValueError(
+            f"failure_threshold is {failure_threshold!r}, not a finite number. "
+            "Give the indicator limit as a finite number in the indicator's units."
+        )
 
+    # Timestamps first: they are cheap to check, while the signal_ids route
+    # reduces every stored recording before its values can be checked.
     if len(timestamps) != n:
         raise ValueError(
             f"Got {n} measurements but {len(timestamps)} timestamps — "
             "provide one timestamp per measurement."
         )
     t = [float(x) for x in timestamps]
+    validate_finite_samples(
+        t,
+        source="timestamps",
+        remedy=f"give each measurement's time as a finite number in {time_unit}",
+    )
     if any(b <= a for a, b in zip(t, t[1:])):
         raise ValueError(
             "timestamps must be strictly increasing — sort the "
             "measurements chronologically and remove duplicates."
         )
+
+    if feature_values is not None:
+        values = [float(v) for v in feature_values]
+        validate_finite_samples(
+            values,
+            source="feature_values",
+            remedy=(
+                "remove that measurement and its timestamp, or replace it with "
+                "the value actually measured"
+            ),
+        )
+    else:
+        assert signal_ids is not None
+        values = _measurement_series_from_signals(signal_ids, feature_name)
+    if method == "exponential":
+        validate_positive_for_exponential(values)
 
     horizon = t[-1] - t[0]
     current_value = values[-1]
@@ -287,8 +484,9 @@ async def estimate_rul(
             trend_p_value=None,
             message=(
                 f"The most recent measurement ({current_value:g}) is at or "
-                f"above the failure threshold ({failure_threshold:g}) — "
-                "no remaining life to estimate. Inspect the machine now."
+                f"above the failure threshold you set ({failure_threshold:g}). "
+                "The threshold is an indicator limit, not an observed component "
+                "failure, and no time to it is estimated. Inspect the machine now."
             ),
             **common,
         )
@@ -297,92 +495,92 @@ async def estimate_rul(
     trend = analyze_trend(values, timestamps=t, significance_level=TREND_ALPHA)
     p_value = trend["p_value"]
 
-    if p_value is None or p_value >= TREND_ALPHA or trend["slope"] <= 0:
-        if trend["slope"] <= 0 and p_value is not None and p_value < TREND_ALPHA:
-            reason = (
-                "the indicator is decreasing/flat, moving away from the "
-                "failure threshold"
-            )
-        else:
-            reason = (
-                "no statistically significant increasing trend "
-                f"(slope p-value = {p_value if p_value is not None else 'n/a'})"
-            )
+    if trend["trend_direction"] != "increasing":
         return RULEstimationResult(
             status="no_degradation_trend",
             trend_p_value=p_value,
             fit_r_squared=round(trend["r_squared"], 4),
-            message=(
-                f"No degradation trend detected: {reason}. The machine "
-                f"appears stable over the {horizon:g} {time_unit} "
-                "observed — keep collecting measurements and re-run "
-                "estimate_rul as the series grows."
+            message=_no_trend_message(
+                values, p_value, trend["trend_direction"], horizon, time_unit
             ),
             **common,
         )
 
     # --- Fit the requested degradation model ----------------------
-    extra: dict = {}
-    if method == "linear":
-        result = estimate_rul_linear(values, t, failure_threshold)
-    elif method == "exponential":
-        result = estimate_rul_exponential(values, t, failure_threshold)
-    else:  # kalman
-        dts = np.diff(t)
-        mean_dt = float(np.mean(dts))
-        spread = float((np.max(dts) - np.min(dts)) / mean_dt)
-        if spread > KALMAN_MAX_SPACING_SPREAD:
-            raise ValueError(
-                "The kalman method assumes uniformly spaced measurements, "
-                f"but the intervals vary by {spread * 100:.0f}% — use "
-                "method='linear' or 'exponential', or resample the series "
-                "to a regular interval."
-            )
-        result = estimate_rul_kalman(
-            values, failure_threshold, sampling_interval=mean_dt
-        )
-        if result is not None:
-            extra["rul_interval_95"] = [round(x, 4) for x in result["rul_interval_95"]]
-            extra["precision_heuristic"] = round(result["precision_heuristic"], 4)
-            extra["estimated_rate"] = round(result["estimated_rate"], 6)
-
-    if result is None:
+    outcome = _model_outcome(method, values, t, failure_threshold)
+    wording = _WORDING[method]
+    fit_r2 = (
+        round(outcome.fit_r_squared, 4) if outcome.fit_r_squared is not None else None
+    )
+    if outcome.crossed:
+        modelled = round(outcome.modelled, 6)
         return RULEstimationResult(
-            status="no_degradation_trend",
+            status="model_threshold_crossed",
             trend_p_value=p_value,
-            fit_r_squared=round(trend["r_squared"], 4),
+            fit_r_squared=fit_r2,
+            modelled_current_value=modelled,
             message=(
-                f"The fitted {method} degradation curve does not reach the "
-                f"failure threshold ({failure_threshold:g}) after the last "
-                "measurement — no finite RUL. Keep collecting measurements."
+                f"The latest measurement ({current_value:g}) is below the failure "
+                f"threshold you set ({failure_threshold:g}), but "
+                f"{wording.places} places the indicator at {modelled:g} at "
+                "the time of that measurement, at or above the threshold. This is "
+                "a model estimate, not an observed exceedance and not a confirmed "
+                "component failure, so no time to the threshold is estimated. "
+                "Review the latest measurements and the machine's condition now "
+                "rather than waiting for further measurements."
+            ),
+            **common,
+        )
+    if not outcome.rising:
+        follow_up = (
+            "Review the latest measurements."
+            if method == "linear"
+            else "Compare with method='linear' and review the latest measurements."
+        )
+        return RULEstimationResult(
+            status="model_not_rising",
+            trend_p_value=p_value,
+            fit_r_squared=fit_r2,
+            message=(
+                "The slope test finds a statistically significant increasing "
+                f"trend (slope p-value = {p_value:.3g}), but "
+                f"{wording.not_rising}, so the model projects no crossing "
+                "of the failure threshold you set and no time to the threshold is "
+                "estimated. The trend test and the model disagree. "
+                f"{follow_up}"
             ),
             **common,
         )
 
-    rul = float(result["rul"])
-    if method == "linear":
-        extra["estimated_rate"] = round(result["estimated_rate"], 6)
-    fit_r2 = result.get("fit_r_squared")
-
+    rul = outcome.rul
     message = (
-        f"RUL estimated at {rul:g} {time_unit} from {n} measurements "
-        f"spanning {horizon:g} {time_unit}. This is an extrapolation of "
-        "the observed trend — treat it as planning input, not a guarantee."
+        "Estimated time for the indicator to reach the failure threshold you "
+        f"set: {rul:g} {time_unit} after the last measurement, from {n} "
+        f"measurements spanning {horizon:g} {time_unit}. This extrapolates "
+        f"{wording.extrapolates}; reaching the threshold is not a "
+        "predicted component failure. Treat it as planning input, not a guarantee."
     )
     if rul > horizon:
         message += (
             f" Caution: the estimate extends {rul / horizon:.1f}x beyond "
             "the observation horizon, so its reliability is low."
         )
+    if method == "kalman":
+        message += (
+            " The Kalman estimate can change with the time unit chosen for the "
+            "timestamps, and its interval (rul_interval_95) with both the time "
+            "unit and the value scale; the interval's empirical coverage is not "
+            "validated."
+        )
 
     return RULEstimationResult(
         status="estimated",
         trend_p_value=p_value,
         rul=round(rul, 4),
-        fit_r_squared=round(fit_r2, 4) if fit_r2 is not None else None,
+        fit_r_squared=fit_r2,
         message=message,
         **common,
-        **extra,
+        **outcome.extra,
     )
 
 
@@ -408,20 +606,24 @@ async def analyze_signal_trend(
     first; the sampling rate comes from the stored signal metadata.
 
     This is a SCREENING tool, not a prognosis: a trend inside seconds
-    of signal says whether the recording is stationary, not how long
-    the machine will live. For Remaining Useful Life, collect repeated
-    measurements over days/weeks (one recording per session) and pass
-    them to estimate_rul — this tool returns the per-segment feature
-    series so each recording can be reduced to one measurement point.
+    of signal describes that recording, not how long the machine will
+    live, and 'stable' means only that no significant slope was found,
+    not that the recording is stationary. For Remaining Useful Life,
+    collect repeated measurements over days/weeks (one recording per
+    session) and pass them to estimate_rul — this tool returns the
+    per-segment feature series so each recording can be reduced to one
+    measurement point.
 
     Args:
         ctx: MCP context. Unused — see this module's docstring on logging.
         signal_id: ID of the stored signal (from load_signal).
         feature_name: Time-domain feature to analyze (default: "rms").
         segment_duration: Duration of each segment in seconds.
-        overlap_ratio: Overlap between segments (0-1).
+        overlap_ratio: Overlap between segments, from 0 to 0.9
+            (default: 0.5).
         onset_threshold_sigma: Baseline standard deviations above the
-            baseline mean that trigger onset detection (default: 3.0).
+            baseline mean that trigger onset detection, a finite number
+            greater than 0 (default: 3.0).
 
     Returns:
         TrendAnalysisResult with slope, direction (p-value based),
@@ -430,9 +632,25 @@ async def analyze_signal_trend(
         onset_segment_index, onset_time_s, baseline_segments).
 
     Raises:
-        ValueError: If the signal_id is not loaded, or the stored
-            signal has no sampling rate.
+        ValueError: If overlap_ratio or onset_threshold_sigma is out of
+            bounds, the signal_id is not loaded, or the stored signal has
+            no sampling rate.
     """
+    if not 0.0 <= overlap_ratio <= MAX_OVERLAP_RATIO:
+        raise ValueError(
+            f"overlap_ratio must be from 0 to {MAX_OVERLAP_RATIO:g}, got "
+            f"{overlap_ratio!r}. Higher values make successive segments nearly "
+            "identical and multiply the computation; use the default 0.5 or a "
+            f"value up to {MAX_OVERLAP_RATIO:g}."
+        )
+    validate_positive_finite(
+        onset_threshold_sigma,
+        name="onset_threshold_sigma",
+        remedy=(
+            "pass the number of baseline standard deviations above the baseline "
+            "mean that marks an onset, for example the default 3.0"
+        ),
+    )
     signal_data, info = resolve_signal(signal_id)
     sr = info.sampling_rate
     logger.info(

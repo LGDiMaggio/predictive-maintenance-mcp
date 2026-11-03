@@ -197,7 +197,7 @@
     "type": "object"
   },
   "analyze_signal_trend": {
-    "description": "Within-recording feature trend \u2014 screening only, NOT a prognosis.\n\nSegments a single recording (seconds of data) and fits a trend on the\nper-segment feature values. Use it to screen whether a recording is\nstationary. It cannot estimate Remaining Useful Life: for RUL, collect\nrepeated measurements over days/weeks and pass them to estimate_rul.",
+    "description": "Within-recording feature trend \u2014 screening only, NOT a prognosis.\n\nSegments a single recording (seconds of data) and fits a trend on the\nper-segment feature values. Use it to screen a recording for a\nwithin-recording trend or a post-baseline onset. It cannot estimate\nRemaining Useful Life: for RUL, collect repeated measurements over\ndays/weeks and pass them to estimate_rul.",
     "properties": {
       "analysis_scope": {
         "description": "Always 'within_recording_screening': this trend spans seconds of one recording, not the machine's life",
@@ -305,7 +305,7 @@
         "type": "number"
       },
       "trend_direction": {
-        "description": "increasing, decreasing, or stable \u2014 based on the slope significance test (p < 0.05), not on an R-squared cutoff",
+        "description": "increasing, decreasing, or stable \u2014 based on the slope significance test (p < 0.05), not on an R-squared cutoff. 'stable' means only that no significant slope was found, or that the test could not be computed (p_value None); it does not show that the recording is stationary or the machine healthy.",
         "title": "Trend Direction",
         "type": "string"
       }
@@ -3453,7 +3453,7 @@
         "title": "Estimated Rate"
       },
       "failure_threshold": {
-        "description": "Indicator value considered as failure",
+        "description": "Indicator limit set by the caller, in the indicator's units. Reaching it is not an observed component failure.",
         "title": "Failure Threshold",
         "type": "number"
       },
@@ -3484,6 +3484,19 @@
         "description": "Estimation method used: linear, exponential, or kalman",
         "title": "Method",
         "type": "string"
+      },
+      "modelled_current_value": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Indicator value the model gives at the time of the latest measurement: the fitted curve for linear and exponential, the filtered level for kalman (only when status='model_threshold_crossed'). Compare it with current_value, the measured value.",
+        "title": "Modelled Current Value"
       },
       "num_measurements": {
         "description": "Number of measurements in the series",
@@ -3518,7 +3531,7 @@
           }
         ],
         "default": null,
-        "description": "Estimated remaining useful life in time_unit (only when status='estimated')",
+        "description": "Time from the latest measurement until the fitted trend reaches failure_threshold, in time_unit (only when status='estimated'). An extrapolation to a caller-set limit, not a predicted failure time.",
         "title": "Rul"
       },
       "rul_interval_95": {
@@ -3534,14 +3547,16 @@
           }
         ],
         "default": null,
-        "description": "[lower, upper] approximate 95% interval from the delta-method variance (kalman only). Coverage not validated \u2014 treat as an order-of-magnitude band.",
+        "description": "[lower, upper] nominal 95% band from a first-order (delta-method) variance of the Kalman filter's state (kalman only). Its empirical coverage is not validated. The filter's noise settings are fixed, so the band depends on the time unit and the value scale of the series and does not widen with the scatter of the measurements.",
         "title": "Rul Interval 95"
       },
       "status": {
-        "description": "'estimated' (RUL computed), 'no_degradation_trend' (no statistically significant trend toward the threshold \u2014 healthy outcome, no RUL number), or 'threshold_already_exceeded' (last measurement is at/above the failure threshold).",
+        "description": "'estimated' (a time to the threshold was computed); 'no_degradation_trend' (the slope test found no statistically significant increasing trend, or could not be computed: no time to the threshold, and nothing about the machine's health follows); 'model_threshold_crossed' (the latest measurement is below failure_threshold, but the fitted model places the indicator at or above it at that time: a model estimate, not an observed exceedance or a confirmed failure); 'model_not_rising' (a significant increasing trend, but the requested model's rate at the last measurement is not positive, so it projects no crossing); or 'threshold_already_exceeded' (the latest measurement is at or above failure_threshold).",
         "enum": [
           "estimated",
           "no_degradation_trend",
+          "model_threshold_crossed",
+          "model_not_rising",
           "threshold_already_exceeded"
         ],
         "title": "Status",
