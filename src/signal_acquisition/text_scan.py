@@ -253,8 +253,12 @@ def _read_head(file: VerifiedFile) -> bytes:
                 break
             _refuse_nul(file, more)
             stop = re.search(rb"[\r\n]", more)
+            # The line's length without its break, as the decoder counts it.
+            length = (
+                len(head) - line_start + (len(more) if stop is None else stop.start())
+            )
             head += more if stop is None else more[: stop.end()]
-            if len(head) - line_start > LINE_CAP:
+            if length > LINE_CAP:
                 line = normalize_line_breaks(head[:line_start]).count(b"\n") + 1
                 raise TextScanRefused(
                     "line_too_long",
@@ -264,8 +268,24 @@ def _read_head(file: VerifiedFile) -> bytes:
                 )
             if stop is not None:
                 break
-    if head.endswith(b"\r") and file.read(len(head), 1) == b"\n":
-        head += b"\n"  # keep a \r\n break whole
+    return _finish_break(file, head)
+
+
+def _finish_break(file: VerifiedFile, head: bytes) -> bytes:
+    """When *head* stops inside a run of ``\\r``, take the rest of the run
+    and the ``\\n`` that may follow, so the break is not split in two (a run
+    of ``\\r`` then ``\\n`` is ONE break). Bounded by :data:`LINE_CAP`."""
+    taken = 0
+    while head.endswith(b"\r") and len(head) < file.size and taken <= LINE_CAP:
+        more = file.read(len(head), _EXTEND_BYTES)
+        _refuse_nul(file, more)
+        run = len(more) - len(more.lstrip(b"\r"))
+        head += more[:run]
+        taken += run
+        if run < len(more):
+            if more[run : run + 1] == b"\n":
+                head += b"\n"
+            break
     return head
 
 

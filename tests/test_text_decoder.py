@@ -11,6 +11,7 @@ import hashlib
 import random
 import re
 import tracemalloc
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -291,10 +292,95 @@ class TestLinesAndRows:
         data = b"t;acc\n1;" + b"2" * (td.LINE_CAP + 10) + b"\n"
         assert refusal(tmp_path, data, interpretation()).code == "line_too_long"
 
+    def test_the_line_cap_matches_the_scan(self, tmp_path):
+        exact = b"1;2,5;" + b"x" * (td.LINE_CAP - 6)
+        interp = interpretation()
+        assert decode(tmp_path, b"t;a;note\n" + exact + b"\n", interp).row_count == 1
+        caught = refusal(tmp_path, b"t;a;note\n" + exact + b"x\n", interp)
+        assert caught.code == "line_too_long" and caught.line == 2
+
     def test_mixed_line_breaks_keep_physical_line_numbers(self, tmp_path):
         data = b"t;acc\r\r\n1;2,5\r3;4,5\n5;x\r\n"
         caught = refusal(tmp_path, data, interpretation())
         assert caught.line == 4
+
+
+class TestFirstOffendingLine:
+    """R20: whichever check finds it, the refusal names the first offending
+    physical line (then the first field)."""
+
+    TWO = interpretation(channels=((1, None), (2, None)))
+
+    @pytest.mark.parametrize(
+        ("rows", "line", "code"),
+        [
+            # a bad token in column 2 before a bad token in column 1
+            (b"0;1;2\n0;1;x\n0;y;2\n", 3, "non_numeric_token"),
+            # a bad token before a ragged row
+            (b"0;1;2\n0;x;2\n0;1\n", 3, "non_numeric_token"),
+            # a ragged row before a bad token
+            (b"0;1;2\n0;1\n0;x;2\n", 3, "ragged_row"),
+            # a bad token before a blank line followed by data
+            (b"0;1;2\n0;x;2\n\n0;1;2\n", 3, "non_numeric_token"),
+            # a bad token before a truncated last line
+            (b"0;1;2\n0;x;2\n0;1;2", 3, "non_numeric_token"),
+            # an over-long token after a bad one in the same column
+            (b"0;x;2\n0;" + b"1" * 70 + b";2\n", 2, "non_numeric_token"),
+            # an over-long token before a bad one in the same column
+            (b"0;" + b"1" * 70 + b";2\n0;x;2\n", 2, "non_numeric_token"),
+            # a non-finite value before an unparsable one
+            (b"0;1e999;2\n0;1e5e;2\n", 2, "non_finite_token"),
+        ],
+    )
+    def test_the_first_line_wins(self, tmp_path, rows, line, code):
+        caught = refusal(tmp_path, b"t;a;b\n" + rows, self.TWO)
+        assert (caught.line, caught.code) == (line, code)
+
+    def test_a_token_before_an_over_long_line_wins(self, tmp_path):
+        data = b"t;a;b\n0;x;2\n0;1;" + b"2" * (td.LINE_CAP + 5) + b"\n"
+        caught = refusal(tmp_path, data, self.TWO)
+        assert (caught.line, caught.code) == (2, "non_numeric_token")
+
+    def test_the_first_field_wins_on_one_line(self, tmp_path):
+        caught = refusal(tmp_path, b"t;a;b\n0;x;y\n", self.TWO)
+        assert (caught.line, caught.field) == (2, 1)
+
+
+class TestBoundedTokenMemory:
+    @staticmethod
+    def _peak(tmp_path, data: bytes) -> int:
+        interp = interpretation(
+            delimiter=",", decimal=".", first=1, header_line=None, channels=((0, None),)
+        )
+        (tmp_path / "x.csv").write_bytes(data)
+        with open_import_file(
+            "x.csv", [tmp_path], base=tmp_path, max_size=1 << 30
+        ) as file:
+            tracemalloc.start()
+            result = td.decode_text(file, interp, mode="digest")
+            _, peak = tracemalloc.get_traced_memory()
+            tracemalloc.stop()
+        assert result.row_count == data.count(b"\n")
+        return peak
+
+    def test_one_long_token_does_not_widen_every_row(self, tmp_path):
+        """Two million one-byte rows (a whole 4 MiB block), with and without
+        one 64-byte token: the token matrix is built in slices and the row
+        arrays in batches, so the long token adds almost nothing and the peak
+        stays bounded."""
+        rows = 2_000_000
+        plain = b"1\n" * rows
+        with_long = b"1\n" * (rows // 2) + b"1" * 64 + b"\n" + b"1\n" * (rows // 2)
+        baseline = self._peak(tmp_path, plain)
+        peak = self._peak(tmp_path, with_long)
+        assert peak < baseline * 1.2
+        assert peak < 96 * 1024 * 1024
+
+    def test_an_overflowing_token_is_refused_without_a_warning(self, tmp_path):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            caught = refusal(tmp_path, b"t;acc\n1;1e400\n", interpretation(decimal="."))
+        assert caught.code == "non_finite_token"
 
 
 # ---------------------------------------------------------------------------

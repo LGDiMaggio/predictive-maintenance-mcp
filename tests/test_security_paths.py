@@ -576,6 +576,10 @@ class TestImportPathGate:
             ("\\pmm\\data\\x.csv", "root-relative"),
             ("C:\\pmm\\data\\x" + chr(0x202E) + "vsc.csv", "invisible formatting"),
             ("C:\\pmm\\data\\x\n.csv", "control"),
+            ("C:\\pmm\\data\\x?.csv", "reserves in names"),
+            ('C:\\pmm\\data\\"x".csv', "reserves in names"),
+            ("C:\\pmm\\data\\x|y.csv", "reserves in names"),
+            ("C:\\pmm\\data\\" + "a" * 256 + ".csv", "over 255 characters"),
         ],
     )
     def test_windows_aliases_and_devices_are_refused(self, raw, problem):
@@ -734,6 +738,31 @@ def _open(root: Path, name: str, max_size: int = 1 << 30) -> path_safety.Verifie
     return path_safety.open_import_file(name, [root], base=root, max_size=max_size)
 
 
+def _after_the_check(monkeypatch, path: Path, action) -> None:
+    """Run *action* right after the ``lstat`` of the resolved *path*, i.e.
+    between the check and the open. Armed only once ``safe_resolve`` has
+    returned: on POSIX, resolving a path ``lstat``-s every component too."""
+    real_lstat = os.lstat
+    real_resolve = path_safety.safe_resolve
+    resolved_path = path.resolve()  # before patching: resolving calls lstat
+    state = {"armed": False, "done": False}
+
+    def resolve_then_arm(*args, **kwargs):
+        resolved = real_resolve(*args, **kwargs)
+        state["armed"] = True
+        return resolved
+
+    def lstat_then_act(target, *args, **kwargs):
+        seen = real_lstat(target, *args, **kwargs)
+        if state["armed"] and not state["done"] and Path(target) == resolved_path:
+            state["done"] = True
+            action()
+        return seen
+
+    monkeypatch.setattr(path_safety, "safe_resolve", resolve_then_arm)
+    monkeypatch.setattr(os, "lstat", lstat_then_act)
+
+
 class TestOpenImportFile:
     def test_a_regular_file_opens_and_reads_only_up_to_its_size(self, tmp_path):
         _write(tmp_path, "pump.csv", b"0123456789")
@@ -797,16 +826,13 @@ class TestOpenImportFile:
         self, tmp_path, monkeypatch
     ):
         path = _write(tmp_path, "swap.csv")
-        real_lstat = os.lstat
 
-        def lstat_then_swap(target, *args, **kwargs):
-            seen = real_lstat(target, *args, **kwargs)
+        def swap():
             replacement = tmp_path / "other.tmp"
             replacement.write_bytes(b"9;9\n")
             os.replace(replacement, path)
-            return seen
 
-        monkeypatch.setattr(os, "lstat", lstat_then_swap)
+        _after_the_check(monkeypatch, path, swap)
         with pytest.raises(path_safety.PathRefused) as caught:
             _open(tmp_path, "swap.csv")
         assert caught.value.code == "source_changed"
@@ -826,18 +852,63 @@ class TestOpenImportFile:
     ):
         path = _write(tmp_path, "link.csv")
         (tmp_path / "target.csv").write_bytes(b"7;7\n")
-        real_lstat = os.lstat
 
-        def lstat_then_link(target, *args, **kwargs):
-            seen = real_lstat(target, *args, **kwargs)
+        def link():
             path.unlink()
             os.symlink(tmp_path / "target.csv", path)
-            return seen
 
-        monkeypatch.setattr(os, "lstat", lstat_then_link)
+        _after_the_check(monkeypatch, path, link)
         with pytest.raises(path_safety.PathRefused) as caught:
             _open(tmp_path, "link.csv")
         assert caught.value.code == "source_changed"
+        assert "replaced by a link" in str(caught.value)
+
+    def test_a_locked_or_forbidden_file_is_unreadable_not_replaced(
+        self, tmp_path, monkeypatch
+    ):
+        _write(tmp_path, "locked.csv")
+
+        def denied(*_args, **_kwargs):
+            raise PermissionError(13, "denied: /full/server/path/locked.csv")
+
+        monkeypatch.setattr(os, "open", denied)
+        with pytest.raises(path_safety.PathRefused) as caught:
+            _open(tmp_path, "locked.csv")
+        assert caught.value.code == "file_unreadable"
+        assert "/full/server/path" not in str(caught.value)
+        assert "another program holds the file open" in str(caught.value)
+
+    @pytest.mark.parametrize(
+        ("error", "code"),
+        [
+            (NotADirectoryError(20, "x"), "file_not_found"),
+            (PermissionError(13, "x"), "file_unreadable"),
+            (OSError(22, "x"), "file_unreadable"),
+        ],
+    )
+    def test_lstat_errors_become_refusals(self, tmp_path, monkeypatch, error, code):
+        _write(tmp_path, "x.csv")
+
+        def failing(*_args, **_kwargs):
+            raise error
+
+        monkeypatch.setattr(os, "lstat", failing)
+        monkeypatch.setattr(
+            path_safety, "safe_resolve", lambda root, rel: Path(root) / rel
+        )
+        with pytest.raises(path_safety.PathRefused) as caught:
+            _open(tmp_path, "x.csv")
+        assert caught.value.code == code
+
+    def test_a_link_loop_while_resolving_is_a_refusal(self, tmp_path, monkeypatch):
+        def looping(*_args, **_kwargs):
+            raise RuntimeError("Symlink loop from '/full/path'")
+
+        monkeypatch.setattr(path_safety, "safe_resolve", looping)
+        with pytest.raises(path_safety.PathRefused) as caught:
+            _open(tmp_path, "x.csv")
+        assert caught.value.code == "file_unreadable"
+        assert "/full/path" not in str(caught.value)
 
     @pytest.mark.skipif(os.name == "nt", reason="symlinks need privileges on Windows")
     def test_a_symlink_leading_outside_the_root_is_refused(self, tmp_path):

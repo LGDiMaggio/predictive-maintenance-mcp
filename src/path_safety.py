@@ -17,6 +17,7 @@ the same implementation instead of each rolling — or drifting from — its own
     ``startswith("/data/signals")``. See ``tests/test_security_paths.py``.
 """
 
+import errno
 import ntpath
 import os
 import posixpath
@@ -195,6 +196,9 @@ IMPORT_SUFFIXES: tuple[str, ...] = (".csv", ".txt")
 #: Longest path string the gate considers.
 _MAX_PATH_CHARS = 4096
 
+#: Longest path component (the limit of NTFS, ext4 and APFS names).
+_MAX_COMPONENT_CHARS = 255
+
 _CHANGED_REMEDY = (
     "the file changed while it was being read, so the export may still be in "
     "progress: wait until it is complete, then validate it again"
@@ -206,8 +210,9 @@ class PathRefused(ValueError):
 
     Attributes:
         code: The issue code of the import contract (``unsafe_path``,
-            ``path_outside_roots``, ``file_not_found``, ``not_a_regular_file``,
-            ``unsupported_suffix``, ``file_too_large``, ``source_changed``).
+            ``path_outside_roots``, ``file_not_found``, ``file_unreadable``,
+            ``not_a_regular_file``, ``unsupported_suffix``, ``file_too_large``,
+            ``source_changed``).
     """
 
     def __init__(self, code: str, message: str) -> None:
@@ -307,6 +312,8 @@ def gate_import_path(
             raise _unsafe(raw, "a root-relative path (no drive letter)")
         if ":" in rest:
             raise _unsafe(raw, "a ':' after the drive (an alternate data stream)")
+        if any(char in rest for char in '<>"|?*'):
+            raise _unsafe(raw, 'a character Windows reserves in names (< > " | ? *)')
         components = rest.split("\\")
     else:
         text = raw
@@ -317,6 +324,10 @@ def gate_import_path(
     for component in components:
         if component in ("", ".", ".."):
             continue
+        if len(component) > _MAX_COMPONENT_CHARS:
+            raise _unsafe(
+                raw, f"a path component is over {_MAX_COMPONENT_CHARS} characters"
+            )
         if component.endswith((".", " ")):
             raise _unsafe(raw, "a path component ends with a dot or a space")
         if component.split(".")[0].rstrip(" ").upper() in WINDOWS_DEVICE_NAMES:
@@ -466,18 +477,23 @@ def open_import_file(
         The open :class:`VerifiedFile`; the caller closes it.
 
     Raises:
-        PathRefused: With the code of the failed check.
+        PathRefused: With the code of the failed check; an operating-system
+            error never escapes with its own message (which names the full
+            path).
     """
     gated = gate_import_path(raw, roots, base=base)
+    shown = _quoted(str(raw))
     try:
         resolved = safe_resolve(Path(gated.root), gated.relative)
     except ValueError:
         raise PathRefused(
             "path_outside_roots",
-            f"Path {_quoted(str(raw))} leads outside the folders the import "
-            f"reads once its links are followed. Copy the file into the data "
-            f"directory or a folder listed in PMM_IMPORT_ROOTS.",
+            f"Path {shown} leads outside the folders the import reads once its "
+            f"links are followed. Copy the file into the data directory or a "
+            f"folder listed in PMM_IMPORT_ROOTS.",
         ) from None
+    except (OSError, RuntimeError) as exc:  # RuntimeError: a symbolic link loop
+        raise _unreadable(shown, exc) from None
     name = resolved.name
     if not name.lower().endswith(IMPORT_SUFFIXES):
         raise PathRefused(
@@ -488,12 +504,14 @@ def open_import_file(
         )
     try:
         seen = os.lstat(resolved)
-    except FileNotFoundError:
+    except (FileNotFoundError, NotADirectoryError):
         raise PathRefused(
             "file_not_found",
-            f"File {_quoted(str(raw))} does not exist; check the path (list_signals "
-            f"shows the files under the data directory).",
+            f"File {shown} does not exist; check the path (list_signals shows the "
+            f"files under the data directory).",
         ) from None
+    except OSError as exc:
+        raise _unreadable(shown, exc) from None
     if not stat.S_ISREG(seen.st_mode):
         raise PathRefused(
             "not_a_regular_file",
@@ -503,12 +521,20 @@ def open_import_file(
     _refuse_oversized(name, seen.st_size, max_size)
     try:
         fd = os.open(resolved, _OPEN_FLAGS)
-    except OSError:
+    except (FileNotFoundError, NotADirectoryError):
         raise PathRefused(
             "source_changed",
-            f"File {_quoted(name)} could not be opened as the file that was "
-            f"checked (it was replaced, or is a link): {_CHANGED_REMEDY}.",
+            f"File {_quoted(name)} disappeared between its check and its "
+            f"opening: {_CHANGED_REMEDY}.",
         ) from None
+    except OSError as exc:
+        if exc.errno == getattr(errno, "ELOOP", None):
+            raise PathRefused(
+                "source_changed",
+                f"File {_quoted(name)} was replaced by a link between its check "
+                f"and its opening: {_CHANGED_REMEDY}.",
+            ) from None
+        raise _unreadable(_quoted(name), exc) from None
     try:
         opened = os.fstat(fd)
         if not stat.S_ISREG(opened.st_mode) or (opened.st_dev, opened.st_ino) != (
@@ -525,6 +551,23 @@ def open_import_file(
         os.close(fd)
         raise
     return VerifiedFile(fd, resolved, opened)
+
+
+def _unreadable(shown: str, exc: BaseException) -> PathRefused:
+    """A refusal for a file the operating system will not let the import
+    read; the system's own message (which carries the full path) is not
+    repeated."""
+    reason = (
+        "permission is denied, or another program holds the file open (a "
+        "spreadsheet program locks the files it shows)"
+        if isinstance(exc, PermissionError)
+        else "the operating system refused to read it"
+    )
+    return PathRefused(
+        "file_unreadable",
+        f"File {shown} cannot be read: {reason}. Close the program that holds "
+        f"it, check the permissions, or copy the export into the data directory.",
+    )
 
 
 def _refuse_oversized(name: str, size: int, max_size: int) -> None:

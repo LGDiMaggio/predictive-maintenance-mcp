@@ -57,7 +57,7 @@ measurement replays under the contract it was decoded with.
 import codecs
 import hashlib
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Literal, Optional
@@ -67,6 +67,7 @@ import numpy as np
 from ..config import get_max_signal_size
 from ..file_text import LABEL_CHARS, TOKEN_CHARS, FileText, escape_file_text
 from ..path_safety import VerifiedFile
+from ..signal_validation import validate_finite_samples
 from .import_config import MAX_FIELDS, normalize_interpretation, scaling_divisor
 from .line_breaks import LineBreakNormalizer
 from .text_scan import LINE_CAP
@@ -91,9 +92,18 @@ __all__ = [
 #: Contract id of this decoder; bumped only when its output can change.
 DECODER_CONTRACT = "pmm-text-decoder/1"
 
-#: Bytes read per block. The gates keep a few bytes of working memory per
-#: byte of block, so a much larger block would raise the peak for no gain.
+#: Bytes read per block. The row and field gates keep a few bytes of working
+#: memory per byte of block, so a much larger block would raise the peak for
+#: no gain.
 BLOCK_BYTES = 4 * 1024 * 1024
+
+#: Rows whose tokens are gated and parsed together: the token matrix of one
+#: slice is at most this many rows times the longest token allowed.
+_SLICE_ROWS = 65536
+
+#: Rows checked together for blank lines, width and fields (about a hundred
+#: bytes of index arrays per row).
+_BATCH_ROWS = 262144
 
 #: The decoded-output budget is this many times ``PMM_MAX_SIGNAL_SIZE``.
 DECODED_BUDGET_FACTOR = 2
@@ -287,6 +297,14 @@ def _field_words(field: int) -> str:
     return f"field {field} (the {position}{suffix} from the left)"
 
 
+def _parses(text: bytes) -> bool:
+    try:
+        float(text)
+    except ValueError:
+        return False
+    return True
+
+
 _THOUSANDS = {
     ".": re.compile(rb"[+-]?\d{1,3}(,\d{3})+(\.\d*)?"),
     ",": re.compile(rb"[+-]?\d{1,3}(\.\d{3})+(,\d*)?"),
@@ -463,23 +481,30 @@ class _Decoder:
         starts = np.empty(count, dtype=np.int64)
         starts[0] = 0
         starts[1:] = ends[:-1] + 1
-        too_long = np.flatnonzero(ends - starts > LINE_CAP)
-        if too_long.size:
-            raise self.too_long(line0 + int(too_long[0]))
         for header in plan.header_lines:
             if line0 <= header < line0 + count:
                 index = header - line0
                 self.header_texts.add(batch[starts[index] : ends[index]].strip())
+        too_long = np.flatnonzero(ends - starts > LINE_CAP)
+        stop = int(too_long[0]) if too_long.size else count
         lo = max(plan.first - line0, 0)
         hi = count if plan.last is None else min(count, plan.last - line0 + 1)
-        if lo < hi:
+        # The lines before an over-long one are checked first, so a refusal
+        # always names the first offending line. They go in batches of at
+        # most _BATCH_ROWS rows: the row and field arrays stay bounded even
+        # when a block holds millions of very short rows.
+        end = min(hi, stop)
+        for first in range(lo, end, _BATCH_ROWS):
+            last = min(first + _BATCH_ROWS, end)
             self.region(
                 array,
-                starts[lo:hi],
-                ends[lo:hi],
-                line0 + lo,
-                unterminated=unterminated and hi == count,
+                starts[first:last],
+                ends[first:last],
+                line0 + first,
+                unterminated=unterminated and last == count,
             )
+        if stop < count:
+            raise self.too_long(line0 + stop)
 
     def region(
         self,
@@ -496,31 +521,34 @@ class _Decoder:
         )
         blank = np.flatnonzero(~has_data)
         data = np.flatnonzero(has_data)
-        if self.plan.last is not None and blank.size:
-            raise self.blank(line0 + int(blank[0]), declared=True)
         if self.pending_blank is not None and data.size:
             raise self.blank(self.pending_blank, declared=False)
-        if blank.size and data.size and blank[0] < data[-1]:
-            raise self.blank(line0 + int(blank[0]), declared=False)
-        if not data.size:
-            if self.pending_blank is None:
-                self.pending_blank = line0 + int(blank[0])
-            return
-        last = int(data[-1])
-        if blank.size and self.pending_blank is None:
-            self.pending_blank = line0 + int(blank[0])
-        if unterminated and last == ends.size - 1:
-            raise self.refuse(
+        # The first structural problem of these lines, raised only once the
+        # rows before it have passed every check.
+        stop: Optional[int] = None
+        problem: Optional[TextDecodeError] = None
+        if blank.size and (
+            self.plan.last is not None or (data.size and blank[0] < data[-1])
+        ):
+            stop = int(blank[0])
+            problem = self.blank(line0 + stop, declared=self.plan.last is not None)
+        elif data.size and unterminated and int(data[-1]) == ends.size - 1:
+            stop = int(data[-1])
+            problem = self.refuse(
                 "truncated_last_line",
                 "is the last line and has no line break, so it may be cut short",
-                "the export may still be in progress; when it is complete, end "
-                "the file with a line break, or end data_lines before that line",
-                line=line0 + last,
+                "the export may still be in progress; when it is complete, end the "
+                "file with a line break, or end data_lines before that line",
+                line=line0 + stop,
             )
-        segment = array[offset : int(ends[last]) + 1]
-        self.data_rows(
-            segment, starts[: last + 1] - offset, ends[: last + 1] - offset, line0
-        )
+        rows = (int(data[-1]) + 1 if data.size else 0) if stop is None else stop
+        if rows:
+            segment = array[offset : int(ends[rows - 1]) + 1]
+            self.data_rows(segment, starts[:rows] - offset, ends[:rows] - offset, line0)
+        if problem is not None:
+            raise problem
+        if blank.size and self.pending_blank is None:
+            self.pending_blank = line0 + int(blank[0])
 
     def blank(self, line: int, *, declared: bool) -> TextDecodeError:
         remedy = (
@@ -540,7 +568,6 @@ class _Decoder:
         self, segment: np.ndarray, starts: np.ndarray, ends: np.ndarray, line0: int
     ) -> None:
         plan = self.plan
-        count = starts.size
         if plan.delimiter is not None:
             is_delimiter = segment == plan.delimiter
             fields = np.add.reduceat(is_delimiter, starts, dtype=np.int64) + 1
@@ -555,6 +582,27 @@ class _Decoder:
         width = self.width
         assert width is not None
         ragged = np.flatnonzero(fields != width)
+        count = int(ragged[0]) if ragged.size else starts.size
+        if count:
+            end = int(ends[count - 1]) + 1
+            field_start = np.empty((count, width), dtype=np.int64)
+            field_end = np.empty((count, width), dtype=np.int64)
+            if plan.delimiter is not None:
+                positions = np.flatnonzero(is_delimiter[:end]).reshape(count, width - 1)
+                field_start[:, 0] = starts[:count]
+                field_start[:, 1:] = positions + 1
+                field_end[:, :-1] = positions
+                field_end[:, -1] = ends[:count]
+            else:
+                stops = content[:end].copy()
+                stops[:-1] &= ~content[1:end]
+                field_start[:] = np.flatnonzero(begins[:end]).reshape(count, width)
+                field_end[:] = np.flatnonzero(stops).reshape(count, width) + 1
+            rows = _Rows(segment, line0, starts[:count], field_start, field_end)
+            if self.rows == 0:
+                self.check_trailing_column(rows)
+            self.charge(count)
+            self.columns(rows)
         if ragged.size:
             index = int(ragged[0])
             raise self.refuse(
@@ -564,47 +612,34 @@ class _Decoder:
                 "the data line range",
                 line=line0 + index,
             )
-        field_start = np.empty((count, width), dtype=np.int64)
-        field_end = np.empty((count, width), dtype=np.int64)
-        if plan.delimiter is not None:
-            positions = np.flatnonzero(is_delimiter).reshape(count, width - 1)
-            field_start[:, 0] = starts
-            field_start[:, 1:] = positions + 1
-            field_end[:, :-1] = positions
-            field_end[:, -1] = ends
-        else:
-            stops = content.copy()
-            stops[:-1] &= ~content[1:]
-            field_start[:] = np.flatnonzero(begins).reshape(count, width)
-            field_end[:] = np.flatnonzero(stops).reshape(count, width) + 1
-        rows = _Rows(segment, line0, starts, field_start, field_end)
-        if self.rows == 0:
-            self.check_trailing_column(rows)
-        self.charge(count)
 
+    def columns(self, rows: _Rows) -> None:
+        """Decode every selected column of *rows*; when several refuse, the
+        first line (then the first field) is the one reported."""
+        plan = self.plan
+        refusals: list[TextDecodeError] = []
+        values: dict[int, np.ndarray] = {}
+        times: dict[int, tuple[np.ndarray, np.ndarray]] = {}
         for column in plan.channels:
-            values = self.parse_floats(rows, column)
-            divisor = plan.divisors[column]
-            if divisor is not None:
-                with np.errstate(over="ignore", invalid="ignore"):
-                    values = values / divisor  # checked finite right below
-                bad = np.flatnonzero(~np.isfinite(values))
-                if bad.size:
-                    raise self.refuse(
-                        "non_finite_token",
-                        "is not finite once divided by the scaling divisor",
-                        "check the sensitivity and the source unit",
-                        line=line0 + int(bad[0]),
-                        field=column,
-                    )
-            values = np.ascontiguousarray(values, dtype="<f8")
-            self.digests[column].update(values.data)
-            if self.mode == "full":
-                self.blocks[column].append(values)
+            try:
+                values[column] = self.channel_values(rows, column)
+            except TextDecodeError as refusal:
+                refusals.append(refusal)
         for column, _unit in plan.time_columns:
-            self.time_blocks[column].append(self.parse_time(rows, column))
-        self.rows += count
-        self.last_row_line = line0 + count - 1
+            try:
+                times[column] = self.time_values(rows, column)
+            except TextDecodeError as refusal:
+                refusals.append(refusal)
+        if refusals:
+            raise min(refusals, key=lambda r: (r.line or 0, r.field or 0))
+        for column, samples in values.items():
+            self.digests[column].update(samples.data)
+            if self.mode == "full":
+                self.blocks[column].append(samples)
+        for column, pair in times.items():
+            self.time_blocks[column].append(pair)
+        self.rows += rows.starts.size
+        self.last_row_line = rows.line0 + rows.starts.size - 1
 
     def set_width(self, width: int, line: int) -> None:
         if width > MAX_FIELDS:
@@ -659,52 +694,68 @@ class _Decoder:
 
     # -- tokens -------------------------------------------------------------
 
-    def token_matrix(
-        self, rows: _Rows, column: int, cap: int, *, time: bool
-    ) -> np.ndarray:
-        """The column's tokens as a (rows, width) uint8 matrix, gated, with
-        the decimal mark as ``.``; a time column's spaces at either end are
-        dropped."""
+    def spans(
+        self, rows: _Rows, column: int, *, time: bool
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Start and end of the column's token in every row; a time stamp's
+        spaces at either end are left out."""
         segment = rows.segment
         start = rows.field_start[:, column].copy()
         end = rows.field_end[:, column].copy()
         if time:
-            for _ in range(cap + 1):
-                lead = (start < end) & (
-                    segment[np.minimum(start, segment.size - 1)] == _SPACE
-                )
+            last_byte = segment.size - 1
+            for _ in range(TIME_TOKEN_BYTES + 1):
+                lead = (start < end) & (segment[np.minimum(start, last_byte)] == _SPACE)
                 trail = (start < end) & (segment[np.maximum(end - 1, 0)] == _SPACE)
                 if not (lead.any() or trail.any()):
                     break
                 start += lead
                 end -= trail & ~lead
-        lengths = end - start
-        too_long = np.flatnonzero(lengths > cap)
-        if too_long.size:
-            index = int(too_long[0])
-            raise self.refuse(
-                "time_grammar" if time else "non_numeric_token",
-                f"is longer than {cap} bytes",
-                "this is not a number the import reads",
-                line=rows.line0 + index,
-                field=column,
-                position=int(start[index] - rows.starts[index]),
-                token=bytes(segment[start[index] : end[index]]),
-            )
-        span = max(int(lengths.max()), 1)
-        # One byte position at a time: the temporaries stay row-sized.
-        matrix = np.zeros((lengths.size, span), dtype=np.uint8)
+        return start, end
+
+    def gated_slices(
+        self, rows: _Rows, column: int, cap: int, *, time: bool
+    ) -> Iterator[tuple[int, np.ndarray, Optional[TextDecodeError]]]:
+        """The column's tokens in slices of at most :data:`_SLICE_ROWS` rows,
+        each as a uint8 matrix (decimal mark as ``.``) of the rows before the
+        slice's first gate refusal, with that refusal (or None). Memory stays
+        bounded whatever the rows' lengths."""
+        segment = rows.segment
+        start_all, end_all = self.spans(rows, column, time=time)
         last_byte = segment.size - 1
-        for offset in range(span):
-            matrix[:, offset] = np.where(
-                lengths > offset, segment[np.minimum(start + offset, last_byte)], 0
-            )
-        refused = np.flatnonzero(~self.alphabet[matrix].all(axis=1))
-        if refused.size:
-            raise self.token_refusal(rows, column, int(refused[0]), time=time)
-        if self.plan.decimal_mark == ",":
-            matrix[matrix == _COMMA] = _DOT
-        return matrix
+        for lo in range(0, start_all.size, _SLICE_ROWS):
+            start = start_all[lo : lo + _SLICE_ROWS]
+            lengths = end_all[lo : lo + _SLICE_ROWS] - start
+            long_rows = np.flatnonzero(lengths > cap)
+            limit = int(long_rows[0]) if long_rows.size else start.size
+            span = max(int(lengths[:limit].max()) if limit else 1, 1)
+            matrix = np.zeros((limit, span), dtype=np.uint8)
+            for offset in range(span):
+                matrix[:, offset] = np.where(
+                    lengths[:limit] > offset,
+                    segment[np.minimum(start[:limit] + offset, last_byte)],
+                    0,
+                )
+            refusal: Optional[TextDecodeError] = None
+            refused = np.flatnonzero(~self.alphabet[matrix].all(axis=1))
+            if refused.size:
+                limit = int(refused[0])
+                matrix = matrix[:limit]
+                refusal = self.token_refusal(rows, column, lo + limit, time=time)
+            elif long_rows.size:
+                row = lo + limit
+                refusal = self.refuse(
+                    "time_grammar" if time else "non_numeric_token",
+                    f"is longer than {cap} bytes",
+                    "this is not a number the import reads",
+                    line=rows.line0 + row,
+                    field=column,
+                    position=int(start_all[row] - rows.starts[row]),
+                    token=segment[start_all[row] : end_all[row]].tobytes(),
+                )
+            if self.plan.decimal_mark == ",":
+                matrix[matrix == _COMMA] = _DOT
+            yield lo, matrix, refusal
 
     def token_refusal(
         self, rows: _Rows, column: int, row: int, *, time: bool
@@ -714,7 +765,7 @@ class _Decoder:
         line_end = (
             int(rows.starts[row + 1]) - 1
             if row + 1 < rows.starts.size
-            else segment.size - 1
+            else int(rows.field_end[row, -1])
         )
         if segment[line_start:line_end].tobytes().strip() in self.header_texts:
             return self.refuse(
@@ -738,21 +789,56 @@ class _Decoder:
             token=token,
         )
 
-    def parse_floats(self, rows: _Rows, column: int) -> np.ndarray:
-        matrix = self.token_matrix(rows, column, MAX_TOKEN_BYTES, time=False)
+    def channel_values(self, rows: _Rows, column: int) -> np.ndarray:
+        """The column's samples, parsed, scaled and checked finite."""
+        parts = []
+        for lo, matrix, refusal in self.gated_slices(
+            rows, column, MAX_TOKEN_BYTES, time=False
+        ):
+            parts.append(self.parse_floats(rows, column, lo, matrix))
+            if refusal is not None:
+                raise refusal
+        values = np.concatenate(parts) if len(parts) > 1 else parts[0]
+        divisor = self.plan.divisors[column]
+        if divisor is not None:
+            with np.errstate(over="ignore", invalid="ignore"):
+                values = values / divisor  # checked finite right below
+            bad = np.flatnonzero(~np.isfinite(values))
+            if bad.size:
+                raise self.refuse(
+                    "non_finite_token",
+                    "is not finite once divided by the scaling divisor",
+                    "check the sensitivity and the source unit",
+                    line=rows.line0 + int(bad[0]),
+                    field=column,
+                )
+        values = np.ascontiguousarray(values, dtype="<f8")
+        # The shared finite-sample rule (R47); the line-precise checks above
+        # already refused anything it would.
+        return validate_finite_samples(values, source=f"File {self.name}")
+
+    def parse_floats(
+        self, rows: _Rows, column: int, lo: int, matrix: np.ndarray
+    ) -> np.ndarray:
+        if not matrix.shape[0]:
+            return np.empty(0, dtype=np.float64)
         texts = matrix.view(f"S{matrix.shape[1]}").ravel()
+        unparsable: Optional[int] = None
         try:
-            values = texts.astype(np.float64)
+            with np.errstate(over="ignore", invalid="ignore"):
+                values = texts.astype(np.float64)
         except ValueError:
-            for row, text in enumerate(texts):
-                try:
-                    float(text)
-                except ValueError:
-                    raise self.token_refusal(rows, column, row, time=False) from None
-            raise AssertionError("unreachable: the cast refused no token") from None
+            unparsable = next(
+                row for row, text in enumerate(texts) if not _parses(text)
+            )
+            # A non-finite value before the unparsable one comes first.
+            with np.errstate(over="ignore", invalid="ignore"):
+                values = texts[:unparsable].astype(np.float64)
         bad = np.flatnonzero(~np.isfinite(values))
+        if unparsable is not None and not bad.size:
+            raise self.token_refusal(rows, column, lo + unparsable, time=False)
         if bad.size:
-            row = int(bad[0])
+            row = lo + int(bad[0])
             start = int(rows.field_start[row, column])
             raise self.refuse(
                 "non_finite_token",
@@ -766,9 +852,23 @@ class _Decoder:
             )
         return values
 
-    def parse_time(self, rows: _Rows, column: int) -> tuple[np.ndarray, np.ndarray]:
+    def time_values(self, rows: _Rows, column: int) -> tuple[np.ndarray, np.ndarray]:
+        """The column's stamps as int64 mantissas and int16 exponents."""
+        mantissas, exponents = [], []
+        for lo, matrix, refusal in self.gated_slices(
+            rows, column, TIME_TOKEN_BYTES, time=True
+        ):
+            mantissa, exponent = self.parse_time(rows, column, lo, matrix)
+            mantissas.append(mantissa)
+            exponents.append(exponent)
+            if refusal is not None:
+                raise refusal
+        return np.concatenate(mantissas), np.concatenate(exponents)
+
+    def parse_time(
+        self, rows: _Rows, column: int, lo: int, matrix: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray]:
         """Exact decimal parse: int64 mantissa and int16 exponent per row."""
-        matrix = self.token_matrix(rows, column, TIME_TOKEN_BYTES, time=True)
         count, span = matrix.shape
         classes = _CLASS[matrix]
         state = np.full(count, _START, dtype=np.int8)
@@ -803,7 +903,7 @@ class _Decoder:
         )
         refused = np.flatnonzero(~valid)
         if refused.size:
-            row = int(refused[0])
+            row = lo + int(refused[0])
             start = int(rows.field_start[row, column])
             token = rows.segment[start : int(rows.field_end[row, column])].tobytes()
             code, problem = _token_problem(token, self.plan.decimal_mark, time=True)

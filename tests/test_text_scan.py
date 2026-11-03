@@ -161,6 +161,30 @@ class TestScanContent:
         assert scan.tail_lines[-1] == "20000,40000"
         assert all("," in line for line in scan.tail_lines)
 
+    @pytest.mark.parametrize(
+        ("line", "size"),
+        [(b"1;23\r\r\n", 73_500), (b"1;2\r\r\n", 72_000), (b"1;23\r\n", 73_500)],
+    )
+    def test_a_break_split_at_the_head_cap_is_not_a_phantom_line(
+        self, tmp_path, line, size
+    ):
+        """Python's csv module on Windows writes \\r\\r\\n; when the head cap
+        falls inside that break, the tail must not start with an empty line."""
+        data = line * (size // len(line))
+        scan = _scan(tmp_path, "a.csv", data)
+        expected = line.rstrip(b"\r\n").decode()
+        assert all(text == expected for text in scan.tail_lines), scan.tail_lines[:3]
+        assert all(entry.text == expected for entry in scan.head_lines)
+
+    def test_the_line_cap_counts_the_line_without_its_break(self, tmp_path):
+        """Like the decoder: a line of exactly LINE_CAP bytes is read."""
+        exact = b"1;" + b"x" * (ts.LINE_CAP - 2)
+        scan = _scan(tmp_path, "a.csv", exact + b"\n2;3\n")
+        assert len(scan.head_lines[0].text) == ts.LINE_CAP
+        assert scan.tail_lines == ("2;3",)
+        refused = _refusal(tmp_path, "b.csv", exact + b"x\n2;3\n")
+        assert refused.code == "line_too_long"
+
     def test_scan_writes_nothing(self, tmp_path):
         target = tmp_path / "a.csv"
         target.write_bytes(b"1;2\n3;4\n")
