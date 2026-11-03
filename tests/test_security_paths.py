@@ -642,6 +642,18 @@ class TestImportPathGate:
         )
         assert gated.path == "/srv/pmm/data/runs/12:30.csv"
 
+    @pytest.mark.parametrize(
+        ("raw", "base", "problem"),
+        [
+            ("1:\\pmm\\data\\x.csv", WIN_ROOT, "only a drive letter"),
+            ("x.csv", None, "no base directory"),
+            ("x.csv", "relative\\base", "absolute path"),
+        ],
+    )
+    def test_drive_and_base_rules(self, raw, base, problem):
+        with pytest.raises(path_safety.PathRefused, match=problem):
+            path_safety.gate_import_path(raw, [WIN_ROOT], base=base, windows=True)
+
     @pytest.mark.parametrize("raw", [None, "", "   ", 5, "x" * 5000])
     def test_non_paths_are_refused(self, raw):
         with pytest.raises(path_safety.PathRefused) as caught:
@@ -821,6 +833,37 @@ class TestOpenImportFile:
         assert caught.value.code == "source_changed"
         assert "export may still be in progress" in str(caught.value)
         assert seen == b"1;2\n" * 10
+
+    def test_a_file_that_shrinks_after_open_is_refused(self, tmp_path):
+        path = _write(tmp_path, "shrinking.csv", b"1;2\n" * 10)
+        with _open(tmp_path, "shrinking.csv") as file:
+            path.write_bytes(b"1;2\n")
+            with pytest.raises(path_safety.PathRefused) as caught:
+                b"".join(file.iter_chunks(8))
+        assert caught.value.code == "source_changed"
+        assert "shorter" in str(caught.value)
+
+    def test_a_closed_file_cannot_be_read(self, tmp_path):
+        _write(tmp_path, "x.csv")
+        file = _open(tmp_path, "x.csv")
+        file.close()
+        file.close()
+        with pytest.raises(ValueError, match="closed"):
+            file.read(0, 1)
+
+    def test_a_file_that_vanishes_before_its_open_is_refused(
+        self, tmp_path, monkeypatch
+    ):
+        _write(tmp_path, "gone.csv")
+
+        def vanished(*_args, **_kwargs):
+            raise FileNotFoundError(2, "gone")
+
+        monkeypatch.setattr(os, "open", vanished)
+        with pytest.raises(path_safety.PathRefused) as caught:
+            _open(tmp_path, "gone.csv")
+        assert caught.value.code == "source_changed"
+        assert "disappeared" in str(caught.value)
 
     def test_a_file_swapped_between_check_and_open_is_refused(
         self, tmp_path, monkeypatch

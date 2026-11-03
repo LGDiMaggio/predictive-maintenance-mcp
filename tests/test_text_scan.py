@@ -185,6 +185,20 @@ class TestScanContent:
         refused = _refusal(tmp_path, "b.csv", exact + b"x\n2;3\n")
         assert refused.code == "line_too_long"
 
+    def test_an_empty_file_has_no_lines(self, tmp_path):
+        scan = _scan(tmp_path, "a.csv", b"")
+        assert scan.head_lines == () and scan.tail_lines == () and scan.complete
+
+    def test_a_tail_without_any_break_has_no_lines(self, tmp_path):
+        data = b"1;2\n" + b"x" * (ts.HEAD_BYTES + ts.TAIL_BYTES + 10)
+        scan = _scan(tmp_path, "a.csv", data)
+        assert scan.tail_lines == ()
+
+    def test_a_bom_before_invalid_utf8_is_refused(self, tmp_path):
+        refusal = _refusal(tmp_path, "a.csv", b"\xef\xbb\xbf1;2\n\xff\n")
+        assert refusal.code == "unsupported_encoding"
+        assert "byte-order mark" in str(refusal)
+
     def test_scan_writes_nothing(self, tmp_path):
         target = tmp_path / "a.csv"
         target.write_bytes(b"1;2\n3;4\n")

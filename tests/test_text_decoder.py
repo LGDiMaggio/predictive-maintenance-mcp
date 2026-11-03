@@ -305,6 +305,76 @@ class TestLinesAndRows:
         assert caught.line == 4
 
 
+class TestStreamingEdges:
+    """Behaviors that only show across block boundaries or at the end of a
+    file; blocks are made small to reach them with small files."""
+
+    @pytest.fixture
+    def small_blocks(self, monkeypatch):
+        monkeypatch.setattr(td, "BLOCK_BYTES", 64)
+
+    def test_a_line_longer_than_the_cap_without_a_break_is_refused_while_streaming(
+        self, tmp_path, monkeypatch
+    ):
+        monkeypatch.setattr(td, "BLOCK_BYTES", 4096)
+        monkeypatch.setattr(td, "LINE_CAP", 10_000)
+        data = b"t;acc\n1;" + b"2" * 20_000
+        caught = refusal(tmp_path, data, interpretation())
+        assert caught.code == "line_too_long" and caught.line == 2
+
+    def test_a_blank_line_ending_one_block_and_data_in_the_next(
+        self, tmp_path, small_blocks
+    ):
+        data = b"t;acc\n" + b"1;2,5\n" * 9 + b"\n" + b"1;2,5\n" * 20
+        caught = refusal(tmp_path, data, interpretation())
+        assert (caught.code, caught.line) == ("blank_line_in_data", 11)
+
+    def test_every_block_size_gives_the_same_samples(self, tmp_path, monkeypatch):
+        data = b"t;a;b\r\r\n" + b"".join(
+            f"{k};{k / 7:.5f};-{k % 13},5\r\n".replace(".", ",", 1).encode()
+            for k in range(500)
+        )
+        interp = interpretation(
+            channels=((1, None), (2, None)), time_columns=((0, "s"),)
+        )
+        reference = decode(tmp_path, data, interp)
+        for size in (1, 7, 64, 1000):
+            monkeypatch.setattr(td, "BLOCK_BYTES", size)
+            result = decode(tmp_path, data, interp)
+            assert [c.samples_digest for c in result.channels] == [
+                c.samples_digest for c in reference.channels
+            ]
+            assert np.array_equal(
+                result.time_columns[0].mantissa, reference.time_columns[0].mantissa
+            )
+
+    def test_a_trailing_carriage_return_ends_the_last_line(self, tmp_path):
+        result = decode(tmp_path, b"t;acc\r1;2,5\r", interpretation())
+        assert result.row_count == 1
+
+    def test_input_ending_inside_a_utf8_character_is_refused(self, tmp_path):
+        data = b"t;acc\n1;2,5\nend \xc3"
+        caught = refusal(tmp_path, data, interpretation(last=2))
+        assert caught.code == "unsupported_encoding"
+
+    def test_more_than_the_field_cap_is_refused(self, tmp_path):
+        row = ";".join(["1"] * 1100) + "\n"
+        caught = refusal(tmp_path, ("t\n" + row).encode(), interpretation())
+        assert caught.code == "too_many_fields"
+
+    def test_time_stamps_padded_with_spaces_are_read(self, tmp_path):
+        data = b"t;acc\n  0,5 ;1\n1,5   ;2\n"
+        result = decode(tmp_path, data, interpretation(time_columns=((0, "s"),)))
+        assert result.time_columns[0].mantissa.tolist() == [5, 15]
+
+    def test_an_eleventh_field_is_named_eleventh(self, tmp_path):
+        row = ";".join(["1"] * 10 + ["x"]) + "\n"
+        caught = refusal(
+            tmp_path, ("t\n" + row).encode(), interpretation(channels=((10, None),))
+        )
+        assert "field 10 (the 11th from the left)" in str(caught)
+
+
 class TestFirstOffendingLine:
     """R20: whichever check finds it, the refusal names the first offending
     physical line (then the first field)."""
