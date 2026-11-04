@@ -1033,7 +1033,7 @@ class TestChunkBoundaries:
         tokens = self.COLUMNS[name]()
         whole = assess(tokens, stated_rate_hz="25600")
         if name == "print ties":  # the column reaches the print-tie check
-            assert "only print ties explain" in whole.findings[0].statement
+            assert TIE_COMPATIBLE in whole.findings[0].statement
         for size in (7, 1000):
             monkeypatch.setattr(tb, "_CHUNK_ROWS", size)
             chunked = assess(tokens, stated_rate_hz="25600")
@@ -1208,6 +1208,12 @@ class TestSecondReviewRound:
 # ---------------------------------------------------------------------------
 
 
+#: The print-tie finding's claim: compatibility with a rounding, not a cause.
+TIE_COMPATIBLE = (
+    "compatible with exact half-to-even rounding of a uniform candidate clock"
+)
+
+
 def tie_print(instants, rounding="even"):
     """Integer ticks of exact instants (Fractions of a tick), each the correct
     rounding, a tie to even (half to even, as printf prints an exact tie), up,
@@ -1296,14 +1302,29 @@ class TestPrintTies:
         assert result.outcome == "needs_confirmation"
         assert codes(result) == {"time_off_pattern"}
         statement = finding(result, "time_off_pattern").statement
-        assert "only print ties explain" in statement
-        assert (
-            "half-to-even print of one uniform clock of 1 tick per sample" in statement
-        )
-        assert "(1000 Hz)" in statement
+        assert f"{TIE_COMPATIBLE} of 1 tick per sample (1000 Hz)," in statement
+        assert "one possible representation, not proof of a uniform" in statement
+        assert "not a sampling rate the import has selected or validated" in statement
+        assert "only print ties explain" not in statement
         assert result.evidence == "partial"
         assert result.proposed_rate_hz is None and result.fitted_rate_hz is None
         assert result.rate_sources == ()
+
+    @pytest.mark.parametrize(
+        "decimals, unit, rate",
+        [(2, "s", "100"), (4, "s", "10000"), (6, "s", "1000000"), (3, "ms", "1000000")],
+    )
+    def test_the_candidate_rate_follows_the_print_tick(self, decimals, unit, rate):
+        """The candidate clock's rate comes from the printed resolution and the
+        time unit, never a fixed 1000 Hz: one tick per sample of a 1e-4 s print
+        is 10000 Hz, and of a 1e-3 ms print 1 MHz. It stays a candidate: no
+        rate is fitted or proposed."""
+        tokens = tie_tokens(tie_print(mid_interval(2000, 1)), decimals)
+        result = assess(tokens, unit=unit)
+        assert result.outcome == "needs_confirmation"
+        statement = finding(result, "time_off_pattern").statement
+        assert f"{TIE_COMPATIBLE} of 1 tick per sample ({rate} Hz)," in statement
+        assert result.proposed_rate_hz is None and result.fitted_rate_hz is None
 
     @pytest.mark.parametrize("interval", [1, Fraction(3, 2), 2, Fraction(5, 2), 3])
     @pytest.mark.parametrize("rounding", ["even", "up", "down"])
@@ -1350,7 +1371,7 @@ class TestPrintTies:
                     refused += 1
                     assert result.outcome == "needs_confirmation"
                     statement = finding(result, "time_off_pattern").statement
-                    assert "only print ties explain" in statement
+                    assert TIE_COMPATIBLE in statement
                 else:
                     assert result == alone
         assert refused >= 1  # at least the one-tick mid-interval clock

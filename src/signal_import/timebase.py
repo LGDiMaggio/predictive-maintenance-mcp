@@ -48,12 +48,15 @@ Every bound comes from the printed resolution; there is no free tolerance.
    prints the whole column, each stamp the correct rounding of its instant
    with a tie to even (half to even, as printf and Python print an exact
    tie; stamps exactly half a tick off the grid, such as mid-interval
-   stamps). If one does, the offences become one ``time_off_pattern``
-   finding (``needs_confirmation``, no fitted or proposed rate) that names
-   the clock; a stated or file-declared rate is compared by the rule of
-   step 9 (it must predict every stamp within one tick) and never validates
-   the column. Otherwise the refusal stands. The 0.5 ``b`` and 1.5 ``b``
-   thresholds are unchanged.
+   stamps). If one does, the column is compatible with exact half-to-even
+   rounding of that candidate clock, which is one possible representation
+   and no proof of a uniform acquisition: the offences become one
+   ``time_off_pattern`` finding (``needs_confirmation``, no fitted or
+   proposed rate) that names the candidate clock, its rate derived from
+   the print tick and the time unit; a stated or file-declared rate is
+   compared by the rule of step 9 (it must predict every stamp within one
+   tick) and never validates the column. Otherwise the refusal stands. The
+   0.5 ``b`` and 1.5 ``b`` thresholds are unchanged.
 7. *Residual.* After the step tests pass, a least-squares line; a stamp
    further than ``b/2`` from it, or than the print-and-fit bound when that
    is wider, plus its own extra rounding and the widest one (which can pull
@@ -1579,11 +1582,12 @@ def _tie_finding(
         lines,
         (),
         f"{_plural(count, 'step')} from {int(column.steps.min())} to "
-        f"{int(column.steps.max())} ticks that only print ties explain: the "
-        f"whole column is the half-to-even print of one uniform clock of {clock}, "
-        f"its stamps exactly half a tick off the print grid, but a print that "
-        f"fits is no proof of a uniform acquisition; choose the time-base "
-        f"source; first at line {lines[0]}",
+        f"{int(column.steps.max())} ticks; the whole column is compatible with "
+        f"exact half-to-even rounding of a uniform candidate clock of {clock}, "
+        f"its stamps exactly half a tick off the print grid; that clock is one "
+        f"possible representation, not proof of a uniform acquisition, and its "
+        f"rate is not a sampling rate the import has selected or validated; "
+        f"choose the time-base source; first at line {lines[0]}",
     )
 
 

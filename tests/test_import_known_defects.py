@@ -19,9 +19,10 @@ and asks for the marker to be removed (the convention of
 Retired:
 
 - ``timebase-print-ties-misread`` (PR #108, owner decision 2026-11-04): a
-  fixed-decimal column that is the half-to-even print of one uniform clock
-  with its stamps on print ties is no longer refused; an exact check finds
-  that clock and reports the ambiguity as ``needs_confirmation``. Its
+  fixed-decimal column compatible with exact half-to-even rounding of one
+  uniform clock with its stamps on print ties is no longer refused; an
+  exact check finds that candidate clock and reports the ambiguity as
+  ``needs_confirmation``, without selecting or validating a rate. Its
   regression tests live in ``tests/test_timebase.py`` (``TestPrintTies``).
 
 - ``blank-row-scan-quadratic-on-cr-runs`` (plan U3, 2026-11-03): the
