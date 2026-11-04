@@ -86,10 +86,10 @@ Known limits, from the print alone:
 - The print-tie check covers fixed decimals only: a uniform clock on print
   ties in a significant-digit print (``%.4g`` of mid-interval stamps) is
   still refused (strict tripwire ``timebase-significant-digit-print-ties``).
-- Ties that a float representation decides (a float64 instant a hair to
-  either side of a decimal tie) follow no single rounding rule, so such a
-  column is not explained by half to even and is refused as before at one
-  or two ticks per sample.
+- Timestamps represented as float64 may lie slightly above or below an
+  exact decimal half-tie. Such columns may fail the exact half-to-even
+  candidate-clock check and retain the original step-test verdict,
+  including refusal in the documented one-tick-per-sample case.
 - At exactly one tick per sample a single duplicated row makes the modal
   pair ``{0, 1}``: ``b`` falls just below 1, the column reads as
   ``duration_only``, and the duplicate is indistinguishable from a slightly
