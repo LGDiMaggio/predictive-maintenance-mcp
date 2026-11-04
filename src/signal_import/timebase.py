@@ -45,13 +45,15 @@ Every bound comes from the printed resolution; there is no free tolerance.
    whatever the rounding. *Print ties* (owner decision of 2026-11-04): when
    these tests refuse a fixed-decimal column whose steps all lie within two
    ticks, with none backward, an exact check asks whether one uniform clock
-   prints the whole column, each stamp being the nearest print of its
-   instant with a tie rounded either way (stamps exactly half a tick off the
-   grid, such as mid-interval stamps). If one does, the offences become one
-   ``time_off_pattern`` finding (``needs_confirmation``, no proposed rate)
-   that names the admitted intervals; a stated or file-declared rate is
-   checked against them and never validates the column. Otherwise the
-   refusal stands. The 0.5 ``b`` and 1.5 ``b`` thresholds are unchanged.
+   prints the whole column, each stamp the correct rounding of its instant
+   with a tie to even (half to even, as printf and Python print an exact
+   tie; stamps exactly half a tick off the grid, such as mid-interval
+   stamps). If one does, the offences become one ``time_off_pattern``
+   finding (``needs_confirmation``, no fitted or proposed rate) that names
+   the clock; a stated or file-declared rate is compared by the rule of
+   step 9 (it must predict every stamp within one tick) and never validates
+   the column. Otherwise the refusal stands. The 0.5 ``b`` and 1.5 ``b``
+   thresholds are unchanged.
 7. *Residual.* After the step tests pass, a least-squares line; a stamp
    further than ``b/2`` from it, or than the print-and-fit bound when that
    is wider, plus its own extra rounding and the widest one (which can pull
@@ -73,9 +75,22 @@ interval the print's rounding alone allows it; it is checked with
 evidence, outside ``significant_digits``, with no finding at all; even then
 a time column alone never sets the rate (R12): the caller records a basis.
 
-Known limit, from the print alone: float32 values whose spacing is finer
-than the print but comparable to it cannot be recognized (the print shows
-no digit beyond float32), so their rounding is read as the clock's.
+Known limits, from the print alone:
+
+- float32 values whose spacing is finer than the print but comparable to
+  it cannot be recognized (the print shows no digit beyond float32), so
+  their rounding is read as the clock's.
+- The print-tie check covers fixed decimals only: a uniform clock on print
+  ties in a significant-digit print (``%.4g`` of mid-interval stamps) is
+  still refused (strict tripwire ``timebase-significant-digit-print-ties``).
+- Ties that a float representation decides (a float64 instant a hair to
+  either side of a decimal tie) follow no single rounding rule, so such a
+  column is not explained by half to even and is refused as before at one
+  or two ticks per sample.
+- At exactly one tick per sample a single duplicated row makes the modal
+  pair ``{0, 1}``: ``b`` falls just below 1, the column reads as
+  ``duration_only``, and the duplicate is indistinguishable from a slightly
+  slower clock.
 
 Memory: the step array (8 bytes per row) and, outside fixed decimals, the
 tick array; the floating-point passes run in chunks of :data:`_CHUNK_ROWS`.
@@ -1329,21 +1344,6 @@ def _disagreement(comparisons: Sequence[RateComparison]) -> Optional[TimeFinding
 # ---------------------------------------------------------------------------
 
 
-@dataclass(frozen=True)
-class _Ties:
-    """The uniform clocks a fixed-decimal column admits when a printed stamp
-    may be either nearest print of its true instant (a tie rounded either
-    way): every interval ``beta`` in ``[low, high]`` ticks per sample, exact,
-    has a start ``c`` with ``|c + i * beta - k_i| <= 1/2`` for every stamp."""
-
-    low: Fraction
-    high: Fraction
-
-    def admits(self, low: Fraction, high: Fraction) -> bool:
-        """Some admitted interval lies within ``[low, high]``."""
-        return self.low <= high and low <= self.high
-
-
 def _tie_candidate(column: _Column, findings: Sequence[TimeFinding]) -> bool:
     """Only a refusal by the step tests of a fixed-decimal column, with no
     backward step and every step within the two ticks a uniform clock's
@@ -1393,16 +1393,118 @@ def _hull(values: np.ndarray, sign: int) -> list[tuple[int, int]]:
     return [(i, int(values[i])) for i in sorted(vertices)]
 
 
+def _edge_slopes(chain: list[tuple[int, int]]) -> list[Fraction]:
+    return [Fraction(y2 - y1, x2 - x1) for (x1, y1), (x2, y2) in zip(chain, chain[1:])]
+
+
+class _Band:
+    """Band heights ``w(s) = max(d_i - i s) - min(d_i - i s)`` of the points
+    ``(i, d_i)``, exactly: the height of the narrowest strip of slope ``s``
+    holding them all.
+
+    The maximum lies on the upper convex hull, the minimum on the lower, so
+    ``w`` is convex and piecewise linear, with breakpoints at the hulls' edge
+    slopes and slope ``-+(n - 1)`` beyond them. One ordered sweep evaluates
+    it at every breakpoint: as ``s`` grows, the maximizing vertex of the
+    upper hull moves left and the minimizing vertex of the lower hull moves
+    right, so the cost is linear in the hulls' size.
+    """
+
+    def __init__(self, values: np.ndarray) -> None:
+        upper, lower = _hull(values, 1), _hull(values, -1)
+        rising = sorted(_edge_slopes(upper))  # the upper hull's slopes fall
+        climbing = _edge_slopes(lower)  # the lower hull's slopes rise
+        self.slopes = sorted(set(rising) | set(climbing))
+        self.outer = values.size - 1
+        self.heights: list[Fraction] = []
+        passed_upper = passed_lower = 0
+        for slope in self.slopes:
+            while passed_upper < len(rising) and rising[passed_upper] < slope:
+                passed_upper += 1
+            while passed_lower < len(climbing) and climbing[passed_lower] < slope:
+                passed_lower += 1
+            x_top, y_top = upper[len(upper) - 1 - passed_upper]
+            x_bottom, y_bottom = lower[passed_lower]
+            self.heights.append((y_top - x_top * slope) - (y_bottom - x_bottom * slope))
+
+    def level(self, height: int) -> Optional[tuple[Fraction, Fraction]]:
+        """The slopes ``s`` with ``w(s) <= height``, a closed interval."""
+        slopes, heights = self.slopes, self.heights
+        best = min(range(len(slopes)), key=heights.__getitem__)
+        if heights[best] > height:
+            return None
+        first = last = best
+        while first > 0 and heights[first - 1] <= height:
+            first -= 1
+        while last < len(slopes) - 1 and heights[last + 1] <= height:
+            last += 1
+
+        def crossing(inside: int, outside: int) -> Fraction:
+            return slopes[inside] + (height - heights[inside]) * (
+                slopes[outside] - slopes[inside]
+            ) / (heights[outside] - heights[inside])
+
+        low = (
+            crossing(first, first - 1)
+            if first > 0
+            else slopes[0] - (height - heights[0]) / self.outer
+        )
+        high = (
+            crossing(last, last + 1)
+            if last < len(slopes) - 1
+            else slopes[-1] + (height - heights[-1]) / self.outer
+        )
+        return low, high
+
+
+@dataclass(frozen=True)
+class _Ties:
+    """The uniform clocks that print a fixed-decimal column, each stamp the
+    correct rounding of its instant with a tie to even (half to even), and
+    the intervals a stated or declared rate may take to predict every stamp
+    within one tick (KTD9's rule for any column). Intervals are exact, in
+    ticks per sample."""
+
+    low: Fraction
+    high: Fraction
+    predict_low: Fraction
+    predict_high: Fraction
+
+
+def _ties_on_even_digits(column: _Column, slope: Fraction, values: np.ndarray) -> bool:
+    """At the one line of *slope* that holds the points in a band one tick
+    high, the stamps on its edges sit exactly half a tick from their
+    instants: each must be an even tick, as half to even prints a tie."""
+    numerator, denominator = slope.numerator, slope.denominator
+    top = bottom = None
+    for lo, hi in _chunks(column.rows):
+        # Exact in int64: |values| <= 2 n and the slope's terms stay below n.
+        scaled = denominator * values[lo:hi] - numerator * np.arange(
+            lo, hi, dtype=np.int64
+        )
+        top = int(scaled.max()) if top is None else max(top, int(scaled.max()))
+        bottom = int(scaled.min()) if bottom is None else min(bottom, int(scaled.min()))
+    for lo, hi in _chunks(column.rows):
+        scaled = denominator * values[lo:hi] - numerator * np.arange(
+            lo, hi, dtype=np.int64
+        )
+        on_edge = (scaled == top) | (scaled == bottom)
+        if np.any(column.ticks[lo:hi][on_edge] % 2):
+            return False
+    return True
+
+
 def _tie_band(column: _Column) -> Optional[_Ties]:
-    """The uniform clocks the whole column admits, decided exactly.
+    """The uniform clocks that print the whole column half to even, decided
+    exactly, or None.
 
     In coordinates ``d_i = k_i - k_0 - i * m0`` (``m0`` the smallest step),
-    a clock of interval ``m0 + s`` fits iff the band of the lines of slope
-    ``s`` through the points is at most one tick high: ``w(s) = max(d_i - i
-    s) - min(d_i - i s) <= 1``. The maximum lies on the upper hull, the
-    minimum on the lower; ``w`` is convex and piecewise linear with
-    breakpoints at the hull edges' slopes, linear with slope ``-+(n - 1)``
-    beyond them, so ``{w <= 1}`` is computed in exact rationals.
+    a clock of interval ``m0 + s`` with every stamp within half a tick of
+    its instant exists iff ``w(s) <= 1`` (:class:`_Band`). Where ``w < 1`` no
+    stamp needs to be a tie. Where the least height is exactly 1, its slope
+    and the clock's start are unique (``w`` has no flat piece unless it is
+    0), the stamps on the band's edges are ties, and half to even admits the
+    clock only if each of them is an even tick.
     """
     base = int(column.steps.min())
     values = np.zeros(column.rows, dtype=np.int64)
@@ -1411,48 +1513,23 @@ def _tie_band(column: _Column) -> Optional[_Ties]:
         np.cumsum(column.steps[lo:hi] - base, out=values[lo + 1 : hi + 1])
         values[lo + 1 : hi + 1] += carry
         carry = int(values[hi])
-    upper, lower = _hull(values, 1), _hull(values, -1)
-
-    def width(slope: Fraction) -> Fraction:
-        return max(y - x * slope for x, y in upper) - min(
-            y - x * slope for x, y in lower
-        )
-
-    slopes = sorted(
-        {
-            Fraction(y2 - y1, x2 - x1)
-            for chain in (upper, lower)
-            for (x1, y1), (x2, y2) in zip(chain, chain[1:])
-        }
-    )
-    widths = [width(s) for s in slopes]
-    best = min(range(len(slopes)), key=widths.__getitem__)
-    if widths[best] > 1:
+    band = _Band(values)
+    fitting = band.level(1)
+    if fitting is None:
         return None
-    first = last = best
-    while first > 0 and widths[first - 1] <= 1:
-        first -= 1
-    while last < len(slopes) - 1 and widths[last + 1] <= 1:
-        last += 1
-    outer = column.rows - 1  # |slope| of w beyond every breakpoint
-
-    def crossing(i: int, j: int) -> Fraction:
-        """Where ``w`` reaches 1 between breakpoints ``i`` (w <= 1) and ``j``."""
-        return slopes[i] + (1 - widths[i]) * (slopes[j] - slopes[i]) / (
-            widths[j] - widths[i]
-        )
-
-    low = (
-        crossing(first, first - 1) if first > 0 else slopes[0] - (1 - widths[0]) / outer
+    low, high = fitting
+    if low == high and not _ties_on_even_digits(column, low, values):
+        return None
+    predicting = band.level(2)
+    assert predicting is not None  # w <= 1 somewhere, so w <= 2 there too
+    # Steps never fall, so w falls on every negative slope and its level sets
+    # end at a positive slope; only their start may need the clamp to 0.
+    return _Ties(
+        max(base + low, Fraction(0)),
+        base + high,
+        max(base + predicting[0], Fraction(0)),
+        base + predicting[1],
     )
-    high = (
-        crossing(last, last + 1)
-        if last < len(slopes) - 1
-        else slopes[-1] + (1 - widths[-1]) / outer
-    )
-    if base + high <= 0:
-        return None  # no clock that advances
-    return _Ties(max(base + low, Fraction(0)), base + high)
 
 
 def _exact_beta(rate: Decimal, tick_exponent: int) -> Fraction:
@@ -1462,13 +1539,12 @@ def _exact_beta(rate: Decimal, tick_exponent: int) -> Fraction:
 
 def _ticks(value: Fraction) -> str:
     with decimal.localcontext(_RATE_CONTEXT):
-        return _display(Decimal(value.numerator) / Decimal(value.denominator))
+        text = _display(Decimal(value.numerator) / Decimal(value.denominator))
+    return f"{text} {'tick' if value == 1 else 'ticks'}"
 
 
-def _rate_of(interval: Fraction, tick_exponent: int) -> Optional[Decimal]:
-    """The rate, in Hz, of an interval of *interval* ticks (None for zero)."""
-    if interval <= 0:
-        return None
+def _rate_of(interval: Fraction, tick_exponent: int) -> Decimal:
+    """The rate, in Hz, of a positive interval of *interval* ticks."""
     with decimal.localcontext(_RATE_CONTEXT):
         return (
             Decimal(1).scaleb(-tick_exponent)
@@ -1480,52 +1556,52 @@ def _rate_of(interval: Fraction, tick_exponent: int) -> Optional[Decimal]:
 def _tie_finding(
     column: _Column, findings: Sequence[TimeFinding], ties: _Ties
 ) -> TimeFinding:
-    """The step offences of an ambiguous column, as the choice they need."""
+    """The step offences of an ambiguous column, as the choice they need.
+
+    A column the step tests refuse spans two ticks or more, so every clock
+    that prints it advances: the admitted intervals are positive.
+    """
+    assert ties.low > 0
     count = sum(f.count for f in findings)
     lines = tuple(sorted(line for f in findings for line in f.lines)[:MAX_LISTED_LINES])
-    if ties.low == ties.high:
-        interval = f"{_ticks(ties.low)} ticks"
-    else:
-        interval = f"{_ticks(ties.low)} to {_ticks(ties.high)} ticks"
     fastest = _rate_of(ties.low, column.tick_exponent)
     slowest = _rate_of(ties.high, column.tick_exponent)
-    assert slowest is not None
-    if fastest is None:
-        rates = f"{_display(slowest)} Hz or faster"
-    elif fastest == slowest:
-        rates = f"{_display(fastest)} Hz"
+    if ties.low == ties.high:
+        clock = f"{_ticks(ties.low)} per sample ({_display(fastest)} Hz)"
     else:
-        rates = f"{_display(slowest)} to {_display(fastest)} Hz"
+        clock = (
+            f"{_ticks(ties.low)} to {_ticks(ties.high)} per sample "
+            f"({_display(slowest)} to {_display(fastest)} Hz)"
+        )
     return TimeFinding(
         "time_off_pattern",
         count,
         lines,
         (),
         f"{_plural(count, 'step')} from {int(column.steps.min())} to "
-        f"{int(column.steps.max())} ticks that a uniform clock prints only when "
-        f"its stamps lie exactly on print ties: the whole column fits one "
-        f"uniform clock of {interval} per sample ({rates}) if each stamp is the "
-        f"nearest print of its instant, a tie rounded either way, but a print "
-        f"that fits is no proof of a uniform acquisition; choose the time-base "
+        f"{int(column.steps.max())} ticks that only print ties explain: the "
+        f"whole column is the half-to-even print of one uniform clock of {clock}, "
+        f"its stamps exactly half a tick off the print grid, but a print that "
+        f"fits is no proof of a uniform acquisition; choose the time-base "
         f"source; first at line {lines[0]}",
     )
 
 
 def _tie_comparison(column: _Column, ties: _Ties, other: _Source) -> RateComparison:
-    """An ambiguous column against one rate source: does a clock it admits
-    run at a rate the source allows? It never validates the column."""
+    """An ambiguous column against one rate source, by KTD9's rule for any
+    column: a rate the source allows must predict every stamp within one
+    tick. It never validates the column."""
     shortest = _exact_beta(other.high, column.tick_exponent)
     longest = _exact_beta(other.low, column.tick_exponent)
-    consistent = ties.admits(shortest, longest)
+    consistent = ties.predict_low <= longest and shortest <= ties.predict_high
     fastest = _rate_of(ties.low, column.tick_exponent)
     slowest = _rate_of(ties.high, column.tick_exponent)
-    assert slowest is not None
-    if consistent:
+    if slowest <= other.rate <= fastest:
         ppm: Optional[float] = 0.0
     elif other.rate < slowest:
         ppm = _ppm(slowest, other.rate)
     else:
-        ppm = _ppm(fastest, other.rate) if fastest is not None else None
+        ppm = _ppm(fastest, other.rate)
     return RateComparison("time_column", other.source, consistent, ppm)
 
 

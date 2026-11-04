@@ -1025,15 +1025,15 @@ class TestChunkBoundaries:
         "4 decimals": lambda: printed(
             [n for n in range(5000) if not 100 <= n < 300], FS, 4
         ),
-        "print ties": lambda: tie_tokens(
-            tie_print(mid_interval(5000, Fraction(3, 2)), "alternate")
-        ),
+        "print ties": lambda: tie_tokens(tie_print(mid_interval(5000, 1))),
     }
 
     @pytest.mark.parametrize("name", sorted(COLUMNS))
     def test_results_do_not_depend_on_the_chunk_size(self, name, monkeypatch):
         tokens = self.COLUMNS[name]()
         whole = assess(tokens, stated_rate_hz="25600")
+        if name == "print ties":  # the column reaches the print-tie check
+            assert "only print ties explain" in whole.findings[0].statement
         for size in (7, 1000):
             monkeypatch.setattr(tb, "_CHUNK_ROWS", size)
             chunked = assess(tokens, stated_rate_hz="25600")
@@ -1209,9 +1209,11 @@ class TestSecondReviewRound:
 
 
 def tie_print(instants, rounding="even"):
-    """Integer ticks of exact instants (Fractions of a tick), each the nearest
-    print, a tie rounded to even, up, down, or alternately (a print whose
-    tie direction follows float noise)."""
+    """Integer ticks of exact instants (Fractions of a tick), each the correct
+    rounding, a tie to even (half to even, as printf prints an exact tie), up,
+    down, alternately, or by a seeded coin per row (ties decided row by row,
+    as float noise decides them for a float64 instant next to a decimal
+    tie)."""
     ticks = []
     for i, t in enumerate(instants):
         low = t.numerator // t.denominator
@@ -1224,8 +1226,10 @@ def tie_print(instants, rounding="even"):
             ticks.append(low + 1)
         elif rounding == "down":
             ticks.append(low)
-        else:  # alternate
+        elif rounding == "alternate":
             ticks.append(low + (i % 2))
+        else:  # noise
+            ticks.append(low + (random.Random(i).random() < 0.5))
     return ticks
 
 
@@ -1233,29 +1237,52 @@ def tie_tokens(ticks, decimals=3):
     return [_fixed(k, decimals) for k in ticks]
 
 
-def oracle_width(ticks):
-    """The exact narrowest band, over every slope, holding all points
-    ``(i, k_i)``: brute force over every pair's slope (the band's breakpoints
-    are among them). One uniform clock prints the column, ties rounded
-    either way, iff it is at most one tick."""
-    n = len(ticks)
-    slopes = {
-        Fraction(ticks[j] - ticks[i], j - i) for i in range(n) for j in range(i + 1, n)
-    }
-    return min(
-        max(k - i * s for i, k in enumerate(ticks))
-        - min(k - i * s for i, k in enumerate(ticks))
-        for s in slopes
-    )
-
-
-def oracle_admits(ticks, interval):
-    shifted = [k - i * interval for i, k in enumerate(ticks)]
-    return max(shifted) - min(shifted) <= 1
-
-
 def mid_interval(rows, interval, start=Fraction(1, 2)):
     return [start + i * Fraction(interval) for i in range(rows)]
+
+
+def oracle_band(ticks, height=1):
+    """The exact intervals ``beta`` (ticks per sample) for which some start
+    ``c`` puts every stamp within ``height / 2`` of its instant ``c + i *
+    beta``: the intersection, over every pair of rows, of the intervals that
+    pair allows. None when empty."""
+    low, high = None, None
+    for i in range(len(ticks)):
+        for j in range(i + 1, len(ticks)):
+            gap = Fraction(ticks[j] - ticks[i])
+            lo, hi = (gap - height) / (j - i), (gap + height) / (j - i)
+            low = lo if low is None else max(low, lo)
+            high = hi if high is None else min(high, hi)
+    return None if low > high else (low, high)
+
+
+def oracle_half_even(ticks):
+    """Is the column the half-to-even print of one advancing uniform clock?
+    Brute force, exact: an interval inside the band's admitted range leaves
+    the start free, with no stamp on a tie; a single admitted interval fixes
+    the start, and every stamp it puts on a tie must be an even tick."""
+    band = oracle_band(ticks)
+    if band is None or band[1] <= 0:
+        return False
+    low, high = band
+    if low < high:
+        return True
+    starts_low = [k - Fraction(1, 2) - i * low for i, k in enumerate(ticks)]
+    starts_high = [k + Fraction(1, 2) - i * low for i, k in enumerate(ticks)]
+    c_low, c_high = max(starts_low), min(starts_high)
+    if c_low < c_high:
+        return True
+    if c_low > c_high:
+        return False
+    tied = [i for i, s in enumerate(starts_low) if s == c_low] + [
+        i for i, s in enumerate(starts_high) if s == c_high
+    ]
+    return all(ticks[i] % 2 == 0 for i in tied)
+
+
+def tie_column(tokens):
+    mantissa, exponent = tb.parse_time_tokens(tokens)
+    return tb._column(mantissa, exponent, "s", FIRST_LINE)
 
 
 class TestPrintTies:
@@ -1268,35 +1295,53 @@ class TestPrintTies:
         result = assess(tie_tokens(ticks))
         assert result.outcome == "needs_confirmation"
         assert codes(result) == {"time_off_pattern"}
-        off = finding(result, "time_off_pattern")
-        assert "print ties" in off.statement and "1 ticks per sample" in off.statement
-        assert "1000 Hz" in off.statement
+        statement = finding(result, "time_off_pattern").statement
+        assert "only print ties explain" in statement
+        assert (
+            "half-to-even print of one uniform clock of 1 tick per sample" in statement
+        )
+        assert "(1000 Hz)" in statement
         assert result.evidence == "partial"
         assert result.proposed_rate_hz is None and result.fitted_rate_hz is None
         assert result.rate_sources == ()
 
-    @pytest.mark.parametrize("interval", [1, Fraction(3, 2), 2, Fraction(5, 2)])
-    @pytest.mark.parametrize("rounding", ["even", "up", "down", "alternate"])
+    @pytest.mark.parametrize("interval", [1, Fraction(3, 2), 2, Fraction(5, 2), 3])
+    @pytest.mark.parametrize("rounding", ["even", "up", "down"])
     @pytest.mark.parametrize("start", [Fraction(1, 2), Fraction(0), Fraction(1, 4)])
-    def test_uniform_clocks_on_ties_are_never_invalid(self, interval, rounding, start):
+    def test_a_uniform_clock_printed_by_one_rounding_rule_is_never_invalid(
+        self, interval, rounding, start
+    ):
         ticks = tie_print(mid_interval(400, interval, start), rounding)
-        assert oracle_width(ticks) <= 1  # by construction: one clock prints it
+        assert oracle_half_even(ticks) or rounding != "even"
         result = assess(tie_tokens(ticks))
         assert result.outcome != "invalid", result.findings
         if result.outcome == "needs_confirmation":
             assert result.proposed_rate_hz is None
-            assert codes(result) == {"time_off_pattern"}
+
+    def test_ties_decided_row_by_row_are_not_excused(self, monkeypatch):
+        """Ties decided by float noise follow no single rounding rule: the
+        column is not the half-to-even print of any clock, so the check
+        leaves the step tests' verdict as it was (a documented limit)."""
+        ticks = tie_print(mid_interval(400, 1), "noise")
+        assert oracle_band(ticks) is not None  # ties either way: a clock fits
+        assert not oracle_half_even(ticks)
+        tokens = tie_tokens(ticks)
+        with monkeypatch.context() as patched:
+            patched.setattr(tb, "_tie_band", lambda column: None)
+            alone = assess(tokens)
+        assert alone.outcome == "invalid"
+        assert assess(tokens) == alone
 
     def test_the_ambiguity_replaces_exactly_the_refusals_of_tie_prints(
         self, monkeypatch
     ):
-        """Where the step tests alone refuse a uniform clock on ties, the check
-        turns the refusal into needs_confirmation; where they accept it, it
-        stays accepted."""
+        """Where the step tests alone refuse a uniform clock printed half to
+        even, the check turns the refusal into needs_confirmation; where
+        they accept it, it stays accepted."""
         refused = 0
         for interval in (1, Fraction(3, 2), 2, Fraction(5, 2)):
-            for rounding in ("even", "up", "alternate"):
-                tokens = tie_tokens(tie_print(mid_interval(400, interval), rounding))
+            for start in (Fraction(1, 2), Fraction(0)):
+                tokens = tie_tokens(tie_print(mid_interval(400, interval, start)))
                 with monkeypatch.context() as patched:
                     patched.setattr(tb, "_tie_band", lambda column: None)
                     alone = assess(tokens)
@@ -1304,10 +1349,11 @@ class TestPrintTies:
                 if alone.outcome == "invalid":
                     refused += 1
                     assert result.outcome == "needs_confirmation"
-                    assert "print ties" in finding(result, "time_off_pattern").statement
+                    statement = finding(result, "time_off_pattern").statement
+                    assert "only print ties explain" in statement
                 else:
                     assert result == alone
-        assert refused >= 2
+        assert refused >= 1  # at least the one-tick mid-interval clock
 
     def test_uniform_clocks_without_ties_are_unchanged(self):
         for interval in (Fraction(21, 20), Fraction(39, 25), 39):
@@ -1319,7 +1365,7 @@ class TestPrintTies:
         instants = mid_interval(400, interval)
         del instants[200]
         ticks = tie_print(instants)
-        assert oracle_width(ticks) > 1
+        assert not oracle_half_even(ticks)
         result = assess(tie_tokens(ticks))
         assert result.outcome == "invalid"
         assert codes(result) & {"time_gap", "time_reversal"}
@@ -1335,34 +1381,48 @@ class TestPrintTies:
             ticks = ticks[:200] + ticks[:200]
         else:
             ticks[200] = ticks[199] - 1
+        assert not oracle_half_even(ticks)
+        assert assess(tie_tokens(ticks)).outcome == "invalid", defect
+
+    @pytest.mark.parametrize("rows", [401, 200001])
+    def test_drops_and_a_duplicate_in_a_clean_log_stay_refused(self, rows):
+        """A clean one-tick log (k_i = i, no stamp on a tie) with a dropped
+        row, a duplicated row and another dropped row: a clock with every
+        stamp on a tie could print it only if its ties were rounded up and
+        down at exactly those rows, which half to even does not do."""
+        ticks = list(range(rows))
+        del ticks[3 * rows // 4]
+        ticks.insert(rows // 2, ticks[rows // 2])
+        del ticks[rows // 4]
+        if rows <= 401:
+            assert oracle_band(ticks) is not None and not oracle_half_even(ticks)
         result = assess(tie_tokens(ticks))
-        assert result.outcome == "invalid", (defect, result.findings)
-        if defect != "duplicate":
-            assert oracle_width(ticks) > 1 or min(np.diff(ticks)) < 0
+        assert result.outcome == "invalid"
+        assert "time_reversal" in codes(result)
 
     def test_a_real_rate_change_stays_refused(self):
         instants = mid_interval(200, 1) + [
             Fraction(1, 2) + 200 + i * Fraction(3, 2) for i in range(200)
         ]
         ticks = tie_print(instants)
-        assert oracle_width(ticks) > 1
+        assert not oracle_half_even(ticks)
         assert assess(tie_tokens(ticks)).outcome == "invalid"
 
-    def test_a_stated_rate_constrains_but_never_validates(self):
+    def test_a_stated_rate_is_compared_but_never_validates(self):
         tokens = tie_tokens(tie_print(mid_interval(2000, 1)))
-        agreeing = assess(tokens, stated_rate_hz="1000")
-        assert agreeing.outcome == "needs_confirmation"
-        assert codes(agreeing) == {"time_off_pattern"}
-        assert comparison(agreeing, "time_column", "stated").consistent
-        assert agreeing.proposed_rate_hz is None
-        off = assess(tokens, stated_rate_hz="1010")
-        assert off.outcome == "needs_confirmation"
-        assert codes(off) == {"time_off_pattern", "rate_sources_disagree"}
-        disagreement = comparison(off, "time_column", "stated")
-        assert not disagreement.consistent
-        assert disagreement.difference_ppm == pytest.approx(10000)
+        for rate, consistent in (("1000", True), ("1000.0001", True), ("1010", False)):
+            result = assess(tokens, stated_rate_hz=rate)
+            assert result.outcome == "needs_confirmation"
+            assert result.proposed_rate_hz is None
+            assert comparison(result, "time_column", "stated").consistent is consistent
+            expected = {"time_off_pattern"} | (
+                set() if consistent else {"rate_sources_disagree"}
+            )
+            assert codes(result) == expected
+        off = comparison(assess(tokens, stated_rate_hz="1010"), "time_column", "stated")
+        assert off.difference_ppm == pytest.approx(10000)
 
-    def test_a_declared_interval_constrains_but_never_validates(self):
+    def test_a_declared_interval_is_compared_but_never_validates(self):
         tokens = tie_tokens(tie_print(mid_interval(2000, 1)))
         inside = tb.DeclaredTimeBase(kind="interval", token="0.001")
         result = assess(tokens, declared=inside)
@@ -1373,18 +1433,19 @@ class TestPrintTies:
             assess(tokens, declared=outside), "time_column", "file_declared"
         ).consistent
 
-    def test_the_stated_check_agrees_with_the_exact_oracle(self):
-        """A stated rate fits the 1 kHz mid-interval column exactly when the
-        oracle says one clock of its interval prints it."""
+    def test_the_stated_rule_agrees_with_the_exact_oracle(self):
+        """A stated rate fits an ambiguous column exactly when its clock
+        predicts every stamp within one tick, KTD9's rule for any column."""
         ticks = tie_print(mid_interval(60, 1))
         tokens = tie_tokens(ticks)
         assert assess(tokens).outcome == "needs_confirmation"
+        low, high = oracle_band(ticks, 2)
         verdicts = set()
-        for rate in ("1000", "999.99999999999999999", "1000.0000000000000001", "1010"):
-            expected = oracle_admits(ticks, Fraction(1000) / Fraction(rate))
+        for rate in ("1000", "1017", "1017.3", "983", "982.9", "1100"):
+            interval = Fraction(1000) / Fraction(rate)
+            expected = low <= interval <= high
             verdicts.add(expected)
             stated = assess(tokens, stated_rate_hz=rate)
-            assert stated.outcome == "needs_confirmation"
             assert comparison(stated, "time_column", "stated").consistent is expected
         assert verdicts == {True, False}
 
@@ -1392,8 +1453,9 @@ class TestPrintTies:
         "ticks, outcome",
         [
             ([0, 2, 2], "needs_confirmation"),
-            ([0, 0, 2], "needs_confirmation"),
             ([0, 2, 2, 4], "needs_confirmation"),
+            ([0, 0, 2], "needs_confirmation"),
+            ([1, 1, 3], "invalid"),
             ([0, 0, 3], "invalid"),
             ([0, 2, 0], "invalid"),
         ],
@@ -1402,30 +1464,25 @@ class TestPrintTies:
         result = assess(tie_tokens(ticks))
         assert result.outcome == outcome, result.findings
         if outcome == "needs_confirmation":
-            assert oracle_width(ticks) <= 1 and result.proposed_rate_hz is None
-
-    def test_float32_columns_are_not_tie_checked(self):
-        gapped = assess([repr(n / 32768) for n in range(N) if n != 10000])
-        assert gapped.float32_values and codes(gapped) == {"time_gap"}
-
-    def test_significant_digit_columns_are_not_tie_checked(self, monkeypatch):
-        called = []
-        monkeypatch.setattr(tb, "_tie_band", lambda column: called.append(1))
-        assess(["%g" % (n / FS) for n in range(1000)] + ["0.1"])
-        assert called == []
+            assert oracle_half_even(ticks) and result.proposed_rate_hz is None
 
     def test_against_the_oracle_on_random_columns(self, monkeypatch):
-        """The check changes an outcome only where one uniform clock prints the
-        column (oracle width at most one tick), and there only from invalid
-        to needs_confirmation without a proposed rate."""
+        """Both directions: the check changes an outcome only where the
+        column is the half-to-even print of one clock, and only from invalid
+        to needs_confirmation without a rate; and every column the step
+        tests alone refuse within the check's scope that the oracle admits
+        is changed."""
         rng = random.Random(20261104)
         kinds = ["uniform", "gap", "duplicate", "swap", "rate", "jitter"]
-        changed = 0
-        for trial in range(1500):
+        changed = admitted_refusals = 0
+        for _ in range(1500):
+            # Weighted towards mid-interval clocks, where print ties live.
             interval = rng.choice(
-                [1, Fraction(3, 2), 2, Fraction(5, 2), Fraction(7, 5)]
+                [1, 1, 1, Fraction(3, 2), 2, Fraction(5, 2), Fraction(7, 5)]
             )
-            start = rng.choice([Fraction(1, 2), Fraction(0), Fraction(1, 3)])
+            start = rng.choice(
+                [Fraction(1, 2), Fraction(1, 2), Fraction(0), Fraction(1, 3)]
+            )
             rows = rng.randint(3, 40)
             instants = mid_interval(rows, interval, start)
             kind = rng.choice(kinds)
@@ -1443,20 +1500,126 @@ class TestPrintTies:
                 ]
             elif kind == "jitter":
                 instants = [t + Fraction(rng.randint(-3, 3), 8) for t in instants]
-            ticks = tie_print(instants, rng.choice(["even", "up", "down", "alternate"]))
-            if len(ticks) < 2:
-                continue
+            ticks = tie_print(
+                instants,
+                rng.choice(["even", "even", "up", "down", "alternate", "noise"]),
+            )
             tokens = tie_tokens(ticks)
             with_ties = assess(tokens)
             with monkeypatch.context() as patched:
                 patched.setattr(tb, "_tie_band", lambda column: None)
                 without = assess(tokens)
-            if with_ties == without:
-                continue
-            changed += 1
-            assert min(np.diff(ticks)) >= 0
-            assert oracle_width(ticks) <= 1, (kind, ticks)
-            assert without.outcome == "invalid"
-            assert with_ties.outcome == "needs_confirmation"
-            assert with_ties.proposed_rate_hz is None
-        assert changed > 50
+            steps = np.diff(ticks)
+            in_scope = (
+                without.outcome == "invalid"
+                and codes(without) <= {"time_gap", "time_reversal"}
+                and steps.min() >= 0
+                and steps.max() - steps.min() <= 2
+            )
+            if in_scope and oracle_half_even(ticks):
+                admitted_refusals += 1
+                assert with_ties.outcome == "needs_confirmation", ticks
+                assert with_ties.proposed_rate_hz is None
+            if with_ties != without:
+                changed += 1
+                assert in_scope and oracle_half_even(ticks), (kind, ticks)
+        assert changed == admitted_refusals > 30
+
+    def test_the_band_agrees_with_the_exact_oracle(self):
+        """`_tie_band` and `_Band.level` against the pairwise oracle on
+        random columns in its scope, ties included, with exact endpoints."""
+        rng = random.Random(4)
+        checked = 0
+        for _ in range(3000):
+            rows = rng.randint(2, 30)
+            steps = [
+                rng.choice([0, 1, 2]) if rng.random() < 0.7 else 1
+                for _ in range(rows - 1)
+            ]
+            base = rng.randint(0, 2)
+            ticks = [0]
+            for step in steps:
+                ticks.append(ticks[-1] + base + step)
+            column = tie_column(tie_tokens(ticks))
+            values = np.asarray(ticks, dtype=np.int64) - ticks[0]
+            values -= np.arange(rows, dtype=np.int64) * int(column.steps.min())
+            band = tb._Band(values)
+            for height in (1, 2):
+                level = band.level(height)
+                expected = oracle_band(ticks, height)
+                m0 = int(column.steps.min())
+                got = None if level is None else (m0 + level[0], m0 + level[1])
+                assert got == expected, (ticks, height)
+            ties = tb._tie_band(column)
+            assert (ties is not None) == oracle_half_even(ticks), ticks
+            if ties is not None:
+                low, high = oracle_band(ticks)
+                assert (ties.low, ties.high) == (max(low, Fraction(0)), high)
+                checked += 1
+        assert checked > 300
+
+    def test_a_constant_column_clamps_its_intervals_at_zero(self):
+        ties = tb._tie_band(tie_column(["1.000"] * 5))
+        assert ties is not None
+        assert ties.low == 0 and ties.high == Fraction(1, 4)
+        assert ties.predict_low == 0 and ties.predict_high == Fraction(1, 2)
+
+    def test_the_statement_names_a_range_of_clocks(self):
+        column = tie_column(tie_tokens(tie_print(mid_interval(200, 1))))
+        findings = [tb.TimeFinding("time_reversal", 3, (7, 9, 11), (), "")]
+        ties = tb._Ties(Fraction(1), Fraction(5, 4), Fraction(1), Fraction(2))
+        statement = tb._tie_finding(column, findings, ties).statement
+        assert "1 tick to 1.25 ticks per sample (800 to 1000 Hz)" in statement
+
+
+class TestPrintTieScope:
+    """The check runs only on a refused fixed-decimal column, no float32
+    values, no extra rounding, no backward step, steps within two ticks."""
+
+    @pytest.fixture
+    def refused(self):
+        tokens = tie_tokens(tie_print(mid_interval(400, 1)))
+        column = tie_column(tokens)
+        findings = tb._step_findings(column)
+        assert findings and tb._tie_candidate(column, findings)
+        return column, findings
+
+    @pytest.mark.parametrize(
+        "change",
+        [
+            {"printed_regime": "significant_digits"},
+            {"printed_regime": "shortest_repr"},
+            {"spacing": 2.0**-15},
+            {"largest_extra": 0.5},
+        ],
+    )
+    def test_each_column_condition_excludes(self, refused, change):
+        import dataclasses
+
+        column, findings = refused
+        if "printed_regime" in change:
+            printed = dataclasses.replace(
+                column.printed, regime=change["printed_regime"]
+            )
+            column = dataclasses.replace(column, printed=printed)
+        else:
+            column = dataclasses.replace(column, **change)
+        assert not tb._tie_candidate(column, findings)
+
+    def test_backward_steps_wide_steps_and_other_findings_exclude(self, refused):
+        column, findings = refused
+        residual = tb.TimeFinding("time_residual", 1, (7,), (), "")
+        assert not tb._tie_candidate(column, [*findings, residual])
+        assert not tb._tie_candidate(column, [])
+        for ticks in ([0, 2, 2, 1, 3], [0, 0, 3, 3, 6]):
+            other = tie_column(tie_tokens(ticks))
+            assert not tb._tie_candidate(other, tb._step_findings(other) or findings)
+
+    def test_a_significant_digit_tie_column_never_reaches_the_check(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(tb, "_tie_band", lambda column: calls.append(1))
+        tokens = ["%.4g" % ((n + 0.5) / 1000) for n in range(1, 3000)]
+        result = assess(tokens)
+        assert result.regime == "significant_digits"
+        assert result.outcome == "invalid"
+        assert calls == []
