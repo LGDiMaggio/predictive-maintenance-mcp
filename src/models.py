@@ -1171,7 +1171,7 @@ class RULEstimationResult(BaseModel):
             "failure_threshold, but the fitted model places the indicator at or "
             "above it at that time: a model estimate, not an observed exceedance "
             "or a confirmed failure); 'model_not_rising' (a significant "
-            "increasing trend, but the requested model's rate at the last "
+            "increasing trend, but the requested model's rate at the latest "
             "measurement is not positive, so it projects no crossing); or "
             "'threshold_already_exceeded' (the latest measurement is at or above "
             "failure_threshold). For kalman, model_threshold_crossed and "
@@ -1220,7 +1220,7 @@ class RULEstimationResult(BaseModel):
     rul: Optional[float] = Field(
         None,
         description=(
-            "Time from the latest measurement until the fitted trend reaches "
+            "Time from the latest measurement until the model's extrapolation reaches "
             "failure_threshold, in time_unit (only when status='estimated'). An "
             "extrapolation to a caller-set limit, not a predicted failure time."
         ),

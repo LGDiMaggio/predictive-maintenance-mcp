@@ -3531,7 +3531,7 @@
           }
         ],
         "default": null,
-        "description": "Time from the latest measurement until the fitted trend reaches failure_threshold, in time_unit (only when status='estimated'). An extrapolation to a caller-set limit, not a predicted failure time.",
+        "description": "Time from the latest measurement until the model's extrapolation reaches failure_threshold, in time_unit (only when status='estimated'). An extrapolation to a caller-set limit, not a predicted failure time.",
         "title": "Rul"
       },
       "rul_interval_95": {
@@ -3551,7 +3551,7 @@
         "title": "Rul Interval 95"
       },
       "status": {
-        "description": "'estimated' (a time to the threshold was computed); 'no_degradation_trend' (the slope test found no statistically significant increasing trend, or could not be computed: no time to the threshold, and nothing about the machine's health follows); 'model_threshold_crossed' (the latest measurement is below failure_threshold, but the fitted model places the indicator at or above it at that time: a model estimate, not an observed exceedance or a confirmed failure); 'model_not_rising' (a significant increasing trend, but the requested model's rate at the last measurement is not positive, so it projects no crossing); or 'threshold_already_exceeded' (the latest measurement is at or above failure_threshold). For kalman, model_threshold_crossed and model_not_rising can change with the time unit of the timestamps.",
+        "description": "'estimated' (a time to the threshold was computed); 'no_degradation_trend' (the slope test found no statistically significant increasing trend, or could not be computed: no time to the threshold, and nothing about the machine's health follows); 'model_threshold_crossed' (the latest measurement is below failure_threshold, but the fitted model places the indicator at or above it at that time: a model estimate, not an observed exceedance or a confirmed failure); 'model_not_rising' (a significant increasing trend, but the requested model's rate at the latest measurement is not positive, so it projects no crossing); or 'threshold_already_exceeded' (the latest measurement is at or above failure_threshold). For kalman, model_threshold_crossed and model_not_rising can change with the time unit of the timestamps.",
         "enum": [
           "estimated",
           "no_degradation_trend",

@@ -232,16 +232,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the message names the test, its p-value, and that a non-significant test
   can miss a real trend. Messages and descriptions treat `failure_threshold`
   as a limit the caller sets, not as an observed component failure, and an
-  estimate as the time for the indicator to reach it. A Kalman estimate
-  says that it can change with the time unit, that its interval depends on
-  the time unit and the value scale, and that the interval's coverage is not
-  validated. The estimator itself is unchanged.
+  estimate as the time for the indicator to reach it. A Kalman estimate,
+  model-implied crossing or non-rising rate says that it can change with the
+  time unit, and an estimate adds that its interval depends on the time unit
+  and the value scale and that the interval's coverage is not validated. The
+  estimator itself is unchanged.
 - **`analyze_signal_trend` refuses an `overlap_ratio` outside 0 to 0.9 and an
   `onset_threshold_sigma` that is not a finite number greater than 0.** An
   overlap near 1 advanced each segment by one sample and could take minutes
   on seconds of data; a zero or negative sigma flagged an onset on any
   record. Its description now says that `stable` means only that no
   significant slope was found or that the test could not be computed.
+  Before 1.0 this is a behavior change of published fields: the next release
+  bumps MINOR, per the project's pre-1.0 rule.
 - **The sample bearing data is no longer part of the source distribution.**
   The sdist now contains no files from `data/`; the sample signals stay in
   the repository. `LICENSE` now holds only the MIT License, and the license
@@ -423,7 +426,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   significant rise whose exponential curve or Kalman rate does not rise is
   now `model_not_rising` instead of `no_degradation_trend`. Both statuses
   are new values of `status`. Present in 0.13.0 and earlier; every other
-  `estimate_rul` result keeps its numbers.
+  result for input that is still accepted keeps its numbers. Before 1.0
+  this is a behavior change of published fields: the next release bumps
+  MINOR, per the project's pre-1.0 rule.
 - **`estimate_rul` refuses values, timestamps and thresholds that are not
   finite.** A NaN or infinite input used to produce "appears stable", an
   inspection alarm, or `status: estimated` with no number. It is now

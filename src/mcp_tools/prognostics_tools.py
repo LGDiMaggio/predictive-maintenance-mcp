@@ -103,7 +103,7 @@ _WORDING = {
     "kalman": _MethodWording(
         "the Kalman filter's level estimate",
         "the Kalman filter's estimated level and rate",
-        "the Kalman filter's rate estimate at the last measurement is not positive",
+        "the Kalman filter's rate estimate at the latest measurement is not positive",
     ),
 }
 
@@ -118,11 +118,11 @@ _KALMAN_OUTCOME_NOTE = (
 
 
 class _ModelOutcome(NamedTuple):
-    """Where the requested model places the indicator at the last measurement."""
+    """Where the requested model places the indicator at the latest measurement."""
 
     modelled: float  # fitted curve or filtered level at the last timestamp
     crossed: bool  # modelled at or above the threshold
-    rising: bool  # the model's rate at the last measurement is positive
+    rising: bool  # the model's rate at the latest measurement is positive
     fit_r_squared: Optional[float]  # None for kalman, which fits no curve
     rul: Optional[float]  # time to the threshold, when rising and not crossed
     extra: dict  # method-specific result fields of an estimate
@@ -233,6 +233,7 @@ def _no_trend_message(
     direction: str,
     horizon: float,
     time_unit: str,
+    failure_threshold: float,
 ) -> str:
     """What the slope test supports when it does not license an estimate."""
     n = len(values)
@@ -244,14 +245,16 @@ def _no_trend_message(
         )
         return (
             "No time to the threshold is estimated: the slope test could not be "
-            f"computed on these {n} measurements ({cause}), so it shows no trend in "
-            f"either direction. {_NOT_HEALTH}. Re-run estimate_rul as the series grows."
+            f"computed on these {n} measurements ({cause}), so no trend conclusion "
+            f"can be drawn from this test. {_NOT_HEALTH}. Re-run estimate_rul as the "
+            "series grows."
         )
     if direction == "decreasing":
         return (
             "No time to the threshold is estimated: the measurements show a "
             f"statistically significant decreasing trend (slope p-value = "
-            f"{p_value:.3g}), away from the failure threshold you set, and "
+            f"{p_value:.3g}), away from the threshold supplied in this call "
+            f"(failure_threshold = {failure_threshold:g}), and "
             "estimate_rul assumes an indicator that rises toward its threshold. "
             f"{_NOT_HEALTH}."
         )
@@ -365,8 +368,8 @@ async def estimate_rul(
     observed component failure. A statistically significant increasing
     trend (slope p-value < 0.05) is required before any RUL is computed.
     Every value, timestamp and the threshold must be finite numbers, and
-    the exponential method needs every value to be positive: anything
-    else is refused, never dropped.
+    the exponential method needs every value to be positive whenever it
+    fits; such input is refused, never dropped.
 
     Outcomes (status): 'estimated' (time to the threshold computed);
     'no_degradation_trend' (the slope test found no significant
@@ -375,7 +378,7 @@ async def estimate_rul(
     measurement is below the threshold, but the fitted model places the
     indicator at or above it: a model estimate, not an observed
     exceedance); 'model_not_rising' (a significant rise, but the
-    requested model's rate at the last measurement is not positive);
+    requested model's rate at the latest measurement is not positive);
     'threshold_already_exceeded' (the latest measurement is at or above
     the threshold).
 
@@ -490,8 +493,9 @@ async def estimate_rul(
             status="threshold_already_exceeded",
             trend_p_value=None,
             message=(
-                f"The most recent measurement ({current_value:g}) is at or "
-                f"above the failure threshold you set ({failure_threshold:g}). "
+                f"The latest measurement ({current_value:g}) is at or above the "
+                f"threshold supplied in this call (failure_threshold = "
+                f"{failure_threshold:g}). "
                 "The threshold is an indicator limit, not an observed component "
                 "failure, and no time to it is estimated. Inspect the machine now."
             ),
@@ -513,7 +517,12 @@ async def estimate_rul(
             trend_p_value=p_value,
             fit_r_squared=round(trend["r_squared"], 4),
             message=_no_trend_message(
-                values, p_value, trend["trend_direction"], horizon, time_unit
+                values,
+                p_value,
+                trend["trend_direction"],
+                horizon,
+                time_unit,
+                failure_threshold,
             ),
             **common,
         )
@@ -529,8 +538,9 @@ async def estimate_rul(
         # value below the threshold it is reported to have reached.
         modelled = outcome.modelled
         message = (
-            f"The latest measurement ({current_value:g}) is below the failure "
-            f"threshold you set ({failure_threshold:g}), but "
+            f"The latest measurement ({current_value:g}) is below the "
+            f"threshold supplied in this call (failure_threshold = "
+            f"{failure_threshold:g}), but "
             f"{wording.places} places the indicator at {modelled:g} at "
             "the time of that measurement, at or above the threshold. This is "
             "a model estimate, not an observed exceedance and not a confirmed "
@@ -562,7 +572,8 @@ async def estimate_rul(
                 "The slope test finds a statistically significant increasing "
                 f"trend (slope p-value = {p_value:.3g}), but "
                 f"{wording.not_rising}, so the model projects no crossing "
-                "of the failure threshold you set and no time to the threshold is "
+                "of the threshold supplied in this call (failure_threshold = "
+                f"{failure_threshold:g}) and no time to the threshold is "
                 "estimated. The trend test and the model disagree. "
                 f"{follow_up}"
             ),
@@ -571,8 +582,9 @@ async def estimate_rul(
 
     rul = outcome.rul
     message = (
-        "Estimated time for the indicator to reach the failure threshold you "
-        f"set: {rul:g} {time_unit} after the last measurement, from {n} "
+        "Estimated time for the indicator to reach the threshold supplied in this call "
+        f"(failure_threshold = {failure_threshold:g}): {rul:g} {time_unit} after "
+        f"the latest measurement, from {n} "
         f"measurements spanning {horizon:g} {time_unit}. This extrapolates "
         f"{wording.extrapolates}; reaching the threshold is not a "
         "predicted component failure. Treat it as planning input, not a guarantee."

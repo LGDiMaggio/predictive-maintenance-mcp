@@ -298,6 +298,7 @@ class TestEstimateRULOutcomes:
         assert result.trend_p_value is None
         assert "could not be computed" in result.message
         assert "every value is 2" in result.message
+        assert "no trend conclusion can be drawn from this test" in result.message
 
     @pytest.mark.asyncio
     async def test_noisy_stable_series_no_trend(self, tools, mock_ctx):
@@ -682,7 +683,8 @@ class TestEstimateRULWording:
         )
         assert result.status == "estimated"
         assert result.message.startswith(
-            "Estimated time for the indicator to reach the failure threshold you set:"
+            "Estimated time for the indicator to reach the threshold supplied in this "
+            "call (failure_threshold = 4.5): "
         )
         assert "not a predicted component failure" in result.message
         assert not any(claim in result.message for claim in FORBIDDEN_HEALTH_CLAIMS)
@@ -717,6 +719,62 @@ class TestEstimateRULWording:
         )
         assert result.status == "estimated"
         assert "Kalman" not in result.message
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "values, threshold, method, status",
+        [
+            pytest.param(
+                CROSSED_VALUES, 10.0, "linear", "model_threshold_crossed", id="crossed"
+            ),
+            pytest.param(
+                [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 6.0, 4.0],
+                20.0,
+                "kalman",
+                "model_not_rising",
+                id="not_rising",
+            ),
+            pytest.param(
+                [5.0 - 0.3 * i for i in range(10)],
+                10.0,
+                "linear",
+                "no_degradation_trend",
+                id="decreasing",
+            ),
+            pytest.param(
+                CROSSED_VALUES[:-1] + [10.2],
+                10.0,
+                "linear",
+                "threshold_already_exceeded",
+                id="exceeded",
+            ),
+            pytest.param(
+                [1.0 + 0.2 * i for i in range(12)],
+                6.0,
+                "linear",
+                "estimated",
+                id="estimated",
+            ),
+        ],
+    )
+    async def test_threshold_is_named_as_supplied_in_the_call(
+        self, tools, mock_ctx, values, threshold, method, status
+    ):
+        """The threshold is a value of this call, shown with its value, never 'you set'."""
+        result = await tools["estimate_rul"](
+            ctx=mock_ctx,
+            failure_threshold=threshold,
+            feature_values=values,
+            timestamps=[float(i) for i in range(len(values))],
+            method=method,
+        )
+        assert result.status == status
+        assert (
+            f"the threshold supplied in this call (failure_threshold = {threshold:g})"
+            in (result.message)
+        )
+        assert "you set" not in result.message
+        assert "most recent" not in result.message
 
     def test_status_vocabulary_and_descriptions(self):
         """The schema names every outcome and carries no health claim."""

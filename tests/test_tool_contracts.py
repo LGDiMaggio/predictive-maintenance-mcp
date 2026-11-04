@@ -175,6 +175,10 @@ Fixture history:
   coverage is not validated and, like the heuristic and the Kalman
   outcomes, depends on the units. On analyze_signal_trend the root and
   trend_direction descriptions change: 'stable' is a test outcome only.
+  Wording gate, regenerated again in the same PR: two descriptions only, no
+  property, enum value or type changed. status says the latest
+  measurement, and rul says the model's extrapolation reaches the
+  threshold, which also covers kalman.
   Generated under mcp 2.3.0 and pydantic 2.12.0 (uv.lock).
 """
 
