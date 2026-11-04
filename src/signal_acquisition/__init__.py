@@ -24,6 +24,10 @@ from .measurement import (  # noqa: F401
     measurement_id_from_digest,
     compute_measurement_id,
     build_measurement_identity,
+    SOURCE_KINDS,
+    build_import_identity,
+    binding_collisions,
+    shift_acquired_at,
 )
 from .repository import (  # noqa: F401
     SignalRepository,

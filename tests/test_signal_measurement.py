@@ -19,17 +19,22 @@ pin, from the plan's U1 scenarios:
   insertion (batches stay all-or-nothing), ``companion_warning`` instead of
   refusal for unusable companions;
 - tool-level visibility (``get_signal_info`` / ``list_signals``);
-- the per-test ledger sandbox and packaging parity.
+- the per-test ledger sandbox and packaging parity;
+- for the signal import (U6): the companion messages byte-identical under
+  `source_kind`, the import bundle, one channel's identity from an already
+  computed digest, binding collisions and the exact shift of a trimmed range.
 """
 
 import ast
 import hashlib
 import json
 import os
+import re
 import shutil
 import sys
 import tomllib
 from datetime import datetime, timezone
+from fractions import Fraction
 from pathlib import Path
 from unittest.mock import AsyncMock
 
@@ -1103,3 +1108,520 @@ class TestPackaging:
             and any(arg == "data" or arg.startswith("data/") for arg in words[1:])
         ]
         assert includes == []
+
+
+# ---------------------------------------------------------------------------
+# Import binding (Signal Import Engine plan, U6, KTD15)
+# ---------------------------------------------------------------------------
+
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
+IMPORT_NOW = datetime(2026, 9, 1, tzinfo=timezone.utc)
+DIGEST = hashlib.sha256(b"an export").hexdigest()
+DEFAULTS = {
+    "asset_id": "P-101",
+    "acquired_at": "2026-08-20T11:42:00+00:00",
+    "rpm": "1782",
+    "load": None,
+    "operating_state": None,
+}
+BINDING = {
+    "measurement_point_id": "motor_de_h",
+    "direction": "horizontal",
+    "sensor_id": None,
+    "asset_id": None,
+}
+
+
+def import_identity(defaults=DEFAULTS, binding=BINDING, *, channel_index=3, **kwargs):
+    kwargs.setdefault("content_sha256", DIGEST)
+    kwargs.setdefault("size_bytes", 9)
+    kwargs.setdefault("now", IMPORT_NOW)
+    return m.build_import_identity(
+        defaults, binding, channel_index=channel_index, **kwargs
+    )
+
+
+class TestCompanionMessagesUnchanged:
+    """The default bundle keeps every companion refusal byte-identical: the
+    fixture holds the messages as ``origin/main`` produced them before
+    ``source_kind`` existed."""
+
+    FIXTURE = json.loads(
+        (FIXTURES / "measurement_companion_messages.json").read_text("utf-8")
+    )
+    NOW = datetime.fromisoformat(FIXTURE["now"])
+
+    @pytest.mark.parametrize("case", sorted(FIXTURE["cases"]))
+    @pytest.mark.parametrize("explicit", [False, True])
+    def test_refusal_is_byte_identical(self, case, explicit):
+        entry = self.FIXTURE["cases"][case]
+        kwargs = {"source_kind": "companion"} if explicit else {}
+        with pytest.raises(ValueError) as caught:
+            m.validate_measurement_declaration(
+                entry["companion"],
+                self.FIXTURE["companion_path"],
+                now=self.NOW,
+                **kwargs,
+            )
+        assert str(caught.value) == entry["message"]
+
+    def test_build_identity_channel_refusal_is_byte_identical(self):
+        entry = self.FIXTURE["bad_channel_index"]
+        with pytest.raises(ValueError) as caught:
+            m.build_measurement_identity(
+                {"measurement": MINIMAL_MEASUREMENT},
+                "x_metadata.json",
+                signal_path="x.csv",
+                channel_index=entry["channel_index"],
+                now=self.NOW,
+            )
+        assert str(caught.value) == entry["message"]
+
+    def test_fixture_covers_every_companion_framing(self):
+        messages = [c["message"] for c in self.FIXTURE["cases"].values()]
+        assert any(msg.startswith("Companion ") for msg in messages)
+        for piece in ("unknown field(s)", "missing required field(s)", "got list"):
+            assert any(piece in msg for msg in messages), piece
+
+
+class TestSourceKind:
+    def test_vocabulary(self):
+        assert m.SOURCE_KINDS == ("companion", "import")
+
+    def test_unknown_source_kind_is_refused(self):
+        with pytest.raises(ValueError, match="source_kind"):
+            validate(MINIMAL_MEASUREMENT, source_kind="playground")
+
+    def test_a_companion_takes_no_channel_index(self):
+        with pytest.raises(ValueError, match="channel_index"):
+            validate(MINIMAL_MEASUREMENT, channel_index=3)
+
+    @pytest.mark.parametrize("channel_index", [None, -1, True, "3"])
+    def test_an_import_needs_a_column_index(self, channel_index):
+        with pytest.raises(ValueError, match="channel_index"):
+            validate(
+                MINIMAL_MEASUREMENT, source_kind="import", channel_index=channel_index
+            )
+
+    def test_import_problem_names_the_import_configuration_and_channel(self):
+        with pytest.raises(ValueError) as caught:
+            validate(
+                {**MINIMAL_MEASUREMENT, "direction": "north"},
+                name=None,
+                source_kind="import",
+                channel_index=3,
+            )
+        message = str(caught.value)
+        assert message.startswith(
+            "Invalid measurement binding in the import configuration, channel 3: "
+        )
+        assert "import configuration, channel 3" in message
+        assert "Invalid direction 'north'" in message  # the shared field rule
+        assert "companion" not in message
+        assert message.endswith(m._IMPORT_REMEDY)
+
+    def test_import_bundle_words_the_framing_problems(self):
+        with pytest.raises(ValueError) as caught:
+            m.validate_measurement_declaration(
+                {}, None, source_kind="import", channel_index=2
+            )
+        assert "binds no measurement to channel 2" in str(caught.value)
+        with pytest.raises(ValueError) as caught:
+            m.validate_measurement_declaration(
+                {"measurement": "P-101"}, None, source_kind="import", channel_index=2
+            )
+        assert "channel 2: expected an object" in str(caught.value)
+        with pytest.raises(ValueError) as caught:
+            validate({"colour": "red"}, source_kind="import", channel_index=2)
+        message = str(caught.value)
+        assert "a channel's measurement accepts only" in message
+        assert "in the binding or in the file-level defaults" in message
+
+    def test_both_bundles_normalize_alike(self):
+        companion = validate(FULL_MEASUREMENT, now=IMPORT_NOW)
+        imported = validate(
+            FULL_MEASUREMENT, source_kind="import", channel_index=0, now=IMPORT_NOW
+        )
+        assert imported == companion
+
+    def test_build_measurement_identity_selects_the_bundle(self, tmp_path):
+        signal = tmp_path / "x.csv"
+        signal.write_bytes(b"1\n2\n")
+        with pytest.raises(ValueError, match="import configuration, channel 1"):
+            m.build_measurement_identity(
+                {"measurement": {}},
+                None,
+                signal_path=signal,
+                channel_index=1,
+                source_kind="import",
+            )
+        block = m.build_measurement_identity(
+            {"measurement": MINIMAL_MEASUREMENT},
+            None,
+            signal_path=signal,
+            channel_index=1,
+            source_kind="import",
+            now=IMPORT_NOW,
+        )
+        assert block["measurement_id"] == m.compute_measurement_id(signal, 1)
+
+
+class TestBuildImportIdentity:
+    def test_field_tables_match_the_import_contract(self):
+        from predictive_maintenance_mcp.signal_acquisition import import_config as ic
+
+        assert m.IMPORT_BINDING_FIELDS == ic._BINDING_FIELDS
+        assert m.IMPORT_DEFAULT_FIELDS == tuple(ic.DECLARATION_DEFAULTS)
+        assert set(m.IMPORT_BINDING_FIELDS) | set(m.IMPORT_DEFAULT_FIELDS) <= set(
+            m.MEASUREMENT_FIELDS
+        )
+
+    def test_binding_over_defaults(self):
+        block = import_identity()
+        assert tuple(block) == m.MEASUREMENT_IDENTITY_KEYS
+        assert block["asset_id"] == "P-101"
+        assert block["measurement_point_id"] == "motor_de_h"
+        assert block["direction"] == "horizontal"
+        assert block["acquired_at"] == "2026-08-20T11:42:00+00:00"
+        assert block["timezone_declared"] is True
+        assert block["rpm"] == 1782.0 and block["load"] is None
+        assert block["channel_index"] == 3
+        assert block["content_sha256"] == DIGEST and block["size_bytes"] == 9
+        assert block["measurement_id"] == m.measurement_id_from_digest(DIGEST, 3)
+
+    def test_the_channel_asset_overrides_the_default(self):
+        block = import_identity(binding={**BINDING, "asset_id": "P-102"})
+        assert block["asset_id"] == "P-102"
+
+    def test_the_identity_equals_the_companion_route_for_the_same_bytes(self, tmp_path):
+        signal = tmp_path / "export.csv"
+        signal.write_bytes(b"time;x\n0;1\n")
+        digest, size = m.digest_file(signal)
+        block = import_identity(content_sha256=digest, size_bytes=size)
+        assert block["measurement_id"] == m.compute_measurement_id(signal, 3)
+
+    @pytest.mark.parametrize("point", ["NUL", "com1", "Lpt9.csv", "aux.jsonl"])
+    def test_a_windows_reserved_device_name_as_point_id_is_refused(self, point):
+        with pytest.raises(ValueError) as caught:
+            import_identity(binding={**BINDING, "measurement_point_id": point})
+        message = str(caught.value)
+        assert "import configuration, channel 3" in message
+        assert "Windows reserved device name" in message
+
+    def test_a_naive_instant_is_accepted_and_flagged(self):
+        block = import_identity(
+            defaults={**DEFAULTS, "acquired_at": "2026-08-20T11:42:00"}
+        )
+        assert block["timezone_declared"] is False
+        assert block["acquired_at"] == "2026-08-20T11:42:00+00:00"
+
+    def test_rpm_and_load_may_be_decimal_strings(self):
+        block = import_identity(defaults={**DEFAULTS, "rpm": "1782.5", "load": "0"})
+        assert block["rpm"] == 1782.5 and block["load"] == 0.0
+
+    def test_a_negative_rpm_is_refused_by_the_shared_rule(self):
+        with pytest.raises(ValueError, match=re.escape("Invalid rpm -5.0")):
+            import_identity(defaults={**DEFAULTS, "rpm": "-5"})
+
+    @pytest.mark.parametrize("rpm", ["abc", "1e999", "1e-999", "1" * 21, "1 500"])
+    def test_a_string_outside_the_configuration_caps_is_refused_in_import_words(
+        self, rpm
+    ):
+        with pytest.raises(ValueError) as caught:
+            import_identity(defaults={**DEFAULTS, "rpm": rpm})
+        message = str(caught.value)
+        assert f"Invalid rpm {rpm!r}: the import configuration writes it" in message
+        assert "not a string" not in message
+
+    def test_a_value_the_configuration_writes_is_accepted(self):
+        """normalize_decimal('1.48e24') writes 25 digits, three of them
+        significant."""
+        block = import_identity(
+            defaults={**DEFAULTS, "rpm": "1480000000000000000000000"}
+        )
+        assert block["rpm"] == 1.48e24
+
+    def test_a_number_still_passes_the_shared_rule(self):
+        assert import_identity(defaults={**DEFAULTS, "rpm": 1500})["rpm"] == 1500.0
+
+    @pytest.mark.parametrize(
+        "acquired_at", ["9999-12-31T23:00:00-05:00", "0001-01-01T00:00:00+05:00"]
+    )
+    def test_an_instant_beyond_utc_is_a_problem_not_a_crash(self, acquired_at):
+        with pytest.raises(ValueError) as caught:
+            import_identity(defaults={**DEFAULTS, "acquired_at": acquired_at})
+        message = str(caught.value)
+        assert "import configuration, channel 3" in message
+        assert "beyond the instants UTC can hold" in message
+
+    def test_the_companion_route_keeps_its_behaviour_beyond_utc(self):
+        """Unchanged on purpose: the companion route is not part of this unit."""
+        with pytest.raises(OverflowError):
+            validate(
+                {**MINIMAL_MEASUREMENT, "acquired_at": "9999-12-31T23:00:00-05:00"}
+            )
+
+    def test_every_problem_is_reported_once_with_the_import_framing(self):
+        with pytest.raises(ValueError) as caught:
+            import_identity(
+                defaults={**DEFAULTS, "measurement_point_id": "x", "acquired_at": None},
+                binding={"measurement_point_id": "motor_de_h", "rpm": 1500},
+            )
+        message = str(caught.value)
+        assert message.count("Invalid measurement binding") == 1
+        assert (
+            "field(s) ['measurement_point_id'] do not belong in the file-level defaults"
+            in message
+        )
+        assert "field(s) ['rpm'] do not belong in the channel's binding" in message
+        assert "missing required field(s) acquired_at" in message
+        assert message.endswith(m._IMPORT_REMEDY)
+
+    def test_the_missing_remedy_names_the_block_each_field_belongs_in(self):
+        with pytest.raises(ValueError) as caught:
+            import_identity(defaults=None, binding={"measurement_point_id": None})
+        message = str(caught.value)
+        assert (
+            "declare measurement_point_id in the channel's binding, asset_id in the "
+            "binding or in the file-level defaults, and acquired_at in the "
+            "file-level defaults"
+        ) in message
+        # Where it says to put acquired_at, the binding indeed refuses it.
+        with pytest.raises(ValueError, match="do not belong in the channel's binding"):
+            import_identity(binding={**BINDING, "acquired_at": DEFAULTS["acquired_at"]})
+
+    def test_a_missing_point_names_where_to_declare_it(self):
+        with pytest.raises(
+            ValueError, match="declare measurement_point_id in the channel's binding"
+        ):
+            import_identity(binding={**BINDING, "measurement_point_id": None})
+
+    def test_no_defaults_at_all(self):
+        with pytest.raises(
+            ValueError, match="missing required field.s. asset_id, acquired_at"
+        ):
+            import_identity(defaults=None)
+
+    @pytest.mark.parametrize("binding", [None, ["motor_de_h"], "motor_de_h"])
+    def test_a_binding_that_is_not_an_object_is_refused(self, binding):
+        with pytest.raises(ValueError, match="the channel's binding must be an object"):
+            import_identity(binding=binding)
+
+    @pytest.mark.parametrize(
+        "kwargs, match",
+        [
+            ({"content_sha256": "abc"}, "content_sha256"),
+            ({"content_sha256": DIGEST.upper()}, "content_sha256"),
+            ({"size_bytes": -1}, "size_bytes"),
+            ({"size_bytes": True}, "size_bytes"),
+            ({"channel_index": -2}, "channel_index"),
+        ],
+    )
+    def test_bad_file_values_are_refused(self, kwargs, match):
+        with pytest.raises(ValueError, match=match):
+            import_identity(**kwargs)
+
+    def test_a_decoded_file_binds_with_its_digest(self, tmp_path):
+        from predictive_maintenance_mcp.path_safety import open_import_file
+        from predictive_maintenance_mcp.signal_acquisition import text_decoder as td
+
+        (tmp_path / "export.csv").write_bytes(b"x;y\n0.5;1.5\n0.25;2.5\n")
+        interpretation = {
+            "schema": "pmm-text-import/1",
+            "dialect": {
+                "encoding": "utf-8",
+                "delimiter": ";",
+                "decimal": ".",
+                "header_line": 1,
+            },
+            "data_lines": {"first": 2, "last": None},
+            "time_base": {"source": "stated", "sampling_rate_hz": "25600"},
+            "time_columns": [],
+            "channels": [
+                {
+                    "column": c,
+                    "role": "vibration",
+                    "quantity": "acceleration",
+                    "unit": "g",
+                    "scaling": None,
+                }
+                for c in (0, 1)
+            ],
+        }
+        with open_import_file(
+            "export.csv", [tmp_path], base=tmp_path, max_size=1 << 20
+        ) as f:
+            decoded = td.decode_text(f, interpretation, mode="digest")
+        blocks = [
+            import_identity(
+                binding={**BINDING, "direction": direction},
+                channel_index=channel.column,
+                content_sha256=decoded.source_sha256,
+                size_bytes=decoded.size_bytes,
+            )
+            for channel, direction in zip(decoded.channels, ("horizontal", "vertical"))
+        ]
+        assert [b["measurement_id"] for b in blocks] == [
+            m.compute_measurement_id(tmp_path / "export.csv", c) for c in (0, 1)
+        ]
+        assert m.binding_collisions(blocks) == ()
+
+
+class TestBindingCollisions:
+    def blocks(self, *bindings):
+        return [
+            import_identity(binding={**BINDING, **binding}, channel_index=column)
+            for column, binding in bindings
+        ]
+
+    def test_same_point_direction_and_sensor_collide(self):
+        blocks = self.blocks((3, {}), (1, {}), (5, {"direction": "axial"}))
+        assert m.binding_collisions(blocks) == ((1, 3),)
+
+    def test_three_channels_on_one_measurement_are_one_group(self):
+        blocks = self.blocks((1, {}), (2, {}), (4, {}), (6, {"sensor_id": "s2"}))
+        assert m.binding_collisions(blocks) == ((1, 2, 4),)
+
+    def test_a_different_asset_is_a_different_measurement(self):
+        blocks = self.blocks((1, {}), (2, {"asset_id": "P-102"}))
+        assert m.binding_collisions(blocks) == ()
+
+    def test_two_groups_in_order(self):
+        blocks = self.blocks(
+            (7, {"direction": "axial"}), (8, {"direction": "axial"}), (1, {}), (2, {})
+        )
+        assert m.binding_collisions(blocks) == ((1, 2), (7, 8))
+
+
+class TestShiftAcquiredAt:
+    def test_a_trim_of_320000_samples_at_25600_hz_shifts_exactly_12_5_s(self):
+        shift = m.shift_acquired_at(
+            "2026-08-20T11:42:00+00:00", offset_samples=320000, sampling_rate_hz="25600"
+        )
+        assert tuple(shift) == m.TRIM_SHIFT_KEYS
+        assert shift["acquired_at"] == "2026-08-20T11:42:12.500000+00:00"
+        assert shift["shift_seconds"] == "12.5"
+        assert shift["shift_exact"] is True
+        assert shift["offset_samples"] == 320000
+
+    def test_an_offset_instant_is_written_in_utc(self):
+        shift = m.shift_acquired_at(
+            "2026-08-20T13:42:00+02:00", offset_samples=25600, sampling_rate_hz="25600"
+        )
+        assert shift["acquired_at"] == "2026-08-20T11:42:01+00:00"
+
+    def test_a_naive_instant_stays_naive(self):
+        shift = m.shift_acquired_at(
+            "2026-08-20T11:42:00", offset_samples=12800, sampling_rate_hz="25600"
+        )
+        assert shift["acquired_at"] == "2026-08-20T11:42:00.500000"
+
+    def test_no_offset_is_no_shift(self):
+        shift = m.shift_acquired_at(
+            "2026-08-20T11:42:00+00:00", offset_samples=0, sampling_rate_hz="25600"
+        )
+        assert shift["shift_seconds"] == "0" and shift["shift_exact"]
+
+    def test_a_shift_below_a_microsecond_is_rounded_and_reported(self):
+        shift = m.shift_acquired_at(
+            "2026-08-20T11:42:00+00:00", offset_samples=1, sampling_rate_hz="25600"
+        )
+        assert shift["shift_seconds"] == "0.000039"  # 39.0625 us
+        assert shift["shift_exact"] is False
+
+    @pytest.mark.parametrize("offset, microseconds", [(1, 0), (3, 2), (5, 2)])
+    def test_microseconds_round_half_to_even(self, offset, microseconds):
+        shift = m.shift_acquired_at(
+            "2026-08-20T11:42:00+00:00",
+            offset_samples=offset,
+            sampling_rate_hz="2000000",
+        )
+        assert shift["shift_seconds"] == (
+            "0" if not microseconds else f"0.00000{microseconds}"
+        )
+        assert shift["shift_exact"] is False
+
+    @pytest.mark.parametrize(
+        "offset, rate, exact",
+        [
+            (320000, "25600", "12.5"),
+            (1, "25600", "0.0000390625"),
+            (1, "12000", "1/12000"),
+            (7, "51200", "0.00013671875"),
+            (0, "25600", "0"),
+        ],
+    )
+    def test_the_exact_shift_is_stated(self, offset, rate, exact):
+        shift = m.shift_acquired_at(
+            "2026-08-20T11:42:00+00:00", offset_samples=offset, sampling_rate_hz=rate
+        )
+        assert Fraction(shift["exact_shift_seconds"]) == Fraction(offset) / Fraction(
+            rate
+        )
+        assert shift["exact_shift_seconds"] == exact
+
+    def test_an_instant_with_sub_microsecond_digits_is_not_shifted_exactly(self):
+        shift = m.shift_acquired_at(
+            "2026-08-20T11:42:00.1234567+00:00",
+            offset_samples=25600,
+            sampling_rate_hz="25600",
+        )
+        assert shift["shift_seconds"] == "1"
+        assert shift["shift_exact"] is False
+
+    def test_an_instant_beyond_utc_is_refused(self):
+        with pytest.raises(ValueError, match="beyond the instants UTC can hold"):
+            m.shift_acquired_at(
+                "9999-12-31T23:00:00-05:00", offset_samples=0, sampling_rate_hz="25600"
+            )
+
+    def test_a_trim_past_the_year_9999_names_the_trim(self):
+        with pytest.raises(ValueError, match=r"Invalid trim: .* beyond the year 9999"):
+            m.shift_acquired_at(
+                "9999-12-31T23:59:59+00:00", offset_samples=2, sampling_rate_hz="1"
+            )
+
+    def test_a_decimal_rate_is_exact(self):
+        shift = m.shift_acquired_at(
+            "2026-08-20T11:42:00+00:00", offset_samples=3, sampling_rate_hz="2.4"
+        )
+        assert shift["shift_seconds"] == "1.25" and shift["shift_exact"]
+
+    @pytest.mark.parametrize(
+        "kwargs, match",
+        [
+            ({"offset_samples": -1}, "offset_samples"),
+            ({"offset_samples": True}, "offset_samples"),
+            ({"offset_samples": 1.0}, "offset_samples"),
+            ({"sampling_rate_hz": "0"}, "sampling_rate_hz"),
+            ({"sampling_rate_hz": "-25600"}, "sampling_rate_hz"),
+            ({"sampling_rate_hz": 25600}, "sampling_rate_hz"),
+            ({"sampling_rate_hz": "NaN"}, "sampling_rate_hz"),
+            ({"acquired_at": "yesterday"}, "acquired_at"),
+            ({"acquired_at": None}, "acquired_at"),
+            ({"offset_samples": 10**15, "sampling_rate_hz": "1"}, "9999"),
+        ],
+    )
+    def test_bad_inputs_are_refused(self, kwargs, match):
+        arguments = {
+            "acquired_at": "2026-08-20T11:42:00+00:00",
+            "offset_samples": 1,
+            "sampling_rate_hz": "25600",
+            **kwargs,
+        }
+        acquired_at = arguments.pop("acquired_at")
+        with pytest.raises(ValueError, match=match):
+            m.shift_acquired_at(acquired_at, **arguments)
+
+
+class TestImportReexports:
+    def test_new_names_are_reexported_from_the_package(self):
+        from predictive_maintenance_mcp import signal_acquisition as pkg
+
+        for name in (
+            "SOURCE_KINDS",
+            "build_import_identity",
+            "binding_collisions",
+            "shift_acquired_at",
+        ):
+            assert getattr(pkg, name) is getattr(m, name), name

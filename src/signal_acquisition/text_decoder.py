@@ -80,6 +80,7 @@ __all__ = [
     "TIME_TOKEN_BYTES",
     "TIME_MAX_DIGITS",
     "TIME_MAX_EXPONENT_DIGITS",
+    "parse_time_matrix",
     "TextDecodeError",
     "ChannelResult",
     "TimeColumnResult",
@@ -191,6 +192,61 @@ _CLASS[list(b"0123456789")] = _DIGIT
 _CLASS[_DOT] = _POINT
 _CLASS[list(b"+-")] = _SIGN
 _CLASS[list(b"eE")] = _EXP
+
+
+def parse_time_matrix(matrix: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Parse time stamps exactly, one per row of a token matrix.
+
+    The one time-stamp grammar of the import, shared by the decoder and the
+    time-base assessment (``signal_import.timebase``), so a preview and a
+    full decode read a stamp the same way.
+
+    Args:
+        matrix: uint8 matrix, one token per row, left-aligned and padded with
+            zero bytes, with ``.`` as the decimal mark and no spaces.
+
+    Returns:
+        ``(mantissa, exponent, valid)``: the int64 digits and int16 decimal
+        exponent of each stamp (value = mantissa * 10**exponent), and whether
+        the row is a stamp of at most :data:`TIME_MAX_DIGITS` significant
+        digits and :data:`TIME_MAX_EXPONENT_DIGITS` exponent digits. The
+        first two are meaningless where ``valid`` is false.
+    """
+    count, span = matrix.shape
+    classes = _CLASS[matrix]
+    state = np.full(count, _START, dtype=np.int8)
+    mantissa = np.zeros(count, dtype=np.int64)
+    significant = np.zeros(count, dtype=np.int64)
+    fraction = np.zeros(count, dtype=np.int64)
+    exponent = np.zeros(count, dtype=np.int64)
+    exponent_digits = np.zeros(count, dtype=np.int64)
+    negative = np.zeros(count, dtype=bool)
+    negative_exponent = np.zeros(count, dtype=bool)
+    for j in range(span):
+        cls = classes[:, j]
+        digit = matrix[:, j].astype(np.int64) - ord("0")
+        following = _TRANSITIONS[state, cls]
+        mantissa_digit = (following == _INT) | (following == _FRAC)
+        counted = mantissa_digit & ((significant > 0) | (digit > 0))
+        significant += counted
+        fits = mantissa_digit & (significant <= TIME_MAX_DIGITS)
+        mantissa = np.where(fits, mantissa * 10 + digit, mantissa)
+        fraction += following == _FRAC
+        negative |= (state == _START) & (matrix[:, j] == _MINUS)
+        negative_exponent |= (state == _E) & (matrix[:, j] == _MINUS)
+        in_exponent = following == _E_DIGITS
+        exponent = np.where(in_exponent, exponent * 10 + digit, exponent)
+        exponent_digits += in_exponent
+        state = following
+    state = _TRANSITIONS[state, _PAD]
+    valid = (
+        (state == _END)
+        & (significant <= TIME_MAX_DIGITS)
+        & (exponent_digits <= TIME_MAX_EXPONENT_DIGITS)
+    )
+    mantissa = np.where(negative, -mantissa, mantissa)
+    scale = np.where(negative_exponent, -exponent, exponent) - fraction
+    return mantissa, scale.astype(np.int16), valid
 
 
 class TextDecodeError(ValueError):
@@ -432,7 +488,10 @@ class _Decoder:
         text = ", ".join(where) + ": "
         if token is not None:
             cited = FileText.of(token, cap=TOKEN_CHARS)
-            shown = f"'{cited.file_text}{'...' if cited.truncated else ''}'"
+            # The token's own quotes are escaped, so it cannot close the
+            # quotation and speak in the server's voice.
+            quoted = cited.file_text.replace("'", "\\'")
+            shown = f"'{quoted}{'...' if cited.truncated else ''}'"
             text += f"the value {shown} {problem}"
         else:
             text += problem
@@ -869,38 +928,7 @@ class _Decoder:
         self, rows: _Rows, column: int, lo: int, matrix: np.ndarray
     ) -> tuple[np.ndarray, np.ndarray]:
         """Exact decimal parse: int64 mantissa and int16 exponent per row."""
-        count, span = matrix.shape
-        classes = _CLASS[matrix]
-        state = np.full(count, _START, dtype=np.int8)
-        mantissa = np.zeros(count, dtype=np.int64)
-        significant = np.zeros(count, dtype=np.int64)
-        fraction = np.zeros(count, dtype=np.int64)
-        exponent = np.zeros(count, dtype=np.int64)
-        exponent_digits = np.zeros(count, dtype=np.int64)
-        negative = np.zeros(count, dtype=bool)
-        negative_exponent = np.zeros(count, dtype=bool)
-        for j in range(span):
-            cls = classes[:, j]
-            digit = matrix[:, j].astype(np.int64) - ord("0")
-            following = _TRANSITIONS[state, cls]
-            mantissa_digit = (following == _INT) | (following == _FRAC)
-            counted = mantissa_digit & ((significant > 0) | (digit > 0))
-            significant += counted
-            fits = mantissa_digit & (significant <= TIME_MAX_DIGITS)
-            mantissa = np.where(fits, mantissa * 10 + digit, mantissa)
-            fraction += following == _FRAC
-            negative |= (state == _START) & (matrix[:, j] == _MINUS)
-            negative_exponent |= (state == _E) & (matrix[:, j] == _MINUS)
-            in_exponent = following == _E_DIGITS
-            exponent = np.where(in_exponent, exponent * 10 + digit, exponent)
-            exponent_digits += in_exponent
-            state = following
-        state = _TRANSITIONS[state, _PAD]
-        valid = (
-            (state == _END)
-            & (significant <= TIME_MAX_DIGITS)
-            & (exponent_digits <= TIME_MAX_EXPONENT_DIGITS)
-        )
+        mantissa, exponent, valid = parse_time_matrix(matrix)
         refused = np.flatnonzero(~valid)
         if refused.size:
             row = lo + int(refused[0])
@@ -923,9 +951,7 @@ class _Decoder:
                 position=start - int(rows.starts[row]),
                 token=token,
             )
-        mantissa = np.where(negative, -mantissa, mantissa)
-        scale = np.where(negative_exponent, -exponent, exponent) - fraction
-        return mantissa, scale.astype(np.int16)
+        return mantissa, exponent
 
     # -- result -------------------------------------------------------------
 
