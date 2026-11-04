@@ -6,6 +6,7 @@ and report ``fit_r_squared`` (goodness of fit, never "confidence").
 
 import math
 
+import numpy as np
 import pytest
 
 import predictive_maintenance_mcp.prognostics as prognostics_pkg
@@ -13,6 +14,8 @@ import predictive_maintenance_mcp.prognostics.rul_estimator as rul_estimator_mod
 from predictive_maintenance_mcp.prognostics.rul_estimator import (
     estimate_rul_linear,
     estimate_rul_exponential,
+    fit_exponential_degradation,
+    fit_linear_degradation,
 )
 
 
@@ -105,12 +108,25 @@ class TestExponentialRUL:
         assert result["fit_r_squared"] > 0.99
         assert "confidence" not in result
 
-    def test_exponential_negative_values_handled(self):
-        """Series with all negative values cannot be log-fitted."""
+    @pytest.mark.parametrize(
+        "series, index",
+        [
+            ([-5.0, -4.0, -3.0, -2.0, -1.0], 0),
+            ([-1.0, 0.0, 0.5, 1.0, 2.0], 0),
+            ([0.5, 1.0, 0.0, 1.5, 2.0], 2),
+        ],
+    )
+    def test_exponential_refuses_non_positive_values(self, series, index):
+        """A log-linear fit on a subset would hide the dropped measurements."""
         timestamps = [0.0, 1.0, 2.0, 3.0, 4.0]
-        series = [-5.0, -4.0, -3.0, -2.0, -1.0]
-        result = estimate_rul_exponential(series, timestamps, failure_threshold=10.0)
-        assert result is None
+        with pytest.raises(ValueError, match=f"index {index} \\(counting from 0\\) is"):
+            estimate_rul_exponential(series, timestamps, failure_threshold=10.0)
+
+    def test_exponential_refuses_a_value_that_is_not_a_number(self):
+        with pytest.raises(ValueError, match="index 1 \\(counting from 0\\) is nan"):
+            estimate_rul_exponential(
+                [1.0, float("nan"), 2.0], [0.0, 1.0, 2.0], failure_threshold=10.0
+            )
 
     def test_exponential_decay_returns_none(self):
         """Decaying series never reaches an upper threshold."""
@@ -125,6 +141,52 @@ class TestExponentialRUL:
         assert (
             estimate_rul_exponential(series, timestamps, failure_threshold=0.0) is None
         )
+
+
+class TestThresholdCrossingFits:
+    """The fits report where the curve meets the threshold, even before the last point."""
+
+    VALUES = [6.0, 7.1, 8.0, 9.2, 10.4, 9.7]
+    TIMESTAMPS = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0]
+
+    def test_linear_fit_locates_a_crossing_before_the_last_measurement(self):
+        fit = fit_linear_degradation(
+            self.VALUES, self.TIMESTAMPS, failure_threshold=10.0
+        )
+        slope, intercept = np.polyfit(self.TIMESTAMPS, self.VALUES, 1)
+        assert fit["slope"] == pytest.approx(slope)
+        assert fit["crossing_time"] == pytest.approx((10.0 - intercept) / slope)
+        assert fit["crossing_time"] < self.TIMESTAMPS[-1]
+        assert fit["fitted_last_value"] == pytest.approx(intercept + slope * 5.0)
+        assert fit["time_to_crossing"] == pytest.approx(fit["crossing_time"] - 5.0)
+        assert fit["time_to_crossing"] < 0
+        assert estimate_rul_linear(self.VALUES, self.TIMESTAMPS, 10.0) is None
+
+    def test_linear_fit_has_no_crossing_without_a_rise(self):
+        fit = fit_linear_degradation([5.0] * 6, self.TIMESTAMPS, failure_threshold=10.0)
+        assert fit["crossing_time"] is None and fit["time_to_crossing"] is None
+
+    def test_linear_fit_locates_a_crossing_after_the_last_measurement(self):
+        """y = 2t reaches 30 at t = 15, five after the last measurement at t = 10."""
+        timestamps = [0.0, 1.0, 3.0, 7.0, 10.0]
+        series = [2.0 * t for t in timestamps]
+        fit = fit_linear_degradation(series, timestamps, failure_threshold=30.0)
+        assert fit["crossing_time"] == pytest.approx(15.0)
+        assert fit["time_to_crossing"] == pytest.approx(5.0)
+
+    def test_exponential_fit_locates_a_crossing_before_the_last_measurement(self):
+        fit = fit_exponential_degradation(
+            self.VALUES, self.TIMESTAMPS, failure_threshold=10.0
+        )
+        b, log_a = np.polyfit(self.TIMESTAMPS, np.log(self.VALUES), 1)
+        assert fit["growth_rate"] == pytest.approx(b)
+        assert fit["crossing_time"] == pytest.approx((math.log(10.0) - log_a) / b)
+        assert fit["crossing_time"] < self.TIMESTAMPS[-1]
+        assert fit["fitted_last_value"] == pytest.approx(math.exp(log_a + b * 5.0))
+
+    def test_exponential_fit_refuses_a_non_positive_threshold(self):
+        with pytest.raises(ValueError, match="failure_threshold must be positive"):
+            fit_exponential_degradation(self.VALUES, self.TIMESTAMPS, 0.0)
 
 
 class TestWeibullRemoved:

@@ -10,23 +10,21 @@ from __future__ import annotations
 import numpy as np
 
 
-def estimate_rul_kalman(
+def kalman_degradation_state(
     feature_series: list[float],
-    failure_threshold: float,
     sampling_interval: float = 1.0,
     process_noise: float = 0.01,
     measurement_noise: float = 0.1,
 ) -> dict | None:
-    """Estimate RUL using a 2-state linear Kalman filter.
+    """Run the 2-state linear Kalman filter and return its final state.
 
-    The state vector is ``[degradation_level, degradation_rate]``.  The
-    filter tracks degradation dynamics and extrapolates linearly from
-    the final filtered state to compute Remaining Useful Life.
+    The state vector is ``[degradation_level, degradation_rate]``. The
+    state is what every Kalman outcome rests on, including those with no
+    RUL: a filtered level already at the threshold, or a rate that is not
+    rising.
 
     Args:
         feature_series: Ordered degradation indicator values.
-        failure_threshold: Value at which the component is considered
-            failed.
         sampling_interval: Time between successive samples (arbitrary
             units — hours, cycles, etc.).
         process_noise: Process noise scaling factor for the state
@@ -34,21 +32,9 @@ def estimate_rul_kalman(
         measurement_noise: Measurement noise variance *R*.
 
     Returns:
-        Dict with:
-            - ``rul``: Estimated remaining useful life (time units).
-            - ``rul_std``: Delta-method standard deviation of the RUL.
-            - ``rul_interval_95``: ``[lower, upper]`` approximate 95%
-              interval from the delta-method variance. Coverage has not
-              been validated — treat as an order-of-magnitude band.
-            - ``precision_heuristic``: Heuristic in [0, 1] computed as
-              ``1 − rul_std / rul`` (clipped). It is NOT a statistical
-              confidence or a probability of correctness — only a rough
-              indication of how noisy the extrapolation is.
-            - ``estimated_rate``, ``final_level``, ``method``
-              (``"kalman"``).
-        Returns *None* when the estimate is not feasible (fewer than 3
-        points, non-positive filtered rate, or threshold already
-        exceeded).
+        Dict with ``final_level``, ``final_rate`` and ``covariance`` (the
+        final 2x2 state covariance *P*). *None* when there are fewer than
+        3 points.
     """
     y = np.asarray(feature_series, dtype=float)
     n = len(y)
@@ -102,8 +88,36 @@ def estimate_rul_kalman(
         x = x_pred + (K @ innovation).flatten()
         P = (np.eye(2) - K @ H) @ P_pred
 
-    final_level = float(x[0])
-    final_rate = float(x[1])
+    return {"final_level": float(x[0]), "final_rate": float(x[1]), "covariance": P}
+
+
+def kalman_rul_from_state(state: dict, failure_threshold: float) -> dict | None:
+    """Extrapolate a filtered state linearly to *failure_threshold*.
+
+    Args:
+        state: A result of ``kalman_degradation_state``.
+        failure_threshold: Value at which the component is considered
+            failed.
+
+    Returns:
+        Dict with:
+            - ``rul``: Estimated remaining useful life (time units).
+            - ``rul_std``: Delta-method standard deviation of the RUL.
+            - ``rul_interval_95``: ``[lower, upper]`` approximate 95%
+              interval from the delta-method variance. Coverage has not
+              been validated — treat as an order-of-magnitude band.
+            - ``precision_heuristic``: Heuristic in [0, 1] computed as
+              ``1 − rul_std / rul`` (clipped). It is NOT a statistical
+              confidence or a probability of correctness — only a rough
+              indication of how noisy the extrapolation is.
+            - ``estimated_rate``, ``final_level``, ``method``
+              (``"kalman"``).
+        Returns *None* when the filtered level is already at or above the
+        threshold, or the filtered rate is not positive.
+    """
+    final_level = state["final_level"]
+    final_rate = state["final_rate"]
+    P = state["covariance"]
 
     # Threshold already exceeded.
     if final_level >= failure_threshold:
@@ -154,3 +168,40 @@ def estimate_rul_kalman(
         "estimated_rate": final_rate,
         "final_level": final_level,
     }
+
+
+def estimate_rul_kalman(
+    feature_series: list[float],
+    failure_threshold: float,
+    sampling_interval: float = 1.0,
+    process_noise: float = 0.01,
+    measurement_noise: float = 0.1,
+) -> dict | None:
+    """Estimate RUL using a 2-state linear Kalman filter.
+
+    The state vector is ``[degradation_level, degradation_rate]``.  The
+    filter tracks degradation dynamics and extrapolates linearly from
+    the final filtered state to compute Remaining Useful Life.
+
+    Args:
+        feature_series: Ordered degradation indicator values.
+        failure_threshold: Value at which the component is considered
+            failed.
+        sampling_interval: Time between successive samples (arbitrary
+            units — hours, cycles, etc.).
+        process_noise: Process noise scaling factor for the state
+            transition covariance matrix *Q*.
+        measurement_noise: Measurement noise variance *R*.
+
+    Returns:
+        The result of ``kalman_rul_from_state``. *None* when the estimate
+        is not feasible (fewer than 3 points, non-positive filtered rate,
+        or threshold already exceeded); ``kalman_degradation_state`` tells
+        these apart.
+    """
+    state = kalman_degradation_state(
+        feature_series, sampling_interval, process_noise, measurement_noise
+    )
+    if state is None:
+        return None
+    return kalman_rul_from_state(state, failure_threshold)

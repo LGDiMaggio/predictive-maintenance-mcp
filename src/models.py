@@ -1156,13 +1156,26 @@ class RULEstimationResult(BaseModel):
     """
 
     status: Literal[
-        "estimated", "no_degradation_trend", "threshold_already_exceeded"
+        "estimated",
+        "no_degradation_trend",
+        "model_threshold_crossed",
+        "model_not_rising",
+        "threshold_already_exceeded",
     ] = Field(
         description=(
-            "'estimated' (RUL computed), 'no_degradation_trend' (no "
-            "statistically significant trend toward the threshold — healthy "
-            "outcome, no RUL number), or 'threshold_already_exceeded' (last "
-            "measurement is at/above the failure threshold)."
+            "'estimated' (a time to the threshold was computed); "
+            "'no_degradation_trend' (the slope test found no statistically "
+            "significant increasing trend, or could not be computed: no time to "
+            "the threshold, and nothing about the machine's health follows); "
+            "'model_threshold_crossed' (the latest measurement is below "
+            "failure_threshold, but the fitted model places the indicator at or "
+            "above it at that time: a model estimate, not an observed exceedance "
+            "or a confirmed failure); 'model_not_rising' (a significant "
+            "increasing trend, but the requested model's rate at the latest "
+            "measurement is not positive, so it projects no crossing); or "
+            "'threshold_already_exceeded' (the latest measurement is at or above "
+            "failure_threshold). For kalman, model_threshold_crossed and "
+            "model_not_rising can change with the time unit of the timestamps."
         )
     )
     method: str = Field(
@@ -1181,9 +1194,22 @@ class RULEstimationResult(BaseModel):
         description="Unit of timestamps, observation_horizon, and rul"
     )
     failure_threshold: float = Field(
-        description="Indicator value considered as failure"
+        description=(
+            "Indicator limit set by the caller, in the indicator's units. "
+            "Reaching it is not an observed component failure."
+        )
     )
     current_value: float = Field(description="Most recent measured indicator value")
+    modelled_current_value: Optional[float] = Field(
+        None,
+        description=(
+            "Only when status='model_threshold_crossed': the indicator value the "
+            "model gives at the time of the latest measurement (the fitted curve "
+            "for linear and exponential, the filtered level for kalman, which can "
+            "change with the time unit of the timestamps). Compare it with "
+            "current_value, the measured value."
+        ),
+    )
     trend_p_value: Optional[float] = Field(
         None,
         description=(
@@ -1193,7 +1219,11 @@ class RULEstimationResult(BaseModel):
     )
     rul: Optional[float] = Field(
         None,
-        description="Estimated remaining useful life in time_unit (only when status='estimated')",
+        description=(
+            "Time from the latest measurement until the model's extrapolation reaches "
+            "failure_threshold, in time_unit (only when status='estimated'). An "
+            "extrapolation to a caller-set limit, not a predicted failure time."
+        ),
     )
     fit_r_squared: Optional[float] = Field(
         None,
@@ -1210,9 +1240,11 @@ class RULEstimationResult(BaseModel):
     rul_interval_95: Optional[list[float]] = Field(
         None,
         description=(
-            "[lower, upper] approximate 95% interval from the delta-method "
-            "variance (kalman only). Coverage not validated — treat as an "
-            "order-of-magnitude band."
+            "[lower, upper] nominal 95% band from a first-order (delta-method) "
+            "variance of the Kalman filter's state (kalman only). Its empirical "
+            "coverage is not validated. The filter's noise settings are fixed, so "
+            "the band depends on the time unit and the value scale of the series "
+            "and does not widen with the scatter of the measurements."
         ),
     )
     precision_heuristic: Optional[float] = Field(
@@ -1220,7 +1252,9 @@ class RULEstimationResult(BaseModel):
         description=(
             "Heuristic in [0,1]: 1 - rul_std/rul, clipped (kalman only). "
             "This is a heuristic, NOT a statistical confidence — do not "
-            "present it as a probability of correctness."
+            "present it as a probability of correctness. It comes from the same "
+            "variance as rul_interval_95 and changes with the time unit and the "
+            "value scale like it."
         ),
     )
     message: str = Field(
@@ -1232,9 +1266,10 @@ class TrendAnalysisResult(BaseModel):
     """Within-recording feature trend — screening only, NOT a prognosis.
 
     Segments a single recording (seconds of data) and fits a trend on the
-    per-segment feature values. Use it to screen whether a recording is
-    stationary. It cannot estimate Remaining Useful Life: for RUL, collect
-    repeated measurements over days/weeks and pass them to estimate_rul.
+    per-segment feature values. Use it to screen a recording for a
+    within-recording trend or a post-baseline onset. It cannot estimate
+    Remaining Useful Life: for RUL, collect repeated measurements over
+    days/weeks and pass them to estimate_rul.
     """
 
     feature_name: str = Field(description="Feature analyzed")
@@ -1248,7 +1283,10 @@ class TrendAnalysisResult(BaseModel):
     trend_direction: str = Field(
         description=(
             "increasing, decreasing, or stable — based on the slope "
-            "significance test (p < 0.05), not on an R-squared cutoff"
+            "significance test (p < 0.05), not on an R-squared cutoff. "
+            "'stable' means only that no significant slope was found, or that "
+            "the test could not be computed (p_value None); it does not show "
+            "that the recording is stationary or the machine healthy."
         )
     )
     p_value: Optional[float] = Field(

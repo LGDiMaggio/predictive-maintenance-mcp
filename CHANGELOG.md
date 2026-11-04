@@ -226,6 +226,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   updates stay off, and MCP SDK major updates are ignored.
 
 ### Changed
+- **`estimate_rul` messages state only what the slope test supports.** A
+  non-significant or uncomputable trend no longer says that the machine
+  "appears stable", and the schema no longer calls it a "healthy outcome";
+  the message names the test, its p-value, and that a non-significant test
+  can miss a real trend. Messages and descriptions treat `failure_threshold`
+  as a limit the caller sets, not as an observed component failure, and an
+  estimate as the time for the indicator to reach it. A Kalman estimate,
+  model-implied crossing or non-rising rate says that it can change with the
+  time unit, and an estimate adds that its interval depends on the time unit
+  and the value scale and that the interval's coverage is not validated. The
+  estimator itself is unchanged.
+- **`analyze_signal_trend` refuses an `overlap_ratio` outside 0 to 0.9 and an
+  `onset_threshold_sigma` that is not a finite number greater than 0.** An
+  overlap near 1 advanced each segment by one sample and could take minutes
+  on seconds of data; a zero or negative sigma flagged an onset on any
+  record. Its description now says that `stable` means only that no
+  significant slope was found or that the test could not be computed.
+  Before 1.0 this is a behavior change of published fields: the next release
+  bumps MINOR, per the project's pre-1.0 rule.
 - **The sample bearing data is no longer part of the source distribution.**
   The sdist now contains no files from `data/`; the sample signals stay in
   the repository. `LICENSE` now holds only the MIT License, and the license
@@ -395,6 +414,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   check also covers `tools/`.
 
 ### Fixed
+- **`estimate_rul` no longer reports a model-implied threshold crossing as
+  no degradation trend.** When the slope test found a significant rise and
+  the fitted curve, or the Kalman filter's level, was already at or above
+  `failure_threshold` at the last measurement while that measurement was
+  still below it, the result was `no_degradation_trend` with "does not reach
+  the failure threshold ... Keep collecting measurements". It is now
+  `model_threshold_crossed`, with the model's value at that time in the new
+  `modelled_current_value` field and a message saying that this is a model
+  estimate, neither an observed exceedance nor a confirmed failure. A
+  significant rise whose exponential curve or Kalman rate does not rise is
+  now `model_not_rising` instead of `no_degradation_trend`. Both statuses
+  are new values of `status`. Present in 0.13.0 and earlier; every other
+  result for input that is still accepted keeps its numbers. Before 1.0
+  this is a behavior change of published fields: the next release bumps
+  MINOR, per the project's pre-1.0 rule.
+- **`estimate_rul` refuses values, timestamps and thresholds that are not
+  finite.** A NaN or infinite input used to produce "appears stable", an
+  inspection alarm, or `status: estimated` with no number. It is now
+  refused with the offending index and a remedy, also when a stored
+  recording's feature is not finite.
+- **The exponential method no longer drops measurements without saying
+  so.** It used to fit the positive values only. A zero or negative
+  measurement is now refused with its index whenever the curve would be
+  fitted, by `estimate_rul` and by the Python function
+  `estimate_rul_exponential`, which returned `None` or fitted the rest. A
+  latest measurement at or above the threshold is still reported as
+  `threshold_already_exceeded` first.
 - **A bearing that could not be checked is reported as not computed instead
   of being dropped (#84).** `diagnose_vibration` with a `bearing_id` that is
   not in the bearing catalog skipped the bearing check without saying so: the
