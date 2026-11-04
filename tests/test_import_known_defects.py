@@ -11,14 +11,13 @@ and asks for the marker to be removed (the convention of
   ``0,5`` loads as ``0``. The import route reads such files exactly; the fix
   of ``load_signal`` itself is its own change (plan, Deferred to Follow-Up
   Work).
-- `timebase-print-ties-misread`: a uniform clock whose every stamp lies
-  exactly half a tick off the print grid (mid-interval stamps printed at one
-  tick per sample) rounds to steps of 0 and 2, which KTD9's thresholds read
-  as duplicates or gaps and refuse; at larger whole-number intervals the same
-  ties read as off-pattern (needs confirmation, never a refusal). A
-  tie-aware rule changes KTD9's thresholds, so it waits for a plan decision.
-
 Retired:
+
+- ``timebase-print-ties-misread`` (PR #108, owner decision 2026-11-04): a
+  uniform clock whose every stamp lies on a print tie is no longer refused;
+  an exact check finds the clocks the whole column admits and reports the
+  ambiguity as `needs_confirmation`. Its regression tests live in
+  `tests/test_timebase.py` (`TestPrintTies`).
 
 - ``blank-row-scan-quadratic-on-cr-runs`` (plan U3, 2026-11-03): the
   blank-row scan is linear on long runs of ``\\r``. Its regression tests live
@@ -81,31 +80,3 @@ async def test_decimal_comma_csv_is_read_exactly_or_refused(sandbox_data_dir):
         ), f"decimal-comma samples loaded as {loaded[:4].tolist()}..."
     finally:
         repo.clear_all()
-
-
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason=known_defect(
-        "timebase-print-ties-misread",
-        "a uniform clock whose stamps all lie on print ties is refused at one "
-        "or two ticks per sample",
-    ),
-)
-def test_a_uniform_clock_on_print_ties_is_not_refused():
-    """1 kHz stamps at the middle of each sample interval, (n + 0.5) ms,
-    printed with 3 decimals and rounded half to even: 0.000, 0.002, 0.002,
-    0.004, ... The clock is uniform; only the print's ties make its steps
-    0 and 2."""
-    from decimal import ROUND_HALF_EVEN, Decimal
-
-    from predictive_maintenance_mcp.signal_import import timebase
-
-    tick = Decimal("0.001")
-    tokens = [
-        str(((n + Decimal("0.5")) * tick).quantize(tick, rounding=ROUND_HALF_EVEN))
-        for n in range(2000)
-    ]
-    mantissa, exponent = timebase.parse_time_tokens(tokens)
-    result = timebase.assess_time_base(mantissa, exponent, time_unit="s", first_line=2)
-    assert result.outcome != "invalid", result.findings

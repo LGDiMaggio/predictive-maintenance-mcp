@@ -42,7 +42,16 @@ Every bound comes from the printed resolution; there is no free tolerance.
    stamps; a step of the modal pair is the reference, never an offence. At
    ``duration_only`` a backward step is a reversal (rounding never reverses
    a clock), and a step is a gap only when it is longer than 1.5 intervals
-   whatever the rounding.
+   whatever the rounding. *Print ties* (owner decision of 2026-11-04): when
+   these tests refuse a fixed-decimal column whose steps all lie within two
+   ticks, with none backward, an exact check asks whether one uniform clock
+   prints the whole column, each stamp being the nearest print of its
+   instant with a tie rounded either way (stamps exactly half a tick off the
+   grid, such as mid-interval stamps). If one does, the offences become one
+   ``time_off_pattern`` finding (``needs_confirmation``, no proposed rate)
+   that names the admitted intervals; a stated or file-declared rate is
+   checked against them and never validates the column. Otherwise the
+   refusal stands. The 0.5 ``b`` and 1.5 ``b`` thresholds are unchanged.
 7. *Residual.* After the step tests pass, a least-squares line; a stamp
    further than ``b/2`` from it, or than the print-and-fit bound when that
    is wider, plus its own extra rounding and the widest one (which can pull
@@ -64,16 +73,9 @@ interval the print's rounding alone allows it; it is checked with
 evidence, outside ``significant_digits``, with no finding at all; even then
 a time column alone never sets the rate (R12): the caller records a basis.
 
-Known limits, both from the print alone:
-
-- A clock whose every stamp lies exactly on a print tie (true instants half
-  a tick off the grid, such as mid-interval stamps) rounds to steps of
-  ``b - 1`` and ``b + 1``: at one or two ticks per sample KTD9's thresholds
-  refuse it, at larger whole-number intervals it reads as off-pattern
-  (strict tripwire ``timebase-print-ties-misread``).
-- float32 values whose spacing is finer than the print but comparable to
-  it cannot be recognized (the print shows no digit beyond float32), so
-  their rounding is read as the clock's.
+Known limit, from the print alone: float32 values whose spacing is finer
+than the print but comparable to it cannot be recognized (the print shows
+no digit beyond float32), so their rounding is read as the clock's.
 
 Memory: the step array (8 bytes per row) and, outside fixed decimals, the
 tick array; the floating-point passes run in chunks of :data:`_CHUNK_ROWS`.
@@ -1322,6 +1324,211 @@ def _disagreement(comparisons: Sequence[RateComparison]) -> Optional[TimeFinding
     )
 
 
+# ---------------------------------------------------------------------------
+# Print ties (step 6 of the module docstring, owner decision of 2026-11-04)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class _Ties:
+    """The uniform clocks a fixed-decimal column admits when a printed stamp
+    may be either nearest print of its true instant (a tie rounded either
+    way): every interval ``beta`` in ``[low, high]`` ticks per sample, exact,
+    has a start ``c`` with ``|c + i * beta - k_i| <= 1/2`` for every stamp."""
+
+    low: Fraction
+    high: Fraction
+
+    def admits(self, low: Fraction, high: Fraction) -> bool:
+        """Some admitted interval lies within ``[low, high]``."""
+        return self.low <= high and low <= self.high
+
+
+def _tie_candidate(column: _Column, findings: Sequence[TimeFinding]) -> bool:
+    """Only a refusal by the step tests of a fixed-decimal column, with no
+    backward step and every step within the two ticks a uniform clock's
+    rounding can spread its steps over, can be a print-tie misreading."""
+    steps = column.steps
+    return (
+        bool(findings)
+        and all(f.code in ("time_gap", "time_reversal") for f in findings)
+        and column.printed.regime == "fixed_decimals"
+        and column.spacing is None
+        and column.largest_extra == 0
+        and int(steps.min()) >= 0
+        and int(steps.max()) - int(steps.min()) <= 2
+    )
+
+
+def _farthest(values: np.ndarray, a: int, b: int, sign: int) -> tuple[int, int]:
+    """The point ``(i, values[i])``, ``a < i < b``, furthest on the *sign*
+    side of the chord from ``a`` to ``b``, with twice its signed area (exact
+    in int64: both factors stay within twice the row count)."""
+    ya, yb = int(values[a]), int(values[b])
+    best, where = 0, -1
+    for lo in range(a + 1, b, _CHUNK_ROWS):
+        hi = min(lo + _CHUNK_ROWS, b)
+        index = np.arange(lo, hi, dtype=np.int64)
+        area = sign * ((b - a) * (values[lo:hi] - ya) - (yb - ya) * (index - a))
+        j = int(np.argmax(area))
+        if int(area[j]) > best:
+            best, where = int(area[j]), lo + j
+    return where, best
+
+
+def _hull(values: np.ndarray, sign: int) -> list[tuple[int, int]]:
+    """The upper (``sign=1``) or lower (``sign=-1``) convex hull of the points
+    ``(i, values[i])``, left to right (quickhull)."""
+    last = values.size - 1
+    vertices = {0, last}
+    pending = [(0, last)]
+    while pending:
+        a, b = pending.pop()
+        if b - a < 2:
+            continue
+        where, area = _farthest(values, a, b, sign)
+        if area > 0:
+            vertices.add(where)
+            pending += [(a, where), (where, b)]
+    return [(i, int(values[i])) for i in sorted(vertices)]
+
+
+def _tie_band(column: _Column) -> Optional[_Ties]:
+    """The uniform clocks the whole column admits, decided exactly.
+
+    In coordinates ``d_i = k_i - k_0 - i * m0`` (``m0`` the smallest step),
+    a clock of interval ``m0 + s`` fits iff the band of the lines of slope
+    ``s`` through the points is at most one tick high: ``w(s) = max(d_i - i
+    s) - min(d_i - i s) <= 1``. The maximum lies on the upper hull, the
+    minimum on the lower; ``w`` is convex and piecewise linear with
+    breakpoints at the hull edges' slopes, linear with slope ``-+(n - 1)``
+    beyond them, so ``{w <= 1}`` is computed in exact rationals.
+    """
+    base = int(column.steps.min())
+    values = np.zeros(column.rows, dtype=np.int64)
+    carry = 0  # each step adds 0 to 2, so every offset fits easily
+    for lo, hi in _chunks(column.steps.size):
+        np.cumsum(column.steps[lo:hi] - base, out=values[lo + 1 : hi + 1])
+        values[lo + 1 : hi + 1] += carry
+        carry = int(values[hi])
+    upper, lower = _hull(values, 1), _hull(values, -1)
+
+    def width(slope: Fraction) -> Fraction:
+        return max(y - x * slope for x, y in upper) - min(
+            y - x * slope for x, y in lower
+        )
+
+    slopes = sorted(
+        {
+            Fraction(y2 - y1, x2 - x1)
+            for chain in (upper, lower)
+            for (x1, y1), (x2, y2) in zip(chain, chain[1:])
+        }
+    )
+    widths = [width(s) for s in slopes]
+    best = min(range(len(slopes)), key=widths.__getitem__)
+    if widths[best] > 1:
+        return None
+    first = last = best
+    while first > 0 and widths[first - 1] <= 1:
+        first -= 1
+    while last < len(slopes) - 1 and widths[last + 1] <= 1:
+        last += 1
+    outer = column.rows - 1  # |slope| of w beyond every breakpoint
+
+    def crossing(i: int, j: int) -> Fraction:
+        """Where ``w`` reaches 1 between breakpoints ``i`` (w <= 1) and ``j``."""
+        return slopes[i] + (1 - widths[i]) * (slopes[j] - slopes[i]) / (
+            widths[j] - widths[i]
+        )
+
+    low = (
+        crossing(first, first - 1) if first > 0 else slopes[0] - (1 - widths[0]) / outer
+    )
+    high = (
+        crossing(last, last + 1)
+        if last < len(slopes) - 1
+        else slopes[-1] + (1 - widths[-1]) / outer
+    )
+    if base + high <= 0:
+        return None  # no clock that advances
+    return _Ties(max(base + low, Fraction(0)), base + high)
+
+
+def _exact_beta(rate: Decimal, tick_exponent: int) -> Fraction:
+    """Ticks per sample at *rate*, exactly."""
+    return Fraction(10) ** -tick_exponent / Fraction(rate)
+
+
+def _ticks(value: Fraction) -> str:
+    with decimal.localcontext(_RATE_CONTEXT):
+        return _display(Decimal(value.numerator) / Decimal(value.denominator))
+
+
+def _rate_of(interval: Fraction, tick_exponent: int) -> Optional[Decimal]:
+    """The rate, in Hz, of an interval of *interval* ticks (None for zero)."""
+    if interval <= 0:
+        return None
+    with decimal.localcontext(_RATE_CONTEXT):
+        return (
+            Decimal(1).scaleb(-tick_exponent)
+            * interval.denominator
+            / interval.numerator
+        )
+
+
+def _tie_finding(
+    column: _Column, findings: Sequence[TimeFinding], ties: _Ties
+) -> TimeFinding:
+    """The step offences of an ambiguous column, as the choice they need."""
+    count = sum(f.count for f in findings)
+    lines = tuple(sorted(line for f in findings for line in f.lines)[:MAX_LISTED_LINES])
+    if ties.low == ties.high:
+        interval = f"{_ticks(ties.low)} ticks"
+    else:
+        interval = f"{_ticks(ties.low)} to {_ticks(ties.high)} ticks"
+    fastest = _rate_of(ties.low, column.tick_exponent)
+    slowest = _rate_of(ties.high, column.tick_exponent)
+    assert slowest is not None
+    if fastest is None:
+        rates = f"{_display(slowest)} Hz or faster"
+    elif fastest == slowest:
+        rates = f"{_display(fastest)} Hz"
+    else:
+        rates = f"{_display(slowest)} to {_display(fastest)} Hz"
+    return TimeFinding(
+        "time_off_pattern",
+        count,
+        lines,
+        (),
+        f"{_plural(count, 'step')} from {int(column.steps.min())} to "
+        f"{int(column.steps.max())} ticks that a uniform clock prints only when "
+        f"its stamps lie exactly on print ties: the whole column fits one "
+        f"uniform clock of {interval} per sample ({rates}) if each stamp is the "
+        f"nearest print of its instant, a tie rounded either way, but a print "
+        f"that fits is no proof of a uniform acquisition; choose the time-base "
+        f"source; first at line {lines[0]}",
+    )
+
+
+def _tie_comparison(column: _Column, ties: _Ties, other: _Source) -> RateComparison:
+    """An ambiguous column against one rate source: does a clock it admits
+    run at a rate the source allows? It never validates the column."""
+    shortest = _exact_beta(other.high, column.tick_exponent)
+    longest = _exact_beta(other.low, column.tick_exponent)
+    consistent = ties.admits(shortest, longest)
+    fastest = _rate_of(ties.low, column.tick_exponent)
+    slowest = _rate_of(ties.high, column.tick_exponent)
+    assert slowest is not None
+    if consistent:
+        ppm: Optional[float] = 0.0
+    elif other.rate < slowest:
+        ppm = _ppm(slowest, other.rate)
+    else:
+        ppm = _ppm(fastest, other.rate) if fastest is not None else None
+    return RateComparison("time_column", other.source, consistent, ppm)
+
+
 def _in_unit(value: Decimal) -> str:
     return format(value, "f")
 
@@ -1406,6 +1613,20 @@ def assess_time_base(
     column = _column(mantissa, exponent, time_unit, first_line)
 
     findings = _step_findings(column)
+    ties: Optional[_Ties] = None
+    evidence = column.evidence
+    if _tie_candidate(column, findings):
+        ties = _tie_band(column)
+        if ties is not None:
+            # One uniform clock prints the whole column if stamps lie on
+            # ties: ambiguous, never refused, never a proposed rate. Its
+            # evidence is what the shortest admitted interval resolves.
+            findings = [_tie_finding(column, findings, ties)]
+            evidence = (
+                "full"
+                if ties.low >= 2
+                else "partial" if ties.low >= 1 else "duration_only"
+            )
     fit: Optional[_Fit] = None
     if column.evidence != "duration_only" and not findings:
         fit, fit_finding = _fit_findings(column, stated)
@@ -1422,12 +1643,20 @@ def assess_time_base(
         uncertainty_text = _with_digits(uncertainty, 2, decimal.ROUND_UP)
 
     # A column with a finding is no rate evidence: jitter, a gap or a defect
-    # needs a choice or a refusal first.
-    comparisons = [
-        _column_comparison(column, fit, own, other)
-        for other in (file_declared, stated)
-        if other is not None and not findings
-    ]
+    # needs a choice or a refusal first. A print-tie column is compared by
+    # the clocks it admits, which never validates it.
+    if ties is not None:
+        comparisons = [
+            _tie_comparison(column, ties, other)
+            for other in (file_declared, stated)
+            if other is not None
+        ]
+    else:
+        comparisons = [
+            _column_comparison(column, fit, own, other)
+            for other in (file_declared, stated)
+            if other is not None and not findings
+        ]
     if file_declared is not None and stated is not None:
         comparisons.append(
             RateComparison(
@@ -1452,7 +1681,7 @@ def assess_time_base(
     proposed = None
     if (
         outcome == "accepted"
-        and column.evidence == "full"
+        and evidence == "full"
         and column.printed.regime != "significant_digits"
         and fitted_text is not None
         and own is not None
@@ -1461,7 +1690,7 @@ def assess_time_base(
     resolution = _in_unit(Decimal(1).scaleb(column.printed.grid))
     return TimeBaseAssessment(
         outcome=outcome,
-        evidence=column.evidence,
+        evidence=evidence,
         regime=column.printed.regime,
         time_unit=time_unit,
         row_count=column.rows,
