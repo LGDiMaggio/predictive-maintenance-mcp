@@ -18,7 +18,7 @@
 
 **Give your AI assistant evidence-based vibration diagnostics — machinery fault detection, ISO-cited severity, and diagnostic reports built to support and accelerate expert decision-making.**
 
-An open-source [MCP](https://modelcontextprotocol.io/) server that turns LLMs into condition monitoring assistants for reliability engineers. Its core design rule: **the server refuses to guess**. No diagnosis is ever inferred from filenames or statistical parameters alone — a fault indication requires matching spectral evidence. Every severity claim cites ISO 20816-3, and the evaluative wording in reports is authored by the server, not improvised by the model. The AI orchestrates the analysis and presents the evidence — detected fault frequencies, matched fault patterns, severity zones — while the final judgment stays with the engineer. Also available as a **Claude Code plugin** with 8 diagnostic skills.
+An open-source [MCP](https://modelcontextprotocol.io/) server that turns LLMs into condition monitoring assistants for reliability engineers. Its core design rule: **the server refuses to guess**. No diagnosis is ever inferred from filenames or statistical parameters alone — a fault indication requires matching spectral evidence. Every severity claim cites ISO 20816-3, and the evaluative wording in reports is authored by the server, not improvised by the model. The AI orchestrates the analysis and presents the evidence — detected fault frequencies, matched fault patterns, severity zones — while the final judgment stays with the engineer. Also available as a **Claude Code plugin** with 9 diagnostic skills.
 
 ---
 
@@ -158,7 +158,7 @@ The project includes a **plugin for Claude Code** with domain-specific skills th
   <img src="assets/plugin.gif" alt="Animated demo: adding the predictive-maintenance marketplace, installing the plugin and opening its page, which lists its skills and agents" width="720">
 </p>
 
-The plugin adds **8 skills** that activate automatically based on context (bearing-diagnosis, gear-diagnosis, quick-screening, report-generation, anomaly-detection, signal-management, documentation-search, prognostics), **2 agents** that run multi-step diagnostic workflows end-to-end and hand you the evidence (diagnostic-pipeline, signal-explorer), and **3 commands** for quick entry points (`/pm-diagnose`, `/pm-screen`, `/pm-report`).
+The plugin adds **9 skills** that activate automatically based on context (bearing-diagnosis, gear-diagnosis, quick-screening, report-generation, anomaly-detection, signal-management, documentation-search, prognostics, experimental shaft-order-evidence), **2 agents** that run multi-step diagnostic workflows end-to-end and hand you the evidence (diagnostic-pipeline, signal-explorer), and **3 commands** for quick entry points (`/pm-diagnose`, `/pm-screen`, `/pm-report`).
 
 Full skill, agent, and command reference: [Plugin README](plugin/README.md).
 
@@ -265,7 +265,7 @@ pytest --cov=src --cov-report=html      # with coverage report
 ## Roadmap
 
 - [x] 43 MCP endpoints on the main branch (40 tools, 3 prompts) with modular architecture and a single `signal_id` handle
-- [x] Claude Code plugin (8 skills, 2 agents, 3 commands)
+- [x] Claude Code plugin (9 skills, 2 agents, 3 commands)
 - [x] 85%+ test coverage enforced in CI, CI/CD on 3 platforms
 - [x] Docker + SSE/HTTP transport for enterprise deployment
 - [x] Semantic document search (FAISS + TF-IDF)

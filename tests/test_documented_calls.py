@@ -267,8 +267,8 @@ def endpoints() -> dict[str, set[str]]:
 
 def _plugin_markdown_files() -> list[Path]:
     files = sorted(PLUGIN_DIR.rglob("*.md"))
-    assert len(files) >= 14, (
-        f"Expected the full plugin surface (8 skills + 2 agents + 3 commands "
+    assert len(files) >= 15, (
+        f"Expected the full plugin surface (9 skills + 2 agents + 3 commands "
         f"+ README), found only {len(files)} markdown files in {PLUGIN_DIR}"
     )
     return files

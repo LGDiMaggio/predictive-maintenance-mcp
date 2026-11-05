@@ -37,7 +37,7 @@ rest on the bearing check, such as the ISO 20816-3 zone, as usual.
 
 ## Components
 
-### Skills (8)
+### Skills (9)
 
 Skills activate automatically when Claude detects relevant context.
 
@@ -51,6 +51,7 @@ Skills activate automatically when Claude detects relevant context.
 | **signal-management** | "load signal", "generate test signal" | Signal loading, generation, cache management |
 | **documentation-search** | "search manual", "look up bearing" | RAG search across manuals and catalogs |
 | **prognostics** | "trend analysis", "remaining useful life" | Within-recording screening + multi-measurement RUL |
+| **shaft-order-evidence** | "is this unbalance", "misalignment or looseness" | Experimental shaft-order evidence; attributes no fault (unreleased tool) |
 
 ### Agents (2)
 

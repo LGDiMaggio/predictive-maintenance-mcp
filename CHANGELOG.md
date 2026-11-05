@@ -8,6 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Plugin: an optional `shaft-order-evidence` skill.** It tells a client
+  model when to call `assess_shaft_fault_evidence` and how to read it: quote
+  its `summary` and statements verbatim, read `pattern_observed` as an
+  observed pattern and never as a fault, read every observed pattern as the
+  `inconclusive` status the server returns, read the ISO 20816-3 zone as
+  context only, and never count agreement with `diagnose_vibration` on the
+  same signal as corroboration. The quick-screening skill, the
+  diagnostic-pipeline agent and the `quick_diagnostic_report` prompt point to
+  it as an optional step; no bearing, gear or screening workflow requires it.
+  Their general cautious-language rules let the model name unbalance,
+  misalignment or looseness as possible explanations next to the others,
+  never attribute them from a 1x or 2x line or from the shaft-order
+  assessment, and never count a re-reading of the same line, or a manual
+  describing a compatible pattern, as independent evidence. The documented
+  calls pass no speed, direction or machine class: the server takes them
+  from the declared context, and the model asks the user for a speed nobody
+  declares. Plugin version 1.3.0. Not yet in a published release.
 - **`assess_shaft_fault_evidence`: an experimental evidence assessment for
   unbalance, misalignment and looseness.** For one to six channels of one
   machine at one operating condition it tests the lines at integer and half

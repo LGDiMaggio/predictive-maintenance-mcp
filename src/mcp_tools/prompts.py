@@ -467,7 +467,7 @@ def quick_diagnostic_report(signal_id: str) -> str:
     Guardrails:
     - Ignore signal ids/filenames as diagnostic evidence.
     - Do NOT diagnose faults from statistics alone; use them for screening only.
-    - Use cautious language: "possible/consistent with" unless corroborated by multiple indicators.
+    - Use cautious language: "possible/consistent with" unless corroborated by multiple indicators. Unbalance, misalignment or looseness may be named as possible explanations next to the others, never attributed from a peak at 1×/2× RPM; a re-reading of the same peak of the same signal, or a manual describing a compatible pattern, is not independent evidence.
 
     1) Load & sanity checks
     Call: get_signal_info(signal_id="{signal_id}")
@@ -484,12 +484,13 @@ def quick_diagnostic_report(signal_id: str) -> str:
     3) Spectral snapshot
     Call: analyze_fft(signal_id="{signal_id}")
     - Report peak frequency, magnitude (top 3 peaks only).
-    - If operating speed is known, relate peaks to 1×/2× RPM; otherwise, request it for deeper interpretation.
+    - If operating speed is known, relate peaks to 1×/2× RPM; otherwise, request it for deeper interpretation. A peak at 1×/2× RPM names no fault.
 
     4) Next-step guidance (evidence-first)
     - If strong impulsiveness (CF>6 or Kurtosis>6), suggest: "Use diagnose_bearing prompt for targeted bearing analysis"
     - If tonal/harmonic pattern dominates, suggest: "Use diagnose_gear prompt if gear suspected"
     - If broadband increase, suggest: ISO 20816-3 check with assess_severity(signal_id="{signal_id}")
+    - If the user asks about unbalance, misalignment or looseness, suggest the optional assess_shaft_fault_evidence(signal_ids=["{signal_id}"]), which takes the speed and the machine class the signal or its measurement point declare; if no speed is declared, ask the user for it, and pass rpm or directions only as the user gives them. Unbalance and misalignment also need a declared signal unit. It is an experimental evidence assessment that attributes no fault.
 
     Output format (≤200 words):
     - Screening summary with measured values (bullet points)

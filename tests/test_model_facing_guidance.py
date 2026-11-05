@@ -29,6 +29,7 @@ single quotes made double, so a rewrap or a change of quoting is not drift.
 """
 
 import functools
+import json
 import re
 from typing import Callable, NamedTuple, get_args
 
@@ -226,6 +227,16 @@ def outcome_violations(surface: str, text: str) -> list[str]:
 
 
 _LEVEL_SHAPED_RE = re.compile(rf"(?<![\w.])({_WORD}_(?:claim|evidence))(?!\w)")
+
+#: Registered tool names, from the frozen inventory: a tool whose name ends in
+#: _evidence (assess_shaft_fault_evidence) is named, not a claim level.
+TOOL_NAMES = frozenset(
+    json.loads(
+        (REPO_ROOT / "tests" / "fixtures" / "tool_inventory.json").read_text(
+            encoding="utf-8"
+        )
+    )["tools"]
+)
 _CODE_TOKEN_RE = re.compile(rf"[`'\"]({_WORD})[`'\"]")
 _LEVEL_IS_RE = re.compile(rf"claim\.level`?\s+is\s+(?:not\s+)?[`'\"]?({_WORD})")
 _LEVEL_LIST_RE = re.compile(r"claim\.level`?\s*\(([^)]*)\)")
@@ -254,7 +265,7 @@ def claim_level_violations(surface: str, text: str) -> list[str]:
     positional += _RELAY_BULLET_RE.findall(text)
     positional += _level_table_cells(text)
     coded = [t for t in _CODE_TOKEN_RE.findall(text) if t in LEVELS]
-    shaped = _LEVEL_SHAPED_RE.findall(text)
+    shaped = [s for s in _LEVEL_SHAPED_RE.findall(text) if s not in TOOL_NAMES]
     named = (set(positional) | set(coded) | set(shaped)) & LEVELS
     off_list = (set(positional) | set(shaped)) - LEVELS
     violations = []
@@ -857,6 +868,13 @@ MUTATIONS = (
         AGENT,
         claim_level_violations,
         _swap("at `single_spectrum_evidence`", "at `supported_claim`"),
+        raw=True,
+    ),
+    Mutation(
+        "add: an off-list level next to a tool name that ends in _evidence",
+        AGENT,
+        claim_level_violations,
+        _append(" `assess_shaft_fault_evidence` returns `strong_evidence`."),
         raw=True,
     ),
     # ledger bases

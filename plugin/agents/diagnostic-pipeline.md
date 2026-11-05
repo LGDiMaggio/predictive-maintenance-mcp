@@ -117,6 +117,29 @@ low kurtosis does not rule it out):
 - Call `check_bearing_faults(signal_id="<id>", rpm=1500, frequencies={"GMF": 800.0})`
 - Run envelope analysis centered near the GMF band
 
+**If unbalance, misalignment or looseness is asked about** (optional; a
+bearing or gear check never needs it):
+- Call `assess_shaft_fault_evidence(signal_ids=["<h>", "<v>", "<a>"])` on
+  channels of one machine at one operating condition. The server takes the
+  speed, the machine group, the support type and the machine power from what
+  the signals or their measurement point declare, and each channel's direction
+  from what its signal declares; `parameter_sources` and `direction_source`
+  say where each came from
+- If the call is refused because no shaft speed is declared, ask the user for
+  it and call again with `rpm` set to the value they give; never estimate it.
+  Pass `directions`, `machine_group`, `support_type` or `machine_power_kw` only
+  when the user supplies them for these channels (a direction declared only
+  for the measurement point in the asset ledger is not read: ask the user for
+  it)
+- Quote `summary` and each hypothesis `statement` verbatim. `pattern_observed`
+  true is an observed pattern, never a fault, and every observed pattern is
+  `inconclusive`: never write from this result that unbalance, misalignment or
+  looseness is present, possible or suspected. `not_observed` does not exclude the fault;
+  `insufficient_data` says nothing about the family; relay `limitations`
+  with every observed pattern; its ISO 20816-3 zone is context only
+- `diagnose_vibration` reads the same spectral lines of the same signal: the
+  agreement of the two repeats the observation and corroborates nothing
+
 **If general vibration concern**:
 - Focus on the ISO 20816-3 assessment (Phase 5)
 
@@ -167,7 +190,12 @@ Present a concise summary to the user:
 
 ## Rules
 
-- Use cautious diagnostic language: "consistent with", "possible", "suggests"
+- Use cautious diagnostic language: "consistent with", "possible", "suggests".
+  Unbalance, misalignment or looseness may be named as possible explanations
+  next to the others, never attributed from a strongest line at 1x or 2x or
+  from the shaft-order assessment; a re-reading of the same line of the same
+  signal, or a manual describing a compatible pattern, is not independent
+  evidence (Phase 4)
 - Neither `check_bearing_faults` nor the bearing block of `diagnose_vibration`
   confirms a bearing defect: never write "confirmed", "damage detected" or
   "fault present" for a bearing claim, however many indicators agree. If the
