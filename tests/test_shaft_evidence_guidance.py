@@ -35,7 +35,9 @@ The wording guard screens the guidance's own sentences, not what a model may
 discuss: background on how a fault can show in vibration, named next to the
 other explanations, passes; a phrase that attributes a fault from a line
 ("possible unbalance", "typical of misalignment") does not. It is a heuristic
-screen, not a proof: a negation within the
+screen, not a proof (a descriptive sentence such as "the assessment reads the
+declared unit for each signal" still reads as a recurring step, and fails
+loudly): a negation within the
 twelve words before a phrase exempts it ("never write that unbalance is
 present"), and it reads text, not meaning. Each guard is shown to fail on
 mutations of the real text.
@@ -252,11 +254,14 @@ _ENUMERATION = re.compile(
 #: clause ('no' does not: "no sidebands, so unbalance is likely" stays
 #: affirmative; 'not only' is not a negation).
 _NEGATION = re.compile(
-    r"\b(?:not(?!\s+only)|cannot|never|nothing|whether|neither|nor)\b|n't\b", re.I
+    r"\b(?:not(?!\s+only)|cannot|never|nothing|whether|neither|nor)\b|n['\u2019]t\b",
+    re.I,
 )
 _NEGATION_WORDS = 12
 _CLAUSE_BREAK = re.compile(r"[,;:()\u2014]|\s-\s")
 _REPORTED = re.compile(r"\bthat\b", re.I)
+#: A request for the mapping ("ask the user how x, y and z map to ...").
+_ASKS_FOR_MAPPING = re.compile(r"\bask\b|\bhow\b|\bwhich\b", re.I)
 #: Guidance must not assert a fixed correspondence between a sensor axis and a
 #: physical direction.
 AXIS_MAPPING = re.compile(
@@ -562,9 +567,14 @@ def semantic_violations(source: str, text: str) -> list[str]:
                 sentence, m
             ):
                 out.append(f"{source}: causal fault attribution {m.group(0)!r}")
+        mapping_negated = False
         for m in AXIS_MAPPING.finditer(sentence):
-            if not _negated_before(sentence, m.start()):
-                out.append(f"{source}: fixed axis-to-direction mapping {m.group(0)!r}")
+            if _ASKS_FOR_MAPPING.search(sentence[: m.start()]):
+                continue
+            if mapping_negated or _negated_before(sentence, m.start()):
+                mapping_negated = True
+                continue
+            out.append(f"{source}: fixed axis-to-direction mapping {m.group(0)!r}")
         if not _CORROBORATION_SCOPE.search(sentence):
             continue
         for corroboration in _CORROBORATION.finditer(sentence):
@@ -1081,6 +1091,10 @@ def test_a_negated_or_descriptive_mention_passes_the_placement_guard(sentence):
         " are others.",
         "Do not read x as horizontal or z as axial without the user's answer.",
         "Records at one operating condition cannot establish misalignment.",
+        "This result doesn\u2019t show unbalance.",
+        "Ask the user how x, y and z map to horizontal, vertical and axial.",
+        "Ask the user to map x, y or z to horizontal, vertical or axial.",
+        "Never treat x as horizontal, y as vertical or z as axial.",
         "Corroboration does not come from diagnose_vibration: it reads the same"
         " lines.",
         "A 1x line may be caused by unbalance or by a resonance near running speed.",
