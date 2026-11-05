@@ -165,6 +165,11 @@ Fixture history:
   value in every evaluated acquisition, so one missing or listed makes it
   unavailable while it stays in the evaluated history.
   Generated under mcp 2.3.0 and pydantic 2.12.0 (uv.lock).
+- Shaft-order evidence (2026-11-05): regenerated intentionally: ADDITIVE.
+  New entry assess_shaft_fault_evidence (ShaftFaultEvidenceResult and its
+  nested channel, line, speed, band, level, hypothesis, observation and
+  source models). No existing tool's output schema changed.
+  Generated under mcp 2.3.0 and pydantic 2.12.0 (uv.lock).
 - RUL outcomes (2026-11-03): regenerated intentionally: ADDITIVE for
   estimate_rul, no property removed and no type changed. The status enum
   gains model_threshold_crossed and model_not_rising, and the result gains

@@ -16,6 +16,7 @@ notifications; any fact a caller needs is carried by the return value.
 """
 
 import logging
+import math
 import json
 import pickle
 from typing import Any, Literal, NamedTuple, Optional
@@ -46,6 +47,10 @@ from ..models import (
     ISOSeverityRefusal,
     DiagnosisParameterSource,
     DiagnosisResult,
+    ShaftDetail,
+    ShaftDirection,
+    ShaftFaultEvidenceResult,
+    ShaftParameterSource,
     StoredSignalInfo,
 )
 from ..document_reader import (
@@ -62,6 +67,15 @@ from ..diagnostics.bearing_analyzer import (
     check_frequency_set as _check_frequency_set,
 )
 from ..diagnostics.bearing_claims import acquisition_eligibility_from_companion
+from ..diagnostics.shaft_fault_evidence import (
+    MAX_CHANNELS as _SHAFT_MAX_CHANNELS,
+    assess_shaft_fault_evidence as _assess_shaft_fault_evidence,
+    with_detail as _shaft_with_detail,
+)
+from ..diagnostics.shaft_orders import (
+    DEFAULT_MAX_ORDER as _SHAFT_DEFAULT_MAX_ORDER,
+    DEFAULT_SPEED_TOLERANCE_PCT as _SHAFT_DEFAULT_TOLERANCE,
+)
 from ..diagnostics.iso20816 import (
     assess_severity_raw,
     classify_zone,
@@ -77,7 +91,11 @@ from ..signal_processing.features import (
     extract_time_domain_features,
     segment_and_extract_features as _segment_and_extract_features,
 )
-from ..signal_validation import validate_expected_frequencies, validate_rpm
+from ..signal_validation import (
+    InvalidInputError,
+    validate_expected_frequencies,
+    validate_rpm,
+)
 from ._utils import (
     refusal_boundary,
     resolve_signal,
@@ -2046,6 +2064,312 @@ async def diagnose_vibration(
     )
 
 
+def _shaft_declared(
+    signal_ids: list[str],
+    contexts: list[dict[str, Any]],
+    key: str,
+    label: str,
+    parameter: str,
+    check: Any,
+) -> tuple[Any, ShaftParameterSource]:
+    """The one value the channels' points declare for *key*, or (None, 'none').
+
+    Raises:
+        InvalidInputError: If channels declare different values.
+    """
+    found = [
+        (sid, check(context[key], sid))
+        for sid, context in zip(signal_ids, contexts)
+        if context[key] is not None
+    ]
+    values = {value for _, value in found}
+    if len(values) > 1:
+        listed = ", ".join(f"{sid}: {value!r}" for sid, value in found)
+        raise InvalidInputError(
+            f"The measurement points of the channels declare different {label} "
+            f"({listed}); the assessment needs one machine. Pass {parameter}=... to "
+            f"state it, or assess the channels of each machine separately."
+        )
+    if not found:
+        return None, "none"
+    return found[0][1], "point"
+
+
+def _shaft_rpm(
+    signal_ids: list[str], contexts: list[dict[str, Any]], rpm: Optional[float]
+) -> tuple[float, ShaftParameterSource]:
+    """The speed: explicit, else the one the channels declare; never estimated.
+
+    Raises:
+        InvalidInputError: If no channel declares a speed, or channels declare
+            different speeds.
+    """
+    if rpm is not None:
+        return float(rpm), "explicit"
+    found = [
+        (sid, float(context["rpm"]), context["rpm_source"])
+        for sid, context in zip(signal_ids, contexts)
+        if context["rpm"] is not None
+    ]
+    if not found:
+        raise InvalidInputError(
+            f"Cannot resolve the operating speed: no rpm was passed and none of "
+            f'{signal_ids} declares one. Pass rpm=... to this call, declare "rpm" in '
+            f'the companion\'s "measurement" object and re-load the file, or declare '
+            f"nominal_rpm for the point with declare_measurement_point(...)."
+        )
+    if len({value for _, value, _ in found}) > 1:
+        listed = ", ".join(f"{sid}: {value:g} rpm" for sid, value, _ in found)
+        raise InvalidInputError(
+            f"The channels declare different speeds ({listed}); the assessment needs "
+            f"records of one operating condition. Pass rpm=... to state the speed, or "
+            f"assess the channels of each speed separately."
+        )
+    _, value, source = found[0]
+    return value, "measurement" if source == "measurement" else "point"
+
+
+def _shaft_location(info: StoredSignalInfo) -> Optional[str]:
+    """'asset/point' of a signal that declares a measurement identity, else None."""
+    identity = info.measurement
+    if not isinstance(identity, dict):
+        return None
+    asset, point = identity.get("asset_id"), identity.get("measurement_point_id")
+    if isinstance(asset, str) and isinstance(point, str):
+        return f"{asset}/{point}"
+    return None
+
+
+def _positive_power(value: object, signal_id: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not value > 0:
+        raise InvalidInputError(
+            f"The measurement point of signal '{signal_id}' declares machine_power_kw "
+            f"{value!r}, which is not a positive number; re-declare the point or pass "
+            f"machine_power_kw= to this call."
+        )
+    return float(value)
+
+
+def _six_significant(value: Any) -> Any:
+    """Floats of a result rounded to 6 significant digits, recursively.
+
+    The computation keeps full precision; only the returned numbers are
+    rounded, which halves the size of the response an LLM client reads.
+    """
+    if isinstance(value, float):
+        return float(f"{value:.6g}") if math.isfinite(value) else value
+    if isinstance(value, dict):
+        return {k: _six_significant(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_six_significant(v) for v in value]
+    return value
+
+
+async def assess_shaft_fault_evidence(
+    ctx: Context,
+    signal_ids: list[str],
+    rpm: Optional[float] = None,
+    directions: Optional[list[Optional[ShaftDirection]]] = None,
+    machine_group: Optional[Literal[1, 2]] = None,
+    support_type: Optional[Literal["rigid", "flexible"]] = None,
+    machine_power_kw: Optional[float] = None,
+    speed_tolerance_pct: float = _SHAFT_DEFAULT_TOLERANCE,
+    max_order: int = _SHAFT_DEFAULT_MAX_ORDER,
+    line_frequency_hz: Optional[float] = None,
+    detail: ShaftDetail = "summary",
+) -> ShaftFaultEvidenceResult:
+    """EXPERIMENTAL evidence assessment for unbalance, misalignment and looseness.
+
+    Measures the lines at integer and half shaft orders (0.5X up to max_order)
+    of one to six channels of one machine at one operating condition, tests
+    each against its local noise floor, and reports for each fault family
+    which observations match the pattern this assessment uses for it, what
+    conflicts with it, which measurements are missing and what else could
+    explain it. The patterns use fixed cut points of this assessment (each
+    hypothesis states its pattern_definition), not validated thresholds, and
+    are not validated as fault detectors. A significant line means a
+    periodic component stands above the noise floor, which is normal for
+    shaft orders, not that it is abnormal. Records at one operating
+    condition cannot establish any of these faults, and this version
+    attributes none: an observed pattern is 'inconclusive' with
+    pattern_observed true and the reason attribution_not_validated, an absent
+    one 'not_observed' with pattern_observed false; resonance is always
+    'not_assessable_from_record'. An observed pattern stays evidence. ISO
+    20816-3 severity, evaluated only with a declared unit, machine group and
+    support type, is reported per channel as context, never as evidence of a
+    specific fault. The limitations field states what the result cannot
+    establish, including the measured false-alarm rates of the line test.
+
+    A status here does not verify a fault: the fault_types of
+    generate_maintenance_recommendations are caller-supplied and unverified,
+    and passing a family from this result does not make it a finding. The
+    dominant-peak sentence of diagnose_vibration reads the same spectrum, so
+    the two are not independent evidence and their agreement confirms nothing.
+
+    Args:
+        ctx: MCP context. Unused — see this module's docstring on logging.
+        signal_ids: One to six stored signals measured on one machine at one
+            operating condition (for example horizontal, vertical and axial
+            at a bearing).
+        rpm: Shaft speed in RPM, positive and finite. Optional: the speed the
+            channels declare (companion "measurement" rpm, then the point's
+            nominal_rpm; channels that declare none take the speed the others
+            declare); never estimated or defaulted. parameter_sources says
+            where it came from.
+        directions: Direction of each channel, aligned with signal_ids
+            ('horizontal', 'vertical', 'axial', 'x', 'y', 'z', or null to use
+            the direction the measurement declares; an explicit value is used
+            as given and the channel's direction_source says so). Patterns on
+            a channel without a declared horizontal, vertical or axial
+            direction stay inconclusive.
+        machine_group: ISO 20816-3 machine group, 1 (large, above 300 kW) or 2
+            (medium, 15 to 300 kW). Optional: the points' declaration. No
+            default: without it the overall severity is not evaluated.
+        support_type: 'rigid' or 'flexible'. Optional: the points'
+            declaration. No default, as for machine_group.
+        machine_power_kw: Rated machine power in kW, if known. Optional: the
+            points' declaration. ISO 20816-3 covers machines above 15 kW;
+            below it the zone is not used as context.
+        speed_tolerance_pct: Uncertainty of the speed in percent (default 5,
+            at most 15); declare a smaller one for a measured speed.
+        max_order: Highest integer order tested, 2 to 20 (default 10).
+        line_frequency_hz: Electrical supply frequency in Hz, if known. For a
+            motor on a variable-frequency drive, declare the drive's output
+            frequency: when omitted, only 50 and 60 Hz are checked against the
+            order windows, which covers line-fed motors only.
+        detail: 'summary' (default) returns the hypotheses with their
+            observations and values, the severity context, the limitations
+            and each channel's speed, band, screening statistics and
+            significant lines; 'full' adds every order line, every
+            cross-channel comparison, the full line-test policy and what
+            each source supports.
+
+    Returns:
+        ShaftFaultEvidenceResult. summary and each hypothesis statement are
+        server sentences: quote them, never restate them more strongly.
+
+    Raises:
+        ValueError: If signal_ids is empty, longer than six or repeats an id,
+            if directions does not match signal_ids, if an explicit rpm, a
+            parameter or a sample is invalid, if no speed can be resolved, if
+            the channels declare different speeds or their points different
+            machine classes, if a point's declaration is malformed, or if a
+            stored signal has no sampling rate.
+    """
+    if rpm is not None:
+        validate_rpm(rpm, source="the rpm parameter", optional=True)
+    if detail not in ("summary", "full"):
+        raise InvalidInputError(
+            f"detail must be 'summary' or 'full', got {detail!r} — pass 'full' for "
+            f"every order line and the full policy and source texts."
+        )
+    if not signal_ids or len(signal_ids) > _SHAFT_MAX_CHANNELS:
+        raise InvalidInputError(
+            f"signal_ids must name 1 to {_SHAFT_MAX_CHANNELS} stored signals, got "
+            f"{len(signal_ids)} — pass the channels of one machine at one operating "
+            f"condition."
+        )
+    if len(set(signal_ids)) != len(signal_ids):
+        raise InvalidInputError(
+            f"Each channel must be a different signal, got {signal_ids} — remove the "
+            f"repeated ids."
+        )
+    if directions is not None and len(directions) != len(signal_ids):
+        raise InvalidInputError(
+            f"directions has {len(directions)} entries for {len(signal_ids)} signals — "
+            f"pass one direction (or null) per signal id, in the same order."
+        )
+
+    resolved = [resolve_signal(sid) for sid in signal_ids]
+    infos = [info for _, info in resolved]
+    # Each point is read once; an unreadable ledger counts as no point.
+    contexts = [
+        _declared_context(
+            sid, info.measurement, _point_context_for(sid, info.measurement)
+        )
+        for sid, info in zip(signal_ids, infos)
+    ]
+    effective_rpm, rpm_source = _shaft_rpm(signal_ids, contexts, rpm)
+    sources: dict[str, ShaftParameterSource] = {"rpm": rpm_source}
+    group: Optional[int] = machine_group
+    support: Optional[str] = support_type
+    power: Optional[float] = machine_power_kw
+    if group is None:
+        group, sources["machine_group"] = _shaft_declared(
+            signal_ids,
+            contexts,
+            "machine_group",
+            "machine groups",
+            "machine_group",
+            _point_machine_group,
+        )
+    else:
+        sources["machine_group"] = "explicit"
+    if support is None:
+        support, sources["support_type"] = _shaft_declared(
+            signal_ids,
+            contexts,
+            "support_type",
+            "support types",
+            "support_type",
+            _point_support_type,
+        )
+    else:
+        sources["support_type"] = "explicit"
+    if power is None:
+        power, sources["machine_power_kw"] = _shaft_declared(
+            signal_ids,
+            contexts,
+            "machine_power_kw",
+            "machine powers",
+            "machine_power_kw",
+            _positive_power,
+        )
+    else:
+        sources["machine_power_kw"] = "explicit"
+
+    channels = []
+    direction_sources: list[ShaftParameterSource] = []
+    for n, (sid, (data, info)) in enumerate(zip(signal_ids, resolved)):
+        direction = directions[n] if directions is not None else None
+        direction_sources.append("explicit" if direction is not None else "none")
+        if direction is None and isinstance(info.measurement, dict):
+            direction = info.measurement.get("direction")
+            if direction is not None:
+                direction_sources[-1] = "measurement"
+        channels.append(
+            {
+                "signal": data,
+                "fs": info.sampling_rate,
+                "signal_id": sid,
+                "signal_unit": info.signal_unit,
+                "direction": direction,
+                "location": _shaft_location(info),
+                "acquisition_eligibility": acquisition_eligibility_from_companion(
+                    info.source_metadata
+                ),
+            }
+        )
+
+    result = _assess_shaft_fault_evidence(
+        channels,
+        effective_rpm,
+        machine_group=group,
+        support_type=support,
+        machine_power_kw=power,
+        speed_tolerance_pct=speed_tolerance_pct,
+        max_order=max_order,
+        line_frequency_hz=line_frequency_hz,
+    )
+    result = _six_significant(_shaft_with_detail(result, detail))
+    for channel, direction_source in zip(result["channels"], direction_sources):
+        channel["direction_source"] = direction_source
+    logger.info(f"Shaft-order evidence for {signal_ids}: {result['summary']}")
+    return ShaftFaultEvidenceResult(
+        **result, rpm=effective_rpm, parameter_sources=sources
+    )
+
+
 def register(mcp: MCPServer) -> None:
     """Register diagnostics, anomaly-detection, and documentation tools on *mcp*."""
     mcp.tool()(refusal_boundary(assess_severity))
@@ -2059,3 +2383,4 @@ def register(mcp: MCPServer) -> None:
     mcp.tool()(refusal_boundary(search_documentation))
     mcp.tool()(refusal_boundary(check_bearing_faults))
     mcp.tool()(refusal_boundary(diagnose_vibration))
+    mcp.tool()(refusal_boundary(assess_shaft_fault_evidence))

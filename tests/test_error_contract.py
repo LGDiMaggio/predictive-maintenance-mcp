@@ -223,6 +223,7 @@ FAILURE_CASES = {
         "measurement_point_id": "motor_de_h",
         "last_k": 0,  # below the documented minimum of 1
     },
+    "assess_shaft_fault_evidence": {"signal_ids": ["__not_loaded__"], "rpm": 1500.0},
     "forecast_asset_indicator": {
         "observed_at": ["2026-10-01T00:00:00"],  # no timezone: never interpreted
         "values": [1.0],
@@ -486,6 +487,11 @@ REFUSAL_CASES = [
         "check_bearing_faults",
         {"signal_id": "__not_loaded__", "bearing_id": "6205", "rpm": 0.0},
         "rpm must be positive and finite",
+    ),
+    (
+        "assess_shaft_fault_evidence",
+        {"signal_ids": [], "rpm": 1500.0},
+        "signal_ids must name 1 to 6 stored signals",
     ),
     (
         "forecast_asset_indicator",

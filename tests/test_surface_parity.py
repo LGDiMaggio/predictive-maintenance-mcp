@@ -87,6 +87,16 @@ POST_U9_ADDITIONS: dict[str, str] = {
         "returns a remaining life; this tool returns the indicator's projected "
         "values and never a threshold, a failure probability or a remaining life."
     ),
+    "assess_shaft_fault_evidence": (
+        "Shaft-order evidence (unreleased, experimental): significance-tested "
+        "lines at integer and half shaft orders of one to six channels, a "
+        "severity context and, per fault family (unbalance, misalignment, "
+        "looseness), supporting and conflicting observations, missing "
+        "measurements and alternatives. New concept: diagnose_vibration and "
+        "check_bearing_faults assess bearing lines and one dominant peak; this "
+        "tool reports the evidence for machine-level fault families and never "
+        "a diagnosis."
+    ),
 }
 
 
