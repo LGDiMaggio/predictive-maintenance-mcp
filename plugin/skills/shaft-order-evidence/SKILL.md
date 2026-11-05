@@ -55,11 +55,12 @@ at one bearing. Ask the user for what is missing; never guess:
 - the signal unit, declared at load time with
   `load_signal(filepath="<file>", signal_unit="<unit the user gives>")`. A
   channel already loaded without a unit is re-loaded from its own file under
-  its own signal_id, with
-  `load_signal(filepath="<that channel's file>", signal_id="<its signal_id>", signal_unit="<unit the user gives>", overwrite=True)`;
-  overwrite=True replaces only that signal_id. Without a unit, unbalance and
-  misalignment have `insufficient_data` (`unit_undeclared`); looseness is still
-  assessed;
+  its own signal_id with the same load arguments it was first loaded with (for
+  a raw binary file, the decode parameters get_signal_info reports, and any
+  sampling rate given explicitly), adding signal_unit="<unit the user gives>"
+  and overwrite=True; overwrite=True replaces only that signal_id. Without a
+  unit, unbalance and misalignment have `insufficient_data`
+  (`unit_undeclared`); looseness is still assessed;
 - optionally the ISO 20816-3 machine group, support type and machine power, for
   the severity context;
 - for a motor on a variable-frequency drive, the drive's output frequency.
