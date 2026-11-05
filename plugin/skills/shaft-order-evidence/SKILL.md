@@ -43,14 +43,23 @@ at one bearing. Ask the user for what is missing; never guess:
 - the shaft speed in rpm, unless the signals or their measurement point declare
   it;
 - the direction of each channel (horizontal, vertical or axial), unless the
-  signal's measurement metadata declares it; a direction declared only for the
-  measurement point in the asset ledger is not read, so ask the user for it.
-  Pass null for a direction nobody declares: the patterns of that channel
-  then stay `inconclusive` with `direction_undeclared`;
+  signal's measurement metadata declares one of these three. A declared x, y
+  or z names a sensor axis with no fixed correspondence to horizontal,
+  vertical or axial: ask the user which it is and pass the answer in
+  `directions`; until then the assessment reads that channel's direction as
+  undeclared (`direction_undeclared`). A populated direction field alone does
+  not make a channel usable. A direction declared only for the measurement
+  point in the asset ledger is not read, so ask the user for it. Pass null
+  for a direction nobody declares: the patterns of that channel then stay
+  `inconclusive` with `direction_undeclared`;
 - the signal unit, declared at load time with
-  `load_signal(filepath="<file>", signal_unit="<unit the user gives>")`.
-  Without it, unbalance and misalignment have `insufficient_data`
-  (`unit_undeclared`); looseness is still assessed;
+  `load_signal(filepath="<file>", signal_unit="<unit the user gives>")`. A
+  channel already loaded without a unit is re-loaded from its own file under
+  its own signal_id, with
+  `load_signal(filepath="<that channel's file>", signal_id="<its signal_id>", signal_unit="<unit the user gives>", overwrite=True)`;
+  overwrite=True replaces only that signal_id. Without a unit, unbalance and
+  misalignment have `insufficient_data` (`unit_undeclared`); looseness is still
+  assessed;
 - optionally the ISO 20816-3 machine group, support type and machine power, for
   the severity context;
 - for a motor on a variable-frequency drive, the drive's output frequency.

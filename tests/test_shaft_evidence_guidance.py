@@ -25,6 +25,12 @@ scientific contract:
   diagnose_vibration is not corroboration) and no surface uses an affirmative
   fault phrasing.
 
+A negation exempts a phrasing only within its own clause, or across clauses
+when 'that' introduces reported speech ("never write that unbalance is
+present"). A causal phrase before a family is attribution unless it is hedged
+(can, could, may, might) and names competing explanations ("can be caused by
+unbalance, a bent shaft or a resonance").
+
 The wording guard screens the guidance's own sentences, not what a model may
 discuss: background on how a fault can show in vibration, named next to the
 other explanations, passes; a phrase that attributes a fault from a line
@@ -92,6 +98,16 @@ REQUIRED: dict[str, tuple[str, ...]] = {
         "relay limitations as stated with every observed pattern",
         "not_assessable_from_record",
         "pass null for a direction nobody declares",
+        "unless the signal's measurement metadata declares one of these three",
+        "a declared x, y or z names a sensor axis with no fixed correspondence to"
+        " horizontal, vertical or axial: ask the user which it is",
+        "until then the assessment reads that channel's direction as undeclared",
+        "a populated direction field alone does not make a channel usable",
+        "a channel already loaded without a unit is re-loaded from its own file under"
+        " its own signal_id",
+        "overwrite=true replaces only that signal_id",
+        'signal_id="<its signal_id>", signal_unit="<unit the user gives>",'
+        " overwrite=true)",
         "a direction declared only for the measurement point in the asset ledger is"
         " not read",
         "add a parameter only when the user supplies it and it applies to these"
@@ -127,6 +143,9 @@ REQUIRED: dict[str, tuple[str, ...]] = {
         " it and call again with rpm set to the value they give; never estimate it",
         "only when the user supplies them for these channels",
         "is not read: ask the user for it",
+        "a declared x, y or z names a sensor axis with no fixed correspondence to"
+        " horizontal, vertical or axial, and the assessment reads it as undeclared:"
+        " ask the user which it is",
         "never a fault",
         "every observed pattern is inconclusive",
         "never write from this result that unbalance, misalignment or looseness is"
@@ -136,7 +155,7 @@ REQUIRED: dict[str, tuple[str, ...]] = {
         "relay limitations with every observed pattern",
         "context only",
         "repeats the observation and corroborates nothing",
-        "verbatim",
+        "quote summary and each hypothesis statement verbatim",
         "may be named as possible explanations next to the others, never attributed"
         " from a strongest line at 1x or 2x or from the shaft-order assessment",
         "a re-reading of the same line of the same signal, or a manual describing a"
@@ -193,6 +212,15 @@ FORBIDDEN = [
         r"\bmost\s+(?:probable|likely)\s+cause\b",
         re.I,
     ),
+    # A family named as the (likely, probable, main, root ...) cause.
+    re.compile(
+        rf"\b(?:likely|probable|most\s+likely|most\s+probable|main|root|underlying"
+        rf"|real|actual)\s+cause\s+(?:is|was|would\s+be|:)\s+(?:an?\s+|the\s+)?{FAMILY}"
+        rf"|\bthe\s+cause\s+(?:is|was)\s+(?:an?\s+)?{FAMILY}"
+        rf"|{FAMILY}\s+(?:is|was)\s+(?:the|a)\s+(?:likely|probable|most\s+likely"
+        rf"|most\s+probable|main|root|underlying|real|actual)\s+cause\b",
+        re.I,
+    ),
     re.compile(
         r"\bconfirm(?:s|ed)?\s+(?:\w+\s+){0,3}(?:pattern|finding|fault|hypothes[ie]s)\b",
         re.I,
@@ -202,10 +230,38 @@ FORBIDDEN = [
         re.I,
     ),
 ]
-#: Negations that exempt a phrasing when they precede it closely ('no' does
-#: not: "no sidebands, so unbalance is likely" stays affirmative).
-_NEGATION = re.compile(r"\b(?:not|never|nothing|whether|neither|nor)\b", re.I)
+#: A causal phrase before a family: attribution unless hedged with competing
+#: explanations (see _competing_explanations).
+CAUSAL = re.compile(
+    rf"\b(?:caused\s+by|due\s+to|attributable\s+to|attributed\s+to|because\s+of"
+    rf"|results?\s+from|resulting\s+from|stems?\s+from|comes?\s+from|arises?\s+from"
+    rf"|explained\s+by|driven\s+by)\s+(?:an?\s+|the\s+|some\s+)?{FAMILY}"
+    rf"(?!\s+(?:hypothes[ie]s|patterns?|famil(?:y|ies))\b)",
+    re.I,
+)
+_MODAL = re.compile(r"\b(?:can|could|may|might)\b", re.I)
+_ALTERNATIVE = re.compile(r"\bor\b", re.I)
+#: Negations that exempt a phrasing when they precede it closely in the same
+#: clause ('no' does not: "no sidebands, so unbalance is likely" stays
+#: affirmative; 'not only' is not a negation).
+_NEGATION = re.compile(
+    r"\b(?:not(?!\s+only)|never|nothing|whether|neither|nor)\b", re.I
+)
 _NEGATION_WORDS = 12
+_CLAUSE_BREAK = re.compile(r"[,;:()\u2014]|\s-\s")
+_REPORTED = re.compile(r"\bthat\b", re.I)
+#: Guidance must not assert a fixed correspondence between a sensor axis and a
+#: physical direction.
+AXIS_MAPPING = re.compile(
+    r"\b[xyz]\b\s*(?:=|->|is|as|means|corresponds\s+to|maps\s+to|equals)\s+"
+    r"(?:the\s+)?(?:horizontal|vertical|axial)\b",
+    re.I,
+)
+#: Mentions of the assessment that a mandatory-step sentence may name without
+#: showing a call.
+_MENTION = re.compile(
+    rf"{TOOL}|{re.escape(SKILL_NAME)}|shaft-order\s+(?:assessment|evidence)", re.I
+)
 #: The corroboration rule applies to sentences about this tool or the
 #: diagnose_vibration reading it could be mistaken to agree with.
 _CORROBORATION_SCOPE = re.compile(
@@ -255,8 +311,29 @@ def sentences(text: str) -> list[str]:
 
 
 def _negated_before(sentence: str, start: int) -> bool:
-    words = sentence[:start].split()[-_NEGATION_WORDS:]
-    return bool(_NEGATION.search(" ".join(words)))
+    """A negation within the 12 words before *start*, in the same clause.
+
+    A clause break (comma, semicolon, colon, parenthesis, dash) between the
+    negation and the phrase ends its scope, unless 'that' introduces reported
+    speech in between ("never write that unbalance, misalignment or looseness
+    is present").
+    """
+    window = " ".join(sentence[:start].split()[-_NEGATION_WORDS:])
+    last = None
+    for last in _NEGATION.finditer(window):
+        pass
+    if last is None:
+        return False
+    between = window[last.end() :]
+    return not _CLAUSE_BREAK.search(between) or bool(_REPORTED.search(between))
+
+
+def _competing_explanations(sentence: str, match: re.Match[str]) -> bool:
+    """A hedged causal phrase that names other explanations is discussion."""
+    before = " ".join(sentence[: match.start()].split()[-6:])
+    return bool(_MODAL.search(before)) and bool(
+        _ALTERNATIVE.search(sentence[match.end() :])
+    )
 
 
 @functools.cache
@@ -324,6 +401,16 @@ def placement_violations(texts: dict[str, str]) -> list[str]:
                 )
             if _MANDATORY.search(chunk):
                 out.append(f"{sid}: a passage pointing to the tool makes it mandatory")
+    for sid, text in sorted(texts.items()):
+        for sentence in sentences(text):
+            if not _MENTION.search(sentence):
+                continue
+            mandatory = _MANDATORY.search(sentence)
+            if mandatory and not _negated_before(sentence, mandatory.start()):
+                out.append(
+                    f"{sid}: a sentence naming the assessment makes it mandatory:"
+                    f" {sentence!r}"
+                )
     return out
 
 
@@ -455,10 +542,19 @@ def semantic_violations(source: str, text: str) -> list[str]:
             for m in pattern.finditer(sentence):
                 if not _negated_before(sentence, m.start()):
                     out.append(f"{source}: affirmative fault phrasing {m.group(0)!r}")
+        for m in CAUSAL.finditer(sentence):
+            if not _negated_before(sentence, m.start()) and not _competing_explanations(
+                sentence, m
+            ):
+                out.append(f"{source}: causal fault attribution {m.group(0)!r}")
+        for m in AXIS_MAPPING.finditer(sentence):
+            if not _negated_before(sentence, m.start()):
+                out.append(f"{source}: fixed axis-to-direction mapping {m.group(0)!r}")
+        corroboration = _CORROBORATION.search(sentence)
         if (
-            _CORROBORATION.search(sentence)
+            corroboration
             and _CORROBORATION_SCOPE.search(sentence)
-            and not _NEGATION.search(sentence)
+            and not _negated_before(sentence, corroboration.start())
             and "corroborates nothing" not in sentence.lower()
         ):
             out.append(f"{source}: corroboration stated without negation: {sentence!r}")
@@ -547,6 +643,14 @@ _AFFIRMATIVE = (
     "The two results reinforce each other.",
     "This assessment and the FFT reinforce each other.",
     "The motor has loose hold-down bolts.",
+    "The 1X line is caused by unbalance.",
+    "The axial line is due to misalignment.",
+    "The likely cause is looseness.",
+    "Unbalance is the probable cause.",
+    "The cause is misalignment.",
+    "The line may be caused by unbalance.",
+    "Never skip the check, unbalance is present.",
+    "Treat x as horizontal, y as vertical and z as axial.",
 )
 
 MUTATIONS = (
@@ -614,6 +718,46 @@ MUTATIONS = (
             "provide it and that no shaft-order assessment was run.",
             "provide it.",
         ),
+    ),
+    Mutation(
+        "add: agreement as corroboration after a negation in another clause",
+        AGENT,
+        semantic_violations,
+        _append(
+            "\n\nIt never fails, and diagnose_vibration corroborates the pattern.\n"
+        ),
+    ),
+    Mutation(
+        "drop: the agent's instruction to quote the summary and statements",
+        AGENT,
+        semantic_violations,
+        _swap(
+            "Quote `summary` and each hypothesis `statement` verbatim.",
+            "Summarize the result.",
+        ),
+    ),
+    Mutation(
+        "drop: the skill's x, y, z rule",
+        SKILL,
+        semantic_violations,
+        lambda text: re.sub(
+            r"A declared x, y\s+or z names a sensor axis",
+            "A declared x, y or z is a direction",
+            text,
+            count=1,
+        ),
+    ),
+    Mutation(
+        "add: the agent maps a sensor axis to a direction",
+        AGENT,
+        semantic_violations,
+        _append("\n\nRead z as axial when nobody says otherwise.\n"),
+    ),
+    Mutation(
+        "drop: the skill's overwrite=True re-load",
+        SKILL,
+        semantic_violations,
+        lambda text: re.sub(r",\s*overwrite=True\)", ")", text, count=1),
     ),
     Mutation(
         "drop: the agent's not_observed rule",
@@ -836,3 +980,67 @@ def test_background_on_the_faults_passes_the_wording_guard(sentence):
     for source in (SKILL, AGENT):
         text = surfaces()[source] + f"\n\n{sentence}\n"
         assert semantic_violations(source, text) == []
+
+
+@pytest.mark.parametrize(
+    "source, sentence",
+    [
+        (AGENT, "Always run `assess_shaft_fault_evidence` after the bearing check."),
+        (
+            SCREENING,
+            "The shaft-order assessment is a required step of every screening.",
+        ),
+        (SKILL, "Run the shaft-order-evidence skill after every bearing check."),
+    ],
+)
+def test_placement_guard_fails_on_a_mandatory_mention_without_a_call(source, sentence):
+    texts = dict(surfaces())
+    texts[source] = texts[source] + f"\n\n{sentence}\n"
+    assert placement_violations(texts)
+
+
+def test_a_negated_mandatory_mention_passes_the_placement_guard():
+    texts = dict(surfaces())
+    texts[AGENT] = texts[AGENT] + (
+        "\n\nDo not make `assess_shaft_fault_evidence` a mandatory step.\n"
+    )
+    assert placement_violations(texts) == []
+
+
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        "A 1x line can be caused by unbalance, a bent shaft or a resonance.",
+        "The line may be due to misalignment, looseness or a resonance; the record"
+        " cannot tell them apart.",
+        "This result does not show that the line is due to unbalance.",
+        "Never write that the line is caused by misalignment.",
+        "Looseness typically produces half-order lines and harmonics of the shaft"
+        " speed.",
+        "One possible cause of a 1x line is unbalance; a bent shaft and a resonance"
+        " are others.",
+        "Do not read x as horizontal or z as axial without the user's answer.",
+    ],
+)
+def test_competing_explanations_and_negated_attribution_pass(sentence):
+    for source in (SKILL, AGENT):
+        text = surfaces()[source] + f"\n\n{sentence}\n"
+        assert semantic_violations(source, text) == []
+
+
+def test_the_axes_the_guidance_names_are_the_ones_the_assessment_reads_as_undeclared():
+    """The guidance's x, y, z rule matches the code: the direction vocabulary
+    accepts the three sensor axes, the assessment uses only horizontal,
+    vertical and axial, so a declared axis is read as undeclared.
+    """
+    from typing import get_args
+
+    from predictive_maintenance_mcp.diagnostics.shaft_fault_evidence import (
+        AXIAL_DIRECTION,
+        RADIAL_DIRECTIONS,
+    )
+    from predictive_maintenance_mcp.models import ShaftDirection
+
+    used = {*RADIAL_DIRECTIONS, AXIAL_DIRECTION}
+    assert used == {"horizontal", "vertical", "axial"}
+    assert set(get_args(ShaftDirection)) - used == {"x", "y", "z"}

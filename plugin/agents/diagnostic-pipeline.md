@@ -134,7 +134,9 @@ bearing or gear check never needs it):
   Pass `directions`, `machine_group`, `support_type` or `machine_power_kw` only
   when the user supplies them for these channels (a direction declared only
   for the measurement point in the asset ledger is not read: ask the user for
-  it)
+  it; a declared x, y or z names a sensor axis with no fixed correspondence to
+  horizontal, vertical or axial, and the assessment reads it as undeclared: ask
+  the user which it is)
 - Quote `summary` and each hypothesis `statement` verbatim. `pattern_observed`
   true is an observed pattern, never a fault, and every observed pattern is
   `inconclusive`: never write from this result that unbalance, misalignment or
