@@ -20,10 +20,13 @@ patterns are not validated as fault detectors. The result supports the
 engineer's judgment; it never replaces it.
 
 **Prerequisite**: a predictive-maintenance-mcp server that registers
-`assess_shaft_fault_evidence` (main branch; not yet in a published release). If
-the tool is not available, tell the user that the connected server does not
-provide it. Do not substitute your own reading of FFT peaks or a strongest
-line at 1x or 2x reported by `diagnose_vibration`.
+`assess_shaft_fault_evidence` (main branch; not yet in a published release).
+An installed plugin does not mean the connected server has the tool. If it is
+not among the server's tools, tell the user that the connected server does not
+provide it and that no shaft-order assessment was run. Never simulate the tool
+or its result, and do not substitute your own reading of FFT peaks or a
+strongest line at 1x or 2x reported by `diagnose_vibration`. Continue with the
+tools the server does provide where they fit the question.
 
 **Optional**: use it when the question is about unbalance, misalignment or
 looseness, or about what shaft-order lines could mean. A bearing check, a gear

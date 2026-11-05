@@ -104,6 +104,10 @@ REQUIRED: dict[str, tuple[str, ...]] = {
         "**optional**",
         "not yet in a published release",
         "do not substitute your own reading of fft peaks",
+        "an installed plugin does not mean the connected server has the tool",
+        "no shaft-order assessment was run",
+        "never simulate the tool or its result",
+        "continue with the tools the server does provide",
         "a significant line is not abnormality",
     ),
     SCREENING: (
@@ -115,6 +119,9 @@ REQUIRED: dict[str, tuple[str, ...]] = {
     ),
     AGENT: (
         "(optional; a bearing or gear check never needs it)",
+        "if the connected server does not provide assess_shaft_fault_evidence, say so"
+        " and that no shaft-order assessment was run",
+        "never simulate the tool or infer its result from other tools",
         "and each channel's direction from what its signal declares",
         "if the call is refused because no shaft speed is declared, ask the user for"
         " it and call again with rpm set to the value they give; never estimate it",
@@ -583,6 +590,30 @@ MUTATIONS = (
             "Agreement with diagnose_vibration strengthens the case.",
             "The base is loose.",
         )
+    ),
+    *(
+        Mutation(
+            f"weaken: the unavailable-tool safeguard of {source}",
+            source,
+            semantic_violations,
+            lambda text: re.sub(
+                r"never\s+simulate\s+the\s+tool",
+                "approximate the tool",
+                text,
+                count=1,
+                flags=re.I,
+            ),
+        )
+        for source in (SKILL, AGENT)
+    ),
+    Mutation(
+        "drop: the skill's statement that no assessment was run",
+        SKILL,
+        semantic_violations,
+        _swap(
+            "provide it and that no shaft-order assessment was run.",
+            "provide it.",
+        ),
     ),
     Mutation(
         "drop: the agent's not_observed rule",

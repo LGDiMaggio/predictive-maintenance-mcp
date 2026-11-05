@@ -119,6 +119,10 @@ low kurtosis does not rule it out):
 
 **If unbalance, misalignment or looseness is asked about** (optional; a
 bearing or gear check never needs it):
+- If the connected server does not provide `assess_shaft_fault_evidence`, say
+  so and that no shaft-order assessment was run; never simulate the tool or
+  infer its result from other tools, and continue with the phases the server
+  supports
 - Call `assess_shaft_fault_evidence(signal_ids=["<h>", "<v>", "<a>"])` on
   channels of one machine at one operating condition. The server takes the
   speed, the machine group, the support type and the machine power from what

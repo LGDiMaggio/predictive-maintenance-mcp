@@ -24,7 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   describing a compatible pattern, as independent evidence. The documented
   calls pass no speed, direction or machine class: the server takes them
   from the declared context, and the model asks the user for a speed nobody
-  declares. Plugin version 1.3.0. Not yet in a published release.
+  declares. With a connected server that does not provide the tool, the
+  skill and the agent say so, report that no assessment was run and simulate
+  nothing. Plugin version 1.3.0. Not yet in a published release.
 - **`assess_shaft_fault_evidence`: an experimental evidence assessment for
   unbalance, misalignment and looseness.** For one to six channels of one
   machine at one operating condition it tests the lines at integer and half
