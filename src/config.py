@@ -73,6 +73,26 @@ def get_ledger_dir() -> Path:
     return PROJECT_ROOT / "data" / "ledger"
 
 
+def get_import_dir() -> Path:
+    """Directory of the signal import's record store.
+
+    Reads ``PMM_IMPORT_DIR`` at EACH call (the ``get_ledger_dir`` pattern);
+    a set-but-blank value counts as unset. Nothing is created here: the
+    record store creates the directory on its first write and
+    ``server._setup_environment`` creates it at startup (warning when it is
+    not writable, cannot hold hard links, or lies under a cloud-synced
+    folder).
+
+    Returns:
+        The configured directory (not resolved, not created). Default:
+        ``PROJECT_ROOT / "data" / "imports"``.
+    """
+    configured = (os.environ.get("PMM_IMPORT_DIR") or "").strip()
+    if configured:
+        return Path(configured)
+    return PROJECT_ROOT / "data" / "imports"
+
+
 def get_import_roots() -> tuple[Path, ...]:
     """Folders the signal import may read: the data directory, then the
     entries of ``PMM_IMPORT_ROOTS``.

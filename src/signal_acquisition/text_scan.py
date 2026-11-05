@@ -14,7 +14,11 @@ What it reads:
   refused, never materialized); at most :data:`HEAD_LINES` of its lines are
   returned;
 - the tail: the last :data:`TAIL_BYTES` bytes, without their first, partial
-  line.
+  line. When the head already reached the end of the file but holds more
+  than :data:`HEAD_LINES` lines, the tail is the lines after the returned
+  ones that lie within the last :data:`TAIL_BYTES` (each counted with one
+  break), taken from the bytes already read, so the end of a file is seen
+  whatever its size.
 
 What it refuses, before any text is returned: known binary and compressed
 signatures, UTF-16 and UTF-32 byte-order marks (a named limit of this
@@ -145,8 +149,12 @@ class TextScan:
         head_lines: The first complete lines, in order (at most
             :data:`HEAD_LINES`).
         tail_lines: The complete lines of the tail, without line numbers (the
-            middle of the file is not read). Empty when the head reached the
-            end of the file.
+            middle of the file is not read). Empty when the returned head
+            lines reach the end of the file, or when no complete line fits in
+            the tail (a last line longer than :data:`TAIL_BYTES`).
+        tail_follows_head: The first tail line is the line right after the
+            last head line, so no line lies unread between them and the tail
+            lines can be numbered on from the head.
         head_truncated: More of the file follows the returned head lines.
         complete: Every byte of the file was read.
         bytes_read: Bytes read through the descriptor.
@@ -158,6 +166,7 @@ class TextScan:
     newline_census: dict[str, int]
     head_lines: tuple[ScannedLine, ...]
     tail_lines: tuple[str, ...]
+    tail_follows_head: bool
     head_truncated: bool
     complete: bool
     bytes_read: int
@@ -303,6 +312,21 @@ def _tail_body(file: VerifiedFile, head_end: int) -> tuple[bytes, bool]:
     return tail[first_break.start() :], False
 
 
+def _last_lines(lines: list[str], encoding: str) -> tuple[str, ...]:
+    """The last of *lines* (decoded from a head that read the whole file)
+    that fit in :data:`TAIL_BYTES`, each counted with one break: the tail a
+    larger file would have, without reading anything more."""
+    codec = "utf-8" if encoding == "utf-8-sig" else encoding
+    kept: list[str] = []
+    size = 0
+    for line in reversed(lines):
+        size += len(line.encode(codec)) + 1
+        if size > TAIL_BYTES:
+            break
+        kept.append(line)
+    return tuple(reversed(kept))
+
+
 def scan_text(file: VerifiedFile) -> TextScan:
     """Scan the head and tail of an opened import file.
 
@@ -355,6 +379,7 @@ def scan_text(file: VerifiedFile) -> TextScan:
         _refuse_wide(file, f"line {line.number}", line.text)
 
     tail_lines: tuple[str, ...] = ()
+    follows = False
     if tail:
         tail_encoding = "utf-8" if encoding == "utf-8-sig" else encoding
         decoded = normalize_line_breaks(tail).decode(tail_encoding)
@@ -364,8 +389,15 @@ def scan_text(file: VerifiedFile) -> TextScan:
         if decoded.endswith("\n"):
             lines = lines[:-1]
         tail_lines = tuple(lines)
-        for tail_line in tail_lines:
-            _refuse_wide(file, "a line near the end", tail_line)
+        # The head ends at a line break, so a tail read from where it ended
+        # starts on the next line; it follows the head lines when all of the
+        # head's lines were returned.
+        follows = contiguous and len(pieces) <= HEAD_LINES
+    elif head_is_all and len(pieces) > HEAD_LINES:
+        tail_lines = _last_lines(pieces[HEAD_LINES:], encoding)
+        follows = len(tail_lines) == len(pieces) - HEAD_LINES
+    for tail_line in tail_lines:
+        _refuse_wide(file, "a line near the end", tail_line)
 
     return TextScan(
         size_bytes=file.size,
@@ -374,6 +406,7 @@ def scan_text(file: VerifiedFile) -> TextScan:
         newline_census=_census(head + tail),
         head_lines=head_lines,
         tail_lines=tail_lines,
+        tail_follows_head=bool(tail_lines) and follows,
         head_truncated=not head_is_all or len(pieces) > HEAD_LINES,
         complete=head_is_all or contiguous,
         bytes_read=file.bytes_read,

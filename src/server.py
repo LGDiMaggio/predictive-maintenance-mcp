@@ -21,6 +21,8 @@ from .config import (
     MODELS_DIR,
     REPORTS_DIR,
     RESOURCES_DIR,
+    get_import_dir,
+    get_import_roots,
     get_ledger_dir,
 )
 from .mcp_tools import register_all
@@ -399,6 +401,8 @@ def _setup_environment() -> None:
     (RESOURCES_DIR / "datasheets").mkdir(parents=True, exist_ok=True)
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     _setup_ledger_dir()
+    _setup_import_dir()
+    _warn_broad_import_roots()
 
 
 #: Environment variables whose value is the root of a cloud-synced folder.
@@ -489,6 +493,101 @@ def _setup_ledger_dir() -> None:
             ledger_dir,
             sync_root,
         )
+
+
+def _supports_hard_links(directory: Path) -> bool:
+    """Probe hard-link support with two files of our own, both removed.
+
+    The import record store creates each record's first line through a link
+    that never replaces an existing file; FAT, exFAT and some network shares
+    refuse links, and on them every import would be refused.
+    """
+    try:
+        with tempfile.TemporaryDirectory(dir=directory, prefix=".link-probe-") as probe:
+            source = Path(probe) / "source"
+            source.write_bytes(b"")
+            os.link(source, Path(probe) / "link")
+    except OSError:
+        return False
+    return True
+
+
+def _setup_import_dir() -> None:
+    """Create the signal import's record directory and warn, once at startup,
+    about the ways imports would fail or degrade later: not writable, no hard
+    links, or cloud-synced. Warnings only: the server must still start, and
+    the import refuses with a remedy when its record cannot be written.
+    """
+    import_dir = get_import_dir()
+    try:
+        import_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        logger.warning(
+            "Signal import record directory %s cannot be created (%s): signal "
+            "imports will be refused. Set PMM_IMPORT_DIR to a writable local "
+            "directory.",
+            import_dir,
+            exc,
+        )
+        return
+    if not _ledger_dir_writable(import_dir):
+        logger.warning(
+            "Signal import record directory %s is not writable: signal imports "
+            "will be refused. Set PMM_IMPORT_DIR to a writable local directory.",
+            import_dir,
+        )
+    elif not _supports_hard_links(import_dir):
+        logger.warning(
+            "Signal import record directory %s is on a filesystem without hard "
+            "links (FAT, exFAT and some network shares): signal imports will be "
+            "refused. Set PMM_IMPORT_DIR to a local NTFS, APFS or ext4 directory.",
+            import_dir,
+        )
+    sync_root = find_sync_root(import_dir)
+    if sync_root is not None:
+        logger.warning(
+            "Signal import record directory %s lies under a cloud-synced folder "
+            "(%s): the sync client can lock or stale its append-only files. Set "
+            "PMM_IMPORT_DIR to a local, unsynced directory.",
+            import_dir,
+            sync_root,
+        )
+
+
+def _warn_broad_import_roots() -> None:
+    """Warn about an import root that opens far more than an export folder.
+
+    Every ``.csv`` and ``.txt`` file under an import root can be inspected,
+    so a whole drive or the home folder exposes much more than the operator
+    likely meant. A malformed ``PMM_IMPORT_ROOTS`` is reported here too,
+    since every import will refuse until it is corrected.
+    """
+    try:
+        roots = get_import_roots()
+    except ValueError as exc:
+        logger.warning("%s Until then, signal imports will be refused.", exc)
+        return
+    try:
+        home: Optional[str] = os.path.normcase(os.path.normpath(str(Path.home())))
+    except (RuntimeError, KeyError, OSError):
+        home = None  # no home directory to compare with (a bare container)
+    _data_dir, *operator_roots = roots
+    for root in operator_roots:
+        normalized = os.path.normpath(str(root))
+        if os.path.dirname(normalized) == normalized:
+            logger.warning(
+                "Import root %s in PMM_IMPORT_ROOTS is a whole drive: every .csv "
+                "and .txt file on it can be inspected. List the folders that "
+                "hold signal exports instead.",
+                root,
+            )
+        elif os.path.normcase(normalized) == home:
+            logger.warning(
+                "Import root %s in PMM_IMPORT_ROOTS is the home folder: every "
+                ".csv and .txt file under it can be inspected. List the folders "
+                "that hold signal exports instead.",
+                root,
+            )
 
 
 #: Transports this server can be asked for. Kept next to the dispatch in
