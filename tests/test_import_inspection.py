@@ -281,23 +281,21 @@ class TestNotImportable:
         )
         assert result.status == "not_importable"
         assert codes(result) == ["no_numeric_region"]
+        assert result.issues[0].line == 1
         assert result.issues[0].message == (
-            "No row of numbers within the 1024-field limit of this version was "
-            "found in the first 8 lines, the only lines searched for rows: lines "
-            "1, 2, 3, 4, 5, 6, 7, 8 have more fields than that, so they are not "
-            "read as rows, and the file may hold more columns than this version "
-            "imports; rows further on in the file are not ruled out."
+            "Searched the first 8 lines for data rows: lines 1 to 8 hold numbers "
+            "but exceed the 1,024-field limit, so they are not accepted as data "
+            "rows. The rest of the file was not searched."
         )
 
     def test_one_row_over_the_field_cap_in_a_fully_scanned_file(self, write):
         wide = ",".join(f"{value}.5" for value in range(1025))
         data = corpus.lines_to_bytes(["channels follow", wide])
         result = inspect_signal_file(str(write("one-wide.csv", data)))
+        assert result.issues[0].line == 2
         assert result.issues[0].message == (
-            "No row of numbers within the 1024-field limit of this version was "
-            "found in the scanned lines: line 2 has more fields than that, so it "
-            "is not read as a row, and the file may hold more columns than this "
-            "version imports."
+            "Searched every line for data rows: line 2 holds numbers but exceeds "
+            "the 1,024-field limit, so it is not accepted as a data row."
         )
 
     def test_wide_text_header_is_not_counted_as_a_wide_row(self, write):
@@ -308,9 +306,51 @@ class TestNotImportable:
         result = inspect_signal_file(
             str(write("wide-header.csv", corpus.lines_to_bytes([header] + notes)))
         )
+        assert result.issues[0].line is None
         assert result.issues[0].message == (
-            "No row of numbers was found in the first 300 lines, the only lines "
-            "searched for rows; rows further on in the file are not ruled out."
+            "Searched the first 300 lines for data rows and found none. The rest "
+            "of the file was not searched, so this does not show that the file "
+            "holds only text."
+        )
+
+    def test_wide_label_header_alone_is_neither_rows_nor_text_only(self, write):
+        # Labels such as "Ch 7" put a number among the fields split at
+        # spaces, but not most of them: no row of numbers, and no text-only
+        # claim either.
+        header = "time," + ",".join(f"Ch {index}" for index in range(1024))
+        result = inspect_signal_file(
+            str(write("labels.csv", corpus.lines_to_bytes([header])))
+        )
+        assert result.issues[0].line == 1
+        assert result.issues[0].message == (
+            "Searched every line for data rows and found none: line 1 exceeds "
+            "the 1,024-field limit and holds some numbers."
+        )
+
+    def test_sparse_wide_rows_count_as_rows_of_numbers(self, write):
+        # Empty cells do not hide a row of numbers.
+        sparse = ",".join("1.5" if i % 2 == 0 else "" for i in range(2100))
+        data = corpus.lines_to_bytes(["time,values"] + [sparse] * 3)
+        result = inspect_signal_file(str(write("sparse.csv", data)))
+        assert result.issues[0].line == 2
+        assert result.issues[0].message == (
+            "Searched every line for data rows: lines 2 to 4 hold numbers but "
+            "exceed the 1,024-field limit, so they are not accepted as data rows."
+        )
+
+    def test_number_after_many_empty_cells_is_not_called_text(self, write):
+        data = corpus.lines_to_bytes(["header text", "," * 2100 + "1.5"])
+        result = inspect_signal_file(str(write("late-number.csv", data)))
+        assert "text only" not in result.issues[0].message
+        assert result.issues[0].line == 2
+
+    def test_wide_rows_of_numbers_and_nan_are_not_called_text(self, write):
+        mixed = ",".join(["0.5"] * 500 + ["NaN"] * 600)
+        data = corpus.lines_to_bytes([mixed] * 3)
+        result = inspect_signal_file(str(write("nan.csv", data)))
+        assert result.issues[0].message == (
+            "Searched every line for data rows and found none: lines 1 to 3 "
+            "exceed the 1,024-field limit and hold some numbers."
         )
 
     def test_text_head_of_a_longer_file_claims_nothing_past_it(self, write):
@@ -319,8 +359,9 @@ class TestNotImportable:
         result = inspect_signal_file(str(write("late-data.csv", data)))
         assert codes(result) == ["no_numeric_region"]
         assert result.issues[0].message == (
-            "No row of numbers was found in the first 300 lines, the only lines "
-            "searched for rows; rows further on in the file are not ruled out."
+            "Searched the first 300 lines for data rows and found none. The rest "
+            "of the file was not searched, so this does not show that the file "
+            "holds only text."
         )
 
     def test_empty_file(self, write):
@@ -712,6 +753,123 @@ def _rows(count: int, *, sep: str = ",") -> list[str]:
     ]
 
 
+def _wide_rows(count: int, columns: int = 1025) -> list[str]:
+    """Rows of numbers one column over the 1,024-field cap (about 7 KB)."""
+    return [
+        ",".join(f"{corpus.sample(row, column):.4f}" for column in range(columns))
+        for row in range(count)
+    ]
+
+
+class TestRowsOverTheFieldCapAfterData:
+    """Rows of numbers over the field cap after the rows within it are named;
+    when they are at least as many, no trailer is described and the file is
+    not importable as the structure stands."""
+
+    def test_one_row_then_wide_rows_is_not_a_short_region_and_trailer(self, write):
+        data = corpus.lines_to_bytes(["time,value", "0.0,0.5"] + _wide_rows(3))
+        result = inspect_signal_file(str(write("one-then-wide.csv", data)))
+        assert result.status == "not_importable"
+        assert codes(result) == ["too_many_fields"]  # no not_a_waveform guess
+        assert result.issues[0].line == 3
+        assert result.issues[0].message == (
+            "After the data rows, lines 3 to 5 hold numbers but exceed the "
+            "1,024-field limit, so they are not accepted as data rows. The rows "
+            "shown may not be the file's data."
+        )
+        assert region(result, "trailer") is None
+        assert result.required_confirmations == []
+
+    def test_numeric_preamble_line_then_wide_rows_in_a_large_file(self, write):
+        # A "Channels: 1025" line reads as one row of numbers; the wide rows
+        # run past the head into the tail, whose lines carry no number.
+        lines = ["Sampling rate: 25600", "Channels: 1025"] + _wide_rows(20)
+        result = inspect_signal_file(
+            str(write("wide20.csv", corpus.lines_to_bytes(lines)))
+        )
+        assert not result.file.scan.complete
+        assert result.status == "not_importable"
+        wide = [issue for issue in result.issues if issue.code == "too_many_fields"]
+        assert [issue.line for issue in wide] == [3]
+        assert wide[0].message == (
+            "After the data rows, lines 3 to 12 and 2 lines near the end hold "
+            "numbers but exceed the 1,024-field limit, so they are not accepted "
+            "as data rows. The rows shown may not be the file's data."
+        )
+        assert region(result, "trailer") is None
+
+    def test_wide_header_between_the_stray_row_and_the_wide_rows(self, write):
+        # The usual shape of a wide export: a text header (no numbers) sits
+        # between the one stray numeric row and the wide rows.
+        header = ",".join(["time"] + [f"acc_{index:04d}" for index in range(1024)])
+        lines = ["Sampling rate: 25600", "Channels: 1025", header] + _wide_rows(3)
+        result = inspect_signal_file(
+            str(write("wide-header3.csv", corpus.lines_to_bytes(lines)))
+        )
+        assert result.status == "not_importable"
+        wide = [issue for issue in result.issues if issue.code == "too_many_fields"]
+        assert [issue.line for issue in wide] == [4]  # the header is not counted
+        assert "lines 4 to 6 hold numbers" in wide[0].message
+        assert region(result, "trailer") is None
+        assert "not_a_waveform" not in codes(result)
+
+    def test_sparse_wide_rows_after_one_row_are_not_a_trailer(self, write):
+        sparse = ",".join("1.5" if i % 2 == 0 else "" for i in range(2100))
+        data = corpus.lines_to_bytes(["time,value", "0.0,0.5"] + [sparse] * 3)
+        result = inspect_signal_file(str(write("sparse-after.csv", data)))
+        assert result.status == "not_importable"
+        assert codes(result) == ["too_many_fields"]
+        assert region(result, "trailer") is None
+
+    def test_one_wide_line_after_many_rows_is_named_in_an_ordinary_trailer(self, write):
+        lines = ["time,value"] + _rows(400) + _wide_rows(1)
+        result = inspect_signal_file(
+            str(write("wide-summary.csv", corpus.lines_to_bytes(lines)))
+        )
+        assert result.status == "importable"
+        wide = [issue for issue in result.issues if issue.code == "too_many_fields"]
+        assert [(issue.line, issue.message) for issue in wide] == [
+            (
+                402,
+                "After the data rows, line 402 holds numbers but exceeds the "
+                "1,024-field limit, so it is not accepted as a data row.",
+            )
+        ]
+        trailer = region(result, "trailer")
+        assert (trailer.first_line, trailer.lines) == (402, 1)
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            " ".join(["word"] * 1100),  # no number at all
+            " ".join(["word"] * 1099) + " 2024",  # one number among many words
+            "time," + ",".join(f"Ch {index}" for index in range(1024)),
+            "Total" + "\t" * 1100 + "5",  # empty fields and one number
+        ],
+        ids=["words", "words-and-a-year", "labels-with-numbers", "tab-padded"],
+    )
+    def test_wide_text_after_the_data_is_an_ordinary_trailer(self, write, line):
+        lines = ["time,value"] + _rows(400) + [line]
+        result = inspect_signal_file(
+            str(write("note.csv", corpus.lines_to_bytes(lines)))
+        )
+        assert result.status == "importable"
+        assert "too_many_fields" not in codes(result)
+        trailer = region(result, "trailer")
+        assert (trailer.first_line, trailer.lines) == (402, 1)
+
+    def test_wide_numeric_preamble_line_above_the_header_is_preamble(self, write):
+        gains = "Gains," + ",".join("1.0" for _ in range(1100))
+        lines = [gains, "time,value"] + _rows(400)
+        result = inspect_signal_file(
+            str(write("gains.csv", corpus.lines_to_bytes(lines)))
+        )
+        assert result.status == "importable"
+        assert "too_many_fields" not in codes(result)
+        assert region(result, "preamble").first_line == 1
+        assert result.dialect.proposal.data_first_line == 3
+
+
 class TestCraftedInputStaysBounded:
     """Long runs of spaces in untrusted text must not make matching quadratic."""
 
@@ -735,6 +893,16 @@ class TestCraftedInputStaysBounded:
             write, "kv.csv", ["a:x" + " " * 60000 + "y", "time,value"] + _rows(300)
         )
         assert elapsed < self.LIMIT_SECONDS
+
+    def test_wide_line_alternating_numbers_and_text_after_the_data(self, write):
+        # One number in three fields, so the count never stops early: the
+        # field sample bounds the work on a line of about 1 MB.
+        line = "\t".join("1" if i % 3 == 0 else "x" for i in range(500_000))
+        elapsed, result = self._timed(
+            write, "alternating.csv", ["time,value"] + _rows(270) + [line]
+        )
+        assert elapsed < self.LIMIT_SECONDS
+        assert "too_many_fields" not in [issue.code for issue in result.issues]
 
     def test_space_padded_bracket_in_a_header_field(self, write):
         elapsed, _ = self._timed(
@@ -915,6 +1083,19 @@ class TestReviewedEdgeCases:
         mismatch = [i for i in result.issues if i.code == "field_count_mismatch"]
         assert [i.line for i in mismatch] == [2]
         assert all(c.unit_token is None for c in result.columns)
+
+
+@pytest.mark.parametrize(
+    "numbers, shown",
+    [
+        ([3], "3"),
+        ([3, 4, 5], "3 to 5"),
+        ([2, 5, 6, 7, 12], "2, 5 to 7 and 12"),
+        ([1, 3, 5, 7, 9, 11, 12, 13], "1, 3, 5, 7, 9 and 3 more"),
+    ],
+)
+def test_line_references_are_ranges_with_the_rest_counted(numbers, shown):
+    assert inspection_module._line_ranges(numbers) == shown
 
 
 def test_waveform_minimum_is_the_spectral_tools_default_segment():

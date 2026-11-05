@@ -44,6 +44,7 @@ import math
 import os
 import re
 from dataclasses import dataclass
+from itertools import islice
 from typing import Optional
 
 from .. import config
@@ -125,6 +126,7 @@ _NUMBER = {
 }
 _ANY_NUMBER = re.compile(r"[+-]?(?:\d+(?:[.,]\d*)?|[.,]\d+)(?:[eE][+-]?\d+)?")
 _WHITESPACE_RUN = re.compile(r"[ \t]+")
+_DIGIT = re.compile("[0-9]")
 _SEPARATOR = re.compile("[:=]")
 _DELIMITER_CHAR = re.compile("[ \t]")
 # Patterns on stripped text with no two quantifiers competing for the same
@@ -204,19 +206,42 @@ def _split(text: str, delimiter: str) -> Optional[list[str]]:
     return None if len(fields) > MAX_FIELDS else fields
 
 
-def _over_the_field_cap(text: str) -> bool:
-    """*text* would be a row (a number among its fields) under some reading,
-    but has more fields than the cap under that delimiter."""
+#: Non-empty fields of a reading examined when a line is wider than the
+#: field cap, which bounds the number checks on a long line.
+_OVER_CAP_SAMPLE = 2 * MAX_FIELDS + 1
+
+
+def _over_cap_numbers(text: str) -> Optional[bool]:
+    """How a line wider than the field cap holds numbers: True when, under
+    some reading with more than ``MAX_FIELDS`` fields, most of its non-empty
+    fields are numbers (a row of numbers, empty cells allowed); False when
+    such a reading shows some numbers but never most (a wide header or note
+    with a number here and there); None when none shows a number. Only the
+    first ``_OVER_CAP_SAMPLE`` non-empty fields of a reading are examined."""
+    if _DIGIT.search(text) is None:
+        return None
+    found: Optional[bool] = None
     for delimiter in DELIMITERS:
         fields = _fields(text, delimiter)
-        if len(fields) > MAX_FIELDS and any(
-            _number(field, decimal) is not None
-            for decimal in DECIMAL_MARKS
-            if decimal != delimiter
-            for field in fields
-        ):
-            return True
-    return False
+        if len(fields) <= MAX_FIELDS:
+            continue
+        sample = list(
+            islice((field for field in fields if field.strip(" ")), _OVER_CAP_SAMPLE)
+        )
+        for decimal in DECIMAL_MARKS:
+            if decimal == delimiter:
+                continue
+            numbers = sum(1 for field in sample if _number(field, decimal) is not None)
+            if 2 * numbers > len(sample):
+                return True
+            if numbers:
+                found = False
+    return found
+
+
+def _over_the_field_cap(text: str) -> bool:
+    """*text* is a row of numbers wider than the field cap."""
+    return _over_cap_numbers(text) is True
 
 
 def _number(token: str, decimal: str) -> Optional[float]:
@@ -561,6 +586,45 @@ def _index_list(indexes: list[int]) -> str:
     return shown + (f" and {len(indexes) - 10} more" if len(indexes) > 10 else "")
 
 
+def _line_ranges(numbers: list[int]) -> str:
+    """Ascending line numbers as ranges, ``3 to 9`` or ``2, 5 to 7 and 12``;
+    past five ranges, the remaining lines are counted."""
+    runs: list[list[int]] = []
+    for number in numbers:
+        if runs and number == runs[-1][1] + 1:
+            runs[-1][1] = number
+        else:
+            runs.append([number, number])
+    parts = [str(a) if a == b else f"{a} to {b}" for a, b in runs[:5]]
+    rest = sum(b - a + 1 for a, b in runs[5:])
+    if rest:
+        return ", ".join(parts) + f" and {rest} more"
+    return parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " and " + parts[-1]
+
+
+def _over_cap_clause(numbered: list[int], near_end: int = 0) -> str:
+    """``lines 3 to 9 hold numbers but exceed the 1,024-field limit, so they
+    are not accepted as data rows`` (singular for one line); *near_end*
+    counts tail lines that carry no number."""
+    subjects = []
+    if numbered:
+        subjects.append(
+            f"line{'s' if len(numbered) > 1 else ''} {_line_ranges(numbered)}"
+        )
+    if near_end:
+        subjects.append(f"{near_end} line{'s' if near_end > 1 else ''} near the end")
+    subject = " and ".join(subjects)
+    if len(numbered) + near_end == 1:
+        return (
+            f"{subject} holds numbers but exceeds the {MAX_FIELDS:,}-field limit, "
+            f"so it is not accepted as a data row"
+        )
+    return (
+        f"{subject} hold numbers but exceed the {MAX_FIELDS:,}-field limit, so "
+        f"they are not accepted as data rows"
+    )
+
+
 # ---------------------------------------------------------------------------
 # The result and its size budget
 # ---------------------------------------------------------------------------
@@ -738,37 +802,52 @@ def _file_issues(
     return issues, confirmations
 
 
-def _no_rows_message(scan: TextScan) -> str:
-    """Why no row of numbers was found, claiming nothing about lines that
-    were not searched (rows are searched for in the head lines only)."""
+def _no_rows_issue(scan: TextScan) -> Issue:
+    """Why no data row was found, claiming nothing about lines that were not
+    searched (rows are searched for in the head lines only)."""
     if scan.size_bytes == 0:
-        return "The file is empty."
-    if scan.head_truncated:
-        where = (
-            f"in the first {len(scan.head_lines)} lines, the only lines searched "
-            f"for rows"
-        )
-        further = "; rows further on in the file are not ruled out"
-    else:
-        where, further = "in the scanned lines", ""
-    wide = [line.number for line in scan.head_lines if _over_the_field_cap(line.text)]
+        return Issue(code="no_numeric_region", message="The file is empty.")
+    searched = (
+        f"Searched the first {len(scan.head_lines)} lines for data rows"
+        if scan.head_truncated
+        else "Searched every line for data rows"
+    )
+    rest = " The rest of the file was not searched." if scan.head_truncated else ""
+    kinds = [(line.number, _over_cap_numbers(line.text)) for line in scan.head_lines]
+    wide = [number for number, kind in kinds if kind is True]
     if wide:
-        which = (
-            f"line {wide[0]} has more fields than that, so it is not read as a row"
-            if len(wide) == 1
-            else f"lines {_index_list(wide)} have more fields than that, so they "
-            f"are not read as rows"
+        return Issue(
+            code="no_numeric_region",
+            message=f"{searched}: {_over_cap_clause(wide)}.{rest}",
+            line=wide[0],
         )
-        return (
-            f"No row of numbers within the {MAX_FIELDS}-field limit of this "
-            f"version was found {where}: {which}, and the file may hold more "
-            f"columns than this version imports{further}."
+    some = [number for number, kind in kinds if kind is False]
+    if some:
+        verbs = "exceeds" if len(some) == 1 else "exceed"
+        holds = "holds" if len(some) == 1 else "hold"
+        return Issue(
+            code="no_numeric_region",
+            message=(
+                f"{searched} and found none: line{'s' if len(some) > 1 else ''} "
+                f"{_line_ranges(some)} {verbs} the {MAX_FIELDS:,}-field limit and "
+                f"{holds} some numbers.{rest}"
+            ),
+            line=some[0],
         )
-    if further:
-        return f"No row of numbers was found {where}{further}."
-    return (
-        "No row of numbers was found in the scanned lines: the file holds text "
-        "only (for example a header without data rows)."
+    if scan.head_truncated:
+        return Issue(
+            code="no_numeric_region",
+            message=(
+                f"{searched} and found none. The rest of the file was not "
+                f"searched, so this does not show that the file holds only text."
+            ),
+        )
+    return Issue(
+        code="no_numeric_region",
+        message=(
+            "No row of numbers was found in the scanned lines: the file holds "
+            "text only (for example a header without data rows)."
+        ),
     )
 
 
@@ -798,7 +877,7 @@ def _inspect(
 
     readings = _readings(lines)
     if not readings:
-        issues.append(Issue(code="no_numeric_region", message=_no_rows_message(scan)))
+        issues.append(_no_rows_issue(scan))
         return _empty_result(file, issues, confirmations)
 
     best = readings[0]
@@ -880,7 +959,7 @@ def _inspect(
     # lines carry a number only when the tail follows the head, and the
     # trailer's length is stated only when every line of it was scanned.
     tail_first = lines[-1].number + 1 if scan.tail_follows_head else None
-    trailer_lines: list[Optional[int]] = []
+    trailer: list[tuple[Optional[int], str]] = []  # (line number, text)
     data_in_tail = False
     for offset in range(len(scan.tail_lines) - 1, -1, -1):
         text = scan.tail_lines[offset]
@@ -889,23 +968,42 @@ def _inspect(
         if best.matches(_row(text, best.delimiter, best.decimal)):
             data_in_tail = True
             break
-        trailer_lines.append(None if tail_first is None else tail_first + offset)
-    trailer_lines.reverse()
+        trailer.append((None if tail_first is None else tail_first + offset, text))
+    trailer.reverse()
     whole = data_in_tail
     if not data_in_tail:
         if not reaches_head_end:
-            trailer_lines[:0] = [
-                line.number for line in lines[best.last + 1 :] if line.text.strip(" \t")
+            trailer[:0] = [
+                (line.number, line.text)
+                for line in lines[best.last + 1 :]
+                if line.text.strip(" \t")
             ]
         # Unread lines may lie between the head and the tail.
         whole = not scan.head_truncated or scan.tail_follows_head
-    if trailer_lines:
+    # Rows of numbers over the field cap after the data rows are named. When
+    # they are at least as many as the rows within the cap, those rows may
+    # not be the file's data: no trailer is described, and nothing is
+    # importable as the structure stands.
+    over_wide = [number for number, text in trailer if _over_the_field_cap(text)]
+    displaced = len(over_wide) >= len(best.rows)
+    if over_wide:
+        numbered = [number for number in over_wide if number is not None]
+        clause = _over_cap_clause(numbered, len(over_wide) - len(numbered))
+        doubt = " The rows shown may not be the file's data." if displaced else ""
+        issues.append(
+            Issue(
+                code="too_many_fields",
+                message=f"After the data rows, {clause}.{doubt}",
+                line=numbered[0] if numbered else None,
+            )
+        )
+    if trailer and not (over_wide and displaced):
         regions.append(
             Region(
                 kind="trailer",
-                first_line=trailer_lines[0],
+                first_line=trailer[0][0],
                 last_line=None,
-                lines=len(trailer_lines) if whole else None,
+                lines=len(trailer) if whole else None,
             )
         )
 
@@ -1100,7 +1198,11 @@ def _inspect(
 
     # The row count is exact only when every line of the file was scanned.
     status: InspectionStatus = "importable"
-    if scan.complete and not scan.head_truncated and len(best.rows) < MIN_WAVEFORM_ROWS:
+    if over_wide and displaced:
+        status = "not_importable"  # the too_many_fields issue says why
+    elif (
+        scan.complete and not scan.head_truncated and len(best.rows) < MIN_WAVEFORM_ROWS
+    ):
         status = "not_importable"
         issues.append(
             Issue(
