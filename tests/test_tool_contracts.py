@@ -185,6 +185,12 @@ Fixture history:
   measurement, and rul says the model's extrapolation reaches the
   threshold, which also covers kalman.
   Generated under mcp 2.3.0 and pydantic 2.12.0 (uv.lock).
+- Shaft-order line (2026-11-05): regenerated intentionally: one description
+  only (diagnose_vibration evidence_strength), no property, enum value or
+  type changed. A strongest spectral line at 1x or 2x of the shaft speed is
+  no longer among the counted findings; it is reported in overall_diagnosis
+  as a measurement and is not counted.
+  Generated under mcp 2.3.0 and pydantic 2.12.0 (uv.lock).
 """
 
 from __future__ import annotations

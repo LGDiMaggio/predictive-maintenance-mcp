@@ -72,7 +72,12 @@ async def generate_maintenance_recommendations(
             must not be a type taken from an envelope indication of
             check_bearing_faults or diagnose_vibration, or from any other
             bearing evidence this server reports (such as
-            assess_asset_change). None for zone-only advice.
+            assess_asset_change), and must not be unbalance, misalignment or
+            looseness taken from a strongest spectral line at 1x or 2x in
+            diagnose_vibration or from a status of
+            assess_shaft_fault_evidence. The tool cannot establish where a
+            fault type came from: these exclusions are instructions to the
+            caller, not a check. None for zone-only advice.
 
     Returns:
         Formatted string listing all maintenance recommendations.

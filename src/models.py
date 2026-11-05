@@ -1105,9 +1105,10 @@ class DiagnosisResult(BaseModel):
         description=(
             "Combined evidence across the analyses that ran: 'none', 'weak', "
             "'moderate', or 'strong'. It counts findings (ISO severity zone C or "
-            "D, a dominant peak at 1x or 2x shaft speed, the bearing claim, the "
-            "anomaly model) and never rests on severity alone. It is not a "
-            "probability and "
+            "D, the bearing claim, the anomaly model) and never rests on "
+            "severity alone. A strongest spectral line at 1x or 2x shaft speed "
+            "is reported in overall_diagnosis as a measurement and is not "
+            "counted. It is not a probability and "
             "does not identify or confirm a fault type. A bearing finding counts "
             "once: at claim level single_spectrum_evidence, or qualified from an "
             "indicated or several_types outcome; a withheld claim and one held "
