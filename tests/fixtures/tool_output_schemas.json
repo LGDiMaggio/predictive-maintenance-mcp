@@ -854,6 +854,1387 @@
     "title": "VibrationSeverityResult",
     "type": "object"
   },
+  "assess_shaft_fault_evidence": {
+    "$defs": {
+      "ShaftCrossChannelRatio": {
+        "description": "A velocity amplitude ratio between declared directions (descriptor only).",
+        "properties": {
+          "denominator_signal_id": {
+            "title": "Denominator Signal Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "axial_over_radial",
+              "horizontal_over_vertical"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "numerator_signal_id": {
+            "title": "Numerator Signal Id",
+            "type": "string"
+          },
+          "order": {
+            "description": "Shaft order compared",
+            "title": "Order",
+            "type": "number"
+          },
+          "ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Velocity amplitude ratio",
+            "title": "Ratio"
+          },
+          "status": {
+            "description": "'not_computed' when a line is not significant in both channels or a unit is undeclared; 'not_comparable_speed' when the channels see different shaft frequencies; 'not_comparable_location' when they declare different measurement points",
+            "enum": [
+              "computed",
+              "not_computed",
+              "not_comparable_speed",
+              "not_comparable_location"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "order",
+          "numerator_signal_id",
+          "denominator_signal_id",
+          "status"
+        ],
+        "title": "ShaftCrossChannelRatio",
+        "type": "object"
+      },
+      "ShaftEvidenceObservation": {
+        "description": "One observation of the record, with the values behind it.",
+        "properties": {
+          "channels": {
+            "description": "Signals the observation rests on",
+            "items": {
+              "type": "string"
+            },
+            "title": "Channels",
+            "type": "array"
+          },
+          "code": {
+            "description": "Closed observation code",
+            "enum": [
+              "one_x_dominant",
+              "harmonic_at_least_one_x",
+              "harmonic_above_floor_without_one_x",
+              "axial_exceeds_radial",
+              "half_order_lines",
+              "half_orders_present"
+            ],
+            "title": "Code",
+            "type": "string"
+          },
+          "sources": {
+            "description": "Keys into the result's sources",
+            "items": {
+              "type": "string"
+            },
+            "title": "Sources",
+            "type": "array"
+          },
+          "statement": {
+            "description": "Server sentence fragment stating the observation",
+            "title": "Statement",
+            "type": "string"
+          },
+          "values": {
+            "additionalProperties": true,
+            "description": "Computed values behind the statement",
+            "title": "Values",
+            "type": "object"
+          }
+        },
+        "required": [
+          "code",
+          "statement",
+          "channels",
+          "values",
+          "sources"
+        ],
+        "title": "ShaftEvidenceObservation",
+        "type": "object"
+      },
+      "ShaftEvidenceSource": {
+        "properties": {
+          "access": {
+            "description": "How much of the source was read",
+            "title": "Access",
+            "type": "string"
+          },
+          "citation": {
+            "title": "Citation",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "supports": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "What the assessment takes from it (detail 'full' only)",
+            "title": "Supports"
+          }
+        },
+        "required": [
+          "key",
+          "citation",
+          "access"
+        ],
+        "title": "ShaftEvidenceSource",
+        "type": "object"
+      },
+      "ShaftFaultHypothesis": {
+        "description": "The evidence assessment of one fault family (experimental).",
+        "properties": {
+          "alternatives": {
+            "description": "Other explanations the record cannot exclude",
+            "items": {
+              "type": "string"
+            },
+            "title": "Alternatives",
+            "type": "array"
+          },
+          "conflicting": {
+            "description": "Observations the family's mechanism alone does not explain",
+            "items": {
+              "$ref": "#/$defs/ShaftEvidenceObservation"
+            },
+            "title": "Conflicting",
+            "type": "array"
+          },
+          "family": {
+            "enum": [
+              "unbalance",
+              "misalignment",
+              "looseness",
+              "resonance"
+            ],
+            "title": "Family",
+            "type": "string"
+          },
+          "missing": {
+            "description": "Measurements that would discriminate",
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing",
+            "type": "array"
+          },
+          "pattern_definition": {
+            "description": "How this assessment defines the family's pattern: its own fixed cut points, not validated thresholds",
+            "title": "Pattern Definition",
+            "type": "string"
+          },
+          "pattern_observed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "True when the pattern this assessment uses is observed, False when it is absent (not_observed), None when it could not be assessed. An observed pattern is evidence, not a fault attribution",
+            "title": "Pattern Observed"
+          },
+          "reasons": {
+            "description": "Why inconclusive or insufficient",
+            "items": {
+              "enum": [
+                "generated_without_noise",
+                "one_x_untestable",
+                "unit_undeclared",
+                "no_half_order_testable",
+                "level_unit_undeclared",
+                "level_class_undeclared",
+                "level_outside_scope",
+                "level_not_evaluable",
+                "level_not_elevated",
+                "conflicting_observations",
+                "axial_channel_missing",
+                "radial_channel_undeclared",
+                "direction_undeclared",
+                "shaft_frequency_declared",
+                "line_frequency_multiple",
+                "single_record_insufficient",
+                "half_orders_not_specific",
+                "attribution_not_validated",
+                "speed_changed"
+              ],
+              "type": "string"
+            },
+            "title": "Reasons",
+            "type": "array"
+          },
+          "sources": {
+            "description": "Keys into the result's sources",
+            "items": {
+              "type": "string"
+            },
+            "title": "Sources",
+            "type": "array"
+          },
+          "statement": {
+            "description": "Server sentence; quote it, never restate it more strongly",
+            "title": "Statement",
+            "type": "string"
+          },
+          "status": {
+            "description": "'inconclusive' (pattern observed; no fault is attributed, see reasons), 'not_observed' (pattern absent; does not exclude the fault), 'insufficient_data', or 'not_assessable_from_record' (resonance, always). No status attributes a fault.",
+            "enum": [
+              "insufficient_data",
+              "not_observed",
+              "inconclusive",
+              "not_assessable_from_record"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "supporting": {
+            "description": "Observations that match the pattern this assessment uses",
+            "items": {
+              "$ref": "#/$defs/ShaftEvidenceObservation"
+            },
+            "title": "Supporting",
+            "type": "array"
+          }
+        },
+        "required": [
+          "family",
+          "status",
+          "statement",
+          "pattern_definition",
+          "reasons",
+          "supporting",
+          "conflicting",
+          "missing",
+          "alternatives",
+          "sources"
+        ],
+        "title": "ShaftFaultHypothesis",
+        "type": "object"
+      },
+      "ShaftLevelContext": {
+        "description": "Overall vibration severity (ISO 20816-3) used as context, never as a fault.",
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The severity evaluation's own refusal for a channel it could not assess",
+            "title": "Detail"
+          },
+          "machine_group": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Declared machine group, or None",
+            "title": "Machine Group"
+          },
+          "machine_power_kw": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Declared machine power (kW), or None",
+            "title": "Machine Power Kw"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "generated_without_noise",
+                  "one_x_untestable",
+                  "unit_undeclared",
+                  "no_half_order_testable",
+                  "level_unit_undeclared",
+                  "level_class_undeclared",
+                  "level_outside_scope",
+                  "level_not_evaluable",
+                  "level_not_elevated",
+                  "conflicting_observations",
+                  "axial_channel_missing",
+                  "radial_channel_undeclared",
+                  "direction_undeclared",
+                  "shaft_frequency_declared",
+                  "line_frequency_multiple",
+                  "single_record_insufficient",
+                  "half_orders_not_specific",
+                  "attribution_not_validated",
+                  "speed_changed"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Why it was not assessed",
+            "title": "Reason"
+          },
+          "rms_velocity_mm_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "RMS velocity of that channel",
+            "title": "Rms Velocity Mm S"
+          },
+          "signal_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Channel with the highest zone",
+            "title": "Signal Id"
+          },
+          "status": {
+            "enum": [
+              "assessed",
+              "not_assessed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "support_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Declared support type, or None",
+            "title": "Support Type"
+          },
+          "zone": {
+            "anyOf": [
+              {
+                "enum": [
+                  "A",
+                  "B",
+                  "C",
+                  "D"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Highest zone over the steady channels with a declared horizontal or vertical direction. ISO 20816-3 zones apply to machines above 15 kW, 120 to 30 000 r/min, in steady state; outside that scope the zone is not a valid context",
+            "title": "Zone"
+          },
+          "zones": {
+            "description": "Zone per channel",
+            "items": {
+              "$ref": "#/$defs/ShaftLevelZone"
+            },
+            "title": "Zones",
+            "type": "array"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "ShaftLevelContext",
+        "type": "object"
+      },
+      "ShaftLevelZone": {
+        "properties": {
+          "rms_velocity_mm_s": {
+            "title": "Rms Velocity Mm S",
+            "type": "number"
+          },
+          "signal_id": {
+            "title": "Signal Id",
+            "type": "string"
+          },
+          "zone": {
+            "enum": [
+              "A",
+              "B",
+              "C",
+              "D"
+            ],
+            "title": "Zone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "signal_id",
+          "zone",
+          "rms_velocity_mm_s"
+        ],
+        "title": "ShaftLevelZone",
+        "type": "object"
+      },
+      "ShaftLineFrequencyMultiple": {
+        "description": "A multiple of the electrical line frequency inside an order window.",
+        "properties": {
+          "declared": {
+            "description": "True for the declared line frequency; False when none was declared and 50 or 60 Hz was checked",
+            "title": "Declared",
+            "type": "boolean"
+          },
+          "frequency_hz": {
+            "description": "multiple x line_frequency_hz (Hz)",
+            "title": "Frequency Hz",
+            "type": "number"
+          },
+          "line_frequency_hz": {
+            "description": "Line frequency checked (Hz)",
+            "title": "Line Frequency Hz",
+            "type": "number"
+          },
+          "multiple": {
+            "description": "Multiple of the line frequency (1 to 4)",
+            "title": "Multiple",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "line_frequency_hz",
+          "multiple",
+          "frequency_hz",
+          "declared"
+        ],
+        "title": "ShaftLineFrequencyMultiple",
+        "type": "object"
+      },
+      "ShaftOrderAnalysis": {
+        "description": "What was analyzed.",
+        "properties": {
+          "conventional_bandwidth_hz": {
+            "description": "fs / 2.56 (Hz)",
+            "title": "Conventional Bandwidth Hz",
+            "type": "number"
+          },
+          "duration_s": {
+            "description": "Duration analyzed (s)",
+            "title": "Duration S",
+            "type": "number"
+          },
+          "frequency_resolution_hz": {
+            "description": "fs / samples (Hz)",
+            "title": "Frequency Resolution Hz",
+            "type": "number"
+          },
+          "revolutions": {
+            "description": "Shaft revolutions at the declared speed",
+            "title": "Revolutions",
+            "type": "number"
+          },
+          "samples": {
+            "description": "Samples analyzed",
+            "title": "Samples",
+            "type": "integer"
+          },
+          "sampling_rate_hz": {
+            "description": "Sampling rate (Hz)",
+            "title": "Sampling Rate Hz",
+            "type": "number"
+          },
+          "total_samples": {
+            "description": "Samples in the record",
+            "title": "Total Samples",
+            "type": "integer"
+          },
+          "truncated": {
+            "description": "True when only the leading samples were analyzed (bounded length)",
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "samples",
+          "total_samples",
+          "truncated",
+          "sampling_rate_hz",
+          "duration_s",
+          "frequency_resolution_hz",
+          "revolutions",
+          "conventional_bandwidth_hz"
+        ],
+        "title": "ShaftOrderAnalysis",
+        "type": "object"
+      },
+      "ShaftOrderChannel": {
+        "description": "The shaft-order measurements of one channel.",
+        "properties": {
+          "analysis": {
+            "$ref": "#/$defs/ShaftOrderAnalysis"
+          },
+          "direction": {
+            "anyOf": [
+              {
+                "enum": [
+                  "horizontal",
+                  "vertical",
+                  "axial",
+                  "x",
+                  "y",
+                  "z"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Declared direction (horizontal, vertical, axial, x, y, z) or None",
+            "title": "Direction"
+          },
+          "direction_source": {
+            "default": "none",
+            "description": "'explicit' (the directions argument), 'measurement' (the companion's declaration) or 'none'",
+            "enum": [
+              "explicit",
+              "measurement",
+              "point",
+              "none"
+            ],
+            "title": "Direction Source",
+            "type": "string"
+          },
+          "line_frequency_hz": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Declared electrical supply frequency (Hz), or None",
+            "title": "Line Frequency Hz"
+          },
+          "lines": {
+            "description": "detail 'full': one entry per order, in order; detail 'summary': the significant lines only",
+            "items": {
+              "$ref": "#/$defs/ShaftOrderLine"
+            },
+            "title": "Lines",
+            "type": "array"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Declared measurement point (asset/point), or None; channels declaring different locations are never compared",
+            "title": "Location"
+          },
+          "signal_id": {
+            "description": "Stored signal",
+            "title": "Signal Id",
+            "type": "string"
+          },
+          "significant_orders": {
+            "description": "Orders with a significant line",
+            "items": {
+              "type": "number"
+            },
+            "title": "Significant Orders",
+            "type": "array"
+          },
+          "speed": {
+            "$ref": "#/$defs/ShaftSpeed"
+          },
+          "stationarity": {
+            "$ref": "#/$defs/ShaftStationarity"
+          },
+          "time_domain": {
+            "$ref": "#/$defs/ShaftTimeDomain"
+          },
+          "unit": {
+            "$ref": "#/$defs/ShaftUnit"
+          },
+          "untestable_orders": {
+            "description": "Orders the record could not test",
+            "items": {
+              "type": "number"
+            },
+            "title": "Untestable Orders",
+            "type": "array"
+          },
+          "velocity_band": {
+            "$ref": "#/$defs/ShaftVelocityBand"
+          }
+        },
+        "required": [
+          "signal_id",
+          "analysis",
+          "speed",
+          "unit",
+          "lines",
+          "significant_orders",
+          "velocity_band",
+          "time_domain",
+          "stationarity"
+        ],
+        "title": "ShaftOrderChannel",
+        "type": "object"
+      },
+      "ShaftOrderLine": {
+        "description": "The line test of one shaft order on the amplitude spectrum.\n\nSerialized without its null and empty fields (all of them optional), so an\nuntestable or non-significant line stays short in the response.",
+        "properties": {
+          "amplitude": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Peak-bin amplitude in the server's FFT convention (Hamming, 2|X|/N, no gain correction: a sinusoid of amplitude A on a bin reads about 0.54 A), in the signal's unit",
+            "title": "Amplitude"
+          },
+          "amplitude_estimate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Significant lines only: 0-to-peak amplitude of the sinusoid from the main-lobe power less the noise floor, independent of where it falls between bins, in the signal's unit",
+            "title": "Amplitude Estimate"
+          },
+          "beyond_conventional_bandwidth": {
+            "description": "The window reaches above fs / 2.56, where an acquisition anti-aliasing filter may attenuate the line",
+            "title": "Beyond Conventional Bandwidth",
+            "type": "boolean"
+          },
+          "expected_hz": {
+            "description": "order x shaft_hz (Hz)",
+            "title": "Expected Hz",
+            "type": "number"
+          },
+          "frequency_hz": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Interpolated frequency of the strongest bin (Hz)",
+            "title": "Frequency Hz"
+          },
+          "half_width_hz": {
+            "description": "Half-width of the search window (Hz)",
+            "title": "Half Width Hz",
+            "type": "number"
+          },
+          "level_db": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Power of the strongest bin over the local noise floor (dB)",
+            "title": "Level Db"
+          },
+          "line_frequency_multiples": {
+            "description": "Line-frequency multiples inside this window (integer orders only)",
+            "items": {
+              "$ref": "#/$defs/ShaftLineFrequencyMultiple"
+            },
+            "title": "Line Frequency Multiples",
+            "type": "array"
+          },
+          "order": {
+            "description": "Shaft order (0.5, 1, 1.5, ...)",
+            "title": "Order",
+            "type": "number"
+          },
+          "significant": {
+            "description": "The strongest bin of the window is a local maximum above the threshold: a periodic component stands above the local noise floor. Not abnormality.",
+            "title": "Significant",
+            "type": "boolean"
+          },
+          "testable": {
+            "description": "Whether the record could test this line",
+            "title": "Testable",
+            "type": "boolean"
+          },
+          "threshold_db": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Threshold the level had to exceed (dB over the floor)",
+            "title": "Threshold Db"
+          },
+          "untestable_reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "above_frequency_range",
+                  "order_windows_overlap",
+                  "search_window_too_narrow",
+                  "noise_floor_not_estimable"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Why the line could not be tested",
+            "title": "Untestable Reason"
+          },
+          "velocity_amplitude_mm_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "amplitude_estimate as a 0-to-peak velocity in mm/s (declared unit only; an acceleration divided by 2 pi f)",
+            "title": "Velocity Amplitude Mm S"
+          }
+        },
+        "required": [
+          "order",
+          "expected_hz",
+          "half_width_hz",
+          "testable",
+          "significant",
+          "beyond_conventional_bandwidth"
+        ],
+        "title": "ShaftOrderLine",
+        "type": "object"
+      },
+      "ShaftSpeed": {
+        "description": "The shaft frequency the orders are measured from, and where it came from.",
+        "properties": {
+          "declared_rpm": {
+            "description": "Speed used (rpm); see parameter_sources",
+            "title": "Declared Rpm",
+            "type": "number"
+          },
+          "declared_shaft_hz": {
+            "description": "declared_rpm / 60 (Hz)",
+            "title": "Declared Shaft Hz",
+            "type": "number"
+          },
+          "deviation_from_declared_pct": {
+            "description": "(shaft_hz - declared_shaft_hz) / declared_shaft_hz in percent",
+            "title": "Deviation From Declared Pct",
+            "type": "number"
+          },
+          "search": {
+            "$ref": "#/$defs/ShaftSpeedSearch",
+            "description": "The 1x search"
+          },
+          "shaft_hz": {
+            "description": "Shaft frequency used for the orders (Hz)",
+            "title": "Shaft Hz",
+            "type": "number"
+          },
+          "source": {
+            "description": "'located_line' (interpolated 1x line, one bin of uncertainty) or 'declared' (declared speed with its full uncertainty)",
+            "enum": [
+              "located_line",
+              "declared"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "tolerance_pct": {
+            "description": "Declared speed uncertainty (percent)",
+            "title": "Tolerance Pct",
+            "type": "number"
+          },
+          "uncertainty_hz": {
+            "description": "Uncertainty of shaft_hz (Hz)",
+            "title": "Uncertainty Hz",
+            "type": "number"
+          }
+        },
+        "required": [
+          "declared_rpm",
+          "declared_shaft_hz",
+          "tolerance_pct",
+          "shaft_hz",
+          "source",
+          "uncertainty_hz",
+          "deviation_from_declared_pct",
+          "search"
+        ],
+        "title": "ShaftSpeed",
+        "type": "object"
+      },
+      "ShaftSpeedSearch": {
+        "description": "The search for the 1x line in the declared speed's window.",
+        "properties": {
+          "competing_count": {
+            "default": 0,
+            "description": "Number of competing significant lines",
+            "title": "Competing Count",
+            "type": "integer"
+          },
+          "competing_hz": {
+            "description": "Competing significant lines (Hz), at most the five strongest",
+            "items": {
+              "type": "number"
+            },
+            "title": "Competing Hz",
+            "type": "array"
+          },
+          "half_width_hz": {
+            "description": "Half-width of the 1x search window (Hz)",
+            "title": "Half Width Hz",
+            "type": "number"
+          },
+          "level_db": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Its level over the floor (dB)",
+            "title": "Level Db"
+          },
+          "peak_hz": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Strongest bin in the window (Hz)",
+            "title": "Peak Hz"
+          },
+          "status": {
+            "description": "'located' (exactly one significant line), 'not_significant', 'ambiguous' (several competing significant lines; none is taken as 1x) or 'untestable'",
+            "enum": [
+              "located",
+              "not_significant",
+              "ambiguous",
+              "untestable"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "threshold_db": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Threshold (dB over the floor)",
+            "title": "Threshold Db"
+          },
+          "untestable_reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "above_frequency_range",
+                  "order_windows_overlap",
+                  "search_window_too_narrow",
+                  "noise_floor_not_estimable"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Why the window could not be tested",
+            "title": "Untestable Reason"
+          }
+        },
+        "required": [
+          "status",
+          "half_width_hz"
+        ],
+        "title": "ShaftSpeedSearch",
+        "type": "object"
+      },
+      "ShaftStationarity": {
+        "description": "Whether the 1x frequency differs between the two halves of the record.",
+        "properties": {
+          "amplitude": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "1x peak-bin amplitude per half (server FFT convention)",
+            "title": "Amplitude"
+          },
+          "drift_hz": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Difference of the two frequencies (Hz)",
+            "title": "Drift Hz"
+          },
+          "frequency_hz": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "1x frequency per half (Hz)",
+            "title": "Frequency Hz"
+          },
+          "frequency_resolution_hz": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Frequency resolution of a half (Hz)",
+            "title": "Frequency Resolution Hz"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "record_too_short",
+                  "1x_not_located_in_both_halves"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Why it was not assessed",
+            "title": "Reason"
+          },
+          "speed_changed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "True when the drift exceeds one bin of a half",
+            "title": "Speed Changed"
+          },
+          "status": {
+            "description": "Whether it was assessed",
+            "enum": [
+              "assessed",
+              "not_assessed"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "ShaftStationarity",
+        "type": "object"
+      },
+      "ShaftTimeDomain": {
+        "description": "Screening statistics of the analyzed samples (never diagnostic alone).",
+        "properties": {
+          "crest_factor": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Peak over RMS; None for a constant record",
+            "title": "Crest Factor"
+          },
+          "kurtosis_excess": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Excess kurtosis (0 for a Gaussian signal)",
+            "title": "Kurtosis Excess"
+          },
+          "rms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "RMS in the signal's unit",
+            "title": "Rms"
+          }
+        },
+        "title": "ShaftTimeDomain",
+        "type": "object"
+      },
+      "ShaftUnit": {
+        "properties": {
+          "quantity": {
+            "anyOf": [
+              {
+                "enum": [
+                  "acceleration",
+                  "velocity"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Quantity of the declared unit, or None",
+            "title": "Quantity"
+          },
+          "signal_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Declared unit, or None",
+            "title": "Signal Unit"
+          }
+        },
+        "title": "ShaftUnit",
+        "type": "object"
+      },
+      "ShaftVelocityBand": {
+        "description": "Velocity power of the ISO 20816-3 band and the 1X share of it.",
+        "properties": {
+          "high_hz": {
+            "description": "Upper band edge, at most half the sampling rate (Hz)",
+            "title": "High Hz",
+            "type": "number"
+          },
+          "low_hz": {
+            "description": "Lower band edge (Hz)",
+            "title": "Low Hz",
+            "type": "number"
+          },
+          "one_x_share": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Share of the band's velocity power carried by the 1X line (0 to 1)",
+            "title": "One X Share"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "unit_undeclared",
+                  "band_empty"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Why it was not computed",
+            "title": "Reason"
+          },
+          "status": {
+            "description": "Whether it was computed",
+            "enum": [
+              "computed",
+              "not_computed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "truncated": {
+            "description": "True when half the sampling rate is below 1 kHz",
+            "title": "Truncated",
+            "type": "boolean"
+          },
+          "velocity_rms_mm_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "RMS velocity of the band from the amplitude spectrum, the denominator of one_x_share; not the ISO severity value (see level_context)",
+            "title": "Velocity Rms Mm S"
+          }
+        },
+        "required": [
+          "status",
+          "low_hz",
+          "high_hz",
+          "truncated"
+        ],
+        "title": "ShaftVelocityBand",
+        "type": "object"
+      }
+    },
+    "description": "Experimental shaft-order evidence assessment for unbalance, misalignment, looseness.\n\nMeasured lines, a severity context and, per fault family, supporting and\nconflicting observations, missing measurements and alternatives. No\noutcome is a diagnosis.",
+    "properties": {
+      "assessment_version": {
+        "description": "Version of the assessment rules",
+        "title": "Assessment Version",
+        "type": "integer"
+      },
+      "channels": {
+        "items": {
+          "$ref": "#/$defs/ShaftOrderChannel"
+        },
+        "title": "Channels",
+        "type": "array"
+      },
+      "cross_channel": {
+        "description": "Velocity ratios between declared directions (descriptors only); detail 'summary' keeps the computed ones",
+        "items": {
+          "$ref": "#/$defs/ShaftCrossChannelRatio"
+        },
+        "title": "Cross Channel",
+        "type": "array"
+      },
+      "detail": {
+        "description": "'summary' (default: hypotheses, severity context, limitations and the significant lines) or 'full' (every order line, every cross-channel comparison, the full line-test policy and source texts)",
+        "enum": [
+          "summary",
+          "full"
+        ],
+        "title": "Detail",
+        "type": "string"
+      },
+      "experimental": {
+        "const": true,
+        "description": "Always True: patterns not validated",
+        "title": "Experimental",
+        "type": "boolean"
+      },
+      "hypotheses": {
+        "description": "One entry per family: unbalance, misalignment, looseness, resonance",
+        "items": {
+          "$ref": "#/$defs/ShaftFaultHypothesis"
+        },
+        "title": "Hypotheses",
+        "type": "array"
+      },
+      "level_context": {
+        "$ref": "#/$defs/ShaftLevelContext"
+      },
+      "limitations": {
+        "description": "What the result cannot establish, stated with every result",
+        "items": {
+          "type": "string"
+        },
+        "title": "Limitations",
+        "type": "array"
+      },
+      "order_line_policy": {
+        "additionalProperties": true,
+        "description": "Line test policy and its limits; detail 'summary' keeps the method, the version, the nominal budget and the measured false-alarm rates",
+        "title": "Order Line Policy",
+        "type": "object"
+      },
+      "parameter_sources": {
+        "additionalProperties": {
+          "enum": [
+            "explicit",
+            "measurement",
+            "point",
+            "none"
+          ],
+          "type": "string"
+        },
+        "description": "Where rpm, machine_group, support_type and machine_power_kw came from: 'explicit', 'measurement' (rpm only), 'point' or 'none'",
+        "title": "Parameter Sources",
+        "type": "object"
+      },
+      "rpm": {
+        "description": "Speed used (rpm); see parameter_sources",
+        "title": "Rpm",
+        "type": "number"
+      },
+      "scope_statement": {
+        "description": "What the assessment is and is not",
+        "title": "Scope Statement",
+        "type": "string"
+      },
+      "sources": {
+        "items": {
+          "$ref": "#/$defs/ShaftEvidenceSource"
+        },
+        "title": "Sources",
+        "type": "array"
+      },
+      "summary": {
+        "description": "Server sentence; quote it, never restate it more strongly",
+        "title": "Summary",
+        "type": "string"
+      }
+    },
+    "required": [
+      "experimental",
+      "detail",
+      "assessment_version",
+      "scope_statement",
+      "limitations",
+      "summary",
+      "rpm",
+      "parameter_sources",
+      "channels",
+      "cross_channel",
+      "level_context",
+      "hypotheses",
+      "order_line_policy",
+      "sources"
+    ],
+    "title": "ShaftFaultEvidenceResult",
+    "type": "object"
+  },
   "calculate_bearing_characteristic_frequencies": {
     "additionalProperties": {
       "type": "number"

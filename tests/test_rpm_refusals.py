@@ -47,6 +47,7 @@ RPM_TOOLS = {
         "pitch_diameter_mm": 39.04,
     },
     "check_bearing_faults": {"signal_id": "__not_loaded__", "bearing_id": "6205"},
+    "assess_shaft_fault_evidence": {"signal_ids": ["__not_loaded__"]},
     "diagnose_vibration": {"signal_id": "__not_loaded__"},
     "generate_diagnostic_report": {"signal_id": "__not_loaded__"},
     "generate_envelope_report": {"signal_id": "__not_loaded__"},

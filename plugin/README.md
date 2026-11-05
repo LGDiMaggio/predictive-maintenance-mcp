@@ -73,11 +73,11 @@ Quick entry points for common workflows.
 
 ## MCP Tool Coverage
 
-This plugin provides domain expertise for all 39 tools (plus 3 guided prompts, 42 endpoints total) of the predictive-maintenance-mcp server on the main branch; tools listed under Unreleased in the server's [CHANGELOG](../CHANGELOG.md) are not yet in a published release. Every signal is referenced by the `signal_id` returned by `load_signal`.
+This plugin provides domain expertise for all 40 tools (plus 3 guided prompts, 43 endpoints total) of the predictive-maintenance-mcp server on the main branch; tools listed under Unreleased in the server's [CHANGELOG](../CHANGELOG.md) are not yet in a published release. Every signal is referenced by the `signal_id` returned by `load_signal`.
 
 - **Signal Lifecycle**: load_signal, list_signals, get_signal_info, generate_test_signal, clear_signals
 - **Spectral & Statistical Analysis**: analyze_fft, analyze_envelope, analyze_statistics, extract_features_from_signal, compute_power_spectral_density, compute_spectrogram_stft
-- **Diagnostics & Health Assessment**: assess_severity, check_bearing_faults, diagnose_vibration, calculate_bearing_characteristic_frequencies, search_bearing_catalog, train_anomaly_model, predict_anomalies
+- **Diagnostics & Health Assessment**: assess_severity, check_bearing_faults, diagnose_vibration, calculate_bearing_characteristic_frequencies, search_bearing_catalog, train_anomaly_model, predict_anomalies, assess_shaft_fault_evidence (unreleased, experimental)
 - **Documentation**: list_machine_manuals, read_manual_excerpt, extract_manual_specs, search_documentation
 - **Reports**: plot_signal, generate_fft_report, generate_envelope_report, generate_iso_report, generate_diagnostic_report_docx, generate_pca_visualization_report, generate_feature_comparison_report, list_html_reports
 - **Prognostics**: analyze_signal_trend, estimate_rul, forecast_asset_indicator (unreleased)

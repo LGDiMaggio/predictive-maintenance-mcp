@@ -420,6 +420,7 @@ UNRELEASED_TOOLS = frozenset(
         "get_asset_history",
         "assess_asset_change",
         "forecast_asset_indicator",
+        "assess_shaft_fault_evidence",
     }
 )
 UNRELEASED_MARKER = "Unreleased: main branch only"
@@ -544,13 +545,15 @@ class TestEndpointCountClaims:
         v0.10 added generate_diagnostic_report (33 -> 34 tools); the asset
         ledger (U7) added declare_measurement_point, declare_healthy_baseline,
         get_asset_history and assess_asset_change (34 -> 38 tools); forecast
-        PR 1 added forecast_asset_indicator (38 -> 39 tools, unreleased). The
-        additions register lives in tests/test_surface_parity.py."""
+        PR 1 added forecast_asset_indicator (38 -> 39 tools, unreleased); the
+        shaft-order evidence added assess_shaft_fault_evidence (39 -> 40
+        tools, unreleased). The additions register lives in
+        tests/test_surface_parity.py."""
         assert surface_counts == {
-            "tools": 39,
+            "tools": 40,
             "resources": 0,
             "prompts": 3,
-            "endpoints": 42,
+            "endpoints": 43,
         }
 
 
