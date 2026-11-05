@@ -2,7 +2,7 @@
 
 The complete endpoint reference for the Predictive Maintenance MCP server: every registered MCP tool and guided prompt, grouped by category.
 
-**Total on the main branch: 42 MCP endpoints, 39 tools and 3 prompts.** Tools listed under Unreleased in the [CHANGELOG](../CHANGELOG.md) are not yet in a published PyPI release; their rows below say so.
+**Total on the main branch: 43 MCP endpoints, 40 tools and 3 prompts.** Tools listed under Unreleased in the [CHANGELOG](../CHANGELOG.md) are not yet in a published PyPI release; their rows below say so.
 
 ## Signal Lifecycle (5)
 
@@ -25,7 +25,7 @@ The complete endpoint reference for the Predictive Maintenance MCP server: every
 | `compute_power_spectral_density` | Power spectral density (Welch method) |
 | `compute_spectrogram_stft` | Time-frequency spectrogram |
 
-## Diagnostics & Health Assessment (7)
+## Diagnostics & Health Assessment (8)
 
 | Tool | Description |
 |------|-------------|
@@ -36,6 +36,7 @@ The complete endpoint reference for the Predictive Maintenance MCP server: every
 | `search_bearing_catalog` | Look up verified, source-traced bearing geometry |
 | `train_anomaly_model` | Train novelty detection on healthy baselines |
 | `predict_anomalies` | Score a signal against a trained model (bounded output) |
+| `assess_shaft_fault_evidence` | Experimental evidence assessment for unbalance, misalignment and looseness on one to six channels: significance-tested lines at integer and half shaft orders, a severity context and, per fault family, whether the pattern this assessment uses is observed, matching and conflicting observations, missing measurements and alternatives. Attributes no fault; never a diagnosis. Summary or full detail. Unreleased: main branch only |
 
 ## Documentation (4)
 

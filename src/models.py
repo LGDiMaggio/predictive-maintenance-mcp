@@ -6,7 +6,7 @@ ensuring consistent and well-documented return types.
 """
 
 from typing import Any, Literal, Optional
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, model_serializer, model_validator
 
 
 class SpectralPeak(BaseModel):
@@ -2009,3 +2009,503 @@ class AssetChangeAssessment(BaseModel):
         ),
     )
     message: str = Field(description="One-paragraph summary of the outcome")
+
+
+# ---------------------------------------------------------------------------
+# Shaft-order evidence (experimental)
+# ---------------------------------------------------------------------------
+
+ShaftOrderUntestableReason = Literal[
+    "above_frequency_range",
+    "order_windows_overlap",
+    "search_window_too_narrow",
+    "noise_floor_not_estimable",
+]
+ShaftFaultFamily = Literal["unbalance", "misalignment", "looseness", "resonance"]
+ShaftFaultStatus = Literal[
+    "insufficient_data",
+    "not_observed",
+    "inconclusive",
+    "not_assessable_from_record",
+]
+ShaftDirection = Literal["horizontal", "vertical", "axial", "x", "y", "z"]
+ShaftParameterSource = Literal["explicit", "measurement", "point", "none"]
+ShaftDetail = Literal["summary", "full"]
+ShaftObservationCode = Literal[
+    "one_x_dominant",
+    "harmonic_at_least_one_x",
+    "harmonic_above_floor_without_one_x",
+    "axial_exceeds_radial",
+    "half_order_lines",
+    "half_orders_present",
+]
+ShaftFaultReason = Literal[
+    "generated_without_noise",
+    "one_x_untestable",
+    "unit_undeclared",
+    "no_half_order_testable",
+    "level_unit_undeclared",
+    "level_class_undeclared",
+    "level_outside_scope",
+    "level_not_evaluable",
+    "level_not_elevated",
+    "conflicting_observations",
+    "axial_channel_missing",
+    "radial_channel_undeclared",
+    "direction_undeclared",
+    "shaft_frequency_declared",
+    "line_frequency_multiple",
+    "single_record_insufficient",
+    "half_orders_not_specific",
+    "attribution_not_validated",
+    "speed_changed",
+]
+
+
+class ShaftLineFrequencyMultiple(BaseModel):
+    """A multiple of the electrical line frequency inside an order window."""
+
+    line_frequency_hz: float = Field(description="Line frequency checked (Hz)")
+    multiple: int = Field(description="Multiple of the line frequency (1 to 4)")
+    frequency_hz: float = Field(description="multiple x line_frequency_hz (Hz)")
+    declared: bool = Field(
+        description=(
+            "True for the declared line frequency; False when none was declared and "
+            "50 or 60 Hz was checked"
+        )
+    )
+
+
+class ShaftOrderLine(BaseModel):
+    """The line test of one shaft order on the amplitude spectrum.
+
+    Serialized without its null and empty fields (all of them optional), so an
+    untestable or non-significant line stays short in the response.
+    """
+
+    @model_serializer(mode="wrap")
+    def _omit_empty(self, handler: Any) -> dict[str, Any]:
+        data = handler(self)
+        return {k: v for k, v in data.items() if v is not None and v != []}
+
+    order: float = Field(description="Shaft order (0.5, 1, 1.5, ...)")
+    expected_hz: float = Field(description="order x shaft_hz (Hz)")
+    half_width_hz: float = Field(description="Half-width of the search window (Hz)")
+    testable: bool = Field(description="Whether the record could test this line")
+    untestable_reason: Optional[ShaftOrderUntestableReason] = Field(
+        None, description="Why the line could not be tested"
+    )
+    significant: bool = Field(
+        description=(
+            "The strongest bin of the window is a local maximum above the threshold: a "
+            "periodic component stands above the local noise floor. Not abnormality."
+        )
+    )
+    frequency_hz: Optional[float] = Field(
+        None, description="Interpolated frequency of the strongest bin (Hz)"
+    )
+    amplitude: Optional[float] = Field(
+        None,
+        description=(
+            "Peak-bin amplitude in the server's FFT convention (Hamming, 2|X|/N, no gain "
+            "correction: a sinusoid of amplitude A on a bin reads about 0.54 A), in the "
+            "signal's unit"
+        ),
+    )
+    amplitude_estimate: Optional[float] = Field(
+        None,
+        description=(
+            "Significant lines only: 0-to-peak amplitude of the sinusoid from the "
+            "main-lobe power less the noise floor, independent of where it falls between "
+            "bins, in the signal's unit"
+        ),
+    )
+    velocity_amplitude_mm_s: Optional[float] = Field(
+        None,
+        description=(
+            "amplitude_estimate as a 0-to-peak velocity in mm/s (declared unit only; an "
+            "acceleration divided by 2 pi f)"
+        ),
+    )
+    level_db: Optional[float] = Field(
+        None, description="Power of the strongest bin over the local noise floor (dB)"
+    )
+    threshold_db: Optional[float] = Field(
+        None, description="Threshold the level had to exceed (dB over the floor)"
+    )
+    beyond_conventional_bandwidth: bool = Field(
+        description=(
+            "The window reaches above fs / 2.56, where an acquisition anti-aliasing filter "
+            "may attenuate the line"
+        )
+    )
+    line_frequency_multiples: list[ShaftLineFrequencyMultiple] = Field(
+        default_factory=list,
+        description="Line-frequency multiples inside this window (integer orders only)",
+    )
+
+
+class ShaftSpeedSearch(BaseModel):
+    """The search for the 1x line in the declared speed's window."""
+
+    status: Literal["located", "not_significant", "ambiguous", "untestable"] = Field(
+        description=(
+            "'located' (exactly one significant line), 'not_significant', 'ambiguous' "
+            "(several competing significant lines; none is taken as 1x) or 'untestable'"
+        )
+    )
+    half_width_hz: float = Field(description="Half-width of the 1x search window (Hz)")
+    peak_hz: Optional[float] = Field(
+        None, description="Strongest bin in the window (Hz)"
+    )
+    level_db: Optional[float] = Field(None, description="Its level over the floor (dB)")
+    threshold_db: Optional[float] = Field(
+        None, description="Threshold (dB over the floor)"
+    )
+    competing_hz: list[float] = Field(
+        default_factory=list,
+        description="Competing significant lines (Hz), at most the five strongest",
+    )
+    competing_count: int = Field(0, description="Number of competing significant lines")
+    untestable_reason: Optional[ShaftOrderUntestableReason] = Field(
+        None, description="Why the window could not be tested"
+    )
+
+
+class ShaftSpeed(BaseModel):
+    """The shaft frequency the orders are measured from, and where it came from."""
+
+    declared_rpm: float = Field(description="Speed used (rpm); see parameter_sources")
+    declared_shaft_hz: float = Field(description="declared_rpm / 60 (Hz)")
+    tolerance_pct: float = Field(description="Declared speed uncertainty (percent)")
+    shaft_hz: float = Field(description="Shaft frequency used for the orders (Hz)")
+    source: Literal["located_line", "declared"] = Field(
+        description=(
+            "'located_line' (interpolated 1x line, one bin of uncertainty) or 'declared' "
+            "(declared speed with its full uncertainty)"
+        )
+    )
+    uncertainty_hz: float = Field(description="Uncertainty of shaft_hz (Hz)")
+    deviation_from_declared_pct: float = Field(
+        description="(shaft_hz - declared_shaft_hz) / declared_shaft_hz in percent"
+    )
+    search: ShaftSpeedSearch = Field(description="The 1x search")
+
+
+class ShaftOrderAnalysis(BaseModel):
+    """What was analyzed."""
+
+    samples: int = Field(description="Samples analyzed")
+    total_samples: int = Field(description="Samples in the record")
+    truncated: bool = Field(
+        description="True when only the leading samples were analyzed (bounded length)"
+    )
+    sampling_rate_hz: float = Field(description="Sampling rate (Hz)")
+    duration_s: float = Field(description="Duration analyzed (s)")
+    frequency_resolution_hz: float = Field(description="fs / samples (Hz)")
+    revolutions: float = Field(description="Shaft revolutions at the declared speed")
+    conventional_bandwidth_hz: float = Field(description="fs / 2.56 (Hz)")
+
+
+class ShaftUnit(BaseModel):
+    signal_unit: Optional[str] = Field(None, description="Declared unit, or None")
+    quantity: Optional[Literal["acceleration", "velocity"]] = Field(
+        None, description="Quantity of the declared unit, or None"
+    )
+
+
+class ShaftVelocityBand(BaseModel):
+    """Velocity power of the ISO 20816-3 band and the 1X share of it."""
+
+    status: Literal["computed", "not_computed"] = Field(
+        description="Whether it was computed"
+    )
+    reason: Optional[Literal["unit_undeclared", "band_empty"]] = Field(
+        None, description="Why it was not computed"
+    )
+    low_hz: float = Field(description="Lower band edge (Hz)")
+    high_hz: float = Field(
+        description="Upper band edge, at most half the sampling rate (Hz)"
+    )
+    truncated: bool = Field(
+        description="True when half the sampling rate is below 1 kHz"
+    )
+    velocity_rms_mm_s: Optional[float] = Field(
+        None,
+        description=(
+            "RMS velocity of the band from the amplitude spectrum, the denominator of "
+            "one_x_share; not the ISO severity value (see level_context)"
+        ),
+    )
+    one_x_share: Optional[float] = Field(
+        None,
+        description="Share of the band's velocity power carried by the 1X line (0 to 1)",
+    )
+
+
+class ShaftTimeDomain(BaseModel):
+    """Screening statistics of the analyzed samples (never diagnostic alone)."""
+
+    rms: Optional[float] = Field(None, description="RMS in the signal's unit")
+    kurtosis_excess: Optional[float] = Field(
+        None, description="Excess kurtosis (0 for a Gaussian signal)"
+    )
+    crest_factor: Optional[float] = Field(
+        None, description="Peak over RMS; None for a constant record"
+    )
+
+
+class ShaftStationarity(BaseModel):
+    """Whether the 1x frequency differs between the two halves of the record."""
+
+    status: Literal["assessed", "not_assessed"] = Field(
+        description="Whether it was assessed"
+    )
+    reason: Optional[Literal["record_too_short", "1x_not_located_in_both_halves"]] = (
+        Field(None, description="Why it was not assessed")
+    )
+    frequency_hz: Optional[list[float]] = Field(
+        None, description="1x frequency per half (Hz)"
+    )
+    amplitude: Optional[list[float]] = Field(
+        None, description="1x peak-bin amplitude per half (server FFT convention)"
+    )
+    frequency_resolution_hz: Optional[float] = Field(
+        None, description="Frequency resolution of a half (Hz)"
+    )
+    drift_hz: Optional[float] = Field(
+        None, description="Difference of the two frequencies (Hz)"
+    )
+    speed_changed: Optional[bool] = Field(
+        None, description="True when the drift exceeds one bin of a half"
+    )
+
+
+class ShaftOrderChannel(BaseModel):
+    """The shaft-order measurements of one channel."""
+
+    signal_id: str = Field(description="Stored signal")
+    direction: Optional[ShaftDirection] = Field(
+        None,
+        description="Declared direction (horizontal, vertical, axial, x, y, z) or None",
+    )
+    direction_source: ShaftParameterSource = Field(
+        "none",
+        description=(
+            "'explicit' (the directions argument), 'measurement' (the companion's "
+            "declaration) or 'none'"
+        ),
+    )
+    location: Optional[str] = Field(
+        None,
+        description=(
+            "Declared measurement point (asset/point), or None; channels declaring "
+            "different locations are never compared"
+        ),
+    )
+    analysis: ShaftOrderAnalysis
+    speed: ShaftSpeed
+    unit: ShaftUnit
+    line_frequency_hz: Optional[float] = Field(
+        None,
+        description="Declared electrical supply frequency (Hz), or None",
+    )
+    lines: list[ShaftOrderLine] = Field(
+        description=(
+            "detail 'full': one entry per order, in order; detail 'summary': the "
+            "significant lines only"
+        )
+    )
+    untestable_orders: list[float] = Field(
+        default_factory=list, description="Orders the record could not test"
+    )
+    significant_orders: list[float] = Field(
+        description="Orders with a significant line"
+    )
+    velocity_band: ShaftVelocityBand
+    time_domain: ShaftTimeDomain
+    stationarity: ShaftStationarity
+
+
+class ShaftCrossChannelRatio(BaseModel):
+    """A velocity amplitude ratio between declared directions (descriptor only)."""
+
+    kind: Literal["axial_over_radial", "horizontal_over_vertical"]
+    order: float = Field(description="Shaft order compared")
+    numerator_signal_id: str
+    denominator_signal_id: str
+    status: Literal[
+        "computed", "not_computed", "not_comparable_speed", "not_comparable_location"
+    ] = Field(
+        description=(
+            "'not_computed' when a line is not significant in both channels or a unit is "
+            "undeclared; 'not_comparable_speed' when the channels see different shaft "
+            "frequencies; 'not_comparable_location' when they declare different "
+            "measurement points"
+        )
+    )
+    ratio: Optional[float] = Field(None, description="Velocity amplitude ratio")
+
+
+class ShaftLevelZone(BaseModel):
+    signal_id: str
+    zone: Literal["A", "B", "C", "D"]
+    rms_velocity_mm_s: float
+
+
+class ShaftLevelContext(BaseModel):
+    """Overall vibration severity (ISO 20816-3) used as context, never as a fault."""
+
+    status: Literal["assessed", "not_assessed"]
+    reason: Optional[ShaftFaultReason] = Field(
+        None, description="Why it was not assessed"
+    )
+    zone: Optional[Literal["A", "B", "C", "D"]] = Field(
+        None,
+        description=(
+            "Highest zone over the steady channels with a declared horizontal or "
+            "vertical direction. ISO 20816-3 zones apply to machines above 15 kW, "
+            "120 to 30 000 r/min, in steady state; outside that scope the zone is not "
+            "a valid context"
+        ),
+    )
+    rms_velocity_mm_s: Optional[float] = Field(
+        None, description="RMS velocity of that channel"
+    )
+    signal_id: Optional[str] = Field(None, description="Channel with the highest zone")
+    machine_group: Optional[int] = Field(
+        None, description="Declared machine group, or None"
+    )
+    support_type: Optional[str] = Field(
+        None, description="Declared support type, or None"
+    )
+    machine_power_kw: Optional[float] = Field(
+        None, description="Declared machine power (kW), or None"
+    )
+    detail: Optional[str] = Field(
+        None,
+        description="The severity evaluation's own refusal for a channel it could not assess",
+    )
+    zones: list[ShaftLevelZone] = Field(
+        default_factory=list, description="Zone per channel"
+    )
+
+
+class ShaftEvidenceObservation(BaseModel):
+    """One observation of the record, with the values behind it."""
+
+    code: ShaftObservationCode = Field(description="Closed observation code")
+    statement: str = Field(
+        description="Server sentence fragment stating the observation"
+    )
+    channels: list[str] = Field(description="Signals the observation rests on")
+    values: dict[str, Any] = Field(description="Computed values behind the statement")
+    sources: list[str] = Field(description="Keys into the result's sources")
+
+
+class ShaftFaultHypothesis(BaseModel):
+    """The evidence assessment of one fault family (experimental)."""
+
+    family: ShaftFaultFamily
+    status: ShaftFaultStatus = Field(
+        description=(
+            "'inconclusive' (pattern observed; no fault is attributed, see reasons), "
+            "'not_observed' (pattern absent; does not exclude the fault), "
+            "'insufficient_data', or 'not_assessable_from_record' (resonance, "
+            "always). No status attributes a fault."
+        )
+    )
+    pattern_observed: Optional[bool] = Field(
+        None,
+        description=(
+            "True when the pattern this assessment uses is observed, False when it is "
+            "absent (not_observed), None when it could not be assessed. An observed "
+            "pattern is evidence, not a fault attribution"
+        ),
+    )
+    statement: str = Field(
+        description="Server sentence; quote it, never restate it more strongly"
+    )
+    pattern_definition: str = Field(
+        description=(
+            "How this assessment defines the family's pattern: its own fixed cut "
+            "points, not validated thresholds"
+        )
+    )
+    reasons: list[ShaftFaultReason] = Field(
+        description="Why inconclusive or insufficient"
+    )
+    supporting: list[ShaftEvidenceObservation] = Field(
+        description="Observations that match the pattern this assessment uses"
+    )
+    conflicting: list[ShaftEvidenceObservation] = Field(
+        description="Observations the family's mechanism alone does not explain"
+    )
+    missing: list[str] = Field(description="Measurements that would discriminate")
+    alternatives: list[str] = Field(
+        description="Other explanations the record cannot exclude"
+    )
+    sources: list[str] = Field(description="Keys into the result's sources")
+
+
+class ShaftEvidenceSource(BaseModel):
+    key: str
+    citation: str
+    access: str = Field(description="How much of the source was read")
+    supports: Optional[str] = Field(
+        None,
+        description="What the assessment takes from it (detail 'full' only)",
+    )
+
+
+class ShaftFaultEvidenceResult(BaseModel):
+    """Experimental shaft-order evidence assessment for unbalance, misalignment, looseness.
+
+    Measured lines, a severity context and, per fault family, supporting and
+    conflicting observations, missing measurements and alternatives. No
+    outcome is a diagnosis.
+    """
+
+    experimental: Literal[True] = Field(
+        description="Always True: patterns not validated"
+    )
+    detail: ShaftDetail = Field(
+        description=(
+            "'summary' (default: hypotheses, severity context, limitations and the "
+            "significant lines) or 'full' (every order line, every cross-channel "
+            "comparison, the full line-test policy and source texts)"
+        )
+    )
+    assessment_version: int = Field(description="Version of the assessment rules")
+    scope_statement: str = Field(description="What the assessment is and is not")
+    limitations: list[str] = Field(
+        description="What the result cannot establish, stated with every result"
+    )
+    summary: str = Field(
+        description="Server sentence; quote it, never restate it more strongly"
+    )
+    rpm: float = Field(description="Speed used (rpm); see parameter_sources")
+    parameter_sources: dict[str, ShaftParameterSource] = Field(
+        description=(
+            "Where rpm, machine_group, support_type and machine_power_kw came from: "
+            "'explicit', 'measurement' (rpm only), 'point' or 'none'"
+        )
+    )
+    channels: list[ShaftOrderChannel]
+    cross_channel: list[ShaftCrossChannelRatio] = Field(
+        description=(
+            "Velocity ratios between declared directions (descriptors only); detail "
+            "'summary' keeps the computed ones"
+        )
+    )
+    level_context: ShaftLevelContext
+    hypotheses: list[ShaftFaultHypothesis] = Field(
+        description="One entry per family: unbalance, misalignment, looseness, resonance"
+    )
+    order_line_policy: dict[str, Any] = Field(
+        description=(
+            "Line test policy and its limits; detail 'summary' keeps the method, the "
+            "version, the nominal budget and the measured false-alarm rates"
+        )
+    )
+    sources: list[ShaftEvidenceSource]

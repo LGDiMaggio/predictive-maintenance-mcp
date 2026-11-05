@@ -8,6 +8,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`assess_shaft_fault_evidence`: an experimental evidence assessment for
+  unbalance, misalignment and looseness.** For one to six channels of one
+  machine at one operating condition it tests the lines at integer and half
+  shaft orders (0.5X to 10X by default) against their local noise floor,
+  locates the 1x line within the declared speed uncertainty, estimates each
+  significant line's amplitude independently of where it falls between
+  frequency bins, and reports velocity amplitudes, the share of the band
+  velocity power carried by the 1X line (10 Hz to 1 kHz, from 2 Hz for slow
+  machines) and the multiples of the supply frequency that fall inside the
+  order windows. For each fault family it states whether the pattern this
+  assessment uses is observed (`pattern_observed`), the observations that
+  match or conflict with it, the missing measurements and the other
+  explanations the records cannot exclude. It attributes no fault: an observed
+  pattern is `inconclusive`, an absent one `not_observed` (which does not
+  exclude the fault), and resonance is always `not_assessable_from_record`;
+  the step from a pattern to a fault has not been evaluated on labelled data
+  from applicable machinery. ISO 20816-3 severity, evaluated only on a
+  declared unit, machine group and support type, is reported as context and
+  never as evidence of a specific fault. The pattern definitions use fixed cut
+  points that were not tuned to data and are the same for every machine (the
+  1X line carrying more than half of the band velocity power; a 2X, 3X or 4X
+  line at least as large as 1X; an axial line above every radial channel; a
+  line at 0.5X, 1.5X or 2.5X). They are this assessment's own operational
+  definitions, not validated thresholds, and the wall-chart ratios (for
+  example 2X at 50 % of 1X) are not used. On public test-rig data the patterns
+  appeared in a large share of records labelled as the normal condition. The
+  line test has a nominal 1 % family-wise false-alarm budget, not an
+  empirically demonstrated guarantee: on seeded noise the realized rate was
+  0.33 % to 0.37 % without a located 1x line and 1.33 % (95 % interval 0.95 to
+  1.81 %) next to located 1X and 2X lines. `detail` selects a `summary` view
+  (default: hypotheses, severity context, limitations and significant lines)
+  or a `full` view (every order line, every cross-channel comparison, the full
+  policy and source texts). `diagnose_vibration`, the bearing check and every
+  other tool are unchanged. Not yet in a published release.
 - **`forecast_asset_indicator`: a projection of one indicator series you
   supply.** It takes ISO 8601 instants, each with `Z` or a UTC offset, and
   their values, with a declared unit, resolution and horizon. It bins them

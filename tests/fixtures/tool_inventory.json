@@ -350,6 +350,143 @@
         "type": "object"
       }
     },
+    "assess_shaft_fault_evidence": {
+      "context_kwarg": "ctx",
+      "is_async": true,
+      "parameters": {
+        "properties": {
+          "detail": {
+            "default": "summary",
+            "enum": [
+              "summary",
+              "full"
+            ],
+            "title": "Detail",
+            "type": "string"
+          },
+          "directions": {
+            "anyOf": [
+              {
+                "items": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "horizontal",
+                        "vertical",
+                        "axial",
+                        "x",
+                        "y",
+                        "z"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Directions"
+          },
+          "line_frequency_hz": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Line Frequency Hz"
+          },
+          "machine_group": {
+            "anyOf": [
+              {
+                "enum": [
+                  1,
+                  2
+                ],
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Machine Group"
+          },
+          "machine_power_kw": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Machine Power Kw"
+          },
+          "max_order": {
+            "default": 10,
+            "title": "Max Order",
+            "type": "integer"
+          },
+          "rpm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Rpm"
+          },
+          "signal_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Signal Ids",
+            "type": "array"
+          },
+          "speed_tolerance_pct": {
+            "default": 5.0,
+            "title": "Speed Tolerance Pct",
+            "type": "number"
+          },
+          "support_type": {
+            "anyOf": [
+              {
+                "enum": [
+                  "rigid",
+                  "flexible"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Support Type"
+          }
+        },
+        "required": [
+          "signal_ids"
+        ],
+        "title": "assess_shaft_fault_evidenceArguments",
+        "type": "object"
+      }
+    },
     "calculate_bearing_characteristic_frequencies": {
       "context_kwarg": "ctx",
       "is_async": true,

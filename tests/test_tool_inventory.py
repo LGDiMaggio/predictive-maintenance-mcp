@@ -86,6 +86,11 @@ Fixture history:
   values, indicator, unit, resolution, horizon_steps, backend, aggregation,
   season_length_steps; ctx pinned), declared in tests/test_surface_parity.py
   POST_U9_ADDITIONS. No existing tool's schema changed; counts 39/0/3.
+- Shaft-order evidence (2026-11-05): regenerated intentionally: ADDITIVE.
+  New tool assess_shaft_fault_evidence (signal_ids, rpm, directions,
+  machine_group, support_type, speed_tolerance_pct, max_order,
+  line_frequency_hz; ctx pinned), declared in tests/test_surface_parity.py
+  POST_U9_ADDITIONS. No existing tool's schema changed; counts 40/0/3.
 
 Snapshot recipe (run from the repo root):
     python -c "from tests.test_tool_inventory import build_inventory, \\
