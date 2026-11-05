@@ -12,7 +12,12 @@ what was read before anything is imported: the time-base assessment
 
 from .contracts import InspectionResult  # noqa: F401
 from .inspection import inspect_signal_file  # noqa: F401
-from .records import ImportRecordError, ImportRecordStore  # noqa: F401
+from .records import (  # noqa: F401
+    ImportRecordDamaged,
+    ImportRecordError,
+    ImportRecordMissing,
+    ImportRecordStore,
+)
 from .timebase import (  # noqa: F401
     EVIDENCE_LEVELS,
     FINDING_CODES,
@@ -32,7 +37,9 @@ from .timebase import (  # noqa: F401
 )
 
 __all__ = [
+    "ImportRecordDamaged",
     "ImportRecordError",
+    "ImportRecordMissing",
     "ImportRecordStore",
     "InspectionResult",
     "inspect_signal_file",

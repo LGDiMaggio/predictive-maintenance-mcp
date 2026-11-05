@@ -190,14 +190,33 @@ _CONFIRM_COMPANION = "that the companion metadata file next to this file is not 
 # ---------------------------------------------------------------------------
 
 
-def _split(text: str, delimiter: str) -> Optional[list[str]]:
-    """The fields of *text* under *delimiter*; None over the field cap."""
+def _fields(text: str, delimiter: str) -> list[str]:
+    """The fields of *text* under *delimiter*, however many."""
     if delimiter == "whitespace":
         stripped = text.strip(" \t")
-        fields = _WHITESPACE_RUN.split(stripped) if stripped else [""]
-    else:
-        fields = text.split("\t" if delimiter == "tab" else delimiter)
+        return _WHITESPACE_RUN.split(stripped) if stripped else [""]
+    return text.split("\t" if delimiter == "tab" else delimiter)
+
+
+def _split(text: str, delimiter: str) -> Optional[list[str]]:
+    """The fields of *text* under *delimiter*; None over the field cap."""
+    fields = _fields(text, delimiter)
     return None if len(fields) > MAX_FIELDS else fields
+
+
+def _over_the_field_cap(text: str) -> bool:
+    """*text* would be a row (a number among its fields) under some reading,
+    but has more fields than the cap under that delimiter."""
+    for delimiter in DELIMITERS:
+        fields = _fields(text, delimiter)
+        if len(fields) > MAX_FIELDS and any(
+            _number(field, decimal) is not None
+            for decimal in DECIMAL_MARKS
+            if decimal != delimiter
+            for field in fields
+        ):
+            return True
+    return False
 
 
 def _number(token: str, decimal: str) -> Optional[float]:
@@ -719,6 +738,40 @@ def _file_issues(
     return issues, confirmations
 
 
+def _no_rows_message(scan: TextScan) -> str:
+    """Why no row of numbers was found, claiming nothing about lines that
+    were not searched (rows are searched for in the head lines only)."""
+    if scan.size_bytes == 0:
+        return "The file is empty."
+    if scan.head_truncated:
+        where = (
+            f"in the first {len(scan.head_lines)} lines, the only lines searched "
+            f"for rows"
+        )
+        further = "; rows further on in the file are not ruled out"
+    else:
+        where, further = "in the scanned lines", ""
+    wide = [line.number for line in scan.head_lines if _over_the_field_cap(line.text)]
+    if wide:
+        which = (
+            f"line {wide[0]} has more fields than that, so it is not read as a row"
+            if len(wide) == 1
+            else f"lines {_index_list(wide)} have more fields than that, so they "
+            f"are not read as rows"
+        )
+        return (
+            f"No row of numbers within the {MAX_FIELDS}-field limit of this "
+            f"version was found {where}: {which}, and the file may hold more "
+            f"columns than this version imports{further}."
+        )
+    if further:
+        return f"No row of numbers was found {where}{further}."
+    return (
+        "No row of numbers was found in the scanned lines: the file holds text "
+        "only (for example a header without data rows)."
+    )
+
+
 def _inspect(
     scan: TextScan,
     *,
@@ -745,18 +798,7 @@ def _inspect(
 
     readings = _readings(lines)
     if not readings:
-        issues.append(
-            Issue(
-                code="no_numeric_region",
-                message=(
-                    "The file is empty."
-                    if scan.size_bytes == 0
-                    else "No row of numbers was found in the scanned lines: the "
-                    "file holds text only (for example a header without data "
-                    "rows)."
-                ),
-            )
-        )
+        issues.append(Issue(code="no_numeric_region", message=_no_rows_message(scan)))
         return _empty_result(file, issues, confirmations)
 
     best = readings[0]
@@ -834,26 +876,36 @@ def _inspect(
             lines=None if data_last is None else data_last - data_first + 1,
         )
     )
-    trailer_first: Optional[int] = None
-    trailer_count = 0
-    if not reaches_head_end:
-        after = [line for line in lines[best.last + 1 :] if line.text.strip(" \t")]
-        if after:
-            trailer_first, trailer_count = after[0].number, len(after)
-    elif scan.tail_lines:
-        for text in reversed(scan.tail_lines):
-            if not text.strip(" \t"):
-                continue
-            if best.matches(_row(text, best.delimiter, best.decimal)):
-                break
-            trailer_count += 1
-    if trailer_count:
+    # The trailer: the non-blank lines after the last data row seen. Tail
+    # lines carry a number only when the tail follows the head, and the
+    # trailer's length is stated only when every line of it was scanned.
+    tail_first = lines[-1].number + 1 if scan.tail_follows_head else None
+    trailer_lines: list[Optional[int]] = []
+    data_in_tail = False
+    for offset in range(len(scan.tail_lines) - 1, -1, -1):
+        text = scan.tail_lines[offset]
+        if not text.strip(" \t"):
+            continue
+        if best.matches(_row(text, best.delimiter, best.decimal)):
+            data_in_tail = True
+            break
+        trailer_lines.append(None if tail_first is None else tail_first + offset)
+    trailer_lines.reverse()
+    whole = data_in_tail
+    if not data_in_tail:
+        if not reaches_head_end:
+            trailer_lines[:0] = [
+                line.number for line in lines[best.last + 1 :] if line.text.strip(" \t")
+            ]
+        # Unread lines may lie between the head and the tail.
+        whole = not scan.head_truncated or scan.tail_follows_head
+    if trailer_lines:
         regions.append(
             Region(
                 kind="trailer",
-                first_line=trailer_first,
+                first_line=trailer_lines[0],
                 last_line=None,
-                lines=trailer_count,
+                lines=len(trailer_lines) if whole else None,
             )
         )
 

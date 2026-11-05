@@ -273,6 +273,56 @@ class TestNotImportable:
         assert codes(result) == ["no_numeric_region"]
         assert "text only" in result.issues[0].message
 
+    def test_rows_over_the_field_cap_are_not_called_text(self, write):
+        # F2: 1,025 numeric columns, one more than this version reads; rows
+        # of about 9 KB, so the 64 KB head holds 8 of them.
+        result = inspect_signal_file(
+            str(write("wide.csv", corpus.plain_columns(400, 1025)))
+        )
+        assert result.status == "not_importable"
+        assert codes(result) == ["no_numeric_region"]
+        assert result.issues[0].message == (
+            "No row of numbers within the 1024-field limit of this version was "
+            "found in the first 8 lines, the only lines searched for rows: lines "
+            "1, 2, 3, 4, 5, 6, 7, 8 have more fields than that, so they are not "
+            "read as rows, and the file may hold more columns than this version "
+            "imports; rows further on in the file are not ruled out."
+        )
+
+    def test_one_row_over_the_field_cap_in_a_fully_scanned_file(self, write):
+        wide = ",".join(f"{value}.5" for value in range(1025))
+        data = corpus.lines_to_bytes(["channels follow", wide])
+        result = inspect_signal_file(str(write("one-wide.csv", data)))
+        assert result.issues[0].message == (
+            "No row of numbers within the 1024-field limit of this version was "
+            "found in the scanned lines: line 2 has more fields than that, so it "
+            "is not read as a row, and the file may hold more columns than this "
+            "version imports."
+        )
+
+    def test_wide_text_header_is_not_counted_as_a_wide_row(self, write):
+        # 600 labels of three words: over the cap only when split at spaces,
+        # and no number among the fields, so it is no row at all.
+        header = ",".join(f"Ch {chr(65 + index % 26)} acc" for index in range(600))
+        notes = ["note text here" for _ in range(400)]
+        result = inspect_signal_file(
+            str(write("wide-header.csv", corpus.lines_to_bytes([header] + notes)))
+        )
+        assert result.issues[0].message == (
+            "No row of numbers was found in the first 300 lines, the only lines "
+            "searched for rows; rows further on in the file are not ruled out."
+        )
+
+    def test_text_head_of_a_longer_file_claims_nothing_past_it(self, write):
+        notes = [f"note {index}: plain text" for index in range(350)]
+        data = corpus.lines_to_bytes(notes + ["time,value"] + _rows(400))
+        result = inspect_signal_file(str(write("late-data.csv", data)))
+        assert codes(result) == ["no_numeric_region"]
+        assert result.issues[0].message == (
+            "No row of numbers was found in the first 300 lines, the only lines "
+            "searched for rows; rows further on in the file are not ruled out."
+        )
+
     def test_empty_file(self, write):
         result = inspect_signal_file(str(write("empty.csv", b"")))
         assert result.status == "not_importable"
@@ -484,6 +534,72 @@ class TestStructure:
         trailer = region(result, "trailer")
         # Counted from its first non-blank line; blank lines are not trailer lines.
         assert (trailer.first_line, trailer.last_line, trailer.lines) == (283, None, 2)
+
+    def test_trailer_past_line_300_of_a_file_under_64_kb_is_found(self, write):
+        # F1: the head read the whole file, but only its first 300 lines are
+        # head lines; the trailer lies after them.
+        lines = ["time,value"] + _rows(400) + ["", "END OF DATA", "", "rows,400"]
+        data = corpus.lines_to_bytes(lines)
+        result = inspect_signal_file(str(write("mid.csv", data)))
+        assert len(data) < 64 * 1024 and result.file.scan.complete
+        assert region(result, "data").last_line is None  # past the scanned head
+        trailer = region(result, "trailer")
+        # The tail follows the head, so its lines are numbered: 402 is blank.
+        assert (trailer.first_line, trailer.last_line, trailer.lines) == (
+            403,
+            None,
+            2,
+        )
+
+    def test_trailer_after_blank_lines_past_line_300_is_found(self, write):
+        # The data ends at line 291; only blank lines follow it in the head.
+        lines = ["time,value"] + _rows(290) + [""] * 20 + ["END OF DATA", "rows,290"]
+        result = inspect_signal_file(
+            str(write("gap.csv", corpus.lines_to_bytes(lines)))
+        )
+        assert region(result, "data").last_line == 291
+        trailer = region(result, "trailer")
+        assert (trailer.first_line, trailer.lines) == (312, 2)
+
+    def test_trailer_starting_at_line_301_is_counted_whole(self, write):
+        lines = ["time,value"] + _rows(299) + ["END", "x y z"]
+        result = inspect_signal_file(
+            str(write("edge301.csv", corpus.lines_to_bytes(lines)))
+        )
+        trailer = region(result, "trailer")
+        assert (trailer.first_line, trailer.lines) == (301, 2)
+
+    def test_trailer_across_line_300_of_a_small_file_is_counted_whole(self, write):
+        # Data ends at line 271; the trailer runs from line 272 to line 371,
+        # all of it read (the tail follows the head).
+        notes = [f"note {index}: summary text" for index in range(100)]
+        lines = ["time,value"] + _rows(270) + notes
+        result = inspect_signal_file(
+            str(write("long-trailer.csv", corpus.lines_to_bytes(lines)))
+        )
+        assert region(result, "data").last_line == 271
+        trailer = region(result, "trailer")
+        assert (trailer.first_line, trailer.lines) == (272, 100)
+
+    def test_trailer_running_past_the_scanned_head_has_no_stated_length(self, write):
+        # A large file: lines between the head and the tail are not read.
+        notes = [f"note {index:05d}: summary text" for index in range(5000)]
+        lines = ["time,value"] + _rows(270) + notes
+        result = inspect_signal_file(
+            str(write("long-trailer2.csv", corpus.lines_to_bytes(lines)))
+        )
+        assert not result.file.scan.complete
+        assert region(result, "data").last_line == 271
+        trailer = region(result, "trailer")
+        assert (trailer.first_line, trailer.lines) == (272, None)
+
+    def test_trailer_filling_the_whole_tail_has_no_stated_length(self, write):
+        # No data row in the last 16 KB: where the trailer starts is unknown.
+        notes = [f"note {index:05d}: summary text" for index in range(1500)]
+        data = corpus.plain_columns(5000, 2) + corpus.lines_to_bytes(notes)
+        result = inspect_signal_file(str(write("tail-trailer.csv", data)))
+        trailer = region(result, "trailer")
+        assert (trailer.first_line, trailer.lines) == (None, None)
 
     def test_blank_line_between_preamble_and_header(self, write):
         lines = ["Sampling rate: 25600", "", "time,value"] + _rows(400)

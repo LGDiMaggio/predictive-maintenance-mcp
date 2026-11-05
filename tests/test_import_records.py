@@ -33,7 +33,9 @@ from predictive_maintenance_mcp.signal_import import records as records_module
 from predictive_maintenance_mcp.signal_import.records import (
     RECORD_SCHEMA,
     RECORD_WORDING,
+    ImportRecordDamaged,
     ImportRecordError,
+    ImportRecordMissing,
     ImportRecordStore,
 )
 
@@ -342,7 +344,7 @@ class TestRivalWriterLinksFirst:
     def test_damaged_line_one_is_refused_and_left_as_it_is(self, store, monkeypatch):
         rid = compute_import_id(SHA_A, SIZE, interpretation())
         self._rival(monkeypatch, b"damaged\n")
-        with pytest.raises(ImportRecordError) as caught:
+        with pytest.raises(ImportRecordDamaged) as caught:
             store.write_interpretation(SHA_A, SIZE, interpretation())
         assert str(caught.value).startswith(
             f"The first line of import record {rid[:12]} does not match its "
@@ -412,8 +414,22 @@ class TestReading:
 
     def test_missing_record_is_refused_with_a_remedy(self, store):
         rid = compute_import_id(SHA_A, SIZE, interpretation())
-        with pytest.raises(ImportRecordError, match="List the records"):
+        with pytest.raises(ImportRecordMissing, match="List the records"):
             store.read(rid)
+
+    def test_line_nested_too_deep_is_unreadable_not_a_crash(self, store, clock):
+        nested = b"[" * 100_000 + b"]" * 100_000 + b"\n"
+        rid = store.write_interpretation(SHA_A, SIZE, interpretation()).import_id
+        store.append_event(rid, "attestation", {"n": 1})
+        with open(store.records_dir / f"{rid}.jsonl", "ab") as handle:
+            handle.write(nested)  # a later line: one unreadable line
+        assert store.read(rid).unreadable_lines == (3,)
+        damaged = compute_import_id(SHA_B, SIZE, interpretation())
+        (store.records_dir / f"{damaged}.jsonl").write_bytes(nested)
+        with pytest.raises(ImportRecordDamaged):  # line 1: a damaged record
+            store.read(damaged)
+        entries, refused = store.list_records()
+        assert ([e.import_id for e in entries], refused) == ([rid], (damaged,))
 
     def test_unreadable_record_is_refused_and_never_rewritten(self, store, monkeypatch):
         rid = store.write_interpretation(SHA_A, SIZE, interpretation()).import_id
@@ -430,6 +446,8 @@ class TestReading:
         ):
             with pytest.raises(ImportRecordError) as caught:
                 attempt()
+            # F3: an access failure, which may pass, is not called damage.
+            assert type(caught.value) is ImportRecordError
             assert str(caught.value) == (
                 f"Cannot read import record {rid[:12]}: Permission denied. Check "
                 f"that the import record directory (PMM_IMPORT_DIR) is readable."
@@ -453,7 +471,7 @@ class TestReading:
             lambda: store.read(rid),
             lambda: store.write_interpretation(SHA_A, SIZE, interpretation()),
         ):
-            with pytest.raises(ImportRecordError) as caught:
+            with pytest.raises(ImportRecordDamaged) as caught:
                 attempt()
             message = str(caught.value)
             assert message.startswith(
@@ -554,6 +572,56 @@ class TestIndex:
         entries, refused = store.list_records()
         assert [e.import_id for e in entries] == [good]
         assert refused == (bad,)
+
+    def test_record_that_cannot_be_read_is_never_listed_as_damaged(
+        self, store, clock, monkeypatch
+    ):
+        # F3: an access failure (a sharing lock, a permission change) may
+        # pass; the listing names it as such, never among the refused.
+        good = self._import(store, SHA_A, (1,), "25600", "a.csv", ("a_c1",))
+        busy = self._import(store, SHA_B, (1,), "25600", "b.csv", ("b_c1",))
+        before = {p.name: p.read_bytes() for p in store.records_dir.iterdir()}
+        real_open = open
+
+        def denied_for_busy(file, *args, **kwargs):
+            if Path(file).name == f"{busy}.jsonl":
+                raise PermissionError(errno.EACCES, "Permission denied")
+            return real_open(file, *args, **kwargs)
+
+        with monkeypatch.context() as patch:
+            patch.setattr(records_module, "open", denied_for_busy, raising=False)
+            with pytest.raises(ImportRecordError) as caught:
+                store.list_records()
+        assert type(caught.value) is ImportRecordError
+        assert str(caught.value) == (
+            f"Cannot read import record {busy[:12]}: Permission denied. Check "
+            f"that the import record directory (PMM_IMPORT_DIR) is readable."
+        )
+        # Nothing was written; once access returns, both records list.
+        assert {p.name: p.read_bytes() for p in store.records_dir.iterdir()} == before
+        entries, refused = store.list_records()
+        assert (sorted(e.import_id for e in entries), refused) == (
+            sorted([good, busy]),
+            (),
+        )
+
+    def test_record_moved_aside_while_listing_is_left_out_silently(
+        self, store, clock, monkeypatch, tmp_path
+    ):
+        kept = self._import(store, SHA_A, (1,), "25600", "a.csv", ("a_c1",))
+        moved = self._import(store, SHA_B, (1,), "25600", "b.csv", ("b_c1",))
+        source = store.records_dir / f"{moved}.jsonl"
+        aside = tmp_path / "moved-aside.jsonl"
+
+        def list_then_move(path):
+            names = os.listdir(path)
+            source.rename(aside)  # the operator moves it out meanwhile
+            return names
+
+        monkeypatch.setattr(records_module, "os", _OsWith(listdir=list_then_move))
+        entries, refused = store.list_records()
+        assert ([e.import_id for e in entries], refused) == ([kept], ())
+        assert aside.exists()
 
     def test_listing_writes_nothing(self, store, clock):
         self._import(store, SHA_A, (1,), "25600", "a.csv", ("a_c1",))

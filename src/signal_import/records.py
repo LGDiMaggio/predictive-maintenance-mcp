@@ -100,6 +100,8 @@ __all__ = [
     "EVENT_KINDS",
     "RECORD_WORDING",
     "ImportRecordError",
+    "ImportRecordDamaged",
+    "ImportRecordMissing",
     "RecordWrite",
     "RecordEvent",
     "ImportRecord",
@@ -156,6 +158,17 @@ _O_BINARY = getattr(os, "O_BINARY", 0)
 
 class ImportRecordError(ValueError):
     """A record the store refuses to name, create, read or extend."""
+
+
+class ImportRecordDamaged(ImportRecordError):
+    """A record whose bytes were read and whose line 1 fails its check: the
+    one refusal that tells the operator to move the record aside. A record
+    that cannot be read at all raises :class:`ImportRecordError` itself."""
+
+
+class ImportRecordMissing(ImportRecordError):
+    """No record under that id: never written, or moved out of the import
+    record directory."""
 
 
 class RecordWrite(NamedTuple):
@@ -279,13 +292,13 @@ def _decode(raw: bytes) -> Optional[dict[str, Any]]:
         raw = raw[:-1]
     try:
         obj = json.loads(raw.decode("ascii"))
-    except ValueError:
+    except (ValueError, RecursionError):  # RecursionError: nested too deep
         return None
     return obj if isinstance(obj, dict) else None
 
 
-def _corrupt(import_id: str) -> ImportRecordError:
-    return ImportRecordError(
+def _corrupt(import_id: str) -> ImportRecordDamaged:
+    return ImportRecordDamaged(
         f"The first line of {_short(import_id)} does not match its import_id: "
         f"the record was edited or damaged outside the server, so it is not "
         f"read, and the same interpretation cannot be recorded again while it "
@@ -420,7 +433,7 @@ class ImportRecordStore:
             with open(record, "rb") as handle:
                 return handle.read()
         except FileNotFoundError:
-            raise ImportRecordError(
+            raise ImportRecordMissing(
                 f"There is no {_short(import_id)} in the import record "
                 f"directory (PMM_IMPORT_DIR). List the records to find the "
                 f"import_id, or validate and import the file again."
@@ -472,9 +485,10 @@ class ImportRecordStore:
         Raises:
             ValueError: From the interpretation normalizer or for a malformed
                 digest or size.
+            ImportRecordDamaged: An existing line 1 fails its check.
             ImportRecordError: The directory cannot be created, the
-                filesystem cannot hold hard links, or an existing line 1
-                fails its check.
+                filesystem cannot hold hard links, or an existing record
+                cannot be read.
             LedgerLockTimeout, LedgerWriteError: From the shared lock.
         """
         canonical = normalize_interpretation(interpretation)
@@ -586,8 +600,10 @@ class ImportRecordStore:
         """Read one record back (no lock; readers never take one).
 
         Raises:
-            ImportRecordError: A malformed id, no such record, or a line 1
-                that fails its check.
+            ImportRecordDamaged: A line 1 that fails its check.
+            ImportRecordMissing: No record under that id.
+            ImportRecordError: A malformed id, or a record that cannot be
+                read (an operating-system error, which may pass).
         """
         import_id, record, _ = self._paths(import_id)
         segments, tail, first = self._load_line_one(import_id, record)
@@ -640,7 +656,13 @@ class ImportRecordStore:
         Returns:
             ``(entries, refused)``: the index entries, newest first (records
             without any later line last), and the ids of records whose line
-            1 failed its check, which the index leaves out.
+            1 failed its check, which the index leaves out. A record moved
+            out of the directory while it is listed is left out silently.
+
+        Raises:
+            ImportRecordError: The directory, or one record in it, cannot be
+                read (an operating-system error, which may pass); such a
+                record is never reported as damaged.
         """
         entries: list[ImportRecordIndexEntry] = []
         locations: dict[str, list[str]] = {}
@@ -649,9 +671,11 @@ class ImportRecordStore:
             import_id = name[: -len(RECORD_SUFFIX)]
             try:
                 record = self.read(import_id)
-            except ImportRecordError:
+            except ImportRecordDamaged:
                 refused.append(import_id)
                 continue
+            except ImportRecordMissing:
+                continue  # moved aside after the directory was listed
             names: list[str] = []
             channels: tuple[RecordChannel, ...] = ()
             for event in record.events:
