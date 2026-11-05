@@ -466,6 +466,52 @@ class TestStructure:
         assert trailer is not None and trailer.lines == 2 and trailer.first_line is None
         assert region(result, "data").last_line is None
 
+    def test_blank_lines_in_the_tail_trailer_are_not_counted(self, write):
+        data = corpus.plain_columns(5000, 2) + b"END OF DATA\n\nchecksum,abc\n\n"
+        result = inspect_signal_file(str(write("trailer2.csv", data)))
+        trailer = region(result, "trailer")
+        assert (trailer.first_line, trailer.lines) == (None, 2)
+
+    def test_trailer_after_the_data_of_a_fully_scanned_file(self, write):
+        # 285 lines: the whole file is in the scanned head.
+        lines = ["time,value"] + _rows(280) + ["", "END OF DATA", "", "rows,280"]
+        result = inspect_signal_file(
+            str(write("short.csv", corpus.lines_to_bytes(lines)))
+        )
+        assert result.file.scan.complete and result.status == "importable"
+        data = region(result, "data")
+        assert (data.first_line, data.last_line, data.lines) == (2, 281, 280)
+        trailer = region(result, "trailer")
+        # Counted from its first non-blank line; blank lines are not trailer lines.
+        assert (trailer.first_line, trailer.last_line, trailer.lines) == (283, None, 2)
+
+    def test_blank_line_between_preamble_and_header(self, write):
+        lines = ["Sampling rate: 25600", "", "time,value"] + _rows(400)
+        result = inspect_signal_file(
+            str(write("blank.csv", corpus.lines_to_bytes(lines)))
+        )
+        preamble, header = region(result, "preamble"), region(result, "header")
+        assert (preamble.first_line, preamble.last_line) == (1, 1)
+        assert header.first_line == 3
+        assert result.dialect.proposal.data_first_line == 4
+        assert [c.label.file_text for c in result.columns] == ["time", "value"]
+        stated = [c for c in result.candidates if c.status == "detected"]
+        assert [(c.field, c.normalized, c.line) for c in stated] == [
+            ("sampling_rate_hz", "25600", 1)
+        ]
+
+    def test_header_and_units_row_ending_with_the_delimiter(self, write):
+        rows = [f"{r / 25600:.6f},{corpus.sample(r, 0):.6f}," for r in range(400)]
+        data = corpus.lines_to_bytes(["time,acc,", "s,g,"] + rows)
+        result = inspect_signal_file(str(write("trail.csv", data)))
+        # The empty last field of every line is dropped, so labels and units
+        # still match the two columns.
+        assert codes(result) == ["trailing_delimiter_column"]
+        assert result.columns_total == 2
+        assert [c.label.file_text for c in result.columns] == ["time", "acc"]
+        assert [c.unit_token.file_text for c in result.columns] == ["s", "g"]
+        assert [c.unit_line for c in result.columns] == [2, 2]
+
 
 class TestPagingAndBudget:
     def test_columns_are_paged(self, write):
@@ -513,6 +559,25 @@ class TestPagingAndBudget:
         # The column page shrank first; the caller pages on to the rest.
         assert len(result.columns) >= 1
         assert result.next_columns_from == result.columns_from + len(result.columns)
+
+    def test_plain_preamble_lines_drop_before_key_values(self, write):
+        plain = ["\\" * 300 for _ in range(20)]  # lines 1 to 20, no key
+        pairs = [f"k{i:02d}" + "\\" * 100 + ": " + "\\" * 300 for i in range(20)]
+        path = write(
+            "mixed.csv",
+            corpus.lines_to_bytes(plain + pairs + ["time,value"] + _rows(400)),
+        )
+        result = inspect_signal_file(str(path))
+        assert len(dumped(result).encode("utf-8")) <= OUTPUT_BUDGET_BYTES
+        # The column page shrank first; the caller pages on to the rest.
+        assert len(result.columns) == 1 and result.next_columns_from == 1
+        # Then plain lines went from the end, before any key-value pair.
+        shown = [line.line for line in result.preamble.lines]
+        assert 0 < len(shown) < 20 and shown == list(range(1, len(shown) + 1))
+        assert [pair.line for pair in result.preamble.key_values] == list(range(21, 41))
+        assert result.preamble.omitted_lines == 20 - len(shown)
+        assert len(result.required_confirmations) == 3
+        assert dumped(inspect_signal_file(str(path))) == dumped(result)
 
     def test_issue_codes_belong_to_the_closed_vocabulary(self, write):
         for name, data in (
@@ -661,6 +726,22 @@ class TestReviewedEdgeCases:
         result = inspect_signal_file(str(write("norm.txt", data)))
         stated = [c for c in result.candidates if c.status == "detected"]
         assert [(c.field, c.normalized) for c in stated] == [(field, normalized)]
+
+    @pytest.mark.parametrize(
+        "value",
+        ["1e40", "25600.0000000000000000001"],
+        ids=["beyond-1e30", "over-20-significant-digits"],
+    )
+    def test_stated_number_the_decimal_rules_refuse_is_shown_not_normalized(
+        self, write, value
+    ):
+        data = corpus.lines_to_bytes([f"fs: {value}", "time,value"] + _rows(400))
+        result = inspect_signal_file(str(write("refused.csv", data)))
+        stated = [c for c in result.candidates if c.field == "sampling_rate_hz"]
+        # Kept as written, never rounded into a value it does not state.
+        assert [(c.status, c.value.file_text, c.normalized) for c in stated] == [
+            ("detected", value, None)
+        ]
 
     def test_decimal_comma_preamble_number(self, write):
         rows = [f"{r},5;{r},25" for r in range(400)]

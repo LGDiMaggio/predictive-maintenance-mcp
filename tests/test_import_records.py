@@ -15,6 +15,7 @@ import subprocess
 import sys
 import threading
 from pathlib import Path
+from typing import Optional
 
 import pytest
 from conftest import REPO_ROOT, SUBPROCESS_PIN
@@ -79,6 +80,49 @@ def clock(monkeypatch):
 
 def record_lines(store: ImportRecordStore, import_id: str) -> list[bytes]:
     return (store.records_dir / f"{import_id}.jsonl").read_bytes().split(b"\n")
+
+
+def leftovers(store: ImportRecordStore) -> list[str]:
+    """The records directory's files other than the sidecar locks."""
+    return sorted(
+        p.name for p in store.records_dir.iterdir() if not p.name.endswith(".lock")
+    )
+
+
+def assert_lock_released(store: ImportRecordStore, import_id: str) -> None:
+    """The record's lock is free: a second descriptor takes it at once."""
+    _, _, lock = store._paths(import_id)
+    fd = acquire_lock(lock, what="check", timeout=0.05, wording=RECORD_WORDING)
+    release_lock(fd)
+
+
+class _OsWith:
+    """``os`` as one module sees it, with some calls replaced.
+
+    Patched in place of a module's ``os`` name, it confines a fault to that
+    module: the shared ledger primitives, pytest and every other module keep
+    the real ``os``.
+    """
+
+    def __init__(self, **replaced) -> None:
+        self.__dict__.update(replaced)
+
+    def __getattr__(self, name: str):
+        return getattr(os, name)
+
+
+class _IncorrectFunction(OSError):
+    """A refused link as some exFAT and network drivers on Windows report
+    it: ``ERROR_INVALID_FUNCTION`` (winerror 1) and no POSIX errno."""
+
+    winerror = 1
+
+
+HARD_LINK_REFUSAL = (
+    "The import record directory is on a filesystem that cannot hold hard "
+    "links (FAT, exFAT and some network shares), which records need. Point "
+    "PMM_IMPORT_DIR at a local NTFS, APFS or ext4 directory."
+)
 
 
 class TestInterpretationLine:
@@ -156,6 +200,158 @@ class TestInterpretationLine:
         with pytest.raises(ValueError, match="kind must be one of"):
             store.append_event(rid, "comment", {})
 
+    @pytest.mark.parametrize("payload", ["text", ["a"], None])
+    def test_payload_that_is_not_an_object_is_refused_and_writes_nothing(
+        self, store, payload
+    ):
+        rid = store.write_interpretation(SHA_A, SIZE, interpretation()).import_id
+        path = store.records_dir / f"{rid}.jsonl"
+        before = path.read_bytes()
+        with pytest.raises(ValueError) as caught:
+            store.append_event(rid, "attestation", payload)
+        assert str(caught.value) == "payload must be a JSON object (a dict)."
+        assert path.read_bytes() == before
+
+    def test_record_moved_aside_while_the_append_waits_is_not_recreated(
+        self, store, monkeypatch, tmp_path
+    ):
+        rid = store.write_interpretation(SHA_A, SIZE, interpretation()).import_id
+        path = store.records_dir / f"{rid}.jsonl"
+        aside = tmp_path / "moved-aside.jsonl"
+        before = path.read_bytes()
+        real_acquire = records_module.acquire_lock
+
+        def acquire_then_move(lock, **kwargs):
+            fd = real_acquire(lock, **kwargs)
+            path.rename(aside)  # the operator moves the record out meanwhile
+            return fd
+
+        monkeypatch.setattr(records_module, "acquire_lock", acquire_then_move)
+        with pytest.raises(ImportRecordError) as caught:
+            store.append_event(rid, "attestation", {"n": 1})
+        assert str(caught.value) == (
+            f"There is no import record {rid[:12]} to extend: its "
+            f"interpretation line is written first."
+        )
+        # No record made of a later line alone, and the moved one untouched.
+        assert not path.exists()
+        assert aside.read_bytes() == before
+        assert_lock_released(store, rid)
+
+
+class TestWriteFailures:
+    """A failure while line 1 is written refuses with the record store's
+    wording, leaves neither a record nor a temporary file and releases the
+    lock; once the cause is gone, a retry writes the record."""
+
+    def _refused(self, store, monkeypatch, **replaced) -> tuple[Exception, str]:
+        rid = compute_import_id(SHA_A, SIZE, interpretation())
+        with monkeypatch.context() as patch:
+            patch.setattr(records_module, "os", _OsWith(**replaced))
+            with pytest.raises(ImportRecordError) as caught:
+                store.write_interpretation(SHA_A, SIZE, interpretation())
+        assert leftovers(store) == []
+        assert_lock_released(store, rid)
+        retried = store.write_interpretation(SHA_A, SIZE, interpretation())
+        assert (retried.import_id, retried.created) == (rid, True)
+        assert store.read(rid).events == ()
+        return caught.value, rid
+
+    def test_short_write(self, store, monkeypatch):
+        def short_write(fd, data):
+            return os.write(fd, data[:-1])  # the device took all but one byte
+
+        error, rid = self._refused(store, monkeypatch, write=short_write)
+        assert str(error) == (
+            f"Short write while creating import record {rid[:12]}. Check free "
+            f"space and permissions, then retry."
+        )
+
+    def test_failed_sync_of_the_temporary_file(self, store, monkeypatch):
+        def failing_fsync(fd):
+            raise OSError(errno.EIO, "Input/output error")
+
+        error, rid = self._refused(store, monkeypatch, fsync=failing_fsync)
+        assert str(error) == (
+            f"Cannot create import record {rid[:12]}: Input/output error. Check "
+            f"that the import record directory (PMM_IMPORT_DIR) is writable."
+        )
+        assert isinstance(error.__cause__, OSError)
+        assert error.__cause__.errno == errno.EIO
+
+    def test_temporary_file_that_cannot_be_created(self, store, monkeypatch):
+        def refused_open(path, flags, mode=0o777):
+            raise PermissionError(errno.EACCES, "Permission denied")
+
+        # The cleanup of a temporary file never created must not mask this.
+        error, rid = self._refused(store, monkeypatch, open=refused_open)
+        assert str(error) == (
+            f"Cannot create import record {rid[:12]}: Permission denied. Check "
+            f"that the import record directory (PMM_IMPORT_DIR) is writable."
+        )
+
+    def test_link_that_fails_for_another_reason(self, store, monkeypatch):
+        def full_disk(source, target):
+            raise OSError(errno.ENOSPC, "No space left on device")
+
+        error, rid = self._refused(store, monkeypatch, link=full_disk)
+        assert str(error) == (
+            f"Cannot create import record {rid[:12]}: No space left on device. "
+            f"Check free space and permissions, then retry."
+        )
+
+    @pytest.mark.parametrize(
+        "refusal",
+        [
+            OSError(errno.EXDEV, "Invalid cross-device link"),
+            _IncorrectFunction(None, "Incorrect function"),
+        ],
+        ids=["EXDEV", "winerror-1"],
+    )
+    def test_filesystem_without_hard_links(self, store, monkeypatch, refusal):
+        def refused(source, target):
+            raise refusal
+
+        error, _ = self._refused(store, monkeypatch, link=refused)
+        assert str(error) == HARD_LINK_REFUSAL
+
+
+class TestRivalWriterLinksFirst:
+    """A writer outside this store's lock (a restored copy, another server
+    version) can place line 1 between the existence check and the link; the
+    link never replaces what it placed."""
+
+    def _rival(self, monkeypatch, content: Optional[bytes]) -> None:
+        def rival_links_first(source, target):
+            Path(target).write_bytes(
+                Path(source).read_bytes() if content is None else content
+            )
+            os.link(source, target)  # FileExistsError: a link never replaces
+
+        monkeypatch.setattr(records_module, "os", _OsWith(link=rival_links_first))
+
+    def test_identical_line_one_is_verified_and_reused(self, store, monkeypatch):
+        rid = compute_import_id(SHA_A, SIZE, interpretation())
+        self._rival(monkeypatch, None)
+        written = store.write_interpretation(SHA_A, SIZE, interpretation())
+        assert (written.import_id, written.created) == (rid, False)
+        assert leftovers(store) == [f"{rid}.jsonl"]
+        assert len(record_lines(store, rid)) == 2  # one line + b""
+        assert store.read(rid).events == ()
+
+    def test_damaged_line_one_is_refused_and_left_as_it_is(self, store, monkeypatch):
+        rid = compute_import_id(SHA_A, SIZE, interpretation())
+        self._rival(monkeypatch, b"damaged\n")
+        with pytest.raises(ImportRecordError) as caught:
+            store.write_interpretation(SHA_A, SIZE, interpretation())
+        assert str(caught.value).startswith(
+            f"The first line of import record {rid[:12]} does not match its "
+            f"import_id"
+        )
+        assert (store.records_dir / f"{rid}.jsonl").read_bytes() == b"damaged\n"
+        assert leftovers(store) == [f"{rid}.jsonl"]
+        assert_lock_released(store, rid)
+
 
 class TestCrashBetweenTemporaryWriteAndLink:
     def test_interrupted_link_leaves_no_line_one_and_the_retry_succeeds(
@@ -218,6 +414,72 @@ class TestReading:
         rid = compute_import_id(SHA_A, SIZE, interpretation())
         with pytest.raises(ImportRecordError, match="List the records"):
             store.read(rid)
+
+    def test_unreadable_record_is_refused_and_never_rewritten(self, store, monkeypatch):
+        rid = store.write_interpretation(SHA_A, SIZE, interpretation()).import_id
+        path = store.records_dir / f"{rid}.jsonl"
+        before = path.read_bytes()
+
+        def denied(file, *args, **kwargs):
+            raise PermissionError(errno.EACCES, "Permission denied")
+
+        monkeypatch.setattr(records_module, "open", denied, raising=False)
+        for attempt in (
+            lambda: store.read(rid),
+            lambda: store.write_interpretation(SHA_A, SIZE, interpretation()),
+        ):
+            with pytest.raises(ImportRecordError) as caught:
+                attempt()
+            assert str(caught.value) == (
+                f"Cannot read import record {rid[:12]}: Permission denied. Check "
+                f"that the import record directory (PMM_IMPORT_DIR) is readable."
+            )
+        assert path.read_bytes() == before
+        assert leftovers(store) == [f"{rid}.jsonl"]
+
+    @pytest.mark.parametrize(
+        "content",
+        [b"", b'{"schema":"pmm-import-record/1","kind":"interp'],
+        ids=["empty", "torn-only"],
+    )
+    def test_record_without_a_complete_first_line_is_refused_and_kept(
+        self, store, content
+    ):
+        rid = compute_import_id(SHA_A, SIZE, interpretation())
+        store.records_dir.mkdir(parents=True)
+        path = store.records_dir / f"{rid}.jsonl"
+        path.write_bytes(content)
+        for attempt in (
+            lambda: store.read(rid),
+            lambda: store.write_interpretation(SHA_A, SIZE, interpretation()),
+        ):
+            with pytest.raises(ImportRecordError) as caught:
+                attempt()
+            message = str(caught.value)
+            assert message.startswith(
+                f"The first line of import record {rid[:12]} does not match its "
+                f"import_id"
+            )
+            assert (
+                f"Move records/{rid}.jsonl out of the import record directory "
+                f"(PMM_IMPORT_DIR)" in message
+            )
+        assert path.read_bytes() == content  # never completed or replaced
+        assert store.list_records() == ([], (rid,))
+
+    def test_line_endings_rewritten_to_crlf_still_verify(self, store, clock):
+        rid = store.write_interpretation(SHA_A, SIZE, interpretation()).import_id
+        store.append_event(rid, "attestation", {"n": 1})
+        store.append_event(rid, "location", {"location": "/mnt/a/run.csv"})
+        before = store.read(rid)
+        path = store.records_dir / f"{rid}.jsonl"
+        path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n"))
+        assert store.read(rid) == before
+        assert (
+            store.write_interpretation(SHA_A, SIZE, interpretation()).created is False
+        )
+        entries, refused = store.list_records()
+        assert ([e.import_id for e in entries], refused) == ([rid], ())
 
     @pytest.mark.parametrize(
         "bad", ["../ledger/x", "A" * 64, "a" * 63, "a" * 65, "", None, 7]
@@ -303,6 +565,32 @@ class TestIndex:
     def test_empty_or_absent_directory_lists_nothing(self, store):
         assert store.list_records() == ([], ())
 
+    def test_directory_that_cannot_be_listed_is_refused_with_a_remedy(
+        self, store, monkeypatch
+    ):
+        store.records_dir.mkdir(parents=True)
+
+        def denied(path):
+            raise PermissionError(errno.EACCES, "Permission denied")
+
+        monkeypatch.setattr(records_module, "os", _OsWith(listdir=denied))
+        with pytest.raises(ImportRecordError) as caught:
+            store.list_records()
+        assert str(caught.value) == (
+            "Cannot list the import record directory: Permission denied. Point "
+            "PMM_IMPORT_DIR at a readable directory."
+        )
+
+    def test_location_without_a_file_name_names_no_file(self, store, clock):
+        rid = store.write_interpretation(SHA_A, SIZE, interpretation()).import_id
+        store.append_event(rid, "location", {"location": ""})
+        store.append_event(rid, "location", {})
+        entries, _ = store.list_records()
+        assert [(e.import_id, e.file_name) for e in entries] == [(rid, None)]
+        assert store.list_records(file_name="") == ([], ())
+        store.append_event(rid, "location", {"location": "/mnt/exports/run.csv"})
+        assert store.list_records()[0][0].file_name.file_text == "run.csv"
+
 
 class TestMisshapenLaterLines:
     """A later line that parses but has the wrong shape is one unreadable
@@ -317,6 +605,8 @@ class TestMisshapenLaterLines:
             {"kind": "outcome", "payload": {"channels": ["c1"]}},
             {"kind": "outcome", "payload": {"channels": [{"column": "1"}]}},
             {"kind": "location", "payload": {"location": 7}},
+            {"kind": "attestation", "recorded_at": 1762336800, "payload": {}},
+            {"kind": "attestation", "recorded_at": "yesterday", "payload": {}},
         ],
     )
     def test_misshapen_line_is_unreadable_and_the_index_still_lists(
@@ -358,6 +648,25 @@ class TestRecencyOrder:
         assert by_id[first].supersedes == (second,)
         assert by_id[second].supersedes == ()  # the first was used again after it
         assert by_id[first].recorded_at < by_id[first].last_recorded_at
+
+    def test_record_without_later_lines_lists_last_and_supersedes_nothing(
+        self, store, clock
+    ):
+        undated = store.write_interpretation(SHA_A, SIZE, interpretation(1)).import_id
+        dated = store.write_interpretation(
+            SHA_A, SIZE, interpretation(1, rate="25000")
+        ).import_id
+        store.append_event(dated, "attestation", {"n": 1})
+        entries, refused = store.list_records()
+        assert ([e.import_id for e in entries], refused) == ([dated, undated], ())
+        by_id = {e.import_id: e for e in entries}
+        # A record with line 1 only has no time to be ordered by.
+        assert by_id[dated].supersedes == ()
+        assert by_id[undated].supersedes == ()
+        assert (by_id[undated].recorded_at, by_id[undated].last_recorded_at) == (
+            None,
+            None,
+        )
 
 
 class TestConcurrentWriters:
@@ -541,6 +850,45 @@ class TestStartupWarnings:
     def test_hard_link_probe_is_real_and_leaves_nothing(self, sandbox_server, tmp_path):
         assert sandbox_server._supports_hard_links(tmp_path) is True
         assert list(tmp_path.iterdir()) == []
+
+    def test_link_refused_in_the_probe_warns_and_leaves_nothing(
+        self, sandbox_server, monkeypatch, package_caplog, import_dir
+    ):
+        def refused(source, target):
+            raise OSError(errno.EPERM, "Operation not permitted")
+
+        monkeypatch.setattr(sandbox_server, "os", _OsWith(link=refused))
+        sandbox_server._setup_environment()
+        warnings = _import_warnings(package_caplog)
+        assert len(warnings) == 1 and "without hard links" in warnings[0]
+        assert [p.name for p in import_dir.iterdir()] == []  # probe files removed
+
+    def test_hard_link_probe_in_a_missing_directory_is_false_and_creates_nothing(
+        self, sandbox_server, tmp_path
+    ):
+        assert sandbox_server._supports_hard_links(tmp_path / "gone") is False
+        assert list(tmp_path.iterdir()) == []
+
+    def test_directory_that_cannot_be_created_is_the_only_warning(
+        self, sandbox_server, monkeypatch, package_caplog, tmp_path
+    ):
+        blocker = tmp_path / "blocker"
+        blocker.write_text("a file, not a directory", encoding="utf-8")
+        target = blocker / "imports"
+        monkeypatch.setenv("PMM_IMPORT_DIR", str(target))
+        # Under a sync root: had startup gone on, a second warning would follow.
+        monkeypatch.setenv("OneDrive", str(tmp_path))
+        sandbox_server._setup_environment()  # must not raise
+        warnings = _import_warnings(package_caplog)
+        assert len(warnings) == 1
+        assert warnings[0].startswith(
+            f"Signal import record directory {target} cannot be created ("
+        )
+        assert warnings[0].endswith(
+            "): signal imports will be refused. Set PMM_IMPORT_DIR to a writable "
+            "local directory."
+        )
+        assert blocker.read_text(encoding="utf-8") == "a file, not a directory"
 
     def test_cloud_synced(self, sandbox_server, monkeypatch, tmp_path, package_caplog):
         monkeypatch.setenv("OneDrive", str(tmp_path))
