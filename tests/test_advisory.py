@@ -1763,3 +1763,54 @@ class TestScenarioStatements:
             ]
 
         assert not offending, offending
+
+
+class TestSpectralEnergyStatement:
+    """The band holding the most STFT energy is a measurement: the statement
+    names it and its share, and no source. It used to read low-frequency
+    dominance as unbalance or misalignment and high-frequency dominance as
+    structural resonances, whichever band dominated."""
+
+    NO_SOURCE = (
+        "This percentage describes the measured signal and does not identify a "
+        "fault. The relative distribution across frequency bands can change with "
+        "the measured physical quantity (for example, acceleration versus "
+        "velocity)."
+    )
+
+    @staticmethod
+    def _bands(**energies):
+        names = ("0-100 Hz", "100-500 Hz", "500-2000 Hz", "2000-5000 Hz", "5000+ Hz")
+        return [{"band": n, "energy": energies.get(n, 1.0)} for n in names]
+
+    def _statement(self, bands):
+        diagnosis = _diagnosis()
+        diagnosis["stft_summary"]["energy_per_band"] = bands
+        return build_advisory(diagnosis)["spectral_energy"]
+
+    def test_low_band_dominance_names_no_shaft_order_source(self):
+        block = self._statement(self._bands(**{"0-100 Hz": 96.0}))
+        assert block["statement"] == (
+            "The largest share of STFT energy is in the 0-100 Hz band (96% of the "
+            f"total). {self.NO_SOURCE}"
+        )
+        assert block["dominant_band"] == "0-100 Hz"
+        assert block["dominant_share_pct"] == 96.0
+
+    def test_high_band_dominance_names_no_resonance_source(self):
+        block = self._statement(self._bands(**{"5000+ Hz": 96.0}))
+        assert block["statement"].endswith(self.NO_SOURCE)
+        for word in ("unbalance", "misalignment", "resonance", "consistent with"):
+            assert word not in block["statement"]
+
+    def test_the_statement_reaches_the_evidence_list(self):
+        diagnosis = _diagnosis()
+        diagnosis["stft_summary"]["energy_per_band"] = self._bands(**{"0-100 Hz": 96.0})
+        statements = build_advisory(diagnosis)["evidence"]["statements"]
+        assert any(s.endswith(self.NO_SOURCE) for s in statements)
+        assert not any("shaft-order sources" in s for s in statements)
+
+    def test_no_bands_keeps_the_absent_statement(self):
+        block = self._statement([])
+        assert block["status"] == "absent"
+        assert block["bands"] == {}

@@ -145,7 +145,10 @@ runs FFT + PSD + STFT + bearing checks + ISO severity in one pass.
 - Optionally formalize the zone action with
   `generate_maintenance_recommendations(severity_zone="C")` (use the actual
   zone letter). Do NOT pass fault_types taken from an envelope indication of
-  check_bearing_faults or diagnose_vibration: the tool does not verify fault
+  check_bearing_faults or diagnose_vibration, or unbalance, misalignment or
+  looseness taken from a strongest spectral line at 1x or 2x in
+  diagnose_vibration or from a status of assess_shaft_fault_evidence: the
+  tool does not verify fault
   types, and its fault-type actions are maintenance actions for an established
   fault. Pass fault_types only when the user states an independently
   established fault (for example by inspection), in the canonical vocabulary

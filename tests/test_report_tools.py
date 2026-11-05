@@ -30,6 +30,7 @@ from _bearing_scenarios import (
     defect,
     white,
 )
+from test_diagnosis_shaft_order_line import assert_no_fault_attribution
 from predictive_maintenance_mcp.mcp_tools.diagnostics_tools import check_bearing_faults
 from predictive_maintenance_mcp.mcp_tools.report_tools import register
 from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
@@ -1894,3 +1895,79 @@ class TestGenerateDiagnosticReport:
         instructions = (server.instructions or "").lower()
         assert "report authorship policy" in instructions
         assert "no confidence score" in instructions
+
+
+class TestShaftOrderLineEndToEnd:
+    """A strongest line at 1x or 2x, end to end through the MCP tools: the
+    stored 50 Hz signal read at 3000 rpm (1x) and 1500 rpm (2x) gives the
+    same grade and the same actions as at 1800 rpm (1.67x, no order). The
+    fault names may appear as readings the check cannot distinguish; no
+    output attributes unbalance, misalignment or looseness, and no action is
+    specific to one of them."""
+
+    RETIRED = (
+        "possible unbalance",
+        "possible misalignment",
+        "Check rotor balance.",
+        "Check alignment and coupling condition.",
+        "consistent with shaft-order sources",
+    )
+
+    @staticmethod
+    def _diagnose_tool():
+        from predictive_maintenance_mcp.mcp_tools.diagnostics_tools import (
+            register as register_diagnostics,
+        )
+
+        server = MCPServer("test-shaft-order-line")
+        register_diagnostics(server)
+        return {t.name: t.fn for t in server._tool_manager._tools.values()}[
+            "diagnose_vibration"
+        ]
+
+    @pytest.mark.asyncio
+    async def test_diagnose_vibration_tool(self, repo, mock_ctx):
+        diagnose = self._diagnose_tool()
+        results = {
+            rpm: await diagnose(ctx=mock_ctx, signal_id="report_test", rpm=rpm)
+            for rpm in (3000.0, 1500.0, 1800.0)
+        }
+        assert "(within 10 % of 1x)" in results[3000.0].overall_diagnosis
+        assert "(within 5 % of 2x)" in results[1500.0].overall_diagnosis
+        reference = results[1800.0]
+        for rpm in (3000.0, 1500.0):
+            result = results[rpm]
+            assert result.evidence_strength == reference.evidence_strength
+            assert result.recommendations == reference.recommendations
+            text = " ".join([result.overall_diagnosis, *result.recommendations])
+            assert not any(phrase in text for phrase in self.RETIRED)
+            assert_no_fault_attribution(
+                [result.overall_diagnosis], result.recommendations
+            )
+
+    @pytest.mark.asyncio
+    async def test_integrated_report(self, tools, repo, reports_dir, mock_ctx):
+        results = {
+            rpm: await tools["generate_diagnostic_report"](
+                signal_id="report_test", rpm=rpm, ctx=mock_ctx
+            )
+            for rpm in (3000.0, 1500.0, 1800.0)
+        }
+        reference = results[1800.0]
+        for rpm in (3000.0, 1500.0):
+            result = results[rpm]
+            assert result["evidence_strength"] == reference["evidence_strength"]
+            assert [r["action"] for r in result["recommendations"]] == [
+                r["action"] for r in reference["recommendations"]
+            ]
+            text = " ".join(
+                [
+                    *result["statements"],
+                    *(r["action"] for r in result["recommendations"]),
+                ]
+            )
+            assert not any(phrase in text for phrase in self.RETIRED)
+            assert_no_fault_attribution(
+                result["statements"],
+                [r["action"] for r in result["recommendations"]],
+            )

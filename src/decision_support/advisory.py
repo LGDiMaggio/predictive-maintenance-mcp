@@ -289,12 +289,17 @@ def _build_energy_block(stft_summary: dict) -> dict:
     share = (bands[dominant] / total * 100) if total else 0.0
     return {
         "status": ASSESSED,
+        # Which band holds the most energy is a measurement: shaft orders,
+        # resonances, impacts, gear or bearing tones and electrical sources
+        # can each dominate a band, so the statement names no source. A unit
+        # change (g to m/s2) scales every band alike; a different measured
+        # quantity (acceleration versus velocity) can reorder them.
         "statement": (
-            f"Spectral energy is concentrated in the {dominant} band "
-            f"({share:.0f}% of total STFT energy). High-frequency dominance is "
-            f"consistent with impulsive excitation of structural resonances; "
-            f"low-frequency dominance is consistent with shaft-order sources "
-            f"such as unbalance or misalignment."
+            f"The largest share of STFT energy is in the {dominant} band "
+            f"({share:.0f}% of the total). This percentage describes the "
+            f"measured signal and does not identify a fault. The relative "
+            f"distribution across frequency bands can change with the measured "
+            f"physical quantity (for example, acceleration versus velocity)."
         ),
         "bands": dict(bands),
         "dominant_band": dominant,
