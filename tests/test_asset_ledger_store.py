@@ -7,9 +7,11 @@ filesystem mocks; the only monkeypatch is a spy on the store's single read
 primitive, used to prove that a versioned append reads only the delta.
 """
 
+import errno
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -908,6 +910,87 @@ class TestLockingInProcess:
         result = LedgerStore(root).append(ASSET, point_event(2))
         assert result.appended
         assert versions_in(LedgerStore(root).read(ASSET)) == [1, 2]
+
+    def test_lock_timeout_message_is_unchanged(self, root):
+        holder = LedgerStore(root)
+        holder.append(ASSET, point_event(1))
+        _, lock_path = holder._paths(ASSET)
+        fd = holder._acquire_lock(lock_path, what="test holder")
+        try:
+            with pytest.raises(LedgerLockTimeout) as caught:
+                LedgerStore(root, lock_timeout=0.05).append(ASSET, point_event(2))
+        finally:
+            holder._release_lock(fd)
+        assert str(caught.value) == (
+            "Could not acquire the ledger lock of asset 'P-101' within 0.05 s: "
+            "another process is writing it. Retry; if the wait persists, find "
+            "the process holding P-101.jsonl.lock (the lock is released when it "
+            "exits)."
+        )
+
+    def test_unopenable_lock_file_message_is_unchanged(self, root):
+        root.mkdir(parents=True, exist_ok=True)
+        (root / "P-101.jsonl.lock").mkdir()
+        with pytest.raises(LedgerWriteError) as caught:
+            LedgerStore(root).append(ASSET, point_event(1))
+        message = str(caught.value)
+        assert message.startswith("Cannot open the lock file of asset 'P-101': ")
+        assert message.endswith(
+            ". Check that the ledger directory (PMM_LEDGER_DIR) is writable."
+        )
+
+    def test_unopenable_ledger_file_message_is_unchanged(self, root):
+        root.mkdir(parents=True, exist_ok=True)
+        (root / "P-101.jsonl").mkdir()
+        with pytest.raises(LedgerWriteError) as caught:
+            LedgerStore(root).append(ASSET, point_event(1))
+        message = str(caught.value)
+        assert message.startswith("Cannot open asset 'P-101' for appending: ")
+        assert message.endswith(
+            ". Check that the ledger directory (PMM_LEDGER_DIR) is writable."
+        )
+
+    def test_lock_failure_message_is_unchanged(self, root, monkeypatch):
+        def refuse(fd):
+            raise OSError(errno.EINVAL, "Invalid argument")
+
+        monkeypatch.setattr(store_module, "_try_lock", refuse)
+        with pytest.raises(LedgerWriteError) as caught:
+            LedgerStore(root).append(ASSET, point_event(1))
+        assert str(caught.value) == (
+            "Cannot lock asset 'P-101': Invalid argument. Check that the ledger "
+            "directory is on a filesystem that supports file locks."
+        )
+
+    def test_short_write_message_is_unchanged(self, root, monkeypatch):
+        real_write = os.write
+        monkeypatch.setattr(
+            store_module.os, "write", lambda fd, data: real_write(fd, data[:-1])
+        )
+        with pytest.raises(LedgerWriteError) as caught:
+            LedgerStore(root).append(ASSET, point_event(1))
+        monkeypatch.undo()
+        match = re.fullmatch(
+            r"Short write on asset 'P-101': (\d+) of (\d+) bytes\. The torn tail "
+            r"will be reported as one unreadable record; check free space and "
+            r"retry \(the retry is idempotent\)\.",
+            str(caught.value),
+        )
+        assert match is not None and int(match[1]) == int(match[2]) - 1
+
+    def test_failed_write_message_is_unchanged(self, root, monkeypatch):
+        def broken(fd):
+            raise OSError(errno.EIO, "Input/output error")
+
+        monkeypatch.setattr(store_module.os, "fsync", broken)
+        with pytest.raises(LedgerWriteError) as caught:
+            LedgerStore(root).append(ASSET, point_event(1))
+        monkeypatch.undo()
+        assert str(caught.value) == (
+            "Write to asset 'P-101' failed: Input/output error. Check free space "
+            "and permissions, then retry (the retry is idempotent: a duplicate "
+            "is absorbed by the reader)."
+        )
 
     def test_sidecar_is_never_replaced_or_truncated(self, root):
         store = LedgerStore(root)

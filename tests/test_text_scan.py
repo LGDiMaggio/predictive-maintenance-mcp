@@ -161,6 +161,50 @@ class TestScanContent:
         assert scan.tail_lines[-1] == "20000,40000"
         assert all("," in line for line in scan.tail_lines)
 
+    def test_a_small_file_past_the_line_cap_has_the_lines_after_the_head_as_tail(
+        self, tmp_path
+    ):
+        """The head read the whole file (under HEAD_BYTES) but returns only
+        HEAD_LINES lines: the rest are the tail, read from the same bytes."""
+        lines = [f"{n},{n * 2}" for n in range(1, 401)]
+        data = "".join(f"{line}\n" for line in lines).encode()
+        scan = _scan(tmp_path, "a.csv", data)
+        assert len(data) < ts.HEAD_BYTES
+        assert scan.complete and scan.head_truncated
+        assert len(scan.head_lines) == ts.HEAD_LINES
+        assert scan.tail_lines == tuple(lines[ts.HEAD_LINES :])
+        assert scan.tail_follows_head
+        assert scan.bytes_read == len(data)  # nothing read twice or beyond
+        assert scan.newline_census == {"lf": 400, "crlf": 0, "cr": 0}
+
+    def test_that_tail_is_bounded_like_any_other(self, tmp_path):
+        lines = [f"{n:08d},{n * 2:010d}" for n in range(1, 3001)]  # 60,000 bytes
+        data = "".join(f"{line}\n" for line in lines).encode()
+        scan = _scan(tmp_path, "a.csv", data)
+        assert len(data) < ts.HEAD_BYTES and scan.complete
+        kept = len(scan.tail_lines)
+        assert 0 < kept < len(lines) - ts.HEAD_LINES
+        assert scan.tail_lines == tuple(lines[-kept:])  # whole lines, the last ones
+        assert sum(len(line) + 1 for line in scan.tail_lines) <= ts.TAIL_BYTES
+        assert sum(len(line) + 1 for line in lines[-kept - 1 :]) > ts.TAIL_BYTES
+        assert not scan.tail_follows_head  # lines were skipped before it
+
+    def test_a_tail_read_from_where_a_short_head_ended_follows_it(self, tmp_path):
+        """A head of long lines holds fewer than HEAD_LINES of them; the tail
+        read from where it ended starts on the next line."""
+        lines = [f"{n:05d}," + "7" * 273 for n in range(1, 251)]  # 70,000 bytes
+        data = "".join(f"{line}\n" for line in lines).encode()
+        scan = _scan(tmp_path, "a.csv", data)
+        assert scan.complete and len(scan.head_lines) < ts.HEAD_LINES
+        assert scan.tail_follows_head
+        head = [line.text for line in scan.head_lines]
+        assert head + list(scan.tail_lines) == lines  # every line once, in order
+
+    def test_a_large_file_tail_does_not_follow_the_head(self, tmp_path):
+        data = b"".join(f"{n},{n * 2}\n".encode() for n in range(1, 20001))
+        scan = _scan(tmp_path, "a.csv", data)
+        assert scan.tail_lines and not scan.tail_follows_head
+
     @pytest.mark.parametrize(
         ("line", "size"),
         [(b"1;23\r\r\n", 73_500), (b"1;2\r\r\n", 72_000), (b"1;23\r\n", 73_500)],

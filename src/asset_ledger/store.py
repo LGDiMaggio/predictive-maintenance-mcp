@@ -89,7 +89,12 @@ Locking
     on one byte at offset 0 on Windows, polled every ~10 ms up to a timeout
     measured with ``time.monotonic`` (5 s by default) and refused as
     :class:`LedgerLockTimeout`. An OS lock dies with its process, so there is
-    no stale-lock cleanup and no need for one. Readers take no lock.
+    no stale-lock cleanup and no need for one. Readers take no lock. The
+    lock, append and split primitives (:func:`acquire_lock`,
+    :func:`release_lock`, :func:`append_line`, :func:`split_records`) are
+    public so that the signal import's record store reuses them instead of a
+    copy; each caller passes a :class:`StoreWording`, so a failure names the
+    caller's own directory and the ledger's messages stay as they are.
 
 Invariants
     * No code path rewrites, truncates, renames or deletes a ledger file.
@@ -117,6 +122,7 @@ import logging
 import os
 import sys
 import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, NamedTuple, Optional, Union
@@ -150,6 +156,13 @@ __all__ = [
     "LedgerWriteError",
     "AppendResult",
     "LedgerReadResult",
+    "StoreWording",
+    "LEDGER_WORDING",
+    "SplitRecords",
+    "split_records",
+    "acquire_lock",
+    "release_lock",
+    "append_line",
     "canonical_json",
     "content_hash",
     "short_id",
@@ -443,8 +456,166 @@ def make_event(
 
 
 # ---------------------------------------------------------------------------
-# Locking primitives
+# Locking, appending and splitting primitives (shared with the import record
+# store, which passes its own wording so its failures name its own directory)
 # ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class StoreWording:
+    """The words a locked, append-only store puts in its failure messages.
+
+    Attributes:
+        directory: The directory and the variable that configures it, as
+            the remedy names them (``"the ledger directory
+            (PMM_LEDGER_DIR)"``).
+        directory_short: The directory alone (``"the ledger directory"``).
+        lock: The lock, as the timeout names it (``"ledger lock"``).
+        torn: The remedy after a short write.
+        failed: The remedy after a failed write.
+    """
+
+    directory: str
+    directory_short: str
+    lock: str
+    torn: str
+    failed: str
+
+
+#: The asset ledger's wording (its messages are pinned by test).
+LEDGER_WORDING = StoreWording(
+    directory="the ledger directory (PMM_LEDGER_DIR)",
+    directory_short="the ledger directory",
+    lock="ledger lock",
+    torn=(
+        "The torn tail will be reported as one unreadable record; check free "
+        "space and retry (the retry is idempotent)."
+    ),
+    failed=(
+        "Check free space and permissions, then retry (the retry is idempotent: "
+        "a duplicate is absorbed by the reader)."
+    ),
+)
+
+
+class SplitRecords(NamedTuple):
+    """Bytes split on 0x0A (see the module doc's byte rules).
+
+    Attributes:
+        segments: Every terminated segment, without its 0x0A (a trailing
+            0x0D is kept: the caller decides what one means).
+        tail: The final bytes without a terminator (empty when *data* ends
+            with 0x0A): unreadable and not consumed.
+        end_offset: Offset just past the last terminator, counted from the
+            *base_offset* the data was read at.
+    """
+
+    segments: list[bytes]
+    tail: bytes
+    end_offset: int
+
+
+def split_records(data: bytes, base_offset: int = 0) -> SplitRecords:
+    """Split *data* on the single byte 0x0A, never on other line breaks."""
+    segments = data.split(_DELIMITER)
+    tail = segments.pop()
+    return SplitRecords(segments, tail, base_offset + len(data) - len(tail))
+
+
+def acquire_lock(
+    lock_path: Path, *, what: str, timeout: float, wording: StoreWording
+) -> int:
+    """Open the sidecar *lock_path* and lock it, polling up to *timeout* s.
+
+    Returns:
+        The locked descriptor; release it with :func:`release_lock`.
+
+    Raises:
+        LedgerWriteError: The sidecar cannot be opened or locked.
+        LedgerLockTimeout: The lock stayed busy for *timeout* seconds.
+    """
+    try:
+        fd = os.open(lock_path, os.O_RDWR | os.O_CREAT | _O_BINARY, 0o644)
+    except OSError as exc:
+        raise LedgerWriteError(
+            f"Cannot open the lock file of {what}: {exc.strerror or exc}. "
+            f"Check that {wording.directory} is writable."
+        ) from exc
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            _try_lock(fd)
+            return fd
+        except OSError as exc:
+            if exc.errno not in _LOCK_BUSY_ERRNOS:
+                os.close(fd)
+                raise LedgerWriteError(
+                    f"Cannot lock {what}: {exc.strerror or exc}. Check that "
+                    f"{wording.directory_short} is on a filesystem that "
+                    f"supports file locks."
+                ) from exc
+        if time.monotonic() >= deadline:
+            os.close(fd)
+            raise LedgerLockTimeout(
+                f"Could not acquire the {wording.lock} of {what} within "
+                f"{timeout:g} s: another process is writing it. "
+                f"Retry; if the wait persists, find the process holding "
+                f"{lock_path.name} (the lock is released when it exits)."
+            )
+        time.sleep(LOCK_POLL_SECONDS)
+
+
+def release_lock(fd: int) -> None:
+    """Release a lock taken by :func:`acquire_lock` and close its sidecar."""
+    try:
+        _unlock(fd)
+    finally:
+        os.close(fd)
+
+
+def append_line(path: Path, line: bytes, *, what: str, wording: StoreWording) -> int:
+    """Append *line* (already terminated) as one write; return the new size.
+
+    A file that does not end with 0x0A gets one 0x0A prepended INSIDE the
+    same write, so the torn tail becomes exactly one unreadable record and
+    this record starts on its own line. The write is checked for its byte
+    count and synced.
+
+    Raises:
+        LedgerWriteError: The file cannot be opened, written or synced.
+    """
+    flags = os.O_RDWR | os.O_APPEND | os.O_CREAT | _O_BINARY
+    try:
+        fd = os.open(path, flags, 0o644)
+    except OSError as exc:
+        raise LedgerWriteError(
+            f"Cannot open {what} for appending: {exc.strerror or exc}. "
+            f"Check that {wording.directory} is writable."
+        ) from exc
+    try:
+        size = os.lseek(fd, 0, os.SEEK_END)
+        prefix = b""
+        if size > 0:
+            os.lseek(fd, size - 1, os.SEEK_SET)
+            if os.read(fd, 1) != _DELIMITER:
+                prefix = _DELIMITER
+        data = prefix + line
+        written = os.write(fd, data)
+        if written != len(data):
+            raise LedgerWriteError(
+                f"Short write on {what}: {written} of {len(data)} bytes. "
+                f"{wording.torn}"
+            )
+        os.fsync(fd)
+        return os.lseek(fd, 0, os.SEEK_END)
+    except LedgerError:
+        raise
+    except OSError as exc:
+        raise LedgerWriteError(
+            f"Write to {what} failed: {exc.strerror or exc}. {wording.failed}"
+        ) from exc
+    finally:
+        os.close(fd)
 
 
 def _try_lock(fd: int) -> None:
@@ -627,88 +798,20 @@ class LedgerStore:
 
     def _acquire_lock(self, lock_path: Path, *, what: str) -> int:
         """Open the sidecar and lock it, polling up to ``lock_timeout``."""
-        try:
-            fd = os.open(lock_path, os.O_RDWR | os.O_CREAT | _O_BINARY, 0o644)
-        except OSError as exc:
-            raise LedgerWriteError(
-                f"Cannot open the lock file of {what}: {exc.strerror or exc}. "
-                f"Check that the ledger directory (PMM_LEDGER_DIR) is writable."
-            ) from exc
-        deadline = time.monotonic() + self.lock_timeout
-        while True:
-            try:
-                _try_lock(fd)
-                return fd
-            except OSError as exc:
-                if exc.errno not in _LOCK_BUSY_ERRNOS:
-                    os.close(fd)
-                    raise LedgerWriteError(
-                        f"Cannot lock {what}: {exc.strerror or exc}. Check that "
-                        f"the ledger directory is on a filesystem that supports "
-                        f"file locks."
-                    ) from exc
-            if time.monotonic() >= deadline:
-                os.close(fd)
-                raise LedgerLockTimeout(
-                    f"Could not acquire the ledger lock of {what} within "
-                    f"{self.lock_timeout:g} s: another process is writing it. "
-                    f"Retry; if the wait persists, find the process holding "
-                    f"{lock_path.name} (the lock is released when it exits)."
-                )
-            time.sleep(LOCK_POLL_SECONDS)
+        return acquire_lock(
+            lock_path, what=what, timeout=self.lock_timeout, wording=LEDGER_WORDING
+        )
 
     @staticmethod
     def _release_lock(fd: int) -> None:
-        try:
-            _unlock(fd)
-        finally:
-            os.close(fd)
+        release_lock(fd)
 
     # -- raw bytes -----------------------------------------------------------
 
     @staticmethod
     def _write_line(path: Path, line: bytes, *, what: str) -> int:
-        """Append *line* (already terminated) as one write; return the new size.
-
-        A file that does not end with 0x0A gets one 0x0A prepended INSIDE the
-        same write, so the torn tail becomes exactly one unreadable record
-        and this record starts on its own line.
-        """
-        flags = os.O_RDWR | os.O_APPEND | os.O_CREAT | _O_BINARY
-        try:
-            fd = os.open(path, flags, 0o644)
-        except OSError as exc:
-            raise LedgerWriteError(
-                f"Cannot open {what} for appending: {exc.strerror or exc}. "
-                f"Check that the ledger directory (PMM_LEDGER_DIR) is writable."
-            ) from exc
-        try:
-            size = os.lseek(fd, 0, os.SEEK_END)
-            prefix = b""
-            if size > 0:
-                os.lseek(fd, size - 1, os.SEEK_SET)
-                if os.read(fd, 1) != _DELIMITER:
-                    prefix = _DELIMITER
-            data = prefix + line
-            written = os.write(fd, data)
-            if written != len(data):
-                raise LedgerWriteError(
-                    f"Short write on {what}: {written} of {len(data)} bytes. "
-                    f"The torn tail will be reported as one unreadable record; "
-                    f"check free space and retry (the retry is idempotent)."
-                )
-            os.fsync(fd)
-            return os.lseek(fd, 0, os.SEEK_END)
-        except LedgerError:
-            raise
-        except OSError as exc:
-            raise LedgerWriteError(
-                f"Write to {what} failed: {exc.strerror or exc}. Check free "
-                f"space and permissions, then retry (the retry is idempotent: "
-                f"a duplicate is absorbed by the reader)."
-            ) from exc
-        finally:
-            os.close(fd)
+        """Append *line* as one write (:func:`append_line`)."""
+        return append_line(path, line, what=what, wording=LEDGER_WORDING)
 
     def _read_segment(self, path: Path, offset: int) -> bytes:
         """Return the bytes of *path* from *offset* to the end.
@@ -760,9 +863,7 @@ class LedgerStore:
         seen: set[str] = set()
         last_recorded: Optional[datetime] = None
 
-        segments = data.split(_DELIMITER)
-        tail = segments.pop()
-        end_offset = base_offset + len(data) - len(tail)
+        segments, tail, end_offset = split_records(data, base_offset)
 
         def report(index: int, code: str, **extra: Any) -> None:
             if code in _UNREADABLE_CODES:

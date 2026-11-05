@@ -190,6 +190,31 @@ def ledger_dir(tmp_path, monkeypatch) -> Path:
     return target
 
 
+#: Variables that widen what the signal import may read; cleared for every
+#: test so an operator's own settings never leak into one.
+IMPORT_ACCESS_VARIABLES = (
+    "PMM_IMPORT_ROOTS",
+    "PMM_IMPORT_ALLOW_REMOTE",
+    "PMM_IMPORT_REMOTE_ROOTS",
+)
+
+
+@pytest.fixture(autouse=True)
+def import_dir(tmp_path, monkeypatch) -> Path:
+    """Every test gets its own import record directory under ``tmp_path``.
+
+    The ``ledger_dir`` pattern: ``config.get_import_dir()`` reads
+    ``PMM_IMPORT_DIR`` at each call, so no test writes into the checkout's
+    ``data/imports/``. The import-root variables are cleared as well; a
+    test that needs one sets it itself.
+    """
+    target = tmp_path / "imports"
+    monkeypatch.setenv("PMM_IMPORT_DIR", str(target))
+    for name in IMPORT_ACCESS_VARIABLES:
+        monkeypatch.delenv(name, raising=False)
+    return target
+
+
 @pytest.fixture
 def sample_healthy_signal():
     """Load baseline healthy signal."""

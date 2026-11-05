@@ -70,6 +70,7 @@ data/signals/cwru/
 # Asset health ledger: local append-only JSONL, one file per asset. Operator
 # data, never committed (override the location with PMM_LEDGER_DIR).
 data/ledger/
+data/imports/
 
 # Temporary files
 *.tmp
