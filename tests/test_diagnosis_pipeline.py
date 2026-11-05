@@ -421,7 +421,9 @@ class TestRecommendations:
         """A very quiet machine must NOT get strong fault evidence.
 
         The old code derived 'confidence' from the severity score and
-        returned 'high' for a machine with zero findings.
+        returned 'high' for a machine with zero findings. The fixture's
+        strongest line sits at 1x, which used to add a point ('weak'); it is
+        now reported as a measurement and counts nothing.
         """
         signal, fs = healthy_signal
         result = diagnose_vibration(
@@ -432,7 +434,7 @@ class TestRecommendations:
             anomaly_model_name="nonexistent_model_u4",
         )
         assert result["iso_severity"]["zone"] == "A"
-        assert result["evidence_strength"] in ("none", "weak")
+        assert result["evidence_strength"] == "none"
 
     def test_quiet_machine_no_findings_evidence_none(self):
         """Quiet machine with no shaft signature → no fault evidence at all."""
@@ -566,30 +568,47 @@ class TestSynthesisEdgeCases:
         assert result["iso_severity"]["zone"] == "D"
         assert result["evidence_strength"] != "strong"
 
-    def test_1x_unbalance_detection(self):
-        """Dominant peak at 1x shaft speed should suggest unbalance."""
+    def test_1x_strongest_line_is_a_measurement_not_unbalance(self):
+        """A strongest line at 1x is stated as a measurement: no fault, no
+        evidence point, no balance check (it used to say 'possible
+        unbalance', count 1.0 and recommend 'Check rotor balance.')."""
         fs = 10000
         rpm = 3000  # shaft = 50 Hz
         t = np.linspace(0, 1.0, fs, endpoint=False)
         signal = 0.01 * np.sin(2 * np.pi * 50 * t)
-        result = diagnose_vibration(signal, fs, rpm=rpm, signal_unit="g")
-        # Assert on the detected 1x peak (deterministic) rather than the
-        # FFT-resolution-flaky diagnosis text, mirroring the 2x test.
+        result = diagnose_vibration(
+            signal, fs, rpm=rpm, signal_unit="g", anomaly_model_name=NO_MODEL
+        )
         peak_f = result["fft_summary"]["peak_frequency_hz"]
         assert abs(peak_f - 50) < 5
-        assert "unbalance" in result["overall_diagnosis"].lower()
+        text = result["overall_diagnosis"]
+        assert "(within 10 % of 1x)" in text
+        assert "possible unbalance" not in text
+        assert result["evidence_strength"] == "none"
+        assert result["recommendations"] == [
+            "Continue routine monitoring per maintenance schedule."
+        ]
 
-    def test_2x_misalignment_detection(self):
-        """Dominant peak at 2x shaft speed should suggest misalignment."""
+    def test_2x_strongest_line_is_a_measurement_not_misalignment(self):
+        """A strongest line at 2x is stated as a measurement: no fault, no
+        evidence point, no alignment check."""
         fs = 10000
         rpm = 3000  # shaft = 50 Hz, 2x = 100 Hz
         t = np.linspace(0, 1.0, fs, endpoint=False)
         # Make 100 Hz dominant
         signal = 0.001 * np.sin(2 * np.pi * 50 * t) + 0.01 * np.sin(2 * np.pi * 100 * t)
-        result = diagnose_vibration(signal, fs, rpm=rpm, signal_unit="g")
-        # Check that 2x is detected in FFT
+        result = diagnose_vibration(
+            signal, fs, rpm=rpm, signal_unit="g", anomaly_model_name=NO_MODEL
+        )
         peak_f = result["fft_summary"]["peak_frequency_hz"]
         assert abs(peak_f - 100) < 5
+        text = result["overall_diagnosis"]
+        assert "(within 5 % of 2x)" in text
+        assert "possible misalignment" not in text
+        assert result["evidence_strength"] == "none"
+        assert "Check alignment and coupling condition." not in (
+            result["recommendations"]
+        )
 
 
 class TestBearingCheckEnvelopeBand:
@@ -776,20 +795,46 @@ class TestEvidenceStrengthUpperBranches:
     branches of _synthesize_diagnosis, which the other tests only touch at
     the low end.
 
-    The cases use an undeclared unit so the ISO block is REFUSED (contributes
-    NO points): the upper branches are reached by findings of separate
-    analyses, not by severity. A bearing finding counts once (+1.0), whatever
-    the legacy grade of its checks: the "high" grade no longer adds 2.0 (a
-    deliberate change of T1 PR C).
+    The diagnoses use an undeclared unit so the ISO block is REFUSED
+    (contributes NO points): the upper branches are reached by findings of
+    separate analyses, not by severity. A bearing finding counts once (+1.0),
+    whatever the legacy grade of its checks: the "high" grade no longer adds
+    2.0 (a deliberate change of T1 PR C). A strongest line at 1x or 2x of the
+    shaft speed counts nothing: it used to add 1.0, and the case that relied
+    on it is now weak.
     """
 
     RPM = 1800  # shaft = 30 Hz
 
     def _with_shaft_line(self) -> np.ndarray:
         # Dominant shaft component at 1x (30 Hz) so the FFT peak lands on the
-        # shaft frequency (+1.0), on top of the modulated bearing carrier.
+        # shaft frequency, on top of the modulated bearing carrier.
         t = np.arange(10000) / 10000
         return 1.5 * np.sin(2 * np.pi * 30.0 * t) + _bpfo_carrier(1.0)
+
+    def _bearing_blocks(self) -> dict:
+        """A diagnosis whose only finding is the qualified bearing claim."""
+        return diagnose_vibration(
+            _bpfo_carrier(1.0),
+            10000,
+            rpm=self.RPM,
+            signal_id="blocks",
+            bearing_id="6205",
+            anomaly_model_name=NO_MODEL,
+        )
+
+    def _resynthesize(self, blocks: dict, iso: dict, anomaly: dict) -> str:
+        _, strength, _ = _synthesize_diagnosis(
+            fft_summary=blocks["fft_summary"],
+            psd_summary=blocks["psd_summary"],
+            stft_summary=blocks["stft_summary"],
+            bearing_faults=blocks["bearing_faults"],
+            bearing_check=blocks["bearing_check"],
+            iso_severity=iso,
+            anomaly=anomaly,
+            rpm=self.RPM,
+        )
+        return strength
 
     def test_a_bearing_finding_alone_is_weak(self):
         """The carrier dominates the FFT (no 1x/2x shaft match), the unit is
@@ -810,43 +855,52 @@ class TestEvidenceStrengthUpperBranches:
         assert bearing["claim"]["conditions"] == ["cage_comb_not_excluded"]
         assert result["evidence_strength"] == "weak"
 
-    def test_two_findings_are_moderate(self):
-        """A bearing finding (+1.0) and a dominant 1x shaft peak (+1.0)."""
+    def test_a_1x_line_beside_a_bearing_finding_stays_weak(self):
+        """The bearing finding (+1.0) is the only contribution: the strongest
+        line at 1x is reported as a measurement and counts nothing. This
+        record was graded 'moderate' while the line added a point."""
         result = diagnose_vibration(
             self._with_shaft_line(),
             10000,
             rpm=self.RPM,
-            signal_id="moderate_case",
+            signal_id="weak_with_1x",
             bearing_id="6205",
             anomaly_model_name=NO_MODEL,
         )
 
         assert result["iso_severity"]["status"] == "refused"  # no ISO points
         assert abs(result["fft_summary"]["peak_frequency_hz"] - 30.0) < 5
+        assert "(within 10 % of 1x)" in result["overall_diagnosis"]
         assert result["bearing_faults"]["claim"]["level"] == "qualified"
-        assert result["evidence_strength"] == "moderate"
+        assert result["evidence_strength"] == "weak"
 
-    def test_three_findings_are_strong(self):
-        """The two findings above and an anomaly model that flags the signal
-        as faulty (+1.0) reach 'strong' (>=3.0), the ISO block still refused."""
-        blocks = diagnose_vibration(
-            self._with_shaft_line(),
-            10000,
-            rpm=self.RPM,
-            signal_id="strong_case",
-            bearing_id="6205",
-            anomaly_model_name=NO_MODEL,
+    def test_two_findings_are_moderate(self):
+        """A bearing finding (+1.0) and an anomaly model that flags the
+        signal as faulty (+1.0), the ISO block still refused."""
+        blocks = self._bearing_blocks()
+
+        assert blocks["iso_severity"]["status"] == "refused"
+        strength = self._resynthesize(
+            blocks,
+            blocks["iso_severity"],
+            {"overall_health": "Faulty", "anomaly_ratio": 0.5},
         )
 
-        _, strength, _ = _synthesize_diagnosis(
-            fft_summary=blocks["fft_summary"],
-            psd_summary=blocks["psd_summary"],
-            stft_summary=blocks["stft_summary"],
-            bearing_faults=blocks["bearing_faults"],
-            bearing_check=blocks["bearing_check"],
-            iso_severity=blocks["iso_severity"],
-            anomaly={"overall_health": "Faulty", "anomaly_ratio": 0.5},
-            rpm=self.RPM,
+        assert strength == "moderate"
+
+    def test_three_findings_are_strong(self):
+        """The two findings above and an ISO zone C verdict (+1.0) reach
+        'strong' (>=3.0): three separate analyses."""
+        blocks = self._bearing_blocks()
+        zone_c = {
+            "status": "assessed",
+            "zone": "C",
+            "rms_velocity_mm_s": 5.0,
+            "severity_level": "Unsatisfactory",
+        }
+
+        strength = self._resynthesize(
+            blocks, zone_c, {"overall_health": "Faulty", "anomaly_ratio": 0.5}
         )
 
         assert strength == "strong"

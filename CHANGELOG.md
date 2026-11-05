@@ -260,6 +260,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   updates stay off, and MCP SDK major updates are ignored.
 
 ### Changed
+- **`diagnose_vibration` no longer reads a dominant 1x or 2x line as
+  unbalance or misalignment.** When the strongest line of the spectrum lies
+  near 1x or 2x of the shaft speed, found with the same spectrum and the
+  same windows as before, `overall_diagnosis` now states its order as a
+  measurement, names the readings this check cannot distinguish, normal
+  condition first, and names information that would narrow them down. It
+  no longer writes
+  "possible unbalance" or "possible misalignment", no longer adds a point to
+  `evidence_strength`, and no longer recommends "Check rotor balance." or
+  "Check alignment and coupling condition.". A result whose strongest line
+  sits at 1x or 2x can therefore carry an `evidence_strength` one grade
+  lower than before (for example `weak` instead of `moderate`), and where
+  nothing else is recommended the routine monitoring line appears instead;
+  read `fft_summary.peak_frequency_hz` and `rpm` rather than the old
+  sentence. The numerical blocks and the result schema are unchanged. The
+  integrated report's spectral-energy statement no longer names unbalance,
+  misalignment or resonances as sources; it says that the percentage
+  describes the measured signal and does not identify a fault, and that the
+  distribution across bands can change with the measured physical quantity
+  (for example acceleration versus velocity). A new server instruction tells
+  the model not to attribute a fault to that line or count it as a finding.
+  It and the descriptions of `diagnose_vibration` and
+  `assess_shaft_fault_evidence` state that another result reading the same
+  line of the same signal repeats the observation and does not corroborate
+  it. The description of `generate_maintenance_recommendations` tells callers
+  not to take `fault_types` from that line or from a status of
+  `assess_shaft_fault_evidence`. The tool cannot establish where a fault type
+  came from, so this is an instruction to the caller, not a check; its
+  signature, vocabulary and actions are unchanged.
+  Before 1.0 this is a behavior change of published fields: the next release
+  bumps MINOR, per the project's pre-1.0 rule.
 - **`estimate_rul` messages state only what the slope test supports.** A
   non-significant or uncomputable trend no longer says that the machine
   "appears stable", and the schema no longer calls it a "healthy outcome";

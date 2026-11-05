@@ -544,6 +544,69 @@ def diagnose_vibration(
     }
 
 
+#: The window each order's sentence names: the ratio of the strongest line to
+#: the shaft frequency lies strictly between 0.9 and 1.1, or 1.9 and 2.1.
+_ORDER_LINE_WINDOWS = {1: "within 10 % of 1x", 2: "within 5 % of 2x"}
+
+#: What a strongest line at each order cannot separate. Normal running comes
+#: first; every listed reading can put the strongest line at that order, and
+#: no source validates the order alone as a fault indicator.
+_ORDER_LINE_READINGS = {
+    1: (
+        "the 1x response of a machine in normal condition from unbalance, a "
+        "bent or bowed rotor, eccentricity, misalignment, mechanical looseness "
+        "or a soft foot, a worn or damaged coupling, a resonance near running "
+        "speed, vibration transmitted from another machine, or a component at "
+        "the electrical supply frequency, which lies close to 1x on a two-pole "
+        "motor"
+    ),
+    2: (
+        "the 2x response of a machine in normal condition from misalignment, "
+        "mechanical looseness, a rub, a shaft crack, a shaft or rotor with "
+        "asymmetric stiffness, a resonance near twice running speed, the "
+        "passing tone of a rotor with two blades or lobes, vibration "
+        "transmitted from another machine, a component at the electrical "
+        "supply frequency, which lies close to 2x on a four-pole motor, or, on "
+        "a two-pole motor, the electromagnetic vibration at twice the supply "
+        "frequency, which lies close to 2x (exactly at 2x on a synchronous "
+        "motor)"
+    ),
+}
+
+#: What would narrow the readings down: information, not an action. Phase,
+#: baselines, channels and speeds strengthen or weaken readings; a cause is
+#: established on the machine.
+_ORDER_LINE_DISCRIMINATION = (
+    "Narrowing these down needs more than this check, such as a finer analysis "
+    "of the line's frequency, a baseline from the same machine at the same "
+    "condition, phase, a second radial or an axial channel, or several speeds. "
+    "Establishing a cause needs a physical check of the machine."
+)
+
+#: The same line read again, by this server or another analysis of the same
+#: signal, is the same observation.
+_ORDER_LINE_REPEAT = (
+    "Another analysis that reads this same line of the same signal repeats the "
+    "observation and does not corroborate it."
+)
+
+
+def _order_line_statement(order: int, ratio: float) -> str:
+    """The measured-line sentence for a strongest line near *order* x shaft speed.
+
+    Args:
+        order: 1 or 2.
+        ratio: Frequency of the strongest line over the shaft frequency.
+    """
+    return (
+        f"The strongest line of the spectrum is at {ratio:.2f} times the "
+        f"declared shaft frequency ({_ORDER_LINE_WINDOWS[order]}). Its dominance "
+        f"does not identify a fault, and it is not counted as a finding. This "
+        f"check cannot distinguish {_ORDER_LINE_READINGS[order]}. "
+        f"{_ORDER_LINE_DISCRIMINATION} {_ORDER_LINE_REPEAT}"
+    )
+
+
 def _synthesize_diagnosis(
     fft_summary: dict,
     psd_summary: dict,
@@ -563,7 +626,10 @@ def _synthesize_diagnosis(
       is direct physical evidence of a problem, but on its own it is not
       corroborated). A refused ISO block (undeclared unit, insufficient
       sampling rate) contributes NO evidence — no verdict, no points.
-    - Shaft signature: dominant peak at 1x or 2x shaft speed +1.0.
+    - Shaft-order line: a strongest spectral line at 1x or 2x shaft speed is
+      stated as a measurement with the readings it cannot distinguish, and
+      adds nothing. A shaft-rate line is expected on a rotating machine and
+      identifies no fault.
     - Bearing claim (:mod:`..diagnostics.bearing_claims`): one finding,
       +1.0, at single-spectrum evidence or qualified from an indicated or
       several-types outcome; a withheld claim and one held back as
@@ -617,17 +683,17 @@ def _synthesize_diagnosis(
     shaft_freq = rpm / 60.0
     lines.append(f"Dominant frequency: {peak_f:.1f} Hz (shaft: {shaft_freq:.1f} Hz).")
 
-    # Check for shaft-related frequencies
+    # A strongest line at a shaft order is reported as a measurement, with the
+    # windows the earlier fault sentences used. It adds no evidence point and
+    # no recommendation: a shaft-rate line is expected on a rotating machine,
+    # and the order alone does not separate normal running from the faults
+    # and non-fault sources that share it.
     if shaft_freq > 0:
         ratio = peak_f / shaft_freq
         if 0.9 < ratio < 1.1:
-            lines.append("Dominant peak at 1x shaft speed — possible unbalance.")
-            evidence_points += 1.0
-            recommendations.append("Check rotor balance.")
+            lines.append(_order_line_statement(1, ratio))
         elif 1.9 < ratio < 2.1:
-            lines.append("Dominant peak at 2x shaft speed — possible misalignment.")
-            evidence_points += 1.0
-            recommendations.append("Check alignment and coupling condition.")
+            lines.append(_order_line_statement(2, ratio))
 
     if bearing_faults:
         lines.append(pipeline_statement(bearing_faults))

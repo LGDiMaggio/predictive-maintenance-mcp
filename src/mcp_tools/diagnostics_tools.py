@@ -1915,7 +1915,14 @@ async def diagnose_vibration(
         counts the findings of the analyses that ran, the ISO zone among
         them, and a bearing finding once: it is not a confidence score or a
         probability, it does not identify or confirm a fault type, and
-        'none' does not establish that the machine is healthy.
+        'none' does not establish that the machine is healthy. When the
+        strongest line of the spectrum lies near 1x or 2x of the shaft
+        speed, overall_diagnosis states it as a measurement and names the
+        readings this check cannot distinguish: it attributes no fault, adds
+        nothing to evidence_strength and adds no recommendation. A strongest
+        line elsewhere excludes none of these readings. Another result that
+        reads the same spectral line of the same signal, from this tool or
+        another, repeats that observation and does not corroborate it.
 
     Raises:
         ValueError: If an explicit rpm is not a positive finite number, if
@@ -2202,9 +2209,11 @@ async def assess_shaft_fault_evidence(
 
     A status here does not verify a fault: the fault_types of
     generate_maintenance_recommendations are caller-supplied and unverified,
-    and passing a family from this result does not make it a finding. The
-    dominant-peak sentence of diagnose_vibration reads the same spectrum, so
-    the two are not independent evidence and their agreement confirms nothing.
+    and passing a family from this result does not make it a finding. When
+    diagnose_vibration reports a strongest line near 1x or 2x of a signal
+    also passed here, it reads the same spectrum of that signal: a pattern
+    here that rests on that line repeats the observation, and the two
+    readings of that line do not corroborate each other.
 
     Args:
         ctx: MCP context. Unused — see this module's docstring on logging.

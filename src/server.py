@@ -222,6 +222,7 @@ mcp = MCPServer(
     4) Neither check_bearing_faults nor the bearing block of diagnose_vibration confirms a bearing defect: say 'consistent with', never 'confirmed', 'damage detected' or 'fault present' for bearing claims. Finding nothing ('no_indication', 'no_change', 'none') is not health; 'legacy' or 'unavailable' ledger evidence is unclassified, not absent or negative.
     5) Always cite which analyses and thresholds support each conclusion. If data or parameters are missing, ask for them instead of guessing.
     6) NEVER suggest parameters, thresholds or actions not in a tool output or prompt workflow. A bearing indication asks for confirmation, never a replacement.
+    7) Do not attribute a fault to a strongest spectral line at 1x or 2x, or count it as a finding; re-reading that line in the same signal is the same observation, not corroboration.
 
     Report authorship policy (who is allowed to assert):
     - generate_diagnostic_report returns a 'statements' list containing every

@@ -29,6 +29,7 @@ single quotes made double, so a rewrap or a change of quoting is not drift.
 """
 
 import functools
+import json
 import re
 from typing import Callable, NamedTuple, get_args
 
@@ -226,6 +227,16 @@ def outcome_violations(surface: str, text: str) -> list[str]:
 
 
 _LEVEL_SHAPED_RE = re.compile(rf"(?<![\w.])({_WORD}_(?:claim|evidence))(?!\w)")
+
+#: Registered tool names, from the frozen inventory: a tool whose name ends in
+#: _evidence (assess_shaft_fault_evidence) is named, not a claim level.
+TOOL_NAMES = frozenset(
+    json.loads(
+        (REPO_ROOT / "tests" / "fixtures" / "tool_inventory.json").read_text(
+            encoding="utf-8"
+        )
+    )["tools"]
+)
 _CODE_TOKEN_RE = re.compile(rf"[`'\"]({_WORD})[`'\"]")
 _LEVEL_IS_RE = re.compile(rf"claim\.level`?\s+is\s+(?:not\s+)?[`'\"]?({_WORD})")
 _LEVEL_LIST_RE = re.compile(r"claim\.level`?\s*\(([^)]*)\)")
@@ -254,7 +265,7 @@ def claim_level_violations(surface: str, text: str) -> list[str]:
     positional += _RELAY_BULLET_RE.findall(text)
     positional += _level_table_cells(text)
     coded = [t for t in _CODE_TOKEN_RE.findall(text) if t in LEVELS]
-    shaped = _LEVEL_SHAPED_RE.findall(text)
+    shaped = [s for s in _LEVEL_SHAPED_RE.findall(text) if s not in TOOL_NAMES]
     named = (set(positional) | set(coded) | set(shaped)) & LEVELS
     off_list = (set(positional) | set(shaped)) - LEVELS
     violations = []
@@ -422,6 +433,30 @@ COUNTS_FINDINGS = "counts findings"
 NOT_IDENTIFY_OR_CONFIRM = "does not identify or confirm"
 ONE_SPECTRUM = "lines of one envelope spectrum"
 NOT_HEALTHY = "does not establish that the machine is healthy"
+#: Rule 7 in full: no fault is attributed to a 1x/2x line and it is not
+#: counted, and the same line read again from the same signal is the same
+#: observation.
+SHAFT_ORDER_RULE = (
+    "7) Do not attribute a fault to a strongest spectral line at 1x or 2x, or "
+    "count it as a finding; re-reading that line in the same signal is the "
+    "same observation, not corroboration."
+)
+#: The recommendations tool cannot check where a fault type came from; its
+#: exclusions are instructions, and the description says so.
+FAULT_TYPE_PROVENANCE = (
+    "The tool cannot establish where a fault type came from: these exclusions "
+    "are instructions to the caller, not a check."
+)
+SAME_LINE = (
+    "Another result that reads the same spectral line of the same signal, "
+    "from this tool or another, repeats that observation and does not "
+    "corroborate it."
+)
+SHAFT_ORDER_FAULT_TYPES = (
+    "unbalance, misalignment or looseness taken from a strongest spectral line "
+    "at 1x or 2x in diagnose_vibration or from a status of "
+    "assess_shaft_fault_evidence"
+)
 ASKS_CONFIRMATION = "asks for confirmation"
 OWN_MATCHING = "never your own matching of envelope peaks"
 RELATIVE_EVIDENCE = (
@@ -496,6 +531,12 @@ REQUIRED_PHRASES: tuple[tuple[str, tuple[str, ...]], ...] = (
         "assess_asset_change)",
         (RECOMMENDATIONS,),
     ),
+    (SHAFT_ORDER_RULE, (INSTRUCTIONS,)),
+    (SAME_LINE, (DIAGNOSIS,)),
+    ("adds nothing to evidence_strength and adds no recommendation", (DIAGNOSIS,)),
+    ("A strongest line elsewhere excludes none of these readings.", (DIAGNOSIS,)),
+    (SHAFT_ORDER_FAULT_TYPES, (RECOMMENDATIONS, AGENT)),
+    (FAULT_TYPE_PROVENANCE, (RECOMMENDATIONS,)),
     ("neither is the classification", (LEDGER,)),
     ("relative_present_in_last_k of relative_k", (LEDGER,)),
     (f"a no_change classification {NOT_FREE_OF_DEFECTS}", (LEDGER,)),
@@ -562,6 +603,7 @@ WINDOW_PASSAGES = (
     "3) Single out",
     "4) Neither check_bearing_faults",
     "6) NEVER suggest",
+    "7) Do not attribute a fault",
     "- This server publishes NO",
     "- If a question is not answered",
 )
@@ -1087,6 +1129,46 @@ MUTATIONS = (
         DIAGNOSIS,
         required_phrase_violations,
         _swap("it does not identify or confirm", "it does identify or confirm"),
+    ),
+    Mutation(
+        "delete-negator: 'Do not' of rule 7's 'Do not attribute a fault'",
+        INSTRUCTIONS,
+        required_phrase_violations,
+        _swap("7) Do not attribute a fault", "7) Attribute a fault"),
+    ),
+    Mutation(
+        "delete-negator: 'none' of the diagnosis's absence sentence",
+        DIAGNOSIS,
+        required_phrase_violations,
+        _swap("excludes none of these readings", "excludes these readings"),
+    ),
+    Mutation(
+        "delete-negator: 'does not' of the diagnosis's same-line sentence",
+        DIAGNOSIS,
+        required_phrase_violations,
+        _swap(
+            "repeats that observation and does not corroborate it",
+            "corroborates that observation",
+        ),
+    ),
+    Mutation(
+        "substitute: the recommendations tool claims to check provenance",
+        RECOMMENDATIONS,
+        required_phrase_violations,
+        _swap("instructions to the caller, not a check", "checked by the tool"),
+    ),
+    Mutation(
+        "remove-clause: the recommendations tool loses the 1x/2x exclusion",
+        RECOMMENDATIONS,
+        required_phrase_violations,
+        _swap("from a strongest spectral line at 1x or 2x", "from a line"),
+    ),
+    Mutation(
+        "relocate: rule 7 past the window",
+        INSTRUCTIONS_FULL,
+        window_violations,
+        _move_past_window("7) Do not attribute a fault"),
+        raw=True,
     ),
     # window
     Mutation(

@@ -145,3 +145,54 @@ class TestGenerateMaintenanceRecommendations:
         )
 
         assert set(get_args(FaultType)) == set(VALID_FAULT_TYPES)
+
+
+class TestCallerSuppliedFaultTypesStayCompatible:
+    """The description now tells callers not to pass unbalance, misalignment
+    or looseness taken from a strongest 1x/2x line or from a status of
+    assess_shaft_fault_evidence. That is guidance only: the tool cannot see
+    where a fault type came from, and a fault established independently (for
+    example by inspection) still gets its action, with the same signature."""
+
+    def test_signature_is_unchanged(self, mcp):
+        import inspect
+
+        tool = next(
+            t
+            for t in mcp._tool_manager._tools.values()
+            if t.name == "generate_maintenance_recommendations"
+        )
+        assert list(inspect.signature(tool.fn).parameters) == [
+            "ctx",
+            "severity_zone",
+            "fault_types",
+        ]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("fault_type", "action"),
+        [
+            ("unbalance", "Balance rotor, check for deposit buildup"),
+            ("misalignment", "Realign coupling, check foundation bolts"),
+            ("looseness", "Tighten foundation bolts, inspect mounting"),
+        ],
+    )
+    async def test_machine_level_fault_types_still_get_their_action(
+        self, tools, mock_ctx, fault_type, action
+    ):
+        result = await tools["generate_maintenance_recommendations"](
+            ctx=mock_ctx, severity_zone="C", fault_types=[fault_type]
+        )
+        assert action in result
+
+    def test_the_description_does_not_claim_to_check_provenance(self, mcp):
+        tool = next(
+            t
+            for t in mcp._tool_manager._tools.values()
+            if t.name == "generate_maintenance_recommendations"
+        )
+        text = " ".join(tool.description.split())
+        assert (
+            "The tool cannot establish where a fault type came from: these "
+            "exclusions are instructions to the caller, not a check." in text
+        )
