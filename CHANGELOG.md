@@ -498,6 +498,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   check also covers `tools/`.
 
 ### Fixed
+- **The plugin agents can call the server's tools.** The diagnostic-pipeline
+  and signal-explorer agents listed only Read, Glob, Grep and Bash in their
+  `tools` field, which Claude Code applies as an allowlist, so as plugin
+  subagents they could call no tool of the server. Each now also lists, by
+  name, the server tools its own workflow uses, for a server registered as
+  `predictive-maintenance` (19 for diagnostic-pipeline, 10 for
+  signal-explorer); other server tools stay unavailable to them. Under another
+  registration name the agents still cannot reach the tools, and they say so
+  instead of working around it. Plugin version 1.3.0.
 - **`estimate_rul` no longer reports a model-implied threshold crossing as
   no degradation trend.** When the slope test found a significant rise and
   the fitted curve, or the Kalman filter's level, was already at or above

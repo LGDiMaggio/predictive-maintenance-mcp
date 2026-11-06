@@ -33,6 +33,25 @@ tools:
   - Glob
   - Grep
   - Bash
+  - mcp__predictive-maintenance__analyze_fft
+  - mcp__predictive-maintenance__analyze_statistics
+  - mcp__predictive-maintenance__assess_severity
+  - mcp__predictive-maintenance__assess_shaft_fault_evidence
+  - mcp__predictive-maintenance__calculate_bearing_characteristic_frequencies
+  - mcp__predictive-maintenance__check_bearing_faults
+  - mcp__predictive-maintenance__compute_power_spectral_density
+  - mcp__predictive-maintenance__compute_spectrogram_stft
+  - mcp__predictive-maintenance__diagnose_vibration
+  - mcp__predictive-maintenance__generate_diagnostic_report_docx
+  - mcp__predictive-maintenance__generate_envelope_report
+  - mcp__predictive-maintenance__generate_fft_report
+  - mcp__predictive-maintenance__generate_iso_report
+  - mcp__predictive-maintenance__generate_maintenance_recommendations
+  - mcp__predictive-maintenance__get_signal_info
+  - mcp__predictive-maintenance__list_signals
+  - mcp__predictive-maintenance__load_signal
+  - mcp__predictive-maintenance__plot_signal
+  - mcp__predictive-maintenance__search_bearing_catalog
 ---
 
 # Diagnostic Pipeline Agent
@@ -119,10 +138,13 @@ low kurtosis does not rule it out):
 
 **If unbalance, misalignment or looseness is asked about** (optional; a
 bearing or gear check never needs it):
-- If the connected server does not provide `assess_shaft_fault_evidence`, say
-  so and that no shaft-order assessment was run; never simulate the tool or
-  infer its result from other tools, and continue with the phases the server
-  supports
+- If `assess_shaft_fault_evidence` is not among the tools you can call, or the
+  call is refused, say that the shaft-order assessment is not available to you
+  and that no shaft-order assessment was run. Your own tool list cannot show
+  whether the server lacks the tool or your tool permissions exclude it: name a
+  cause only when a tool result or a permission message states it. Never
+  simulate the tool or infer its result from other tools, and continue with
+  the phases you can run
 - Call `assess_shaft_fault_evidence(signal_ids=["<h>", "<v>", "<a>"])` on
   channels of one machine at one operating condition. The server takes the
   speed, the machine group, the support type and the machine power from what
@@ -214,3 +236,8 @@ Present a concise summary to the user:
 - Process all signals the user specified — do not stop after the first one
 - Generate reports for every analysis performed
 - All processing is local — confirm this to the user if they ask
+- You call the server's tools by name, as `mcp__predictive-maintenance__<tool>`:
+  you reach them only when the server is registered as `predictive-maintenance`.
+  If none of them is available to you, say that the predictive-maintenance
+  tools are not reachable from this agent and stop; never run the analysis
+  through Bash or simulate a tool result

@@ -125,7 +125,8 @@ REQUIRED: dict[str, tuple[str, ...]] = {
         "an installed plugin does not mean the connected server has the tool",
         "no shaft-order assessment was run",
         "never simulate the tool or its result",
-        "continue with the tools the server does provide",
+        "continue with the tools you can call",
+        "name a cause only when you can establish it",
         "a significant line is not abnormality",
     ),
     SCREENING: (
@@ -137,8 +138,10 @@ REQUIRED: dict[str, tuple[str, ...]] = {
     ),
     AGENT: (
         "(optional; a bearing or gear check never needs it)",
-        "if the connected server does not provide assess_shaft_fault_evidence, say so"
+        "if assess_shaft_fault_evidence is not among the tools you can call, or the"
+        " call is refused, say that the shaft-order assessment is not available to you"
         " and that no shaft-order assessment was run",
+        "name a cause only when a tool result or a permission message states it",
         "never simulate the tool or infer its result from other tools",
         "and each channel's direction from what its signal declares",
         "if the call is refused because no shaft speed is declared, ask the user for"
@@ -752,9 +755,11 @@ MUTATIONS = (
         "drop: the skill's statement that no assessment was run",
         SKILL,
         semantic_violations,
-        _swap(
-            "provide it and that no shaft-order assessment was run.",
-            "provide it.",
+        lambda text: re.sub(
+            r"\s+and\s+that\s+no\s+shaft-order\s+assessment\s+was\s+run\.",
+            ".",
+            text,
+            count=1,
         ),
     ),
     Mutation(

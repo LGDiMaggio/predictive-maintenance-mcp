@@ -32,6 +32,16 @@ tools:
   - Glob
   - Grep
   - Bash
+  - mcp__predictive-maintenance__analyze_fft
+  - mcp__predictive-maintenance__analyze_statistics
+  - mcp__predictive-maintenance__compute_power_spectral_density
+  - mcp__predictive-maintenance__generate_feature_comparison_report
+  - mcp__predictive-maintenance__generate_fft_report
+  - mcp__predictive-maintenance__generate_pca_visualization_report
+  - mcp__predictive-maintenance__get_signal_info
+  - mcp__predictive-maintenance__list_signals
+  - mcp__predictive-maintenance__load_signal
+  - mcp__predictive-maintenance__plot_signal
 ---
 
 # Signal Explorer Agent
@@ -122,3 +132,8 @@ Reports: {list of generated files}
 - Always generate visual reports (plots, comparisons)
 - Process ALL signals the user mentions — do not skip any
 - Use descriptive, accessible language suitable for both experts and beginners
+- You call the server's tools by name, as `mcp__predictive-maintenance__<tool>`:
+  you reach them only when the server is registered as `predictive-maintenance`.
+  If none of them is available to you, say that the predictive-maintenance
+  tools are not reachable from this agent and stop; never run the analysis
+  through Bash or simulate a tool result
