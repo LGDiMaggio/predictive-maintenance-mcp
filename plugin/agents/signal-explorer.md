@@ -32,6 +32,16 @@ tools:
   - Glob
   - Grep
   - Bash
+  - mcp__predictive-maintenance__analyze_fft
+  - mcp__predictive-maintenance__analyze_statistics
+  - mcp__predictive-maintenance__compute_power_spectral_density
+  - mcp__predictive-maintenance__generate_feature_comparison_report
+  - mcp__predictive-maintenance__generate_fft_report
+  - mcp__predictive-maintenance__generate_pca_visualization_report
+  - mcp__predictive-maintenance__get_signal_info
+  - mcp__predictive-maintenance__list_signals
+  - mcp__predictive-maintenance__load_signal
+  - mcp__predictive-maintenance__plot_signal
 ---
 
 # Signal Explorer Agent
@@ -96,8 +106,9 @@ Reports generated: {list of HTML files}
    — signal_groups maps a group label to the signal_ids in that group
 4. If a trained anomaly model exists, add
    `generate_pca_visualization_report(model_name="anomaly_model", test_signal_ids=["sig_a", "sig_b"])`
-   for a clustering view (train one first via the anomaly-detection skill if
-   the user wants it)
+   for a clustering view; training a model is a step of the anomaly-detection
+   skill in the main conversation: suggest it to the user and do not train
+   one yourself
 5. Identify outliers — signals whose features deviate strongly from the group
 
 Present comparison summary:
@@ -122,3 +133,11 @@ Reports: {list of generated files}
 - Always generate visual reports (plots, comparisons)
 - Process ALL signals the user mentions — do not skip any
 - Use descriptive, accessible language suitable for both experts and beginners
+- You call the server's tools by name, as `mcp__predictive-maintenance__<tool>`:
+  you reach them only when the server is registered as `predictive-maintenance`.
+  If none of them is available to you, say that the predictive-maintenance
+  tools are not reachable from this agent and stop; never run the analysis
+  through Bash or simulate a tool result
+- Use Bash only to inspect files the user points to: never to run an
+  analysis, write or delete reports, change the asset ledger, models or signal
+  files, or install packages

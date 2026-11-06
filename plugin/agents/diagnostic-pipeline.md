@@ -33,6 +33,25 @@ tools:
   - Glob
   - Grep
   - Bash
+  - mcp__predictive-maintenance__analyze_fft
+  - mcp__predictive-maintenance__analyze_statistics
+  - mcp__predictive-maintenance__assess_severity
+  - mcp__predictive-maintenance__assess_shaft_fault_evidence
+  - mcp__predictive-maintenance__calculate_bearing_characteristic_frequencies
+  - mcp__predictive-maintenance__check_bearing_faults
+  - mcp__predictive-maintenance__compute_power_spectral_density
+  - mcp__predictive-maintenance__compute_spectrogram_stft
+  - mcp__predictive-maintenance__diagnose_vibration
+  - mcp__predictive-maintenance__generate_diagnostic_report_docx
+  - mcp__predictive-maintenance__generate_envelope_report
+  - mcp__predictive-maintenance__generate_fft_report
+  - mcp__predictive-maintenance__generate_iso_report
+  - mcp__predictive-maintenance__generate_maintenance_recommendations
+  - mcp__predictive-maintenance__get_signal_info
+  - mcp__predictive-maintenance__list_signals
+  - mcp__predictive-maintenance__load_signal
+  - mcp__predictive-maintenance__plot_signal
+  - mcp__predictive-maintenance__search_bearing_catalog
 ---
 
 # Diagnostic Pipeline Agent
@@ -117,6 +136,40 @@ low kurtosis does not rule it out):
 - Call `check_bearing_faults(signal_id="<id>", rpm=1500, frequencies={"GMF": 800.0})`
 - Run envelope analysis centered near the GMF band
 
+**If unbalance, misalignment or looseness is asked about** (optional; a
+bearing or gear check never needs it):
+- If `assess_shaft_fault_evidence` is not among the tools you can call, or a
+  permission setting denies the call, say that the shaft-order assessment is
+  not available to you and that no shaft-order assessment was run. Your own
+  tool list cannot show whether the server lacks the tool or your tool
+  permissions exclude it: name a cause only when a tool result or a permission
+  message states it. An error the tool itself returns, such as a refusal for a
+  missing speed, means the tool is available: follow its remedy. Never
+  simulate the tool or infer its result from other tools, and continue with
+  the phases you can run
+- Call `assess_shaft_fault_evidence(signal_ids=["<h>", "<v>", "<a>"])` on
+  channels of one machine at one operating condition. The server takes the
+  speed, the machine group, the support type and the machine power from what
+  the signals or their measurement point declare, and each channel's direction
+  from what its signal declares; `parameter_sources` and `direction_source`
+  say where each came from
+- If the call is refused because no shaft speed is declared, ask the user for
+  it and call again with `rpm` set to the value they give; never estimate it.
+  Pass `directions`, `machine_group`, `support_type` or `machine_power_kw` only
+  when the user supplies them for these channels (a direction declared only
+  for the measurement point in the asset ledger is not read: ask the user for
+  it; a declared x, y or z names a sensor axis with no fixed correspondence to
+  horizontal, vertical or axial, and the assessment reads it as undeclared: ask
+  the user which it is)
+- Quote `summary` and each hypothesis `statement` verbatim. `pattern_observed`
+  true is an observed pattern, never a fault, and every observed pattern is
+  `inconclusive`: never write from this result that unbalance, misalignment or
+  looseness is present, possible or suspected. `not_observed` does not exclude the fault;
+  `insufficient_data` says nothing about the family; relay `limitations`
+  with every observed pattern; its ISO 20816-3 zone is context only
+- `diagnose_vibration` reads the same spectral lines of the same signal: the
+  agreement of the two repeats the observation and corroborates nothing
+
 **If general vibration concern**:
 - Focus on the ISO 20816-3 assessment (Phase 5)
 
@@ -170,7 +223,12 @@ Present a concise summary to the user:
 
 ## Rules
 
-- Use cautious diagnostic language: "consistent with", "possible", "suggests"
+- Use cautious diagnostic language: "consistent with", "possible", "suggests".
+  Unbalance, misalignment or looseness may be named as possible explanations
+  next to the others, never attributed from a strongest line at 1x or 2x or
+  from the shaft-order assessment; a re-reading of the same line of the same
+  signal, or a manual describing a compatible pattern, is not independent
+  evidence (Phase 4)
 - Neither `check_bearing_faults` nor the bearing block of `diagnose_vibration`
   confirms a bearing defect: never write "confirmed", "damage detected" or
   "fault present" for a bearing claim, however many indicators agree. If the
@@ -180,3 +238,11 @@ Present a concise summary to the user:
 - Process all signals the user specified — do not stop after the first one
 - Generate reports for every analysis performed
 - All processing is local — confirm this to the user if they ask
+- You call the server's tools by name, as `mcp__predictive-maintenance__<tool>`:
+  you reach them only when the server is registered as `predictive-maintenance`.
+  If none of them is available to you, say that the predictive-maintenance
+  tools are not reachable from this agent and stop; never run the analysis
+  through Bash or simulate a tool result
+- Use Bash only to inspect files the user points to: never to run an
+  analysis, write or delete reports, change the asset ledger, models or signal
+  files, or install packages

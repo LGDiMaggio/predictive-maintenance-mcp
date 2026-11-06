@@ -901,6 +901,13 @@ MUTATIONS = (
         _swap("at `single_spectrum_evidence`", "at `supported_claim`"),
         raw=True,
     ),
+    Mutation(
+        "add: an off-list level next to a tool name that ends in _evidence",
+        AGENT,
+        claim_level_violations,
+        _append(" `assess_shaft_fault_evidence` returns `strong_evidence`."),
+        raw=True,
+    ),
     # ledger bases
     Mutation(
         "substitute: an off-list ledger basis in rule 4",

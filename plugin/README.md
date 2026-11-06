@@ -37,7 +37,29 @@ rest on the bearing check, such as the ISO 20816-3 zone, as usual.
 
 ## Components
 
-### Skills (8)
+### MCP server name for the agents
+
+The two agents call the server's tools by name, as
+`mcp__predictive-maintenance__<tool>`, so they reach them only when the server
+is registered under the name `predictive-maintenance`, the name the
+installation instructions use (register it under that name in Claude Code
+too). Under any other name the agents cannot call the server's
+tools and say so; skills and commands, which run in the main conversation, are
+not affected. Each agent lists in the `tools:` field of its file only the
+server tools its workflow uses (19 for diagnostic-pipeline, 10 for
+signal-explorer); other server tools, such as `clear_signals` or
+`train_anomaly_model`, are not available to the agents. Some listed tools
+change state: `load_signal` stores signals in the server's memory, where
+`overwrite=True` replaces the signal with the same id, and, for a file whose
+companion declares an asset and measurement point, adds the measurement with
+its declared unit, sampling rate and raw-format settings to the append-only
+asset ledger (a re-load with changed settings adds a superseding entry; the
+earlier one stays in the history); the report tools write new files under
+`reports/`. Both agents also keep Read, Glob, Grep and Bash; their
+instructions limit Bash to inspecting files. Claude Code asks before each
+tool call according to your permission settings.
+
+### Skills (9)
 
 Skills activate automatically when Claude detects relevant context.
 
@@ -51,6 +73,7 @@ Skills activate automatically when Claude detects relevant context.
 | **signal-management** | "load signal", "generate test signal" | Signal loading, generation, cache management |
 | **documentation-search** | "search manual", "look up bearing" | RAG search across manuals and catalogs |
 | **prognostics** | "trend analysis", "remaining useful life" | Within-recording screening + multi-measurement RUL |
+| **shaft-order-evidence** | "is this unbalance", "misalignment or looseness" | Experimental shaft-order evidence; attributes no fault (unreleased tool) |
 
 ### Agents (2)
 

@@ -48,6 +48,11 @@ Report:
 - Top 3 spectral peaks (frequency + magnitude)
 - Any obvious harmonic patterns
 
+A strongest line at 1x or 2x, or a harmonic series, names no fault on its own.
+If the user asks about unbalance, misalignment or looseness, the
+shaft-order-evidence skill gives an experimental evidence assessment that
+attributes no fault. It is optional and not part of the screening card.
+
 ### Step 4 — ISO Severity Assessment
 
 Call `assess_severity(signal_id="<id>", machine_group=2, support_type="rigid")`.
@@ -98,6 +103,8 @@ Recommendation:
 - This is a SCREENING tool, NOT a diagnostic tool
 - Never make definitive fault claims from screening alone
 - Always recommend targeted analysis for Suspicious/Critical results
-- Use cautious language: "indicators suggest", not "confirmed fault"
+- Use cautious language: "indicators suggest", not "confirmed fault"; a line at
+  1x or 2x attributes no unbalance, misalignment or looseness; they may be
+  named as possible explanations next to the others (Step 3)
 - The screening supports the engineer's judgment; it does not replace it
 - All processing happens locally — raw data never leaves the machine
