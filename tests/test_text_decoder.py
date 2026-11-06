@@ -604,6 +604,56 @@ class TestModes:
         for result in full.channels:
             assert result.samples_digest == ic.samples_digest(result.samples)
 
+    @pytest.mark.parametrize("block_bytes", [256, 4096, 1 << 20])
+    def test_both_modes_carry_the_streamed_moments(
+        self, tmp_path, monkeypatch, block_bytes
+    ):
+        """Mean and population standard deviation merged block by block equal
+        the full array's, whatever the block size, in both modes."""
+        monkeypatch.setattr(td, "BLOCK_BYTES", block_bytes)
+        data = _rows(5000)
+        interp = interpretation(channels=((0, None), (1, None), (2, None)))
+        full = decode(tmp_path, data, interp)
+        digest = decode(tmp_path, data, interp, mode="digest")
+        for kept, streamed in zip(full.channels, digest.channels):
+            assert kept.samples is not None and streamed.samples is None
+            assert (streamed.mean, streamed.std) == (kept.mean, kept.std)
+            assert streamed.mean == pytest.approx(
+                float(np.mean(kept.samples)), abs=1e-12
+            )
+            assert streamed.std == pytest.approx(float(np.std(kept.samples)), rel=1e-12)
+
+    def test_moments_are_of_the_scaled_samples(self, tmp_path):
+        rows = [f"{1000 + (r % 7) * 10}" for r in range(600)]
+        data = ("v\n" + "\n".join(rows) + "\n").encode()
+        scaling = {
+            "source_unit": "mV",
+            "sensitivity": {
+                "value": "100",
+                "unit": "mV/g",
+                "source": "datasheet_nominal",
+            },
+            "dc_policy": "keep",
+        }
+        interp = interpretation(delimiter=",", decimal=".", channels=((0, scaling),))
+        result = decode(tmp_path, data, interp)
+        [channel] = result.channels
+        assert channel.mean == pytest.approx(float(np.mean(channel.samples)), rel=1e-12)
+        assert channel.std == pytest.approx(float(np.std(channel.samples)), rel=1e-12)
+        assert 10.0 < channel.mean < 10.7  # millivolts divided by 100 mV/g
+
+    @pytest.mark.parametrize("value", ["1.5", "3.3", "1000000000000.1"])
+    def test_a_constant_channel_has_exactly_zero_spread(
+        self, tmp_path, monkeypatch, value
+    ):
+        """Across block boundaries and at a large offset: the shifted
+        accumulator gives exactly 0, so no ratio is formed from rounding."""
+        monkeypatch.setattr(td, "BLOCK_BYTES", 256)
+        data = ("v\n" + f"{value}\n" * 3000).encode()
+        interp = interpretation(delimiter=",", decimal=".", channels=((0, None),))
+        [channel] = decode(tmp_path, data, interp, mode="digest").channels
+        assert (channel.mean, channel.std) == (float(value), 0.0)
+
     def test_digest_mode_holds_no_sample_arrays_only_the_time_array(self, tmp_path):
         """What a decode leaves allocated: the samples in full mode; in
         digest mode only the time column's mantissa and exponent arrays."""

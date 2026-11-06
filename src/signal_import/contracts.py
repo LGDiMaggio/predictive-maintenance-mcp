@@ -7,12 +7,13 @@ model takes from a file is a :class:`FileText` (escaped, capped and carried
 under the key ``file_text``), so a reader can always tell file text from the
 server's own words, and file text never speaks in the server's voice.
 
-This module holds the inspection result. Input models (the configuration a
-caller sends) set ``extra="forbid"`` so that a misspelled key is refused
-instead of silently dropped; output models are built by the server only.
+This module holds the inspection result, the draft a configuration starts
+from, and the validation result. The configuration a caller sends is
+normalized by ``attestation.normalize_configuration`` (plain data, refused
+key by key); output models are built by the server only.
 """
 
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -39,6 +40,16 @@ __all__ = [
     "Candidate",
     "Issue",
     "InspectionResult",
+    "Prefill",
+    "ImportDraft",
+    "ValidationOutcome",
+    "IssueEffect",
+    "ValidationIssue",
+    "Statement",
+    "TimeColumnCheck",
+    "ValidatedChannel",
+    "ChannelPrecheck",
+    "ValidationResult",
 ]
 
 #: How an inspected value was obtained (see ``import_config.VALUE_STATUSES``).
@@ -349,3 +360,278 @@ class InspectionResult(_Output):
     candidates: list[Candidate]
     issues: list[Issue]
     required_confirmations: list[str]
+
+
+# ---------------------------------------------------------------------------
+# Configuration draft
+# ---------------------------------------------------------------------------
+
+
+class Prefill(_Output):
+    """A configured value a draft took from evidence, not from the user.
+
+    A prefill is never a basis: the user still confirms it, citing the same
+    evidence (the remaining confirmations say how).
+
+    Attributes:
+        field: The field path the value fills (``time_base``,
+            ``channels[3].unit``, ``defaults.rpm``, ...).
+        value: The value, as the configuration writes it.
+        origin: One of ``attestation.ORIGINS``.
+        line: The file line it was read from (``file_declared``).
+        column: The time column it was derived from (``derived``).
+        import_id: The earlier import it came from (``prior_import``).
+        declaration_version: The point declaration it came from
+            (``point_declaration``).
+    """
+
+    field: str
+    value: str
+    origin: str
+    line: Optional[int] = None
+    column: Optional[int] = None
+    import_id: Optional[str] = None
+    declaration_version: Optional[int] = None
+
+
+class ImportDraft(_Output):
+    """A configuration to complete: never a confirmation.
+
+    Attributes:
+        configuration: The draft (``attestation.CONFIGURATION_SCHEMA``); its
+            attestation carries no basis, since only the user gives one.
+        prefills: Every value the draft took from evidence, with its origin.
+        remaining_confirmations: What the user still has to state or accept,
+            in the server's words.
+    """
+
+    configuration: dict[str, Any]
+    prefills: list[Prefill]
+    remaining_confirmations: list[str]
+
+
+# ---------------------------------------------------------------------------
+# Validation result
+# ---------------------------------------------------------------------------
+
+#: ``ready``: every value has a basis its evidence supports and the whole
+#: file parses; ``needs_confirmation``: the user has to state, accept or
+#: choose something; ``invalid``: the file or the configuration is refused
+#: as it stands.
+ValidationOutcome = Literal["ready", "needs_confirmation", "invalid"]
+
+#: What an issue does to the outcome.
+IssueEffect = Literal["invalid", "needs_confirmation", "notice"]
+
+
+class ValidationIssue(_Output):
+    """One finding of a validation, in the server's words.
+
+    Attributes:
+        code: One of ``import_config.ISSUE_CODES``.
+        effect: ``invalid`` and ``needs_confirmation`` keep the import from
+            ``ready``; a ``notice`` informs and is recorded.
+        message: What was found and what to do; file text never enters it.
+        field: The configuration field it concerns, when there is one.
+        line: The physical file line it concerns, when there is one.
+        column: The physical column it concerns, when there is one.
+    """
+
+    code: str
+    effect: IssueEffect
+    message: str
+    field: Optional[str] = None
+    line: Optional[int] = None
+    column: Optional[int] = None
+
+
+class Statement(_Output):
+    """One server-authored confirmation statement per engineering value.
+
+    The prose names a channel by its index and its 1-based position and
+    states the consequence; the column's first tokens, and its label only
+    when the header's field count matches the data, travel in their own
+    file-text fields, never inside the prose.
+
+    Attributes:
+        field: The configuration field the statement confirms.
+        column: The channel's physical column, when it concerns one.
+        text: The statement, in the server's words.
+        label: The column's header label as file text.
+        head_tokens: The column's first data tokens as file text.
+        origin: Where the value comes from (``attestation.ORIGINS``).
+        basis: The user's act behind it (``attestation.BASES``).
+        caller_asserted: The basis arrived as an MCP tool argument: it
+            records what the caller claimed, never who the caller is.
+    """
+
+    field: str
+    column: Optional[int] = None
+    text: str
+    label: Optional[FileText] = None
+    head_tokens: list[FileText] = Field(default_factory=list)
+    origin: Optional[str] = None
+    basis: Optional[str] = None
+    caller_asserted: bool = False
+
+
+class TimeColumnCheck(_Output):
+    """The assessment of one time column over the whole data region.
+
+    Attributes:
+        column: Physical column index.
+        time_unit: The declared unit of its stamps.
+        outcome: ``accepted``, ``needs_confirmation`` or ``invalid``.
+        evidence: ``full``, ``partial`` or ``duration_only``.
+        regime: How its stamps are printed.
+        resolution: One tick of its print, in *time_unit*.
+        fitted_rate_hz: The least-squares rate, when one was fitted.
+        proposed_rate_hz: The rate it supports proposing, when it does.
+        finding_codes: Its findings (issue codes).
+        statements: Its findings in plain words, with their statistics.
+    """
+
+    column: int
+    time_unit: str
+    outcome: str
+    evidence: str
+    regime: str
+    resolution: str
+    fitted_rate_hz: Optional[str] = None
+    proposed_rate_hz: Optional[str] = None
+    finding_codes: list[str] = Field(default_factory=list)
+    statements: list[str] = Field(default_factory=list)
+
+
+class ValidatedChannel(_Output):
+    """One selected vibration channel, as the whole-file parse found it.
+
+    Attributes:
+        column: Physical column index.
+        position: Its 1-based position in words ("the 4th field from the
+            left").
+        role: ``vibration``.
+        quantity: ``acceleration`` or ``velocity``.
+        unit: The unit it is stored in.
+        scaling_divisor: Source units per stored unit, as an exact decimal
+            string, for an electrical column.
+        sample_count: Samples in the data region.
+        samples_digest: SHA-256 of the stored samples (little-endian
+            float64), the value replay must reproduce.
+        label: Its header label as file text (None when the header's field
+            count differs from the data's).
+        unit_token: Its unit token as file text.
+        head_tokens: Its first data tokens as file text.
+        mean: Mean of the stored samples (electrical columns, for the DC
+            policy).
+        mean_to_std: Mean divided by standard deviation (electrical columns).
+        measurement_id: The measurement it binds, when it has a binding.
+    """
+
+    column: int
+    position: str
+    role: str
+    quantity: str
+    unit: str
+    scaling_divisor: Optional[str] = None
+    sample_count: int
+    samples_digest: str
+    label: Optional[FileText] = None
+    unit_token: Optional[FileText] = None
+    head_tokens: list[FileText] = Field(default_factory=list)
+    mean: Optional[float] = None
+    mean_to_std: Optional[float] = None
+    measurement_id: Optional[str] = None
+
+
+class ChannelPrecheck(_Output):
+    """The read-only ledger pre-check of one bound channel.
+
+    Attributes:
+        column: Physical column index.
+        measurement_id: The measurement the channel binds.
+        asset_id: The asset it binds.
+        asset_status: ``known`` (the ledger holds events of the asset) or
+            ``new``.
+        point_status: ``declared`` or ``undeclared``.
+        point_declaration_version: The point's current declaration version.
+        measurement_status: ``new``, ``already_recorded`` (an identical
+            declaration is recorded) or ``supersedes`` (it would replace the
+            recorded declaration).
+        changed: The declaration keys a supersession changes.
+        recorded_asset_id: The asset the measurement is recorded under, when
+            it is recorded.
+        baseline_member: The measurement is a member of its point's active
+            baseline.
+        restores_superseded: The new interpretation is one an earlier,
+            later superseded, declaration of the measurement used.
+        data_range_overlaps: Whether the new data line range overlaps the
+            recorded one (None when nothing comparable is recorded).
+        column_swap: The measurement of another column of the same bytes
+            recorded at the same point and acquisition slot.
+    """
+
+    column: int
+    measurement_id: str
+    asset_id: str
+    asset_status: Literal["known", "new"]
+    point_status: Literal["declared", "undeclared"]
+    point_declaration_version: Optional[int] = None
+    measurement_status: Literal["new", "already_recorded", "supersedes"]
+    changed: list[str] = Field(default_factory=list)
+    recorded_asset_id: Optional[str] = None
+    baseline_member: bool = False
+    restores_superseded: bool = False
+    data_range_overlaps: Optional[bool] = None
+    column_swap: Optional[str] = None
+
+
+class ValidationResult(_Output):
+    """What a validation decided (nothing is ever written).
+
+    Attributes:
+        outcome: ``ready``, ``needs_confirmation`` or ``invalid``.
+        file: The file name as file text.
+        source_sha256: SHA-256 of every byte of the file (None when the
+            parse stopped before the end).
+        size_bytes: The file size.
+        first_line: Physical line of the first data row.
+        last_line: Physical line of the last data row.
+        row_count: Data rows (samples per channel).
+        sampling_rate_hz: The configured sampling rate.
+        time_base_source: Where it comes from (``time_column``, ``stated``
+            or ``file_declared``).
+        time_columns: Every assessed time column.
+        channels: Every selected channel the parse decoded.
+        statements: One statement per engineering value.
+        issues: Every finding, each with its effect on the outcome.
+        required_confirmations: What the user still has to confirm, in the
+            server's words (empty when ``ready``).
+        ledger_precheck: The read-only pre-check of every bound channel.
+        confirmation_channel: Through which channel the configuration came.
+        caller_asserted: Its bases record what the caller claimed.
+        import_id: The interpretation's identity (None when the parse
+            stopped before the end).
+        import_digest: What an import must present; set only when
+            ``ready``.
+    """
+
+    outcome: ValidationOutcome
+    file: FileText
+    source_sha256: Optional[str] = None
+    size_bytes: int
+    first_line: Optional[int] = None
+    last_line: Optional[int] = None
+    row_count: Optional[int] = None
+    sampling_rate_hz: str
+    time_base_source: str
+    time_columns: list[TimeColumnCheck] = Field(default_factory=list)
+    channels: list[ValidatedChannel] = Field(default_factory=list)
+    statements: list[Statement] = Field(default_factory=list)
+    issues: list[ValidationIssue] = Field(default_factory=list)
+    required_confirmations: list[str] = Field(default_factory=list)
+    ledger_precheck: list[ChannelPrecheck] = Field(default_factory=list)
+    confirmation_channel: str
+    caller_asserted: bool
+    import_id: Optional[str] = None
+    import_digest: Optional[str] = None
