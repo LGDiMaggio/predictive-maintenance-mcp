@@ -76,6 +76,10 @@ def test_the_agent_says_how_it_reaches_the_server_and_never_works_around_it(agen
     assert "registered as predictive-maintenance" in flat
     assert "tools are not reachable from this agent and stop" in flat
     assert "never run the analysis through bash or simulate a tool result" in flat
+    assert "use bash only to inspect files the user points to" in flat
+    assert (
+        "change the asset ledger, models or signal files, or install packages" in flat
+    )
 
 
 def test_the_plugin_readme_names_the_server_and_the_limit():
@@ -85,6 +89,8 @@ def test_the_plugin_readme_names_the_server_and_the_limit():
     assert "registered under the name `predictive-maintenance`" in flat
     assert "Under any other name the agents cannot call the server's tools" in flat
     assert "Claude Code asks before each tool call" in flat
+    assert "append-only asset ledger" in flat
+    assert "instructions limit Bash to inspecting files" in flat
 
 
 def _add(line: str) -> Callable[[str], str]:
@@ -117,3 +123,9 @@ def test_the_permission_guard_fails_on_mutations(agent, case):
     mutated = MUTATIONS[case](text)
     assert mutated != text
     assert tool_violations(mutated), f"{case}: the guard stayed green"
+
+
+def test_signal_explorer_does_not_train_a_model_itself():
+    flat = re.sub(r"\s+", " ", _text("plugin/agents/signal-explorer.md")).lower()
+    assert "do not train one yourself" in flat
+    assert "train one first" not in flat

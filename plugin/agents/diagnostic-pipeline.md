@@ -138,11 +138,13 @@ low kurtosis does not rule it out):
 
 **If unbalance, misalignment or looseness is asked about** (optional; a
 bearing or gear check never needs it):
-- If `assess_shaft_fault_evidence` is not among the tools you can call, or the
-  call is refused, say that the shaft-order assessment is not available to you
-  and that no shaft-order assessment was run. Your own tool list cannot show
-  whether the server lacks the tool or your tool permissions exclude it: name a
-  cause only when a tool result or a permission message states it. Never
+- If `assess_shaft_fault_evidence` is not among the tools you can call, or a
+  permission setting denies the call, say that the shaft-order assessment is
+  not available to you and that no shaft-order assessment was run. Your own
+  tool list cannot show whether the server lacks the tool or your tool
+  permissions exclude it: name a cause only when a tool result or a permission
+  message states it. An error the tool itself returns, such as a refusal for a
+  missing speed, means the tool is available: follow its remedy. Never
   simulate the tool or infer its result from other tools, and continue with
   the phases you can run
 - Call `assess_shaft_fault_evidence(signal_ids=["<h>", "<v>", "<a>"])` on
@@ -241,3 +243,6 @@ Present a concise summary to the user:
   If none of them is available to you, say that the predictive-maintenance
   tools are not reachable from this agent and stop; never run the analysis
   through Bash or simulate a tool result
+- Use Bash only to inspect files the user points to: never to run an
+  analysis, write or delete reports, change the asset ledger, models or signal
+  files, or install packages

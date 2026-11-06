@@ -106,8 +106,9 @@ Reports generated: {list of HTML files}
    — signal_groups maps a group label to the signal_ids in that group
 4. If a trained anomaly model exists, add
    `generate_pca_visualization_report(model_name="anomaly_model", test_signal_ids=["sig_a", "sig_b"])`
-   for a clustering view (train one first via the anomaly-detection skill if
-   the user wants it)
+   for a clustering view; training a model is a step of the anomaly-detection
+   skill in the main conversation: suggest it to the user and do not train
+   one yourself
 5. Identify outliers — signals whose features deviate strongly from the group
 
 Present comparison summary:
@@ -137,3 +138,6 @@ Reports: {list of generated files}
   If none of them is available to you, say that the predictive-maintenance
   tools are not reachable from this agent and stop; never run the analysis
   through Bash or simulate a tool result
+- Use Bash only to inspect files the user points to: never to run an
+  analysis, write or delete reports, change the asset ledger, models or signal
+  files, or install packages

@@ -25,8 +25,9 @@ An installed plugin does not mean the connected server has the tool. If you
 cannot call it, tell the user that the shaft-order assessment is not available
 here and that no shaft-order assessment was run. Name a cause only when you can
 establish it: the connected server may not provide the tool, or a permission
-setting may block it, and a refused call shows the second. Never simulate the
-tool or its result, and do not substitute your own reading of FFT peaks or a
+setting may block it, and a permission message shows the second. An error the
+tool itself returns, such as a refusal for a missing speed, means the tool is
+there: follow its remedy. Never simulate the tool or its result, and do not substitute your own reading of FFT peaks or a
 strongest line at 1x or 2x reported by `diagnose_vibration`. Continue with the
 tools you can call where they fit the question.
 

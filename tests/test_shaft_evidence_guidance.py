@@ -127,6 +127,8 @@ REQUIRED: dict[str, tuple[str, ...]] = {
         "never simulate the tool or its result",
         "continue with the tools you can call",
         "name a cause only when you can establish it",
+        "an error the tool itself returns, such as a refusal for a missing speed,"
+        " means the tool is there: follow its remedy",
         "a significant line is not abnormality",
     ),
     SCREENING: (
@@ -138,9 +140,11 @@ REQUIRED: dict[str, tuple[str, ...]] = {
     ),
     AGENT: (
         "(optional; a bearing or gear check never needs it)",
-        "if assess_shaft_fault_evidence is not among the tools you can call, or the"
-        " call is refused, say that the shaft-order assessment is not available to you"
-        " and that no shaft-order assessment was run",
+        "if assess_shaft_fault_evidence is not among the tools you can call, or a"
+        " permission setting denies the call, say that the shaft-order assessment is"
+        " not available to you and that no shaft-order assessment was run",
+        "an error the tool itself returns, such as a refusal for a missing speed,"
+        " means the tool is available: follow its remedy",
         "name a cause only when a tool result or a permission message states it",
         "never simulate the tool or infer its result from other tools",
         "and each channel's direction from what its signal declares",
