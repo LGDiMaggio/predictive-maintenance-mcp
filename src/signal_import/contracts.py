@@ -435,6 +435,9 @@ class ValidationIssue(_Output):
         field: The configuration field it concerns, when there is one.
         line: The physical file line it concerns, when there is one.
         column: The physical column it concerns, when there is one.
+        token: The file's own text the issue is about (a printed value or
+            row as written), escaped and capped, when it names one; the
+            message refers to it and never repeats it.
     """
 
     code: str
@@ -443,6 +446,7 @@ class ValidationIssue(_Output):
     field: Optional[str] = None
     line: Optional[int] = None
     column: Optional[int] = None
+    token: Optional[FileText] = None
 
 
 class Statement(_Output):
@@ -606,7 +610,11 @@ class ValidationResult(_Output):
         statements: One statement per engineering value.
         issues: Every finding, each with its effect on the outcome.
         required_confirmations: What the user still has to confirm, in the
-            server's words (empty when ``ready``).
+            server's words (empty when ``ready``): entry *i* is the message of
+            the *i*-th issue whose effect is ``needs_confirmation``, in issue
+            order, and no two such issues share a message. That issue carries
+            the field, the line and, for a value the file prints, the text as
+            printed (``token``) its message refers to.
         ledger_precheck: The read-only pre-check of every bound channel.
         confirmation_channel: Through which channel the configuration came.
         caller_asserted: Its bases record what the caller claimed.

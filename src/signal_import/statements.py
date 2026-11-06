@@ -182,17 +182,20 @@ def channel_unit_statement(
     override: Optional[str] = None,
 ) -> Statement:
     """A channel's role, quantity and unit. A scaled channel's sensitivity has
-    its own statement (:func:`scaling_statement`) with its own basis."""
-    text = f"{channel_words(column).capitalize()} is imported as vibration {quantity} in {unit}"
+    its own statement (:func:`scaling_statement`) with its own basis, so the
+    conversion is said after this basis and attributed to that statement."""
+    text = (
+        f"{channel_words(column).capitalize()} is imported as vibration "
+        f"{quantity} in {unit}, {basis_words(basis, caller_asserted, citation=citation)}."
+    )
     if scaling is not None and scaling.get("source_unit"):
         electrical = _ELECTRICAL_WORDS.get(scaling["source_unit"], "the source unit")
-        text += f", converted from {electrical} by its sensitivity"
-    text += f", {basis_words(basis, caller_asserted, citation=citation)}."
-    if override is not None:
         text += (
-            " The column's own unit token says otherwise; an override with a "
-            "reason is recorded."
+            f" Its samples are converted from {electrical} by the sensitivity in "
+            f"its own scaling statement."
         )
+    if override is not None:
+        text += " An override with a reason is recorded for its unit."
     return _statement(
         f"channels[{column}].unit",
         text,
@@ -215,6 +218,7 @@ def scaling_statement(
     origin: Optional[str],
     caller_asserted: bool,
     citation: str,
+    override: Optional[str] = None,
 ) -> Statement:
     """A scaled channel's sensitivity, the transformation it applies, and the
     basis it was confirmed on. The sensitivity's source (datasheet,
@@ -239,6 +243,8 @@ def scaling_statement(
         f"source is {source}. Its samples, in {electrical} as configured, are "
         f"{transformation}."
     )
+    if override is not None:
+        text += " An override with a reason is recorded for its sensitivity."
     return _statement(
         f"channels[{column}].scaling",
         text,
@@ -349,7 +355,7 @@ def default_statement(
             f"{shift['exact_shift_seconds']} s{exact}."
         )
     if override is not None:
-        text += " The file states another value; an override with a reason is recorded."
+        text += " An override with a reason is recorded for it."
     return _statement(
         f"defaults.{field}",
         text,

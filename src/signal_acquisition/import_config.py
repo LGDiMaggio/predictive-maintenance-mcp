@@ -290,6 +290,7 @@ ISSUE_CODES: tuple[str, ...] = (
     "double_scaling",
     "missing_sensitivity",
     "contradicts_file_declaration",
+    "printed_value_unverified",
     # bases, binding and history
     "missing_basis",
     "basis_mismatch",

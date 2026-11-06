@@ -10,7 +10,8 @@ ISO 13374 Block 1 (data acquisition). Internal to
 writes anywhere.
 """
 
-from datetime import datetime
+import re
+from datetime import date, datetime
 from typing import Any, Mapping, Optional
 
 from ...signal_acquisition.measurement import (
@@ -21,7 +22,7 @@ from ...signal_acquisition.measurement import (
 from ...signal_acquisition.text_decoder import DecodeResult
 from .. import statements as st
 from ..inspection import _classify_unit, _unit_text
-from ._common import _ASK, _Run, _decimal
+from ._common import _ASK, _Run, _decimal, _printed
 from ._evidence import (
     _Evidence,
     _Preamble,
@@ -29,6 +30,7 @@ from ._evidence import (
     _time_like,
     _token_line,
     _unit_token,
+    _unit_tokens,
 )
 from ._history import _Prior
 
@@ -64,68 +66,145 @@ def _check_time_like_channel(
     )
 
 
+_DATE_ONLY = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+#: Why a printed speed or instant cannot be compared, by verdict.
+_UNVERIFIED = {
+    "unreadable_rpm": (
+        "Line {line} prints a shaft speed that this version cannot read as a "
+        "number in rpm (its text as printed is in this issue's token), so the "
+        "configured {value} rpm cannot be checked against it"
+    ),
+    "unreadable_acquired_at": (
+        "Line {line} prints an acquisition instant that this version cannot read "
+        "as an ISO 8601 date and time (its text as printed is in this issue's "
+        "token), so the configured instant cannot be checked against it"
+    ),
+    "naive_printed": (
+        "Line {line} prints the acquisition instant without a time zone while the "
+        "configured instant declares an offset, so the two cannot be compared "
+        "without assuming a zone"
+    ),
+    "aware_printed": (
+        "Line {line} prints the acquisition instant with a time zone while the "
+        "configured instant declares none, so the two cannot be compared without "
+        "assuming a zone"
+    ),
+    "date_only": (
+        "Line {line} prints only a date, with no time zone, while the configured "
+        "instant declares an offset, so its local date cannot be compared without "
+        "assuming a zone"
+    ),
+}
+
+
 def _check_stated_defaults(run: _Run, evidence: _Evidence) -> None:
-    """A speed or acquisition instant the preamble prints otherwise (R11):
-    refused unless an override names a reason. A value accepted from the
-    file is checked against its cited line instead."""
+    """Every speed or acquisition instant the preamble prints against the
+    configured one (R11): a contradiction is refused unless an override names
+    a reason, and a printed value that cannot be read or compared needs the
+    user. The line a file-value basis cites is checked by that basis; every
+    other printed line is compared here."""
     defaults = run.interpretation["defaults"]
     for name, words in (("rpm", "shaft speed"), ("acquired_at", "acquisition instant")):
         value = defaults[name]
-        entry = run.basis(f"defaults.{name}")
-        if value is None or (
-            entry is not None and entry["basis"] == "user_accepted_file_value"
-        ):
+        if value is None:
             continue
         path = f"defaults.{name}"
+        entry = run.basis(path)
+        cited = (
+            entry["line"]
+            if entry is not None and entry["basis"] == "user_accepted_file_value"
+            else None
+        )
         override = run.override(path)
+        contradicted = False
         for found in evidence.preamble:
-            if found.field != name or not _contradicts(name, found, value):
+            if found.field != name or found.line == cited:
+                continue
+            verdict = _printed_verdict(name, found, value)
+            if verdict == "agree" or (verdict == "differ" and contradicted):
+                continue
+            if verdict == "differ":
+                contradicted = True
+                run.issue(
+                    "contradicts_file_declaration",
+                    "notice" if override is not None else "invalid",
+                    f"The configured {words} is not the one line {found.line} of "
+                    f"the file prints"
+                    + (
+                        "; the override with its reason is recorded."
+                        if override is not None
+                        else f". Correct the configuration, or name an override "
+                        f"with a reason for {path!r} if the file is wrong."
+                    ),
+                    field_path=path,
+                    line=found.line,
+                )
                 continue
             run.issue(
-                "contradicts_file_declaration",
-                "notice" if override is not None else "invalid",
-                f"The configured {words} is not the one line {found.line} of the "
-                f"file prints"
+                "printed_value_unverified",
+                "notice" if override is not None else "needs_confirmation",
+                _UNVERIFIED[verdict].format(line=found.line, value=value)
                 + (
                     "; the override with its reason is recorded."
                     if override is not None
-                    else f". Correct the configuration, or name an override with "
-                    f"a reason for {path!r} if the file is wrong."
+                    else f": {_ASK} to confirm the configured value, and name an "
+                    f"override with a reason for {path!r}."
                 ),
                 field_path=path,
                 line=found.line,
+                token=_printed(found.raw),
             )
-            break
 
 
-def _contradicts(name: str, found: _Preamble, value: str) -> bool:
-    """A printed speed or instant that differs from the configured one; a
-    printed value the comparison cannot read contradicts nothing."""
+def _printed_verdict(name: str, found: _Preamble, value: str) -> str:
+    """``agree``, ``differ``, or why a printed speed or instant cannot be
+    compared with the configured one. A naive instant is compared only with
+    a naive one, and a date alone only with a naive instant's date: no zone
+    is ever assumed."""
     if name == "rpm":
         printed = _decimal(found.normalized)
-        return printed is not None and printed != _decimal(value)
+        if printed is None:
+            return "unreadable_rpm"
+        return "agree" if printed == _decimal(value) else "differ"
+    text = found.raw.strip()
+    configured = datetime.fromisoformat(value)
+    if _DATE_ONLY.fullmatch(text):
+        if configured.tzinfo is not None:
+            return "date_only"
+        try:
+            day = date.fromisoformat(text)
+        except ValueError:
+            return "unreadable_acquired_at"
+        return "agree" if day == configured.date() else "differ"
     try:
-        left = datetime.fromisoformat(found.raw.strip())
-        right = datetime.fromisoformat(value)
+        printed_at = datetime.fromisoformat(text)
     except ValueError:
-        return False
-    if left.tzinfo is None or right.tzinfo is None:
-        # A naive print states a wall-clock time only.
-        return left.replace(tzinfo=None) != right.replace(tzinfo=None)
-    return left != right
+        return "unreadable_acquired_at"
+    if printed_at.tzinfo is None and configured.tzinfo is not None:
+        return "naive_printed"
+    if printed_at.tzinfo is not None and configured.tzinfo is None:
+        return "aware_printed"
+    return "agree" if printed_at == configured else "differ"
 
 
 def _check_units(run: _Run, evidence: _Evidence, channel: Mapping[str, Any]) -> None:
-    """A unit token on a selected column against the configured unit."""
+    """Every unit token the file prints for a selected column against the
+    configured unit."""
+    for token, line in _unit_tokens(evidence, channel["column"]):
+        _check_unit_token(run, channel, token, line)
+
+
+def _check_unit_token(
+    run: _Run, channel: Mapping[str, Any], token: str, line: Optional[int]
+) -> None:
     column = channel["column"]
-    token = _unit_token(evidence, column)
     scaling = channel["scaling"]
     path = f"channels[{column}].unit"
     override = run.override(path)
     where = st.channel_words(column).capitalize()
     if token is not None:
         unit, _role, kind = _classify_unit(token)
-        line = _token_line(evidence)
         contradiction: Optional[str] = None
         if kind == "importable":
             if scaling is not None:
@@ -152,10 +231,26 @@ def _check_units(run: _Run, evidence: _Evidence, channel: Mapping[str, Any]) -> 
                     f"in {channel['unit']} needs a sensitivity and its source unit"
                 )
             elif source_unit is None or source_unit.lower() != electrical:
-                contradiction = (
-                    f"its unit token on line {line} names another electrical unit "
-                    f"than the scaling's source unit"
+                # The scaling's source unit is what disagrees, so only the
+                # scaling's override records a reason for it.
+                scaling_path = f"channels[{column}].scaling"
+                scaling_override = run.override(scaling_path)
+                run.issue(
+                    "contradicts_file_declaration",
+                    "notice" if scaling_override is not None else "invalid",
+                    f"{where}: its unit token on line {line} names another "
+                    f"electrical unit than the scaling's source unit"
+                    + (
+                        "; the override with its reason is recorded."
+                        if scaling_override is not None
+                        else f". Correct the configuration, or name an override "
+                        f"with a reason for {scaling_path!r} if the file is wrong."
+                    ),
+                    field_path=scaling_path,
+                    line=line,
+                    column=column,
                 )
+                return
         elif kind == "preview":
             if override is None:
                 run.issue(

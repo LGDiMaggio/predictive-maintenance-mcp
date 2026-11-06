@@ -21,30 +21,38 @@ one:
   that accepts a file, derived, earlier-import or point-declaration value
   must cite that evidence, and the configured value must equal what it
   holds;
-- a unit token on a selected column that does not map to the configured
-  unit is a contradiction, refused unless an override names a reason;
+- a unit token on a selected column, or on a time column, that does not
+  map to the configured unit is a contradiction, refused unless the
+  override of that field names a reason;
 - every time column, configured or inspected, is assessed over the whole
   data region, whatever the time base; a gap, reversal or timing defect
   refuses the file, and a time column alone never sets the rate;
 - the structure (encoding, dialect, header and units rows, data range)
   needs a basis unless the whole file parses as configured, no other
   reading parses the scanned data, the encoding is unambiguous and the
-  header and units rows are the ones the inspection rule finds; a units
-  row the configuration leaves out is still evidence for the unit check;
-- a value the file prints (a rate or interval, a sensitivity with its
-  unit, the shaft speed, the acquisition instant) that the configuration
-  states otherwise is a contradiction or a disagreement, never silently
-  ignored;
+  header and units rows are the ones the inspection rule finds; a header
+  or units row the configuration leaves out or names elsewhere is still
+  evidence, and every other line above the data is read for printed
+  values;
+- every value the file prints (a rate or interval, a sensitivity with its
+  unit, a unit, the shaft speed, the acquisition instant) is compared with
+  the configuration, not only the line a basis cites: a contradiction is
+  refused unless the override of that field names a reason; a printed
+  value that cannot be read, cannot be compared without assuming a time
+  zone, or that the file does not tie to one channel needs the user, and
+  only that field's override records the reason;
 - history this validation needs and cannot read (a damaged import record,
-  an unreadable ledger line or index entry) or does not read in full (a
-  record store over its scan limit) makes the outcome ``invalid``: no user
-  confirmation stands in for it; a record store or ledger that cannot be
-  read at all raises.
+  an unreadable ledger record, a recorded measurement of these bytes that
+  cannot be read in full or disagrees with its own id, a move that reaches
+  no holder) or does not read in full (a count, byte or event bound
+  reached) makes the outcome ``invalid``: no user confirmation stands in
+  for it; a record store or ledger directory that cannot be read at all
+  raises.
 
 The package is internal apart from :func:`validate_import`: ``_entry`` runs
-a validation; ``_evidence``, ``_time``, ``_checks`` and ``_history`` hold
-the checks; ``_results`` builds the statements and per-channel values;
-``_common`` holds the run they share.
+a validation; ``_evidence``, ``_time``, ``_checks``, ``_printed`` and
+``_history`` hold the checks; ``_results`` builds the statements and
+per-channel values; ``_common`` holds the run they share.
 """
 
 from ._entry import validate_import

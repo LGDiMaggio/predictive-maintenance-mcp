@@ -148,10 +148,22 @@ def _statements(
     entry = run.basis("time_base")
     discrepancy = ""
     if run.override("time_base") is not None:
-        discrepancy = (
-            "The rate sources disagree or a time column is off pattern; the "
-            "choice of time-base source is recorded with its reason."
-        )
+        # Say only what the override covers in this validation.
+        covered = {
+            issue.code
+            for issue in run.issues
+            if issue.field == "time_base" and issue.effect == "notice"
+        }
+        reasons = []
+        if covered - {"printed_value_unverified"}:
+            reasons.append("the rate sources disagree or a time column is off pattern")
+        if "printed_value_unverified" in covered:
+            reasons.append("a rate or interval the file prints could not be read")
+        if reasons:
+            discrepancy = (
+                f"{' and '.join(reasons).capitalize()}; the choice of time-base "
+                f"source is recorded with its reason."
+            )
     run.statements.insert(
         0,
         st.time_base_statement(
@@ -199,6 +211,7 @@ def _statements(
                     origin=_origin(entry),
                     caller_asserted=run.caller,
                     citation=_citation(entry),
+                    override=run.override(f"channels[{column}].scaling"),
                 )
             )
         if (

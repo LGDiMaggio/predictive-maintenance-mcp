@@ -54,6 +54,7 @@ from typing import Any, Optional
 from ..canonical_json import canonical_json, content_hash
 from ..file_text import escape_file_text
 from ..signal_acquisition.import_config import (
+    MAX_FIELDS,
     InterpretationError,
     InterpretationProblem,
     is_import_id,
@@ -154,12 +155,15 @@ CALLER_ASSERTED_CHANNELS: tuple[str, ...] = ("mcp_tool_argument",)
 TRANSPORTS: tuple[str, ...] = ("stdio", "sse", "streamable-http")
 
 #: Fields an override may name: the stated value contradicts a file
-#: declaration (a unit token, a printed rate, speed or instant), or a time
-#: candidate column is left unassessed.
+#: declaration, or one the file prints cannot be read or tied to it (a unit
+#: token, a printed rate, sensitivity, speed or instant, a time column's
+#: unit token), or a time candidate column is left unassessed.
 OVERRIDABLE_FIELDS: tuple[str, ...] = (
     "channel_unit",
+    "channel_scaling",
     "time_base",
     "time_column",
+    "time_column_unit",
     "defaults.rpm",
     "defaults.acquired_at",
 )
@@ -167,17 +171,29 @@ OVERRIDABLE_FIELDS: tuple[str, ...] = (
 _ATTESTATION_FIELDS = ("schema", "bases", "overrides", "declared_by")
 _CONFIGURATION_FIELDS = ("schema", "interpretation", "attestation")
 _ENTRY_FIELDS = ("basis", "line", "column", "import_id", "declaration_version")
+_PLAIN_FIELDS = ("dialect", "data_lines", "time_base", "companion")
 _CHANNEL_PARTS = ("unit", "scaling", "dc_policy", "binding")
 _DEFAULT_FIELDS = ("acquired_at", "rpm", "load", "operating_state")
 _MAX_FIELD_CHARS = 64
-_MAX_BASES = 4096
+#: Every field a full configuration can confirm: the plain fields, the
+#: defaults, and each part of a channel on every column a file can hold.
+_MAX_BASES = (
+    len(_PLAIN_FIELDS) + len(_DEFAULT_FIELDS) + len(_CHANNEL_PARTS) * MAX_FIELDS
+)
+#: Every override a configuration can name: a column holds a channel (its
+#: unit and its scaling) or a time column (listed or left unassessed), plus
+#: the time base and the two defaults.
+_MAX_OVERRIDES = 2 * MAX_FIELDS + 3
+#: Problems one refusal keeps, and the ones its message shows.
+_MAX_PROBLEMS = 4096
+_SHOWN_PROBLEMS = 40
 _LINE_LIMIT = 2**53
 
 _FIELD = re.compile(
     r"(?P<plain>dialect|data_lines|time_base|companion)"
     r"|defaults\.(?P<default>acquired_at|rpm|load|operating_state)"
     r"|channels\[(?P<channel>0|[1-9][0-9]{0,3})\]\.(?P<part>unit|scaling|dc_policy|binding)"
-    r"|time_columns\[(?P<time>0|[1-9][0-9]{0,3})\]"
+    r"|time_columns\[(?P<time>0|[1-9][0-9]{0,3})\](?P<time_unit>\.time_unit)?"
 )
 
 _DIGEST_DOMAIN = "pmm-import-digest/1"
@@ -194,11 +210,14 @@ class ConfigurationError(InterpretationError):
     refused interpretation handles a refused configuration too.
     """
 
-    def __init__(self, problems: list[InterpretationProblem]) -> None:
+    def __init__(self, problems: list[InterpretationProblem], more: int = 0) -> None:
+        shown = problems[:_SHOWN_PROBLEMS]
+        hidden = len(problems) - len(shown) + more
         ValueError.__init__(
             self,
             "Invalid import configuration: "
-            + "; ".join(f"{p.path} {p.text}" for p in problems)
+            + "; ".join(f"{p.path} {p.text}" for p in shown)
+            + (f"; and {hidden} more problems" if hidden else "")
             + f". {_REMEDY}",
         )
         self.problems = tuple(problems)
@@ -209,8 +228,8 @@ def parse_field(path: object) -> Optional[tuple[str, Optional[int]]]:
 
     Kinds: ``dialect``, ``data_lines``, ``time_base``, ``companion``,
     ``defaults.<field>``, ``channel_<part>`` (unit, scaling, dc_policy,
-    binding) and ``time_column``; *column* is the physical column of the
-    two indexed kinds.
+    binding), ``time_column`` and ``time_column_unit``; *column* is the
+    physical column of the indexed kinds.
     """
     if not isinstance(path, str) or len(path) > _MAX_FIELD_CHARS:
         return None
@@ -223,7 +242,8 @@ def parse_field(path: object) -> Optional[tuple[str, Optional[int]]]:
         return f"defaults.{match['default']}", None
     if match["channel"] is not None:
         return f"channel_{match['part']}", int(match["channel"])
-    return "time_column", int(match["time"])
+    kind = "time_column_unit" if match["time_unit"] else "time_column"
+    return kind, int(match["time"])
 
 
 def is_caller_asserted(channel: str) -> bool:
@@ -275,11 +295,22 @@ def _shown(value: object) -> str:
 
 
 class _Problems:
+    """The problems of one refusal, at most :data:`_MAX_PROBLEMS` kept (the
+    rest counted), so neither the refusal nor its message grows with an
+    unbounded input."""
+
     def __init__(self) -> None:
         self.items: list[InterpretationProblem] = []
+        self.more = 0
 
     def add(self, path: str, text: str, kind: str = "invalid") -> None:
+        if len(self.items) >= _MAX_PROBLEMS:
+            self.more += 1
+            return
         self.items.append(InterpretationProblem(path, kind, text))
+
+    def refusal(self) -> "ConfigurationError":
+        return ConfigurationError(self.items, self.more)
 
 
 def _free_text(
@@ -422,16 +453,28 @@ def _check_field(
                 path, "names a file-level default the interpretation leaves empty"
             )
             return False
-    elif kind == "time_column":
+    elif kind in ("time_column", "time_column_unit"):
+        if column is not None and column >= MAX_FIELDS:
+            problems.add(
+                path, f"names column {column}, beyond the {MAX_FIELDS} a file holds"
+            )
+            return False
         if not for_override:
             problems.add(
                 path,
-                "takes an override (a reason to leave the column unassessed), not "
-                "a basis",
+                "takes an override (a reason to leave the column unassessed, or "
+                "to keep a time column's unit against the file), not a basis",
             )
             return False
         listed = {c["column"] for c in interpretation["time_columns"]}
-        if column in listed or column in channels:
+        if kind == "time_column_unit" and column not in listed:
+            problems.add(
+                path,
+                f"names column {column}, which time_columns does not list; list it "
+                f"with its time_unit first",
+            )
+            return False
+        if kind == "time_column" and (column in listed or column in channels):
             problems.add(
                 path,
                 f"names column {column}, which the interpretation already reads; "
@@ -441,12 +484,47 @@ def _check_field(
     if for_override and kind not in OVERRIDABLE_FIELDS:
         problems.add(
             path,
-            f"takes no override: an override is named for a channel's unit, the "
-            f"time base, the rpm or acquisition instant default, or an unlisted "
-            f"time column (fields {list(OVERRIDABLE_FIELDS)})",
+            f"takes no override: an override is named for a channel's unit or "
+            f"scaling, the time base, the rpm or acquisition instant default, a "
+            f"time column's unit, or an unlisted time column (fields "
+            f"{list(OVERRIDABLE_FIELDS)})",
         )
         return False
     return True
+
+
+def _normalize_overrides(
+    given: object,
+    path: str,
+    interpretation: Optional[Mapping[str, Any]],
+    problems: _Problems,
+) -> dict[str, str]:
+    """The overrides of an attestation: each names an overridable field and a
+    reason, and there are at most :data:`_MAX_OVERRIDES` of them."""
+    overrides: dict[str, str] = {}
+    if given is None:
+        given = {}
+    if not isinstance(given, Mapping):
+        problems.add(path, f"is {_shown(given)}: pass an object")
+        return overrides
+    if len(given) > _MAX_OVERRIDES:
+        problems.add(path, f"names {len(given)} fields, over {_MAX_OVERRIDES}")
+        return overrides
+    for field, reason in given.items():
+        entry_path = f"{path}[{_shown(field)}]"
+        parsed = parse_field(field)
+        if parsed is None:
+            problems.add(entry_path, "is not a field this version confirms")
+            continue
+        if not _check_field(field, parsed, interpretation, problems, for_override=True):
+            continue
+        if reason is None:
+            problems.add(entry_path, "needs a reason", kind="missing")
+            continue
+        text = _free_text("override reason", reason, entry_path, problems)
+        if text is not None:
+            overrides[field] = text
+    return overrides
 
 
 def _normalize_attestation(
@@ -502,31 +580,9 @@ def _normalize_attestation(
                 field, parsed, interpretation, problems, for_override=False
             ):
                 bases[field] = entry
-    overrides: dict[str, str] = {}
-    given_overrides = value.get("overrides")
-    if given_overrides is None:
-        given_overrides = {}
-    if not isinstance(given_overrides, Mapping):
-        problems.add(
-            f"{path}.overrides", f"is {_shown(given_overrides)}: pass an object"
-        )
-    else:
-        for field, reason in given_overrides.items():
-            entry_path = f"{path}.overrides[{_shown(field)}]"
-            parsed = parse_field(field)
-            if parsed is None:
-                problems.add(entry_path, "is not a field this version confirms")
-                continue
-            if not _check_field(
-                field, parsed, interpretation, problems, for_override=True
-            ):
-                continue
-            if reason is None:
-                problems.add(entry_path, "needs a reason", kind="missing")
-                continue
-            text = _free_text("override reason", reason, entry_path, problems)
-            if text is not None:
-                overrides[field] = text
+    overrides = _normalize_overrides(
+        value.get("overrides"), f"{path}.overrides", interpretation, problems
+    )
     declared_by = value.get("declared_by")
     if declared_by is not None:
         declared_by = _free_text(
@@ -568,7 +624,7 @@ def normalize_configuration(configuration: object) -> dict[str, Any]:
             f"is {_shown(configuration)}: pass an object with the keys "
             f"{list(_CONFIGURATION_FIELDS)}",
         )
-        raise ConfigurationError(problems.items)
+        raise problems.refusal()
     for key in configuration:
         if key not in _CONFIGURATION_FIELDS:
             problems.add(
@@ -601,7 +657,7 @@ def normalize_configuration(configuration: object) -> dict[str, Any]:
         configuration.get("attestation"), interpretation, problems
     )
     if problems.items:
-        raise ConfigurationError(problems.items)
+        raise problems.refusal()
     return {
         "schema": CONFIGURATION_SCHEMA,
         "interpretation": interpretation,

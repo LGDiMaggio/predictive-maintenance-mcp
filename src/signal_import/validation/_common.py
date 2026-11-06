@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from typing import Any, Mapping, Optional
 
+from ...file_text import PREAMBLE_LINE_CHARS, FileText
 from .. import statements as st
 from ..attestation import BASIS_ORIGIN
 from ..contracts import IssueEffect, Statement, ValidationIssue
@@ -45,6 +46,7 @@ class _Run:
         field_path: Optional[str] = None,
         line: Optional[int] = None,
         column: Optional[int] = None,
+        token: Optional[FileText] = None,
     ) -> None:
         self.issues.append(
             ValidationIssue(
@@ -54,6 +56,7 @@ class _Run:
                 field=field_path,
                 line=line,
                 column=column,
+                token=token,
             )
         )
 
@@ -94,10 +97,19 @@ def _origin(entry: Optional[Mapping[str, Any]]) -> Optional[str]:
     return None if entry is None else BASIS_ORIGIN[entry["basis"]]
 
 
+def _printed(raw: str) -> FileText:
+    """File text an issue names, escaped and capped like a preamble line."""
+    return FileText.of(raw.strip(), cap=PREAMBLE_LINE_CHARS)
+
+
 def _decimal(text: Optional[str]) -> Optional[Decimal]:
+    """A decimal string as a finite Decimal; None when it is absent or not a
+    finite number (a hand-written ledger may hold ``NaN``), so it never
+    equals anything."""
     if text is None:
         return None
     try:
-        return Decimal(text)
+        value = Decimal(text)
     except (InvalidOperation, ValueError):
         return None
+    return value if value.is_finite() else None

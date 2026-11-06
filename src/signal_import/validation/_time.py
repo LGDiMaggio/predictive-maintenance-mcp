@@ -23,7 +23,7 @@ from ..timebase import (
     TimeBaseRefused,
     assess_time_column,
 )
-from ._common import _ASK, _Run, _decimal
+from ._common import _ASK, _Run, _decimal, _printed
 from ._evidence import _Evidence, _Preamble, _time_like
 from ._history import _Prior
 
@@ -279,6 +279,36 @@ def _check_rate(
         compared.add(assessed.line)
     choice = run.override("time_base")
     for printed in evidence.preamble:
+        if (
+            printed.field in ("sampling_rate_hz", "sample_interval")
+            and not printed.printed
+            and printed.line not in compared
+        ):
+            # Recognized but not readable as the field's number: never taken
+            # as agreeing with the configured rate.
+            what = (
+                "a sampling rate that this version cannot read as a number in Hz"
+                if printed.field == "sampling_rate_hz"
+                else "a sample interval that this version cannot read as a number "
+                "in s"
+            )
+            run.issue(
+                "printed_value_unverified",
+                "notice" if choice is not None else "needs_confirmation",
+                f"Line {printed.line} prints {what} in the file's decimal mark (its "
+                f"text as printed is in this issue's token), so the configured rate "
+                f"{rate} Hz cannot be checked against it"
+                + (
+                    "; the time-base override is recorded."
+                    if choice is not None
+                    else f": {_ASK} to choose the time-base source, and name an "
+                    f"override with a reason for 'time_base'."
+                ),
+                field_path="time_base",
+                line=printed.line,
+                token=_printed(printed.raw),
+            )
+            continue
         if (
             printed.field not in ("sampling_rate_hz", "sample_interval")
             or not printed.printed

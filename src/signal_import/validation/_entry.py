@@ -43,7 +43,7 @@ from ..contracts import (
     ValidationOutcome,
     ValidationResult,
 )
-from ..inspection import MIN_WAVEFORM_ROWS
+from ..inspection import _LABEL_UNIT, MIN_WAVEFORM_ROWS, _bracketed
 from ..records import ImportRecordStore
 from ._checks import (
     _check_stated_defaults,
@@ -56,8 +56,9 @@ from ._checks import (
     _structure_proofs,
 )
 from ._common import _Run
-from ._evidence import _aligned, _evidence
+from ._evidence import _aligned, _Evidence, _evidence
 from ._history import (
+    _Budget,
     _Prior,
     _Views,
     _candidate_ids,
@@ -65,6 +66,7 @@ from ._history import (
     _precheck,
     _prior_differs,
 )
+from ._printed import _check_printed
 from ._results import (
     _channel_results,
     _sample_stats,
@@ -109,6 +111,64 @@ def _pending_dc_policies(
     return patched, columns
 
 
+def _match_rows(run: _Run, evidence: _Evidence, field_count: int) -> None:
+    """Match the header and units rows to the data's fields. A row that does
+    not match is no longer read for labels or tokens; a row whose unit
+    tokens are lost that way is recorded, so the units cannot pass as
+    checked against it."""
+    evidence.header = _aligned(evidence.header, evidence, field_count)
+    evidence.units = _aligned(evidence.units, evidence, field_count)
+    evidence.extra_units = _aligned(evidence.extra_units, evidence, field_count)
+    if evidence.header is not None and len(evidence.header) != field_count:
+        run.issue(
+            "field_count_mismatch",
+            "notice",
+            f"The header has {len(evidence.header)} fields but the data rows "
+            f"have {field_count}, so labels and unit tokens are not "
+            f"matched to columns: every channel is mapped by its index, and "
+            f"the statements show no label.",
+            line=evidence.header_line,
+        )
+        if evidence.header_line is not None and any(
+            _bracketed(label, _LABEL_UNIT) for label in evidence.header
+        ):
+            evidence.lost.append(
+                ("header", evidence.header_line, len(evidence.header), field_count)
+            )
+        evidence.header = None
+    if evidence.units is not None and len(evidence.units) != field_count:
+        run.issue(
+            "field_count_mismatch",
+            "notice",
+            f"The units row has {len(evidence.units)} fields but the data rows "
+            f"have {field_count}, so its unit tokens are not matched to "
+            f"columns.",
+            line=evidence.units_line,
+        )
+        if evidence.units_line is not None and any(evidence.units):
+            evidence.lost.append(
+                ("units", evidence.units_line, len(evidence.units), field_count)
+            )
+        evidence.units = None
+    extra = evidence.extra_units
+    if extra is not None and len(extra) != field_count:
+        if evidence.extra_units_line is not None and any(extra):
+            evidence.lost.append(
+                ("units", evidence.extra_units_line, len(extra), field_count)
+            )
+        evidence.extra_units = None
+    evidence.extra_header = _aligned(evidence.extra_header, evidence, field_count)
+    header = evidence.extra_header
+    if header is not None and len(header) != field_count:
+        if evidence.extra_header_line is not None and any(
+            _bracketed(label, _LABEL_UNIT) for label in header
+        ):
+            evidence.lost.append(
+                ("header", evidence.extra_header_line, len(header), field_count)
+            )
+        evidence.extra_header = None
+
+
 def validate_import(
     path: str,
     configuration: Mapping[str, Any],
@@ -133,16 +193,21 @@ def validate_import(
     Raises:
         ConfigurationError: The configuration is malformed (one message,
             every problem typed).
-        ValueError: An unknown channel or transport, or a malformed
-            ``PMM_IMPORT_ROOTS``.
+        ValueError: An unknown channel or transport, a malformed
+            ``PMM_IMPORT_ROOTS``, or a bound asset id that differs from an
+            existing ledger only by letter case (the ledger store refuses it).
         PathRefused: The path is unsafe, outside the import roots, not a
             regular ``.csv`` or ``.txt`` file, too large, or unreadable.
         TextScanRefused: Binary, compressed, UTF-16/UTF-32 or undecodable
             content, a line over the line cap, or rows too wide under every
             delimiter.
-        ImportRecordError: An earlier import record cannot be read; it is
-            never taken as no earlier record.
-        LedgerError: The asset ledger cannot be read.
+        ImportRecordError: An earlier import record, or the record
+            directory, cannot be listed, sized or read (an operating-system
+            error); it is never taken as no earlier record.
+        LedgerError: The ledger directory or a ledger cannot be listed, sized
+            or read (an operating-system error). Both are ``ValueError``
+            subclasses: the tool boundary returns them as refusals with their
+            remedy, and no result (so never ``ready``) is produced.
     """
     channel = check_channel(channel)
     transport = check_transport(transport)
@@ -209,9 +274,11 @@ def validate_import(
     )
     if declared_value is None:
         declared_value = _declared(evidence, None)
+    budget = _Budget()
     prior = _Prior(
         store=ImportRecordStore(config.get_import_dir()),
         sha256=decode.source_sha256 if decode is not None else None,
+        budget=budget,
     )
     checks: list[TimeColumnCheck] = []
     channels_out: list[ValidatedChannel] = []
@@ -231,29 +298,7 @@ def validate_import(
                 f"which this version requires of an imported signal.",
                 line=decode.first_line,
             )
-        evidence.header = _aligned(evidence.header, evidence, decode.field_count)
-        evidence.units = _aligned(evidence.units, evidence, decode.field_count)
-        if evidence.header is not None and len(evidence.header) != decode.field_count:
-            run.issue(
-                "field_count_mismatch",
-                "notice",
-                f"The header has {len(evidence.header)} fields but the data rows "
-                f"have {decode.field_count}, so labels and unit tokens are not "
-                f"matched to columns: every channel is mapped by its index, and "
-                f"the statements show no label.",
-                line=evidence.header_line,
-            )
-            evidence.header = None
-        if evidence.units is not None and len(evidence.units) != decode.field_count:
-            run.issue(
-                "field_count_mismatch",
-                "notice",
-                f"The units row has {len(evidence.units)} fields but the data rows "
-                f"have {decode.field_count}, so its unit tokens are not matched to "
-                f"columns.",
-                line=evidence.units_line,
-            )
-            evidence.units = None
+        _match_rows(run, evidence, decode.field_count)
         checks, assessments = _time_columns(run, decode, _as_declared(declared_value))
         _check_rate(run, evidence, assessments, prior, declared_value)
         _time_candidates(run, evidence, decode.field_count)
@@ -261,6 +306,7 @@ def validate_import(
             _check_units(run, evidence, channel_entry)
             _check_time_like_channel(run, evidence, channel_entry)
         _check_stated_defaults(run, evidence)
+        _check_printed(run, evidence, decode.field_count)
         the_import_id = compute_import_id(
             decode.source_sha256, decode.size_bytes, interpretation
         )
@@ -276,7 +322,12 @@ def validate_import(
             for result in decode.channels
         }
         candidates = _candidate_ids(decode)
-        views = _Views(LedgerStore(config.get_ledger_dir()), candidates)
+        views = _Views(
+            LedgerStore(config.get_ledger_dir()),
+            candidates,
+            decode.source_sha256,
+            budget=budget,
+        )
         prechecks, points = _precheck(run, decode, identities, formats, views)
         _prior_differs(
             run,
