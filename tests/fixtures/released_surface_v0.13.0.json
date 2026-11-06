@@ -1,0 +1,588 @@
+{
+  "tag": "v0.13.0",
+  "commit": "50a01dd1adbfb1ddfd802c20bb214385d8c7bacb",
+  "method": "See the module docstring of tests/test_semantic_registry_closure.py.",
+  "tools": {
+    "analyze_envelope": {
+      "parameters": [
+        "filter_high",
+        "filter_low",
+        "num_peaks",
+        "random_seed",
+        "segment_duration",
+        "signal_id"
+      ],
+      "output_properties": [
+        "diagnosis",
+        "filter_band",
+        "frequency_hz",
+        "magnitude",
+        "magnitude_db",
+        "note",
+        "num_samples",
+        "sampling_rate",
+        "signal_id",
+        "top_peaks"
+      ]
+    },
+    "analyze_fft": {
+      "parameters": [
+        "max_frequency",
+        "random_seed",
+        "segment_duration",
+        "signal_id"
+      ],
+      "output_properties": [
+        "freq_range_hz",
+        "frequency_hz",
+        "frequency_resolution",
+        "magnitude",
+        "magnitude_db",
+        "note",
+        "num_samples",
+        "peak_frequency",
+        "peak_magnitude",
+        "rms_spectral",
+        "sampling_rate",
+        "top_peaks",
+        "total_bins"
+      ]
+    },
+    "analyze_signal_trend": {
+      "parameters": [
+        "feature_name",
+        "onset_threshold_sigma",
+        "overlap_ratio",
+        "segment_duration",
+        "signal_id"
+      ],
+      "output_properties": [
+        "analysis_scope",
+        "baseline_segments",
+        "feature_name",
+        "feature_series",
+        "intercept",
+        "num_segments",
+        "onset_detected",
+        "onset_segment_index",
+        "onset_threshold_sigma",
+        "onset_time_s",
+        "p_value",
+        "r_squared",
+        "segment_times_s",
+        "series_truncated",
+        "slope",
+        "trend_direction"
+      ]
+    },
+    "analyze_statistics": {
+      "parameters": [
+        "signal_id"
+      ],
+      "output_properties": [
+        "crest_factor",
+        "kurtosis",
+        "mean",
+        "peak",
+        "peak_to_peak",
+        "rms",
+        "signal_unit",
+        "skewness",
+        "std_dev",
+        "unit_note"
+      ]
+    },
+    "assess_severity": {
+      "parameters": [
+        "machine_group",
+        "machine_power_kw",
+        "rms_velocity_mm_s",
+        "rpm",
+        "signal_id",
+        "support_type",
+        "thresholds"
+      ],
+      "output_properties": [
+        "alert_level",
+        "axis",
+        "boundaries",
+        "color_code",
+        "exceeded_threshold",
+        "frequency_range",
+        "machine_group",
+        "machine_power_kw",
+        "operating_speed_rpm",
+        "original_unit",
+        "rms_velocity_mm_s",
+        "severity_level",
+        "signal_id",
+        "status",
+        "support_type",
+        "threshold_provenance",
+        "unit_conversion_performed",
+        "zone",
+        "zone_description"
+      ]
+    },
+    "calculate_bearing_characteristic_frequencies": {
+      "parameters": [
+        "ball_diameter_mm",
+        "contact_angle_deg",
+        "num_balls",
+        "pitch_diameter_mm",
+        "rpm"
+      ],
+      "output_properties": []
+    },
+    "check_bearing_faults": {
+      "parameters": [
+        "ball_diameter_mm",
+        "bearing_id",
+        "contact_angle_deg",
+        "frequencies",
+        "num_balls",
+        "pitch_diameter_mm",
+        "rpm",
+        "signal_id",
+        "tolerance_pct"
+      ],
+      "output_properties": [
+        "bearing_frequencies",
+        "bearing_id",
+        "detected",
+        "detected_frequency_hz",
+        "deviation_pct",
+        "evidence_strength",
+        "expected_frequency_hz",
+        "fault_checks",
+        "fault_type",
+        "fault_type_canonical",
+        "harmonics_detected",
+        "magnitude",
+        "most_likely_fault",
+        "most_likely_fault_canonical",
+        "overall_assessment",
+        "rpm",
+        "shaft_frequency_hz",
+        "signal_id",
+        "source"
+      ]
+    },
+    "clear_signals": {
+      "parameters": [
+        "signal_id"
+      ],
+      "output_properties": []
+    },
+    "compute_power_spectral_density": {
+      "parameters": [
+        "noverlap",
+        "nperseg",
+        "signal_id",
+        "window"
+      ],
+      "output_properties": [
+        "freq_range_hz",
+        "frequency_hz",
+        "frequency_resolution",
+        "magnitude",
+        "magnitude_db",
+        "note",
+        "noverlap",
+        "nperseg",
+        "num_samples",
+        "sampling_rate",
+        "signal_id",
+        "top_peaks",
+        "total_power",
+        "window"
+      ]
+    },
+    "compute_spectrogram_stft": {
+      "parameters": [
+        "noverlap",
+        "nperseg",
+        "signal_id",
+        "window"
+      ],
+      "output_properties": [
+        "energy_per_band",
+        "freq_range_hz",
+        "max_power_freq_hz",
+        "max_power_time_s",
+        "noverlap",
+        "nperseg",
+        "num_freq_bins",
+        "num_samples",
+        "num_time_bins",
+        "sampling_rate",
+        "signal_id",
+        "time_range_s",
+        "window"
+      ]
+    },
+    "diagnose_vibration": {
+      "parameters": [
+        "bearing_id",
+        "machine_group",
+        "rpm",
+        "signal_id",
+        "support_type"
+      ],
+      "output_properties": [
+        "alert_level",
+        "anomaly_detection",
+        "axis",
+        "bearing_faults",
+        "bearing_frequencies",
+        "bearing_id",
+        "boundaries",
+        "color_code",
+        "detected",
+        "detected_frequency_hz",
+        "deviation_pct",
+        "evidence_strength",
+        "exceeded_threshold",
+        "expected_frequency_hz",
+        "fault_checks",
+        "fault_type",
+        "fault_type_canonical",
+        "fft_summary",
+        "frequency_range",
+        "harmonics_detected",
+        "iso_severity",
+        "machine_group",
+        "machine_power_kw",
+        "magnitude",
+        "most_likely_fault",
+        "most_likely_fault_canonical",
+        "operating_speed_rpm",
+        "original_unit",
+        "overall_assessment",
+        "overall_diagnosis",
+        "psd_summary",
+        "reason",
+        "recommendations",
+        "remedy",
+        "rms_velocity_mm_s",
+        "rpm",
+        "severity_level",
+        "shaft_frequency_hz",
+        "signal_id",
+        "source",
+        "status",
+        "stft_summary",
+        "support_type",
+        "threshold_provenance",
+        "unit_conversion_performed",
+        "zone",
+        "zone_description"
+      ]
+    },
+    "estimate_rul": {
+      "parameters": [
+        "failure_threshold",
+        "feature_name",
+        "feature_values",
+        "method",
+        "signal_ids",
+        "time_unit",
+        "timestamps"
+      ],
+      "output_properties": [
+        "current_value",
+        "estimated_rate",
+        "failure_threshold",
+        "feature_name",
+        "fit_r_squared",
+        "message",
+        "method",
+        "num_measurements",
+        "observation_horizon",
+        "precision_heuristic",
+        "rul",
+        "rul_interval_95",
+        "status",
+        "time_unit",
+        "trend_p_value"
+      ]
+    },
+    "extract_features_from_signal": {
+      "parameters": [
+        "overlap_ratio",
+        "segment_duration",
+        "signal_id"
+      ],
+      "output_properties": [
+        "feature_names",
+        "features_preview",
+        "features_shape",
+        "num_segments",
+        "overlap_ratio",
+        "segment_duration_s",
+        "segment_length_samples"
+      ]
+    },
+    "extract_manual_specs": {
+      "parameters": [
+        "file_name",
+        "use_cache"
+      ],
+      "output_properties": []
+    },
+    "generate_diagnostic_report": {
+      "parameters": [
+        "baseline_signal_id",
+        "bearing_id",
+        "formats",
+        "machine_group",
+        "rpm",
+        "signal_id",
+        "support_type"
+      ],
+      "output_properties": []
+    },
+    "generate_diagnostic_report_docx": {
+      "parameters": [
+        "sections",
+        "signal_id",
+        "title"
+      ],
+      "output_properties": []
+    },
+    "generate_envelope_report": {
+      "parameters": [
+        "bearing_freqs",
+        "filter_high",
+        "filter_low",
+        "max_freq",
+        "num_peaks",
+        "signal_id"
+      ],
+      "output_properties": []
+    },
+    "generate_feature_comparison_report": {
+      "parameters": [
+        "features_to_plot",
+        "overlap_ratio",
+        "segment_duration",
+        "signal_groups"
+      ],
+      "output_properties": []
+    },
+    "generate_fft_report": {
+      "parameters": [
+        "max_freq",
+        "num_peaks",
+        "rpm",
+        "signal_id"
+      ],
+      "output_properties": []
+    },
+    "generate_iso_report": {
+      "parameters": [
+        "machine_group",
+        "rpm",
+        "signal_id",
+        "support_type"
+      ],
+      "output_properties": []
+    },
+    "generate_maintenance_recommendations": {
+      "parameters": [
+        "fault_types",
+        "severity_zone"
+      ],
+      "output_properties": [
+        "result"
+      ]
+    },
+    "generate_pca_visualization_report": {
+      "parameters": [
+        "model_name",
+        "overlap_ratio",
+        "segment_duration",
+        "test_signal_ids",
+        "true_labels"
+      ],
+      "output_properties": []
+    },
+    "generate_test_signal": {
+      "parameters": [
+        "duration",
+        "noise_level",
+        "random_seed",
+        "sampling_rate",
+        "signal_type"
+      ],
+      "output_properties": [
+        "duration_s",
+        "filepath",
+        "load_timestamp",
+        "num_samples",
+        "raw_format",
+        "sampling_rate",
+        "shape",
+        "signal_id",
+        "signal_unit",
+        "size_bytes",
+        "source_metadata"
+      ]
+    },
+    "get_signal_info": {
+      "parameters": [
+        "signal_id"
+      ],
+      "output_properties": [
+        "duration_s",
+        "filepath",
+        "load_timestamp",
+        "num_samples",
+        "raw_format",
+        "sampling_rate",
+        "shape",
+        "signal_id",
+        "signal_unit",
+        "size_bytes",
+        "source_metadata"
+      ]
+    },
+    "list_html_reports": {
+      "parameters": [
+        "file_name"
+      ],
+      "output_properties": [
+        "result"
+      ]
+    },
+    "list_machine_manuals": {
+      "parameters": [],
+      "output_properties": [
+        "result"
+      ]
+    },
+    "list_signals": {
+      "parameters": [
+        "scope"
+      ],
+      "output_properties": []
+    },
+    "load_signal": {
+      "parameters": [
+        "byte_order",
+        "channel_index",
+        "filepath",
+        "header_offset",
+        "n_channels",
+        "overwrite",
+        "sample_format",
+        "sampling_rate",
+        "scale_factor",
+        "signal_id",
+        "signal_unit"
+      ],
+      "output_properties": [
+        "duration_s",
+        "filepath",
+        "load_timestamp",
+        "num_samples",
+        "raw_format",
+        "result",
+        "sampling_rate",
+        "shape",
+        "signal_id",
+        "signal_unit",
+        "size_bytes",
+        "source_metadata"
+      ]
+    },
+    "plot_signal": {
+      "parameters": [
+        "show_statistics",
+        "signal_id",
+        "time_range",
+        "title"
+      ],
+      "output_properties": [
+        "result"
+      ]
+    },
+    "predict_anomalies": {
+      "parameters": [
+        "model_name",
+        "signal_id"
+      ],
+      "output_properties": [
+        "anomaly_count",
+        "anomaly_ratio",
+        "model_name",
+        "num_segments",
+        "overall_health",
+        "score_percentiles",
+        "segment_duration_s",
+        "worst_segments"
+      ]
+    },
+    "read_manual_excerpt": {
+      "parameters": [
+        "file_name",
+        "max_pages"
+      ],
+      "output_properties": [
+        "result"
+      ]
+    },
+    "search_bearing_catalog": {
+      "parameters": [
+        "bearing_id"
+      ],
+      "output_properties": [
+        "bearing_id",
+        "catalog_contains",
+        "result",
+        "status",
+        "suggestion"
+      ]
+    },
+    "search_documentation": {
+      "parameters": [
+        "force_reindex",
+        "query",
+        "top_k"
+      ],
+      "output_properties": []
+    },
+    "train_anomaly_model": {
+      "parameters": [
+        "fault_signal_ids",
+        "healthy_signal_ids",
+        "healthy_validation_ids",
+        "model_name",
+        "model_type",
+        "overlap_ratio",
+        "pca_variance",
+        "segment_duration"
+      ],
+      "output_properties": [
+        "model_name",
+        "model_params",
+        "model_path",
+        "model_type",
+        "num_features_original",
+        "num_features_pca",
+        "num_training_samples",
+        "pca_path",
+        "scaler_path",
+        "validation_accuracy",
+        "validation_details",
+        "validation_metrics",
+        "variance_explained"
+      ]
+    }
+  },
+  "prompts": [
+    "diagnose_bearing",
+    "diagnose_gear",
+    "quick_diagnostic_report"
+  ]
+}
