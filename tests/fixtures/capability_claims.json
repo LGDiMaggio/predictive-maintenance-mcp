@@ -1,0 +1,263 @@
+{
+  "description": "One entry per registered MCP tool and prompt. 'release' is the first published version that registers the name, or 'unreleased'. 'claim_class' (what kind of statement the capability may support) stays null until it is decided; tests/test_semantic_registry_closure.py keeps this file closed over the registry.",
+  "entries": {
+    "analyze_envelope": {
+      "kind": "tool",
+      "release": "0.13.0",
+      "claim_class": null,
+      "claim_class_decision": "pending owner decision"
+    },
+    "analyze_fft": {
+      "kind": "tool",
+      "release": "0.13.0",
+      "claim_class": null,
+      "claim_class_decision": "pending owner decision"
+    },
+    "analyze_signal_trend": {
+      "kind": "tool",
+      "release": "0.13.0",
+      "claim_class": null,
+      "claim_class_decision": "pending owner decision"
+    },
+    "analyze_statistics": {
+      "kind": "tool",
+      "release": "0.13.0",
+      "claim_class": null,
+      "claim_class_decision": "pending owner decision"
+    },
+    "assess_asset_change": {
+      "kind": "tool",
+      "release": "unreleased",
+      "claim_class": null,
+      "claim_class_decision": "pending owner decision"
+    },
+    "assess_severity": {
+      "kind": "tool",
+      "release": "0.13.0",
+      "claim_class": null,
+      "claim_class_decision": "pending owner decision"
+    },
+    "assess_shaft_fault_evidence": {
+      "kind": "tool",
+      "release": "unreleased",
+      "claim_class": null,
+      "claim_class_decision": "pending owner decision"
+    },
+    "calculate_bearing_characteristic_frequencies": {
+      "kind": "tool",
+      "release": "0.13.0",
+      "claim_class": null,
+      "claim_class_decision": "pending owner decision"
+    },
+    "check_bearing_faults": {
+      "kind": "tool",
+      "release": "0.13.0",
+      "claim_class": null,
+      "claim_class_decision": "pending owner decision"
+    },
+    "clear_signals": {
+      "kind": "tool",
+      "release": "0.13.0",
+      "claim_class": null,
+      "claim_class_decision": "pending owner decision"
+    },
+    "compute_power_spectral_density": {
+      "kind": "tool",
+      "release": "0.13.0",
+      "claim_class": null,
+      "claim_class_decision": "pending owner decision"
+    },
+    "compute_spectrogram_stft": {
+      "kind": "tool",
+      "release": "0.13.0",
+      "claim_class": null,
+      "claim_class_decision": "pending owner decision"
+    },
+    "declare_healthy_baseline": {
+      "kind": "tool",
+      "release": "unreleased",
+      "claim_class": null,
+      "claim_class_decision": "pending owner decision"
+    },
+    "declare_measurement_point": {
+      "kind": "tool",
+      "release": "unreleased",
+      "claim_class": null,
+      "claim_class_decision": "pending owner decision"
+    },
+    "diagnose_vibration": {
+      "kind": "tool",
+      "release": "0.13.0",
+      "claim_class": null,
+      "claim_class_decision": "pending owner decision"
+    },
+    "estimate_rul": {
+      "kind": "tool",
+      "release": "0.13.0",
+      "claim_class": null,
+      "claim_class_decision": "pending owner decision"
+    },
+    "extract_features_from_signal": {
+      "kind": "tool",
+      "release": "0.13.0",
+      "claim_class": null,
+      "claim_class_decision": "pending owner decision"
+    },
+    "extract_manual_specs": {
+      "kind": "tool",
+      "release": "0.13.0",
+      "claim_class": null,
+      "claim_class_decision": "pending owner decision"
+    },
+    "forecast_asset_indicator": {
+      "kind": "tool",
+      "release": "unreleased",
+      "claim_class": null,
+      "claim_class_decision": "pending owner decision"
+    },
+    "generate_diagnostic_report": {
+      "kind": "tool",
+      "release": "0.13.0",
+      "claim_class": null,
+      "claim_class_decision": "pending owner decision"
+    },
+    "generate_diagnostic_report_docx": {
+      "kind": "tool",
+      "release": "0.13.0",
+      "claim_class": null,
+      "claim_class_decision": "pending owner decision"
+    },
+    "generate_envelope_report": {
+      "kind": "tool",
+      "release": "0.13.0",
+      "claim_class": null,
+      "claim_class_decision": "pending owner decision"
+    },
+    "generate_feature_comparison_report": {
+      "kind": "tool",
+      "release": "0.13.0",
+      "claim_class": null,
+      "claim_class_decision": "pending owner decision"
+    },
+    "generate_fft_report": {
+      "kind": "tool",
+      "release": "0.13.0",
+      "claim_class": null,
+      "claim_class_decision": "pending owner decision"
+    },
+    "generate_iso_report": {
+      "kind": "tool",
+      "release": "0.13.0",
+      "claim_class": null,
+      "claim_class_decision": "pending owner decision"
+    },
+    "generate_maintenance_recommendations": {
+      "kind": "tool",
+      "release": "0.13.0",
+      "claim_class": null,
+      "claim_class_decision": "pending owner decision"
+    },
+    "generate_pca_visualization_report": {
+      "kind": "tool",
+      "release": "0.13.0",
+      "claim_class": null,
+      "claim_class_decision": "pending owner decision"
+    },
+    "generate_test_signal": {
+      "kind": "tool",
+      "release": "0.13.0",
+      "claim_class": null,
+      "claim_class_decision": "pending owner decision"
+    },
+    "get_asset_history": {
+      "kind": "tool",
+      "release": "unreleased",
+      "claim_class": null,
+      "claim_class_decision": "pending owner decision"
+    },
+    "get_signal_info": {
+      "kind": "tool",
+      "release": "0.13.0",
+      "claim_class": null,
+      "claim_class_decision": "pending owner decision"
+    },
+    "list_html_reports": {
+      "kind": "tool",
+      "release": "0.13.0",
+      "claim_class": null,
+      "claim_class_decision": "pending owner decision"
+    },
+    "list_machine_manuals": {
+      "kind": "tool",
+      "release": "0.13.0",
+      "claim_class": null,
+      "claim_class_decision": "pending owner decision"
+    },
+    "list_signals": {
+      "kind": "tool",
+      "release": "0.13.0",
+      "claim_class": null,
+      "claim_class_decision": "pending owner decision"
+    },
+    "load_signal": {
+      "kind": "tool",
+      "release": "0.13.0",
+      "claim_class": null,
+      "claim_class_decision": "pending owner decision"
+    },
+    "plot_signal": {
+      "kind": "tool",
+      "release": "0.13.0",
+      "claim_class": null,
+      "claim_class_decision": "pending owner decision"
+    },
+    "predict_anomalies": {
+      "kind": "tool",
+      "release": "0.13.0",
+      "claim_class": null,
+      "claim_class_decision": "pending owner decision"
+    },
+    "read_manual_excerpt": {
+      "kind": "tool",
+      "release": "0.13.0",
+      "claim_class": null,
+      "claim_class_decision": "pending owner decision"
+    },
+    "search_bearing_catalog": {
+      "kind": "tool",
+      "release": "0.13.0",
+      "claim_class": null,
+      "claim_class_decision": "pending owner decision"
+    },
+    "search_documentation": {
+      "kind": "tool",
+      "release": "0.13.0",
+      "claim_class": null,
+      "claim_class_decision": "pending owner decision"
+    },
+    "train_anomaly_model": {
+      "kind": "tool",
+      "release": "0.13.0",
+      "claim_class": null,
+      "claim_class_decision": "pending owner decision"
+    },
+    "diagnose_bearing": {
+      "kind": "prompt",
+      "release": "0.13.0",
+      "claim_class": null,
+      "claim_class_decision": "pending owner decision"
+    },
+    "diagnose_gear": {
+      "kind": "prompt",
+      "release": "0.13.0",
+      "claim_class": null,
+      "claim_class_decision": "pending owner decision"
+    },
+    "quick_diagnostic_report": {
+      "kind": "prompt",
+      "release": "0.13.0",
+      "claim_class": null,
+      "claim_class_decision": "pending owner decision"
+    }
+  }
+}
