@@ -44,6 +44,10 @@ How a file is read (plan KTD8):
 Two modes: ``"full"`` keeps every channel's samples; ``"digest"`` (for
 validation) keeps only the time columns and streams each channel's samples
 digest, which equals ``import_config.samples_digest`` of the full array.
+In both modes every channel also carries the mean and population standard
+deviation of its scaled samples, merged block by block (three numbers per
+channel, whatever the file's length), so validation can state a voltage
+channel's DC level without keeping its samples.
 
 Refusals are :class:`TextDecodeError` (a ``ValueError``) with an issue code
 of the import contract, the physical line, the 0-based field and the
@@ -56,6 +60,7 @@ measurement replays under the contract it was decoded with.
 
 import codecs
 import hashlib
+import math
 import re
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
@@ -134,6 +139,34 @@ _UTF8_BOM = b"\xef\xbb\xbf"
 #: Bytes that make a line hold data (anything but ASCII whitespace).
 _DATA_BYTE = np.ones(256, dtype=bool)
 _DATA_BYTE[list(b" \t\x0b\x0c\n")] = False
+
+
+def _merge_moments(
+    moments: tuple[int, float, float, float], block: np.ndarray
+) -> tuple[int, float, float, float]:
+    """``(count, shift, mean, sum of squared deviations)`` after one more
+    block: Chan's pairwise update on the samples minus *shift* (the
+    channel's first sample), so the moments stay exact to rounding without
+    keeping the samples, a constant channel has exactly zero spread, and the
+    same blocks always give the same result. The channel's mean is
+    ``shift + mean``."""
+    count, shift, mean, squares = moments
+    size = int(block.size)
+    if size == 0:
+        return moments
+    if count == 0:
+        shift = float(block[0])
+    shifted = block - shift
+    block_mean = float(shifted.mean())
+    block_squares = float(np.square(shifted - block_mean).sum())
+    total = count + size
+    delta = block_mean - mean
+    return (
+        total,
+        shift,
+        mean + delta * size / total,
+        squares + block_squares + delta * delta * count * size / total,
+    )
 
 
 def _alphabet(decimal_mark: str) -> np.ndarray:
@@ -287,12 +320,17 @@ class ChannelResult:
         samples: The float64 samples after scaling (None in digest mode).
         samples_digest: SHA-256 of the samples as little-endian float64.
         sample_count: Number of samples.
+        mean: Mean of the scaled samples, merged block by block.
+        std: Population standard deviation of the scaled samples, merged
+            block by block (Chan's pairwise update), in both modes.
     """
 
     column: int
     samples: Optional[np.ndarray]
     samples_digest: str
     sample_count: int
+    mean: Optional[float] = None
+    std: Optional[float] = None
 
 
 @dataclass(frozen=True)
@@ -461,6 +499,11 @@ class _Decoder:
         self.next_line = 1
         self.partial = b""
         self.digests = {column: hashlib.sha256() for column in plan.channels}
+        # Per channel: sample count, shift (the first sample), running mean of
+        # the shifted samples, sum of squared deviations.
+        self.moments: dict[int, tuple[int, float, float, float]] = {
+            c: (0, 0.0, 0.0, 0.0) for c in plan.channels
+        }
         self.blocks: dict[int, list[np.ndarray]] = {c: [] for c in plan.channels}
         self.time_blocks: dict[int, list[tuple[np.ndarray, np.ndarray]]] = {
             column: [] for column, _ in plan.time_columns
@@ -693,6 +736,7 @@ class _Decoder:
             raise min(refusals, key=lambda r: (r.line or 0, r.field or 0))
         for column, samples in values.items():
             self.digests[column].update(samples.data)
+            self.moments[column] = _merge_moments(self.moments[column], samples)
             if self.mode == "full":
                 self.blocks[column].append(samples)
         for column, pair in times.items():
@@ -983,12 +1027,15 @@ class _Decoder:
             blocks = self.blocks.pop(column)
             samples = np.concatenate(blocks) if self.mode == "full" else None
             blocks.clear()
+            count, shift, mean, squares = self.moments[column]
             channels.append(
                 ChannelResult(
                     column=column,
                     samples=samples,
                     samples_digest=self.digests[column].hexdigest(),
                     sample_count=self.rows,
+                    mean=shift + mean if count else None,
+                    std=math.sqrt(squares / count) if count else None,
                 )
             )
         times = tuple(

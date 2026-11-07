@@ -283,20 +283,26 @@ ISSUE_CODES: tuple[str, ...] = (
     "time_off_pattern",
     "time_resolution_insufficient",
     "rate_sources_disagree",
+    "time_column_unassessed",
     # units and scaling
     "unit_token_unrecognized",
     "unit_token_preview_only",
     "double_scaling",
     "missing_sensitivity",
     "contradicts_file_declaration",
-    # binding and history
+    "printed_value_unverified",
+    # bases, binding and history
     "missing_basis",
+    "basis_mismatch",
+    "binding_invalid",
     "binding_collision",
     "prior_import_differs",
     "supersedes_baseline_member",
     "data_range_not_overlapping",
     "restores_superseded_interpretation",
     "companion_present",
+    "history_unreadable",
+    "history_incomplete",
     # replay
     "source_missing",
     "source_changed",
