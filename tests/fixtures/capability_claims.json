@@ -175,9 +175,27 @@
       "claim_class": null,
       "claim_class_decision": "pending owner decision"
     },
+    "get_signal_imports": {
+      "kind": "tool",
+      "release": "unreleased",
+      "claim_class": null,
+      "claim_class_decision": "pending owner decision"
+    },
     "get_signal_info": {
       "kind": "tool",
       "release": "0.13.0",
+      "claim_class": null,
+      "claim_class_decision": "pending owner decision"
+    },
+    "import_signal_file": {
+      "kind": "tool",
+      "release": "unreleased",
+      "claim_class": null,
+      "claim_class_decision": "pending owner decision"
+    },
+    "inspect_signal_file": {
+      "kind": "tool",
+      "release": "unreleased",
       "claim_class": null,
       "claim_class_decision": "pending owner decision"
     },
@@ -241,6 +259,12 @@
       "claim_class": null,
       "claim_class_decision": "pending owner decision"
     },
+    "validate_signal_import": {
+      "kind": "tool",
+      "release": "unreleased",
+      "claim_class": null,
+      "claim_class_decision": "pending owner decision"
+    },
     "diagnose_bearing": {
       "kind": "prompt",
       "release": "0.13.0",
@@ -250,6 +274,12 @@
     "diagnose_gear": {
       "kind": "prompt",
       "release": "0.13.0",
+      "claim_class": null,
+      "claim_class_decision": "pending owner decision"
+    },
+    "guided_signal_import": {
+      "kind": "prompt",
+      "release": "unreleased",
       "claim_class": null,
       "claim_class_decision": "pending owner decision"
     },

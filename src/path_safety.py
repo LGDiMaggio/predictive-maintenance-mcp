@@ -28,12 +28,11 @@ from collections.abc import Iterator, Sequence
 from pathlib import Path
 from typing import NamedTuple, Optional
 
-from .file_text import LABEL_CHARS, escape_file_text
-
 __all__ = [
     "safe_resolve",
     "sanitize_filename",
     "validate_name_component",
+    "resolve_under",
     "resolve_model_paths",
     "ModelPaths",
     "WINDOWS_DEVICE_NAMES",
@@ -76,6 +75,21 @@ def safe_resolve(base_dir: Path, user_input: str) -> Path:
     # Path.is_relative_to (Python 3.9+) avoids the sibling-directory bypass:
     # /data/signals_evil would pass a naive startswith("/data/signals") check.
     if not candidate.is_relative_to(allowed):
+        raise ValueError(f"Invalid path — escapes base directory: {user_input}")
+    return candidate
+
+
+def resolve_under(resolved_base: Path, user_input: str) -> Path:
+    """:func:`safe_resolve` for a base the caller resolved once already.
+
+    A loop over many locations resolves its base directory once instead of
+    once per location.
+
+    Raises:
+        ValueError: If the resolved path escapes *resolved_base*.
+    """
+    candidate = _without_extended_prefix((resolved_base / user_input).resolve())
+    if not candidate.is_relative_to(resolved_base):
         raise ValueError(f"Invalid path — escapes base directory: {user_input}")
     return candidate
 
@@ -235,15 +249,10 @@ class GatedPath(NamedTuple):
     relative: str
 
 
-def _quoted(value: str) -> str:
-    text, truncated = escape_file_text(value, cap=LABEL_CHARS)
-    return f"'{text}{'...' if truncated else ''}'"
-
-
-def _unsafe(raw: str, problem: str) -> PathRefused:
+def _unsafe(problem: str) -> PathRefused:
     return PathRefused(
         "unsafe_path",
-        f"Path {_quoted(raw)} is refused: {problem}. Pass a plain local path "
+        f"The path is refused: {problem}. Pass a plain local path "
         f"to a file under the data directory or a folder listed in "
         f"PMM_IMPORT_ROOTS (a network share through a mapped drive letter).",
     )
@@ -291,55 +300,53 @@ def gate_import_path(
     if not isinstance(raw, str) or not raw.strip():
         raise PathRefused("unsafe_path", "Pass the file path as a non-empty string.")
     if len(raw) > _MAX_PATH_CHARS:
-        raise _unsafe(raw[:40], f"it is {len(raw)} characters long")
+        raise _unsafe(f"it is {len(raw)} characters long")
     if any(unicodedata.category(ch) in ("Cc", "Cf", "Zl", "Zp") for ch in raw):
-        raise _unsafe(raw, "it contains control or invisible formatting characters")
+        raise _unsafe("it contains control or invisible formatting characters")
 
     if windows:
         text = raw.replace("/", "\\")
         if text.startswith("\\\\"):
             raise _unsafe(
-                raw, "network shares and the \\\\?\\ and \\\\.\\ forms are not read"
+                "network shares and the \\\\?\\ and \\\\.\\ forms are not read"
             )
         if text.startswith("\\??\\"):
-            raise _unsafe(raw, "the \\??\\ namespace is not read")
+            raise _unsafe("the \\??\\ namespace is not read")
         drive, rest = ntpath.splitdrive(text)
         if drive and not re.fullmatch(r"[A-Za-z]:", drive):
-            raise _unsafe(raw, "only a drive letter may precede the path")
+            raise _unsafe("only a drive letter may precede the path")
         if drive and rest and not rest.startswith("\\"):
-            raise _unsafe(raw, "a drive-relative path (no separator after the drive)")
+            raise _unsafe("a drive-relative path (no separator after the drive)")
         if not drive and text.startswith("\\"):
-            raise _unsafe(raw, "a root-relative path (no drive letter)")
+            raise _unsafe("a root-relative path (no drive letter)")
         if ":" in rest:
-            raise _unsafe(raw, "a ':' after the drive (an alternate data stream)")
+            raise _unsafe("a ':' after the drive (an alternate data stream)")
         if any(char in rest for char in '<>"|?*'):
-            raise _unsafe(raw, 'a character Windows reserves in names (< > " | ? *)')
+            raise _unsafe('a character Windows reserves in names (< > " | ? *)')
         components = rest.split("\\")
     else:
         text = raw
         if text.startswith("//"):
-            raise _unsafe(raw, "a path starting with '//'")
+            raise _unsafe("a path starting with '//'")
         components = text.split("/")
 
     for component in components:
         if component in ("", ".", ".."):
             continue
         if len(component) > _MAX_COMPONENT_CHARS:
-            raise _unsafe(
-                raw, f"a path component is over {_MAX_COMPONENT_CHARS} characters"
-            )
+            raise _unsafe(f"a path component is over {_MAX_COMPONENT_CHARS} characters")
         if component.endswith((".", " ")):
-            raise _unsafe(raw, "a path component ends with a dot or a space")
+            raise _unsafe("a path component ends with a dot or a space")
         if component.split(".")[0].rstrip(" ").upper() in WINDOWS_DEVICE_NAMES:
-            raise _unsafe(raw, "a path component is a Windows device name")
+            raise _unsafe("a path component is a Windows device name")
 
     if not flavor.isabs(text):
         if base is None:
-            raise _unsafe(raw, "a relative path with no base directory")
+            raise _unsafe("a relative path with no base directory")
         text = flavor.join(str(base), text)
     normalized = flavor.normpath(text)
     if not flavor.isabs(normalized):
-        raise _unsafe(raw, "it does not form an absolute path")
+        raise _unsafe("it does not form an absolute path")
 
     sep = "\\" if windows else "/"
     match: Optional[str] = None
@@ -353,10 +360,10 @@ def gate_import_path(
     if match is None:
         raise PathRefused(
             "path_outside_roots",
-            f"Path {_quoted(raw)} is outside the folders the import reads: the "
-            f"data directory and the folders listed in PMM_IMPORT_ROOTS. Copy "
-            f"the file into one of them, or ask the operator to list its "
-            f"folder in PMM_IMPORT_ROOTS.",
+            "The path is outside the folders the import reads: the "
+            "data directory and the folders listed in PMM_IMPORT_ROOTS. Copy "
+            "the file into one of them, or ask the operator to list its "
+            "folder in PMM_IMPORT_ROOTS.",
         )
     relative = normalized[len(match.rstrip(sep)) :].lstrip(sep)
     return GatedPath(path=normalized, root=match, relative=relative)
@@ -410,7 +417,7 @@ class VerifiedFile:
             if not data:
                 raise PathRefused(
                     "source_changed",
-                    f"File {_quoted(self.path.name)} became shorter while it "
+                    f"The file became shorter while it "
                     f"was being read: {_CHANGED_REMEDY}.",
                 )
             offset += len(data)
@@ -426,8 +433,7 @@ class VerifiedFile:
         if grew or now.st_size != self.size or now.st_mtime_ns != self._mtime_ns:
             raise PathRefused(
                 "source_changed",
-                f"File {_quoted(self.path.name)} changed while it was being "
-                f"read: {_CHANGED_REMEDY}.",
+                f"The file changed while it was being read: {_CHANGED_REMEDY}.",
             )
 
     def close(self) -> None:
@@ -482,59 +488,58 @@ def open_import_file(
             path).
     """
     gated = gate_import_path(raw, roots, base=base)
-    shown = _quoted(str(raw))
     try:
         resolved = safe_resolve(Path(gated.root), gated.relative)
     except ValueError:
         raise PathRefused(
             "path_outside_roots",
-            f"Path {shown} leads outside the folders the import reads once its "
-            f"links are followed. Copy the file into the data directory or a "
-            f"folder listed in PMM_IMPORT_ROOTS.",
+            "The path leads outside the folders the import reads once its "
+            "links are followed. Copy the file into the data directory or a "
+            "folder listed in PMM_IMPORT_ROOTS.",
         ) from None
     except (OSError, RuntimeError) as exc:  # RuntimeError: a symbolic link loop
-        raise _unreadable(shown, exc) from None
+        raise _unreadable(exc) from None
     name = resolved.name
     if not name.lower().endswith(IMPORT_SUFFIXES):
         raise PathRefused(
             "unsupported_suffix",
-            f"File {_quoted(name)} is not read by the import: it reads .csv and "
-            f".txt files (any letter case). If it is delimited text, import a "
-            f"copy renamed to .csv; the identity follows the bytes, not the name.",
+            "The file is not read by the import: it reads .csv and "
+            ".txt files (any letter case). If it is delimited text, import a "
+            "copy renamed to .csv; the identity follows the bytes, not the name.",
         )
     try:
         seen = os.lstat(resolved)
     except (FileNotFoundError, NotADirectoryError):
         raise PathRefused(
             "file_not_found",
-            f"File {shown} does not exist; check the path (list_signals shows the "
-            f"files under the data directory).",
+            "The file does not exist; check the path (list_signals shows the "
+            "files under the data directory).",
         ) from None
     except OSError as exc:
-        raise _unreadable(shown, exc) from None
+        raise _unreadable(exc) from None
     if not stat.S_ISREG(seen.st_mode):
         raise PathRefused(
             "not_a_regular_file",
-            f"Path {_quoted(name)} is not a regular file (a folder, a link, a "
-            f"pipe or a device); pass the path of the exported file itself.",
+            "The path is not a regular file (a folder, a link, a "
+            "pipe or a device); pass the path of the exported file itself.",
         )
-    _refuse_oversized(name, seen.st_size, max_size)
+    _refuse_oversized(seen.st_size, max_size)
     try:
         fd = os.open(resolved, _OPEN_FLAGS)
     except (FileNotFoundError, NotADirectoryError):
         raise PathRefused(
             "source_changed",
-            f"File {_quoted(name)} disappeared between its check and its "
+            f"The file disappeared between its check and its "
             f"opening: {_CHANGED_REMEDY}.",
         ) from None
     except OSError as exc:
         if exc.errno == getattr(errno, "ELOOP", None):
             raise PathRefused(
                 "source_changed",
-                f"File {_quoted(name)} was replaced by a link between its check "
+                f"The file was replaced by a link between its check "
                 f"and its opening: {_CHANGED_REMEDY}.",
             ) from None
-        raise _unreadable(_quoted(name), exc) from None
+        raise _unreadable(exc) from None
     try:
         opened = os.fstat(fd)
         if not stat.S_ISREG(opened.st_mode) or (opened.st_dev, opened.st_ino) != (
@@ -543,17 +548,17 @@ def open_import_file(
         ):
             raise PathRefused(
                 "source_changed",
-                f"File {_quoted(name)} was replaced between its check and its "
+                f"The file was replaced between its check and its "
                 f"opening: {_CHANGED_REMEDY}.",
             )
-        _refuse_oversized(name, opened.st_size, max_size)
+        _refuse_oversized(opened.st_size, max_size)
     except BaseException:
         os.close(fd)
         raise
     return VerifiedFile(fd, resolved, opened)
 
 
-def _unreadable(shown: str, exc: BaseException) -> PathRefused:
+def _unreadable(exc: BaseException) -> PathRefused:
     """A refusal for a file the operating system will not let the import
     read; the system's own message (which carries the full path) is not
     repeated."""
@@ -565,16 +570,16 @@ def _unreadable(shown: str, exc: BaseException) -> PathRefused:
     )
     return PathRefused(
         "file_unreadable",
-        f"File {shown} cannot be read: {reason}. Close the program that holds "
+        f"The file cannot be read: {reason}. Close the program that holds "
         f"it, check the permissions, or copy the export into the data directory.",
     )
 
 
-def _refuse_oversized(name: str, size: int, max_size: int) -> None:
+def _refuse_oversized(size: int, max_size: int) -> None:
     if size > max_size:
         raise PathRefused(
             "file_too_large",
-            f"File {_quoted(name)} is {size} bytes, over the {max_size}-byte cap; "
+            f"The file is {size} bytes, over the {max_size}-byte cap; "
             f"raise the cap via the PMM_MAX_SIGNAL_SIZE environment variable "
             f"(bytes) if this size is intentional.",
         )

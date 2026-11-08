@@ -17,6 +17,9 @@
       "sampling_rate",
       "signal_id"
     ],
+    "guided_signal_import": [
+      "filepath"
+    ],
     "quick_diagnostic_report": [
       "signal_id"
     ]
@@ -1725,6 +1728,74 @@
         "type": "object"
       }
     },
+    "get_signal_imports": {
+      "context_kwarg": "ctx",
+      "is_async": false,
+      "parameters": {
+        "properties": {
+          "file_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "File Name"
+          },
+          "file_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "File Sha256"
+          },
+          "import_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Import Id"
+          },
+          "limit": {
+            "default": 20,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "default": 0,
+            "title": "Offset",
+            "type": "integer"
+          },
+          "signal_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Signal Id"
+          }
+        },
+        "title": "get_signal_importsArguments",
+        "type": "object"
+      }
+    },
     "get_signal_info": {
       "context_kwarg": "ctx",
       "is_async": true,
@@ -1739,6 +1810,867 @@
           "signal_id"
         ],
         "title": "get_signal_infoArguments",
+        "type": "object"
+      }
+    },
+    "import_signal_file": {
+      "context_kwarg": "ctx",
+      "is_async": false,
+      "parameters": {
+        "$defs": {
+          "AttestationInput": {
+            "additionalProperties": false,
+            "description": "Who confirmed what: one basis per field path (``time_base``,\n``dialect``, ``data_lines``, ``companion``, ``defaults.acquired_at``,\n``defaults.rpm``, ``defaults.load``, ``defaults.operating_state``,\n``channels[<column>].unit``, ``.scaling``, ``.dc_policy``, ``.binding``),\nthe overrides of file declarations with their reasons, keyed by the same\npaths, and an optional declared_by.",
+            "properties": {
+              "bases": {
+                "anyOf": [
+                  {
+                    "additionalProperties": {
+                      "$ref": "#/$defs/BasisInput"
+                    },
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Bases"
+              },
+              "declared_by": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Declared By"
+              },
+              "overrides": {
+                "anyOf": [
+                  {
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Overrides"
+              },
+              "schema": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Schema"
+              }
+            },
+            "title": "AttestationInput",
+            "type": "object"
+          },
+          "BasisInput": {
+            "additionalProperties": false,
+            "description": "The user's act behind one value, with the evidence it cites: a file\nline (``user_accepted_file_value``), a time column\n(``user_accepted_derived_value``), an earlier import\n(``user_accepted_prior_value``) or a point declaration version\n(``user_accepted_point_value``); ``user_stated`` cites nothing.",
+            "properties": {
+              "basis": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "user_stated",
+                      "user_accepted_file_value",
+                      "user_accepted_derived_value",
+                      "user_accepted_profile_value",
+                      "user_accepted_prior_value",
+                      "user_accepted_point_value"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Basis"
+              },
+              "column": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Column"
+              },
+              "declaration_version": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Declaration Version"
+              },
+              "import_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Import Id"
+              },
+              "line": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Line"
+              }
+            },
+            "title": "BasisInput",
+            "type": "object"
+          },
+          "BindingInput": {
+            "additionalProperties": false,
+            "description": "The measurement a channel is: point, direction, sensor, asset.",
+            "properties": {
+              "asset_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Asset Id"
+              },
+              "direction": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Direction"
+              },
+              "measurement_point_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Measurement Point Id"
+              },
+              "sensor_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Sensor Id"
+              }
+            },
+            "title": "BindingInput",
+            "type": "object"
+          },
+          "ChannelInput": {
+            "additionalProperties": false,
+            "description": "One selected column, by its physical 0-based index (labels are display\ntext only).",
+            "properties": {
+              "binding": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/BindingInput"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "column": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Column"
+              },
+              "quantity": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Quantity"
+              },
+              "role": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Role"
+              },
+              "scaling": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/ScalingInput"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "unit": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Unit"
+              }
+            },
+            "title": "ChannelInput",
+            "type": "object"
+          },
+          "DataLinesInput": {
+            "additionalProperties": false,
+            "description": "The physical lines of the first and last data rows (last null: to the\nend of the data).",
+            "properties": {
+              "first": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "First"
+              },
+              "last": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Last"
+              }
+            },
+            "title": "DataLinesInput",
+            "type": "object"
+          },
+          "DefaultsInput": {
+            "additionalProperties": false,
+            "description": "File-level values every bound channel inherits.",
+            "properties": {
+              "acquired_at": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Acquired At"
+              },
+              "asset_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Asset Id"
+              },
+              "load": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Load"
+              },
+              "operating_state": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Operating State"
+              },
+              "rpm": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Rpm"
+              }
+            },
+            "title": "DefaultsInput",
+            "type": "object"
+          },
+          "DialectInput": {
+            "additionalProperties": false,
+            "description": "How the bytes are read: encoding, delimiter, decimal mark and the\nphysical lines of the header and units rows (1-based, or null).",
+            "properties": {
+              "decimal": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Decimal"
+              },
+              "delimiter": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Delimiter"
+              },
+              "encoding": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Encoding"
+              },
+              "header_line": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Header Line"
+              },
+              "units_line": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Units Line"
+              }
+            },
+            "title": "DialectInput",
+            "type": "object"
+          },
+          "ImportConfiguration": {
+            "additionalProperties": false,
+            "description": "An import configuration: the interpretation plus its attestation\n(schema ``pmm-text-import-config/1``).",
+            "properties": {
+              "attestation": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/AttestationInput"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "interpretation": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/InterpretationInput"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "schema": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Schema"
+              }
+            },
+            "title": "ImportConfiguration",
+            "type": "object"
+          },
+          "InterpretationInput": {
+            "additionalProperties": false,
+            "description": "How the file's bytes become signals.",
+            "properties": {
+              "channels": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "$ref": "#/$defs/ChannelInput"
+                    },
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Channels"
+              },
+              "data_lines": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/DataLinesInput"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "defaults": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/DefaultsInput"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "dialect": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/DialectInput"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "schema": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Schema"
+              },
+              "time_base": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/TimeBaseInput"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "time_columns": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "$ref": "#/$defs/TimeColumnInput"
+                    },
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Time Columns"
+              }
+            },
+            "title": "InterpretationInput",
+            "type": "object"
+          },
+          "ScalingInput": {
+            "additionalProperties": false,
+            "description": "The conversion of an electrical column (mV or V) to its stored unit.",
+            "properties": {
+              "dc_policy": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Dc Policy"
+              },
+              "sensitivity": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/SensitivityInput"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "source_unit": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Source Unit"
+              }
+            },
+            "title": "ScalingInput",
+            "type": "object"
+          },
+          "SensitivityInput": {
+            "additionalProperties": false,
+            "description": "A sensor sensitivity: value (decimal string), unit and where it is from.",
+            "properties": {
+              "source": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Source"
+              },
+              "unit": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Unit"
+              },
+              "value": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Value"
+              }
+            },
+            "title": "SensitivityInput",
+            "type": "object"
+          },
+          "TimeBaseInput": {
+            "additionalProperties": false,
+            "description": "Where the sampling rate comes from and its value in Hz (a decimal\nstring).",
+            "properties": {
+              "sampling_rate_hz": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Sampling Rate Hz"
+              },
+              "source": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Source"
+              },
+              "time_column": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Time Column"
+              }
+            },
+            "title": "TimeBaseInput",
+            "type": "object"
+          },
+          "TimeColumnInput": {
+            "additionalProperties": false,
+            "description": "A time column: its physical index and the unit of its stamps.",
+            "properties": {
+              "column": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Column"
+              },
+              "time_unit": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Time Unit"
+              }
+            },
+            "title": "TimeColumnInput",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "config": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ImportConfiguration"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "filepath": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Filepath"
+          },
+          "import_digest": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Import Digest"
+          },
+          "import_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Import Id"
+          },
+          "overwrite": {
+            "default": false,
+            "title": "Overwrite",
+            "type": "boolean"
+          },
+          "signal_id_prefix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Signal Id Prefix"
+          }
+        },
+        "title": "import_signal_fileArguments",
+        "type": "object"
+      }
+    },
+    "inspect_signal_file": {
+      "context_kwarg": "ctx",
+      "is_async": false,
+      "parameters": {
+        "properties": {
+          "columns_from": {
+            "default": 0,
+            "title": "Columns From",
+            "type": "integer"
+          },
+          "filepath": {
+            "title": "Filepath",
+            "type": "string"
+          }
+        },
+        "required": [
+          "filepath"
+        ],
+        "title": "inspect_signal_fileArguments",
         "type": "object"
       }
     },
@@ -2157,6 +3089,792 @@
           "healthy_signal_ids"
         ],
         "title": "train_anomaly_modelArguments",
+        "type": "object"
+      }
+    },
+    "validate_signal_import": {
+      "context_kwarg": "ctx",
+      "is_async": false,
+      "parameters": {
+        "$defs": {
+          "AttestationInput": {
+            "additionalProperties": false,
+            "description": "Who confirmed what: one basis per field path (``time_base``,\n``dialect``, ``data_lines``, ``companion``, ``defaults.acquired_at``,\n``defaults.rpm``, ``defaults.load``, ``defaults.operating_state``,\n``channels[<column>].unit``, ``.scaling``, ``.dc_policy``, ``.binding``),\nthe overrides of file declarations with their reasons, keyed by the same\npaths, and an optional declared_by.",
+            "properties": {
+              "bases": {
+                "anyOf": [
+                  {
+                    "additionalProperties": {
+                      "$ref": "#/$defs/BasisInput"
+                    },
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Bases"
+              },
+              "declared_by": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Declared By"
+              },
+              "overrides": {
+                "anyOf": [
+                  {
+                    "additionalProperties": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Overrides"
+              },
+              "schema": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Schema"
+              }
+            },
+            "title": "AttestationInput",
+            "type": "object"
+          },
+          "BasisInput": {
+            "additionalProperties": false,
+            "description": "The user's act behind one value, with the evidence it cites: a file\nline (``user_accepted_file_value``), a time column\n(``user_accepted_derived_value``), an earlier import\n(``user_accepted_prior_value``) or a point declaration version\n(``user_accepted_point_value``); ``user_stated`` cites nothing.",
+            "properties": {
+              "basis": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "user_stated",
+                      "user_accepted_file_value",
+                      "user_accepted_derived_value",
+                      "user_accepted_profile_value",
+                      "user_accepted_prior_value",
+                      "user_accepted_point_value"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Basis"
+              },
+              "column": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Column"
+              },
+              "declaration_version": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Declaration Version"
+              },
+              "import_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Import Id"
+              },
+              "line": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Line"
+              }
+            },
+            "title": "BasisInput",
+            "type": "object"
+          },
+          "BindingInput": {
+            "additionalProperties": false,
+            "description": "The measurement a channel is: point, direction, sensor, asset.",
+            "properties": {
+              "asset_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Asset Id"
+              },
+              "direction": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Direction"
+              },
+              "measurement_point_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Measurement Point Id"
+              },
+              "sensor_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Sensor Id"
+              }
+            },
+            "title": "BindingInput",
+            "type": "object"
+          },
+          "ChannelInput": {
+            "additionalProperties": false,
+            "description": "One selected column, by its physical 0-based index (labels are display\ntext only).",
+            "properties": {
+              "binding": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/BindingInput"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "column": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Column"
+              },
+              "quantity": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Quantity"
+              },
+              "role": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Role"
+              },
+              "scaling": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/ScalingInput"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "unit": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Unit"
+              }
+            },
+            "title": "ChannelInput",
+            "type": "object"
+          },
+          "DataLinesInput": {
+            "additionalProperties": false,
+            "description": "The physical lines of the first and last data rows (last null: to the\nend of the data).",
+            "properties": {
+              "first": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "First"
+              },
+              "last": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Last"
+              }
+            },
+            "title": "DataLinesInput",
+            "type": "object"
+          },
+          "DefaultsInput": {
+            "additionalProperties": false,
+            "description": "File-level values every bound channel inherits.",
+            "properties": {
+              "acquired_at": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Acquired At"
+              },
+              "asset_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Asset Id"
+              },
+              "load": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Load"
+              },
+              "operating_state": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Operating State"
+              },
+              "rpm": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Rpm"
+              }
+            },
+            "title": "DefaultsInput",
+            "type": "object"
+          },
+          "DialectInput": {
+            "additionalProperties": false,
+            "description": "How the bytes are read: encoding, delimiter, decimal mark and the\nphysical lines of the header and units rows (1-based, or null).",
+            "properties": {
+              "decimal": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Decimal"
+              },
+              "delimiter": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Delimiter"
+              },
+              "encoding": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Encoding"
+              },
+              "header_line": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Header Line"
+              },
+              "units_line": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Units Line"
+              }
+            },
+            "title": "DialectInput",
+            "type": "object"
+          },
+          "ImportConfiguration": {
+            "additionalProperties": false,
+            "description": "An import configuration: the interpretation plus its attestation\n(schema ``pmm-text-import-config/1``).",
+            "properties": {
+              "attestation": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/AttestationInput"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "interpretation": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/InterpretationInput"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "schema": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Schema"
+              }
+            },
+            "title": "ImportConfiguration",
+            "type": "object"
+          },
+          "InterpretationInput": {
+            "additionalProperties": false,
+            "description": "How the file's bytes become signals.",
+            "properties": {
+              "channels": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "$ref": "#/$defs/ChannelInput"
+                    },
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Channels"
+              },
+              "data_lines": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/DataLinesInput"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "defaults": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/DefaultsInput"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "dialect": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/DialectInput"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "schema": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Schema"
+              },
+              "time_base": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/TimeBaseInput"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "time_columns": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "$ref": "#/$defs/TimeColumnInput"
+                    },
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Time Columns"
+              }
+            },
+            "title": "InterpretationInput",
+            "type": "object"
+          },
+          "ScalingInput": {
+            "additionalProperties": false,
+            "description": "The conversion of an electrical column (mV or V) to its stored unit.",
+            "properties": {
+              "dc_policy": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Dc Policy"
+              },
+              "sensitivity": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/SensitivityInput"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "source_unit": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Source Unit"
+              }
+            },
+            "title": "ScalingInput",
+            "type": "object"
+          },
+          "SensitivityInput": {
+            "additionalProperties": false,
+            "description": "A sensor sensitivity: value (decimal string), unit and where it is from.",
+            "properties": {
+              "source": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Source"
+              },
+              "unit": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Unit"
+              },
+              "value": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Value"
+              }
+            },
+            "title": "SensitivityInput",
+            "type": "object"
+          },
+          "TimeBaseInput": {
+            "additionalProperties": false,
+            "description": "Where the sampling rate comes from and its value in Hz (a decimal\nstring).",
+            "properties": {
+              "sampling_rate_hz": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Sampling Rate Hz"
+              },
+              "source": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Source"
+              },
+              "time_column": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Time Column"
+              }
+            },
+            "title": "TimeBaseInput",
+            "type": "object"
+          },
+          "TimeColumnInput": {
+            "additionalProperties": false,
+            "description": "A time column: its physical index and the unit of its stamps.",
+            "properties": {
+              "column": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Column"
+              },
+              "time_unit": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Time Unit"
+              }
+            },
+            "title": "TimeColumnInput",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "config": {
+            "$ref": "#/$defs/ImportConfiguration"
+          },
+          "filepath": {
+            "title": "Filepath",
+            "type": "string"
+          }
+        },
+        "required": [
+          "filepath",
+          "config"
+        ],
+        "title": "validate_signal_importArguments",
         "type": "object"
       }
     }

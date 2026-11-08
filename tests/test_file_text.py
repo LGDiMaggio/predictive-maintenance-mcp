@@ -13,6 +13,7 @@ import time
 from pathlib import Path
 
 import pytest
+from pydantic import BaseModel, ConfigDict
 
 from predictive_maintenance_mcp.file_text import (
     LABEL_CHARS,
@@ -154,6 +155,40 @@ class TestFileText:
         assert value == FileText.of("x", cap=TOKEN_CHARS)
         with pytest.raises(AttributeError):
             value.file_text = "y"  # type: ignore[misc]
+
+
+class TestPublishedSchema:
+    def test_the_schema_is_the_same_under_every_supported_pydantic(self):
+        """A tool's output schema carries this definition. Newer pydantic
+        releases copy a plain dataclass's docstring and the enclosing model's
+        ``extra`` setting into it, older ones do not: the docstring is
+        developer text, and the frozen schema has to hold across the range
+        the package supports."""
+
+        class Holder(BaseModel):
+            model_config = ConfigDict(extra="forbid")
+            label: FileText
+
+        assert Holder.model_json_schema()["$defs"]["FileText"] == {
+            "properties": {
+                "file_text": {"title": "File Text", "type": "string"},
+                "truncated": {
+                    "default": False,
+                    "title": "Truncated",
+                    "type": "boolean",
+                },
+            },
+            "required": ["file_text"],
+            "title": "FileText",
+            "type": "object",
+        }
+
+    def test_a_model_still_carries_it_as_data(self):
+        class Holder(BaseModel):
+            label: FileText
+
+        dumped = Holder(label=FileText.of("a\tb", cap=32)).model_dump(mode="json")
+        assert dumped == {"label": {"file_text": "a\\tb", "truncated": False}}
 
 
 def test_module_imports_only_the_standard_library():

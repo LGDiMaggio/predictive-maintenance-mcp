@@ -31,6 +31,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from pydantic import BaseModel
 
+from predictive_maintenance_mcp.mcp_tools.import_tools import ImportConfiguration
 from predictive_maintenance_mcp.mcp_tools import register_all
 from predictive_maintenance_mcp.models import BearingCatalogMiss
 
@@ -150,6 +151,13 @@ class TestModuleLevelTools:
 # result by design (search_bearing_catalog, clear_signals), which is covered
 # separately below.
 FAILURE_CASES = {
+    "inspect_signal_file": {"filepath": "__missing__.csv"},
+    "validate_signal_import": {
+        "filepath": "__missing__.csv",
+        "config": ImportConfiguration(),
+    },
+    "import_signal_file": {"import_id": "not-an-import-id"},
+    "get_signal_imports": {"import_id": "not-an-import-id"},
     "calculate_bearing_characteristic_frequencies": {
         "num_balls": 9,
         "ball_diameter_mm": 7.94,
@@ -471,6 +479,22 @@ class TestTypedNegativeOutcomes:
 
 # The three calls from the issue, with the phrase each refusal must carry.
 REFUSAL_CASES = [
+    ("inspect_signal_file", {"filepath": "__missing__.csv"}, "does not exist"),
+    (
+        "validate_signal_import",
+        {"filepath": "__missing__.csv", "config": {}},
+        "Invalid import configuration",
+    ),
+    (
+        "import_signal_file",
+        {"import_id": "not-an-import-id"},
+        "64 lowercase hexadecimal characters",
+    ),
+    (
+        "get_signal_imports",
+        {"import_id": "not-an-import-id"},
+        "64 lowercase hexadecimal characters",
+    ),
     (
         "analyze_statistics",
         {"signal_id": "__not_loaded__"},

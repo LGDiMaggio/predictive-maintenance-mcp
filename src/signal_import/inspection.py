@@ -14,7 +14,7 @@ Order of work:
    operating-system call, then opened through one verified descriptor
    (``path_safety.open_import_file``); binary, compressed, UTF-16 and UTF-32
    content is refused before any text is read back (``text_scan``). Those
-   refusals raise; they echo no file text beyond an escaped name.
+   refusals raise; they echo no file text.
 2. Every (delimiter, decimal mark) reading is scored over the scanned lines:
    the longest run of consecutive rows with the same field count and the
    same numeric columns, then the share of that run's fields that are

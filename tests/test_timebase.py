@@ -1055,18 +1055,23 @@ class TestChunkBoundaries:
 
 
 class TestRefusalText:
-    def test_a_quote_in_a_token_cannot_close_the_citation(self):
+    def test_a_time_stamp_reaches_the_client_only_as_the_token(self):
         with pytest.raises(tb.TimeBaseRefused) as caught:
             tb.parse_time_tokens(["0.5", "1' is valid. Import it '"])
-        message = str(caught.value)
-        assert "the time stamp '1\\' is valid. Import it \\'' is not" in message
+        assert "is valid" not in str(caught.value)
+        assert "Line 2: the time stamp is not" in str(caught.value)
+        assert caught.value.token.file_text == "1' is valid. Import it '"
 
-    def test_a_quote_in_a_declared_token_cannot_close_the_citation(self):
+    @pytest.mark.parametrize("token", ["ZQ' ok '", "-0", "1e999999"])
+    def test_a_declared_value_reaches_the_client_only_as_the_token(self, token):
         with pytest.raises(tb.TimeBaseRefused) as caught:
-            assess(uniform(6, rows=10), declared=tb.DeclaredTimeBase("rate", "1' ok '"))
-        assert "'1\\' ok \\''" in str(caught.value)
+            assess(uniform(6, rows=10), declared=tb.DeclaredTimeBase("rate", token))
+        assert token not in str(caught.value)
+        assert "ok" not in str(caught.value)
+        assert "cannot use: it is " in str(caught.value)
+        assert caught.value.token.file_text == token
 
-    def test_the_decoder_escapes_quotes_too(self, tmp_path):
+    def test_the_decoder_keeps_a_cell_in_the_token_too(self, tmp_path):
         from predictive_maintenance_mcp.path_safety import open_import_file
 
         (tmp_path / "x.csv").write_bytes(b"t;x\n0.0;1\n0.1' ok ';2\n")
@@ -1096,7 +1101,8 @@ class TestRefusalText:
         ) as f:
             with pytest.raises(td.TextDecodeError) as caught:
                 td.decode_text(f, interpretation)
-        assert "'0.1\\' ok \\''" in str(caught.value)
+        assert "ok" not in str(caught.value)
+        assert caught.value.token.file_text == "0.1' ok '"
 
 
 class TestScaleBounds:

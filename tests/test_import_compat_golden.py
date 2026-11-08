@@ -38,6 +38,8 @@ Comparison rules:
 
 Fixture history:
 - U1 (2026-11-02): initial capture on ``main`` 605036f.
+- Store-only import (2026-11-07): not regenerated; ``import_provenance``
+  (always None on the load route) added to :data:`ALLOWED_NEW_KEYS`.
 
 Regenerate ON PURPOSE only (never to make a red test green), adding a line
 to the history above. From the repo root, with the checkout's interpreter
@@ -88,7 +90,7 @@ LINEAGE_PLACEHOLDER = "<recomputed at test time>"
 
 #: Keys the golden does not hold that the comparison accepts, each mapped to
 #: the only value it may take. Paths are dotted from the case's root.
-ALLOWED_NEW_KEYS: dict[str, Any] = {}
+ALLOWED_NEW_KEYS: dict[str, Any] = {"load_signal.import_provenance": None}
 
 ASSET = "P-101"
 CSV_POINT = "motor_de_h"
@@ -490,10 +492,10 @@ class TestImportCompatGolden:
 
     def test_a_new_key_outside_the_allowlist_fails(self, capture, golden):
         extended = copy.deepcopy(capture)
-        extended["cases"]["npy_plain"]["load_signal"]["import_provenance"] = None
-        problems = golden_problems(extended, golden, allowed={})
+        extended["cases"]["npy_plain"]["load_signal"]["unlisted_key"] = None
+        problems = golden_problems(extended, golden)
         assert problems == [
-            "cases.npy_plain.load_signal.import_provenance: new key, not in "
+            "cases.npy_plain.load_signal.unlisted_key: new key, not in "
             "ALLOWED_NEW_KEYS"
         ]
 

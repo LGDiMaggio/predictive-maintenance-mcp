@@ -2005,7 +2005,7 @@ def spy(monkeypatch) -> dict[str, list[str]]:
         "decode": [],
         "compute": [],
     }
-    real_resolve = service.safe_resolve
+    real_resolve = service.resolve_under
     real_digest = service.digest_file
     real_decode = service._decode
     real_compute = service.compute_health_snapshot
@@ -2030,7 +2030,7 @@ def spy(monkeypatch) -> dict[str, list[str]]:
         calls["compute"].append("snapshot")
         return real_compute(*args, **kwargs)
 
-    monkeypatch.setattr(service, "safe_resolve", resolve)
+    monkeypatch.setattr(service, "resolve_under", resolve)
     monkeypatch.setattr(service, "os", _OsProxy(stat_of))
     monkeypatch.setattr(service, "digest_file", digest)
     monkeypatch.setattr(service, "_decode", decode)
@@ -2421,6 +2421,17 @@ class TestReasonCodes:
             "file_missing+relative_location",
         ]
         assert_actions_resolve(result)
+
+    def test_a_local_absolute_location_is_still_reprocessed(
+        self, store, data_dir, tmp_path
+    ):
+        """The path gate refuses network, device and alternate-stream forms
+        only: a measurement whose most recent location is a local absolute
+        path outside the data directory re-processes as before."""
+        measurement_id, _, newest = self.two_locations(store, data_dir, tmp_path)
+        entry = only(reprocess(store, data_dir), measurement_id)
+        assert entry["outcome"] == "reprocessed"
+        assert Path(entry["location_used"]) == newest
 
     def test_the_most_recent_location_decides_the_code(self, store, data_dir, tmp_path):
         measurement_id, original, newest = self.two_locations(store, data_dir, tmp_path)

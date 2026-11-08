@@ -195,7 +195,14 @@ class StoredSignalInfo(BaseModel):
     """Metadata for a signal stored in the SignalRepository."""
 
     signal_id: str = Field(description="Unique identifier for the stored signal")
-    filepath: str = Field(description="Original file path")
+    filepath: str = Field(
+        description=(
+            "Original file path. For a signal created by import_signal_file it "
+            "reads 'import <first 12 characters of the import_id> column "
+            "<index>': the file's own name and folders are file text, shown "
+            "only by get_signal_imports"
+        )
+    )
     load_timestamp: str = Field(description="ISO 8601 timestamp when signal was loaded")
     shape: list[int] = Field(description="Shape of the signal array")
     num_samples: int = Field(description="Number of samples")
@@ -268,6 +275,19 @@ class StoredSignalInfo(BaseModel):
             "(not valid JSON, or not a JSON object): names the file and the "
             "case, and the signal was loaded exactly as if it had no "
             "companion. None when the companion was read fine or is absent."
+        ),
+    )
+    import_provenance: Optional[dict[str, Any]] = Field(
+        None,
+        description=(
+            "Set only for a signal created by import_signal_file: the "
+            "import_id, the physical column and its 1-based position, the "
+            "column label and file name as escaped file text, the time-base "
+            "source, the scaling, the samples digest, the decoder contract, "
+            "the confirmation channel and, per configured value, its basis "
+            "(caller_asserted is true when the bases arrived as MCP tool "
+            "arguments: they record what the caller claimed, never who the "
+            "caller is). None for every other load."
         ),
     )
 

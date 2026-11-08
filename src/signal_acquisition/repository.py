@@ -14,6 +14,8 @@ import logging
 import os
 import threading
 from collections import OrderedDict
+from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -55,9 +57,62 @@ _EXPLICIT_RATE_REMEDY = (
     "pass a sampling_rate > 0 (Hz) or omit it to use the companion _metadata.json"
 )
 
+#: Remedy of a text file whose samples include tokens that are not numbers
+#: (a header row, a units row or a note the plain loader reads as data).
+TEXT_TOKEN_REMEDY = (
+    "the file holds text that load_signal reads as samples, such as a header, "
+    "a units row or a note: read it with inspect_signal_file, then import it "
+    "with validate_signal_import and import_signal_file"
+)
+
+#: Remedy of an empty line between data lines of a text file on the
+#: load_signal route.
+BLANK_ROW_REMEDY = (
+    f"{BAD_SAMPLE_REMEDY}. When a blank line separates a preamble from the "
+    f"data, read the file with inspect_signal_file instead"
+)
+
 #: Canonical signal-unit vocabulary. ISO severity verdicts require one of
 #: these to be DECLARED (never guessed from signal amplitude).
 VALID_SIGNAL_UNITS: tuple[str, ...] = ("g", "m/s2", "mm/s", "m/s")
+
+
+class SignalIdTaken(ValueError):
+    """A batch insert found ids already stored (nothing was inserted).
+
+    Attributes:
+        signal_ids: The ids that were taken, in batch order.
+    """
+
+    def __init__(self, message: str, signal_ids: Sequence[str]) -> None:
+        super().__init__(message)
+        self.signal_ids = tuple(signal_ids)
+
+
+@dataclass(frozen=True)
+class DecodedChannel:
+    """One channel decoded by the signal import, ready for the store.
+
+    Attributes:
+        signal_id: The id it is stored under.
+        filepath: The resolved file it was decoded from.
+        samples: Its float64 samples, already scaled to *signal_unit*.
+        sampling_rate: Its sampling rate in Hz.
+        signal_unit: Its unit (one of :data:`VALID_SIGNAL_UNITS`).
+        measurement: Its identity block, or None when it binds no
+            measurement.
+        import_provenance: What the import recorded about it, shown by
+            ``get_signal_info``.
+    """
+
+    signal_id: str
+    filepath: Path
+    samples: np.ndarray
+    sampling_rate: float
+    signal_unit: str
+    measurement: Optional[dict[str, Any]]
+    import_provenance: dict[str, Any]
+
 
 #: Accepted spellings mapped to the canonical vocabulary (the one table,
 #: defined beside ``UNIT_FAMILIES`` in ``measurement.py``).
@@ -102,7 +157,7 @@ def _refuse_internal_blank_rows(path: Path) -> None:
     if path.suffix not in TEXT_EXTENSIONS:
         return
     try:
-        check_text_blank_rows(path)
+        check_text_blank_rows(path, remedy=BLANK_ROW_REMEDY)
     except OSError as exc:
         raise ValueError(
             f"Unable to load signal from {path.name} — read error "
@@ -400,6 +455,65 @@ class SignalRepository:
         # (re-checks all ids for collisions, then inserts all-or-nothing).
         return self._insert_batch(entries, overwrite=overwrite)
 
+    def insert_decoded(
+        self, channels: Sequence[DecodedChannel], *, overwrite: bool = False
+    ) -> list[dict]:
+        """Insert channels the signal import decoded, all of them or none.
+
+        The import's one way into the store. Every channel goes through the
+        same sampling-rate rule, unit vocabulary, sample check and freeze as
+        a load; one locked batch insert then re-checks every id (a concurrent
+        load may have taken one) and stores every channel or none.
+
+        Args:
+            channels: The decoded channels, in import order.
+            overwrite: Replace stored entries with the same ids.
+
+        Returns:
+            One info dict per channel, in order, each carrying its
+            ``import_provenance``.
+
+        Raises:
+            SignalIdTaken: Without *overwrite*, an id is already stored;
+                nothing was inserted.
+            ValueError: Two channels share an id, a sampling rate is not a
+                finite number above zero, a unit is outside the vocabulary,
+                or a sample is not finite; nothing was inserted.
+        """
+        seen: set[str] = set()
+        entries = []
+        for channel in channels:
+            if channel.signal_id in seen:
+                raise ValueError(
+                    f"Two imported channels share the signal_id "
+                    f"'{channel.signal_id}'; give each channel its own id "
+                    f"(nothing was stored)."
+                )
+            seen.add(channel.signal_id)
+            rate = validate_sampling_rate(
+                channel.sampling_rate,
+                source=f"imported channel '{channel.signal_id}'",
+                remedy="validate the import again",
+            )
+            meta = {
+                "sampling_rate": float(rate),
+                "signal_unit": self._validate_unit(channel.signal_unit),
+                "source_metadata": {},
+            }
+            entries.append(
+                self._finish_entry(
+                    channel.signal_id,
+                    Path(channel.filepath),
+                    channel.samples,
+                    meta,
+                    source=f"Imported channel '{channel.signal_id}'",
+                    remedy=BAD_SAMPLE_REMEDY,
+                    measurement=copy.deepcopy(channel.measurement),
+                    import_provenance=channel.import_provenance,
+                )
+            )
+        return self._insert_batch(entries, overwrite=overwrite)
+
     def get_signal(self, signal_id: str) -> np.ndarray:
         """Get signal array by ID. Updates LRU order.
 
@@ -528,7 +642,9 @@ class SignalRepository:
             f"PMM_SIGNAL_CACHE_GB cap). Currently loaded: "
             f"{available if available else 'none'}. Load it with "
             f"load_signal(filepath=...); use list_signals(scope='disk') to "
-            f"see the files available on disk."
+            f"see the files available on disk. An imported signal is restored "
+            f"with import_signal_file(import_id=...); get_signal_imports "
+            f"lists the imports."
         )
 
     @staticmethod
@@ -829,13 +945,17 @@ class SignalRepository:
                 f"Unable to load signal from {filepath} — unsupported "
                 f"format or read error."
             )
-        # A NaN, infinite or non-numeric sample is refused, never repaired.
-        # A text column comes back parsed to float64 when every token parses.
-        data = validate_finite_samples(
-            data,
-            source=f"File '{filepath}'",
-            remedy=RAW_SAMPLES_REMEDY if raw_params is not None else BAD_SAMPLE_REMEDY,
-        )
+        # The remedy follows the kind of refusal: a raw decode keeps its own;
+        # a text column (some token is not a number, such as a header row)
+        # points to the import, which reads headers and preambles; a NaN or
+        # infinite sample keeps the shared remedy, since the import refuses
+        # those too.
+        if raw_params is not None:
+            remedy = RAW_SAMPLES_REMEDY
+        elif np.asarray(data).dtype.kind in "OSU":
+            remedy = TEXT_TOKEN_REMEDY
+        else:
+            remedy = BAD_SAMPLE_REMEDY
 
         # Companion metadata precedence: explicitly declared parameter >
         # companion _metadata.json > None (undeclared).
@@ -845,6 +965,42 @@ class SignalRepository:
             meta["sampling_rate"] = None
         if declared_unit is not None:
             meta["signal_unit"] = declared_unit
+
+        return self._finish_entry(
+            signal_id,
+            fp,
+            data,
+            meta,
+            source=f"File '{filepath}'",
+            remedy=remedy,
+            raw=raw_params,
+            measurement=measurement,
+        )
+
+    @staticmethod
+    def _finish_entry(
+        signal_id: str,
+        fp: Path,
+        data: Any,
+        meta: dict,
+        *,
+        source: str,
+        remedy: str,
+        raw: Optional[dict[str, Any]] = None,
+        measurement: Optional[dict[str, Any]] = None,
+        import_provenance: Optional[dict[str, Any]] = None,
+    ) -> dict:
+        """Check every sample, freeze the array and build the entry dict.
+
+        The one tail shared by the load route and the import route, so the
+        sample rule and the freeze can never differ between them.
+
+        Raises:
+            ValueError: If a sample is NaN, infinite or not a number.
+        """
+        # A NaN, infinite or non-numeric sample is refused, never repaired.
+        # A text column comes back parsed to float64 when every token parses.
+        data = validate_finite_samples(data, source=source, remedy=remedy)
 
         # Freeze the cached array so tools cannot ACCIDENTALLY corrupt the
         # cache in place (read-only views raise on assignment). The
@@ -862,8 +1018,9 @@ class SignalRepository:
             "fp": fp,
             "data": data,
             "meta": meta,
-            "raw": raw_params,
+            "raw": raw,
             "measurement": measurement,
+            "import_provenance": import_provenance,
         }
 
     def _insert_entry(self, entry: dict, overwrite: bool) -> dict:
@@ -889,11 +1046,12 @@ class SignalRepository:
                 ]
                 if collisions:
                     ids = ", ".join(f"'{c}'" for c in collisions)
-                    raise ValueError(
+                    raise SignalIdTaken(
                         f"Batch load aborted, nothing was loaded — signal_id(s) "
                         f"{ids} were loaded concurrently after validation. Pass "
                         f"overwrite=True to replace them, or retry (the "
-                        f"repository is unchanged)."
+                        f"repository is unchanged).",
+                        collisions,
                     )
             return [self._insert_locked(e, overwrite=overwrite) for e in entries]
 
@@ -906,10 +1064,15 @@ class SignalRepository:
 
         if signal_id in self._store:
             if not overwrite:
-                existing = self._store[signal_id]["info"]["filepath"]
+                stored = self._store[signal_id]["info"]
+                existing = (
+                    "an import"
+                    if stored.get("import_provenance")
+                    else f"'{stored['filepath']}'"
+                )
                 raise ValueError(
                     f"signal_id '{signal_id}' is already loaded (from "
-                    f"'{existing}') — pass overwrite=True to replace it, "
+                    f"{existing}) — pass overwrite=True to replace it, "
                     f"or choose a different signal_id=..."
                 )
             self._remove_entry(signal_id)
@@ -942,6 +1105,9 @@ class SignalRepository:
             # Why a present companion was NOT honored (unparsable or not an
             # object); None when it was read fine or does not exist.
             "companion_warning": meta.get("companion_warning"),
+            # What the signal import recorded about an imported channel;
+            # None for every other load.
+            "import_provenance": copy.deepcopy(entry.get("import_provenance")),
         }
         self._store[signal_id] = {"array": data, "info": info}
         self._current_memory += size_bytes

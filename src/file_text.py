@@ -34,7 +34,7 @@ encoding of a field that failed to decode is unknown.
 
 import re
 from dataclasses import dataclass
-from typing import Union
+from typing import Any, Union
 
 __all__ = [
     "LABEL_CHARS",
@@ -190,6 +190,20 @@ class FileText:
     def as_dict(self) -> dict[str, object]:
         """``{"file_text": ..., "truncated": ...}``, the form results carry."""
         return {"file_text": self.file_text, "truncated": self.truncated}
+
+    @classmethod
+    def __get_pydantic_json_schema__(cls, core_schema: Any, handler: Any) -> Any:
+        """Publish one schema under every supported pydantic.
+
+        Newer releases add this docstring and the enclosing model's ``extra``
+        setting to a plain dataclass's schema, older ones do not. A tool's
+        output schema is frozen, and the docstring is not client text.
+        """
+        json_schema = handler(core_schema)
+        definition = handler.resolve_ref_schema(json_schema)
+        definition.pop("description", None)
+        definition.pop("additionalProperties", None)
+        return json_schema
 
     def __str__(self) -> str:
         return f"<file text withheld: {len(self.file_text)} escaped characters>"

@@ -91,6 +91,17 @@ Fixture history:
   machine_group, support_type, speed_tolerance_pct, max_order,
   line_frequency_hz; ctx pinned), declared in tests/test_surface_parity.py
   POST_U9_ADDITIONS. No existing tool's schema changed; counts 40/0/3.
+- Signal import (2026-11-07): regenerated intentionally: ADDITIVE. New tools
+  inspect_signal_file (filepath, columns_from), validate_signal_import
+  (filepath, config: the import configuration model, unknown keys refused),
+  import_signal_file (filepath, config, import_digest, import_id,
+  overwrite, signal_id_prefix) and get_signal_imports (import_id,
+  file_sha256, file_name, signal_id, offset, limit), all synchronous with
+  ctx pinned, declared in tests/test_surface_parity.py POST_U9_ADDITIONS;
+  new prompt guided_signal_import (filepath), declared in
+  POST_U9_PROMPT_ADDITIONS. The config parameter is typed with the
+  configuration model on purpose, so its schema is in this inventory. No
+  existing tool's schema changed; counts 44/0/4.
 
 Snapshot recipe (run from the repo root):
     python -c "from tests.test_tool_inventory import build_inventory, \\
@@ -171,11 +182,11 @@ class TestInventoryCharacterization:
         """
         # Sibling-module import: CI runs the pytest console script, which
         # does not put the repo root on sys.path.
-        from test_surface_parity import POST_U9_ADDITIONS
+        from test_surface_parity import POST_U9_ADDITIONS, POST_U9_PROMPT_ADDITIONS
 
         assert len(inventory["tools"]) == 33 + len(POST_U9_ADDITIONS)
         assert len(inventory["resources"]) == 0
-        assert len(inventory["prompts"]) == 3
+        assert len(inventory["prompts"]) == 3 + len(POST_U9_PROMPT_ADDITIONS)
 
     def test_merged_tools_absent_new_tools_present(self, inventory):
         """U9 clean cut: absorbed tool names gone, unified names present."""

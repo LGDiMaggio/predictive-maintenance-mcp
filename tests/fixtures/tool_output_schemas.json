@@ -5745,9 +5745,23 @@
         "title": "Duration S"
       },
       "filepath": {
-        "description": "Original file path",
+        "description": "Original file path. For a signal created by import_signal_file it reads 'import <first 12 characters of the import_id> column <index>': the file's own name and folders are file text, shown only by get_signal_imports",
         "title": "Filepath",
         "type": "string"
+      },
+      "import_provenance": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Set only for a signal created by import_signal_file: the import_id, the physical column and its 1-based position, the column label and file name as escaped file text, the time-base source, the scaling, the samples digest, the decoder contract, the confirmation channel and, per configured value, its basis (caller_asserted is true when the bases arrived as MCP tool arguments: they record what the caller claimed, never who the caller is). None for every other load.",
+        "title": "Import Provenance"
       },
       "load_timestamp": {
         "description": "ISO 8601 timestamp when signal was loaded",
@@ -5943,6 +5957,313 @@
     "title": "AssetHistoryResult",
     "type": "object"
   },
+  "get_signal_imports": {
+    "$defs": {
+      "FileText": {
+        "properties": {
+          "file_text": {
+            "title": "File Text",
+            "type": "string"
+          },
+          "truncated": {
+            "default": false,
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "file_text"
+        ],
+        "title": "FileText",
+        "type": "object"
+      },
+      "ImportAttestationView": {
+        "additionalProperties": false,
+        "description": "One confirmation recorded for an import.",
+        "properties": {
+          "bases": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Bases",
+            "type": "object"
+          },
+          "caller_asserted": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Caller Asserted"
+          },
+          "confirmation_channel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Confirmation Channel"
+          },
+          "overrides": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Overrides",
+            "type": "array"
+          },
+          "recorded_at": {
+            "title": "Recorded At",
+            "type": "string"
+          },
+          "transport": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Transport"
+          }
+        },
+        "required": [
+          "recorded_at"
+        ],
+        "title": "ImportAttestationView",
+        "type": "object"
+      },
+      "ImportIndexItem": {
+        "additionalProperties": false,
+        "description": "One import of the index.\n\nAttributes:\n    import_id: The interpretation's identity.\n    file_name: The file name at its latest recorded location (file text).\n    recorded_at: When the import was first recorded.\n    last_recorded_at: When it was last used (the index is newest first\n        by this time).\n    source_sha256: SHA-256 of the file bytes.\n    columns: The physical columns it imports.\n    channels: Column and signal id per channel of its latest outcome.\n    supersedes: Earlier imports of the same bytes it replaced, per shared\n        column.\n    unreadable_lines: Later record lines that could not be read.",
+        "properties": {
+          "channels": {
+            "items": {
+              "$ref": "#/$defs/ImportedChannelEntry"
+            },
+            "title": "Channels",
+            "type": "array"
+          },
+          "columns": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Columns",
+            "type": "array"
+          },
+          "file_name": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/FileText"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "import_id": {
+            "title": "Import Id",
+            "type": "string"
+          },
+          "last_recorded_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Last Recorded At"
+          },
+          "recorded_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Recorded At"
+          },
+          "source_sha256": {
+            "title": "Source Sha256",
+            "type": "string"
+          },
+          "supersedes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Supersedes",
+            "type": "array"
+          },
+          "unreadable_lines": {
+            "default": 0,
+            "title": "Unreadable Lines",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "import_id",
+          "source_sha256"
+        ],
+        "title": "ImportIndexItem",
+        "type": "object"
+      },
+      "ImportRecordView": {
+        "additionalProperties": false,
+        "description": "One import record.\n\nAttributes:\n    import_id: The interpretation's identity.\n    source_sha256: SHA-256 of the file bytes.\n    size_bytes: The file size.\n    interpretation: The canonical interpretation it imports.\n    locations: Every location the file was imported from, as file text,\n        most recent first.\n    attestations: Every confirmation recorded, in order.\n    channels: Column and signal id per channel of its latest outcome.\n    unreadable_lines: Later lines that could not be read.",
+        "properties": {
+          "attestations": {
+            "items": {
+              "$ref": "#/$defs/ImportAttestationView"
+            },
+            "title": "Attestations",
+            "type": "array"
+          },
+          "channels": {
+            "items": {
+              "$ref": "#/$defs/ImportedChannelEntry"
+            },
+            "title": "Channels",
+            "type": "array"
+          },
+          "import_id": {
+            "title": "Import Id",
+            "type": "string"
+          },
+          "interpretation": {
+            "additionalProperties": true,
+            "title": "Interpretation",
+            "type": "object"
+          },
+          "locations": {
+            "items": {
+              "$ref": "#/$defs/FileText"
+            },
+            "title": "Locations",
+            "type": "array"
+          },
+          "size_bytes": {
+            "title": "Size Bytes",
+            "type": "integer"
+          },
+          "source_sha256": {
+            "title": "Source Sha256",
+            "type": "string"
+          },
+          "unreadable_lines": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Unreadable Lines",
+            "type": "array"
+          }
+        },
+        "required": [
+          "import_id",
+          "source_sha256",
+          "size_bytes",
+          "interpretation"
+        ],
+        "title": "ImportRecordView",
+        "type": "object"
+      },
+      "ImportedChannelEntry": {
+        "additionalProperties": false,
+        "description": "One channel of an import's latest outcome.",
+        "properties": {
+          "column": {
+            "title": "Column",
+            "type": "integer"
+          },
+          "signal_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Signal Id"
+          }
+        },
+        "required": [
+          "column"
+        ],
+        "title": "ImportedChannelEntry",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "description": "The import index (a page, newest first) or one import record.\n\nAttributes:\n    entries: The page of the index (empty when one record was asked for).\n    total: Imports matching the filters.\n    offset: Index of the first entry of the page.\n    next_offset: Offset of the next page (None at the end).\n    refused: Ids of records whose first line fails its check.\n    record: The record asked for by ``import_id``.",
+    "properties": {
+      "entries": {
+        "items": {
+          "$ref": "#/$defs/ImportIndexItem"
+        },
+        "title": "Entries",
+        "type": "array"
+      },
+      "next_offset": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Next Offset"
+      },
+      "offset": {
+        "default": 0,
+        "title": "Offset",
+        "type": "integer"
+      },
+      "record": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/ImportRecordView"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      },
+      "refused": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Refused",
+        "type": "array"
+      },
+      "total": {
+        "default": 0,
+        "title": "Total",
+        "type": "integer"
+      }
+    },
+    "title": "SignalImports",
+    "type": "object"
+  },
   "get_signal_info": {
     "description": "Metadata for a signal stored in the SignalRepository.",
     "properties": {
@@ -5973,9 +6294,23 @@
         "title": "Duration S"
       },
       "filepath": {
-        "description": "Original file path",
+        "description": "Original file path. For a signal created by import_signal_file it reads 'import <first 12 characters of the import_id> column <index>': the file's own name and folders are file text, shown only by get_signal_imports",
         "title": "Filepath",
         "type": "string"
+      },
+      "import_provenance": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Set only for a signal created by import_signal_file: the import_id, the physical column and its 1-based position, the column label and file name as escaped file text, the time-base source, the scaling, the samples digest, the decoder contract, the confirmation channel and, per configured value, its basis (caller_asserted is true when the bases arrived as MCP tool arguments: they record what the caller claimed, never who the caller is). None for every other load.",
+        "title": "Import Provenance"
       },
       "load_timestamp": {
         "description": "ISO 8601 timestamp when signal was loaded",
@@ -6084,6 +6419,1181 @@
     "title": "StoredSignalInfo",
     "type": "object"
   },
+  "import_signal_file": {
+    "$defs": {
+      "FileText": {
+        "properties": {
+          "file_text": {
+            "title": "File Text",
+            "type": "string"
+          },
+          "truncated": {
+            "default": false,
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "file_text"
+        ],
+        "title": "FileText",
+        "type": "object"
+      },
+      "ImportedChannel": {
+        "additionalProperties": false,
+        "description": "One channel of an import, as it ended.\n\nAttributes:\n    column: Physical column index.\n    position: Its 1-based position in words.\n    signal_id: The id it is stored under (None when it was not stored).\n    materialized: Whether its samples are in the signal store after\n        this call.\n    samples_digest: SHA-256 of its stored samples (little-endian\n        float64).\n    sample_count: Its number of samples.\n    measurement_id: The measurement it binds (None without a binding).\n    asset_id: The asset it is recorded under (None without a binding).\n    ledger_status: ``recorded``, ``already_recorded``, ``superseded`` or\n        ``not_recorded``; None without a binding.\n    snapshot_status: ``complete``, ``partial``, ``failed`` or\n        ``skipped``; None without a binding.\n    changed: The declaration keys a supersession changed.\n    reattributed_from: The asset the measurement was recorded under\n        before, when the import moved it.\n    reason: Why the channel is not stored or not recorded, in the\n        server's words.",
+        "properties": {
+          "asset_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Asset Id"
+          },
+          "changed": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Changed",
+            "type": "array"
+          },
+          "column": {
+            "title": "Column",
+            "type": "integer"
+          },
+          "ledger_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Ledger Status"
+          },
+          "materialized": {
+            "title": "Materialized",
+            "type": "boolean"
+          },
+          "measurement_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Measurement Id"
+          },
+          "position": {
+            "title": "Position",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Reason"
+          },
+          "reattributed_from": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Reattributed From"
+          },
+          "sample_count": {
+            "title": "Sample Count",
+            "type": "integer"
+          },
+          "samples_digest": {
+            "title": "Samples Digest",
+            "type": "string"
+          },
+          "signal_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Signal Id"
+          },
+          "snapshot_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Snapshot Status"
+          }
+        },
+        "required": [
+          "column",
+          "position",
+          "materialized",
+          "samples_digest",
+          "sample_count"
+        ],
+        "title": "ImportedChannel",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "description": "What an import or a re-materialization did.\n\nAttributes:\n    status: ``imported``, ``already_imported`` or ``rematerialized``.\n    import_id: The interpretation's identity.\n    file: The file name as file text.\n    record_created: Whether this call wrote the import record's first\n        line.\n    caller_asserted: The bases of this import record what the caller\n        claimed (MCP tool arguments), not who the caller is.\n    channels: Every channel of the import, in column order.\n    notices: What the caller should know, in the server's words.",
+    "properties": {
+      "caller_asserted": {
+        "title": "Caller Asserted",
+        "type": "boolean"
+      },
+      "channels": {
+        "items": {
+          "$ref": "#/$defs/ImportedChannel"
+        },
+        "title": "Channels",
+        "type": "array"
+      },
+      "file": {
+        "$ref": "#/$defs/FileText"
+      },
+      "import_id": {
+        "title": "Import Id",
+        "type": "string"
+      },
+      "notices": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Notices",
+        "type": "array"
+      },
+      "record_created": {
+        "title": "Record Created",
+        "type": "boolean"
+      },
+      "status": {
+        "enum": [
+          "imported",
+          "already_imported",
+          "rematerialized"
+        ],
+        "title": "Status",
+        "type": "string"
+      }
+    },
+    "required": [
+      "status",
+      "import_id",
+      "file",
+      "record_created",
+      "caller_asserted"
+    ],
+    "title": "ImportResult",
+    "type": "object"
+  },
+  "inspect_signal_file": {
+    "$defs": {
+      "Candidate": {
+        "additionalProperties": false,
+        "description": "An engineering value the file states or the data suggests.\n\nAttributes:\n    field: ``sampling_rate_hz``, ``sample_interval``, ``sensitivity``,\n        ``acquired_at``, ``rpm`` or ``unit``.\n    status: ``detected`` (stated in the file), ``derived`` (computed\n        from the data), or ``absent`` (for ``sampling_rate_hz`` when\n        neither the file nor a time column gives a rate).\n    value: The value as the file prints it (``detected``).\n    normalized: The value as a canonical decimal string, only when it is\n        a number in the data's decimal mark followed by nothing or by the\n        field's own unit (``Hz``, ``s``, ``rpm``, a sensitivity unit);\n        ``25.6 kHz`` stays unnormalized.\n    line: Physical line it was read from.\n    column: Column it was derived from.",
+        "properties": {
+          "column": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Column"
+          },
+          "field": {
+            "title": "Field",
+            "type": "string"
+          },
+          "line": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Line"
+          },
+          "normalized": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Normalized"
+          },
+          "status": {
+            "enum": [
+              "detected",
+              "derived",
+              "proposed",
+              "ambiguous",
+              "absent"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/FileText"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "field",
+          "status"
+        ],
+        "title": "Candidate",
+        "type": "object"
+      },
+      "ColumnStats": {
+        "additionalProperties": false,
+        "description": "Statistics over the column's numbers among the scanned data rows,\nrounded to six significant digits.",
+        "properties": {
+          "count_at_max": {
+            "title": "Count At Max",
+            "type": "integer"
+          },
+          "count_at_min": {
+            "title": "Count At Min",
+            "type": "integer"
+          },
+          "max": {
+            "title": "Max",
+            "type": "number"
+          },
+          "mean": {
+            "title": "Mean",
+            "type": "number"
+          },
+          "min": {
+            "title": "Min",
+            "type": "number"
+          },
+          "n": {
+            "title": "N",
+            "type": "integer"
+          },
+          "rms": {
+            "title": "Rms",
+            "type": "number"
+          }
+        },
+        "required": [
+          "n",
+          "min",
+          "max",
+          "mean",
+          "rms",
+          "count_at_min",
+          "count_at_max"
+        ],
+        "title": "ColumnStats",
+        "type": "object"
+      },
+      "Dialect": {
+        "additionalProperties": false,
+        "description": "The dialect proposal: ``proposed`` when one reading scores best,\n``ambiguous`` when several tie (each listed in ``candidates``),\n``absent`` when none finds a row of numbers.",
+        "properties": {
+          "candidates": {
+            "items": {
+              "$ref": "#/$defs/DialectReading"
+            },
+            "title": "Candidates",
+            "type": "array"
+          },
+          "proposal": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/DialectReading"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "enum": [
+              "detected",
+              "derived",
+              "proposed",
+              "ambiguous",
+              "absent"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "proposal",
+          "candidates"
+        ],
+        "title": "Dialect",
+        "type": "object"
+      },
+      "DialectReading": {
+        "additionalProperties": false,
+        "description": "One reading of the data rows.\n\nAttributes:\n    delimiter: ``,``, ``;``, ``tab`` or ``whitespace``.\n    decimal: ``.`` or ``,``.\n    fields: Fields per data row under this reading.\n    data_first_line: First line of its longest run of consistent rows.\n    rows: Rows in that run among the scanned lines.\n    numeric_ratio: Share of the run's fields that are numbers.",
+        "properties": {
+          "data_first_line": {
+            "title": "Data First Line",
+            "type": "integer"
+          },
+          "decimal": {
+            "title": "Decimal",
+            "type": "string"
+          },
+          "delimiter": {
+            "title": "Delimiter",
+            "type": "string"
+          },
+          "fields": {
+            "title": "Fields",
+            "type": "integer"
+          },
+          "numeric_ratio": {
+            "title": "Numeric Ratio",
+            "type": "number"
+          },
+          "rows": {
+            "title": "Rows",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "delimiter",
+          "decimal",
+          "fields",
+          "data_first_line",
+          "rows",
+          "numeric_ratio"
+        ],
+        "title": "DialectReading",
+        "type": "object"
+      },
+      "EncodingEvidence": {
+        "additionalProperties": false,
+        "description": "The text encoding: ``detected`` from a UTF-8 byte-order mark,\n``proposed`` when strict UTF-8 decodes every byte read, ``ambiguous`` when\nonly Windows-1252 does (a successful decode does not establish the\nencoding an export was written in, so it needs confirmation).",
+        "properties": {
+          "status": {
+            "enum": [
+              "detected",
+              "derived",
+              "proposed",
+              "ambiguous",
+              "absent"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "value",
+          "status"
+        ],
+        "title": "EncodingEvidence",
+        "type": "object"
+      },
+      "FileText": {
+        "properties": {
+          "file_text": {
+            "title": "File Text",
+            "type": "string"
+          },
+          "truncated": {
+            "default": false,
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "file_text"
+        ],
+        "title": "FileText",
+        "type": "object"
+      },
+      "ImportDraft": {
+        "additionalProperties": false,
+        "description": "A configuration to complete: never a confirmation.\n\nAttributes:\n    configuration: The draft (``attestation.CONFIGURATION_SCHEMA``); its\n        attestation carries no basis, since only the user gives one.\n    prefills: Every value the draft took from evidence, with its origin.\n    remaining_confirmations: What the user still has to state or accept,\n        in the server's words.",
+        "properties": {
+          "configuration": {
+            "additionalProperties": true,
+            "title": "Configuration",
+            "type": "object"
+          },
+          "prefills": {
+            "items": {
+              "$ref": "#/$defs/Prefill"
+            },
+            "title": "Prefills",
+            "type": "array"
+          },
+          "remaining_confirmations": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Remaining Confirmations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "configuration",
+          "prefills",
+          "remaining_confirmations"
+        ],
+        "title": "ImportDraft",
+        "type": "object"
+      },
+      "InspectedColumn": {
+        "additionalProperties": false,
+        "description": "Evidence for one column, by physical 0-based index (labels are display\ntext only and never identify a column).\n\nAttributes:\n    index: Physical column index.\n    label: The header label, as file text (None without a header, or\n        when the header's field count differs from the data's).\n    unit_token: The unit token from the units row or the label's\n        brackets, verbatim, as file text (detected evidence, never a\n        confirmed unit).\n    unit_line: Physical line the unit token was read from.\n    unit: The importable unit the token maps to (``g``, ``m/s2``,\n        ``mm/s``, ``m/s``), None otherwise.\n    role_candidate: The role the evidence suggests (None without any).\n    numeric_ratio: Share of the scanned rows whose field is a number.\n    stats: Statistics of the numbers (None when there are none).\n    time_stats: Time-base statistics, for a time candidate.\n    head_tokens: The first three fields of the column, as file text.",
+        "properties": {
+          "head_tokens": {
+            "items": {
+              "$ref": "#/$defs/FileText"
+            },
+            "title": "Head Tokens",
+            "type": "array"
+          },
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/FileText"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "numeric_ratio": {
+            "title": "Numeric Ratio",
+            "type": "number"
+          },
+          "role_candidate": {
+            "anyOf": [
+              {
+                "enum": [
+                  "vibration",
+                  "time",
+                  "tachometer",
+                  "displacement",
+                  "temperature",
+                  "current",
+                  "voltage",
+                  "index",
+                  "other",
+                  "ignore"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role Candidate"
+          },
+          "stats": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ColumnStats"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "time_stats": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/TimeStats"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          },
+          "unit_line": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Line"
+          },
+          "unit_token": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/FileText"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "index",
+          "label",
+          "unit_token",
+          "unit_line",
+          "unit",
+          "role_candidate",
+          "numeric_ratio",
+          "stats",
+          "time_stats",
+          "head_tokens"
+        ],
+        "title": "InspectedColumn",
+        "type": "object"
+      },
+      "InspectedFile": {
+        "additionalProperties": false,
+        "description": "The file as found.\n\nAttributes:\n    name: The file's name, as file text.\n    size_bytes: Size at open time (no full-file digest is computed).\n    encoding: The encoding evidence.\n    newline_census: Line breaks in the bytes read, by kind (``lf``,\n        ``crlf``, ``cr``).\n    ends_with_line_break: The last byte is a line break (None for an\n        empty file).\n    scan: How much was read.",
+        "properties": {
+          "encoding": {
+            "$ref": "#/$defs/EncodingEvidence"
+          },
+          "ends_with_line_break": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ends With Line Break"
+          },
+          "name": {
+            "$ref": "#/$defs/FileText"
+          },
+          "newline_census": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Newline Census",
+            "type": "object"
+          },
+          "scan": {
+            "$ref": "#/$defs/ScanSummary"
+          },
+          "size_bytes": {
+            "title": "Size Bytes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "size_bytes",
+          "encoding",
+          "newline_census",
+          "ends_with_line_break",
+          "scan"
+        ],
+        "title": "InspectedFile",
+        "type": "object"
+      },
+      "InspectionResult": {
+        "additionalProperties": false,
+        "description": "What a read-only inspection found (the file is never written).\n\nAttributes:\n    status: ``importable`` when a numeric data region was found that can\n        hold a waveform, else ``not_importable``.\n    file: The file as found.\n    regions: Preamble, header, units row, data and trailer.\n    preamble: Preamble lines and key-value pairs (empty when no numeric\n        data region was found).\n    dialect: The dialect proposal.\n    columns_reading: The reading the regions and columns were profiled\n        under: the proposal, or, when the dialect is ambiguous, the first\n        candidate (the others may split the rows differently). None when\n        no numeric data region was found.\n    columns: A page of columns, from *columns_from*.\n    columns_total: Columns in the data rows.\n    columns_from: Index of the first column on this page.\n    next_columns_from: Index to pass for the next page (None when this\n        page reaches the last column).\n    candidates: Engineering values found.\n    issues: Findings.\n    required_confirmations: What an import of this file would need the\n        user to confirm, in the server's words.",
+        "properties": {
+          "candidates": {
+            "items": {
+              "$ref": "#/$defs/Candidate"
+            },
+            "title": "Candidates",
+            "type": "array"
+          },
+          "columns": {
+            "items": {
+              "$ref": "#/$defs/InspectedColumn"
+            },
+            "title": "Columns",
+            "type": "array"
+          },
+          "columns_from": {
+            "title": "Columns From",
+            "type": "integer"
+          },
+          "columns_reading": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/DialectReading"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "columns_total": {
+            "title": "Columns Total",
+            "type": "integer"
+          },
+          "dialect": {
+            "$ref": "#/$defs/Dialect"
+          },
+          "file": {
+            "$ref": "#/$defs/InspectedFile"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/$defs/Issue"
+            },
+            "title": "Issues",
+            "type": "array"
+          },
+          "next_columns_from": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Columns From"
+          },
+          "preamble": {
+            "$ref": "#/$defs/Preamble"
+          },
+          "regions": {
+            "items": {
+              "$ref": "#/$defs/Region"
+            },
+            "title": "Regions",
+            "type": "array"
+          },
+          "required_confirmations": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Required Confirmations",
+            "type": "array"
+          },
+          "status": {
+            "enum": [
+              "importable",
+              "not_importable"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "file",
+          "regions",
+          "preamble",
+          "dialect",
+          "columns_reading",
+          "columns",
+          "columns_total",
+          "columns_from",
+          "next_columns_from",
+          "candidates",
+          "issues",
+          "required_confirmations"
+        ],
+        "title": "InspectionResult",
+        "type": "object"
+      },
+      "Issue": {
+        "additionalProperties": false,
+        "description": "One finding, in the server's words; file text never enters *message*.\n\nAttributes:\n    code: One of ``import_config.ISSUE_CODES``.\n    message: What was found and what it means, in the server's words.\n    line: The physical line it concerns, when there is one.\n    column: The column it concerns, when there is exactly one.\n    columns: Every column it concerns, when it names several.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "column": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Column"
+          },
+          "columns": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Columns",
+            "type": "array"
+          },
+          "line": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Line"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "Issue",
+        "type": "object"
+      },
+      "KeyValue": {
+        "additionalProperties": false,
+        "description": "A preamble line read as a key and a value.",
+        "properties": {
+          "key": {
+            "$ref": "#/$defs/FileText"
+          },
+          "line": {
+            "title": "Line",
+            "type": "integer"
+          },
+          "value": {
+            "$ref": "#/$defs/FileText"
+          }
+        },
+        "required": [
+          "line",
+          "key",
+          "value"
+        ],
+        "title": "KeyValue",
+        "type": "object"
+      },
+      "Preamble": {
+        "additionalProperties": false,
+        "description": "The lines before the header, each shown once.\n\nAttributes:\n    lines: Lines that are not key-value pairs.\n    key_values: Lines read as a key and a value.\n    omitted_lines: Preamble lines not shown (over the cap of 40 lines, or\n        dropped to keep the result within its size budget).",
+        "properties": {
+          "key_values": {
+            "items": {
+              "$ref": "#/$defs/KeyValue"
+            },
+            "title": "Key Values",
+            "type": "array"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/$defs/PreambleLine"
+            },
+            "title": "Lines",
+            "type": "array"
+          },
+          "omitted_lines": {
+            "title": "Omitted Lines",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "lines",
+          "key_values",
+          "omitted_lines"
+        ],
+        "title": "Preamble",
+        "type": "object"
+      },
+      "PreambleLine": {
+        "additionalProperties": false,
+        "description": "A preamble line that is not a key-value pair.",
+        "properties": {
+          "line": {
+            "title": "Line",
+            "type": "integer"
+          },
+          "text": {
+            "$ref": "#/$defs/FileText"
+          }
+        },
+        "required": [
+          "line",
+          "text"
+        ],
+        "title": "PreambleLine",
+        "type": "object"
+      },
+      "Prefill": {
+        "additionalProperties": false,
+        "description": "A configured value a draft took from evidence, not from the user.\n\nA prefill is never a basis: the user still confirms it, citing the same\nevidence (the remaining confirmations say how).\n\nAttributes:\n    field: The field path the value fills (``time_base``,\n        ``channels[3].unit``, ``defaults.rpm``, ...).\n    value: The value, as the configuration writes it.\n    origin: One of ``attestation.ORIGINS``.\n    line: The file line it was read from (``file_declared``).\n    column: The time column it was derived from (``derived``).\n    import_id: The earlier import it came from (``prior_import``).\n    declaration_version: The point declaration it came from\n        (``point_declaration``).",
+        "properties": {
+          "column": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Column"
+          },
+          "declaration_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Declaration Version"
+          },
+          "field": {
+            "title": "Field",
+            "type": "string"
+          },
+          "import_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Import Id"
+          },
+          "line": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Line"
+          },
+          "origin": {
+            "title": "Origin",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "field",
+          "value",
+          "origin"
+        ],
+        "title": "Prefill",
+        "type": "object"
+      },
+      "Region": {
+        "additionalProperties": false,
+        "description": "One region of the file, by physical line (1-based).\n\nAttributes:\n    kind: ``preamble``, ``header``, ``units``, ``data`` or ``trailer``.\n    first_line: First physical line (None when unknown: a trailer found\n        only in the tail, past lines that were not read).\n    last_line: Last physical line (None when the region continues past\n        the scanned head, or is unknown).\n    lines: Lines in the region when known.",
+        "properties": {
+          "first_line": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Line"
+          },
+          "kind": {
+            "enum": [
+              "preamble",
+              "header",
+              "units",
+              "data",
+              "trailer"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "last_line": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Line"
+          },
+          "lines": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lines"
+          }
+        },
+        "required": [
+          "kind",
+          "first_line",
+          "last_line",
+          "lines"
+        ],
+        "title": "Region",
+        "type": "object"
+      },
+      "ScanSummary": {
+        "additionalProperties": false,
+        "description": "How much of the file the inspection read.\n\nAttributes:\n    bytes_read: Bytes read through the verified descriptor.\n    lines_scanned: Head lines examined (at most 300).\n    complete: Every byte of the file was read.",
+        "properties": {
+          "bytes_read": {
+            "title": "Bytes Read",
+            "type": "integer"
+          },
+          "complete": {
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "lines_scanned": {
+            "title": "Lines Scanned",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "bytes_read",
+          "lines_scanned",
+          "complete"
+        ],
+        "title": "ScanSummary",
+        "type": "object"
+      },
+      "TimeStats": {
+        "additionalProperties": false,
+        "description": "The time-base rules applied to a time candidate's scanned rows only\n(validation assesses the whole column).\n\nAttributes:\n    time_unit: The unit read from the column's unit token, or None when\n        it has none (the statistics are then in ticks of the print and\n        no rate is derived). The token itself, as written, is the\n        column's ``unit_token``.\n    time_unit_status: ``detected`` when the token spells the unit\n        exactly; ``ambiguous`` when it names a time unit only with letter\n        case ignored (``S``, ``MS``): no rate is derived then, and the\n        unit is listed among the required confirmations. None without a\n        time unit.\n    rows: Stamps assessed.\n    evidence: ``full``, ``partial`` or ``duration_only`` (None when\n        refused).\n    regime: The print regime (None when refused).\n    resolution: One tick of the print grid, in *time_unit*.\n    modal_steps: The modal pair of tick steps.\n    finding_codes: Codes of the findings on these rows.\n    refused_code: ``time_grammar`` or ``region_too_short`` when the rows\n        cannot be assessed.\n    datetime_text: The stamps are dates or times of day, which this\n        version does not assess.",
+        "properties": {
+          "datetime_text": {
+            "default": false,
+            "title": "Datetime Text",
+            "type": "boolean"
+          },
+          "evidence": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Evidence"
+          },
+          "finding_codes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Finding Codes",
+            "type": "array"
+          },
+          "modal_steps": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Modal Steps"
+          },
+          "refused_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Refused Code"
+          },
+          "regime": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Regime"
+          },
+          "resolution": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Resolution"
+          },
+          "rows": {
+            "title": "Rows",
+            "type": "integer"
+          },
+          "time_unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time Unit"
+          },
+          "time_unit_status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "detected",
+                  "derived",
+                  "proposed",
+                  "ambiguous",
+                  "absent"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Time Unit Status"
+          }
+        },
+        "required": [
+          "time_unit",
+          "rows"
+        ],
+        "title": "TimeStats",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "description": "An inspection and the draft configuration built from it.\n\nAttributes:\n    inspection: What the read-only inspection found.\n    draft: A configuration to complete; it carries no basis, since only\n        the user gives one.",
+    "properties": {
+      "draft": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/ImportDraft"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      },
+      "inspection": {
+        "$ref": "#/$defs/InspectionResult"
+      }
+    },
+    "required": [
+      "inspection"
+    ],
+    "title": "FileInspection",
+    "type": "object"
+  },
   "list_html_reports": {
     "properties": {
       "result": {
@@ -6163,9 +7673,23 @@
             "title": "Duration S"
           },
           "filepath": {
-            "description": "Original file path",
+            "description": "Original file path. For a signal created by import_signal_file it reads 'import <first 12 characters of the import_id> column <index>': the file's own name and folders are file text, shown only by get_signal_imports",
             "title": "Filepath",
             "type": "string"
+          },
+          "import_provenance": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Set only for a signal created by import_signal_file: the import_id, the physical column and its 1-based position, the column label and file name as escaped file text, the time-base source, the scaling, the samples digest, the decoder contract, the confirmation channel and, per configured value, its basis (caller_asserted is true when the bases arrived as MCP tool arguments: they record what the caller claimed, never who the caller is). None for every other load.",
+            "title": "Import Provenance"
           },
           "load_timestamp": {
             "description": "ISO 8601 timestamp when signal was loaded",
@@ -6569,6 +8093,663 @@
       "pca_path"
     ],
     "title": "AnomalyModelResult",
+    "type": "object"
+  },
+  "validate_signal_import": {
+    "$defs": {
+      "ChannelPrecheck": {
+        "additionalProperties": false,
+        "description": "The read-only ledger pre-check of one bound channel.\n\nAttributes:\n    column: Physical column index.\n    measurement_id: The measurement the channel binds.\n    asset_id: The asset it binds.\n    asset_status: ``known`` (the ledger holds events of the asset) or\n        ``new``.\n    point_status: ``declared`` or ``undeclared``.\n    point_declaration_version: The point's current declaration version.\n    measurement_status: ``new``, ``already_recorded`` (an identical\n        declaration is recorded) or ``supersedes`` (it would replace the\n        recorded declaration).\n    changed: The declaration keys a supersession changes.\n    recorded_asset_id: The asset the measurement is recorded under, when\n        it is recorded.\n    baseline_member: The measurement is a member of its point's active\n        baseline.\n    restores_superseded: The new interpretation is one an earlier,\n        later superseded, declaration of the measurement used.\n    data_range_overlaps: Whether the new data line range overlaps the\n        recorded one (None when nothing comparable is recorded).\n    column_swap: The measurement of another column of the same bytes\n        recorded at the same point and acquisition slot.",
+        "properties": {
+          "asset_id": {
+            "title": "Asset Id",
+            "type": "string"
+          },
+          "asset_status": {
+            "enum": [
+              "known",
+              "new"
+            ],
+            "title": "Asset Status",
+            "type": "string"
+          },
+          "baseline_member": {
+            "default": false,
+            "title": "Baseline Member",
+            "type": "boolean"
+          },
+          "changed": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Changed",
+            "type": "array"
+          },
+          "column": {
+            "title": "Column",
+            "type": "integer"
+          },
+          "column_swap": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Column Swap"
+          },
+          "data_range_overlaps": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Data Range Overlaps"
+          },
+          "measurement_id": {
+            "title": "Measurement Id",
+            "type": "string"
+          },
+          "measurement_status": {
+            "enum": [
+              "new",
+              "already_recorded",
+              "supersedes"
+            ],
+            "title": "Measurement Status",
+            "type": "string"
+          },
+          "point_declaration_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Point Declaration Version"
+          },
+          "point_status": {
+            "enum": [
+              "declared",
+              "undeclared"
+            ],
+            "title": "Point Status",
+            "type": "string"
+          },
+          "recorded_asset_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Recorded Asset Id"
+          },
+          "restores_superseded": {
+            "default": false,
+            "title": "Restores Superseded",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "column",
+          "measurement_id",
+          "asset_id",
+          "asset_status",
+          "point_status",
+          "measurement_status"
+        ],
+        "title": "ChannelPrecheck",
+        "type": "object"
+      },
+      "FileText": {
+        "properties": {
+          "file_text": {
+            "title": "File Text",
+            "type": "string"
+          },
+          "truncated": {
+            "default": false,
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "file_text"
+        ],
+        "title": "FileText",
+        "type": "object"
+      },
+      "Statement": {
+        "additionalProperties": false,
+        "description": "One server-authored confirmation statement per engineering value.\n\nThe prose names a channel by its index and its 1-based position and\nstates the consequence; the column's first tokens, and its label only\nwhen the header's field count matches the data, travel in their own\nfile-text fields, never inside the prose.\n\nAttributes:\n    field: The configuration field the statement confirms.\n    column: The channel's physical column, when it concerns one.\n    text: The statement, in the server's words.\n    label: The column's header label as file text.\n    head_tokens: The column's first data tokens as file text.\n    origin: Where the value comes from (``attestation.ORIGINS``).\n    basis: The user's act behind it (``attestation.BASES``).\n    caller_asserted: The basis arrived as an MCP tool argument: it\n        records what the caller claimed, never who the caller is.",
+        "properties": {
+          "basis": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Basis"
+          },
+          "caller_asserted": {
+            "default": false,
+            "title": "Caller Asserted",
+            "type": "boolean"
+          },
+          "column": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Column"
+          },
+          "field": {
+            "title": "Field",
+            "type": "string"
+          },
+          "head_tokens": {
+            "items": {
+              "$ref": "#/$defs/FileText"
+            },
+            "title": "Head Tokens",
+            "type": "array"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/FileText"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Origin"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "field",
+          "text"
+        ],
+        "title": "Statement",
+        "type": "object"
+      },
+      "TimeColumnCheck": {
+        "additionalProperties": false,
+        "description": "The assessment of one time column over the whole data region.\n\nAttributes:\n    column: Physical column index.\n    time_unit: The declared unit of its stamps.\n    outcome: ``accepted``, ``needs_confirmation`` or ``invalid``.\n    evidence: ``full``, ``partial`` or ``duration_only``.\n    regime: How its stamps are printed.\n    resolution: One tick of its print, in *time_unit*.\n    fitted_rate_hz: The least-squares rate, when one was fitted.\n    proposed_rate_hz: The rate it supports proposing, when it does.\n    finding_codes: Its findings (issue codes).\n    statements: Its findings in plain words, with their statistics.",
+        "properties": {
+          "column": {
+            "title": "Column",
+            "type": "integer"
+          },
+          "evidence": {
+            "title": "Evidence",
+            "type": "string"
+          },
+          "finding_codes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Finding Codes",
+            "type": "array"
+          },
+          "fitted_rate_hz": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Fitted Rate Hz"
+          },
+          "outcome": {
+            "title": "Outcome",
+            "type": "string"
+          },
+          "proposed_rate_hz": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Proposed Rate Hz"
+          },
+          "regime": {
+            "title": "Regime",
+            "type": "string"
+          },
+          "resolution": {
+            "title": "Resolution",
+            "type": "string"
+          },
+          "statements": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Statements",
+            "type": "array"
+          },
+          "time_unit": {
+            "title": "Time Unit",
+            "type": "string"
+          }
+        },
+        "required": [
+          "column",
+          "time_unit",
+          "outcome",
+          "evidence",
+          "regime",
+          "resolution"
+        ],
+        "title": "TimeColumnCheck",
+        "type": "object"
+      },
+      "ValidatedChannel": {
+        "additionalProperties": false,
+        "description": "One selected vibration channel, as the whole-file parse found it.\n\nAttributes:\n    column: Physical column index.\n    position: Its 1-based position in words (\"the 4th field from the\n        left\").\n    role: ``vibration``.\n    quantity: ``acceleration`` or ``velocity``.\n    unit: The unit it is stored in.\n    scaling_divisor: Source units per stored unit, as an exact decimal\n        string, for an electrical column.\n    sample_count: Samples in the data region.\n    samples_digest: SHA-256 of the stored samples (little-endian\n        float64), the value replay must reproduce.\n    label: Its header label as file text (None when the header's field\n        count differs from the data's).\n    unit_token: Its unit token as file text.\n    head_tokens: Its first data tokens as file text.\n    mean: Mean of the stored samples (electrical columns, for the DC\n        policy).\n    mean_to_std: Mean divided by standard deviation (electrical columns).\n    measurement_id: The measurement it binds, when it has a binding.",
+        "properties": {
+          "column": {
+            "title": "Column",
+            "type": "integer"
+          },
+          "head_tokens": {
+            "items": {
+              "$ref": "#/$defs/FileText"
+            },
+            "title": "Head Tokens",
+            "type": "array"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/FileText"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "mean": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Mean"
+          },
+          "mean_to_std": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Mean To Std"
+          },
+          "measurement_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Measurement Id"
+          },
+          "position": {
+            "title": "Position",
+            "type": "string"
+          },
+          "quantity": {
+            "title": "Quantity",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "sample_count": {
+            "title": "Sample Count",
+            "type": "integer"
+          },
+          "samples_digest": {
+            "title": "Samples Digest",
+            "type": "string"
+          },
+          "scaling_divisor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Scaling Divisor"
+          },
+          "unit": {
+            "title": "Unit",
+            "type": "string"
+          },
+          "unit_token": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/FileText"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "column",
+          "position",
+          "role",
+          "quantity",
+          "unit",
+          "sample_count",
+          "samples_digest"
+        ],
+        "title": "ValidatedChannel",
+        "type": "object"
+      },
+      "ValidationIssue": {
+        "additionalProperties": false,
+        "description": "One finding of a validation, in the server's words.\n\nAttributes:\n    code: One of ``import_config.ISSUE_CODES``.\n    effect: ``invalid`` and ``needs_confirmation`` keep the import from\n        ``ready``; a ``notice`` informs and is recorded.\n    message: What was found and what to do; file text never enters it.\n    field: The configuration field it concerns, when there is one.\n    line: The physical file line it concerns, when there is one.\n    column: The physical column it concerns, when there is one.\n    token: The file's own text the issue is about (a printed value or\n        row as written), escaped and capped, when it names one; the\n        message refers to it and never repeats it.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "column": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Column"
+          },
+          "effect": {
+            "enum": [
+              "invalid",
+              "needs_confirmation",
+              "notice"
+            ],
+            "title": "Effect",
+            "type": "string"
+          },
+          "field": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Field"
+          },
+          "line": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Line"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "token": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/FileText"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "code",
+          "effect",
+          "message"
+        ],
+        "title": "ValidationIssue",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "description": "What a validation decided (nothing is ever written).\n\nAttributes:\n    outcome: ``ready``, ``needs_confirmation`` or ``invalid``.\n    file: The file name as file text.\n    source_sha256: SHA-256 of every byte of the file (None when the\n        parse stopped before the end).\n    size_bytes: The file size.\n    first_line: Physical line of the first data row.\n    last_line: Physical line of the last data row.\n    row_count: Data rows (samples per channel).\n    sampling_rate_hz: The configured sampling rate.\n    time_base_source: Where it comes from (``time_column``, ``stated``\n        or ``file_declared``).\n    time_columns: Every assessed time column.\n    channels: Every selected channel the parse decoded.\n    statements: One statement per engineering value.\n    issues: Every finding, each with its effect on the outcome.\n    required_confirmations: What the user still has to confirm, in the\n        server's words (empty when ``ready``): entry *i* is the message of\n        the *i*-th issue whose effect is ``needs_confirmation``, in issue\n        order, and no two such issues share a message. That issue carries\n        the field, the line and, for a value the file prints, the text as\n        printed (``token``) its message refers to.\n    ledger_precheck: The read-only pre-check of every bound channel.\n    confirmation_channel: Through which channel the configuration came.\n    caller_asserted: Its bases record what the caller claimed.\n    import_id: The interpretation's identity (None when the parse\n        stopped before the end).\n    import_digest: What an import must present; set only when\n        ``ready``.",
+    "properties": {
+      "caller_asserted": {
+        "title": "Caller Asserted",
+        "type": "boolean"
+      },
+      "channels": {
+        "items": {
+          "$ref": "#/$defs/ValidatedChannel"
+        },
+        "title": "Channels",
+        "type": "array"
+      },
+      "confirmation_channel": {
+        "title": "Confirmation Channel",
+        "type": "string"
+      },
+      "file": {
+        "$ref": "#/$defs/FileText"
+      },
+      "first_line": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "First Line"
+      },
+      "import_digest": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Import Digest"
+      },
+      "import_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Import Id"
+      },
+      "issues": {
+        "items": {
+          "$ref": "#/$defs/ValidationIssue"
+        },
+        "title": "Issues",
+        "type": "array"
+      },
+      "last_line": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Last Line"
+      },
+      "ledger_precheck": {
+        "items": {
+          "$ref": "#/$defs/ChannelPrecheck"
+        },
+        "title": "Ledger Precheck",
+        "type": "array"
+      },
+      "outcome": {
+        "enum": [
+          "ready",
+          "needs_confirmation",
+          "invalid"
+        ],
+        "title": "Outcome",
+        "type": "string"
+      },
+      "required_confirmations": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Required Confirmations",
+        "type": "array"
+      },
+      "row_count": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Row Count"
+      },
+      "sampling_rate_hz": {
+        "title": "Sampling Rate Hz",
+        "type": "string"
+      },
+      "size_bytes": {
+        "title": "Size Bytes",
+        "type": "integer"
+      },
+      "source_sha256": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Source Sha256"
+      },
+      "statements": {
+        "items": {
+          "$ref": "#/$defs/Statement"
+        },
+        "title": "Statements",
+        "type": "array"
+      },
+      "time_base_source": {
+        "title": "Time Base Source",
+        "type": "string"
+      },
+      "time_columns": {
+        "items": {
+          "$ref": "#/$defs/TimeColumnCheck"
+        },
+        "title": "Time Columns",
+        "type": "array"
+      }
+    },
+    "required": [
+      "outcome",
+      "file",
+      "size_bytes",
+      "sampling_rate_hz",
+      "time_base_source",
+      "confirmation_channel",
+      "caller_asserted"
+    ],
+    "title": "ValidationResult",
     "type": "object"
   }
 }

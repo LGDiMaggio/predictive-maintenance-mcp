@@ -1107,11 +1107,16 @@ class TestRawMarker:
         assert ic.import_raw_marker() is not ic.import_raw_marker()
 
     def test_current_decoder_refuses_the_marker_before_reading_the_file(self, tmp_path):
-        """R56 on today's replay path: the marker fails the raw vocabulary
-        check before any file access (the path does not even exist)."""
+        """The replay path reads ``raw_format`` through the predicate: the
+        marker without an ``import_format`` is refused before any file
+        access (the path does not even exist), never decoded as column 0.
+        A server predating the import refuses it in the raw decoder's
+        vocabulary check (see test_asset_ledger_import)."""
         missing = tmp_path / "never-created.csv"
         declaration = {"raw_format": ic.import_raw_marker()}
-        with pytest.raises(ValueError, match="Invalid sample_format 'pmm-text-import'"):
+        with pytest.raises(
+            ValueError, match="never decoded as the file's first column"
+        ):
             ledger_service._decode(missing, declaration)
         assert not missing.exists()
 

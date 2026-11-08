@@ -317,9 +317,9 @@ class TestScanRefusals:
         scan = _scan(tmp_path, "a.csv", row)
         assert len(scan.head_lines) == 1
 
-    def test_refusals_escape_the_file_name(self, tmp_path):
+    def test_refusals_do_not_repeat_the_file_name(self, tmp_path):
         """A Hangul filler passes the path gate (it is a letter) but prints as
-        nothing, so the refusal shows it escaped."""
+        nothing; a refusal carries no file text, so it cannot show it."""
         name = "evil" + chr(0x3164) + ".csv"
         try:
             (tmp_path / name).write_bytes(b"\x00")
@@ -328,7 +328,9 @@ class TestScanRefusals:
         with _open(tmp_path, name) as file, pytest.raises(ts.TextScanRefused) as caught:
             ts.scan_text(file)
         assert chr(0x3164) not in str(caught.value)
-        assert "\\u3164" in str(caught.value)
+        assert "\\u3164" not in str(caught.value)
+        assert "evil" not in str(caught.value)
+        assert str(caught.value).startswith("The file ")
 
 
 class _VirtualFile(VerifiedFile):

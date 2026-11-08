@@ -41,7 +41,7 @@ import json
 import logging
 import math
 import platform
-from typing import Any, Callable, Mapping, NamedTuple, Optional, Union
+from typing import Any, Callable, Mapping, NamedTuple, Optional, Sequence, Union
 
 import numpy as np
 import scipy
@@ -54,6 +54,7 @@ from ..diagnostics.bearing_evidence import (
     Hypothesis,
 )
 from ..diagnostics.iso20816 import assess_severity_raw
+from ..signal_acquisition.import_config import is_raw_declaration
 from ..signal_acquisition.measurement import VALID_DIRECTIONS
 from ..signal_processing.features import extract_time_domain_features
 from ..signal_processing.spectral import (
@@ -424,6 +425,12 @@ def context_digest(context: Mapping[str, Any], declaration: Mapping[str, Any]) -
         "sampling_rate": None if sampling_rate is None else float(sampling_rate),
         "direction": context.get("direction"),
     }
+    import_format = declaration.get("import_format")
+    if import_format is not None:
+        # Only an imported channel carries it, so every other digest is
+        # unchanged; its samples digest makes a corrected sensitivity a new
+        # context.
+        payload["import_format"] = import_format
     return _short_digest(payload)
 
 
@@ -947,7 +954,10 @@ VIEW_BLOCKER_CODES: tuple[str, ...] = (
 
 
 def snapshot_blocker(
-    payload: Mapping[str, Any], point: Optional[Mapping[str, Any]]
+    payload: Mapping[str, Any],
+    point: Optional[Mapping[str, Any]],
+    *,
+    history: Sequence[Mapping[str, Any]] = (),
 ) -> Optional[tuple[str, str]]:
     """Why no snapshot can be computed for a recorded measurement, read
     from its recorded payload and its point's declaration alone.
@@ -962,6 +972,10 @@ def snapshot_blocker(
         payload: The measurement's current ``measurement_recorded``
             payload (``declaration``, ``file``, ``locations``).
         point: The point's current declaration, or None.
+        history: The measurement's recorded payloads, oldest first: a
+            declaration without an import interpretation that follows one
+            with it (written by a server that predates the import) is not
+            reprocessable.
 
     Returns:
         ``(code, reason)`` with ``code`` in :data:`VIEW_BLOCKER_CODES` for
@@ -988,6 +1002,25 @@ def snapshot_blocker(
         return (
             "declaration_unresolvable",
             f"the recorded declaration does not resolve: {exc}",
+        )
+    try:
+        is_raw_declaration(declaration)
+    except ValueError as exc:
+        return (
+            "declaration_unresolvable",
+            f"the recorded declaration is refused: {exc}",
+        )
+    if not isinstance(declaration.get("import_format"), Mapping) and any(
+        isinstance(entry, Mapping)
+        and isinstance(entry.get("declaration"), Mapping)
+        and isinstance(entry["declaration"].get("import_format"), Mapping)
+        for entry in history
+    ):
+        return (
+            "declaration_unresolvable",
+            "the measurement was imported with its own interpretation, and a "
+            "later declaration without it (written by a server that predates "
+            "the import) replaced it, so the file is never read with either",
         )
     raw_format = declaration.get("raw_format")
     if isinstance(raw_format, Mapping) and raw_format.get("sample_format") is None:

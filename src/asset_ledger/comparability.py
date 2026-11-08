@@ -197,7 +197,21 @@ def _measurement_id_of(measurement: dict[str, Any]) -> Optional[str]:
 
 
 def _scale_factor_of(declaration: dict[str, Any]) -> Optional[float]:
-    """Return the effective raw ``scale_factor``; None for self-describing files."""
+    """Return the effective calibration multiplier: the raw ``scale_factor``,
+    or for an imported channel the inverse of its scaling divisor (source
+    units per stored unit); None for self-describing files and for an
+    imported channel stored without scaling."""
+    import_format = declaration.get("import_format")
+    if isinstance(import_format, dict):
+        scaling = import_format.get("scaling")
+        text = scaling.get("divisor") if isinstance(scaling, dict) else None
+        try:
+            divisor = float(text) if isinstance(text, str) else None
+        except ValueError:
+            divisor = None
+        if divisor is None or not math.isfinite(divisor) or divisor == 0:
+            return None
+        return 1.0 / divisor
     raw_format = declaration.get("raw_format")
     if isinstance(raw_format, dict):
         return _as_float(raw_format.get("scale_factor"))

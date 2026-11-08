@@ -2825,6 +2825,9 @@ class TestRefusedTimeColumn:
         refused = [i for i in result.issues if i.field == "time_columns[0]"]
         assert refused and refused[0].effect == "invalid"
         assert refused[0].code == "time_grammar"
+        assert refused[0].token is not None
+        assert "1e-999999999" not in refused[0].message
+        assert refused[0].token.file_text == "1e-999999999"
 
 
 class TestConfigureRemaining:
