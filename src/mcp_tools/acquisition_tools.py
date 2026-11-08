@@ -122,7 +122,9 @@ async def list_signals(
         return {
             "scope": "memory",
             "count": len(signals),
-            "signals": [StoredSignalInfo(**s).model_dump() for s in signals],
+            "signals": [
+                StoredSignalInfo(**shown_info(s)).model_dump() for s in signals
+            ],
         }
 
     # scope == "disk"
@@ -473,7 +475,23 @@ async def get_signal_info(ctx: Context, signal_id: str) -> StoredSignalInfo:
         info = repo.get_signal_info(signal_id)
     except KeyError as exc:
         raise ValueError(str(exc.args[0])) from None
-    return StoredSignalInfo(**info)
+    return StoredSignalInfo(**shown_info(info))
+
+
+def shown_info(info: dict) -> dict:
+    """The info as a client sees it: an imported signal's file path is file
+    text, so its ``filepath`` names the import and column instead (the
+    import provenance carries the column label as file text)."""
+    provenance = info.get("import_provenance")
+    if not provenance:
+        return info
+    return {
+        **info,
+        "filepath": (
+            f"import {str(provenance.get('import_id', ''))[:12]} column "
+            f"{provenance.get('column')}"
+        ),
+    }
 
 
 async def clear_signals(

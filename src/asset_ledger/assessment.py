@@ -113,7 +113,7 @@ clock. Two identical views give byte-identical canonical payloads.
 import logging
 import math
 from datetime import datetime, timezone
-from typing import Any, Callable, Iterable, NamedTuple, Optional, Sequence
+from typing import Any, Callable, Iterable, NamedTuple, Optional, Sequence, Mapping
 
 import numpy as np
 
@@ -438,6 +438,7 @@ def _records_of_point(view: dict[str, Any], point_id: str) -> list[dict[str, Any
                 "order": order,
                 "payload": current,
                 "declaration": declaration,
+                "history": list(slot.get("history") or []),
                 "snapshots": list(slot.get("snapshots") or []),
                 "snapshots_by_lineage": dict(slot.get("snapshots_by_lineage") or {}),
                 "lineage_positions": dict(slot.get("lineage_positions") or {}),
@@ -1538,9 +1539,29 @@ def _classify_evidence(
 # ---------------------------------------------------------------------------
 
 
+def shown_location(
+    payload: Mapping[str, Any], location: Optional[str]
+) -> Optional[str]:
+    """A recorded location as a result shows it: an imported measurement's
+    file path is file text, so it reads ``import <id> column <index>``."""
+    declaration = payload.get("declaration")
+    if (
+        location is None
+        or not isinstance(declaration, Mapping)
+        or not isinstance(declaration.get("import_format"), Mapping)
+    ):
+        return location
+    ref = payload.get("import_ref")
+    import_id = str(ref.get("import_id", "")) if isinstance(ref, Mapping) else ""
+    return f"import {import_id[:12]} column {declaration.get('channel_index')}"
+
+
 def _slot_ref(slot: dict[str, Any]) -> dict[str, Any]:
     file_block = slot["payload"].get("file")
-    location = file_block.get("location") if isinstance(file_block, dict) else None
+    location = shown_location(
+        slot["payload"],
+        file_block.get("location") if isinstance(file_block, dict) else None,
+    )
     return {
         "measurement_id": slot["measurement_id"],
         "acquired_at": slot["acquired_at"],
@@ -1799,12 +1820,56 @@ _RELOAD_MEMBER_NOTE = (
 )
 
 
+#: The re-import a measurement recorded by the signal import needs instead
+#: of a re-load: a load without its interpretation never replaces it.
+_REIMPORT = (
+    "import the file again with validate_signal_import and import_signal_file "
+    "(the same bytes keep the same measurement_id)"
+)
+
+
+def _imported_action(code: str, member: bool) -> Optional[str]:
+    """The action of *code* for a measurement the signal import recorded, or
+    None when it is the plain action."""
+    reload_note = _RELOAD_MEMBER_NOTE if member else ""
+    if code == "declaration_unresolvable":
+        return (
+            f"ask the user to correct the import configuration and {_REIMPORT}, "
+            f"or to re-declare the point with declare_measurement_point" + reload_note
+        )
+    if code == "location_outside_data_dir":
+        return (
+            "ask the operator to list the file's folder in PMM_IMPORT_ROOTS (a "
+            "network share through a mapped drive letter), or copy the file into "
+            f"the data directory and {_REIMPORT}" + reload_note
+        )
+    if code == "file_missing":
+        return (
+            "restore the file at one of its recorded locations, or ask the user "
+            f"where it is now and {_REIMPORT}" + reload_note
+        )
+    if code == "content_differs":
+        return (
+            "a decision for the user, which the agent asks for and does not "
+            "make: restore the original file at its recorded location, or import "
+            "the current file as a new recording with validate_signal_import and "
+            "import_signal_file" + reload_note
+        )
+    if code == "undecodable":
+        return (
+            f"{_REIMPORT[0].upper()}{_REIMPORT[1:]}: this build does not reproduce "
+            f"the recorded decode" + reload_note
+        )
+    return None
+
+
 def reprocess_action(
     code: str,
     *,
     member: bool = False,
     relative: bool = False,
     data_dir: Optional[str] = None,
+    imported: bool = False,
 ) -> Optional[str]:
     """The action that clears a not-reprocessable reason *code* (None for a
     recording superseded in its acquisition slot, which never scores).
@@ -1815,7 +1880,13 @@ def reprocess_action(
         relative: Its most recent recorded location is relative to the
             data directory.
         data_dir: The data directory relative locations resolved under.
+        imported: The signal import recorded the measurement, so the
+            actions name the import instead of ``load_signal``.
     """
+    if imported:
+        action = _imported_action(code, member)
+        if action is not None:
+            return action
     reload_note = _RELOAD_MEMBER_NOTE if member else ""
     if code == "no_valid_sampling_rate":
         return (
@@ -1980,7 +2051,9 @@ def _reprocess_blocker(
     when a re-processing run in the same call found it not reprocessable,
     that finding.
     """
-    found = snapshot_blocker(slot["payload"], point)
+    found = snapshot_blocker(
+        slot["payload"], point, history=slot.get("record", slot).get("history") or ()
+    )
     if found is not None:
         return True, found[0]
     measurement_id = slot["measurement_id"]

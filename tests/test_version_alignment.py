@@ -421,6 +421,10 @@ UNRELEASED_TOOLS = frozenset(
         "assess_asset_change",
         "forecast_asset_indicator",
         "assess_shaft_fault_evidence",
+        "inspect_signal_file",
+        "validate_signal_import",
+        "import_signal_file",
+        "get_signal_imports",
     }
 )
 UNRELEASED_MARKER = "Unreleased: main branch only"
@@ -547,13 +551,16 @@ class TestEndpointCountClaims:
         get_asset_history and assess_asset_change (34 -> 38 tools); forecast
         PR 1 added forecast_asset_indicator (38 -> 39 tools, unreleased); the
         shaft-order evidence added assess_shaft_fault_evidence (39 -> 40
-        tools, unreleased). The additions register lives in
+        tools, unreleased); the signal import added inspect_signal_file,
+        validate_signal_import, import_signal_file and get_signal_imports
+        (40 -> 44 tools) and the guided_signal_import prompt (3 -> 4
+        prompts), unreleased. The additions register lives in
         tests/test_surface_parity.py."""
         assert surface_counts == {
-            "tools": 40,
+            "tools": 44,
             "resources": 0,
-            "prompts": 3,
-            "endpoints": 43,
+            "prompts": 4,
+            "endpoints": 48,
         }
 
 

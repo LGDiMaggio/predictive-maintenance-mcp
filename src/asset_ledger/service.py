@@ -126,7 +126,20 @@ from typing import Any, Callable, Mapping, NamedTuple, Optional, Sequence, Union
 import numpy as np
 
 from ..diagnostics.bearing_catalog import lookup_bearing
-from ..path_safety import safe_resolve
+from ..config import get_max_signal_size
+from ..path_safety import (
+    PathRefused,
+    gate_import_path,
+    open_import_file,
+    resolve_under,
+)
+from ..signal_acquisition.import_config import (
+    IMPORT_FORMAT_KEYS,
+    import_raw_marker,
+    is_raw_declaration,
+    normalize_decimal,
+    samples_digest,
+)
 from ..signal_acquisition.loaders import (
     RAW_SAMPLES_REMEDY,
     TEXT_EXTENSIONS,
@@ -134,6 +147,7 @@ from ..signal_acquisition.loaders import (
     load_raw_binary,
     load_self_describing,
 )
+from ..signal_acquisition.text_decoder import DECODER_CONTRACT, get_decoder
 from ..signal_acquisition.measurement import (
     MEASUREMENT_DECLARATION_KEYS,
     MEASUREMENT_ID_HEX_CHARS,
@@ -151,6 +165,7 @@ from .assessment import (
     ReprocessCoupling,
     _baseline_ids,
     _known_points,
+    shown_location,
     collect_point_slots,
     current_snapshot_id_of,
     reprocess_action,
@@ -186,6 +201,8 @@ from .store import (
 
 __all__ = [
     "DECLARATION_KEYS",
+    "IMPORTED_DECLARATION_KEYS",
+    "IMPORT_DECLARED_BY",
     "LEDGER_STATUSES",
     "SNAPSHOT_STATUSES",
     "OUTCOME_KEYS",
@@ -381,6 +398,16 @@ DECLARATION_KEYS: tuple[str, ...] = (
     "channel_index",
 )
 
+#: Keys of the declaration of an imported channel: :data:`DECLARATION_KEYS`
+#: plus its own interpretation. A declaration loaded any other way never
+#: carries ``import_format`` (not even as null), so its fingerprint is
+#: unchanged.
+IMPORTED_DECLARATION_KEYS: tuple[str, ...] = (*DECLARATION_KEYS, "import_format")
+
+#: ``declared_by`` of every imported channel: who confirmed what lives in the
+#: import record, so re-confirming an interpretation changes no declaration.
+IMPORT_DECLARED_BY = "import"
+
 #: The four ledger outcomes of a load.
 LEDGER_STATUSES: tuple[str, ...] = (
     "recorded",
@@ -479,6 +506,10 @@ def build_declaration(info: Mapping[str, Any]) -> dict[str, Any]:
         None), ``signal_unit`` (canonical or None), ``raw_format`` (a copy
         of the effective raw decode parameters, or None for self-describing
         formats) and ``channel_index`` (the decoded channel, 0 by default).
+        An imported channel (an info with an ``import_format``, built by the
+        signal import, never by the signal store) has
+        :data:`IMPORTED_DECLARATION_KEYS`: ``raw_format`` is the import
+        marker and ``import_format`` its interpretation.
 
     Raises:
         ValueError: If *info* carries no identity block (a signal loaded
@@ -504,6 +535,15 @@ def build_declaration(info: Mapping[str, Any]) -> dict[str, Any]:
     )
     channel = identity.get("channel_index")
     declaration["channel_index"] = 0 if channel is None else int(channel)
+    import_format = info.get("import_format")
+    if isinstance(import_format, Mapping):
+        # An imported channel: its own interpretation, and the marker that
+        # makes a server predating the import refuse it before reading the
+        # file (never column 0).
+        declaration["raw_format"] = import_raw_marker()
+        declaration["import_format"] = {
+            key: import_format[key] for key in IMPORT_FORMAT_KEYS
+        }
     return declaration
 
 
@@ -586,15 +626,28 @@ def changed_keys(
     Values are compared in canonical JSON form (the same form the
     fingerprint hashes, so an empty list here means an equal fingerprint).
     ``"location"`` is listed when the file moved and ``"asset_id"`` when the
-    measurement moved to another asset.
+    measurement moved to another asset; a changed import interpretation is
+    listed by part (``import_format.scaling``, ``import_format.data_lines``).
     """
     keys = set(previous_declaration) | set(new_declaration)
-    changed = {
-        key
-        for key in keys
-        if canonical_json(previous_declaration.get(key))
-        != canonical_json(new_declaration.get(key))
-    }
+    changed: set[str] = set()
+    for key in keys:
+        before, after = previous_declaration.get(key), new_declaration.get(key)
+        if canonical_json(before) == canonical_json(after):
+            continue
+        if (
+            key == "import_format"
+            and isinstance(before, Mapping)
+            and isinstance(after, Mapping)
+        ):
+            # Name the part of the interpretation that changed.
+            changed.update(
+                f"import_format.{part}"
+                for part in set(before) | set(after)
+                if canonical_json(before.get(part)) != canonical_json(after.get(part))
+            )
+        else:
+            changed.add(key)
     if previous_location != new_location:
         changed.add("location")
     return sorted(changed)
@@ -748,8 +801,9 @@ def _measurement_payload(
     signal_id: str,
     changed: list[str],
     locations: list[str],
+    import_ref: Optional[Mapping[str, Any]] = None,
 ) -> dict[str, Any]:
-    return {
+    payload = {
         "measurement_id": measurement_id,
         "measurement_point_id": point_id,
         "declaration_version": version,
@@ -759,6 +813,28 @@ def _measurement_payload(
         "changed": list(changed),
         "locations": list(locations),
     }
+    if import_ref is not None:
+        # Outside the declaration, so outside the fingerprint: which import
+        # and which decoder contract produced this version.
+        payload["import_ref"] = dict(import_ref)
+    return payload
+
+
+def _imported(declaration: Mapping[str, Any]) -> bool:
+    return isinstance(declaration.get("import_format"), Mapping)
+
+
+def _plain_over_import(measurement_id: str, asset_id: str) -> LedgerError:
+    """The refusal of a declaration without an import interpretation over
+    one that has it (on any route)."""
+    return LedgerError(
+        f"measurement {measurement_id} of asset {asset_id} was recorded by the "
+        f"signal import with its own interpretation of the file, and a load "
+        f"without that interpretation never replaces it (it would read the "
+        f"file another way). Re-import the file with validate_signal_import "
+        f"and import_signal_file instead; nothing was recorded and no snapshot "
+        f"was computed"
+    )
 
 
 def _plan(
@@ -808,12 +884,16 @@ def _plan(
             "locations": _extend_locations(previous.get("locations"), location),
             "previous": latest,
         }
+    changed = changed_keys(
+        previous_declaration, previous_location, declaration, location
+    )
+    # A different fingerprint always names what changed: an empty list would
+    # be a supersession nobody can explain.
+    assert changed, f"superseded {measurement_id} without a changed key"
     return {
         "status": "superseded",
         "version": max(known_version, count) + 1,
-        "changed": changed_keys(
-            previous_declaration, previous_location, declaration, location
-        ),
+        "changed": changed,
         "locations": _extend_locations(previous.get("locations"), location),
         "previous": latest,
     }
@@ -867,12 +947,16 @@ class _Batch:
         signals: SignalSource,
         policy: Optional[SnapshotPolicy],
         provenance_overrides: Optional[Mapping[str, str]],
+        import_refs: Optional[Mapping[str, Mapping[str, Any]]] = None,
+        holders: Optional[Mapping[str, Sequence[str]]] = None,
     ) -> None:
         self.store = store
         self.data_dir = data_dir
         self.signals = signals
         self.policy = policy
         self.provenance_overrides = provenance_overrides
+        self.import_refs = dict(import_refs or {})
+        self.holders = {key: list(value) for key, value in (holders or {}).items()}
         self.processing_id = compute_processing_id(policy)
         self.states: dict[str, _AssetState] = {}
         self.index: Optional[dict[str, str]] = None
@@ -980,9 +1064,31 @@ class _Batch:
         state = self.state_for(asset_id)
         index = self.index_for()
         decided: dict[str, Any] = {}
+        import_ref = self.import_refs.get(signal_id)
+        # Every other asset that holds the measurement: the one the global
+        # index names and, for an import, the ones its bounded read of every
+        # ledger found (the index is appended after the ledger and can lag).
+        others = sorted(
+            {index.get(measurement_id), *self.holders.get(measurement_id, [])}
+            - {None, asset_id}
+        )
+        if not _imported(declaration):
+            for other in others:
+                held, _ = self.state_for(other).latest_recorded(measurement_id)
+                if held is not None and _imported(
+                    held["payload"].get("declaration") or {}
+                ):
+                    raise _plain_over_import(measurement_id, other)
 
         def build_event(delta: list[dict[str, Any]]) -> Optional[dict[str, Any]]:
             state.merge(delta)
+            held, _ = state.latest_recorded(measurement_id)
+            if (
+                held is not None
+                and not _imported(declaration)
+                and _imported(held["payload"].get("declaration") or {})
+            ):
+                raise _plain_over_import(measurement_id, asset_id)
             plan = _plan(state, measurement_id, declaration, file_info)
             decided.update(plan)
             if plan["status"] == "already_recorded":
@@ -996,6 +1102,7 @@ class _Batch:
                 signal_id,
                 plan["changed"],
                 plan["locations"],
+                import_ref,
             )
             event = make_event(EVENT_MEASUREMENT_RECORDED, asset_id, payload)
             decided["event"] = event
@@ -1018,9 +1125,10 @@ class _Batch:
         outcome["declaration_version"] = decided["version"]
         outcome["changed"] = list(decided["changed"])
 
-        other = index.get(measurement_id)
-        if other is not None and other != asset_id:
-            self._reattribute(outcome, other, declaration, file_info, signal_id)
+        for other in others:
+            self._reattribute(
+                outcome, other, declaration, file_info, signal_id, import_ref
+            )
 
         if (result.appended or index.get(measurement_id) != asset_id) and (
             recorded is not None
@@ -1041,6 +1149,7 @@ class _Batch:
         declaration: Mapping[str, Any],
         file_info: dict[str, Any],
         signal_id: str,
+        import_ref: Optional[Mapping[str, Any]] = None,
     ) -> None:
         """Supersede the measurement in the ledger of the asset it was
         recorded under by mistake: a declaration naming the new asset, so
@@ -1063,6 +1172,8 @@ class _Batch:
                 previous_declaration = {}
             if previous_declaration.get("asset_id") == asset_id:
                 return None  # already reattributed (a retry)
+            if _imported(previous_declaration) and not _imported(declaration):
+                raise _plain_over_import(measurement_id, other)
             previous_file = previous.get("file")
             previous_location = (
                 previous_file.get("location")
@@ -1095,6 +1206,7 @@ class _Batch:
                 _extend_locations(
                     previous.get("locations"), str(file_info["location"])
                 ),
+                import_ref,
             )
             event = make_event(EVENT_MEASUREMENT_RECORDED, other, payload)
             decided["event"] = event
@@ -1145,6 +1257,17 @@ class _Batch:
                 outcome,
                 f"snapshot skipped: signal {signal_id!r} is not available (evicted "
                 f"from the repository cache?); re-load the file to compute it",
+            )
+            return
+        if _imported(declaration) and samples_digest(signal) != (
+            declaration["import_format"]["samples_digest"]
+        ):
+            # The array handed over is not the one the declaration records.
+            outcome["snapshot_status"] = "failed"
+            _add_reason(
+                outcome,
+                "snapshot not computed: the samples handed to the ledger do not "
+                "match the recorded samples digest",
             )
             return
         try:
@@ -1219,6 +1342,8 @@ def record_measurements(
     data_dir: Union[str, Path],
     policy: Optional[SnapshotPolicy] = None,
     provenance_overrides: Optional[Mapping[str, str]] = None,
+    import_refs: Optional[Mapping[str, Mapping[str, Any]]] = None,
+    holders: Optional[Mapping[str, Sequence[str]]] = None,
 ) -> list[dict[str, Any]]:
     """Record loaded signals in the asset ledger and derive their snapshots.
 
@@ -1238,6 +1363,12 @@ def record_measurements(
             (``config.DATA_DIR`` read at call time).
         policy: Snapshot policy; None means the defaults.
         provenance_overrides: See ``snapshot.collect_provenance``.
+        import_refs: For imported channels, ``{signal_id: {"import_id",
+            "decoder_contract"}}``, recorded beside the declaration (outside
+            its fingerprint).
+        holders: For an import, ``{measurement_id: [asset_id, ...]}``: the
+            assets its bounded read of every ledger found holding the
+            measurement, which complete the global index when it lags.
 
     Returns:
         One outcome dict per info, in order, with exactly
@@ -1259,12 +1390,25 @@ def record_measurements(
               "event_ids":       ids of the events appended by this call,
             }
 
+    A declaration without an import interpretation never replaces one with
+    it, on this asset or on the asset it would move the measurement from:
+    that channel is ``not_recorded`` with a remedy naming the import, and no
+    snapshot is computed.
+
     Raises:
         ValueError: If an info carries no identity block (a caller bug).
             Ledger and snapshot failures never raise: they are reported in
             the outcome.
     """
-    batch = _Batch(store, Path(data_dir), signals, policy, provenance_overrides)
+    batch = _Batch(
+        store,
+        Path(data_dir),
+        signals,
+        policy,
+        provenance_overrides,
+        import_refs=import_refs,
+        holders=holders,
+    )
     return [batch.record(info) for info in infos]
 
 
@@ -1408,6 +1552,31 @@ def _resolved_dir(directory: Path) -> Path:
 _LocationOutcome = tuple[str, str]
 
 
+def _gate_refusal(
+    location: str, roots: Optional[Sequence[Union[str, Path]]]
+) -> Optional[_LocationOutcome]:
+    """The path gate of an absolute recorded location, before any metadata
+    call: a network, device or alternate-stream form is refused for every
+    measurement; an imported measurement's location (*roots* given) must
+    also lie under the current import roots."""
+    anchor = Path(location).anchor or os.sep
+    try:
+        gate_import_path(location, list(roots) if roots is not None else [anchor])
+    except PathRefused as refused:
+        if refused.code == "path_outside_roots":
+            return (
+                "location_outside_data_dir",
+                f"location outside the folders the import reads (the data "
+                f"directory and PMM_IMPORT_ROOTS): {location}",
+            )
+        return (
+            "location_outside_data_dir",
+            f"location refused before any file access (a network, device or "
+            f"alternate-stream path): {location}",
+        )
+    return None
+
+
 def _file_checks_needed(locations: Sequence[str]) -> int:
     """The file checks :func:`_check_locations` spends at most on
     *locations*: a containment check and a metadata call for a relative
@@ -1428,10 +1597,17 @@ def _check_locations(
     data_dir: Path,
     *,
     recorded_size: Optional[int],
+    import_roots: Optional[Sequence[Union[str, Path]]] = None,
 ) -> tuple[list[tuple[str, Path]], dict[str, _LocationOutcome], int]:
     """The file checks of one measurement: containment of each relative
     location and one metadata call per location, most recent first, with
     the size compared to the recorded one. No file content is read.
+
+    An absolute location passes the path gate first, with no operating-system
+    call: a network, device or alternate-stream form is refused; with
+    *import_roots* (an imported measurement), so is one outside them. A
+    relative location is resolved under *data_dir*, which the caller
+    resolved once.
 
     Returns:
         ``(passed, failed, checks)``: the ``(location, path)`` pairs whose
@@ -1444,10 +1620,15 @@ def _check_locations(
     checks = 0
     for location in locations:
         candidate = Path(location)
-        if not candidate.is_absolute():
+        if candidate.is_absolute():
+            refusal = _gate_refusal(location, import_roots)
+            if refusal is not None:
+                failed[location] = refusal
+                continue
+        else:
             checks += 1
             try:
-                candidate = safe_resolve(data_dir, location)
+                candidate = resolve_under(data_dir, location)
             except ValueError:
                 failed[location] = (
                     "location_outside_data_dir",
@@ -1550,8 +1731,85 @@ _VIEW_REASON_SUFFIX = {
 }
 
 
-def _decode(path: Path, declaration: Mapping[str, Any]) -> np.ndarray:
+def _replay_interpretation(declaration: Mapping[str, Any]) -> dict[str, Any]:
+    """The interpretation that decodes an imported channel again, from its
+    declaration alone: its dialect, data lines, quantity and scaling as
+    recorded, its column, unit and rate from the declaration's own keys. The
+    time columns are not read again (the samples digest pins the result)."""
+    recorded = declaration["import_format"]
+    scaling = recorded.get("scaling")
+    return {
+        "schema": recorded["schema"],
+        "dialect": recorded["dialect"],
+        "data_lines": recorded["data_lines"],
+        "time_base": {
+            "source": "stated",
+            "sampling_rate_hz": normalize_decimal(
+                repr(float(declaration["sampling_rate"])), field="sampling_rate"
+            ),
+            "time_column": None,
+        },
+        "time_columns": [],
+        "channels": [
+            {
+                "column": int(declaration["channel_index"]),
+                "role": "vibration",
+                "quantity": recorded["quantity"],
+                "unit": declaration["signal_unit"],
+                "scaling": (
+                    None
+                    if scaling is None
+                    else {
+                        key: scaling[key]
+                        for key in ("source_unit", "sensitivity", "dc_policy")
+                    }
+                ),
+            }
+        ],
+    }
+
+
+def _decode_import(
+    path: Path,
+    declaration: Mapping[str, Any],
+    *,
+    import_ref: Optional[Mapping[str, Any]],
+    roots: Sequence[Union[str, Path]],
+) -> np.ndarray:
+    """Replay an imported channel: through the decoder of its recorded
+    contract, from the file opened behind the path gate, and only when the
+    samples reproduce the recorded digest (never column 0)."""
+    contract = (import_ref or {}).get("decoder_contract") or DECODER_CONTRACT
+    decoder = get_decoder(str(contract))
+    with open_import_file(
+        str(path),
+        list(roots) or [path.parent],
+        base=path.parent,
+        max_size=get_max_signal_size(),
+    ) as file:
+        result = decoder(file, _replay_interpretation(declaration), mode="full")
+    channel = result.channels[0]
+    if channel.samples_digest != declaration["import_format"]["samples_digest"]:
+        raise ValueError(
+            "the recorded file decodes to other samples than the recorded "
+            "samples digest (the decoder of this build does not reproduce the "
+            "recorded import); import the file again"
+        )
+    return np.asarray(channel.samples, dtype=np.float64)
+
+
+def _decode(
+    path: Path,
+    declaration: Mapping[str, Any],
+    *,
+    import_ref: Optional[Mapping[str, Any]] = None,
+    import_roots: Sequence[Union[str, Path]] = (),
+) -> np.ndarray:
     """Decode the verified file with the recorded declaration.
+
+    An imported declaration (``import_format`` beside the import marker)
+    replays through the signal import's decoder; any other ``raw_format``
+    goes to the raw decoder; the rest is a self-describing file.
 
     The re-read refuses what the signal store refuses at load time (an empty
     line between two data lines of a ``.csv``/``.txt`` file; a NaN,
@@ -1567,6 +1825,10 @@ def _decode(path: Path, declaration: Mapping[str, Any]) -> np.ndarray:
         OSError: From the decoders.
     """
     source = f"Recorded file '{path.name}'"
+    if not is_raw_declaration(declaration) and _imported(declaration):
+        return _decode_import(
+            path, declaration, import_ref=import_ref, roots=import_roots
+        )
     raw_format = declaration.get("raw_format")
     if isinstance(raw_format, dict):
         kwargs = {
@@ -1722,6 +1984,7 @@ def _run_reprocess(
     provenance_overrides: Optional[Mapping[str, str]],
     params: AssessmentParams,
     cursor: Optional[str],
+    import_roots: Optional[Sequence[Union[str, Path]]] = None,
 ) -> tuple[dict[str, Any], ReprocessCoupling]:
     """One call of a re-processing sequence (see
     :func:`reprocess_stale_snapshots`), with what the assessment of the same
@@ -1824,11 +2087,13 @@ def _run_reprocess(
     def form_of(code: str, measurement_id: str) -> Optional[str]:
         """The ``action_id`` of *code* for *measurement_id*, its text kept
         for ``needs_action``."""
+        current = measurements[measurement_id]["current"]
         action_id, text = _action_form(
             code,
             member=measurement_id in plan.baseline_members,
-            relative=_location_is_relative(measurements[measurement_id]["current"]),
+            relative=_location_is_relative(current),
             data_dir=str(data_root),
+            imported=_imported(_declaration_of(current)),
         )
         if action_id is not None and text is not None:
             forms.setdefault(code, {})[action_id] = text
@@ -1849,6 +2114,11 @@ def _run_reprocess(
     def fail(result: dict[str, Any], code: str, reason: str) -> None:
         """Report the measurement of *result* not reprocessable."""
         measurement_id = result["measurement_id"]
+        current = measurements[measurement_id]["current"]
+        for recorded in recorded_locations(current):
+            # An imported measurement's path is file text: its reason names
+            # the import and column instead.
+            reason = reason.replace(recorded, shown_location(current, recorded) or "")
         kept = plan.kept_by_duplicate.get(measurement_id)
         if kept is not None:
             result["reason_code"] = found[measurement_id] = "superseded_in_slot"
@@ -1870,7 +2140,9 @@ def _run_reprocess(
         declaration = _declaration_of(payload)
         locations = recorded_locations(payload)
         file_info = payload.get("file") if isinstance(payload.get("file"), dict) else {}
-        blocker = snapshot_blocker(payload, point)
+        blocker = snapshot_blocker(
+            payload, point, history=measurements[measurement_id].get("history") or ()
+        )
         if (
             blocker is None
             and results
@@ -1884,7 +2156,7 @@ def _run_reprocess(
             "reason_code": None,
             "reason": None,
             "action_id": None,
-            "location": next(iter(locations), None),
+            "location": shown_location(payload, next(iter(locations), None)),
             "location_used": None,
             "attempted": False,
             "snapshot_id": None,
@@ -1897,12 +2169,22 @@ def _run_reprocess(
         size = file_info.get("size_bytes")
         own_hash = str(file_info["content_sha256"])
         taken = partial(taken_from, own_hash, locations)
+        roots_here = (
+            [
+                data_root,
+                *(import_roots or []),
+                *(_resolved_dir(Path(root)) for root in import_roots or []),
+            ]
+            if _imported(declaration)
+            else None
+        )
         passed, failed, checks = _check_locations(
             locations,
             data_root,
             recorded_size=(
                 size if isinstance(size, int) and not isinstance(size, bool) else None
             ),
+            import_roots=roots_here,
         )
         file_checks += checks
         if not passed:
@@ -1915,9 +2197,21 @@ def _run_reprocess(
             fail(result, *_located_failure(locations, {**failed, **unmatched}, taken))
             continue
         location, path = match
-        result["location_used"] = location
+        result["location_used"] = shown_location(payload, location)
         try:
-            signal = _decode(path, declaration)
+            if roots_here is None:
+                signal = _decode(path, declaration)
+            else:
+                signal = _decode(
+                    path,
+                    declaration,
+                    import_ref=(
+                        payload.get("import_ref")
+                        if isinstance(payload.get("import_ref"), Mapping)
+                        else None
+                    ),
+                    import_roots=roots_here,
+                )
             snapshot = compute_health_snapshot(
                 signal,
                 float(declaration["sampling_rate"]),
@@ -1926,6 +2220,17 @@ def _run_reprocess(
                 policy=policy,
                 provenance_overrides=provenance_overrides,
             )
+        except PathRefused as exc:
+            fail(
+                result,
+                (
+                    "location_outside_data_dir"
+                    if exc.code in ("unsafe_path", "path_outside_roots")
+                    else "file_inaccessible"
+                ),
+                f"snapshot not computed: {_describe(exc)}",
+            )
+            continue
         except (ValueError, OSError) as exc:
             fail(
                 result,
@@ -1935,7 +2240,7 @@ def _run_reprocess(
             logger.warning(
                 "Re-processing of measurement %s (%s) failed: %s",
                 measurement_id,
-                location,
+                shown_location(payload, location),
                 _describe(exc),
             )
             continue
@@ -2181,10 +2486,16 @@ def _location_is_relative(payload: Mapping[str, Any]) -> bool:
 #: differ from its plain text.
 _MEMBER_FORM = "baseline_member"
 _RELATIVE_FORM = "relative_location"
+_IMPORTED_FORM = "imported_measurement"
 
 
 def _action_form(
-    code: str, *, member: bool = False, relative: bool = False, data_dir: str
+    code: str,
+    *,
+    member: bool = False,
+    relative: bool = False,
+    data_dir: str,
+    imported: bool = False,
 ) -> tuple[Optional[str], Optional[str]]:
     """The ``action_id`` and text of the action that clears *code* for one
     measurement, (None, None) for a code that needs no action.
@@ -2192,19 +2503,31 @@ def _action_form(
     The id is the reason code, qualified by each form that changes the
     text: ``+baseline_member`` for a member of the declared baseline,
     ``+relative_location`` for a most recent location relative to the data
-    directory. Failures that need the same text share the id, and
+    directory, ``+imported_measurement`` for a measurement the signal import
+    recorded. Failures that need the same text share the id, and
     ``needs_action`` gives that text once.
     """
     plain = reprocess_action(code, data_dir=data_dir)
     if plain is None:
         return None, None
-    member = member and reprocess_action(code, member=True, data_dir=data_dir) != plain
-    relative = (
-        relative and reprocess_action(code, relative=True, data_dir=data_dir) != plain
+    imported = (
+        imported and reprocess_action(code, imported=True, data_dir=data_dir) != plain
     )
-    qualifiers = [_MEMBER_FORM] * member + [_RELATIVE_FORM] * relative
+    member = member and reprocess_action(
+        code, member=True, data_dir=data_dir, imported=imported
+    ) != reprocess_action(code, data_dir=data_dir, imported=imported)
+    relative = (
+        not imported
+        and relative
+        and reprocess_action(code, relative=True, data_dir=data_dir) != plain
+    )
+    qualifiers = (
+        [_IMPORTED_FORM] * imported
+        + [_MEMBER_FORM] * member
+        + [_RELATIVE_FORM] * relative
+    )
     return "+".join([code, *qualifiers]), reprocess_action(
-        code, member=member, relative=relative, data_dir=data_dir
+        code, member=member, relative=relative, data_dir=data_dir, imported=imported
     )
 
 
@@ -2219,6 +2542,7 @@ def reprocess_stale_snapshots(
     provenance_overrides: Optional[Mapping[str, str]] = None,
     params: AssessmentParams = AssessmentParams(),
     cursor: Optional[str] = None,
+    import_roots: Optional[Sequence[Union[str, Path]]] = None,
 ) -> dict[str, Any]:
     """One call of a re-processing sequence of one point.
 
@@ -2292,6 +2616,7 @@ def reprocess_stale_snapshots(
         provenance_overrides=provenance_overrides,
         params=params,
         cursor=cursor,
+        import_roots=import_roots,
     )
     return block
 
@@ -2304,6 +2629,7 @@ def reprocess_for_assessment(
     data_dir: Union[str, Path],
     params: AssessmentParams = AssessmentParams(),
     cursor: Optional[str] = None,
+    import_roots: Optional[Sequence[Union[str, Path]]] = None,
 ) -> tuple[dict[str, Any], ReprocessCoupling]:
     """:func:`reprocess_stale_snapshots` with the tool's limit, plus what
     the assessment of the same call needs (``assess_change``'s
@@ -2319,6 +2645,7 @@ def reprocess_for_assessment(
         provenance_overrides=None,
         params=params,
         cursor=cursor,
+        import_roots=import_roots,
     )
 
 
@@ -2820,8 +3147,9 @@ def declare_measurement_point(
         if measurement_id in collapsed:
             collapsed_count += 1
             continue
+        slot = state.view["measurements"][measurement_id]
         found = snapshot_blocker(
-            state.view["measurements"][measurement_id]["current"], point
+            slot["current"], point, history=slot.get("history") or ()
         )
         if found is None:
             attemptable += 1
@@ -3203,7 +3531,9 @@ def _measurement_entry(
         "measurement_point_id": point_id,
         "acquired_at": declaration.get("acquired_at"),
         "signal_id": current.get("signal_id"),
-        "location": file_info.get("location") if isinstance(file_info, dict) else None,
+        "location": shown_location(
+            current, file_info.get("location") if isinstance(file_info, dict) else None
+        ),
         "declaration_version": current.get("declaration_version"),
         "rpm": declaration.get("rpm"),
         "direction": declaration.get("direction"),

@@ -41,6 +41,32 @@ from predictive_maintenance_mcp.mcp_tools import register_all
 # ---------------------------------------------------------------------------
 
 POST_U9_ADDITIONS: dict[str, str] = {
+    "inspect_signal_file": (
+        "Signal import - read-only inspection of a delimited-text export "
+        "(regions, dialect, columns by physical index, stated values) with a "
+        "draft configuration. New concept: load_signal reads a headerless "
+        "column and nothing about the file around it."
+    ),
+    "validate_signal_import": (
+        "Signal import - read-only validation of an import configuration "
+        "against the whole file: every value's basis checked against the "
+        "evidence it cites, one statement per value, the ledger pre-check, "
+        "and an import digest only when ready. New concept: no tool checked a "
+        "user's confirmations before."
+    ),
+    "import_signal_file": (
+        "Signal import - imports a validated configuration (record, signal "
+        "store, asset ledger) or restores a recorded import by import_id. "
+        "Separate from validation so a host's permission prompt on this tool "
+        "stays a human gate. New concept: load_signal has no attested "
+        "interpretation or import record."
+    ),
+    "get_signal_imports": (
+        "Signal import - the index of the recorded imports, or one record "
+        "(get_signal_imports(import_id=None) is the index, on the 'None = "
+        "index' precedent of get_asset_history). New concept: nothing "
+        "recorded imports before."
+    ),
     "generate_diagnostic_report": (
         "v0.10 — integrated, server-authored diagnostic report. New concept: "
         "generate_diagnostic_report_docx takes its content sections from the "
@@ -96,6 +122,16 @@ POST_U9_ADDITIONS: dict[str, str] = {
         "check_bearing_faults assess bearing lines and one dominant peak; this "
         "tool reports the evidence for machine-level fault families and never "
         "a diagnosis."
+    ),
+}
+
+#: Prompts added deliberately after the v0.9.0 consolidation, with the
+#: reason each exists (the migration table cannot describe them).
+POST_U9_PROMPT_ADDITIONS: dict[str, str] = {
+    "guided_signal_import": (
+        "Signal import - walks inspect, the user's confirmations, validation, "
+        "the statements and the import, in that order. New concept: no prompt "
+        "covered reading a text export with a header or a preamble."
     ),
 }
 
@@ -392,7 +428,8 @@ class TestFinalSurface:
         tools, resources, prompts = registered
         assert len(tools) == 33 + len(POST_U9_ADDITIONS)
         assert resources == []
-        assert len(prompts) == 3
+        assert len(prompts) == 3 + len(POST_U9_PROMPT_ADDITIONS)
+        assert set(POST_U9_PROMPT_ADDITIONS) <= set(prompts)
 
     def test_no_tool_suffixes(self, registered):
         tools, _, prompts = registered

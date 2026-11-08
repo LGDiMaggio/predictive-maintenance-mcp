@@ -8,6 +8,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Signal import: four tools and a guided prompt for delimited-text
+  exports.** `inspect_signal_file` reads a `.csv` or `.txt` export without
+  writing anything and reports its regions (preamble, header, units row,
+  data, trailer) with line numbers, the delimiter and decimal mark, each
+  column by its physical index and the values the file states, with a draft
+  configuration. `validate_signal_import` checks a configuration against the
+  whole file, writing nothing: every value the import writes needs a basis
+  that names the user's act, a value accepted from the file must equal what
+  the cited line says, and the outcome is `ready` (with an `import_digest`),
+  `needs_confirmation` or `invalid`, with one statement per value and a
+  read-only pre-check of the asset ledger. `import_signal_file` imports a
+  `ready` configuration: it validates the file again and refuses with
+  "validate again" if anything changed, writes an append-only import record
+  under `PMM_IMPORT_DIR`, stores every channel as `<stem>_c<index>` (all or
+  none), and records each bound channel in the asset ledger with its own
+  interpretation; with `import_id` alone it restores a recorded import after
+  a restart, from the unchanged original file, without new confirmations.
+  `get_signal_imports` lists the imports or reads one record. The
+  `guided_signal_import` prompt walks the steps. Bases sent through these
+  tools are recorded as caller-asserted: they record what the caller
+  claimed, never who the caller is. No sample array reaches the client, and
+  text from the file reaches it only in `file_text` fields. Files are read
+  only from the data directory and `PMM_IMPORT_ROOTS`; the original file is
+  never modified. Over SSE or streamable HTTP the four tools refuse every
+  call unless the server was started from its command line on a loopback
+  address and the call reaches it directly; setting `PMM_IMPORT_ALLOW_REMOTE`
+  with a network transport bound to any other address stops the server at
+  startup. See `docs/IMPORT_GUIDE.md`. Not yet in a published release.
+- **`StoredSignalInfo.import_provenance` (additive).** `get_signal_info` and
+  `list_signals` show, for an imported signal, its `import_id`, column,
+  label as file text, time-base source, scaling, samples digest and the
+  basis of each value; it is null for every other load. For an imported
+  signal, `filepath` reads `import <id> column <index>` (the first 12
+  characters of the import id) instead of the file path.
+- **Asset ledger: measurements recorded by an import.** Each keeps its
+  interpretation (`import_format`), its decoder contract and import id, and a
+  `raw_format` marker that a server without signal import refuses to decode.
+  `assess_asset_change(reprocess=True)` decodes it with the recorded
+  interpretation, refuses when the samples differ from the recorded digest,
+  and reads the file only under the data directory or `PMM_IMPORT_ROOTS`. A
+  plain `load_signal` declaration for a measurement an import recorded is
+  refused, on the same asset or another. Ledger results show such a
+  measurement's location as `import <id> column <index>`.
 - **Plugin: an optional `shaft-order-evidence` skill.** It tells a client
   model when to call `assess_shaft_fault_evidence` and how to read it: quote
   its `summary` and statements verbatim, read `pattern_observed` as an
@@ -279,6 +322,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   updates stay off, and MCP SDK major updates are ignored.
 
 ### Changed
+- **Re-processing checks a recorded location before touching the file
+  system.** `assess_asset_change(reprocess=True)` checks every recorded
+  absolute location as text first and refuses a network (UNC), device or
+  alternate-stream path without opening it, for imported and other
+  measurements alike.
 - **`diagnose_vibration` no longer reads a dominant 1x or 2x line as
   unbalance or misalignment.** When the strongest line of the spectrum lies
   near 1x or 2x of the shaft speed, found with the same spectrum and the

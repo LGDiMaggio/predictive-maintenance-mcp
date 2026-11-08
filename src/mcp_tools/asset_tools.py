@@ -29,7 +29,10 @@ notifications; any fact a caller needs is carried by the return value.
 """
 
 import logging
+from functools import partial
 from typing import Any, Literal, Optional
+
+import anyio
 
 from mcp.server.mcpserver import MCPServer, Context
 
@@ -600,13 +603,26 @@ async def assess_asset_change(
     reprocess_block: Optional[dict[str, Any]] = None
     coupling: Optional[ReprocessCoupling] = None
     if reprocess:
-        reprocess_block, coupling = ledger_service.reprocess_for_assessment(
-            asset_id,
-            measurement_point_id,
-            store=store,
-            data_dir=config.DATA_DIR,
-            params=params,
-            cursor=reprocess_cursor,
+        try:
+            import_roots = config.get_import_roots()
+        except ValueError as exc:
+            # Imported measurements are then read under the data directory
+            # only; every other measurement re-processes as before.
+            logger.warning("%s", exc)
+            import_roots = None
+        # Re-processing decodes recorded files (an imported text file can take
+        # seconds), so it runs on a worker thread: other tools keep answering.
+        reprocess_block, coupling = await anyio.to_thread.run_sync(
+            partial(
+                ledger_service.reprocess_for_assessment,
+                asset_id,
+                measurement_point_id,
+                store=store,
+                data_dir=config.DATA_DIR,
+                params=params,
+                cursor=reprocess_cursor,
+                import_roots=import_roots,
+            )
         )
         logger.info(reprocess_block["message"])
 

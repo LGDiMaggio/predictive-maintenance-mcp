@@ -34,6 +34,7 @@ __all__ = [
     "safe_resolve",
     "sanitize_filename",
     "validate_name_component",
+    "resolve_under",
     "resolve_model_paths",
     "ModelPaths",
     "WINDOWS_DEVICE_NAMES",
@@ -76,6 +77,21 @@ def safe_resolve(base_dir: Path, user_input: str) -> Path:
     # Path.is_relative_to (Python 3.9+) avoids the sibling-directory bypass:
     # /data/signals_evil would pass a naive startswith("/data/signals") check.
     if not candidate.is_relative_to(allowed):
+        raise ValueError(f"Invalid path — escapes base directory: {user_input}")
+    return candidate
+
+
+def resolve_under(resolved_base: Path, user_input: str) -> Path:
+    """:func:`safe_resolve` for a base the caller resolved once already.
+
+    A loop over many locations resolves its base directory once instead of
+    once per location.
+
+    Raises:
+        ValueError: If the resolved path escapes *resolved_base*.
+    """
+    candidate = _without_extended_prefix((resolved_base / user_input).resolve())
+    if not candidate.is_relative_to(resolved_base):
         raise ValueError(f"Invalid path — escapes base directory: {user_input}")
     return candidate
 

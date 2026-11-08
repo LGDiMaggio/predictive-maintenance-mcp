@@ -191,6 +191,16 @@ Fixture history:
   no longer among the counted findings; it is reported in overall_diagnosis
   as a measurement and is not counted.
   Generated under mcp 2.3.0 and pydantic 2.12.0 (uv.lock).
+- Signal import (2026-11-07): regenerated intentionally: ADDITIVE only.
+  Four new tools with their output models (inspect_signal_file ->
+  FileInspection, validate_signal_import -> ValidationResult,
+  import_signal_file -> ImportResult, get_signal_imports ->
+  SignalImports). StoredSignalInfo gains the optional import_provenance
+  (null for every ordinary load), so load_signal, get_signal_info and
+  generate_test_signal each gain one property, and the description of their
+  filepath says what an imported signal shows there; no property, enum
+  value or type of an existing tool was removed or changed.
+  Generated under mcp 2.3.0 and pydantic 2.12.0 (uv.lock).
 """
 
 from __future__ import annotations

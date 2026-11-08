@@ -49,12 +49,13 @@ one:
   for it; a record store or ledger directory that cannot be read at all
   raises.
 
-The package is internal apart from :func:`validate_import`: ``_entry`` runs
+The package is internal apart from :func:`validate_import` and, for the
+import service, :func:`validate_for_import`: ``_entry`` runs
 a validation; ``_evidence``, ``_time``, ``_checks``, ``_printed`` and
 ``_history`` hold the checks; ``_results`` builds the statements and
 per-channel values; ``_common`` holds the run they share.
 """
 
-from ._entry import validate_import
+from ._entry import Validated, validate_for_import, validate_import
 
-__all__ = ["validate_import"]
+__all__ = ["Validated", "validate_for_import", "validate_import"]

@@ -8,8 +8,9 @@ what was read before anything is imported: the time-base assessment
 (:mod:`.timebase`), the read-only inspection (:mod:`.inspection`, results in
 :mod:`.contracts`), the configuration draft (:mod:`.configure`), the
 attestation (:mod:`.attestation`), the read-only validation
-(:mod:`.validation`, statements in :mod:`.statements`) and the append-only
-import record store (:mod:`.records`).
+(:mod:`.validation`, statements in :mod:`.statements`), the append-only
+import record store (:mod:`.records`) and the import itself
+(:mod:`.service`).
 """
 
 from .attestation import ConfigurationError, normalize_configuration  # noqa: F401
@@ -20,6 +21,7 @@ from .contracts import (  # noqa: F401
     ValidationResult,
 )
 from .inspection import inspect_signal_file  # noqa: F401
+from .service import ImportRefused, SignalImportService  # noqa: F401
 from .records import (  # noqa: F401
     ImportRecordDamaged,
     ImportRecordError,
@@ -56,6 +58,8 @@ __all__ = [
     "ImportRecordError",
     "ImportRecordMissing",
     "ImportRecordStore",
+    "ImportRefused",
+    "SignalImportService",
     "InspectionResult",
     "inspect_signal_file",
     "EVIDENCE_LEVELS",

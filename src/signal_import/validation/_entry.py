@@ -12,7 +12,8 @@ writes anywhere.
 import copy
 import os
 import re
-from typing import Any, Mapping, Optional
+from pathlib import Path
+from typing import Any, Mapping, NamedTuple, Optional
 
 from ... import config
 from ...asset_ledger.store import LedgerStore
@@ -23,6 +24,7 @@ from ...signal_acquisition.import_config import (
     import_id as compute_import_id,
 )
 from ...signal_acquisition.text_decoder import (
+    DecodeMode,
     DecodeResult,
     TextDecodeError,
     decode_text,
@@ -169,6 +171,32 @@ def _match_rows(run: _Run, evidence: _Evidence, field_count: int) -> None:
         evidence.extra_header = None
 
 
+class Validated(NamedTuple):
+    """A validation together with what an import of it needs.
+
+    Attributes:
+        result: The :class:`ValidationResult` a caller sees.
+        decode: The decode of the whole file (samples kept only when the
+            validation ran in ``full`` mode); None when the parse stopped.
+        path: The resolved path of the file that was read.
+        interpretation: The canonical interpretation.
+        attestation: The canonical attestation.
+        identities: The identity block of each bound channel, by column.
+        formats: The ``import_format`` of each decoded channel, by column.
+        holders: For each bound measurement, the assets the bounded history
+            read shows holding it as a current measurement.
+    """
+
+    result: ValidationResult
+    decode: Optional[DecodeResult]
+    path: Path
+    interpretation: dict[str, Any]
+    attestation: dict[str, Any]
+    identities: dict[int, dict[str, Any]]
+    formats: dict[int, dict[str, Any]]
+    holders: dict[str, list[str]]
+
+
 def validate_import(
     path: str,
     configuration: Mapping[str, Any],
@@ -209,6 +237,28 @@ def validate_import(
             subclasses: the tool boundary returns them as refusals with their
             remedy, and no result (so never ``ready``) is produced.
     """
+    return validate_for_import(
+        path, configuration, channel=channel, transport=transport, mode="digest"
+    ).result
+
+
+def validate_for_import(
+    path: str,
+    configuration: Mapping[str, Any],
+    *,
+    channel: str,
+    transport: Optional[str],
+    mode: DecodeMode,
+) -> Validated:
+    """Run :func:`validate_import` and keep what an import of it needs.
+
+    In ``full`` mode the decode keeps every channel's samples, so an import
+    stores exactly the bytes this validation judged, read once through one
+    verified descriptor. Nothing is written anywhere.
+
+    Raises:
+        The exceptions of :func:`validate_import`.
+    """
     channel = check_channel(channel)
     transport = check_transport(transport)
     pending: set[int] = set()
@@ -239,6 +289,7 @@ def validate_import(
         path, roots, base=config.DATA_DIR, max_size=config.get_max_signal_size()
     ) as file:
         name = FileText.of(file.path.name, cap=LABEL_CHARS)
+        resolved = file.path
         size = file.size
         scan = scan_text(file)
         companion = os.path.exists(
@@ -248,7 +299,7 @@ def validate_import(
         try:
             # Digest mode keeps no samples; the decoder streams each channel's
             # digest and moments (R19's mean and ratio) block by block.
-            decode = decode_text(file, interpretation, mode="digest")
+            decode = decode_text(file, interpretation, mode=mode)
         except TextDecodeError as refused:
             run.issue(
                 refused.code,
@@ -287,6 +338,8 @@ def validate_import(
     points: dict[int, Optional[dict[str, Any]]] = {}
     shift: Optional[dict[str, Any]] = None
     the_import_id: Optional[str] = None
+    formats: dict[int, dict[str, Any]] = {}
+    holders: dict[str, list[str]] = {}
 
     if decode is not None:
         if decode.row_count < MIN_WAVEFORM_ROWS:
@@ -338,6 +391,10 @@ def validate_import(
             {identity["measurement_id"] for identity in identities.values()},
         )
         _check_history(run, views, prior, candidates)
+        holders = {
+            identity["measurement_id"]: views.holders(identity["measurement_id"])
+            for identity in identities.values()
+        }
         channels_out = _channel_results(run, decode, evidence, identities)
     proofs = _structure_proofs(interpretation, evidence, decode)
     if decode is not None:
@@ -360,7 +417,7 @@ def validate_import(
         digest = import_digest(
             the_import_id, run.attestation, channel=channel, transport=transport
         )
-    return ValidationResult(
+    result = ValidationResult(
         outcome=outcome,
         file=name,
         source_sha256=decode.source_sha256 if decode is not None else None,
@@ -384,4 +441,14 @@ def validate_import(
         caller_asserted=run.caller,
         import_id=the_import_id,
         import_digest=digest,
+    )
+    return Validated(
+        result=result,
+        decode=decode,
+        path=resolved,
+        interpretation=interpretation,
+        attestation=run.attestation,
+        identities=identities,
+        formats=formats,
+        holders=holders,
     )

@@ -50,6 +50,9 @@ __all__ = [
     "ValidatedChannel",
     "ChannelPrecheck",
     "ValidationResult",
+    "ImportStatus",
+    "ImportedChannel",
+    "ImportResult",
 ]
 
 #: How an inspected value was obtained (see ``import_config.VALUE_STATUSES``).
@@ -643,3 +646,72 @@ class ValidationResult(_Output):
     caller_asserted: bool
     import_id: Optional[str] = None
     import_digest: Optional[str] = None
+
+
+#: What an import call did: a new import, a repeat of a recorded one, or a
+#: re-materialization from the import record alone.
+ImportStatus = Literal["imported", "already_imported", "rematerialized"]
+
+
+class ImportedChannel(_Output):
+    """One channel of an import, as it ended.
+
+    Attributes:
+        column: Physical column index.
+        position: Its 1-based position in words.
+        signal_id: The id it is stored under (None when it was not stored).
+        materialized: Whether its samples are in the signal store after
+            this call.
+        samples_digest: SHA-256 of its stored samples (little-endian
+            float64).
+        sample_count: Its number of samples.
+        measurement_id: The measurement it binds (None without a binding).
+        asset_id: The asset it is recorded under (None without a binding).
+        ledger_status: ``recorded``, ``already_recorded``, ``superseded`` or
+            ``not_recorded``; None without a binding.
+        snapshot_status: ``complete``, ``partial``, ``failed`` or
+            ``skipped``; None without a binding.
+        changed: The declaration keys a supersession changed.
+        reattributed_from: The asset the measurement was recorded under
+            before, when the import moved it.
+        reason: Why the channel is not stored or not recorded, in the
+            server's words.
+    """
+
+    column: int
+    position: str
+    signal_id: Optional[str] = None
+    materialized: bool
+    samples_digest: str
+    sample_count: int
+    measurement_id: Optional[str] = None
+    asset_id: Optional[str] = None
+    ledger_status: Optional[str] = None
+    snapshot_status: Optional[str] = None
+    changed: list[str] = Field(default_factory=list)
+    reattributed_from: Optional[str] = None
+    reason: Optional[str] = None
+
+
+class ImportResult(_Output):
+    """What an import or a re-materialization did.
+
+    Attributes:
+        status: ``imported``, ``already_imported`` or ``rematerialized``.
+        import_id: The interpretation's identity.
+        file: The file name as file text.
+        record_created: Whether this call wrote the import record's first
+            line.
+        caller_asserted: The bases of this import record what the caller
+            claimed (MCP tool arguments), not who the caller is.
+        channels: Every channel of the import, in column order.
+        notices: What the caller should know, in the server's words.
+    """
+
+    status: ImportStatus
+    import_id: str
+    file: FileText
+    record_created: bool
+    caller_asserted: bool
+    channels: list[ImportedChannel] = Field(default_factory=list)
+    notices: list[str] = Field(default_factory=list)
