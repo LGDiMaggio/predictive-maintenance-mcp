@@ -1061,7 +1061,14 @@ class TestPackaging:
         )
 
     def test_every_src_subpackage_is_declared_both_ways(self, setuptools_config):
-        on_disk = {p.parent.name for p in SRC_DIR.glob("*/__init__.py")}
+        # Every directory holding source counts, nested or without __init__.py:
+        # one left out of this explicit list is simply absent from the wheel,
+        # while every checkout test still imports it from src/.
+        on_disk = {
+            ".".join(p.parent.relative_to(SRC_DIR).parts)
+            for p in SRC_DIR.rglob("*.py")
+            if p.parent != SRC_DIR
+        }
         declared = {
             name.split(".", 1)[1]
             for name in setuptools_config["packages"]
@@ -1069,10 +1076,9 @@ class TestPackaging:
         }
         assert declared == on_disk
         for sub in on_disk:
-            assert (
-                setuptools_config["package-dir"][f"predictive_maintenance_mcp.{sub}"]
-                == f"src/{sub}"
-            )
+            assert setuptools_config["package-dir"][
+                f"predictive_maintenance_mcp.{sub}"
+            ] == "src/" + sub.replace(".", "/")
 
     @pytest.mark.parametrize("ignore_file", [".gitignore", ".dockerignore"])
     def test_ledger_directory_is_ignored(self, ignore_file):
