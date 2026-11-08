@@ -113,6 +113,7 @@ def _time_columns(
                 field_path=f"time_columns[{column.column}]",
                 line=refused.line,
                 column=column.column,
+                token=refused.token,
             )
             continue
         assessments[column.column] = assessment

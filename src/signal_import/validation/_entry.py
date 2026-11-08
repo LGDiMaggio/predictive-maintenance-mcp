@@ -307,6 +307,7 @@ def validate_for_import(
                 str(refused),
                 line=refused.line,
                 column=refused.field,
+                token=refused.token,
             )
         except PathRefused as refused:
             run.issue(refused.code, "invalid", str(refused))

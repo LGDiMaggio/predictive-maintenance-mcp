@@ -392,13 +392,6 @@ class TimeBaseAssessment:
 # ---------------------------------------------------------------------------
 
 
-def _quoted(cited: FileText) -> str:
-    """File text as a refusal cites it: escaped, capped and quoted, with its own
-    quotes escaped so it cannot close the quotation (as `import_config`)."""
-    text = cited.file_text.replace("'", "\\'")
-    return f"'{text}{'...' if cited.truncated else ''}'"
-
-
 def _token_refusal(token: str, line: int, decimal_mark: str) -> TimeBaseRefused:
     stripped = token.strip(" ")
     words = stripped.lower().lstrip("+-")
@@ -422,10 +415,9 @@ def _token_refusal(token: str, line: int, decimal_mark: str) -> TimeBaseRefused:
             f"{TIME_MAX_EXPONENT_DIGITS} digits"
         )
     cited = FileText.of(token, cap=TOKEN_CHARS)
-    shown = _quoted(cited)
     return TimeBaseRefused(
         "time_grammar",
-        f"Line {line}: the time stamp {shown} {problem} \N{EM DASH} {_GRAMMAR_REMEDY}.",
+        f"Line {line}: the time stamp {problem} \N{EM DASH} {_GRAMMAR_REMEDY}.",
         line=line,
         token=cited,
         datetime_text=datetime_text,
@@ -530,6 +522,9 @@ def _stated_rate(value: object) -> Optional[_Source]:
     return _Source("stated", rate, rate, rate)
 
 
+_NOT_ABOVE_ZERO = "is not above zero"
+
+
 def _declared_rate(declared: Optional[DeclaredTimeBase]) -> Optional[_Source]:
     if declared is None:
         return None
@@ -545,19 +540,23 @@ def _declared_rate(declared: Optional[DeclaredTimeBase]) -> Optional[_Source]:
         raise ValueError(f"time unit {declared.time_unit!r} is not one of {TIME_UNITS}")
     token = declared.token
     cited = FileText.of(token, cap=TOKEN_CHARS) if isinstance(token, str) else None
-    shown = _quoted(cited) if cited else "(not text)"
     try:
         normalize_decimal(token, field="the declared value")
         with decimal.localcontext(_RATE_CONTEXT):
             value = Decimal(token)  # validated just above
         if value <= 0:
-            raise ValueError("is not above zero")
+            raise ValueError(_NOT_ABOVE_ZERO)
     except ValueError as exc:
-        reason = str(exc).replace("the declared value ", "", 1)
+        # The parser's own message quotes the value; the token carries it.
+        reason = (
+            _NOT_ABOVE_ZERO
+            if str(exc) == _NOT_ABOVE_ZERO
+            else "is not a plain decimal number in the range the import reads"
+        )
         raise TimeBaseRefused(
             "time_grammar",
-            f"The file declares a sample {declared.kind} {shown} that the import cannot "
-            f"use: {reason} \N{EM DASH} state the sampling rate, or correct the "
+            f"The file declares a sample {declared.kind} that the import cannot "
+            f"use: it {reason} \N{EM DASH} state the sampling rate, or correct the "
             f"declaration.",
             token=cited,
         ) from None

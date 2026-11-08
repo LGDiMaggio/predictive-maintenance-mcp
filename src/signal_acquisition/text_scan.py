@@ -37,7 +37,6 @@ import re
 from dataclasses import dataclass
 from typing import Optional
 
-from ..file_text import LABEL_CHARS, escape_file_text
 from ..path_safety import VerifiedFile
 from .import_config import MAX_FIELDS
 from .line_breaks import normalize_line_breaks
@@ -172,12 +171,7 @@ class TextScan:
     bytes_read: int
 
 
-def _name(file: VerifiedFile) -> str:
-    text, truncated = escape_file_text(file.path.name, cap=LABEL_CHARS)
-    return f"'{text}{'...' if truncated else ''}'"
-
-
-def _refuse_signatures(file: VerifiedFile, head: bytes) -> None:
+def _refuse_signatures(head: bytes) -> None:
     for prefix, code, label in SIGNATURES:
         if head.startswith(prefix):
             how = (
@@ -187,32 +181,32 @@ def _refuse_signatures(file: VerifiedFile, head: bytes) -> None:
             )
             raise TextScanRefused(
                 code,
-                f"File {_name(file)} is {label} content, not delimited text; "
+                f"The file is {label} content, not delimited text; "
                 f"export the signal as {how}, or load the original format with "
                 f"load_signal.",
             )
     if _BZIP2.match(head):
         raise TextScanRefused(
             "compressed_input",
-            f"File {_name(file)} is bzip2 content, not delimited text; "
-            f"decompress it and import the CSV or TXT file.",
+            "The file is bzip2 content, not delimited text; "
+            "decompress it and import the CSV or TXT file.",
         )
     for mark, label in _UNSUPPORTED_BOMS:
         if head.startswith(mark):
             raise TextScanRefused(
                 "unsupported_encoding",
-                f"File {_name(file)} is {label} text, a limit of this version: "
+                f"The file is {label} text, a limit of this version: "
                 f"save it again as UTF-8 (with or without a byte-order mark) "
                 f"or as Windows-1252, then import that copy.",
             )
 
 
-def _refuse_nul(file: VerifiedFile, data: bytes) -> None:
+def _refuse_nul(data: bytes) -> None:
     if b"\x00" in data:
         raise TextScanRefused(
             "binary_content",
-            f"File {_name(file)} contains NUL bytes, so it is binary content, "
-            f"not delimited text; export the signal as CSV or TXT.",
+            "The file contains NUL bytes, so it is binary content, "
+            "not delimited text; export the signal as CSV or TXT.",
         )
 
 
@@ -236,12 +230,12 @@ def _census(data: bytes) -> dict[str, int]:
     return {"lf": data.count(b"\n") - crlf, "crlf": crlf, "cr": cr}
 
 
-def _refuse_wide(file: VerifiedFile, where: str, text: str) -> None:
+def _refuse_wide(where: str, text: str) -> None:
     stripped = text.strip()
     if all(len(splitter.split(stripped)) > MAX_FIELDS for splitter in _FIELD_SPLITTERS):
         raise TextScanRefused(
             "too_many_fields",
-            f"File {_name(file)} has more than {MAX_FIELDS} fields on {where} "
+            f"The file has more than {MAX_FIELDS} fields on {where} "
             f"under every delimiter the import reads; it is not a signal export "
             f"this version reads.",
         )
@@ -250,8 +244,8 @@ def _refuse_wide(file: VerifiedFile, where: str, text: str) -> None:
 def _read_head(file: VerifiedFile) -> bytes:
     """The head, ending at a line break or at the end of the file."""
     head = file.read(0, HEAD_BYTES)
-    _refuse_signatures(file, head)
-    _refuse_nul(file, head)
+    _refuse_signatures(head)
+    _refuse_nul(head)
     if len(head) < file.size and head[-1:] not in (b"\n", b"\r"):
         line_start = max(head.rfind(b"\n"), head.rfind(b"\r")) + 1
         step = _EXTEND_BYTES
@@ -260,7 +254,7 @@ def _read_head(file: VerifiedFile) -> bytes:
             step = min(step * 2, _EXTEND_MAX_BYTES)
             if not more:
                 break
-            _refuse_nul(file, more)
+            _refuse_nul(more)
             stop = re.search(rb"[\r\n]", more)
             # The line's length without its break, as the decoder counts it.
             length = (
@@ -271,7 +265,7 @@ def _read_head(file: VerifiedFile) -> bytes:
                 line = normalize_line_breaks(head[:line_start]).count(b"\n") + 1
                 raise TextScanRefused(
                     "line_too_long",
-                    f"File {_name(file)} has a line longer than {LINE_CAP} bytes "
+                    f"The file has a line longer than {LINE_CAP} bytes "
                     f"at line {line}; it is not a signal export this version "
                     f"reads.",
                 )
@@ -287,7 +281,7 @@ def _finish_break(file: VerifiedFile, head: bytes) -> bytes:
     taken = 0
     while head.endswith(b"\r") and len(head) < file.size and taken <= LINE_CAP:
         more = file.read(len(head), _EXTEND_BYTES)
-        _refuse_nul(file, more)
+        _refuse_nul(more)
         run = len(more) - len(more.lstrip(b"\r"))
         head += more[:run]
         taken += run
@@ -303,7 +297,7 @@ def _tail_body(file: VerifiedFile, head_end: int) -> tuple[bytes, bool]:
     exactly where the head ended (nothing skipped)."""
     start = max(head_end, file.size - TAIL_BYTES)
     tail = file.read(start, file.size - start)
-    _refuse_nul(file, tail)
+    _refuse_nul(tail)
     if start == head_end:
         return tail, True
     first_break = re.search(rb"[\r\n]", tail)
@@ -350,8 +344,8 @@ def scan_text(file: VerifiedFile) -> TextScan:
         if not _decodes("utf-8", head[len(_UTF8_BOM) :], tail):
             raise TextScanRefused(
                 "unsupported_encoding",
-                f"File {_name(file)} starts with a UTF-8 byte-order mark but is "
-                f"not valid UTF-8; save it again as UTF-8 and import that copy.",
+                "The file starts with a UTF-8 byte-order mark but is "
+                "not valid UTF-8; save it again as UTF-8 and import that copy.",
             )
         encoding = "utf-8-sig"
     elif _decodes("utf-8", head, tail):
@@ -361,8 +355,8 @@ def scan_text(file: VerifiedFile) -> TextScan:
     else:
         raise TextScanRefused(
             "unsupported_encoding",
-            f"File {_name(file)} is neither UTF-8 nor Windows-1252 text; save it "
-            f"again in one of them and import that copy.",
+            "The file is neither UTF-8 nor Windows-1252 text; save it "
+            "again in one of them and import that copy.",
         )
 
     text = normalize_line_breaks(head).decode(encoding)
@@ -376,7 +370,7 @@ def scan_text(file: VerifiedFile) -> TextScan:
         for index, line in enumerate(pieces[:HEAD_LINES])
     )
     for line in head_lines:
-        _refuse_wide(file, f"line {line.number}", line.text)
+        _refuse_wide(f"line {line.number}", line.text)
 
     tail_lines: tuple[str, ...] = ()
     follows = False
@@ -397,7 +391,7 @@ def scan_text(file: VerifiedFile) -> TextScan:
         tail_lines = _last_lines(pieces[HEAD_LINES:], encoding)
         follows = len(tail_lines) == len(pieces) - HEAD_LINES
     for tail_line in tail_lines:
-        _refuse_wide(file, "a line near the end", tail_line)
+        _refuse_wide("a line near the end", tail_line)
 
     return TextScan(
         size_bytes=file.size,

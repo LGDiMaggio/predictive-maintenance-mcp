@@ -189,7 +189,7 @@ def _refuse_remote(ctx: Any) -> None:
             "remote_import_refused",
             "File import is refused over a network connection that another "
             "machine or a proxy can reach: this server does not authenticate "
-            "its clients, so it never reads files for them. Run the import over "
+            "its clients, so the import tools never read files for them. Run the import over "
             "stdio, or with the server started on 127.0.0.1 from its command "
             "line and reached directly, on the machine that holds the file.",
         )

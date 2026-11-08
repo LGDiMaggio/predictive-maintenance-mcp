@@ -2115,7 +2115,8 @@ def _run_reprocess(
         """Report the measurement of *result* not reprocessable."""
         measurement_id = result["measurement_id"]
         current = measurements[measurement_id]["current"]
-        for recorded in recorded_locations(current):
+        # Longest first: a path that starts another must not split it.
+        for recorded in sorted(recorded_locations(current), key=len, reverse=True):
             # An imported measurement's path is file text: its reason names
             # the import and column instead.
             reason = reason.replace(recorded, shown_location(current, recorded) or "")
@@ -2283,7 +2284,7 @@ def _run_reprocess(
             "Re-processed measurement %s of %s from %s (lineage %s)",
             measurement_id,
             asset_id,
-            location,
+            shown_location(payload, location),
             current_processing,
         )
 
@@ -2334,8 +2335,9 @@ def _run_reprocess(
             ),
             "reason_code": earlier_codes[m],
             "action_id": form_of(earlier_codes[m], m),
-            "location": next(
-                iter(recorded_locations(measurements[m]["current"])), None
+            "location": shown_location(
+                measurements[m]["current"],
+                next(iter(recorded_locations(measurements[m]["current"])), None),
             ),
         }
         for m in earlier[:MAX_LISTED_ITEMS]

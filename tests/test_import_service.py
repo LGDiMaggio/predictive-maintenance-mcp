@@ -551,14 +551,14 @@ class TestRematerialize:
             info = fresh.get_signal_info(channel.signal_id)
             assert info["import_provenance"]["import_id"] == outcome.import_id
 
-    def test_moved_file_refused_naming_recorded_locations(self, write, service):
+    def test_moved_file_refused_counting_recorded_locations(self, write, service):
         path, outcome = self._imported(write, service)
         path.rename(path.with_name("moved.csv"))
         with pytest.raises(ImportRefused) as refused:
             SignalImportService(SignalRepository()).rematerialize(outcome.import_id)
         assert refused.value.code == "source_unavailable"
-        assert "run.csv" in str(refused.value)
-        assert "file_not_found" in str(refused.value)
+        assert "run.csv" not in str(refused.value)
+        assert "location 1: file_not_found" in str(refused.value)
 
     def test_changed_bytes_refused_before_decoding(self, write, service, monkeypatch):
         path, outcome = self._imported(write, service)

@@ -8,6 +8,7 @@ histories an older server would write are appended by hand through
 
 import json
 import os
+import re
 import shutil
 from pathlib import Path
 from typing import Any, Optional
@@ -30,7 +31,10 @@ from predictive_maintenance_mcp.asset_ledger.service import (
     record_measurements,
     reprocess_stale_snapshots,
 )
-from predictive_maintenance_mcp.asset_ledger.snapshot import context_digest
+from predictive_maintenance_mcp.asset_ledger.snapshot import (
+    context_digest,
+    recorded_locations,
+)
 from predictive_maintenance_mcp.asset_ledger.store import (
     EVENT_HEALTH_SNAPSHOT_COMPUTED,
     EVENT_MEASUREMENT_RECORDED,
@@ -174,6 +178,10 @@ def events(asset: str = ASSET) -> list[dict[str, Any]]:
 
 def current(asset: str, measurement_id: str) -> dict[str, Any]:
     return store().read_view(asset)["measurements"][measurement_id]["current"]
+
+
+def measurement(outcome) -> str:
+    return outcome.channels[0].measurement_id
 
 
 def by_column(outcome) -> dict[int, Any]:
@@ -469,11 +477,12 @@ class TestPlainNeverReplacesAnImport:
     ):
         outcome = run_import(service, four_columns, configuration((1,)))
         mid = by_column(outcome)[1].measurement_id
-        index = Path(config.get_ledger_dir()) / "_index.jsonl"
         # As after an index append that failed: the ledger holds it, the
-        # index does not.
-        if index.exists():
-            index.write_bytes(b"")
+        # index does not. The path comes from the store, so this cannot empty
+        # a file the implementation never reads.
+        index, _ = store()._index_paths()
+        assert mid in index.read_text("utf-8")
+        index.write_bytes(b"")
         moved = run_import(
             service, four_columns, configuration((1,), asset=OTHER), overwrite=True
         )
@@ -628,6 +637,79 @@ class TestReplay:
         )
         assert failed == {}
         assert [location for location, _ in passed] == ["run.csv", str(outside)]
+
+    def test_a_continued_reprocess_never_shows_or_logs_an_imported_path(
+        self, tmp_path, monkeypatch, service, package_caplog
+    ):
+        root = tmp_path / "exports"
+        root.mkdir()
+        monkeypatch.setenv("PMM_IMPORT_ROOTS", str(root))
+        header = "time [s],a1 [mV],a2 [mV],a3 [mV],a4 [mV]"
+        paths: list[Path] = []
+        outcome = None
+        for index in range(6):
+            path = root / f"run{index}.csv"
+            path.write_bytes(corpus.lines_to_bytes([header] + rows(400 + index, 4)))
+            acquired = f"2026-08-1{index}T13:42:00+02:00"
+            outcome = run_import(service, path, configuration((1,), acquired=acquired))
+            paths.append(path)
+        self._stale(outcome)
+        for path in paths[:2]:
+            path.unlink()
+        arguments: dict[str, Any] = {
+            "store": store(),
+            "data_dir": config.DATA_DIR,
+            "import_roots": config.get_import_roots(),
+            "limit": 3,
+        }
+        first = reprocess_stale_snapshots(ASSET, "motor_de", **arguments)
+        second = reprocess_stale_snapshots(
+            ASSET, "motor_de", cursor=first["next_cursor"], **arguments
+        )
+
+        assert len(second["earlier_failures"]) == 2
+        for entry in second["earlier_failures"]:
+            assert re.fullmatch(r"import [0-9a-f]{12} column 1", entry["location"])
+        shown = json.dumps([first, second])
+        assert json.dumps(str(root))[1:-1] not in shown
+        assert "run0.csv" not in shown
+
+        messages = [record.getMessage() for record in package_caplog.records]
+        assert any("Re-processed measurement" in message for message in messages)
+        assert not any(str(root) in message for message in messages)
+        assert not any("run0.csv" in message for message in messages)
+
+    def test_a_reason_hides_a_path_that_another_path_starts_with(
+        self, tmp_path, monkeypatch, service
+    ):
+        root = tmp_path / "exports"
+        root.mkdir()
+        monkeypatch.setenv("PMM_IMPORT_ROOTS", str(root))
+        data = corpus.lines_to_bytes(
+            ["time [s],a1 [mV],a2 [mV],a3 [mV],a4 [mV]"] + rows(400, 4)
+        )
+        longer, shorter = root / "run.csv X.csv", root / "run.csv"
+        longer.write_bytes(data)
+        shorter.write_bytes(data)
+        run_import(service, longer, configuration((1,)), signal_id_prefix="p")
+        outcome = run_import(
+            service, shorter, configuration((1,)), signal_id_prefix="p"
+        )
+        assert len(recorded_locations(current(ASSET, measurement(outcome)))) == 2
+        self._stale(outcome)
+        longer.unlink()
+        shorter.unlink()
+        block = reprocess_stale_snapshots(
+            ASSET,
+            "motor_de",
+            store=store(),
+            data_dir=config.DATA_DIR,
+            import_roots=config.get_import_roots(),
+        )
+        [entry] = block["results"]
+        assert entry["reason"]
+        assert "X.csv" not in json.dumps(block)
+        assert json.dumps(str(root))[1:-1] not in json.dumps(block)
 
     def test_import_then_plain_history_is_not_reprocessable(
         self, four_columns, service

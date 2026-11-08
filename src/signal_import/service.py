@@ -123,17 +123,6 @@ class ImportRefused(ValueError):
         self.code = code
 
 
-def _shown(text: str) -> str:
-    """File text quoted inside a refusal: escaped and capped."""
-    shown = FileText.of(text, cap=LABEL_CHARS)
-    return f"'{shown.file_text}{'...' if shown.truncated else ''}'"
-
-
-def _named(location: str) -> str:
-    """A recorded location in a refusal: its file name, as file text."""
-    return _shown(PurePath(location).name)
-
-
 def _package_version() -> str:
     try:
         return metadata.version("predictive-maintenance-mcp")
@@ -629,7 +618,7 @@ class SignalImportService:
         failures: list[str] = []
         decode = None
         source_path: Optional[Path] = None
-        for location in locations:
+        for number, location in enumerate(locations, start=1):
             try:
                 with open_import_file(
                     location,
@@ -638,15 +627,15 @@ class SignalImportService:
                     max_size=config.get_max_signal_size(),
                 ) as file:
                     if file.size != record.size_bytes:
-                        failures.append(f"{_named(location)} has another size")
+                        failures.append(f"location {number} has another size")
                         continue
                     if _sha256_of(file) != record.source_sha256:
-                        failures.append(f"{_named(location)} holds other bytes")
+                        failures.append(f"location {number} holds other bytes")
                         continue
                     decode = decoder(file, record.interpretation, mode="full")
                     source_path = file.path
             except (PathRefused, TextDecodeError) as refused:
-                failures.append(f"{_named(location)}: {refused.code}")
+                failures.append(f"location {number}: {refused.code}")
                 continue
             break
         if decode is None or source_path is None:
@@ -654,7 +643,8 @@ class SignalImportService:
             raise ImportRefused(
                 "source_unavailable",
                 f"Import {import_id[:12]} cannot be restored: no recorded location "
-                f"still holds the recorded file ({listed}). Put the original, "
+                f"still holds the recorded file ({listed}). get_signal_imports "
+                f"lists the recorded locations in this order. Put the original, "
                 f"unchanged file back at a recorded location under the data "
                 f"directory or a folder listed in PMM_IMPORT_ROOTS, or import it "
                 f"again from where it is now.",

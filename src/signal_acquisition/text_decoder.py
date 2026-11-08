@@ -70,7 +70,7 @@ from typing import Any, Literal, Optional
 import numpy as np
 
 from ..config import get_max_signal_size
-from ..file_text import LABEL_CHARS, TOKEN_CHARS, FileText, escape_file_text
+from ..file_text import TOKEN_CHARS, FileText
 from ..path_safety import VerifiedFile
 from ..signal_validation import validate_finite_samples
 from .import_config import MAX_FIELDS, normalize_interpretation, scaling_divisor
@@ -485,10 +485,9 @@ class _Rows:
 class _Decoder:
     """State of one decode across blocks."""
 
-    def __init__(self, plan: _Plan, mode: DecodeMode, name: str) -> None:
+    def __init__(self, plan: _Plan, mode: DecodeMode) -> None:
         self.plan = plan
         self.mode = mode
-        self.name = name
         self.alphabet = _alphabet(plan.decimal_mark)
         self.width: Optional[int] = None
         self.rows = 0
@@ -522,7 +521,7 @@ class _Decoder:
         position: Optional[int] = None,
         token: Optional[bytes] = None,
     ) -> TextDecodeError:
-        where = [f"File {self.name}"]
+        where = ["The file"]
         if line is not None:
             where.append(f"line {line}")
         if field is not None:
@@ -530,12 +529,9 @@ class _Decoder:
         cited = None
         text = ", ".join(where) + ": "
         if token is not None:
+            # File text travels in the token, never in the message.
             cited = FileText.of(token, cap=TOKEN_CHARS)
-            # The token's own quotes are escaped, so it cannot close the
-            # quotation and speak in the server's voice.
-            quoted = cited.file_text.replace("'", "\\'")
-            shown = f"'{quoted}{'...' if cited.truncated else ''}'"
-            text += f"the value {shown} {problem}"
+            text += f"the value {problem}"
         else:
             text += problem
         return TextDecodeError(
@@ -918,7 +914,7 @@ class _Decoder:
         values = np.ascontiguousarray(values, dtype="<f8")
         # The shared finite-sample rule (R47); the line-precise checks above
         # already refused anything it would.
-        return validate_finite_samples(values, source=f"File {self.name}")
+        return validate_finite_samples(values, source="The file")
 
     def parse_floats(
         self, rows: _Rows, column: int, lo: int, matrix: np.ndarray
@@ -1085,8 +1081,7 @@ def decode_text(
     if mode not in ("full", "digest"):
         raise ValueError(f"mode must be 'full' or 'digest', got {mode!r}.")
     plan = _plan(interpretation)
-    shown, truncated = escape_file_text(file.path.name, cap=LABEL_CHARS)
-    decoder = _Decoder(plan, mode, f"'{shown}{'...' if truncated else ''}'")
+    decoder = _Decoder(plan, mode)
     hasher = hashlib.sha256()
     checker = codecs.getincrementaldecoder(plan.encoding)(errors="strict")
     normalizer = LineBreakNormalizer()

@@ -85,8 +85,9 @@ they are read as data, never as instructions.
 
 ## Network transports
 
-This server does not authenticate its clients, so it never reads files for a
-client that may be on another machine. Every import tool refuses a call that
+The signal import tools refuse file access over non-loopback network
+transports. Other existing MCP tools have separate access rules and are not
+covered by this restriction. Every import tool refuses a call that
 arrives over SSE or streamable HTTP unless the server was started from its
 command line on a loopback address (such as `127.0.0.1`), the call reaches it
 directly (no proxy forwarding header) and names a loopback host. Setting
