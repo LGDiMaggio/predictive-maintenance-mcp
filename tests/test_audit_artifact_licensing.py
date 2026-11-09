@@ -38,6 +38,7 @@ from pathlib import Path
 
 import pytest
 
+from _research_data import require_recordings
 from tools.audit import __main__ as audit_main
 from tools.audit import artifact_licensing, report, results
 
@@ -1198,14 +1199,18 @@ class TestRepository:
         )
         assert sorted(manifest["files"]) == tracked, REGENERATE
 
+    @pytest.mark.research_data
     def test_the_manifest_hashes_match_the_files(self, manifest):
+        require_recordings(*(REPO_ROOT / path for path in manifest["files"]))
         for path, entry in manifest["files"].items():
             content = (REPO_ROOT / path).read_bytes()
             assert (
                 _entry(content) == entry
             ), f"manifest entry for {path} is stale; {REGENERATE}"
 
+    @pytest.mark.research_data
     def test_the_regeneration_path_reproduces_the_committed_manifest(self, manifest):
+        require_recordings(*(REPO_ROOT / path for path in manifest["files"]))
         fields = {k: v for k, v in manifest.items() if k not in ("roots", "files")}
         rebuilt = artifact_licensing.build_manifest(
             REPO_ROOT, manifest["roots"], **fields

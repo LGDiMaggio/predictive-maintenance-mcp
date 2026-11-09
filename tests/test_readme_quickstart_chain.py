@@ -28,6 +28,7 @@ from pathlib import Path
 
 import pytest
 
+from _research_data import require_recordings
 from predictive_maintenance_mcp.mcp_tools.acquisition_tools import (
     get_signal_info,
     load_signal,
@@ -82,8 +83,7 @@ async def _run_chain() -> dict:
 def chain(tmp_path, monkeypatch) -> dict:
     """Run the documented chain once, with reports under ``tmp_path``."""
     sample = REPO_ROOT / "data" / "signals" / SAMPLE
-    if not sample.exists():
-        pytest.skip(f"Sample data not found: {sample}")
+    require_recordings(sample, sample.with_name(f"{sample.stem}_metadata.json"))
     reports_dir = tmp_path / "reports"
     reports_dir.mkdir()
     for target in (
@@ -101,6 +101,7 @@ def chain(tmp_path, monkeypatch) -> dict:
         repo.clear_all()
 
 
+@pytest.mark.research_data
 class TestBearingEvidence:
     def test_companion_declares_the_four_frequencies(self, chain):
         assert set(chain["frequencies"]) == set(DECLARED)
@@ -131,6 +132,7 @@ class TestBearingEvidence:
         assert "most likely" not in faults.overall_assessment.lower()
 
 
+@pytest.mark.research_data
 class TestSeverityAndReport:
     def test_iso_zone_with_the_assumed_group_and_support(self, chain):
         severity = chain["severity"]

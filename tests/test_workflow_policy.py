@@ -39,6 +39,15 @@ Contracts between ``audit.yml`` and the report builder are pinned too:
     is reported missing;
 12. every audit job sets ``timeout-minutes``.
 
+Checkouts and source archives follow ``tools/audit/third_party_data.json``:
+
+13. every ``actions/checkout`` leaves out each of its roots, with non-cone
+    sparse patterns;
+14. every ``git archive`` carries ``--worktree-attributes`` and
+    ``GIT_NO_LAZY_FETCH=1``;
+15. the pull request package smoke writes a placeholder at each manifest path
+    before it builds.
+
 Each rule is a pure function over parsed YAML with red-path tests against
 synthetic documents that carry the defect, following ``tests/test_ci_gates.py``:
 a rule that quietly stopped finding anything would otherwise report every real
@@ -49,18 +58,22 @@ the real files were read into jobs before any "no violations" is believed.
 from __future__ import annotations
 
 import fnmatch
+import json
 import re
 from typing import Any, Iterator, Optional
 
 import pytest
 import yaml
 
+from _research_data import DISABLED_REASON, require_recordings, skip_reason
 from _workflows import REPO_ROOT, load_workflows, step_label
 from tools.audit import report, results
 
 DEPENDABOT_PATH = REPO_ROOT / ".github" / "dependabot.yml"
 ISSUE_TEMPLATE_DIR = REPO_ROOT / ".github" / "ISSUE_TEMPLATE"
+THIRD_PARTY_MANIFEST = REPO_ROOT / "tools" / "audit" / "third_party_data.json"
 AUDIT_WORKFLOW = "audit.yml"
+TESTS_WORKFLOW = "tests.yml"
 
 #: Marks a permissions block on the workflow rather than on one job.
 WORKFLOW_LEVEL = "<workflow>"
@@ -449,6 +462,78 @@ def jobs_without_timeout(workflow: dict) -> list[str]:
     )
 
 
+def checkout_steps(workflow: dict) -> Iterator[tuple[str, dict]]:
+    """(job/step, step) for every ``actions/checkout`` step."""
+    for job_id, job in _jobs(workflow).items():
+        for label, step in _steps(job):
+            if str(step.get("uses", "")).startswith("actions/checkout@"):
+                yield f"{job_id}/{label}", step
+
+
+def checkout_exclusion_gaps(workflow: dict, roots: list[str]) -> list[str]:
+    """Rule 13: checkouts that would put a root on the runner.
+
+    ``/*`` must come first: the last matching pattern wins, so a ``/*`` after
+    the exclusions would bring every root back.
+    """
+    excluded = {f"!/{root}/" for root in roots}
+    gaps = []
+    for where, step in checkout_steps(workflow):
+        inputs = step.get("with") or {}
+        patterns = str(inputs.get("sparse-checkout", "")).split()
+        if patterns[:1] != ["/*"] or set(patterns[1:]) != excluded:
+            gaps.append(f"{where}: sparse-checkout is {patterns}")
+        if inputs.get("sparse-checkout-cone-mode") is not False:
+            gaps.append(f"{where}: sparse-checkout-cone-mode is not false")
+    return gaps
+
+
+GIT_ARCHIVE = re.compile(r"\bgit\b(?:\s+(?:-[cC]\s+\S+|--\S+))*\s+archive\b")
+NO_LAZY_FETCH = re.compile(r"\bGIT_NO_LAZY_FETCH=1\s+git\b")
+
+
+def archive_commands(workflow: dict) -> list[tuple[str, str]]:
+    """(job/step, command line) for every ``git archive`` a step runs."""
+    found = []
+    for job_id, job in _jobs(workflow).items():
+        for label, step in _steps(job):
+            script = re.sub(r"\\\r?\n", " ", str(step.get("run", "")))
+            for line in script.splitlines():
+                if not line.lstrip().startswith("#") and GIT_ARCHIVE.search(line):
+                    found.append((f"{job_id}/{label}", line))
+    return found
+
+
+def archive_fetch_gaps(workflow: dict) -> list[str]:
+    """Rule 14: ``git archive`` commands that would fetch left-out blobs."""
+    gaps = []
+    for where, line in archive_commands(workflow):
+        if "--worktree-attributes" not in line.split():
+            gaps.append(f"{where}: no --worktree-attributes")
+        if not NO_LAZY_FETCH.search(line):
+            gaps.append(f"{where}: no GIT_NO_LAZY_FETCH=1")
+    return gaps
+
+
+def placeholder_gaps(job: dict) -> list[str]:
+    """Rule 15: the placeholder step is missing or follows the build."""
+    runs = [str(step.get("run", "")) for _, step in _steps(job)]
+    builds = [i for i, run in enumerate(runs) if "python -m build" in run]
+    writes = [
+        i
+        for i, run in enumerate(runs)
+        if all(
+            text in run
+            for text in ("third_party_data.json", 'manifest["files"]', "write_text")
+        )
+    ]
+    if not builds:
+        return ["no build step"]
+    if not writes:
+        return ["no step writes placeholders at the manifest paths"]
+    return [] if max(writes) < min(builds) else ["the placeholders follow the build"]
+
+
 def _ignores_majors(rule: Any, distribution: str) -> bool:
     """True when one ``ignore`` entry stops major updates of ``distribution``.
 
@@ -609,6 +694,43 @@ def test_every_audit_job_has_a_timeout(audit):
 
 def test_dependabot_never_proposes_an_mcp_major(dependabot):
     assert dependabot_mcp_major_gaps(dependabot) == []
+
+
+@pytest.fixture(scope="module")
+def manifest_roots() -> list[str]:
+    manifest = json.loads(THIRD_PARTY_MANIFEST.read_text(encoding="utf-8"))
+    return manifest["roots"]
+
+
+def test_every_checkout_leaves_out_the_manifest_roots(workflows, manifest_roots):
+    # Anchor: the roots were read and the four workflows hold checkouts, so
+    # "no gaps" means they were judged.
+    assert "data/real_bearings" in manifest_roots
+    for name in (AUDIT_WORKFLOW, TESTS_WORKFLOW, "publish.yml", "publish-mcp.yml"):
+        assert list(checkout_steps(workflows[name])), f"no checkout found in {name}"
+    gaps = {
+        name: found
+        for name, workflow in workflows.items()
+        if (found := checkout_exclusion_gaps(workflow, manifest_roots))
+    }
+    assert not gaps, gaps
+
+
+def test_every_git_archive_fetches_no_left_out_blob(workflows):
+    # Anchor: both workflows that archive the commit were read, in both formats.
+    for name in (TESTS_WORKFLOW, "publish.yml"):
+        assert len(archive_commands(workflows[name])) == 2, name
+    gaps = {
+        name: found
+        for name, workflow in workflows.items()
+        if (found := archive_fetch_gaps(workflow))
+    }
+    assert not gaps, gaps
+
+
+def test_the_package_smoke_writes_placeholders_before_it_builds(workflows):
+    job = _jobs(workflows[TESTS_WORKFLOW])["package-smoke"]
+    assert placeholder_gaps(job) == []
 
 
 def test_the_audit_suite_matrix_covers_floors_and_newest(audit):
@@ -1240,6 +1362,203 @@ class TestTimeouts:
             "    steps: [{run: x}]\n  b:\n    steps: [{run: x}]\n"
         )
         assert jobs_without_timeout(doc) == ["b"]
+
+
+ROOTS = ["data/real_bearings", "data/signals/real_train"]
+
+SPARSE_CHECKOUT = """\
+on: push
+jobs:
+  build:
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            /*
+            !/data/real_bearings/
+            !/data/signals/real_train/
+          sparse-checkout-cone-mode: false
+      - run: echo hi
+"""
+
+PLAIN_CHECKOUT_JOB = """\
+  lint:
+    steps:
+      - name: Get the code
+        uses: actions/checkout@v7
+"""
+
+
+class TestCheckoutExclusions:
+    def test_every_root_excluded_in_non_cone_mode_passes(self):
+        assert checkout_exclusion_gaps(_doc(SPARSE_CHECKOUT), ROOTS) == []
+
+    def test_a_checkout_without_patterns_is_reported_in_any_job(self):
+        doc = _doc(SPARSE_CHECKOUT + PLAIN_CHECKOUT_JOB)
+        assert checkout_exclusion_gaps(doc, ROOTS) == [
+            "lint/Get the code: sparse-checkout is []",
+            "lint/Get the code: sparse-checkout-cone-mode is not false",
+        ]
+
+    def test_a_root_the_patterns_miss_is_reported(self):
+        doc = _doc(SPARSE_CHECKOUT.replace("            !/data/real_bearings/\n", ""))
+        assert checkout_exclusion_gaps(doc, ROOTS) == [
+            "build/actions/checkout@v7: sparse-checkout is "
+            "['/*', '!/data/signals/real_train/']"
+        ]
+
+    def test_cone_mode_is_reported(self):
+        doc = _doc(
+            SPARSE_CHECKOUT.replace(
+                "sparse-checkout-cone-mode: false", "sparse-checkout-cone-mode: true"
+            )
+        )
+        assert checkout_exclusion_gaps(doc, ROOTS) == [
+            "build/actions/checkout@v7: sparse-checkout-cone-mode is not false"
+        ]
+
+    def test_an_include_all_after_the_exclusions_is_reported(self):
+        """The last matching pattern wins, so this brings every root back."""
+        moved = SPARSE_CHECKOUT.replace("            /*\n", "", 1).replace(
+            "            !/data/signals/real_train/\n",
+            "            !/data/signals/real_train/\n            /*\n",
+        )
+        assert checkout_exclusion_gaps(_doc(moved), ROOTS) == [
+            "build/actions/checkout@v7: sparse-checkout is "
+            "['!/data/real_bearings/', '!/data/signals/real_train/', '/*']"
+        ]
+
+
+ARCHIVE_STEP = """\
+on: push
+jobs:
+  smoke:
+    steps:
+      - name: Archive
+        run: |
+          GIT_NO_LAZY_FETCH=1 git archive --format=zip -o a.zip HEAD --worktree-attributes
+          # git archive in a comment is no command
+          echo git
+"""
+
+
+class TestArchiveFetch:
+    def test_the_flag_and_the_variable_pass_in_either_flag_position(self):
+        assert archive_fetch_gaps(_doc(ARCHIVE_STEP)) == []
+        leading = ARCHIVE_STEP.replace(
+            "git archive --format=zip -o a.zip HEAD --worktree-attributes",
+            "git archive --worktree-attributes --format=zip -o a.zip HEAD",
+        )
+        assert archive_fetch_gaps(_doc(leading)) == []
+
+    def test_a_comment_is_not_a_command(self):
+        assert len(archive_commands(_doc(ARCHIVE_STEP))) == 1
+
+    def test_a_command_without_the_flag_is_reported(self):
+        doc = _doc(ARCHIVE_STEP.replace(" --worktree-attributes", ""))
+        assert archive_fetch_gaps(doc) == ["smoke/Archive: no --worktree-attributes"]
+
+    def test_a_command_without_the_variable_is_reported(self):
+        doc = _doc(ARCHIVE_STEP.replace("GIT_NO_LAZY_FETCH=1 ", ""))
+        assert archive_fetch_gaps(doc) == ["smoke/Archive: no GIT_NO_LAZY_FETCH=1"]
+
+    def test_the_variable_set_to_anything_else_is_reported(self):
+        doc = _doc(ARCHIVE_STEP.replace("GIT_NO_LAZY_FETCH=1", "GIT_NO_LAZY_FETCH=0"))
+        assert archive_fetch_gaps(doc) == ["smoke/Archive: no GIT_NO_LAZY_FETCH=1"]
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "git -c core.sparseCheckout=false archive",
+            "git -C repo archive",
+            "git --no-pager archive",
+        ],
+    )
+    def test_a_git_option_before_the_subcommand_is_still_a_git_archive(self, command):
+        doc = _doc(ARCHIVE_STEP.replace("GIT_NO_LAZY_FETCH=1 git archive", command))
+        assert archive_fetch_gaps(doc) == ["smoke/Archive: no GIT_NO_LAZY_FETCH=1"]
+
+
+WRITE_PLACEHOLDERS = (
+    'manifest = load("tools/audit/third_party_data.json")\n'
+    'for name in manifest["files"]:\n'
+    '    Path(name).write_text("x")\n'
+)
+
+
+def _smoke_job(*runs: str) -> dict:
+    return {"steps": [{"run": run} for run in runs]}
+
+
+class TestPlaceholders:
+    def test_the_write_before_the_build_passes(self):
+        job = _smoke_job(WRITE_PLACEHOLDERS, "python -m build")
+        assert placeholder_gaps(job) == []
+
+    def test_a_build_with_no_placeholders_is_reported(self):
+        assert placeholder_gaps(_smoke_job("python -m build")) == [
+            "no step writes placeholders at the manifest paths"
+        ]
+
+    def test_placeholders_after_the_build_are_reported(self):
+        job = _smoke_job("python -m build", WRITE_PLACEHOLDERS)
+        assert placeholder_gaps(job) == ["the placeholders follow the build"]
+
+    def test_a_step_that_reads_the_manifest_but_writes_nothing_is_reported(self):
+        job = _smoke_job(
+            WRITE_PLACEHOLDERS.replace("write_text", "exists"), "python -m build"
+        )
+        assert placeholder_gaps(job) == [
+            "no step writes placeholders at the manifest paths"
+        ]
+
+    def test_a_job_that_stopped_building_is_reported(self):
+        assert placeholder_gaps(_smoke_job(WRITE_PLACEHOLDERS)) == ["no build step"]
+
+
+class TestResearchDataGate:
+    """Both skip reasons, on a plain mapping and temporary files."""
+
+    ENABLED = {"PMM_RESEARCH_DATA": "1"}
+
+    @pytest.fixture
+    def present(self, tmp_path):
+        path = tmp_path / "a.csv"
+        path.write_text("1\n", encoding="utf-8")
+        return path
+
+    @pytest.mark.parametrize(
+        "environ", [{}, {"PMM_RESEARCH_DATA": "0"}, {"PMM_RESEARCH_DATA": "true"}]
+    )
+    def test_without_the_exact_value_the_reason_names_the_variable(
+        self, present, environ
+    ):
+        assert skip_reason([present], environ) == (
+            "research-data test: set PMM_RESEARCH_DATA=1 to run it (see data/LICENSE)"
+        )
+
+    def test_the_variable_is_judged_before_the_files(self, tmp_path):
+        assert skip_reason([tmp_path / "absent.csv"], {}) == DISABLED_REASON
+
+    def test_an_absent_file_has_its_own_reason_with_its_relative_path(self):
+        path = REPO_ROOT / "data" / "signals" / "no_such_folder" / "a.csv"
+        assert skip_reason([path], self.ENABLED) == (
+            "research-data test: data/signals/no_such_folder/a.csv "
+            "is not in this checkout"
+        )
+
+    def test_the_first_absent_file_is_named(self, present, tmp_path):
+        absent = tmp_path / "absent.csv"
+        reason = skip_reason([present, absent], self.ENABLED)
+        assert reason == f"research-data test: {absent} is not in this checkout"
+
+    def test_files_that_exist_with_the_variable_set_need_no_skip(self, present):
+        assert skip_reason([present], self.ENABLED) is None
+
+    def test_the_gate_skips_in_this_process(self, present, monkeypatch):
+        monkeypatch.delenv("PMM_RESEARCH_DATA", raising=False)
+        with pytest.raises(pytest.skip.Exception, match="PMM_RESEARCH_DATA=1"):
+            require_recordings(present)
 
 
 def _dependabot(*entries: str) -> dict:
