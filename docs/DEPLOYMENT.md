@@ -508,6 +508,7 @@ Replace `YOUR_TENANT_ID` and `YOUR_CLIENT_ID` with your actual Azure AD values.
 - Use a **reverse proxy** (Caddy, nginx, IIS, Azure Front Door) for TLS termination
 - Add **authentication** (API key or OAuth) for any server exposed outside your private network
 - The server binds to `127.0.0.1` by default — use `--host 0.0.0.0` only behind a reverse proxy or firewall
+- Over SSE or streamable HTTP, `load_signal` refuses an absolute path or a path that leaves the data directory, and re-processing reads no recorded location outside it. Stdio and direct loopback connections are not restricted this way
 - In corporate environments, coordinate with your IT security team for network policies and firewall rules
 - Rotate API keys periodically; use OAuth 2.0 for production multi-user environments
 

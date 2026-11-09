@@ -120,7 +120,7 @@ def validate_positive_finite(
     where = f" (from {source})" if source else ""
     if isinstance(value, (bool, np.bool_)) or not isinstance(value, numbers.Real):
         raise InvalidInputError(
-            f"{name} must be positive and finite ({name} > 0), got {value!r} "
+            f"{name} must be positive and finite ({name} > 0), got a value "
             f"of type {type(value).__name__}, which is not a number{where} — "
             f"{remedy}."
         )
@@ -232,12 +232,13 @@ def validate_expected_frequencies(
     Raises:
         InvalidInputError: If any value is not a positive finite number.
     """
-    bad = {}
+    bad: dict[Any, Any] = {}
     for label, value in frequencies.items():
         try:
             validate_expected_frequency(value, label=label)
         except InvalidInputError:
-            bad[label] = value
+            # A number cannot carry text; anything else may come from a file.
+            bad[label] = value if isinstance(value, numbers.Real) else "not a number"
     if bad:
         raise InvalidInputError(
             f"{name} contains non-positive or non-finite values: {bad} — every "

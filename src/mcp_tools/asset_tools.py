@@ -54,6 +54,7 @@ from ..models import (
     MeasurementPointDeclarationResult,
 )
 from ..signal_acquisition.measurement import validate_ledger_id
+from ._call_origin import is_direct_local_call
 from ._utils import refusal_boundary
 
 logger = logging.getLogger(__name__)
@@ -603,8 +604,11 @@ async def assess_asset_change(
     reprocess_block: Optional[dict[str, Any]] = None
     coupling: Optional[ReprocessCoupling] = None
     if reprocess:
+        # A caller that may be on another machine is served the data
+        # directory only.
+        data_dir_only = not is_direct_local_call(ctx)
         try:
-            import_roots = config.get_import_roots()
+            import_roots = None if data_dir_only else config.get_import_roots()
         except ValueError as exc:
             # Imported measurements are then read under the data directory
             # only; every other measurement re-processes as before.
@@ -622,6 +626,7 @@ async def assess_asset_change(
                 params=params,
                 cursor=reprocess_cursor,
                 import_roots=import_roots,
+                data_dir_only=data_dir_only,
             )
         )
         logger.info(reprocess_block["message"])

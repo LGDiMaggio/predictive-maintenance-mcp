@@ -68,17 +68,30 @@ def _companion_metadata(info: StoredSignalInfo) -> dict:
     """Read the companion _metadata.json of a stored signal's source file.
 
     Used only for OPTIONAL extras (e.g. reference bearing frequencies) —
-    sampling rate and unit always come from the repository entry itself.
+    sampling rate and unit always come from the repository entry itself. The
+    import never reads a companion, so an imported signal has none. A file
+    that cannot be read, or holds anything but a JSON object, supplies
+    nothing.
     """
+    if info.import_provenance:
+        return {}
     src = Path(info.filepath)
     meta_path = src.parent / f"{src.stem}_metadata.json"
-    if meta_path.exists():
-        try:
-            with open(meta_path, encoding="utf-8") as f:
-                return json.load(f)
-        except Exception as e:  # pragma: no cover - corrupt metadata is rare
-            logger.warning(f"Error reading metadata {meta_path}: {e}")
-    return {}
+    if not meta_path.exists():
+        return {}
+    try:
+        with open(meta_path, encoding="utf-8") as f:
+            metadata = json.load(f)
+    except Exception as exc:
+        # The kind of failure only: the path and the parser's message are
+        # file text.
+        logger.warning(
+            "Companion metadata of signal '%s' could not be read (%s)",
+            info.signal_id,
+            type(exc).__name__,
+        )
+        return {}
+    return metadata if isinstance(metadata, dict) else {}
 
 
 async def generate_diagnostic_report_docx(
@@ -473,6 +486,9 @@ async def generate_envelope_report(
                 for k in ("BPFO", "BPFI", "BSF", "FTF")
                 if metadata.get(k) is not None
             }
+            validate_expected_frequencies(
+                bearing_freqs, name="The companion metadata of this signal"
+            )
 
     band = (filter_low, filter_high)
 

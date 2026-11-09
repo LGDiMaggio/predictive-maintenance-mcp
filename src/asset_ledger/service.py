@@ -1598,6 +1598,7 @@ def _check_locations(
     *,
     recorded_size: Optional[int],
     import_roots: Optional[Sequence[Union[str, Path]]] = None,
+    data_dir_only: bool = False,
 ) -> tuple[list[tuple[str, Path]], dict[str, _LocationOutcome], int]:
     """The file checks of one measurement: containment of each relative
     location and one metadata call per location, most recent first, with
@@ -1621,6 +1622,13 @@ def _check_locations(
     for location in locations:
         candidate = Path(location)
         if candidate.is_absolute():
+            if data_dir_only:
+                failed[location] = (
+                    "location_outside_data_dir",
+                    "a recorded location outside the data directory is not read "
+                    "for a network caller",
+                )
+                continue
             refusal = _gate_refusal(location, import_roots)
             if refusal is not None:
                 failed[location] = refusal
@@ -1985,6 +1993,7 @@ def _run_reprocess(
     params: AssessmentParams,
     cursor: Optional[str],
     import_roots: Optional[Sequence[Union[str, Path]]] = None,
+    data_dir_only: bool = False,
 ) -> tuple[dict[str, Any], ReprocessCoupling]:
     """One call of a re-processing sequence (see
     :func:`reprocess_stale_snapshots`), with what the assessment of the same
@@ -2186,6 +2195,7 @@ def _run_reprocess(
                 size if isinstance(size, int) and not isinstance(size, bool) else None
             ),
             import_roots=roots_here,
+            data_dir_only=data_dir_only,
         )
         file_checks += checks
         if not passed:
@@ -2545,6 +2555,7 @@ def reprocess_stale_snapshots(
     params: AssessmentParams = AssessmentParams(),
     cursor: Optional[str] = None,
     import_roots: Optional[Sequence[Union[str, Path]]] = None,
+    data_dir_only: bool = False,
 ) -> dict[str, Any]:
     """One call of a re-processing sequence of one point.
 
@@ -2619,6 +2630,7 @@ def reprocess_stale_snapshots(
         params=params,
         cursor=cursor,
         import_roots=import_roots,
+        data_dir_only=data_dir_only,
     )
     return block
 
@@ -2632,6 +2644,7 @@ def reprocess_for_assessment(
     params: AssessmentParams = AssessmentParams(),
     cursor: Optional[str] = None,
     import_roots: Optional[Sequence[Union[str, Path]]] = None,
+    data_dir_only: bool = False,
 ) -> tuple[dict[str, Any], ReprocessCoupling]:
     """:func:`reprocess_stale_snapshots` with the tool's limit, plus what
     the assessment of the same call needs (``assess_change``'s
@@ -2648,6 +2661,7 @@ def reprocess_for_assessment(
         params=params,
         cursor=cursor,
         import_roots=import_roots,
+        data_dir_only=data_dir_only,
     )
 
 

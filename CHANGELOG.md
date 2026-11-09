@@ -322,6 +322,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   updates stay off, and MCP SDK major updates are ignored.
 
 ### Changed
+- **Network callers reach only the data directory.** Over SSE or streamable
+  HTTP, unless a call comes directly from this machine through a loopback bind,
+  `load_signal` refuses an absolute path or a path that leaves the data
+  directory, and `assess_asset_change(reprocess=True)` does not read a recorded
+  location outside it. Stdio and direct loopback connections keep every path
+  they had.
+- **Companion metadata stays out of refusals and logs.** An unusable bearing
+  frequency in a companion file is refused by its field name, without repeating
+  the value, and a value that is not a number is described by its type. An
+  unreadable companion is logged by signal id and kind of failure, without its
+  path or content. A companion that is not a JSON object supplies nothing, and
+  a file beside an imported signal is not read as a companion.
 - **Re-processing checks a recorded location before touching the file
   system.** `assess_asset_change(reprocess=True)` checks every recorded
   absolute location as text first and refuses a network (UNC), device or
