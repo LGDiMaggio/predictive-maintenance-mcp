@@ -36,6 +36,8 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Every checkout below leaves out the folders listed as roots in
+# tools/audit/third_party_data.json (pinned by tests/test_workflow_policy.py).
 jobs:
   suite:
     name: Suite ${{ matrix.leg }} / Python ${{ matrix.python }}
@@ -63,6 +65,13 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            /*
+            !/data/real_bearings/
+            !/data/signals/real_train/
+            !/data/signals/real_test/
+          sparse-checkout-cone-mode: false
 
       - name: Set up Python ${{ matrix.python }}
         uses: actions/setup-python@v7
@@ -135,6 +144,13 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            /*
+            !/data/real_bearings/
+            !/data/signals/real_train/
+            !/data/signals/real_test/
+          sparse-checkout-cone-mode: false
 
       - name: Set up Python ${{ matrix.python }}
         uses: actions/setup-python@v7
@@ -169,6 +185,13 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            /*
+            !/data/real_bearings/
+            !/data/signals/real_train/
+            !/data/signals/real_test/
+          sparse-checkout-cone-mode: false
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -201,6 +224,13 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            /*
+            !/data/real_bearings/
+            !/data/signals/real_train/
+            !/data/signals/real_test/
+          sparse-checkout-cone-mode: false
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -277,6 +307,13 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            /*
+            !/data/real_bearings/
+            !/data/signals/real_train/
+            !/data/signals/real_test/
+          sparse-checkout-cone-mode: false
 
       - name: Set up Python
         uses: actions/setup-python@v7

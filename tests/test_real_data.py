@@ -8,7 +8,9 @@ NOTE: Sampling rates are read from metadata JSON files.
 from pathlib import Path
 import json
 import numpy as np
+import pytest
 
+from _research_data import REPO_ROOT, require_recordings
 from predictive_maintenance_mcp.mcp_tools.analysis_tools import analyze_statistics
 from predictive_maintenance_mcp.signal_acquisition.loaders import load_signal_data
 from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
@@ -33,8 +35,15 @@ def get_sampling_rate(csv_file):
     return 25000.0  # fallback
 
 
+@pytest.mark.research_data
 def test_real_data():
     """Test complete workflow with real data (statistic analysis only - sync)."""
+    require_recordings(
+        *(
+            REPO_ROOT / "data" / "signals" / name
+            for name in (BASELINE_TRAIN[0], INNER_FAULT_TRAIN[0], OUTER_FAULT_TRAIN[0])
+        )
+    )
     print("=" * 70)
     print("MODULE-LEVEL TOOL TEST WITH REAL BEARING DATA")
     print("=" * 70)

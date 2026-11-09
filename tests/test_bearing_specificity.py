@@ -58,6 +58,7 @@ import pytest
 from scipy.stats import binom
 
 from _bearing_scenarios import (
+    AE5_RECORDINGS,
     DEFECT_SEED,
     DEFECTS_PRESENT,
     FAULT_FREE,
@@ -67,7 +68,6 @@ from _bearing_scenarios import (
     RPM_6205,
     DefectKind,
     defect,
-    load_mfpt,
     shared_line,
     white,
 )
@@ -571,14 +571,16 @@ def _diagnosis_with_declared_frequencies(
     }
 
 
-@pytest.fixture(scope="module")
-def mfpt_baseline() -> dict:
-    """The MFPT healthy baseline_3 with its declared frequencies at 1500 rpm.
+@pytest.fixture(scope="module", params=AE5_RECORDINGS)
+def mfpt_baseline(request) -> dict:
+    """The fixed AE5 stand-in, and the MFPT healthy baseline_3 with its
+    declared frequencies at 1500 rpm.
 
-    Its envelope carries a line at twice the 60 Hz mains frequency inside the
-    BPFI window, with no harmonic or sideband a bearing defect would add.
+    The envelope carries a line inside the BPFI window (for the MFPT recording,
+    at twice the 60 Hz mains frequency), with no harmonic or sideband a bearing
+    defect would add.
     """
-    signal, fs, frequencies, rpm = load_mfpt("real_test/baseline_3.csv")
+    signal, fs, frequencies, rpm = request.param()
     return _diagnosis_with_declared_frequencies(signal, fs, frequencies, rpm)
 
 
@@ -1228,11 +1230,12 @@ class TestEvidenceDefects:
             text = f"{result['outcome_reason']} {step}".lower()
             assert "most likely" not in text and "replace" not in text
 
-    def test_uncorroborated_line_is_inconclusive_with_its_reason(self):
-        """AE5: the MFPT baseline's line at twice the mains frequency in the
-        BPFI window is significant, but no line a bearing defect would add
-        stands beside it."""
-        signal, fs, frequencies, rpm = load_mfpt("real_test/baseline_3.csv")
+    @pytest.mark.parametrize("recording", AE5_RECORDINGS)
+    def test_uncorroborated_line_is_inconclusive_with_its_reason(self, recording):
+        """AE5: a line in the BPFI window (on the MFPT baseline, at twice the
+        mains frequency) is significant, but no line a bearing defect would
+        add stands beside it."""
+        signal, fs, frequencies, rpm = recording()
         result = check_frequency_set(signal, fs, frequencies, rpm)
         bpfi = _check(result, "BPFI")
 

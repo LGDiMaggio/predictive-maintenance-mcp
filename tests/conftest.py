@@ -215,34 +215,43 @@ def import_dir(tmp_path, monkeypatch) -> Path:
     return target
 
 
-@pytest.fixture
+@pytest.fixture(
+    params=[pytest.param(None, id="recording", marks=pytest.mark.research_data)]
+)
 def sample_healthy_signal():
     """Load baseline healthy signal."""
+    from _research_data import require_recordings
+
     signal_path = TEST_DATA_DIR / "baseline_1.csv"
-    if not signal_path.exists():
-        pytest.skip(f"Sample data not found: {signal_path}")
+    require_recordings(signal_path)
 
     df = pd.read_csv(signal_path, header=None)
     return df.iloc[:, 0].values
 
 
-@pytest.fixture
+@pytest.fixture(
+    params=[pytest.param(None, id="recording", marks=pytest.mark.research_data)]
+)
 def sample_faulty_signal():
     """Load outer race fault signal."""
+    from _research_data import require_recordings
+
     signal_path = TEST_DATA_DIR / "OuterRaceFault_1.csv"
-    if not signal_path.exists():
-        pytest.skip(f"Sample data not found: {signal_path}")
+    require_recordings(signal_path)
 
     df = pd.read_csv(signal_path, header=None)
     return df.iloc[:, 0].values
 
 
-@pytest.fixture
+@pytest.fixture(
+    params=[pytest.param(None, id="recording", marks=pytest.mark.research_data)]
+)
 def sample_metadata():
     """Load metadata for baseline signal."""
+    from _research_data import require_recordings
+
     metadata_path = TEST_DATA_DIR / "baseline_1_metadata.json"
-    if not metadata_path.exists():
-        pytest.skip(f"Metadata not found: {metadata_path}")
+    require_recordings(metadata_path)
 
     with open(metadata_path, "r") as f:
         return json.load(f)

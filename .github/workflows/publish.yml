@@ -16,6 +16,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            /*
+            !/data/real_bearings/
+            !/data/signals/real_train/
+            !/data/signals/real_test/
+          sparse-checkout-cone-mode: false
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -43,6 +50,13 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            /*
+            !/data/real_bearings/
+            !/data/signals/real_train/
+            !/data/signals/real_test/
+          sparse-checkout-cone-mode: false
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -65,8 +79,8 @@ jobs:
       # tarball are what GitHub serves for the tag and Zenodo stores.
       - name: Check the licensing of the release commit's source archives
         run: |
-          git archive --format=zip --prefix=predictive-maintenance-mcp/ -o "$RUNNER_TEMP/source.zip" HEAD
-          git archive --format=tar.gz --prefix=predictive-maintenance-mcp/ -o "$RUNNER_TEMP/source.tar.gz" HEAD
+          GIT_NO_LAZY_FETCH=1 git archive --format=zip --prefix=predictive-maintenance-mcp/ -o "$RUNNER_TEMP/source.zip" HEAD --worktree-attributes
+          GIT_NO_LAZY_FETCH=1 git archive --format=tar.gz --prefix=predictive-maintenance-mcp/ -o "$RUNNER_TEMP/source.tar.gz" HEAD --worktree-attributes
           python -m tools.audit artifact-licensing --archive "$RUNNER_TEMP/source.zip" --archive "$RUNNER_TEMP/source.tar.gz" --variant release-source-archives
 
       - name: Install the wheel into a fresh venv and run the stdio smoke harness
