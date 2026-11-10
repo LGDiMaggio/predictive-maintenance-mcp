@@ -320,6 +320,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   matches the fields of the audit's issue candidates. Dependabot proposes
   grouped weekly updates of the GitHub Actions in use; Python version
   updates stay off, and MCP SDK major updates are ignored.
+- **`check_bearing_faults`: an optional, experimental corroboration rule.**
+  The new `corroboration_rule` parameter defaults to `any_line`, the
+  existing rule: its results, identifiers and recorded asset-ledger
+  snapshots are unchanged. `controlled_union_v1` selects an experimental
+  rule that was evaluated on synthetic signals only. It can support a
+  characteristic line through a combined test of its further lines when no
+  further line is counted on its own; that support has `evidence_strength`
+  `low`. Its results name the rule in `evidence_policy.corroboration_rule`,
+  carry a per-check `aggregate_corroboration` record and are not comparable
+  with `any_line` results; `excluded_by` gains the value `aggregate_rule`,
+  which occurs only under that rule. In Python,
+  `SnapshotPolicy(corroboration_rule=...)` keeps the experimental rule's
+  snapshots in a separate ledger lineage, read and written by
+  `assess_change` and `reprocess_stale_snapshots` with the same policy; no
+  tool writes it. A server without this change does not know the rule, so
+  keep such snapshots out of any ledger it reads. The responses of
+  `check_bearing_faults` and `diagnose_vibration` gain
+  `evidence_policy.corroboration_rule` and a per-check
+  `aggregate_corroboration`, both null under the default rule.
 
 ### Changed
 - **Breaking: signal files are closed to network clients by default.** Over

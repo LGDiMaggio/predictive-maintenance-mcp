@@ -30,7 +30,7 @@ The complete endpoint reference for the Predictive Maintenance MCP server: every
 | Tool | Description |
 |------|-------------|
 | `assess_severity` | Unified ISO 20816-3 severity assessment (signal or direct RMS reading, custom thresholds) — requires a declared signal unit, never guesses |
-| `check_bearing_faults` | Unified fault-frequency matching (catalog bearing, explicit frequencies, or explicit geometry) |
+| `check_bearing_faults` | Unified fault-frequency matching (catalog bearing, explicit frequencies, or explicit geometry); optional experimental `corroboration_rule` |
 | `diagnose_vibration` | Integrated evidence-based diagnosis pipeline (one call) |
 | `calculate_bearing_characteristic_frequencies` | Expected fault frequencies from bearing geometry |
 | `search_bearing_catalog` | Look up verified, source-traced bearing geometry |

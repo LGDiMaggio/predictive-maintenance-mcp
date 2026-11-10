@@ -1106,8 +1106,7 @@ def _member_phrase(member: Mapping[str, Any], canonical: Optional[str]) -> str:
     )
 
 
-#: The experimental corroboration rule only (wording is a proposal): a note on
-#: every result of that rule.
+#: The experimental corroboration rule only: a note on every result of that rule.
 _EXPERIMENTAL_RULE_NOTE = (
     "This check used the experimental controlled_union_v1 corroboration rule, "
     "selected for this call. That rule was evaluated on synthetic signals only, so "

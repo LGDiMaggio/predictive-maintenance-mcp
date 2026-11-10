@@ -1043,7 +1043,7 @@ def evidence_policy(
     return record
 
 
-#: Evidence-policy entries of the experimental rule (wording is a proposal).
+#: Evidence-policy entries of the experimental rule.
 _CONTROLLED_UNION_ASSUMPTION = (
     "Under the experimental controlled_union_v1 corroboration rule, Fisher's "
     "combination of the further lines assumes independent lines. Lines of one "

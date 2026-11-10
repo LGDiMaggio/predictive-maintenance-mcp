@@ -846,8 +846,7 @@ def collect_point_slots(
 # ---------------------------------------------------------------------------
 
 
-#: Closes the message of an assessment of an experimental lineage (wording is
-#: a proposal).
+#: Closes the message of an assessment of an experimental lineage.
 _EXPERIMENTAL_ASSESSMENT_NOTE = (
     "This assessment reads the lineage of the experimental {rule} corroboration "
     "rule, selected for this call; that rule was evaluated on synthetic signals only."
