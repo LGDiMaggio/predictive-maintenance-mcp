@@ -27,6 +27,7 @@ import ast
 import copy
 import hashlib
 import json
+import sys
 import time
 from decimal import Decimal
 from pathlib import Path
@@ -495,7 +496,19 @@ class TestRefusals:
     @pytest.mark.parametrize(
         ("make", "fragment"),
         [
-            pytest.param(lambda: "[" * 100000, "nested too deeply", id="deep"),
+            pytest.param(
+                lambda: "[" * 100000,
+                # Before 3.14 a fixed recursion limit always stops this text. From
+                # 3.14 the limit follows the real C stack: with a large stack the
+                # parser reaches the end of the text, a malformed-JSON refusal.
+                (
+                    "nested too deeply"
+                    if sys.version_info < (3, 14)
+                    else r"nested too deeply"
+                    r"|not valid JSON \(Expecting value at line 1, column 100001\)"
+                ),
+                id="deep",
+            ),
             pytest.param(
                 lambda: '{"schema": ' + "1" * 5000 + "}", "out of range", id="bigint"
             ),
