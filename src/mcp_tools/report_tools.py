@@ -27,6 +27,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from mcp.server.mcpserver import MCPServer, Context
 
+from .. import config
 from ..config import MODELS_DIR, REPORTS_DIR
 from ..decision_support.advisory import build_advisory
 from ..decision_support.diagnosis_pipeline import (
@@ -36,6 +37,7 @@ from ..diagnostics.bearing_analyzer import check_frequency_set
 from ..diagnostics.bearing_claims import acquisition_eligibility_from_companion
 from ..figures import build_annotated_envelope_figure
 from ..models import StoredSignalInfo
+from ..path_safety import safe_resolve
 from ..report_generator import (
     save_fft_report,
     save_envelope_report,
@@ -48,6 +50,7 @@ from ..report_generator import (
 )
 from ..signal_processing.features import extract_time_domain_features
 from ..signal_validation import validate_expected_frequencies, validate_rpm
+from ._call_origin import SignalFileAccess, signal_file_access
 from ._utils import refusal_boundary, resolve_model_paths, resolve_signal
 
 # Canonical modular twin of the ISO evaluation tool (module-level function
@@ -64,19 +67,26 @@ from ..signal_processing.spectral import (
 logger = logging.getLogger(__name__)
 
 
-def _companion_metadata(info: StoredSignalInfo) -> dict:
+def _companion_metadata(
+    info: StoredSignalInfo, access: SignalFileAccess = "all"
+) -> dict:
     """Read the companion _metadata.json of a stored signal's source file.
 
     Used only for OPTIONAL extras (e.g. reference bearing frequencies) —
     sampling rate and unit always come from the repository entry itself. The
     import never reads a companion, so an imported signal has none. A file
     that cannot be read, or holds anything but a JSON object, supplies
-    nothing.
+    nothing. *access* is the caller's (see ``signal_file_access``).
     """
-    if info.import_provenance:
+    if access == "none" or info.import_provenance:
         return {}
     src = Path(info.filepath)
     meta_path = src.parent / f"{src.stem}_metadata.json"
+    if access == "data_dir":
+        try:
+            safe_resolve(config.DATA_DIR, str(meta_path))
+        except (ValueError, OSError, RuntimeError):
+            return {}
     if not meta_path.exists():
         return {}
     try:
@@ -479,7 +489,7 @@ async def generate_envelope_report(
     # Optional extras: reference bearing frequencies from the companion
     # metadata of the source file (never required).
     if bearing_freqs is None:
-        metadata = _companion_metadata(info)
+        metadata = _companion_metadata(info, signal_file_access(ctx))
         if any(k in metadata for k in ("BPFO", "BPFI", "BSF", "FTF")):
             bearing_freqs = {
                 k: metadata[k]

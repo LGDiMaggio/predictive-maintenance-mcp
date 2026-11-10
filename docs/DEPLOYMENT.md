@@ -4,6 +4,8 @@ Deploy the Predictive Maintenance MCP Server as an **HTTPS endpoint** for **Micr
 
 > **No Docker?** No problem. Options A and B below work with just Python + a reverse proxy — no containers required.
 
+> **Signal files:** network clients cannot read them until the operator opts in. See [Signal Files over a Network Connection](#signal-files-over-a-network-connection).
+
 ---
 
 ## Table of Contents
@@ -17,8 +19,9 @@ Deploy the Predictive Maintenance MCP Server as an **HTTPS endpoint** for **Micr
 7. [Connecting Other MCP Clients](#connecting-other-mcp-clients)
 8. [Authentication](#authentication)
 9. [Security Considerations](#security-considerations)
-10. [CLI Reference](#cli-reference)
-11. [Troubleshooting](#troubleshooting)
+10. [Signal Files over a Network Connection](#signal-files-over-a-network-connection)
+11. [CLI Reference](#cli-reference)
+12. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -91,6 +94,8 @@ curl http://127.0.0.1:8000/sse
 
 You need a reverse proxy to terminate TLS (HTTPS). Choose one:
 
+> **What the proxy must send to a server bound to `127.0.0.1`:** a loopback `Host` with its port, such as `127.0.0.1:8000`, or the server answers `421 Invalid Host header`; and `X-Forwarded-For` or `Forwarded`. Without that header, calls through the proxy count as direct local calls, with no error (see [Signal Files over a Network Connection](#signal-files-over-a-network-connection)). The Caddy and nginx examples below send both.
+
 #### Option A1: Caddy (simplest — auto TLS)
 
 Install Caddy: https://caddyserver.com/docs/install
@@ -99,7 +104,9 @@ Create a `Caddyfile`:
 
 ```
 mcp.yourdomain.com {
-    reverse_proxy 127.0.0.1:8000
+    reverse_proxy 127.0.0.1:8000 {
+        header_up Host {upstream_hostport}
+    }
 }
 ```
 
@@ -131,7 +138,7 @@ server {
         proxy_cache off;
         chunked_transfer_encoding off;
 
-        proxy_set_header Host $host;
+        proxy_set_header Host $proxy_host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
@@ -175,6 +182,8 @@ For Windows Server environments with IIS:
 4. Bind HTTPS to your site with your corporate TLS certificate.
 
 > **Important for IIS**: Disable response buffering and set `responseBufferLimit="0"` on the handler to allow SSE streaming.
+
+> **Check this example before relying on it.** It has not been tested with the restriction on signal files. ARR must send `X-Forwarded-For`; without it, calls through IIS count as direct local calls, with no error. From another machine, `load_signal` with an absolute path must be refused.
 
 ---
 
@@ -342,6 +351,8 @@ or
 
 > "Analyze the FFT spectrum of baseline_1.csv"
 
+Both prompts read signal files, so they need [the operator's opt-in](#signal-files-over-a-network-connection).
+
 ---
 
 ## Connecting Other MCP Clients
@@ -393,7 +404,9 @@ mcp.yourdomain.com {
         body "Unauthorized"
         close
     }
-    reverse_proxy 127.0.0.1:8000
+    reverse_proxy 127.0.0.1:8000 {
+        header_up Host {upstream_hostport}
+    }
 }
 ```
 
@@ -416,6 +429,7 @@ server {
         proxy_pass http://127.0.0.1:8000;
         proxy_http_version 1.1;
         proxy_set_header Connection '';
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_buffering off;
         proxy_cache off;
         proxy_read_timeout 86400s;
@@ -467,7 +481,9 @@ For corporate SSO with Azure AD (Entra ID):
 
 mcp.yourdomain.com {
     authenticate with myportal
-    reverse_proxy 127.0.0.1:8000
+    reverse_proxy 127.0.0.1:8000 {
+        header_up Host {upstream_hostport}
+    }
 }
 ```
 
@@ -508,9 +524,29 @@ Replace `YOUR_TENANT_ID` and `YOUR_CLIENT_ID` with your actual Azure AD values.
 - Use a **reverse proxy** (Caddy, nginx, IIS, Azure Front Door) for TLS termination
 - Add **authentication** (API key or OAuth) for any server exposed outside your private network
 - The server binds to `127.0.0.1` by default — use `--host 0.0.0.0` only behind a reverse proxy or firewall
-- Over SSE or streamable HTTP, `load_signal` refuses an absolute path or a path that leaves the data directory, and re-processing reads no recorded location outside it. Stdio and direct loopback connections are not restricted this way
+- Signal files are closed to network clients unless the operator opts in: see [Signal Files over a Network Connection](#signal-files-over-a-network-connection). That setting is not authentication
 - In corporate environments, coordinate with your IT security team for network policies and firewall rules
 - Rotate API keys periodically; use OAuth 2.0 for production multi-user environments
+
+---
+
+## Signal Files over a Network Connection
+
+**Breaking default.** Network clients cannot read signal files unless the operator opts in. Over SSE or streamable HTTP, unless a call comes directly from the server's own machine through a loopback bind, `load_signal`, `list_signals` with `scope="disk"`, `assess_asset_change` with `reprocess=True` and the companion lookup of `generate_envelope_report` read no files, including files under the data directory. Every deployment in this guide is affected, the Docker default among them, provided that a reverse proxy in front of a server bound to `127.0.0.1` sends the forwarding header described next.
+
+A reverse proxy in front of a server bound to `127.0.0.1` must send `X-Forwarded-For` or `Forwarded`. Without one, and with a loopback `Host`, the server cannot tell the call from a direct local one, and this restriction does not apply. A forwarding header only marks a call as proxied: it authenticates nobody.
+
+To serve files under the data directory to network clients, the operator sets:
+
+```
+PMM_ALLOW_NETWORK_DATA_DIR_ACCESS=1
+```
+
+**This setting is not authentication.** The server cannot tell who is calling, or whether a reverse proxy authenticated them. Set it only on a server whose network access you control, for example behind a reverse proxy that authenticates every request, or on a private network.
+
+With the setting on, network clients reach only the data directory: absolute paths outside it, paths that leave it and links out of it stay refused, and re-processing reads no recorded location outside it. The signal import tools stay refused over network connections whatever this setting says. The accepted values are `1`, `true`, `yes` and `on`; anything else leaves signal files closed. Stdio and direct loopback connections do not need it. Signals already held in memory, loaded by a local caller or created with `generate_test_signal`, stay available to every client, with their metadata.
+
+The Caddy and nginx examples of Option A, the API-key examples and the Caddyfile of Option C were checked with these rules on one machine, over plain HTTP. The OAuth, TLS and remote-machine deployment examples have not been validated end-to-end.
 
 ---
 
@@ -528,6 +564,7 @@ Environment Variables:
   MCP_TRANSPORT    Same as --transport
   MCP_HOST         Same as --host
   MCP_PORT         Same as --port
+  PMM_ALLOW_NETWORK_DATA_DIR_ACCESS  Serve the data directory to network clients (not authentication)
 ```
 
 CLI arguments take precedence over environment variables.
@@ -554,6 +591,11 @@ CLI arguments take precedence over environment variables.
 - Verify the URL ends in `/sse` (not just the domain)
 - Check that the server started with `--transport sse` (not `stdio`)
 - Check the Copilot Studio logs for error details
+
+### "421 Invalid Host header"
+
+- The server is bound to `127.0.0.1`, `localhost` or `::1` and the proxy sent another `Host`, or a loopback `Host` without its port. Send a loopback `Host` with its port, as the [reverse proxy examples](#3-add-a-reverse-proxy-for-https) do
+- A server bound this way also answers `403 Invalid Origin header` to an `Origin` that is not `http://` with a loopback name and a port, which includes browser-based clients sending their own `Origin`
 
 ### "401 Unauthorized"
 

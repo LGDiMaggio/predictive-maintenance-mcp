@@ -54,7 +54,7 @@ from ..models import (
     MeasurementPointDeclarationResult,
 )
 from ..signal_acquisition.measurement import validate_ledger_id
-from ._call_origin import is_direct_local_call
+from ._call_origin import NETWORK_FILES_CLOSED, signal_file_access
 from ._utils import refusal_boundary
 
 logger = logging.getLogger(__name__)
@@ -604,9 +604,13 @@ async def assess_asset_change(
     reprocess_block: Optional[dict[str, Any]] = None
     coupling: Optional[ReprocessCoupling] = None
     if reprocess:
-        # A caller that may be on another machine is served the data
-        # directory only.
-        data_dir_only = not is_direct_local_call(ctx)
+        # Re-processing reads recorded signal files: none for a caller that
+        # may be on another machine, unless the operator opted in, and then
+        # the data directory only.
+        access = signal_file_access(ctx)
+        if access == "none":
+            raise ValueError(NETWORK_FILES_CLOSED)
+        data_dir_only = access == "data_dir"
         try:
             import_roots = None if data_dir_only else config.get_import_roots()
         except ValueError as exc:

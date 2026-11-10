@@ -2044,6 +2044,29 @@ class TestCompanionMetadataIsUntrusted:
         assert not any(str(data_dir) in m for m in messages)
         assert not any("_metadata.json" in m for m in messages)
 
+    def test_access_decides_which_companion_is_read(self, data_dir, tmp_path):
+        outside = tmp_path / "elsewhere"
+        outside.mkdir()
+        (outside / "run_metadata.json").write_text('{"BPFO": 100.0}')
+        (data_dir / "run_metadata.json").write_text('{"BPFO": 90.0}')
+
+        def info(folder):
+            return type(
+                "Info",
+                (),
+                {
+                    "signal_id": "s",
+                    "filepath": str(folder / "run.csv"),
+                    "import_provenance": None,
+                },
+            )()
+
+        read = report_tools._companion_metadata
+        assert read(info(data_dir), "none") == {}
+        assert read(info(data_dir), "data_dir") == {"BPFO": 90.0}
+        assert read(info(outside), "data_dir") == {}
+        assert read(info(outside), "all") == {"BPFO": 100.0}
+
     def test_an_imported_signal_reads_no_companion(self, data_dir, monkeypatch):
         """The import never reads a companion, so a file beside the original
         has no basis and no path gate: nothing opens it."""

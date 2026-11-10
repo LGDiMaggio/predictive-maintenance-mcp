@@ -39,12 +39,13 @@ from ..signal_validation import (
     validate_positive_finite,
     validate_sampling_rate,
 )
-from ._call_origin import is_direct_local_call
+from ._call_origin import NETWORK_FILES_CLOSED, signal_file_access
 from ._utils import refusal_boundary
 
 logger = logging.getLogger(__name__)
 
-#: The refusal of a file outside the data directory; it names no path.
+#: The refusal, under the operator's opt-in, of a file outside the data
+#: directory; it names no path.
 _NETWORK_FILE_REFUSAL = (
     "This file is not read for a network connection: this server does not "
     "authenticate its clients, so a caller that may be on another machine "
@@ -55,13 +56,17 @@ _NETWORK_FILE_REFUSAL = (
 )
 
 
-def _refuse_outside_data_dir(ctx: Any, filepath: "str | list[str]") -> None:
-    """Refuse a load that may come from another machine and leaves the data
-    directory: first on the path's text, with no file-system call, then with
-    its links followed the way the repository will open it, for the file and
-    for the companion read beside it."""
-    if is_direct_local_call(ctx):
+def _refuse_network_file_access(ctx: Any, filepath: "str | list[str]") -> None:
+    """Refuse a load that may come from another machine: every load, unless
+    the operator opted in, and then any path leaving the data directory, first
+    on the path's text with no file-system call, then with its links followed
+    the way the repository will open it, for the file and for the companion
+    read beside it."""
+    access = signal_file_access(ctx)
+    if access == "all":
         return
+    if access == "none":
+        raise ValueError(NETWORK_FILES_CLOSED)
     data_dir = config.DATA_DIR
     for raw in [filepath] if isinstance(filepath, str) else filepath:
         try:
@@ -161,6 +166,8 @@ async def list_signals(
         }
 
     # scope == "disk"
+    if signal_file_access(ctx) == "none":
+        raise ValueError(NETWORK_FILES_CLOSED)
     files: list[str] = []
     if DATA_DIR.exists():
         for file_path in DATA_DIR.glob("**/*"):
@@ -426,7 +433,7 @@ async def load_signal(
             everything missing plus both remedies), or raw parameters
             are declared for a self-describing format.
     """
-    _refuse_outside_data_dir(ctx, filepath)
+    _refuse_network_file_access(ctx, filepath)
     repo = get_repository()
 
     if isinstance(filepath, list):

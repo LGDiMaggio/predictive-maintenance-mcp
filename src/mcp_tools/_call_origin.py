@@ -13,8 +13,29 @@ loopback ``Host`` cannot be told from a direct call.
 """
 
 import ipaddress
+import os
 from collections.abc import Mapping
-from typing import Any, Optional
+from typing import Any, Literal, Optional
+
+#: The operator's opt-in to serve the data directory to network callers.
+NETWORK_DATA_DIR_OPT_IN = "PMM_ALLOW_NETWORK_DATA_DIR_ACCESS"
+
+#: The only values that turn the opt-in on; anything else leaves files closed.
+_ON_VALUES = frozenset({"1", "true", "yes", "on"})
+
+#: The refusal of a signal-file read for a caller that may be on another
+#: machine, while the operator has not opted in. It names no path.
+NETWORK_FILES_CLOSED = (
+    "Signal files are not read for a network connection: this server does not "
+    "authenticate its clients. Use stdio, or start the server on 127.0.0.1 from "
+    "its command line and reach it directly. An operator who controls who can "
+    f"reach this server can set {NETWORK_DATA_DIR_OPT_IN}=1 to serve files under "
+    "the data directory; that setting is not authentication."
+)
+
+#: Which local signal files a call may read: every path, only the data
+#: directory, or none.
+SignalFileAccess = Literal["all", "data_dir", "none"]
 
 #: Network transports (they open a socket; stdio does not).
 NETWORK_TRANSPORTS: tuple[str, ...] = ("sse", "streamable-http")
@@ -123,3 +144,24 @@ def is_direct_local_call(ctx: Any) -> bool:
         and not any(name in headers for name in _FORWARDING_HEADERS)
         and is_loopback_host(_host_name(headers.get("host", "")))
     )
+
+
+def network_data_dir_access_enabled() -> bool:
+    """Whether the operator opted in to serving the data directory to network
+    callers. Read at each call. The setting states that the operator controls
+    who can reach this server; it authenticates nobody."""
+    value = os.environ.get("PMM_ALLOW_NETWORK_DATA_DIR_ACCESS", "")
+    return value.strip().lower() in _ON_VALUES
+
+
+def signal_file_access(ctx: Any) -> SignalFileAccess:
+    """Which local signal files this call may read.
+
+    A direct local call reads every path it could before. Any other call
+    reads none, unless the operator opted in, and then only the data
+    directory. The signal import tools do not use this: they stay refused for
+    every call that is not direct and local.
+    """
+    if is_direct_local_call(ctx):
+        return "all"
+    return "data_dir" if network_data_dir_access_enabled() else "none"
