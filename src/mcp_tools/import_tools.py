@@ -16,10 +16,8 @@ unaffected. Remote import with server-side authentication is not part of this
 version.
 """
 
-import ipaddress
 import logging
 import os
-from collections.abc import Mapping
 from typing import Any, Literal, Optional, Union
 
 from mcp.server.mcpserver import Context, MCPServer
@@ -44,6 +42,15 @@ from ..signal_import.service import (
     record_locations,
 )
 from ..signal_import.validation import validate_import
+from ._call_origin import (  # noqa: F401 (re-exported for server.main)
+    NETWORK_TRANSPORTS,
+    _SERVER,
+    _host_name,
+    configure_server_transport,
+    is_direct_local_call,
+    is_loopback_host,
+    is_remote_transport,
+)
 from ._utils import refusal_boundary
 
 logger = logging.getLogger(__name__)
@@ -58,54 +65,10 @@ REMOTE_OPT_IN = "PMM_IMPORT_ALLOW_REMOTE"
 #: for remote import.
 _OFF_VALUES = frozenset({"", "0", "false", "no", "off"})
 
-#: Network transports (they open a socket; stdio does not).
-NETWORK_TRANSPORTS: tuple[str, ...] = ("sse", "streamable-http")
 
 #: Default and largest page of ``get_signal_imports``.
 DEFAULT_IMPORTS_PAGE = 20
 MAX_IMPORTS_PAGE = 100
-
-#: Headers a reverse proxy adds: a call carrying one did not come from this
-#: machine directly.
-_FORWARDING_HEADERS: tuple[str, ...] = (
-    "forwarded",
-    "x-forwarded-for",
-    "x-forwarded-host",
-    "x-real-ip",
-)
-
-#: The transport and bind address ``server.main`` records before the server
-#: starts; both stay None when the server was started any other way.
-_SERVER: dict[str, Optional[str]] = {"transport": None, "host": None}
-
-
-def is_loopback_host(host: Optional[str]) -> bool:
-    """Whether binding *host* keeps the socket on this machine.
-
-    ``localhost`` (any letter case) and every loopback address (127.0.0.0/8,
-    ``::1``, an IPv4-mapped loopback, with or without brackets) count. An
-    empty host, a wildcard (``0.0.0.0``, ``::``), any other address and any
-    other name do not: a name could resolve anywhere.
-    """
-    if host is None:
-        return False
-    text = host.strip()
-    if text.lower() == "localhost":
-        return True
-    if text.startswith("[") and text.endswith("]"):
-        text = text[1:-1]
-    try:
-        address = ipaddress.ip_address(text)
-    except ValueError:
-        return False
-    if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped is not None:
-        return address.ipv4_mapped.is_loopback
-    return address.is_loopback
-
-
-def is_remote_transport(transport: str, host: Optional[str]) -> bool:
-    """A network transport bound to an address other clients can reach."""
-    return transport in NETWORK_TRANSPORTS and not is_loopback_host(host)
 
 
 def remote_opt_in_refusal(
@@ -132,59 +95,15 @@ def remote_opt_in_refusal(
     )
 
 
-def configure_server_transport(transport: str, host: Optional[str]) -> None:
-    """Record the transport the server is about to run on (``server.main``)."""
-    _SERVER["transport"] = transport
-    _SERVER["host"] = host
-
-
 def _transport() -> str:
     """The transport an attestation records (stdio when none was recorded)."""
     return _SERVER["transport"] or "stdio"
 
 
-def _request_headers(ctx: Any) -> Optional[Mapping[str, str]]:
-    """The HTTP headers of the call, or None for a call that did not arrive
-    over HTTP (stdio, an in-process client, a direct Python call)."""
-    if ctx is None:
-        return None
-    try:
-        headers = ctx.headers
-    except (AttributeError, LookupError, ValueError, RuntimeError):
-        return None
-    return headers if isinstance(headers, Mapping) else None
-
-
-def _host_name(host_header: str) -> str:
-    """The name or address of a Host header, without its port."""
-    text = host_header.strip()
-    if text.startswith("["):
-        return text[1 : text.find("]")] if "]" in text else text
-    if text.count(":") == 1:
-        return text.split(":", 1)[0]
-    return text
-
-
 def _refuse_remote(ctx: Any) -> None:
-    """Refuse an import call that may come from another machine.
-
-    A call over HTTP is accepted only when the server was started on a
-    loopback address through its command line (the transport recorded), the
-    call carries no proxy forwarding header and its Host is a loopback name or
-    address; anything else, a server started another way included, is refused.
-    """
-    transport, host = _SERVER["transport"], _SERVER["host"]
-    headers = _request_headers(ctx)
-    remote = transport is not None and is_remote_transport(transport, host)
-    if headers is not None:
-        remote = (
-            remote
-            or transport not in NETWORK_TRANSPORTS
-            or not is_loopback_host(host)
-            or any(name in headers for name in _FORWARDING_HEADERS)
-            or not is_loopback_host(_host_name(headers.get("host", "")))
-        )
-    if remote:
+    """Refuse an import call that may come from another machine (see
+    :func:`~predictive_maintenance_mcp.mcp_tools._call_origin.is_direct_local_call`)."""
+    if not is_direct_local_call(ctx):
         raise ImportRefused(
             "remote_import_refused",
             "File import is refused over a network connection that another "

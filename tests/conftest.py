@@ -159,6 +159,16 @@ def patch_data_dir(monkeypatch, signals_dir: Path) -> None:
 # Fixtures
 
 
+@pytest.fixture(autouse=True)
+def _no_recorded_transport():
+    """A test that runs ``server.main`` records a transport for the whole
+    process; the next test must not inherit the call-origin decision."""
+    from predictive_maintenance_mcp.mcp_tools._call_origin import _SERVER
+
+    yield
+    _SERVER.update(transport=None, host=None)
+
+
 @pytest.fixture
 def sandbox_data_dir(tmp_path, monkeypatch) -> Path:
     """An empty ``data/signals`` sandbox seen by every ``DATA_DIR`` import site.
@@ -196,6 +206,7 @@ IMPORT_ACCESS_VARIABLES = (
     "PMM_IMPORT_ROOTS",
     "PMM_IMPORT_ALLOW_REMOTE",
     "PMM_IMPORT_REMOTE_ROOTS",
+    "PMM_ALLOW_NETWORK_DATA_DIR_ACCESS",
 )
 
 

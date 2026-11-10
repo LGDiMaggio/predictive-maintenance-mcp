@@ -26,6 +26,11 @@ from .config import (
     get_ledger_dir,
 )
 from .mcp_tools import import_tools, register_all
+from .mcp_tools._call_origin import (
+    NETWORK_DATA_DIR_OPT_IN,
+    is_loopback_host,
+    network_data_dir_access_enabled,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -707,6 +712,19 @@ def main():
         # the attempt, which put a false success line directly above the
         # traceback of a port conflict.
         logger.info(f"Binding to {args.host}:{args.port}")
+        if network_data_dir_access_enabled():
+            logger.warning(
+                f"{NETWORK_DATA_DIR_OPT_IN} is set: network clients can read signal "
+                f"files under the data directory. This setting is not "
+                f"authentication; keep this server reachable only through network "
+                f"access you control."
+            )
+        elif not is_loopback_host(args.host):
+            logger.warning(
+                f"Signal files are not read for network clients on this address. "
+                f"An operator who controls who can reach this server can set "
+                f"{NETWORK_DATA_DIR_OPT_IN}=1; that setting is not authentication."
+            )
 
     # mcp 2.x dropped Settings.host/port: the bind address is a per-transport
     # run() kwarg now. The stdio overload declares neither, so the branch
