@@ -76,14 +76,27 @@ rolling-element window lies at a shaft order and may be a shaft harmonic, a
 sensitivity cost accepted to avoid naming the wrong type. Harmonics
 and sidebands of one spectrum are correlated symptoms, never independent
 evidence (ISO 13379-1:2012, 5.1.3).
+
+Corroboration rules. The released rule, ``any_line``, is the default of every
+call: a check is corroborated when at least one eligible further line is
+significant on its own. ``controlled_union_v1`` is experimental, selected per
+call and never a default; see :func:`_controlled_union_decision`. It changes
+only that decision, and records it apart from the lines, in the check's
+``aggregate_corroboration``: ``significant`` and the released exclusions keep
+their meaning, a line is ``counted`` only when it is significant on its own,
+and a check the rule supports through its combined test can have no counted
+line. Its Fisher combination assumes independent lines, which lines of one
+spectrum are not, so its nominal level is not a bound on the realized rate; it
+was calibrated as a whole on synthetic signals only.
 """
 
 import math
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Any, NamedTuple, Optional
+from typing import Any, Mapping, NamedTuple, Optional
 
 import numpy as np
+from scipy import stats
 from scipy.optimize import brentq
 
 #: Nominal family-wise false-alarm budget of one complete check, split by
@@ -91,6 +104,15 @@ from scipy.optimize import brentq
 CHECK_FALSE_ALARM_PROBABILITY = 0.01
 #: Nominal false-alarm budget of one corroborating window, over its bins.
 CORROBORATION_FALSE_ALARM_PROBABILITY = 0.01
+#: The released corroboration rule, the default of every call: at least one
+#: eligible further line significant on its own.
+CORROBORATION_RULE_ANY_LINE = "any_line"
+#: Experimental corroboration rule, selected per call and never a default.
+CORROBORATION_RULE_CONTROLLED_UNION = "controlled_union_v1"
+CORROBORATION_RULES = (CORROBORATION_RULE_ANY_LINE, CORROBORATION_RULE_CONTROLLED_UNION)
+#: ``excluded_by`` of a line significant on its own, at no shaft order and not
+#: shared, whose check an aggregate rule does not corroborate.
+EXCLUDED_BY_AGGREGATE_RULE = "aggregate_rule"
 #: A local maximum strictly inside a window needs three bins.
 MIN_SEARCH_BINS = 3
 #: Fewest reference bins from which the floor is estimated.
@@ -526,6 +548,156 @@ def _join(items: list[str]) -> str:
     return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1]
 
 
+def validate_corroboration_rule(rule: object) -> None:
+    """Refuse anything but a named corroboration rule.
+
+    Raises:
+        ValueError: For a name outside :data:`CORROBORATION_RULES`.
+    """
+    if rule not in CORROBORATION_RULES:
+        raise ValueError(
+            f"corroboration_rule must be one of {list(CORROBORATION_RULES)}, "
+            f"got {rule!r}."
+        )
+
+
+def _family_level(members: int) -> float:
+    """Nominal level of the released any-line rule over ``members`` lines."""
+    return 1.0 - (1.0 - CORROBORATION_FALSE_ALARM_PROBABILITY) ** members
+
+
+def _per_bin_probability(member: Mapping[str, Any]) -> float:
+    return os_cfar_false_alarm_probability(
+        member["ratio"], member["reference_bins"], member["reference_rank"]
+    )
+
+
+def _window_p_value(member: Mapping[str, Any]) -> float:
+    """Exact p-value of a window's strongest bin, 1 - (1 - P)^M, kept inside (0, 1)."""
+    per_bin = _per_bin_probability(member)
+    p = (
+        1.0
+        if per_bin >= 1.0
+        else -math.expm1(member["search_bins"] * math.log1p(-per_bin))
+    )
+    return min(max(p, 1e-300), math.nextafter(1.0, 0.0))
+
+
+def _single_line_p_value(member: Mapping[str, Any]) -> float:
+    """The released line test as a p-value: M x per-bin probability, capped at 1."""
+    return float(min(1.0, member["search_bins"] * _per_bin_probability(member)))
+
+
+def _fisher_p_value(p_values: list[float]) -> float:
+    """Fisher's combination of p-values inside (0, 1)."""
+    p = np.asarray(p_values, dtype=float)
+    return float(stats.chi2.sf(-2.0 * float(np.sum(np.log(p))), 2 * p.size))
+
+
+def _controlled_union_decision(
+    members: list[dict[str, Any]], eligible: list[int]
+) -> dict[str, Any]:
+    """The ``controlled_union_v1`` decision over one family (experimental).
+
+    With m eligible lines (testable, strongest bin neither at a shaft order nor
+    shared), the budget is L = 1 - (1 - CORROBORATION_FALSE_ALARM_PROBABILITY)^m,
+    the nominal level of the released rule over those lines. The check is
+    corroborated when an eligible local-maximum line is significant on its own
+    at L / (2 m) (Bonferroni, valid under any dependence), or when Fisher's
+    combination of the eligible local-maximum lines reaches L / 2. By the union
+    bound the nominal level stays at most L. Lines that are not local maxima
+    are left out of the pool, and no line enters with the no-evidence value
+    p = 1.
+
+    The split of the budget and its scale are part of the rule's identity and
+    are not parameters: a change is a new rule with a new name.
+
+    Args:
+        members: The family's measured lines.
+        eligible: Positions in *members* of the eligible lines.
+
+    Returns:
+        The record stored as the check's ``aggregate_corroboration``.
+    """
+    pooled = [k for k in eligible if members[k]["local_maximum"]]
+    record: dict[str, Any] = {
+        "rule": CORROBORATION_RULE_CONTROLLED_UNION,
+        "eligible_lines": len(eligible),
+        "pooled_lines": len(pooled),
+        # Which further lines the combined test used (positions in the check's
+        # corroboration list), and their kinds.
+        "pooled_members": pooled,
+        "pooled_kinds": sorted({members[k]["kind"] for k in pooled}),
+        "budget": None,
+        "combined_p_value": None,
+        "combined_level": None,
+        "single_line_level": None,
+        "single_lines": 0,
+        "corroborated": False,
+        "basis": None,
+    }
+    if not eligible:
+        return record
+    single_line_share = 0.5
+    budget = _family_level(len(eligible))
+    p_values = [_window_p_value(members[k]) for k in pooled]
+    combined_level = (1.0 - single_line_share) * budget
+    combined_p = _fisher_p_value(p_values) if p_values else None
+    combined = combined_p is not None and combined_p <= combined_level
+    single_level = single_line_share * budget / len(eligible)
+    single = sum(_single_line_p_value(members[k]) <= single_level for k in pooled)
+    basis = "single_line" if single else ("combined" if combined else None)
+    record.update(
+        budget=budget,
+        combined_p_value=combined_p,
+        combined_level=combined_level,
+        single_line_level=single_level,
+        single_lines=single,
+        corroborated=basis is not None,
+        basis=basis,
+    )
+    return record
+
+
+def _combined_only(check: Mapping[str, Any]) -> bool:
+    """Whether an aggregate rule supports the check by its combined test alone.
+
+    No further line is then counted on its own, so a sentence that presumes a
+    counted line would overstate the evidence. Never true for the released rule.
+    """
+    decision = check.get("aggregate_corroboration") or {}
+    return decision.get("basis") == "combined" and not any(
+        entry["counted"] for entry in check["corroboration"]
+    )
+
+
+_CONTROLLED_UNION_NAME = "the experimental controlled_union_v1 corroboration rule"
+
+
+def _combined_clause(bearing: bool, check: Mapping[str, Any]) -> str:
+    """The clause naming the further lines a combined test used.
+
+    It says only that those lines reach the combined level, and that none of
+    them is significant in its own line test: under a combined-only decision a
+    significant pooled line would be counted, as it is eligible. One of them
+    may lie below the local noise floor.
+    """
+    pooled = check["aggregate_corroboration"]["pooled_members"]
+    at_hz = _join([f"{check['corroboration'][k]['peak_hz']:.2f}" for k in pooled])
+    level = f"the combined level of {_CONTROLLED_UNION_NAME}"
+    if len(pooled) == 1:
+        noun = "further line its kinematics predict" if bearing else "of its harmonics"
+        return (
+            f"1 {noun} (at {at_hz} Hz), not significant in its own line test, "
+            f"reaches {level}"
+        )
+    nouns = "further lines its kinematics predict" if bearing else "of its harmonics"
+    return (
+        f"{len(pooled)} {nouns} (at {at_hz} Hz), none significant in its own line "
+        f"test, tested together, reach {level}"
+    )
+
+
 def evaluate_hypotheses(
     freqs: np.ndarray,
     mags: np.ndarray,
@@ -537,6 +709,7 @@ def evaluate_hypotheses(
     tolerance_pct: float = 5.0,
     catalog: bool = False,
     envelope_band_hz: Optional[float] = None,
+    corroboration_rule: str = CORROBORATION_RULE_ANY_LINE,
 ) -> dict[str, Any]:
     """Evaluate every hypothesis of a check on one envelope spectrum.
 
@@ -558,6 +731,9 @@ def evaluate_hypotheses(
             from (band high minus band low). Lines and references are used
             only below ``USABLE_BAND_FRACTION`` of it; None uses the whole
             spectrum.
+        corroboration_rule: ``any_line`` (the released rule, the default) or
+            the experimental ``controlled_union_v1``, which adds the check's
+            ``aggregate_corroboration`` record.
 
     Returns:
         ``checks`` (one dict per hypothesis, in input order, with the
@@ -566,7 +742,11 @@ def evaluate_hypotheses(
         ``next_step``,
         ``candidates`` (supported hypotheses, strongest first) and
         ``evidence_policy``.
+
+    Raises:
+        ValueError: For an unknown ``corroboration_rule``.
     """
+    validate_corroboration_rule(corroboration_rule)
     freqs = np.asarray(freqs, dtype=float)
     mags = np.asarray(mags, dtype=float)
     df = float(freqs[1] - freqs[0])
@@ -650,6 +830,27 @@ def evaluate_hypotheses(
                     "untestable_reason": member["untestable_reason"],
                 }
             )
+        corroborated = any(c["counted"] for c in corroboration)
+        decision = None
+        if corroboration_rule != CORROBORATION_RULE_ANY_LINE and n in families:
+            # Eligible: the released exclusions applied to every testable line,
+            # significant or not.
+            decision = _controlled_union_decision(
+                families[n],
+                [
+                    k
+                    for k, member in enumerate(families[n])
+                    if member["testable"]
+                    and not _at_shaft_order(member["peak_hz"], order_hz, df)
+                    and not sharers(n, member["peak_hz"])
+                ],
+            )
+            corroborated = decision["corroborated"]
+            if not corroborated:
+                for entry in corroboration:
+                    if entry["counted"]:
+                        entry["counted"] = False
+                        entry["excluded_by"] = EXCLUDED_BY_AGGREGATE_RULE
         shared_with = sharers(n, line["peak_hz"]) if line["significant"] else []
         if not line["testable"]:
             state, reason = "not_testable", line["untestable_reason"]
@@ -659,7 +860,7 @@ def evaluate_hypotheses(
             state, reason = "unconfirmed", "line_at_shaft_order"
         elif shared_with:
             state, reason = "shared", "line_shared"
-        elif any(c["counted"] for c in corroboration):
+        elif corroborated:
             state, reason = "supported", "corroborated"
         else:
             state, reason = "unconfirmed", "no_corroboration"
@@ -687,6 +888,8 @@ def evaluate_hypotheses(
                 "shared_with": shared_with,
             }
         )
+        if decision is not None:
+            checks[-1]["aggregate_corroboration"] = decision
 
     _hold_back_lone_cage(hypotheses, lines, checks)
     for n, (line, check) in enumerate(zip(lines, checks)):
@@ -725,7 +928,9 @@ def evaluate_hypotheses(
         "outcome_reason": reason,
         "next_step": step,
         "candidates": candidates,
-        "evidence_policy": evidence_policy(tolerance_pct, num_harmonics),
+        "evidence_policy": evidence_policy(
+            tolerance_pct, num_harmonics, corroboration_rule
+        ),
     }
 
 
@@ -769,14 +974,18 @@ def _derived_check_fields(
     deviation relative to the line tested (2 x BSF for the rolling element);
     ``harmonics_detected`` lists the counted harmonics anchored at it; and
     ``evidence_strength`` grades the state, counting corroborating lines of
-    one spectrum, never a probability.
+    one spectrum, never a probability. A check the experimental rule supports
+    by its combined test alone has no counted line and grades ``low``.
     """
     counted = [
         member
         for member, entry in zip(members, check["corroboration"])
         if entry["counted"]
     ]
-    if check["state"] == "supported":
+    if check["state"] == "supported" and _combined_only(check):
+        # Support from the experimental rule's combined test, with no line counted.
+        strength = "low"
+    elif check["state"] == "supported":
         strength = "high" if len(counted) >= 2 else "moderate"
     elif check["state"] in _WEAK_STATES:
         strength = "low"
@@ -808,15 +1017,44 @@ def _derived_check_fields(
     }
 
 
-def evidence_policy(tolerance_pct: float, num_harmonics: int) -> dict[str, Any]:
-    """The policy record echoed in a result, with the call's window settings."""
-    return {
+def evidence_policy(
+    tolerance_pct: float,
+    num_harmonics: int,
+    corroboration_rule: str = CORROBORATION_RULE_ANY_LINE,
+) -> dict[str, Any]:
+    """The policy record echoed in a result, with the call's window settings.
+
+    A check of the released rule carries the released record unchanged; a
+    check of the experimental rule names it, with its own version, assumption
+    and exclusion.
+    """
+    record = {
         **EVIDENCE_POLICY,
         "assumptions": list(EVIDENCE_POLICY["assumptions"]),
         "exclusions": list(EVIDENCE_POLICY["exclusions"]),
         "search_window_pct": float(tolerance_pct),
         "harmonics_tested": int(num_harmonics),
     }
+    if corroboration_rule != CORROBORATION_RULE_ANY_LINE:
+        record["version"] = EVIDENCE_POLICY["version"] + 1
+        record["corroboration_rule"] = corroboration_rule
+        record["assumptions"].append(_CONTROLLED_UNION_ASSUMPTION)
+        record["exclusions"].append(_CONTROLLED_UNION_EXCLUSION)
+    return record
+
+
+#: Evidence-policy entries of the experimental rule (wording is a proposal).
+_CONTROLLED_UNION_ASSUMPTION = (
+    "Under the experimental controlled_union_v1 corroboration rule, Fisher's "
+    "combination of the further lines assumes independent lines. Lines of one "
+    "envelope spectrum are correlated and share reference regions, so its nominal "
+    "level does not bound the realized rate."
+)
+_CONTROLLED_UNION_EXCLUSION = (
+    "The experimental controlled_union_v1 corroboration rule was calibrated on "
+    "synthetic signals only: nothing about its behaviour on real machines is "
+    "established by that calibration."
+)
 
 
 def _rounded(value: Optional[float], digits: int) -> Optional[float]:
@@ -853,8 +1091,8 @@ def _outcome_text(
         names = _NAMES.get(hypotheses[n].canonical or "")
         found = (
             f"{_at(hypotheses[n], checks[n])} stands {checks[n]['level_db']:.1f} dB "
-            f"above the local noise floor, and {_further_count(hypotheses[n], checks[n])} "
-            "above the floor in the same spectrum."
+            f"above the local noise floor, and {_further_count(hypotheses[n], checks[n])}"
+            f"{'' if _combined_only(checks[n]) else ' above the floor'} in the same spectrum."
         )
         if names:
             reasons.append(
@@ -885,9 +1123,16 @@ def _outcome_text(
             f"{_at(hypotheses[n], checks[n])} ({checks[n]['level_db']:.1f} dB)"
             for n in supported
         ]
+        corroborated_by = (
+            "corroborated in the same spectrum, by a line of its own or, under "
+            f"{_CONTROLLED_UNION_NAME}, by further lines that reach its combined "
+            "level, none of them significant in its own line test"
+            if any(_combined_only(checks[n]) for n in supported)
+            else "corroborated by a line of its own in the same spectrum"
+        )
         reasons.append(
             "Several tested lines stand above the local noise floor, each "
-            f"corroborated by a line of its own in the same spectrum: {_join(listed)}. "
+            f"{corroborated_by}: {_join(listed)}. "
             "They are listed by level above the floor, which does not rank them, and "
             "the envelope evidence does not single out one of them."
         )
@@ -985,6 +1230,8 @@ def _at(hypothesis: Hypothesis, check: dict[str, Any]) -> str:
 
 def _further_count(hypothesis: Hypothesis, check: dict[str, Any]) -> str:
     """'2 further lines its kinematics predict also stand' (counted lines)."""
+    if _combined_only(check):
+        return _combined_clause(hypothesis.canonical in _NAMES, check)
     count = sum(c["counted"] for c in check["corroboration"])
     if hypothesis.canonical in _NAMES:
         noun = "further line its kinematics predict"
@@ -1054,6 +1301,11 @@ def _weak_sentence(
     members = check["corroboration"]
     if not members:
         return f"{found} no further line is tested for it at these settings."
+    if any(m["excluded_by"] == EXCLUDED_BY_AGGREGATE_RULE for m in members):
+        return (
+            f"{found} {_CONTROLLED_UNION_NAME} does not accept {further}, although "
+            "at least one of them stands above the floor on its own."
+        )
     if any(m["significant"] for m in members):
         return (
             f"{found} those of {further} that also stand above the floor lie at a "

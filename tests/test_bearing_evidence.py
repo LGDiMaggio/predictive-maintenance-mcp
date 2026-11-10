@@ -362,7 +362,12 @@ class TestPolicy:
 
         assert sorted(constants) == sorted(tunables.values())
         assert {k: record[k] for k in tunables} == tunables
-        assert set(record) == set(BearingEvidencePolicy.model_fields)
+        # The released record never names a rule; only an experimental one does.
+        assert set(record) == set(BearingEvidencePolicy.model_fields) - {
+            "corroboration_rule"
+        }
+        experimental = evidence_policy(5.0, 3, E.CORROBORATION_RULE_CONTROLLED_UNION)
+        assert set(experimental) == set(BearingEvidencePolicy.model_fields)
 
 
 class TestCageAndRollingElement:

@@ -159,6 +159,7 @@ from ..signal_acquisition.measurement import (
 )
 from ..signal_validation import validate_finite_samples
 from .assessment import (
+    _snapshot_rule,
     MAX_LISTED_ITEMS,
     MIN_REFERENCE_MEASUREMENTS,
     AssessmentParams,
@@ -174,6 +175,7 @@ from .assessment import (
 from .comparability import assess_measurement_comparability, build_reference_context
 from .snapshot import (
     BEARING_LABELS,
+    CORROBORATION_RULE_ANY_LINE,
     VIEW_BLOCKER_CODES,
     SnapshotPolicy,
     compute_health_snapshot,
@@ -2306,9 +2308,12 @@ def _run_reprocess(
         token_out = _cursor_token(
             last, digest_of(last, passed_ids, codes, counts), codes, counts
         )
+    # The re-processing tool writes the released lineage only: a run under
+    # another rule continues by repeating its own call with the same policy.
+    rule = (SnapshotPolicy() if policy is None else policy).corroboration_rule
     next_call = (
         reprocess_call(asset_id, measurement_point_id, params=params, cursor=token_out)
-        if remaining_ids
+        if remaining_ids and rule == CORROBORATION_RULE_ANY_LINE
         else None
     )
 
@@ -2409,7 +2414,14 @@ def _run_reprocess(
             )
         message += f", {len(remaining_ids)} stale measurement(s) remaining"
         if sequence_state == "continue":
-            message += f"; call {next_call} to continue"
+            message += (
+                f"; call {next_call} to continue"
+                if next_call is not None
+                else (
+                    "; repeat this call with the same policy"
+                    f"{' and next_cursor' if token_out else ''} to continue"
+                )
+            )
         elif sequence_state == "complete":
             message += (
                 "; the sequence is complete: every stale measurement that "
@@ -2747,14 +2759,20 @@ def _integrity_summary(integrity: Mapping[str, Any]) -> dict[str, Any]:
 def _latest_lineage(
     view: Mapping[str, Any], measurement_ids: Sequence[str]
 ) -> Optional[str]:
-    """The ``processing_id`` of the most recently recorded snapshot among
-    the measurements, or None when none has a snapshot."""
+    """The ``processing_id`` of the most recently recorded snapshot of the
+    released corroboration rule among the measurements, or None when none
+    has one."""
     latest: Optional[str] = None
     latest_position = -1
     measurements = view.get("measurements") or {}
     for measurement_id in measurement_ids:
         slot = measurements.get(measurement_id) or {}
+        by_lineage = slot.get("snapshots_by_lineage") or {}
         for processing, position in (slot.get("lineage_positions") or {}).items():
+            if _snapshot_rule(by_lineage.get(processing) or {}) != (
+                CORROBORATION_RULE_ANY_LINE
+            ):
+                continue
             if isinstance(position, int) and position > latest_position:
                 latest, latest_position = str(processing), position
     return latest

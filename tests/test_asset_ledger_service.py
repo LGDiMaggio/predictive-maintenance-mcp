@@ -3530,3 +3530,142 @@ class TestManyFailures:
         }
         assert listed == set(failing)
         assert len(events_of(store)) == events + 5
+
+
+# ---------------------------------------------------------------------------
+# Lineages of the experimental corroboration rule
+# ---------------------------------------------------------------------------
+
+
+class TestCorroborationRuleLineages:
+    """A lineage of the experimental rule is never read as the released one."""
+
+    UNION = SnapshotPolicy(corroboration_rule="controlled_union_v1")
+
+    def _released_then_union(self, store: LedgerStore, data_dir: Path) -> list[str]:
+        declare_point(store)
+        ids = load_sequence(store, data_dir, 12, policy=None)
+        response = reprocess(store, data_dir, policy=self.UNION)
+        while response["remaining"]:
+            assert response["next_call"] is None
+            assert "repeat this call with the same policy" in response["message"]
+            response = reprocess(
+                store, data_dir, policy=self.UNION, cursor=response["next_cursor"]
+            )
+        return ids
+
+    def test_released_assessment_ignores_a_more_recent_experimental_lineage(
+        self, store, data_dir
+    ):
+        declare_point(store)
+        load_sequence(store, data_dir, 12, policy=None)
+        view = store.read_view(ASSET)
+        before = assess_change(view, ASSET, POINT)
+
+        for call in range(3):
+            response = reprocess(
+                store,
+                data_dir,
+                policy=self.UNION,
+                cursor=None if call == 0 else response["next_cursor"],
+            )
+            if not response["remaining"]:
+                break
+
+        after = assess_change(store.read_view(ASSET), ASSET, POINT)
+        assert after["status"] == "assessed"
+        assert after["lineage"] == before["lineage"]
+        assert after["lineage"]["processing_id"] == processing_id()
+        assert after["lineage"]["is_current"] is True
+        assert "corroboration_rule" not in after["lineage"]
+        assert after["assessed"] == before["assessed"]
+        assert after["observed"] == before["observed"]
+        assert "experimental" not in after["message"]
+
+    def test_experimental_assessment_reads_its_own_lineage_and_says_so(
+        self, store, data_dir
+    ):
+        self._released_then_union(store, data_dir)
+
+        result = assess_change(store.read_view(ASSET), ASSET, POINT, policy=self.UNION)
+
+        assert result["status"] == "assessed"
+        assert result["lineage"]["processing_id"] == processing_id(self.UNION)
+        assert result["lineage"]["is_current"] is True
+        assert result["lineage"]["corroboration_rule"] == "controlled_union_v1"
+        assert list(result["lineage"]["candidates"]) == [processing_id(self.UNION)]
+        assert "experimental controlled_union_v1" in result["message"]
+        assert "synthetic signals only" in result["message"]
+
+    def test_released_assessment_does_not_cover_with_an_experimental_lineage(
+        self, store, data_dir
+    ):
+        declare_point(store)
+        load_sequence(store, data_dir, 12, policy=self.UNION)
+
+        result = assess_change(store.read_view(ASSET), ASSET, POINT)
+
+        assert result["status"] == "processing_not_homogeneous"
+        assert result["lineages"] == {}
+        assert result["other_rule_lineages"] == [processing_id(self.UNION)]
+        assert result["current_processing_id"] == processing_id()
+        assert "of the any_line corroboration rule" in result["message"]
+        assert "of another corroboration rule are not read" in result["message"]
+
+    def test_no_message_changes_on_a_ledger_without_experimental_lineages(
+        self, store, data_dir
+    ):
+        declare_point(store)
+        load_sequence(store, data_dir, 12, policy=OLD_POLICY)
+
+        result = assess_change(store.read_view(ASSET), ASSET, POINT)
+
+        assert "other_rule_lineages" not in result
+        assert "corroboration_rule" not in result["lineage"]
+        assert "corroboration rule" not in result["message"]
+
+    def test_experimental_remedy_never_names_the_released_tool(self, store, data_dir):
+        declare_point(store)
+        load_sequence(store, data_dir, 12, policy=None)
+
+        result = assess_change(store.read_view(ASSET), ASSET, POINT, policy=self.UNION)
+
+        assert result["status"] == "processing_not_homogeneous"
+        assert result["lineages"] == {}
+        assert result["other_rule_lineages"] == [processing_id()]
+        assert "reprocess_stale_snapshots" in result["remedy"]
+        assert "assess_asset_change" not in result["remedy"]
+
+    def test_experimental_stale_verdict_names_no_released_call(self, store, data_dir):
+        """The released re-processing call cannot write this rule's lineage."""
+        declare(store, 2)
+        load_sequence(store, data_dir, 11, policy=self.UNION)
+        declare(store, 1)
+
+        result = assess_change(store.read_view(ASSET), ASSET, POINT, policy=self.UNION)
+
+        assert result["status"] == "assessed"
+        assert result["lineage"]["stale_context"] == 11
+        assert "under a previous declaration" in result["message"]
+        assert "assess_asset_change" not in result["message"]
+
+    def test_experimental_reprocessing_names_no_released_continuation(
+        self, store, data_dir
+    ):
+        declare_point(store)
+        load_sequence(store, data_dir, 12, policy=None)
+
+        first = reprocess(store, data_dir, policy=self.UNION)
+
+        assert first["processing_id"] == processing_id(self.UNION)
+        assert first["remaining"] == 2
+        assert first["next_call"] is None
+        assert "repeat this call with the same policy" in first["message"]
+        assert "assess_asset_change" not in first["message"]
+
+    def test_latest_lineage_of_the_history_stays_released(self, store, data_dir):
+        ids = self._released_then_union(store, data_dir)
+
+        latest = service._latest_lineage(store.read_view(ASSET), ids)
+
+        assert latest == processing_id()

@@ -423,13 +423,14 @@ def golden_repo(tmp_path_factory):
 
 class TestPolicyAndLineage:
     def test_default_policy(self):
-        assert SnapshotPolicy() == (5.0, 3, "default", 1.0, 5.0)
+        assert SnapshotPolicy() == (5.0, 3, "default", 1.0, 5.0, "any_line")
         assert SnapshotPolicy._fields == (
             "tolerance_pct",
             "num_harmonics",
             "envelope_band_policy",
             "fft_segment_s",
             "one_x_tolerance_pct",
+            "corroboration_rule",
         )
 
     def test_processing_id_is_family_version_and_policy_hash(self):

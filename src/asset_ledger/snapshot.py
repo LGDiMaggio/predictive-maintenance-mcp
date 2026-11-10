@@ -51,7 +51,9 @@ from ..diagnostics.bearing_catalog import compute_fault_frequencies
 from ..diagnostics.bearing_evidence import (
     CHECK_FALSE_ALARM_PROBABILITY,
     CORROBORATION_FALSE_ALARM_PROBABILITY,
+    CORROBORATION_RULE_ANY_LINE,
     Hypothesis,
+    validate_corroboration_rule,
 )
 from ..diagnostics.iso20816 import assess_severity_raw
 from ..signal_acquisition.import_config import is_raw_declaration
@@ -169,6 +171,12 @@ class SnapshotPolicy(NamedTuple):
             is computed on, or ``None`` for the whole signal.
         one_x_tolerance_pct: Half-width (percent of the shaft frequency) of
             the window the 1x amplitude is searched in.
+        corroboration_rule: The bearing corroboration rule: the released
+            ``any_line``, or the experimental ``controlled_union_v1``, which
+            forms a lineage of its own that no assessment of the released
+            rule reads. A server older than this option does not know the
+            rule and can select a lineage of it as the most recent one, so
+            keep snapshots of this rule out of any ledger such a server reads.
     """
 
     tolerance_pct: float = 5.0
@@ -176,6 +184,7 @@ class SnapshotPolicy(NamedTuple):
     envelope_band_policy: Union[str, tuple[float, float]] = ENVELOPE_BAND_DEFAULT
     fft_segment_s: Optional[float] = 1.0
     one_x_tolerance_pct: float = 5.0
+    corroboration_rule: str = CORROBORATION_RULE_ANY_LINE
 
 
 def _canonical_json(payload: Any) -> str:
@@ -222,7 +231,9 @@ def policy_params(policy: SnapshotPolicy) -> dict[str, Any]:
     the probabilities, an int for the harmonics, ``"default"`` or
     ``[low, high]`` for the band), so equal policies always hash equal. It
     adds the bearing line test's two false-alarm probabilities, per check
-    and per corroborating line, which the evidence module fixes.
+    and per corroborating line, which the evidence module fixes. The released
+    corroboration rule adds no key, so every recorded ``processing_id`` stays
+    current; another rule is named, which gives it its own lineage.
 
     Raises:
         ValueError: If *policy* is not a :class:`SnapshotPolicy` or one of
@@ -264,7 +275,8 @@ def policy_params(policy: SnapshotPolicy) -> dict[str, Any]:
     segment_param = (
         None if segment is None else _positive_number("fft_segment_s", segment)
     )
-    return {
+    validate_corroboration_rule(policy.corroboration_rule)
+    params: dict[str, Any] = {
         "tolerance_pct": _positive_number("tolerance_pct", policy.tolerance_pct),
         "num_harmonics": harmonics,
         "envelope_band_policy": band_param,
@@ -277,6 +289,9 @@ def policy_params(policy: SnapshotPolicy) -> dict[str, Any]:
             CORROBORATION_FALSE_ALARM_PROBABILITY
         ),
     }
+    if policy.corroboration_rule != CORROBORATION_RULE_ANY_LINE:
+        params["corroboration_rule"] = policy.corroboration_rule
+    return params
 
 
 def processing_id(policy: Optional[SnapshotPolicy] = None) -> str:
@@ -589,6 +604,7 @@ def _bearing_block(
             tolerance_pct=policy.tolerance_pct,
             envelope_freq_range=band,
             num_harmonics=policy.num_harmonics,
+            corroboration_rule=policy.corroboration_rule,
         )
     else:
         summary = check_frequency_set(
@@ -599,6 +615,7 @@ def _bearing_block(
             tolerance_pct=policy.tolerance_pct,
             envelope_freq_range=band,
             num_harmonics=policy.num_harmonics,
+            corroboration_rule=policy.corroboration_rule,
         )
 
     env_freqs, env_mags = envelope_spectrum_arrays(signal, fs, band)

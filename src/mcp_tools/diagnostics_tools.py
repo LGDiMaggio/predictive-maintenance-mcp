@@ -1354,6 +1354,7 @@ async def check_bearing_faults(
     pitch_diameter_mm: Optional[float] = None,
     contact_angle_deg: float = 0.0,
     tolerance_pct: float = 5.0,
+    corroboration_rule: Literal["any_line", "controlled_union_v1"] = "any_line",
 ) -> BearingFaultsSummary:
     """Check expected fault frequencies in a stored signal's envelope spectrum.
 
@@ -1398,6 +1399,16 @@ async def check_bearing_faults(
             percent of its line frequency (default 5). A check repeated with
             another value is a new test: the false-alarm budget applies to
             one check, not to repeated checks.
+        corroboration_rule: Leave at 'any_line', the released rule, unless
+            the user asks for the experimental 'controlled_union_v1' by name.
+            That rule was evaluated on synthetic signals only; its result
+            names it in evidence_policy.corroboration_rule, carries each
+            check's aggregate_corroboration, and is not comparable with an
+            'any_line' result. It can support a line with no further line
+            counted on its own, which 'any_line' never does; that support
+            has evidence_strength 'low'. Say that the experimental rule was
+            used whenever you relay its result. A
+            check repeated under the other rule is a new test.
 
     Returns:
         BearingFaultsSummary with one check per expected frequency, the
@@ -1470,6 +1481,7 @@ async def check_bearing_faults(
             signal_id=signal_id,
             tolerance_pct=tolerance_pct,
             acquisition_eligibility=eligibility,
+            corroboration_rule=corroboration_rule,
         )
     elif frequencies is not None:
         # --- Explicit-frequencies route (gearbox / out-of-catalog) -----
@@ -1485,6 +1497,7 @@ async def check_bearing_faults(
             signal_id=signal_id,
             tolerance_pct=tolerance_pct,
             acquisition_eligibility=eligibility,
+            corroboration_rule=corroboration_rule,
         )
         result["source"] = "user-provided frequencies"
     else:
@@ -1516,6 +1529,7 @@ async def check_bearing_faults(
             signal_id=signal_id,
             tolerance_pct=tolerance_pct,
             acquisition_eligibility=eligibility,
+            corroboration_rule=corroboration_rule,
         )
         result["source"] = "user-provided geometry"
 
