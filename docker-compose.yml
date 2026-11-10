@@ -21,6 +21,11 @@ services:
       # Asset health ledger: ./data is mounted read-only, so the ledger
       # lives on its own named volume (declared at the bottom).
       - PMM_LEDGER_DIR=/app/ledger
+      # Signal files are closed to network clients by default. Uncomment only
+      # if you control who can reach this port, for example behind a reverse
+      # proxy that authenticates every request. This setting is not
+      # authentication. See docs/DEPLOYMENT.md.
+      # - PMM_ALLOW_NETWORK_DATA_DIR_ACCESS=1
     ports:
       - "8000:8000"   # remove this line when using caddy
     volumes:

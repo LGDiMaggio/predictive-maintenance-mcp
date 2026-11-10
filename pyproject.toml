@@ -292,6 +292,7 @@ markers = [
     "unit: marks tests as unit tests",
     "ml: marks tests that require ML models",
     "real_data: marks tests that use real bearing data samples",
+    "research_data: marks tests that read the sample recordings under data/ (skipped unless PMM_RESEARCH_DATA=1)",
     "asyncio: marks tests as async (requires pytest-asyncio)",
 ]
 

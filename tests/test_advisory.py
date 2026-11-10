@@ -26,6 +26,7 @@ import numpy as np
 import pytest
 
 from _bearing_scenarios import (
+    AE5_RECORDINGS,
     DEFECT_SEED,
     DEFECTS_PRESENT,
     FAULT_FREE,
@@ -33,7 +34,6 @@ from _bearing_scenarios import (
     FREQUENCIES_6205,
     RPM_6205,
     defect,
-    load_mfpt,
     white,
 )
 from _golden_signals import FS as GOLDEN_FS
@@ -1406,11 +1406,12 @@ def combined_baseline() -> dict:
     return _scenario(white(rng, FS, 10.0, SHAFT_HZ), FS, RPM_6205)
 
 
-@pytest.fixture(scope="module")
-def mfpt_scenario() -> dict:
-    """AE5: the MFPT baseline_3 with its declared frequencies at 1500 rpm,
-    whose 120 Hz mains line in the BPFI window has no corroborating line."""
-    signal, fs, frequencies, rpm = load_mfpt("real_test/baseline_3.csv")
+@pytest.fixture(scope="module", params=AE5_RECORDINGS)
+def mfpt_scenario(request) -> dict:
+    """AE5: a line in the BPFI window with no corroborating line, on the fixed
+    stand-in and on the MFPT baseline_3 with its declared frequencies at
+    1500 rpm, whose line is the 120 Hz mains line."""
+    signal, fs, frequencies, rpm = request.param()
     return _declared_scenario(signal, fs, frequencies, rpm)
 
 

@@ -428,6 +428,8 @@ pytest --cov=src --cov-report=term-missing
 Pull requests also build the wheel and smoke-test the installed package, and a weekly audit reruns the suite at the dependency floors and at the newest releases.
 [docs/QUALITY_AUDITS.md](docs/QUALITY_AUDITS.md) explains what runs where, how to run each check locally, and how to triage what the audit reports.
 
+Tests that read the sample recordings under `data/` carry the `research_data` marker. They are skipped unless `PMM_RESEARCH_DATA=1` is set and the files are in the checkout, and each skip states which of the two applies. CI checks out the repository without those folders.
+
 ---
 
 ## Pull Request Process

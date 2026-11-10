@@ -19,6 +19,7 @@ import itertools
 import logging
 import json
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Literal, Optional
 
 import numpy as np
@@ -32,14 +33,51 @@ from ..config import DATA_DIR, get_ledger_dir
 from ..signal_acquisition.loaders import SUPPORTED_EXTENSIONS
 from ..signal_acquisition.repository import SignalRepository, get_repository
 from ..models import StoredSignalInfo
+from ..path_safety import gate_import_path, safe_resolve
 from ..signal_validation import (
     validate_finite_samples,
     validate_positive_finite,
     validate_sampling_rate,
 )
+from ._call_origin import NETWORK_FILES_CLOSED, signal_file_access
 from ._utils import refusal_boundary
 
 logger = logging.getLogger(__name__)
+
+#: The refusal, under the operator's opt-in, of a file outside the data
+#: directory; it names no path.
+_NETWORK_FILE_REFUSAL = (
+    "This file is not read for a network connection: this server does not "
+    "authenticate its clients, so a caller that may be on another machine "
+    "reaches only files under the data directory. Pass a path relative to the "
+    "data directory (list_signals(scope='disk') shows them), or load the file "
+    "over stdio or with the server started on 127.0.0.1 from its command line "
+    "and reached directly."
+)
+
+
+def _refuse_network_file_access(ctx: Any, filepath: "str | list[str]") -> None:
+    """Refuse a load that may come from another machine: every load, unless
+    the operator opted in, and then any path leaving the data directory, first
+    on the path's text with no file-system call, then with its links followed
+    the way the repository will open it, for the file and for the companion
+    read beside it."""
+    access = signal_file_access(ctx)
+    if access == "all":
+        return
+    if access == "none":
+        raise ValueError(NETWORK_FILES_CLOSED)
+    data_dir = config.DATA_DIR
+    for raw in [filepath] if isinstance(filepath, str) else filepath:
+        try:
+            gate_import_path(raw, [data_dir], base=data_dir)
+            safe_resolve(data_dir, raw)
+            source = Path(data_dir) / raw
+            safe_resolve(
+                data_dir, str(source.with_name(f"{source.stem}_metadata.json"))
+            )
+        except (ValueError, OSError, RuntimeError):
+            raise ValueError(_NETWORK_FILE_REFUSAL) from None
 
 
 def _record_in_ledger(repo: SignalRepository, infos: list[dict]) -> list[dict]:
@@ -128,6 +166,8 @@ async def list_signals(
         }
 
     # scope == "disk"
+    if signal_file_access(ctx) == "none":
+        raise ValueError(NETWORK_FILES_CLOSED)
     files: list[str] = []
     if DATA_DIR.exists():
         for file_path in DATA_DIR.glob("**/*"):
@@ -393,6 +433,7 @@ async def load_signal(
             everything missing plus both remedies), or raw parameters
             are declared for a self-describing format.
     """
+    _refuse_network_file_access(ctx, filepath)
     repo = get_repository()
 
     if isinstance(filepath, list):

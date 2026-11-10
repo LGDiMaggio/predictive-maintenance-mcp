@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
+import json
 import shutil
 from pathlib import Path
 
@@ -35,6 +36,7 @@ from _semantic_guards import (
     refused_or_accepted,
     require,
     renderer_section_keys,
+    shipped_sample_names,
     unhandled_values,
     unknown_features,
     unmarked_mentions,
@@ -184,18 +186,35 @@ class TestAvailability:
 
 class TestExampleFilesAndLists:
     def test_paths_into_sample_folders_are_checked(self, tmp_path):
-        (tmp_path / "real_train").mkdir()
-        (tmp_path / "real_train" / "a.csv").write_text("1\n", encoding="utf-8")
+        """The sample names come from the manifest; no sample folder exists."""
+        manifest = tmp_path / "manifest.json"
+        manifest.write_text(
+            json.dumps(
+                {
+                    "files": {
+                        "data/signals/real_train/a.csv": {},
+                        "data/real_bearings/train/b.mat": {},
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
         text = (
             'load_signal(filepath="real_train/a.csv")\n'
             'load_signal(filepath="real_train/missing.csv")\n'
             'load_signal(filepath="motor.bin")\n'
             'load_signal(filepath=["real_train/a.csv", "real_train/gone.csv"])\n'
         )
-        assert missing_example_files(text, "s.md", tmp_path) == [
+        assert missing_example_files(text, "s.md", manifest) == [
             "s.md:2: load_signal(filepath='real_train/missing.csv')",
             "s.md:4: load_signal(filepath='real_train/gone.csv')",
         ]
+
+    def test_the_committed_manifest_names_the_sample_folders(self):
+        """Anchor for the strict A-F14 tripwire: the names are really read."""
+        names = shipped_sample_names()
+        assert "real_train/OuterRaceFault_1.csv" in names
+        assert {name.split("/", 1)[0] for name in names} == {"real_test", "real_train"}
 
     def test_coverage_list_and_closure_differences(self):
         readme = "## MCP Tool Coverage\n- **A**: load_signal, analyze_fft\n## Next\n- **B**: other_tool\n"

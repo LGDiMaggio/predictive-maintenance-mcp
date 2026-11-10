@@ -2433,6 +2433,44 @@ class TestReasonCodes:
         assert entry["outcome"] == "reprocessed"
         assert Path(entry["location_used"]) == newest
 
+    def test_a_network_caller_is_served_the_data_directory_location(
+        self, store, data_dir, tmp_path
+    ):
+        measurement_id, _, newest = self.two_locations(store, data_dir, tmp_path)
+        entry = only(reprocess(store, data_dir, data_dir_only=True), measurement_id)
+        assert entry["outcome"] == "reprocessed"
+        assert entry["location_used"] == "m01.csv"
+        assert newest.exists()
+
+    def test_the_assessment_route_honours_the_network_restriction(
+        self, store, data_dir, tmp_path
+    ):
+        measurement_id, original, _ = self.two_locations(store, data_dir, tmp_path)
+        original.unlink()
+        block, _ = service.reprocess_for_assessment(
+            ASSET, POINT, store=store, data_dir=data_dir, data_dir_only=True
+        )
+        assert only(block, measurement_id)["outcome"] == "not_reprocessable"
+
+    def test_a_network_caller_is_refused_an_absolute_location_without_a_stat(
+        self, store, data_dir, tmp_path, monkeypatch
+    ):
+        measurement_id, original, newest = self.two_locations(store, data_dir, tmp_path)
+        original.unlink()
+        seen: list[str] = []
+        real_stat = os.stat
+
+        def watched(target, *args, **kwargs):
+            seen.append(str(target))
+            return real_stat(target, *args, **kwargs)
+
+        monkeypatch.setattr(service.os, "stat", watched)
+        response = reprocess(store, data_dir, data_dir_only=True)
+        entry = only(response, measurement_id)
+        assert entry["outcome"] == "not_reprocessable"
+        assert str(newest) not in seen
+        assert json.dumps(str(newest.parent))[1:-1] not in json.dumps(entry["reason"])
+
     def test_the_most_recent_location_decides_the_code(self, store, data_dir, tmp_path):
         measurement_id, original, newest = self.two_locations(store, data_dir, tmp_path)
         newest.unlink()

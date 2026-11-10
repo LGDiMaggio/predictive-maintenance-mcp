@@ -18,6 +18,12 @@ jobs:
         uses: actions/checkout@v7
         with:
           ref: ${{ github.event.workflow_run.head_branch }}
+          sparse-checkout: |
+            /*
+            !/data/real_bearings/
+            !/data/signals/real_train/
+            !/data/signals/real_test/
+          sparse-checkout-cone-mode: false
 
       - name: Install mcp-publisher
         run: |

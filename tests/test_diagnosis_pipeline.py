@@ -7,6 +7,7 @@ import re
 import numpy as np
 import pytest
 
+from _bearing_scenarios import AE5_RECORDINGS
 from predictive_maintenance_mcp.decision_support.diagnosis_pipeline import (
     _bearing_check,
     _synthesize_diagnosis,
@@ -1007,16 +1008,17 @@ class TestBearingClaimInTheDiagnosis:
         ]
         assert not [r for r in result["recommendations"] if "replac" in r.lower()]
 
-    def test_an_inconclusive_check_counts_nothing_and_asks_for_a_repeat(self):
-        """AE5: the MFPT baseline's line at twice the mains frequency in the
-        BPFI window, with no corroborating line."""
-        from _bearing_scenarios import load_mfpt
-
+    @pytest.mark.parametrize("recording", AE5_RECORDINGS)
+    def test_an_inconclusive_check_counts_nothing_and_asks_for_a_repeat(
+        self, recording
+    ):
+        """AE5: a line in the BPFI window (on the MFPT baseline, at twice the
+        mains frequency) with no corroborating line."""
         from predictive_maintenance_mcp.diagnostics.bearing_analyzer import (
             check_frequency_set,
         )
 
-        signal, fs, frequencies, rpm = load_mfpt("real_test/baseline_3.csv")
+        signal, fs, frequencies, rpm = recording()
         check = check_frequency_set(signal, fs, frequencies, rpm)
         text, strength, recommendations = self._synthesize(check, rpm=rpm)
 

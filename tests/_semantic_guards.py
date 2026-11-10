@@ -15,6 +15,7 @@ contracts.
 
 from __future__ import annotations
 
+import json
 import re
 import traceback
 from dataclasses import dataclass
@@ -28,7 +29,8 @@ from test_documented_calls import KWARG_RE, extract_calls, split_top_level_args
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SRC_DIR = (REPO_ROOT / "src").resolve()
 PLUGIN_DIR = REPO_ROOT / "plugin"
-SIGNALS_DIR = REPO_ROOT / "data" / "signals"
+THIRD_PARTY_MANIFEST = REPO_ROOT / "tools" / "audit" / "third_party_data.json"
+SIGNALS_PREFIX = "data/signals/"
 
 
 # ---------------------------------------------------------------------------
@@ -266,16 +268,29 @@ def missing_pinned_text(
     return []
 
 
+def shipped_sample_names(manifest_path: Path = THIRD_PARTY_MANIFEST) -> set[str]:
+    """The files *manifest_path* lists under ``data/signals``, relative to it."""
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    return {
+        name[len(SIGNALS_PREFIX) :]
+        for name in manifest["files"]
+        if name.startswith(SIGNALS_PREFIX)
+    }
+
+
 def missing_example_files(
-    text: str, source: str, signals_dir: Path = SIGNALS_DIR
+    text: str, source: str, manifest_path: Path = THIRD_PARTY_MANIFEST
 ) -> list[str]:
     """Literal ``filepath`` arguments that point into a shipped sample folder
-    under *signals_dir* (for example ``real_test/...``) but name no file there.
+    (for example ``real_test/...``) but name no file the manifest lists there.
 
-    Generic names such as ``motor.bin`` stand for the user's own files and are
-    not checked; only paths whose first folder exists under *signals_dir*
-    claim to be shipped examples.
+    The names come from the manifest, so the result is the same whether or
+    not the files are in the checkout. Generic names such as ``motor.bin``
+    stand for the user's own files and are not checked; only paths whose first
+    folder is a sample folder of the manifest claim to be shipped examples.
     """
+    shipped = shipped_sample_names(manifest_path)
+    folders = {name.split("/", 1)[0] for name in shipped}
     found = []
     for name, args, line in extract_calls(text):
         value = kwarg_values(args).get("filepath")
@@ -283,9 +298,9 @@ def missing_example_files(
             continue
         for relative in _QUOTED_PATH_RE.findall(value) or [value.strip()]:
             parts = Path(relative).parts
-            if len(parts) < 2 or not (signals_dir / parts[0]).is_dir():
+            if len(parts) < 2 or parts[0] not in folders:
                 continue
-            if not (signals_dir / relative).is_file():
+            if "/".join(parts) not in shipped:
                 found.append(f"{source}:{line}: {name}(filepath={relative!r})")
     return found
 

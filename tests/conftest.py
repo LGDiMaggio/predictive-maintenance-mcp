@@ -159,6 +159,16 @@ def patch_data_dir(monkeypatch, signals_dir: Path) -> None:
 # Fixtures
 
 
+@pytest.fixture(autouse=True)
+def _no_recorded_transport():
+    """A test that runs ``server.main`` records a transport for the whole
+    process; the next test must not inherit the call-origin decision."""
+    from predictive_maintenance_mcp.mcp_tools._call_origin import _SERVER
+
+    yield
+    _SERVER.update(transport=None, host=None)
+
+
 @pytest.fixture
 def sandbox_data_dir(tmp_path, monkeypatch) -> Path:
     """An empty ``data/signals`` sandbox seen by every ``DATA_DIR`` import site.
@@ -196,6 +206,7 @@ IMPORT_ACCESS_VARIABLES = (
     "PMM_IMPORT_ROOTS",
     "PMM_IMPORT_ALLOW_REMOTE",
     "PMM_IMPORT_REMOTE_ROOTS",
+    "PMM_ALLOW_NETWORK_DATA_DIR_ACCESS",
 )
 
 
@@ -215,34 +226,43 @@ def import_dir(tmp_path, monkeypatch) -> Path:
     return target
 
 
-@pytest.fixture
+@pytest.fixture(
+    params=[pytest.param(None, id="recording", marks=pytest.mark.research_data)]
+)
 def sample_healthy_signal():
     """Load baseline healthy signal."""
+    from _research_data import require_recordings
+
     signal_path = TEST_DATA_DIR / "baseline_1.csv"
-    if not signal_path.exists():
-        pytest.skip(f"Sample data not found: {signal_path}")
+    require_recordings(signal_path)
 
     df = pd.read_csv(signal_path, header=None)
     return df.iloc[:, 0].values
 
 
-@pytest.fixture
+@pytest.fixture(
+    params=[pytest.param(None, id="recording", marks=pytest.mark.research_data)]
+)
 def sample_faulty_signal():
     """Load outer race fault signal."""
+    from _research_data import require_recordings
+
     signal_path = TEST_DATA_DIR / "OuterRaceFault_1.csv"
-    if not signal_path.exists():
-        pytest.skip(f"Sample data not found: {signal_path}")
+    require_recordings(signal_path)
 
     df = pd.read_csv(signal_path, header=None)
     return df.iloc[:, 0].values
 
 
-@pytest.fixture
+@pytest.fixture(
+    params=[pytest.param(None, id="recording", marks=pytest.mark.research_data)]
+)
 def sample_metadata():
     """Load metadata for baseline signal."""
+    from _research_data import require_recordings
+
     metadata_path = TEST_DATA_DIR / "baseline_1_metadata.json"
-    if not metadata_path.exists():
-        pytest.skip(f"Metadata not found: {metadata_path}")
+    require_recordings(metadata_path)
 
     with open(metadata_path, "r") as f:
         return json.load(f)

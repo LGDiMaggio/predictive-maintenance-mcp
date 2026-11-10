@@ -79,6 +79,8 @@ docker compose up -d
 
 See [DEPLOYMENT.md](docs/DEPLOYMENT.md) for HTTPS setup with Docker + Caddy auto-TLS.
 
+Network clients cannot read signal files until the operator opts in: see [DEPLOYMENT.md](docs/DEPLOYMENT.md#signal-files-over-a-network-connection).
+
 ---
 
 ## For Claude Desktop Users

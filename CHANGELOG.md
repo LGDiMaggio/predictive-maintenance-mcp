@@ -322,6 +322,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   updates stay off, and MCP SDK major updates are ignored.
 
 ### Changed
+- **Breaking: signal files are closed to network clients by default.** Over
+  SSE or streamable HTTP, unless a call comes directly from this machine through
+  a loopback bind, `load_signal`, `list_signals(scope="disk")`,
+  `assess_asset_change(reprocess=True)` and the companion lookup of
+  `generate_envelope_report` no longer read files, including files under the
+  data directory. Deployments that reach the server over a network, the Docker
+  default among them, must set `PMM_ALLOW_NETWORK_DATA_DIR_ACCESS=1` to keep
+  loading signals. The setting is not authentication: use it only where the
+  operator controls who can reach the server. With it, network clients reach
+  only the data directory: absolute paths outside it, paths that leave it and
+  links out of it are refused, and re-processing reads no recorded location
+  outside it. It does not enable the signal import tools. Stdio and direct
+  loopback connections keep every path they had.
+- **Companion metadata stays out of refusals and logs.** An unusable bearing
+  frequency in a companion file is refused by its field name, without repeating
+  the value, and a value that is not a number is described by its type. An
+  unreadable companion is logged by signal id and kind of failure, without its
+  path or content. A companion that is not a JSON object supplies nothing, and
+  a file beside an imported signal is not read as a companion.
 - **Re-processing checks a recorded location before touching the file
   system.** `assess_asset_change(reprocess=True)` checks every recorded
   absolute location as text first and refuses a network (UNC), device or
@@ -546,6 +565,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   check also covers `tools/`.
 
 ### Fixed
+- **Reverse-proxy examples for a server bound to `127.0.0.1`.** The Caddy and
+  nginx examples in `docs/DEPLOYMENT.md` send a loopback `Host` with its port
+  and a forwarding header. The earlier nginx API-key example sent no
+  forwarding header, so its callers count as direct local calls: a
+  configuration copied from it needs `X-Forwarded-For`.
 - **The plugin agents can call the server's tools.** The diagnostic-pipeline
   and signal-explorer agents listed only Read, Glob, Grep and Bash in their
   `tools` field, which Claude Code applies as an allowlist, so as plugin

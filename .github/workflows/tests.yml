@@ -9,6 +9,8 @@ on:
 permissions:
   contents: read
 
+# Every checkout below leaves out the folders listed as roots in
+# tools/audit/third_party_data.json (pinned by tests/test_workflow_policy.py).
 jobs:
   test:
     name: Test Python ${{ matrix.python-version }} / ${{ matrix.os }}
@@ -21,6 +23,13 @@ jobs:
 
     steps:
     - uses: actions/checkout@v7
+      with:
+        sparse-checkout: |
+          /*
+          !/data/real_bearings/
+          !/data/signals/real_train/
+          !/data/signals/real_test/
+        sparse-checkout-cone-mode: false
 
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v7
@@ -57,6 +66,13 @@ jobs:
 
     steps:
     - uses: actions/checkout@v7
+      with:
+        sparse-checkout: |
+          /*
+          !/data/real_bearings/
+          !/data/signals/real_train/
+          !/data/signals/real_test/
+        sparse-checkout-cone-mode: false
 
     - name: Set up Python
       uses: actions/setup-python@v7
@@ -83,6 +99,13 @@ jobs:
 
     steps:
     - uses: actions/checkout@v7
+      with:
+        sparse-checkout: |
+          /*
+          !/data/real_bearings/
+          !/data/signals/real_train/
+          !/data/signals/real_test/
+        sparse-checkout-cone-mode: false
 
     - name: Set up Python
       uses: actions/setup-python@v7
@@ -114,6 +137,13 @@ jobs:
 
     steps:
     - uses: actions/checkout@v7
+      with:
+        sparse-checkout: |
+          /*
+          !/data/real_bearings/
+          !/data/signals/real_train/
+          !/data/signals/real_test/
+        sparse-checkout-cone-mode: false
 
     - name: Set up Python
       uses: actions/setup-python@v7
@@ -147,6 +177,13 @@ jobs:
 
     steps:
     - uses: actions/checkout@v7
+      with:
+        sparse-checkout: |
+          /*
+          !/data/real_bearings/
+          !/data/signals/real_train/
+          !/data/signals/real_test/
+        sparse-checkout-cone-mode: false
 
     - name: Set up Python
       uses: actions/setup-python@v7
@@ -157,6 +194,20 @@ jobs:
     - name: Install build
       run: |
         python -m pip install build
+
+    - name: Write placeholders at the manifest paths
+      run: |
+        python - <<'EOF'
+        import json
+        from pathlib import Path
+
+        manifest = json.loads(Path("tools/audit/third_party_data.json").read_text(encoding="utf-8"))
+        for name in manifest["files"]:
+            path = Path(name)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("placeholder\n", encoding="utf-8")
+        print(len(manifest["files"]), "placeholders written")
+        EOF
 
     - name: Build the sdist and the wheel
       run: |
@@ -176,8 +227,8 @@ jobs:
     # sample data, only the notices and the data/signals/ placeholder.
     - name: Check the licensing of the source archives
       run: |
-        git archive --format=zip --prefix=predictive-maintenance-mcp/ -o "$RUNNER_TEMP/source.zip" HEAD
-        git archive --format=tar.gz --prefix=predictive-maintenance-mcp/ -o "$RUNNER_TEMP/source.tar.gz" HEAD
+        GIT_NO_LAZY_FETCH=1 git archive --format=zip --prefix=predictive-maintenance-mcp/ -o "$RUNNER_TEMP/source.zip" HEAD --worktree-attributes
+        GIT_NO_LAZY_FETCH=1 git archive --format=tar.gz --prefix=predictive-maintenance-mcp/ -o "$RUNNER_TEMP/source.tar.gz" HEAD --worktree-attributes
         python -m tools.audit artifact-licensing --archive "$RUNNER_TEMP/source.zip" --archive "$RUNNER_TEMP/source.tar.gz" --variant pr-source-archives
 
     # Blocking. Every other job runs the checkout; this one installs the built

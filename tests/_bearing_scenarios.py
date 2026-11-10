@@ -64,7 +64,10 @@ from typing import Callable, Literal
 
 import numpy as np
 import pandas as pd
+import pytest
 from scipy.signal import iirpeak, lfilter
+
+from _research_data import require_recordings
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -306,11 +309,17 @@ def shared_line(
 
 
 # ---------------------------------------------------------------------------
-# Bundled MFPT recordings
+# Bundled MFPT recordings and the AE5 stand-in
 # ---------------------------------------------------------------------------
 
+#: (samples, sampling rate in Hz, BPFO/BPFI/BSF/FTF in Hz, shaft speed in rpm)
+Recording = tuple[np.ndarray, float, dict[str, float], float]
 
-def load_mfpt(relative: str) -> tuple[np.ndarray, float, dict[str, float], float]:
+#: Seed of the AE5 stand-in; no other test uses it.
+AE5_STAND_IN_SEED = 900_001
+
+
+def load_mfpt(relative: str) -> Recording:
     """A bundled MFPT recording under ``data/signals``, with what it declares.
 
     Returns:
@@ -318,7 +327,44 @@ def load_mfpt(relative: str) -> tuple[np.ndarray, float, dict[str, float], float
         shaft speed in rpm), the last three from the companion metadata.
     """
     path = REPO_ROOT / "data" / "signals" / relative
-    meta = json.loads(path.with_name(f"{path.stem}_metadata.json").read_text())
+    metadata_path = path.with_name(f"{path.stem}_metadata.json")
+    require_recordings(path, metadata_path)
+    meta = json.loads(metadata_path.read_text())
     samples = pd.read_csv(path, header=None).to_numpy(dtype=float).ravel()
     frequencies = {k: float(meta[k]) for k in ("BPFO", "BPFI", "BSF", "FTF")}
     return samples, float(meta["sampling_rate"]), frequencies, meta["shaft_speed"] * 60
+
+
+def ae5_stand_in() -> Recording:
+    """A fixed synthetic record of the AE5 branch, shaped like :func:`load_mfpt`.
+
+    Gaussian noise amplitude-modulated at BPFI, 12 kHz for 10 s, with the 6205
+    frequencies at its nominal speed. At this seed the BPFI window holds a
+    significant line with no further line beside it, so the check ends
+    ``inconclusive``. At 1 g RMS the ISO zone alone would add evidence points,
+    hence the 0.02 scale. A regression fixture of this one branch: it is not
+    an evaluation of any rule and says nothing about real machines.
+    """
+    fs, seconds = 12000.0, 10.0
+    rng = np.random.default_rng(AE5_STAND_IN_SEED)
+    n = int(fs * seconds)
+    t = np.arange(n) / fs
+    samples = (
+        (1.0 + 0.7 * np.sin(2 * np.pi * FREQUENCIES_6205["BPFI"] * t))
+        * 0.02
+        * rng.standard_normal(n)
+    )
+    return samples, fs, dict(FREQUENCIES_6205), RPM_6205
+
+
+def ae5_mfpt() -> Recording:
+    """The MFPT baseline_3, whose BPFI window holds a line at twice the mains
+    frequency with no corroborating line."""
+    return load_mfpt("real_test/baseline_3.csv")
+
+
+#: What every AE5 test runs on, as parameters that return a :data:`Recording`.
+AE5_RECORDINGS = (
+    pytest.param(ae5_stand_in, id="synthetic"),
+    pytest.param(ae5_mfpt, id="mfpt", marks=pytest.mark.research_data),
+)

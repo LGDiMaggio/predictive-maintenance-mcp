@@ -24,6 +24,7 @@ import numpy as np
 import pandas as pd
 
 from conftest import write_raw_file
+from _research_data import require_recordings
 from predictive_maintenance_mcp.config import get_max_signal_size
 from predictive_maintenance_mcp.signal_acquisition import loaders
 from predictive_maintenance_mcp.signal_acquisition.loaders import (
@@ -152,11 +153,10 @@ class TestLoadSignalData:
         assert signal.ndim == 1
         assert len(signal) == fs
 
+    @pytest.mark.research_data
     def test_load_real_baseline_if_available(self):
         """Smoke test: load a real baseline CSV from the repo."""
-        baseline = DATA_DIR / "real_train" / "baseline_1.csv"
-        if not baseline.exists():
-            pytest.skip("Real data not in repo")
+        require_recordings(DATA_DIR / "real_train" / "baseline_1.csv")
         signal = load_signal_data("real_train/baseline_1.csv")
         assert signal is not None
         assert len(signal) > 1000
