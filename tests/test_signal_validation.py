@@ -19,7 +19,6 @@ import pytest
 from predictive_maintenance_mcp.signal_validation import (
     BAD_SAMPLE_REMEDY,
     InvalidInputError,
-    InvalidInputError,
     validate_expected_frequencies,
     validate_positive_finite,
     validate_expected_frequency,
