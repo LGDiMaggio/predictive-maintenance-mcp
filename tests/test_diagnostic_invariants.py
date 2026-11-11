@@ -50,7 +50,6 @@ from unittest.mock import AsyncMock
 
 import numpy as np
 import pandas as pd
-import pydantic
 import pytest
 from mcp import Client
 from mcp.server.mcpserver import MCPServer
@@ -382,15 +381,6 @@ class TestSamplingFrequency:
         )
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(
-        strict=True,
-        raises=pydantic.ValidationError,
-        reason=known_defect(
-            "stft-result-schema",
-            "compute_spectrogram_stft always fails STFTResult validation "
-            "(energy_per_band band labels are strings)",
-        ),
-    )
     async def test_stft_frequency_axis_ends_at_nyquist(self, load_csv, mock_ctx):
         rng = np.random.default_rng(6)
         await load_csv("inv_fs_stft", rng.standard_normal(int(FS)))

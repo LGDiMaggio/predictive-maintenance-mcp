@@ -3368,15 +3368,32 @@
     "type": "object"
   },
   "compute_spectrogram_stft": {
+    "$defs": {
+      "STFTBandEnergy": {
+        "properties": {
+          "band": {
+            "title": "Band",
+            "type": "string"
+          },
+          "energy": {
+            "title": "Energy",
+            "type": "number"
+          }
+        },
+        "required": [
+          "band",
+          "energy"
+        ],
+        "title": "STFTBandEnergy",
+        "type": "object"
+      }
+    },
     "description": "STFT Spectrogram result \u2014 summary only, no full 2D arrays.",
     "properties": {
       "energy_per_band": {
         "description": "Energy in predefined frequency bands",
         "items": {
-          "additionalProperties": {
-            "type": "number"
-          },
-          "type": "object"
+          "$ref": "#/$defs/STFTBandEnergy"
         },
         "title": "Energy Per Band",
         "type": "array"
