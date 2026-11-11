@@ -420,12 +420,17 @@ class BearingCorroboratingLine(BaseModel):
     counted: bool = Field(
         description=(
             "Whether the line counts as corroboration: significant, not at a "
-            "shaft order and not shared with another hypothesis"
+            "shaft order, not shared with another hypothesis and not excluded "
+            "by an aggregate rule"
         )
     )
-    excluded_by: Optional[Literal["shaft_order", "shared"]] = Field(
+    excluded_by: Optional[Literal["shaft_order", "shared", "aggregate_rule"]] = Field(
         None,
-        description="Why a significant line is not counted, if it is not",
+        description=(
+            "Why a significant line is not counted, if it is not. aggregate_rule "
+            "occurs only under the experimental controlled_union_v1 rule, when "
+            "that rule does not corroborate the check"
+        ),
     )
     untestable_reason: Optional[
         Literal[
@@ -439,9 +444,63 @@ class BearingCorroboratingLine(BaseModel):
     )
 
 
+class BearingAggregateCorroboration(BaseModel):
+    """The decision of the experimental controlled_union_v1 corroboration rule.
+
+    Recorded apart from the lines: a line it pools is not thereby counted.
+    Lines of one spectrum are correlated, not independent evidence.
+    """
+
+    rule: Literal["controlled_union_v1"] = Field(
+        description="The experimental rule that decided this check"
+    )
+    eligible_lines: int = Field(
+        description="Further lines testable, at no shaft order and not shared"
+    )
+    pooled_lines: int = Field(
+        description="Eligible lines that are local maxima, tested together"
+    )
+    pooled_members: list[int] = Field(
+        description="Positions of the pooled lines in the check's corroboration list"
+    )
+    pooled_kinds: list[str] = Field(description="Kinds of the pooled lines")
+    budget: Optional[float] = Field(
+        None,
+        description=(
+            "Nominal budget of the rule over the eligible lines; None without an "
+            "eligible line"
+        ),
+    )
+    combined_p_value: Optional[float] = Field(
+        None,
+        description=(
+            "Fisher combination of the pooled lines; None without a pooled line. "
+            "It assumes independent lines, so it is not a calibrated probability"
+        ),
+    )
+    combined_level: Optional[float] = Field(
+        None, description="Level the combined test had to reach"
+    )
+    single_line_level: Optional[float] = Field(
+        None, description="Level a pooled line had to reach on its own"
+    )
+    single_lines: int = Field(
+        description="Pooled lines that reached single_line_level on their own"
+    )
+    corroborated: bool = Field(description="Whether the rule corroborates the check")
+    basis: Optional[Literal["single_line", "combined"]] = Field(
+        None,
+        description=(
+            "Which of the rule's two tests corroborated it, if one did. With "
+            "'combined' and no line counted, the check's evidence_strength is 'low'"
+        ),
+    )
+
+
 class BearingCandidate(BaseModel):
     """A hypothesis with a significant line of its own and at least one counted
-    corroborating line.
+    corroborating line, or, under the experimental controlled_union_v1 rule
+    only, further lines that rule's combined test accepts.
 
     A significant corroborating line that is shared with another hypothesis or
     lies at a shaft order is not counted and does not make a candidate.
@@ -536,6 +595,13 @@ class BearingEvidencePolicy(BaseModel):
         description="Statistical assumptions the nominal budgets rest on"
     )
     exclusions: list[str] = Field(description="What the nominal budgets do not cover")
+    corroboration_rule: Optional[Literal["controlled_union_v1"]] = Field(
+        None,
+        description=(
+            "The experimental corroboration rule this check ran with; None for "
+            "the released rule. Results of different rules are not comparable"
+        ),
+    )
 
 
 class BearingClaim(BaseModel):
@@ -692,9 +758,12 @@ class BearingFaultCheckResult(BaseModel):
         description=(
             "Grade of the significance-tested evidence for this hypothesis, from "
             "its state: 'none' (absent or not_testable), 'low' (unconfirmed or "
-            "shared), 'moderate' (supported, one counted corroborating line), "
-            "'high' (supported, two or more). It counts lines of one envelope "
-            "spectrum: it is not a probability, and it does not confirm a fault."
+            "shared, or, under the experimental controlled_union_v1 rule only, "
+            "supported by that rule's combined test with no line counted: state "
+            "supported, aggregate_corroboration.basis combined), 'moderate' "
+            "(supported, one counted corroborating line), 'high' (supported, two "
+            "or more). It counts lines of one envelope spectrum: it is not a "
+            "probability, and it does not confirm a fault."
         )
     )
     state: Optional[BearingEvidenceState] = Field(
@@ -708,7 +777,9 @@ class BearingFaultCheckResult(BaseModel):
             "a shaft order, or a cage line that a significant rolling-element line "
             "can explain), shared (another tested hypothesis also predicts a "
             "line where this line lies), supported (a significant line of its own "
-            "with at least one counted corroborating line its kinematics predict). "
+            "with at least one counted corroborating line its kinematics predict, "
+            "or, under the experimental controlled_union_v1 rule only, further "
+            "lines that rule's combined test accepts: see aggregate_corroboration). "
             "detected and evidence_strength are derived from it."
         ),
     )
@@ -759,6 +830,13 @@ class BearingFaultCheckResult(BaseModel):
             "Further lines tested for a significant line, anchored at it; empty "
             "when no significant line was found. Lines of one spectrum are "
             "correlated, not independent evidence."
+        ),
+    )
+    aggregate_corroboration: Optional[BearingAggregateCorroboration] = Field(
+        None,
+        description=(
+            "Decision of the experimental controlled_union_v1 rule, for a check "
+            "run with it and a significant line; None otherwise"
         ),
     )
     shared_with: list[str] = Field(

@@ -102,6 +102,10 @@ Fixture history:
   POST_U9_PROMPT_ADDITIONS. The config parameter is typed with the
   configuration model on purpose, so its schema is in this inventory. No
   existing tool's schema changed; counts 44/0/4.
+- Bearing corroboration rule (2026-11-09): regenerated intentionally:
+  ADDITIVE. check_bearing_faults gains the optional corroboration_rule
+  (default any_line, the released rule; controlled_union_v1 is experimental).
+  No tool added or removed; counts 44/0/4.
 
 Snapshot recipe (run from the repo root):
     python -c "from tests.test_tool_inventory import build_inventory, \\

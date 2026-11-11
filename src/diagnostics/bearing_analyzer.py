@@ -27,7 +27,11 @@ from .bearing_claims import (
     named_candidate,
     validate_acquisition_eligibility,
 )
-from .bearing_evidence import Hypothesis, evaluate_hypotheses
+from .bearing_evidence import (
+    CORROBORATION_RULE_ANY_LINE,
+    Hypothesis,
+    evaluate_hypotheses,
+)
 from ..signal_processing.spectral import (
     envelope_spectrum_arrays,
     resolve_envelope_band,
@@ -126,6 +130,7 @@ def _check_on_one_spectrum(
     cage_hz: Optional[float],
     catalog: bool = False,
     spectrum: Optional[tuple[np.ndarray, np.ndarray]] = None,
+    corroboration_rule: str = CORROBORATION_RULE_ANY_LINE,
 ) -> tuple[list[dict], dict]:
     """Every (label, expected Hz) checked on ONE envelope spectrum.
 
@@ -172,6 +177,7 @@ def _check_on_one_spectrum(
         tolerance_pct=tolerance_pct,
         catalog=catalog,
         envelope_band_hz=band_width,
+        corroboration_rule=corroboration_rule,
     )
     checks = [
         {
@@ -247,6 +253,7 @@ def check_all_bearing_faults(
     num_harmonics: int = 3,
     *,
     acquisition_eligibility: str = UNKNOWN,
+    corroboration_rule: str = CORROBORATION_RULE_ANY_LINE,
 ) -> dict:
     """Run all four fault checks (BPFO, BPFI, BSF, FTF) for a bearing.
 
@@ -266,13 +273,16 @@ def check_all_bearing_faults(
         acquisition_eligibility: "known_inapplicable" when the signal's own
             companion metadata declares a generated signal without noise
             (the claim is then withheld), else "unknown".
+        corroboration_rule: "any_line" (the released rule, the default) or
+            the experimental "controlled_union_v1".
 
     Returns:
         Dict compatible with BearingFaultsSummary, with its ``claim``.
 
     Raises:
         ValueError: If rpm is not a positive finite number, if
-            acquisition_eligibility is not one of its two values, if the
+            acquisition_eligibility is not one of its two values, if
+            corroboration_rule is not a named rule, if the
             bearing is not found in the catalog, or if
             :func:`check_bearing_fault_peak` refuses the signal, fs or a
             computed frequency (non-finite samples, a non-finite or
@@ -311,6 +321,7 @@ def check_all_bearing_faults(
         shaft_hz=shaft_freq,
         cage_hz=fault_types["FTF"],
         catalog=True,
+        corroboration_rule=corroboration_rule,
     )
 
     bearing_freqs = {k: v for k, v in fault_types.items()}
@@ -348,6 +359,7 @@ def check_frequency_set(
     *,
     acquisition_eligibility: str = UNKNOWN,
     spectrum: Optional[tuple[np.ndarray, np.ndarray]] = None,
+    corroboration_rule: str = CORROBORATION_RULE_ANY_LINE,
 ) -> dict:
     """Check an arbitrary set of labeled expected frequencies in the envelope.
 
@@ -379,6 +391,8 @@ def check_frequency_set(
             returns it, when the caller has already computed it (the
             envelope report); None computes it here. The signal and fs are
             validated first either way.
+        corroboration_rule: "any_line" (the released rule, the default) or
+            the experimental "controlled_union_v1".
 
     Returns:
         Dict compatible with BearingFaultsSummary (bearing_id/source None),
@@ -387,6 +401,7 @@ def check_frequency_set(
     Raises:
         ValueError: If a given rpm is not a positive finite number, if
             acquisition_eligibility is not one of its two values, if
+            corroboration_rule is not a named rule, if
             frequencies is empty or contains a value that is not a positive
             finite number (every such label is listed), or if
             :func:`check_bearing_fault_peak` refuses the signal or fs
@@ -424,6 +439,7 @@ def check_frequency_set(
             None,
         ),
         spectrum=spectrum,
+        corroboration_rule=corroboration_rule,
     )
 
     freq_echo = {k: float(v) for k, v in frequencies.items()}

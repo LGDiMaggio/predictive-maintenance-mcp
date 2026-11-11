@@ -2244,8 +2244,135 @@
   },
   "check_bearing_faults": {
     "$defs": {
+      "BearingAggregateCorroboration": {
+        "description": "The decision of the experimental controlled_union_v1 corroboration rule.\n\nRecorded apart from the lines: a line it pools is not thereby counted.\nLines of one spectrum are correlated, not independent evidence.",
+        "properties": {
+          "basis": {
+            "anyOf": [
+              {
+                "enum": [
+                  "single_line",
+                  "combined"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Which of the rule's two tests corroborated it, if one did. With 'combined' and no line counted, the check's evidence_strength is 'low'",
+            "title": "Basis"
+          },
+          "budget": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Nominal budget of the rule over the eligible lines; None without an eligible line",
+            "title": "Budget"
+          },
+          "combined_level": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Level the combined test had to reach",
+            "title": "Combined Level"
+          },
+          "combined_p_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fisher combination of the pooled lines; None without a pooled line. It assumes independent lines, so it is not a calibrated probability",
+            "title": "Combined P Value"
+          },
+          "corroborated": {
+            "description": "Whether the rule corroborates the check",
+            "title": "Corroborated",
+            "type": "boolean"
+          },
+          "eligible_lines": {
+            "description": "Further lines testable, at no shaft order and not shared",
+            "title": "Eligible Lines",
+            "type": "integer"
+          },
+          "pooled_kinds": {
+            "description": "Kinds of the pooled lines",
+            "items": {
+              "type": "string"
+            },
+            "title": "Pooled Kinds",
+            "type": "array"
+          },
+          "pooled_lines": {
+            "description": "Eligible lines that are local maxima, tested together",
+            "title": "Pooled Lines",
+            "type": "integer"
+          },
+          "pooled_members": {
+            "description": "Positions of the pooled lines in the check's corroboration list",
+            "items": {
+              "type": "integer"
+            },
+            "title": "Pooled Members",
+            "type": "array"
+          },
+          "rule": {
+            "const": "controlled_union_v1",
+            "description": "The experimental rule that decided this check",
+            "title": "Rule",
+            "type": "string"
+          },
+          "single_line_level": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Level a pooled line had to reach on its own",
+            "title": "Single Line Level"
+          },
+          "single_lines": {
+            "description": "Pooled lines that reached single_line_level on their own",
+            "title": "Single Lines",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "rule",
+          "eligible_lines",
+          "pooled_lines",
+          "pooled_members",
+          "pooled_kinds",
+          "single_lines",
+          "corroborated"
+        ],
+        "title": "BearingAggregateCorroboration",
+        "type": "object"
+      },
       "BearingCandidate": {
-        "description": "A hypothesis with a significant line of its own and at least one counted\ncorroborating line.\n\nA significant corroborating line that is shared with another hypothesis or\nlies at a shaft order is not counted and does not make a candidate.\nEvidence in one envelope spectrum, not a confirmed fault.",
+        "description": "A hypothesis with a significant line of its own and at least one counted\ncorroborating line, or, under the experimental controlled_union_v1 rule\nonly, further lines that rule's combined test accepts.\n\nA significant corroborating line that is shared with another hypothesis or\nlies at a shaft order is not counted and does not make a candidate.\nEvidence in one envelope spectrum, not a confirmed fault.",
         "properties": {
           "fault_type": {
             "description": "Checked label",
@@ -2374,7 +2501,7 @@
         "description": "One further line the kinematics of a detected line predict.",
         "properties": {
           "counted": {
-            "description": "Whether the line counts as corroboration: significant, not at a shaft order and not shared with another hypothesis",
+            "description": "Whether the line counts as corroboration: significant, not at a shaft order, not shared with another hypothesis and not excluded by an aggregate rule",
             "title": "Counted",
             "type": "boolean"
           },
@@ -2383,7 +2510,8 @@
               {
                 "enum": [
                   "shaft_order",
-                  "shared"
+                  "shared",
+                  "aggregate_rule"
                 ],
                 "type": "string"
               },
@@ -2392,7 +2520,7 @@
               }
             ],
             "default": null,
-            "description": "Why a significant line is not counted, if it is not",
+            "description": "Why a significant line is not counted, if it is not. aggregate_rule occurs only under the experimental controlled_union_v1 rule, when that rule does not corroborate the check",
             "title": "Excluded By"
           },
           "expected_hz": {
@@ -2506,6 +2634,20 @@
             },
             "title": "Assumptions",
             "type": "array"
+          },
+          "corroboration_rule": {
+            "anyOf": [
+              {
+                "const": "controlled_union_v1",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The experimental corroboration rule this check ran with; None for the released rule. Results of different rules are not comparable",
+            "title": "Corroboration Rule"
           },
           "exclusions": {
             "description": "What the nominal budgets do not cover",
@@ -2622,6 +2764,18 @@
       "BearingFaultCheckResult": {
         "description": "Result of checking for a specific expected fault frequency.",
         "properties": {
+          "aggregate_corroboration": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/BearingAggregateCorroboration"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Decision of the experimental controlled_union_v1 rule, for a check run with it and a significant line; None otherwise"
+          },
           "bearing_id": {
             "anyOf": [
               {
@@ -2675,7 +2829,7 @@
             "title": "Deviation Pct"
           },
           "evidence_strength": {
-            "description": "Grade of the significance-tested evidence for this hypothesis, from its state: 'none' (absent or not_testable), 'low' (unconfirmed or shared), 'moderate' (supported, one counted corroborating line), 'high' (supported, two or more). It counts lines of one envelope spectrum: it is not a probability, and it does not confirm a fault.",
+            "description": "Grade of the significance-tested evidence for this hypothesis, from its state: 'none' (absent or not_testable), 'low' (unconfirmed or shared, or, under the experimental controlled_union_v1 rule only, supported by that rule's combined test with no line counted: state supported, aggregate_corroboration.basis combined), 'moderate' (supported, one counted corroborating line), 'high' (supported, two or more). It counts lines of one envelope spectrum: it is not a probability, and it does not confirm a fault.",
             "title": "Evidence Strength",
             "type": "string"
           },
@@ -2827,7 +2981,7 @@
               }
             ],
             "default": null,
-            "description": "Significance-tested evidence for this hypothesis on the check's envelope spectrum: not_testable (the record cannot test its line), absent (no eligible peak, a local maximum strictly inside the search window, above threshold_db), unconfirmed (a line without a counted corroborating line, a line at a shaft order, or a cage line that a significant rolling-element line can explain), shared (another tested hypothesis also predicts a line where this line lies), supported (a significant line of its own with at least one counted corroborating line its kinematics predict). detected and evidence_strength are derived from it.",
+            "description": "Significance-tested evidence for this hypothesis on the check's envelope spectrum: not_testable (the record cannot test its line), absent (no eligible peak, a local maximum strictly inside the search window, above threshold_db), unconfirmed (a line without a counted corroborating line, a line at a shaft order, or a cage line that a significant rolling-element line can explain), shared (another tested hypothesis also predicts a line where this line lies), supported (a significant line of its own with at least one counted corroborating line its kinematics predict, or, under the experimental controlled_union_v1 rule only, further lines that rule's combined test accepts: see aggregate_corroboration). detected and evidence_strength are derived from it.",
             "title": "State"
           },
           "state_reason": {
@@ -3529,8 +3683,135 @@
   },
   "diagnose_vibration": {
     "$defs": {
+      "BearingAggregateCorroboration": {
+        "description": "The decision of the experimental controlled_union_v1 corroboration rule.\n\nRecorded apart from the lines: a line it pools is not thereby counted.\nLines of one spectrum are correlated, not independent evidence.",
+        "properties": {
+          "basis": {
+            "anyOf": [
+              {
+                "enum": [
+                  "single_line",
+                  "combined"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Which of the rule's two tests corroborated it, if one did. With 'combined' and no line counted, the check's evidence_strength is 'low'",
+            "title": "Basis"
+          },
+          "budget": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Nominal budget of the rule over the eligible lines; None without an eligible line",
+            "title": "Budget"
+          },
+          "combined_level": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Level the combined test had to reach",
+            "title": "Combined Level"
+          },
+          "combined_p_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fisher combination of the pooled lines; None without a pooled line. It assumes independent lines, so it is not a calibrated probability",
+            "title": "Combined P Value"
+          },
+          "corroborated": {
+            "description": "Whether the rule corroborates the check",
+            "title": "Corroborated",
+            "type": "boolean"
+          },
+          "eligible_lines": {
+            "description": "Further lines testable, at no shaft order and not shared",
+            "title": "Eligible Lines",
+            "type": "integer"
+          },
+          "pooled_kinds": {
+            "description": "Kinds of the pooled lines",
+            "items": {
+              "type": "string"
+            },
+            "title": "Pooled Kinds",
+            "type": "array"
+          },
+          "pooled_lines": {
+            "description": "Eligible lines that are local maxima, tested together",
+            "title": "Pooled Lines",
+            "type": "integer"
+          },
+          "pooled_members": {
+            "description": "Positions of the pooled lines in the check's corroboration list",
+            "items": {
+              "type": "integer"
+            },
+            "title": "Pooled Members",
+            "type": "array"
+          },
+          "rule": {
+            "const": "controlled_union_v1",
+            "description": "The experimental rule that decided this check",
+            "title": "Rule",
+            "type": "string"
+          },
+          "single_line_level": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Level a pooled line had to reach on its own",
+            "title": "Single Line Level"
+          },
+          "single_lines": {
+            "description": "Pooled lines that reached single_line_level on their own",
+            "title": "Single Lines",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "rule",
+          "eligible_lines",
+          "pooled_lines",
+          "pooled_members",
+          "pooled_kinds",
+          "single_lines",
+          "corroborated"
+        ],
+        "title": "BearingAggregateCorroboration",
+        "type": "object"
+      },
       "BearingCandidate": {
-        "description": "A hypothesis with a significant line of its own and at least one counted\ncorroborating line.\n\nA significant corroborating line that is shared with another hypothesis or\nlies at a shaft order is not counted and does not make a candidate.\nEvidence in one envelope spectrum, not a confirmed fault.",
+        "description": "A hypothesis with a significant line of its own and at least one counted\ncorroborating line, or, under the experimental controlled_union_v1 rule\nonly, further lines that rule's combined test accepts.\n\nA significant corroborating line that is shared with another hypothesis or\nlies at a shaft order is not counted and does not make a candidate.\nEvidence in one envelope spectrum, not a confirmed fault.",
         "properties": {
           "fault_type": {
             "description": "Checked label",
@@ -3723,7 +4004,7 @@
         "description": "One further line the kinematics of a detected line predict.",
         "properties": {
           "counted": {
-            "description": "Whether the line counts as corroboration: significant, not at a shaft order and not shared with another hypothesis",
+            "description": "Whether the line counts as corroboration: significant, not at a shaft order, not shared with another hypothesis and not excluded by an aggregate rule",
             "title": "Counted",
             "type": "boolean"
           },
@@ -3732,7 +4013,8 @@
               {
                 "enum": [
                   "shaft_order",
-                  "shared"
+                  "shared",
+                  "aggregate_rule"
                 ],
                 "type": "string"
               },
@@ -3741,7 +4023,7 @@
               }
             ],
             "default": null,
-            "description": "Why a significant line is not counted, if it is not",
+            "description": "Why a significant line is not counted, if it is not. aggregate_rule occurs only under the experimental controlled_union_v1 rule, when that rule does not corroborate the check",
             "title": "Excluded By"
           },
           "expected_hz": {
@@ -3855,6 +4137,20 @@
             },
             "title": "Assumptions",
             "type": "array"
+          },
+          "corroboration_rule": {
+            "anyOf": [
+              {
+                "const": "controlled_union_v1",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The experimental corroboration rule this check ran with; None for the released rule. Results of different rules are not comparable",
+            "title": "Corroboration Rule"
           },
           "exclusions": {
             "description": "What the nominal budgets do not cover",
@@ -3971,6 +4267,18 @@
       "BearingFaultCheckResult": {
         "description": "Result of checking for a specific expected fault frequency.",
         "properties": {
+          "aggregate_corroboration": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/BearingAggregateCorroboration"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Decision of the experimental controlled_union_v1 rule, for a check run with it and a significant line; None otherwise"
+          },
           "bearing_id": {
             "anyOf": [
               {
@@ -4024,7 +4332,7 @@
             "title": "Deviation Pct"
           },
           "evidence_strength": {
-            "description": "Grade of the significance-tested evidence for this hypothesis, from its state: 'none' (absent or not_testable), 'low' (unconfirmed or shared), 'moderate' (supported, one counted corroborating line), 'high' (supported, two or more). It counts lines of one envelope spectrum: it is not a probability, and it does not confirm a fault.",
+            "description": "Grade of the significance-tested evidence for this hypothesis, from its state: 'none' (absent or not_testable), 'low' (unconfirmed or shared, or, under the experimental controlled_union_v1 rule only, supported by that rule's combined test with no line counted: state supported, aggregate_corroboration.basis combined), 'moderate' (supported, one counted corroborating line), 'high' (supported, two or more). It counts lines of one envelope spectrum: it is not a probability, and it does not confirm a fault.",
             "title": "Evidence Strength",
             "type": "string"
           },
@@ -4176,7 +4484,7 @@
               }
             ],
             "default": null,
-            "description": "Significance-tested evidence for this hypothesis on the check's envelope spectrum: not_testable (the record cannot test its line), absent (no eligible peak, a local maximum strictly inside the search window, above threshold_db), unconfirmed (a line without a counted corroborating line, a line at a shaft order, or a cage line that a significant rolling-element line can explain), shared (another tested hypothesis also predicts a line where this line lies), supported (a significant line of its own with at least one counted corroborating line its kinematics predict). detected and evidence_strength are derived from it.",
+            "description": "Significance-tested evidence for this hypothesis on the check's envelope spectrum: not_testable (the record cannot test its line), absent (no eligible peak, a local maximum strictly inside the search window, above threshold_db), unconfirmed (a line without a counted corroborating line, a line at a shaft order, or a cage line that a significant rolling-element line can explain), shared (another tested hypothesis also predicts a line where this line lies), supported (a significant line of its own with at least one counted corroborating line its kinematics predict, or, under the experimental controlled_union_v1 rule only, further lines that rule's combined test accepts: see aggregate_corroboration). detected and evidence_strength are derived from it.",
             "title": "State"
           },
           "state_reason": {

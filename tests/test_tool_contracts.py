@@ -191,6 +191,13 @@ Fixture history:
   no longer among the counted findings; it is reported in overall_diagnosis
   as a measurement and is not counted.
   Generated under mcp 2.3.0 and pydantic 2.12.0 (uv.lock).
+- Bearing corroboration rule (2026-11-09): regenerated intentionally:
+  ADDITIVE only. BearingFaultCheckResult gains the optional
+  aggregate_corroboration, BearingEvidencePolicy the optional
+  corroboration_rule, and excluded_by the value aggregate_rule, all reached
+  only through the experimental controlled_union_v1 rule of
+  check_bearing_faults; descriptions of counted, excluded_by, state and
+  evidence_strength say so. Default results carry None for the new fields.
 - Signal import (2026-11-07): regenerated intentionally: ADDITIVE only.
   Four new tools with their output models (inspect_signal_file ->
   FileInspection, validate_signal_import -> ValidationResult,

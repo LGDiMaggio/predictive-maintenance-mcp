@@ -46,6 +46,7 @@ from predictive_maintenance_mcp.asset_ledger import service
 from predictive_maintenance_mcp.asset_ledger import store as store_module
 from predictive_maintenance_mcp.asset_ledger.assessment import (
     AssessmentParams,
+    ReprocessCoupling,
     assess_change,
 )
 from predictive_maintenance_mcp.asset_ledger.service import (
@@ -3568,3 +3569,332 @@ class TestManyFailures:
         }
         assert listed == set(failing)
         assert len(events_of(store)) == events + 5
+
+
+# ---------------------------------------------------------------------------
+# Lineages of the experimental corroboration rule
+# ---------------------------------------------------------------------------
+
+
+class TestCorroborationRuleLineages:
+    """A lineage of the experimental rule is never read as the released one."""
+
+    UNION = SnapshotPolicy(corroboration_rule="controlled_union_v1")
+
+    def _released_then_union(self, store: LedgerStore, data_dir: Path) -> list[str]:
+        declare_point(store)
+        ids = load_sequence(store, data_dir, 12, policy=None)
+        response = reprocess(store, data_dir, policy=self.UNION)
+        while response["remaining"]:
+            assert response["next_call"] is None
+            assert "repeat this call with the same policy" in response["message"]
+            response = reprocess(
+                store, data_dir, policy=self.UNION, cursor=response["next_cursor"]
+            )
+        return ids
+
+    def test_released_assessment_ignores_a_more_recent_experimental_lineage(
+        self, store, data_dir
+    ):
+        declare_point(store)
+        load_sequence(store, data_dir, 12, policy=None)
+        view = store.read_view(ASSET)
+        before = assess_change(view, ASSET, POINT)
+
+        written = 0
+        for call in range(3):
+            response = reprocess(
+                store,
+                data_dir,
+                policy=self.UNION,
+                cursor=None if call == 0 else response["next_cursor"],
+            )
+            written += response["reprocessed"]
+            if not response["remaining"]:
+                break
+        # The experimental lineage now covers every measurement.
+        assert response["processing_id"] == processing_id(self.UNION)
+        assert written == 12
+
+        after = assess_change(store.read_view(ASSET), ASSET, POINT)
+        assert after["status"] == "assessed"
+        assert after["lineage"] == before["lineage"]
+        assert after["lineage"]["processing_id"] == processing_id()
+        assert after["lineage"]["is_current"] is True
+        assert "corroboration_rule" not in after["lineage"]
+        assert after["assessed"] == before["assessed"]
+        assert after["observed"] == before["observed"]
+        assert "experimental" not in after["message"]
+
+    def test_experimental_assessment_reads_its_own_lineage_and_says_so(
+        self, store, data_dir
+    ):
+        self._released_then_union(store, data_dir)
+
+        result = assess_change(store.read_view(ASSET), ASSET, POINT, policy=self.UNION)
+
+        assert result["status"] == "assessed"
+        assert result["lineage"]["processing_id"] == processing_id(self.UNION)
+        assert result["lineage"]["is_current"] is True
+        assert result["lineage"]["corroboration_rule"] == "controlled_union_v1"
+        assert list(result["lineage"]["candidates"]) == [processing_id(self.UNION)]
+        assert "experimental controlled_union_v1" in result["message"]
+        assert "synthetic signals only" in result["message"]
+
+    def test_released_assessment_does_not_cover_with_an_experimental_lineage(
+        self, store, data_dir
+    ):
+        declare_point(store)
+        load_sequence(store, data_dir, 12, policy=self.UNION)
+
+        result = assess_change(store.read_view(ASSET), ASSET, POINT)
+
+        assert result["status"] == "processing_not_homogeneous"
+        assert result["lineages"] == {}
+        assert result["other_rule_lineages"] == [processing_id(self.UNION)]
+        assert result["current_processing_id"] == processing_id()
+        assert "of the any_line corroboration rule" in result["message"]
+        assert "of another corroboration rule are not read" in result["message"]
+
+    def test_no_message_changes_on_a_ledger_without_experimental_lineages(
+        self, store, data_dir
+    ):
+        declare_point(store)
+        load_sequence(store, data_dir, 12, policy=OLD_POLICY)
+
+        result = assess_change(store.read_view(ASSET), ASSET, POINT)
+
+        assert "other_rule_lineages" not in result
+        assert "corroboration_rule" not in result["lineage"]
+        assert "corroboration rule" not in result["message"]
+
+    def test_experimental_remedy_never_names_the_released_tool(self, store, data_dir):
+        declare_point(store)
+        load_sequence(store, data_dir, 12, policy=None)
+
+        result = assess_change(store.read_view(ASSET), ASSET, POINT, policy=self.UNION)
+
+        assert result["status"] == "processing_not_homogeneous"
+        assert result["lineages"] == {}
+        assert result["other_rule_lineages"] == [processing_id()]
+        assert result["remedy"] == (
+            f"the 12 missing {processing_id(self.UNION)} snapshot(s) can be "
+            "written only by reprocess_stale_snapshots with this same "
+            "experimental policy, from Python; no tool writes this lineage"
+        )
+
+    def test_experimental_stale_verdict_names_no_released_call(self, store, data_dir):
+        """The released re-processing call cannot write this rule's lineage."""
+        declare(store, 2)
+        load_sequence(store, data_dir, 11, policy=self.UNION)
+        declare(store, 1)
+
+        result = assess_change(store.read_view(ASSET), ASSET, POINT, policy=self.UNION)
+
+        assert result["status"] == "assessed"
+        assert result["lineage"]["stale_context"] == 11
+        assert "under a previous declaration" in result["message"]
+        assert "assess_asset_change" not in result["message"]
+        # The approved experimental wording names no re-processing route here.
+        assert "reprocess_stale_snapshots" not in result["message"]
+
+    def test_experimental_reprocessing_names_no_released_continuation(
+        self, store, data_dir
+    ):
+        declare_point(store)
+        load_sequence(store, data_dir, 12, policy=None)
+
+        first = reprocess(store, data_dir, policy=self.UNION)
+
+        assert first["processing_id"] == processing_id(self.UNION)
+        assert first["remaining"] == 2
+        assert first["next_call"] is None
+        assert "repeat this call with the same policy" in first["message"]
+        assert "assess_asset_change" not in first["message"]
+
+    def test_latest_lineage_of_the_history_stays_released(self, store, data_dir):
+        ids = self._released_then_union(store, data_dir)
+
+        latest = service._latest_lineage(store.read_view(ASSET), ids)
+
+        assert latest == processing_id()
+
+
+class TestNonDefaultPolicyRemedies:
+    """The re-processing tool writes the default policy's lineage only, so a
+    released-rule policy with another setting is never told to call it."""
+
+    POLICY = SnapshotPolicy(tolerance_pct=4.0)
+
+    def _library_clause(self, action: str) -> str:
+        return (
+            "reprocess_stale_snapshots, called from Python with this same policy, "
+            f"attempts to {action}; no tool writes this lineage"
+        )
+
+    def _library_remedy(self) -> str:
+        return (
+            "call reprocess_stale_snapshots from Python with this same policy to "
+            f"attempt the missing {processing_id(self.POLICY)} snapshots of the "
+            "evaluated slots (idempotent, bounded per call), and repeat it with "
+            "its next_cursor while measurements remain; no tool writes this lineage"
+        )
+
+    def _mixed_lineages(self, store: LedgerStore, data_dir: Path) -> list[str]:
+        """Half the sequence on the default lineage, half on another one."""
+        declare_point(store)
+        infos, arrays = sequence_infos(data_dir, 12)
+        outcomes = record(store, data_dir, infos[:6], arrays, policy=None)
+        outcomes += record(store, data_dir, infos[6:], arrays, policy=OLD_POLICY)
+        return [o["measurement_id"] for o in outcomes]
+
+    def test_earlier_lineage_names_the_library_route(self, store, data_dir):
+        declare_point(store)
+        load_sequence(store, data_dir, 12, policy=None)
+
+        result = assess_change(store.read_view(ASSET), ASSET, POINT, policy=self.POLICY)
+
+        current = processing_id(self.POLICY)
+        assert result["status"] == "assessed"
+        assert result["lineage"]["processing_id"] == processing_id()
+        assert result["lineage"]["current_processing_id"] == current
+        assert result["lineage"]["missing_for_current"] == 12
+        assert "assess_asset_change" not in result["message"]
+        assert self._library_clause(
+            f"compute the 12 missing or outdated {current} snapshot(s) of the "
+            "evaluated slots"
+        ) in (result["message"])
+        assert "corroboration_rule" not in result["lineage"]
+        assert "experimental" not in result["message"]
+
+    def test_the_default_policy_still_names_the_tool_on_the_same_view(
+        self, store, data_dir
+    ):
+        declare_point(store)
+        load_sequence(store, data_dir, 12, policy=OLD_POLICY)
+        view = store.read_view(ASSET)
+
+        released = assess_change(view, ASSET, POINT)
+        other = assess_change(view, ASSET, POINT, policy=self.POLICY)
+
+        assert released["lineage"]["processing_id"] == processing_id(OLD_POLICY)
+        assert other["lineage"]["processing_id"] == processing_id(OLD_POLICY)
+        assert REPROCESS_CALL in released["message"]
+        assert "reprocess_stale_snapshots" not in released["message"]
+        assert "assess_asset_change" not in other["message"]
+        assert "reprocess_stale_snapshots" in other["message"]
+        # A policy equal to the default one is the default one.
+        assert assess_change(view, ASSET, POINT, policy=SnapshotPolicy()) == released
+
+    def test_remedy_without_a_covering_lineage_names_the_library_route(
+        self, store, data_dir
+    ):
+        self._mixed_lineages(store, data_dir)
+        view = store.read_view(ASSET)
+
+        result = assess_change(view, ASSET, POINT, policy=self.POLICY)
+        released = assess_change(view, ASSET, POINT)
+
+        assert result["status"] == "processing_not_homogeneous"
+        assert released["status"] == "processing_not_homogeneous"
+        assert result["remedy"] == self._library_remedy()
+        assert REPROCESS_CALL in released["remedy"]
+
+    def test_remedy_keeps_the_actions_of_blocked_slots(self, store, data_dir):
+        ids = self._mixed_lineages(store, data_dir)
+        view = store.read_view(ASSET)
+
+        def remedy(blocked: list[str]) -> str:
+            coupling = ReprocessCoupling(
+                blocked={m: "file_missing" for m in blocked}, next_call=None
+            )
+            result = assess_change(
+                view, ASSET, POINT, reprocess=coupling, policy=self.POLICY
+            )
+            assert result["status"] == "processing_not_homogeneous"
+            text: str = result["remedy"]
+            assert "assess_asset_change" not in text
+            return text
+
+        partly = remedy(ids[:1])
+        assert partly.startswith(self._library_remedy() + "; 1 of the 12 slots ")
+        assert "stay without it until an action is taken: 1 needs the file " in partly
+        wholly = remedy(ids)
+        assert wholly.startswith(
+            "re-processing cannot compute the 12 missing "
+            f"{processing_id(self.POLICY)} snapshot(s) of the evaluated slots "
+            "until an action is taken: 12 need the file restored or located"
+        )
+        assert "declare_healthy_baseline" in wholly
+        assert "reprocess_stale_snapshots" not in wholly
+
+    def test_stale_earlier_lineage_names_the_library_route(self, store, data_dir):
+        """The default lineage is assessed from stale snapshots and the
+        policy's own lineage has none yet."""
+        declare(store, 2)
+        load_sequence(store, data_dir, 11, policy=None)
+        declare(store, 1)
+
+        result = assess_change(store.read_view(ASSET), ASSET, POINT, policy=self.POLICY)
+
+        current = processing_id(self.POLICY)
+        assert result["status"] == "assessed"
+        assert result["lineage"]["processing_id"] == processing_id()
+        assert result["lineage"]["stale_context"] == 11
+        assert result["lineage"]["missing_for_current"] == 11
+        assert "assess_asset_change" not in result["message"]
+        assert self._library_clause(
+            f"compute the 11 missing or outdated {current} snapshot(s) of the "
+            "evaluated slots"
+        ) in (result["message"])
+
+    def test_stale_verdict_names_the_library_route(self, store, data_dir):
+        declare(store, 2)
+        load_sequence(store, data_dir, 11, policy=self.POLICY)
+        declare(store, 1)
+
+        result = assess_change(store.read_view(ASSET), ASSET, POINT, policy=self.POLICY)
+
+        assert result["status"] == "assessed"
+        assert result["lineage"]["is_current"] is True
+        assert result["lineage"]["stale_context"] == 11
+        assert "assess_asset_change" not in result["message"]
+        assert "; " + self._library_clause("recompute them") in result["message"]
+
+    def test_later_default_lineage_names_the_library_route(self, store, data_dir):
+        """Each slot holds a stale snapshot of the policy's lineage and a
+        current one of the default lineage, recorded later and assessed."""
+        declare(store, 2)
+        load_sequence(store, data_dir, 11, policy=self.POLICY)
+        declare(store, 1)
+        response = reprocess(store, data_dir)
+        while response["remaining"]:
+            response = reprocess(store, data_dir, cursor=response["next_cursor"])
+
+        result = assess_change(store.read_view(ASSET), ASSET, POINT, policy=self.POLICY)
+
+        current = processing_id(self.POLICY)
+        assert result["status"] == "assessed"
+        assert result["lineage"]["processing_id"] == processing_id()
+        assert result["lineage"]["missing_for_current"] == 0
+        assert result["lineage"]["stale_context"] == 0
+        assert "assess_asset_change" not in result["message"]
+        assert "nothing to write" not in result["message"]
+        assert self._library_clause(
+            f"recompute the 11 {current} snapshot(s) computed under a previous "
+            "declaration"
+        ) in (result["message"])
+
+    def test_reprocessing_under_the_policy_names_no_tool_continuation(
+        self, store, data_dir
+    ):
+        declare_point(store)
+        load_sequence(store, data_dir, 12, policy=None)
+
+        first = reprocess(store, data_dir, policy=self.POLICY)
+
+        assert first["processing_id"] == processing_id(self.POLICY)
+        assert first["remaining"] == 2
+        assert first["next_call"] is None
+        assert "repeat this call with the same policy" in first["message"]
+        assert "assess_asset_change" not in first["message"]

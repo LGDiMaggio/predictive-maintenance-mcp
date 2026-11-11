@@ -75,7 +75,10 @@ from .bearing_evidence import (
     _NAMES,
     _ROLLING_ELEMENT,
     Hypothesis,
+    _CONTROLLED_UNION_NAME,
     _capital,
+    _combined_clause,
+    _combined_only,
     _join,
 )
 
@@ -94,6 +97,9 @@ ACQUISITION_ELIGIBILITIES = (KNOWN_INAPPLICABLE, UNKNOWN)
 
 CLAIM_BASIS = "significance_tested"
 CLAIM_POLICY_VERSION = 1
+#: The rules of a claim from the experimental corroboration rule: its
+#: sideband-only limitation also reads the lines of the combined test.
+CLAIM_POLICY_VERSION_CONTROLLED_UNION = 2
 
 # Conditions: why a claim is qualified or withheld.
 GENERATED_WITHOUT_NOISE = "generated_without_noise"
@@ -522,7 +528,15 @@ def _first(hypotheses: Sequence[Hypothesis], canonical: str) -> Optional[int]:
 
 
 def _sideband_only(canonical: Optional[str], check: Mapping[str, Any]) -> bool:
-    """Whether an inner-race line's only counted corroboration is sidebands."""
+    """Whether an inner-race line's only counted corroboration is sidebands.
+
+    Where an aggregate rule's combined test alone supports the line, no line is
+    counted and the test does not show which line carried it, so any sideband
+    in the combined test carries the same limitation.
+    """
+    if _combined_only(check):
+        kinds = check["aggregate_corroboration"]["pooled_kinds"]
+        return canonical == _INNER_RACE and "sideband" in kinds
     counted = {m["kind"] for m in check["corroboration"] if m["counted"]}
     return canonical == _INNER_RACE and counted == {"sideband"}
 
@@ -659,8 +673,18 @@ def bearing_claim(
         "limitations": limitations,
         "acquisition_eligibility": acquisition_eligibility,
         "basis": CLAIM_BASIS,
-        "policy_version": CLAIM_POLICY_VERSION,
+        "policy_version": (
+            CLAIM_POLICY_VERSION_CONTROLLED_UNION
+            if _experimental_rule(evidence)
+            else CLAIM_POLICY_VERSION
+        ),
     }
+
+
+def _experimental_rule(evidence: Mapping[str, Any]) -> bool:
+    """Whether the evidence was decided under the experimental corroboration rule."""
+    policy = evidence.get("evidence_policy")
+    return isinstance(policy, Mapping) and "corroboration_rule" in policy
 
 
 def named_candidate(
@@ -716,8 +740,20 @@ def claim_statement(
         hypotheses: The tested hypotheses, in the order of ``evidence``.
 
     Returns:
-        One statement from ``CLAIM_SENTENCES``.
+        One statement from ``CLAIM_SENTENCES``; a check of the experimental
+        corroboration rule adds a sentence saying so.
     """
+    statement = _statement_of_claim(claim, evidence, hypotheses)
+    if _experimental_rule(evidence):
+        return f"{statement} {_EXPERIMENTAL_RULE_NOTE}"
+    return statement
+
+
+def _statement_of_claim(
+    claim: Mapping[str, Any],
+    evidence: Mapping[str, Any],
+    hypotheses: Sequence[Hypothesis],
+) -> str:
     checks = evidence["checks"]
     conditions = claim["conditions"]
     vocabulary = all(h.canonical in _NAMES for h in hypotheses)
@@ -831,7 +867,11 @@ def claim_statement(
         )
     limitations = claim["limitations"]
     if SIDEBAND_ONLY_CORROBORATION in limitations:
-        sentence += " " + _S["limitation_sideband_only"]
+        sentence += " " + (
+            _combined_sideband_limitation(check)
+            if _combined_only(check)
+            else _S["limitation_sideband_only"]
+        )
     if CAGE_NOT_DECLARED in limitations:
         sentence += " " + _S["limitation_cage_not_declared"]
     return f"{sentence} {_S['assumption']}"
@@ -1030,6 +1070,16 @@ def line_test_statement(summary: Mapping[str, Any]) -> str:
         canonical = check.get("fault_type_canonical")
         line = _line_name(canonical, check["fault_type"])
         state = check["state"]
+        if state == "supported" and _combined_only(check):
+            sentences.append(
+                _COMBINED_BLOCK_SUPPORTED.format(
+                    line=line,
+                    peak_hz=check["line_peak_hz"],
+                    level_db=check["level_db"],
+                    clause=_combined_clause(canonical in _NAMES, check),
+                )
+            )
+            continue
         if state == "supported":
             key = "block_supported" if canonical in _NAMES else "block_supported_label"
         elif state in ("unconfirmed", "shared"):
@@ -1041,6 +1091,8 @@ def line_test_statement(summary: Mapping[str, Any]) -> str:
                 line=line, peak_hz=check["line_peak_hz"], level_db=check["level_db"]
             )
         )
+    if _experimental_rule(summary):
+        sentences.append(_EXPERIMENTAL_RULE_NOTE)
     return " ".join(sentences)
 
 
@@ -1052,6 +1104,58 @@ def _member_phrase(member: Mapping[str, Any], canonical: Optional[str]) -> str:
         peak_hz=member["peak_hz"],
         level_db=member["level_db"],
     )
+
+
+#: The experimental corroboration rule only: a note on every result of that rule.
+_EXPERIMENTAL_RULE_NOTE = (
+    "This check used the experimental controlled_union_v1 corroboration rule, "
+    "selected for this call. That rule was evaluated on synthetic signals only, so "
+    "that evaluation establishes nothing about real machines, and its result is not "
+    "comparable with a result of the released rule."
+)
+#: The counted-lines sentence when a combined test of the further lines, and no
+#: line on its own, supports the type.
+_COMBINED_EVIDENCE = (
+    "Lines counted for the {line}: the line at {peak_hz:.2f} Hz ({level_db:.1f} dB above "
+    "the local noise floor). No further line is counted on its own: {members}, {how} "
+    "the combined level of "
+    + _CONTROLLED_UNION_NAME
+    + ". Lines of one spectrum are not independent evidence and do not confirm a fault."
+)
+#: How the pooled lines of that sentence reach the combined level.
+_COMBINED_HOW_ONE = (
+    "level relative to the local noise floor and not significant in its own line "
+    "test, reaches"
+)
+_COMBINED_HOW_SEVERAL = (
+    "levels relative to the local noise floor and none significant in its own line "
+    "test, tested together reach"
+)
+#: The limitation sentence when a combined test, not a counted line, supports
+#: an inner race and includes shaft-rate sidebands.
+_COMBINED_LIMITATION_SIDEBAND = (
+    "The further lines tested together include shaft-rate sidebands, which shaft-rate "
+    "modulation of the background can also produce, and the combined test does not "
+    "show which line carried the result, so they do not independently confirm an "
+    "inner-race defect."
+)
+_COMBINED_LIMITATION_ONE_SIDEBAND = (
+    "The further line tested is a shaft-rate sideband, which shaft-rate modulation of "
+    "the background can also produce, so it does not independently confirm an "
+    "inner-race defect."
+)
+#: The check block's sentence for a type its combined test alone supports.
+_COMBINED_BLOCK_SUPPORTED = (
+    "The {line} at {peak_hz:.2f} Hz stands {level_db:.1f} dB above the local noise "
+    "floor, and {clause} in the same spectrum."
+)
+
+
+def _combined_sideband_limitation(check: Mapping[str, Any]) -> str:
+    """The limitation sentence for a combined-only decision over a pool with a sideband."""
+    if check["aggregate_corroboration"]["pooled_lines"] == 1:
+        return _COMBINED_LIMITATION_ONE_SIDEBAND
+    return _COMBINED_LIMITATION_SIDEBAND
 
 
 def counted_lines_statements(summary: Mapping[str, Any]) -> list[str]:
@@ -1076,6 +1180,24 @@ def counted_lines_statements(summary: Mapping[str, Any]) -> list[str]:
         members = [
             _member_phrase(m, canonical) for m in check["corroboration"] if m["counted"]
         ]
+        if _combined_only(check):
+            # Support from a combined test of the further lines, none counted
+            # on its own.
+            pooled = [
+                check["corroboration"][k]
+                for k in check["aggregate_corroboration"]["pooled_members"]
+            ]
+            sentence = _COMBINED_EVIDENCE.format(
+                line=_line_name(canonical, candidate["fault_type"]),
+                peak_hz=check["line_peak_hz"],
+                level_db=check["level_db"],
+                members=_join([_member_phrase(m, canonical) for m in pooled]),
+                how=_COMBINED_HOW_SEVERAL if len(pooled) > 1 else _COMBINED_HOW_ONE,
+            )
+            if _sideband_only(canonical, check):
+                sentence += " " + _combined_sideband_limitation(check)
+            sentences.append(sentence)
+            continue
         sentence = _S["evidence_lines"].format(
             line=_line_name(canonical, candidate["fault_type"]),
             peak_hz=check["line_peak_hz"],
@@ -1087,6 +1209,8 @@ def counted_lines_statements(summary: Mapping[str, Any]) -> list[str]:
         if _sideband_only(canonical, check):
             sentence += " " + _S["limitation_sideband_only"]
         sentences.append(sentence)
+    if sentences and _experimental_rule(summary):
+        sentences.append(_EXPERIMENTAL_RULE_NOTE)
     return sentences
 
 

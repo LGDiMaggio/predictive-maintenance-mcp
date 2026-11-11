@@ -561,6 +561,15 @@
             "title": "Contact Angle Deg",
             "type": "number"
           },
+          "corroboration_rule": {
+            "default": "any_line",
+            "enum": [
+              "any_line",
+              "controlled_union_v1"
+            ],
+            "title": "Corroboration Rule",
+            "type": "string"
+          },
           "frequencies": {
             "anyOf": [
               {

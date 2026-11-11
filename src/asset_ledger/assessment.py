@@ -130,6 +130,8 @@ from .comparability import (
     summarize_comparability,
 )
 from .snapshot import (
+    CORROBORATION_RULE_ANY_LINE,
+    SnapshotPolicy,
     BEARING_LABELS,
     context_digest,
     processing_id,
@@ -844,16 +846,43 @@ def collect_point_slots(
 # ---------------------------------------------------------------------------
 
 
-def _select_lineage(evaluated: Sequence[dict[str, Any]]) -> dict[str, Any]:
+#: Closes the message of an assessment of an experimental lineage.
+_EXPERIMENTAL_ASSESSMENT_NOTE = (
+    "This assessment reads the lineage of the experimental {rule} corroboration "
+    "rule, selected for this call; that rule was evaluated on synthetic signals only."
+)
+
+
+def _snapshot_rule(snapshot: Mapping[str, Any]) -> str:
+    """The corroboration rule a snapshot was computed with.
+
+    A snapshot that names none was computed with the released rule.
+    """
+    params = (snapshot.get("processing") or {}).get("params")
+    rule = params.get("corroboration_rule") if isinstance(params, Mapping) else None
+    return rule if isinstance(rule, str) else CORROBORATION_RULE_ANY_LINE
+
+
+def _select_lineage(
+    evaluated: Sequence[dict[str, Any]],
+    corroboration_rule: str = CORROBORATION_RULE_ANY_LINE,
+) -> dict[str, Any]:
     """The most recent lineage covering every evaluated slot, or None.
 
+    Only a lineage of *corroboration_rule* can be chosen, however recent
+    another one is: an assessment never compares across rules, and the
+    assessment of the released rule never reads an experimental lineage.
+
     Returns:
-        ``{"processing_id", "counts", "recency"}``: the chosen id (None when
-        no lineage covers all), the number of covered slots per lineage and
-        the recency key used (position of the latest snapshot).
+        ``{"processing_id", "counts", "recency", "other_rule_lineages"}``: the
+        chosen id (None when no lineage of the rule covers all), the number of
+        covered slots per lineage of the rule, the recency key used (position
+        of the latest snapshot) and the sorted lineages of any other rule,
+        which are never read.
     """
     counts: dict[str, int] = {}
     recency: dict[str, int] = {}
+    rules: dict[str, str] = {}
     for slot in evaluated:
         record = slot["record"]
         positions = record["lineage_positions"]
@@ -866,17 +895,22 @@ def _select_lineage(evaluated: Sequence[dict[str, Any]]) -> dict[str, Any]:
                 recency.get(processing, -1),
                 int(position) if isinstance(position, int) else index,
             )
-        for processing in record["snapshots_by_lineage"]:
+        for processing, snapshot in record["snapshots_by_lineage"].items():
             counts[processing] = counts.get(processing, 0) + 1
+            rules[processing] = _snapshot_rule(snapshot)
     total = len(evaluated)
-    covering = [pid for pid, count in counts.items() if count == total]
+    same_rule = {
+        pid: count for pid, count in counts.items() if rules[pid] == corroboration_rule
+    }
+    covering = [pid for pid, count in same_rule.items() if count == total]
     chosen = (
         max(covering, key=lambda pid: (recency.get(pid, -1), pid)) if covering else None
     )
     return {
         "processing_id": chosen,
-        "counts": {pid: counts[pid] for pid in sorted(counts)},
+        "counts": {pid: same_rule[pid] for pid in sorted(same_rule)},
         "recency": recency,
+        "other_rule_lineages": sorted(set(counts) - set(same_rule)),
     }
 
 
@@ -1988,6 +2022,17 @@ _REPROCESS_CAVEAT = (
     "reprocess block gives the reason)"
 )
 
+
+def _library_clause(action: str) -> str:
+    """The clause naming the re-processing route of the current lineage of a
+    released-rule policy other than the default one: the re-processing tool
+    writes the default policy's lineage only."""
+    return (
+        f"reprocess_stale_snapshots, called from Python with this same policy, "
+        f"attempts to {action}; no tool writes this lineage"
+    )
+
+
 #: The one verification an assessment scored partly from stale snapshots
 #: calls for, whatever its classification. It names what to check, not a
 #: remedy: re-processing may not be able to write the missing snapshots.
@@ -2176,6 +2221,7 @@ def _stale_evidence(
     blocked: _BlockedByCode,
     listed: bool,
     members: frozenset[str],
+    library: bool = False,
 ) -> str:
     """The sentence (without its period) that opens the message when
     *stale* of the *covered* evaluated slots were scored from snapshots
@@ -2187,7 +2233,9 @@ def _stale_evidence(
     them; the *blocked* ones are counted by what they need, and *listed*
     says the reprocess block of the same response lists them (otherwise
     the clause gives their actions, for the declared-baseline *members*
-    included). When the
+    included). With no *call* and *library* set (a released-rule policy
+    other than the default one, whose lineage no tool writes), it names
+    reprocess_stale_snapshots with the same policy instead. When the
     *chosen* lineage is another one, it says that re-processing does not
     touch the chosen lineage's snapshots, and when the assessment moves to
     the current lineage.
@@ -2213,10 +2261,13 @@ def _stale_evidence(
                 blocked=blocked,
                 listed=listed,
                 members=members,
+                library=library,
             )
         )
     if actionable and call is not None:
         text += f"; {call} attempts to recompute them {_REPROCESS_CAVEAT}"
+    elif actionable and library:
+        text += "; " + _library_clause("recompute them")
     return text + _blocked_clause(blocked, current, listed=listed, members=members)
 
 
@@ -2231,14 +2282,18 @@ def _earlier_lineage(
     blocked: _BlockedByCode,
     listed: bool,
     members: frozenset[str],
+    library: bool = False,
 ) -> str:
     """The clause (without its period) that says the assessment uses the
     lineage *chosen*, not the *current* one, and names the re-processing
     *call* when it can compute the current snapshots of *actionable*
-    evaluated slots; the *blocked* ones are counted as in the stale-evidence
-    sentence (*listed*, *members*). It continues that sentence, or opens the
-    message on its own."""
+    evaluated slots, or, with no *call* and *library* set, names
+    reprocess_stale_snapshots with the same policy (see
+    :func:`_stale_evidence`); the *blocked* ones are counted as in the
+    stale-evidence sentence (*listed*, *members*). It continues that
+    sentence, or opens the message on its own."""
     named = actionable if call is not None else 0
+    library_named = actionable if library and not named else 0
     tail = _blocked_clause(blocked, current, listed=listed, members=members)
     if missing:
         text = (
@@ -2253,6 +2308,11 @@ def _earlier_lineage(
                 f"; {call} attempts to compute the {named} missing or "
                 f"outdated {current} snapshot(s) of the evaluated slots "
                 f"{_REPROCESS_CAVEAT}"
+            )
+        elif library_named:
+            text += "; " + _library_clause(
+                f"compute the {library_named} missing or outdated {current} "
+                f"snapshot(s) of the evaluated slots"
             )
         return text + tail
     text = (
@@ -2269,6 +2329,21 @@ def _earlier_lineage(
                 f"{_REPROCESS_CAVEAT}, and the assessment moves to {current} as "
                 f"soon as re-processing appends a {current} snapshot to one of "
                 f"the evaluated slots"
+            )
+            + tail
+        )
+    if library_named:
+        return (
+            text
+            + "; "
+            + _library_clause(
+                f"recompute the {library_named} {current} snapshot(s) computed "
+                f"under a previous declaration"
+            )
+            + (
+                f", and the assessment moves to {current} as soon as "
+                f"re-processing appends a {current} snapshot to one of the "
+                f"evaluated slots"
             )
             + tail
         )
@@ -2401,6 +2476,7 @@ def assess_change(
     params: AssessmentParams = AssessmentParams(),
     known_assets: Optional[list[str]] = None,
     reprocess: Optional[ReprocessCoupling] = None,
+    policy: Optional[SnapshotPolicy] = None,
 ) -> dict[str, Any]:
     """Assess the change of one measurement point from the asset view.
 
@@ -2423,6 +2499,19 @@ def assess_change(
             (the assessment reads no file); with it the stale clause and the
             ``processing_not_homogeneous`` remedy name exactly its
             ``next_call``, or the actions when it gives none.
+        policy: The snapshot policy whose lineage is current; None means the
+            defaults. Only lineages of its corroboration rule are read. The
+            re-processing tool writes the default policy's lineage only, so
+            it is offered as a remedy only when that lineage is the current
+            one. For a released-rule policy with another setting the
+            ``processing_not_homogeneous`` remedy and the stale-evidence
+            clauses of the message name reprocess_stale_snapshots with this
+            same policy, from Python, instead. A policy of the experimental
+            rule is a library path: the payload and message name the rule,
+            and the remedy names the same function. A server
+            older than this option does not know the rule and can
+            select a lineage of it as the most recent one, so keep snapshots
+            of this rule out of any ledger such a server reads.
 
     Returns:
         A dict with ``status`` in :data:`ASSESSMENT_STATUSES` and:
@@ -2537,14 +2626,26 @@ def assess_change(
 
     reference_slots: list[dict[str, Any]] = reference["slots"]
     evaluated = reference_slots + sequence
-    lineage = _select_lineage(evaluated)
-    current_processing = processing_id()
+    resolved_policy = SnapshotPolicy() if policy is None else policy
+    lineage = _select_lineage(evaluated, resolved_policy.corroboration_rule)
+    current_processing = processing_id(resolved_policy)
     point = staged["point"]
-    call = (
-        reprocess_call(asset_id, measurement_point_id, params=params)
-        if reprocess is None
-        else reprocess.next_call
-    )
+    rule = resolved_policy.corroboration_rule
+    experimental = rule != CORROBORATION_RULE_ANY_LINE
+    # The re-processing tool writes the default policy's lineage only. Any
+    # other lineage is written from Python with the same policy, which the
+    # messages name under the released rule; the experimental rule keeps its
+    # own wording.
+    tool_writes_current = current_processing == processing_id()
+    library = not tool_writes_current and not experimental
+    other_rule_lineages: list[str] = lineage["other_rule_lineages"]
+    call: Optional[str]
+    if not tool_writes_current:
+        call = None
+    elif reprocess is None:
+        call = reprocess_call(asset_id, measurement_point_id, params=params)
+    else:
+        call = reprocess.next_call
     missing_for_current = sum(
         1
         for slot in evaluated
@@ -2557,11 +2658,18 @@ def assess_change(
             for s in reference_slots
             if current_processing not in s["record"]["snapshots_by_lineage"]
         ]
+        rule_scope = f" of the {rule} corroboration rule" if other_rule_lineages else ""
         text = (
-            f"No processing lineage covers every one of the {len(evaluated)} "
+            f"No processing lineage{rule_scope} covers every one of the "
+            f"{len(evaluated)} "
             f"evaluated acquisition slots (reference plus post-reference): "
             f"{lineage['counts'] or 'no snapshot at all'}."
         )
+        if other_rule_lineages:
+            text += (
+                f" {len(other_rule_lineages)} lineage(s) of another corroboration "
+                f"rule are not read."
+            )
         if reference["kind"] == "declared_baseline" and reference_missing:
             text += (
                 f" {len(reference_missing)} member(s) of the declared baseline "
@@ -2577,19 +2685,35 @@ def assess_change(
             reprocess,
         )
         members = _baseline_ids(view, measurement_point_id)
-        if attemptable and call is not None:
+        stay_without = (
+            f"; {sum(len(ids) for ids in blocked.values())} of the "
+            f"{missing_for_current} slots missing one stay without it "
+            f"until an action is taken: {_remedy_actions(blocked, members)}"
+            if blocked
+            else ""
+        )
+        if experimental:
+            remedy = (
+                f"the {missing_for_current} missing {current_processing} "
+                f"snapshot(s) can be written only by reprocess_stale_snapshots "
+                f"with this same experimental policy, from Python; no tool "
+                f"writes this lineage"
+            )
+        elif attemptable and library:
+            remedy = (
+                f"call reprocess_stale_snapshots from Python with this same "
+                f"policy to attempt the missing {current_processing} snapshots "
+                f"of the evaluated slots (idempotent, bounded per call), and "
+                f"repeat it with its next_cursor while measurements remain; no "
+                f"tool writes this lineage"
+            ) + stay_without
+        elif attemptable and call is not None:
             remedy = (
                 f"call {call} to attempt the missing {current_processing} "
                 f"snapshots of the evaluated slots (idempotent, bounded per "
                 f"call); while its reprocess block gives a next_call, make "
                 f"exactly that call"
-            )
-            if blocked:
-                remedy += (
-                    f"; {sum(len(ids) for ids in blocked.values())} of the "
-                    f"{missing_for_current} slots missing one stay without it "
-                    f"until an action is taken: {_remedy_actions(blocked, members)}"
-                )
+            ) + stay_without
         else:
             remedy = (
                 f"re-processing cannot compute the {missing_for_current} missing "
@@ -2604,6 +2728,11 @@ def assess_change(
             "status": "processing_not_homogeneous",
             **base,
             "lineages": lineage["counts"],
+            **(
+                {"other_rule_lineages": other_rule_lineages}
+                if other_rule_lineages
+                else {}
+            ),
             "evaluated_slots": len(evaluated),
             "missing_for_current": missing_for_current,
             "current_processing_id": current_processing,
@@ -3023,6 +3152,7 @@ def assess_change(
                 blocked=stale_blocked,
                 listed=listed,
                 members=members,
+                library=library,
             )
         else:
             # The sentence names the lineage assessed. Its amplitude indicators
@@ -3039,9 +3169,12 @@ def assess_change(
                 blocked=stale_blocked,
                 listed=listed,
                 members=members,
+                library=library,
             )
             opening = opening[0].upper() + opening[1:]
         message = opening + ". " + message
+    if experimental:
+        message += " " + _EXPERIMENTAL_ASSESSMENT_NOTE.format(rule=rule)
 
     return {
         "status": "assessed",
@@ -3056,6 +3189,7 @@ def assess_change(
             "is_current": chosen == current_processing,
             "missing_for_current": missing_for_current,
             "stale_context": stale_context,
+            **({"corroboration_rule": rule} if experimental else {}),
         },
         "observed": {
             "reference_statistics": reference_statistics,

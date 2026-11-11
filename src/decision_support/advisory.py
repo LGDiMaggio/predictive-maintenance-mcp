@@ -192,23 +192,26 @@ def _build_bearing_block(
     marked = {c["fault_type"] for c in emphasised_candidates(bearing_faults)}
     rows = []
     for check in bearing_faults["fault_checks"]:
-        rows.append(
-            {
-                "fault_type": check["fault_type"],
-                "fault_canonical": check.get("fault_type_canonical"),
-                "expected_hz": check["expected_frequency_hz"],
-                "line_hz": check["line_frequency_hz"],
-                "peak_hz": check.get("line_peak_hz"),
-                "amplitude": check.get("line_amplitude"),
-                "level_db": check.get("level_db"),
-                "counted_lines": sum(
-                    1 for m in check.get("corroboration") or [] if m["counted"]
-                ),
-                "state": check["state"],
-                "emphasised": check["fault_type"] in marked,
-                "badge": state_badge(check["state"], claim),
-            }
-        )
+        row = {
+            "fault_type": check["fault_type"],
+            "fault_canonical": check.get("fault_type_canonical"),
+            "expected_hz": check["expected_frequency_hz"],
+            "line_hz": check["line_frequency_hz"],
+            "peak_hz": check.get("line_peak_hz"),
+            "amplitude": check.get("line_amplitude"),
+            "level_db": check.get("level_db"),
+            "counted_lines": sum(
+                1 for m in check.get("corroboration") or [] if m["counted"]
+            ),
+            "state": check["state"],
+            "emphasised": check["fault_type"] in marked,
+            "badge": state_badge(check["state"], claim),
+        }
+        # An aggregate rule can support a line with no line counted on its own.
+        aggregate = check.get("aggregate_corroboration")
+        if aggregate is not None:
+            row["aggregate_basis"] = aggregate["basis"]
+        rows.append(row)
 
     return {
         "status": ASSESSED,
