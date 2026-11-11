@@ -208,6 +208,15 @@ Fixture history:
   filepath says what an imported signal shows there; no property, enum
   value or type of an existing tool was removed or changed.
   Generated under mcp 2.3.0 and pydantic 2.12.0 (uv.lock).
+- STFT band entries (2026-11-11): regenerated intentionally: one property
+  type changed, no property added or removed. compute_spectrogram_stft's
+  energy_per_band items were objects of numbers only, which no result of
+  the tool could satisfy (every entry carries a text band label); they now
+  reference a new definition, STFTBandEnergy (band: string, energy: number,
+  both required). No other tool's output schema changed;
+  calculate_bearing_characteristic_frequencies keeps its dict[str, float]
+  schema.
+  Generated under mcp 2.3.0 and pydantic 2.12.0 (uv.lock).
 """
 
 from __future__ import annotations

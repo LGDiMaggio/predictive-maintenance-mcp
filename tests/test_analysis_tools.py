@@ -414,14 +414,10 @@ class TestSpectralDelegation:
 
     @pytest.mark.asyncio
     async def test_compute_stft(self, tools, repo, mock_ctx):
-        try:
-            result = await tools["compute_spectrogram_stft"](
-                ctx=mock_ctx, signal_id="sine50"
-            )
-            assert result is not None
-        except Exception:
-            # Known issue: energy_per_band band names are strings not floats
-            pytest.skip("STFT model validation issue with energy_per_band")
+        result = await tools["compute_spectrogram_stft"](
+            ctx=mock_ctx, signal_id="sine50"
+        )
+        assert result is not None
 
 
 # ---------------------------------------------------------------------------

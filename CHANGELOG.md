@@ -584,6 +584,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   check also covers `tools/`.
 
 ### Fixed
+- **`calculate_bearing_characteristic_frequencies` and
+  `compute_spectrogram_stft` work over MCP again.** Both tools failed on
+  every valid call made through an MCP client, while direct Python calls
+  worked. The bearing calculator also returned a nested `input_parameters`
+  object, which its published output schema (numbers only) does not allow,
+  so the server rejected the whole result and the client received only
+  `Error executing tool calculate_bearing_characteristic_frequencies`. It now
+  returns `BPFO`, `BPFI`, `BSF`, `FTF` and `shaft_freq_hz`, with the same
+  values as before. `compute_spectrogram_stft` declared each
+  `energy_per_band` entry as numbers only, but every entry carries a text
+  band label, so every call failed validation. Each entry is now an object
+  with a string `band` and a number `energy`, which is what the tool always
+  computed; the output schema of that field changes accordingly. Present in
+  0.13.0 and earlier. `diagnose_vibration` and the Python function
+  `calculate_bearing_frequencies` are unchanged.
 - **Reverse-proxy examples for a server bound to `127.0.0.1`.** The Caddy and
   nginx examples in `docs/DEPLOYMENT.md` send a loopback `Host` with its port
   and a forwarding header. The earlier nginx API-key example sent no

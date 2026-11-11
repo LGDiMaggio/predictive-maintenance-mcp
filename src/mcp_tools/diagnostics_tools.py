@@ -1105,6 +1105,10 @@ async def extract_manual_specs(
     return specs
 
 
+#: The keys calculate_bearing_characteristic_frequencies returns over MCP.
+_BEARING_FREQUENCY_KEYS = ("BPFO", "BPFI", "BSF", "FTF", "shaft_freq_hz")
+
+
 async def calculate_bearing_characteristic_frequencies(
     num_balls: int,
     ball_diameter_mm: float,
@@ -1162,7 +1166,11 @@ async def calculate_bearing_characteristic_frequencies(
     logger.info(f"BSF (ball spin): {freqs['BSF']:.2f} Hz")
     logger.info(f"FTF (cage): {freqs['FTF']:.2f} Hz")
 
-    return freqs
+    # The published output schema is dict[str, float]. calculate_bearing_frequencies
+    # also echoes its inputs as a nested ``input_parameters`` object, which that
+    # schema cannot hold, and the SDK rejected the whole result on every MCP call.
+    # Return the numeric keys only; their values are unchanged.
+    return {key: freqs[key] for key in _BEARING_FREQUENCY_KEYS}
 
 
 async def read_manual_excerpt(

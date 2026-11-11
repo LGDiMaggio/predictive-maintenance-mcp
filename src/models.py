@@ -307,6 +307,15 @@ class PSDResult(BaseModel):
     frequency_resolution: float = Field(description="Frequency resolution (Hz)")
 
 
+# One entry of STFTResult.energy_per_band, as compute_stft_spectrogram builds it
+# (src/signal_processing/spectral.py): a text band label and a number. No
+# docstring or field descriptions yet: pydantic would publish them in the tool's
+# outputSchema, and that wording is reviewed separately.
+class STFTBandEnergy(BaseModel):
+    band: str
+    energy: float
+
+
 class STFTResult(BaseModel):
     """STFT Spectrogram result — summary only, no full 2D arrays."""
 
@@ -322,7 +331,7 @@ class STFTResult(BaseModel):
     time_range_s: list[float] = Field(description="[start_time, end_time]")
     max_power_freq_hz: float = Field(description="Frequency with maximum power")
     max_power_time_s: float = Field(description="Time of maximum power")
-    energy_per_band: list[dict[str, float]] = Field(
+    energy_per_band: list[STFTBandEnergy] = Field(
         description="Energy in predefined frequency bands"
     )
 
