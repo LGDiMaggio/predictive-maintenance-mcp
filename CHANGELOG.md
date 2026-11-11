@@ -329,8 +329,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   further line is counted on its own; that support has `evidence_strength`
   `low`. Its results name the rule in `evidence_policy.corroboration_rule`,
   carry a per-check `aggregate_corroboration` record and are not comparable
-  with `any_line` results; `excluded_by` gains the value `aggregate_rule`,
-  which occurs only under that rule. In Python,
+  with `any_line` results; `excluded_by` gains the value `aggregate_rule` and
+  `claim.policy_version` the value 2, both only under that rule. In Python,
   `SnapshotPolicy(corroboration_rule=...)` keeps the experimental rule's
   snapshots in a separate ledger lineage, read and written by
   `assess_change` and `reprocess_stale_snapshots` with the same policy; no

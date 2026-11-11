@@ -2318,12 +2318,12 @@ def _run_reprocess(
         token_out = _cursor_token(
             last, digest_of(last, passed_ids, codes, counts), codes, counts
         )
-    # The re-processing tool writes the released lineage only: a run under
-    # another rule continues by repeating its own call with the same policy.
-    rule = (SnapshotPolicy() if policy is None else policy).corroboration_rule
+    # The re-processing tool writes the default policy's lineage only: a run
+    # on any other lineage continues by repeating its own call with the same
+    # policy.
     next_call = (
         reprocess_call(asset_id, measurement_point_id, params=params, cursor=token_out)
-        if remaining_ids and rule == CORROBORATION_RULE_ANY_LINE
+        if remaining_ids and current_processing == compute_processing_id(None)
         else None
     )
 
@@ -2623,7 +2623,10 @@ def reprocess_stale_snapshots(
         measurements after the last one this call handled, so ``next_call``
         (the exact call to make, with ``next_cursor`` as its
         ``reprocess_cursor`` when an earlier failure must be passed over) is
-        None exactly when it is 0; ``sequence_state`` is in
+        None when it is 0. Under a policy other than the default one,
+        whose lineage the tool does not write, ``next_call`` is always None,
+        and while measurements remain the message says to repeat this call
+        with the same policy (and ``next_cursor``); ``sequence_state`` is in
         :data:`SEQUENCE_STATES`.
 
     Raises:
