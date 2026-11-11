@@ -1,4 +1,5 @@
 ---
+name: anomaly-detection
 description: >
   ML-based anomaly detection and model training for vibration signals using the
   predictive-maintenance-mcp server. Use this skill when the user says "anomaly
@@ -74,7 +75,7 @@ ratio). If too many are flagged, review the baseline data with the user.
 
 #### Step 1 — Load the Target Signal
 
-Call `load_signal(filepath="real_test/OuterRaceFault_1.csv", signal_unit="g")`.
+Call `load_signal(filepath="<file>", signal_unit="g")`.
 
 #### Step 2 — Run Prediction
 
@@ -99,11 +100,12 @@ says "different", not "why". Always follow up with physics-based analysis
 
 #### Step 4 — Visualize with PCA
 
-Call `generate_pca_visualization_report(model_name="pump_a_health", test_signal_ids=["real_test_OuterRaceFault_1"], true_labels={"real_test_OuterRaceFault_1": "fault"})`
+Call `generate_pca_visualization_report(model_name="pump_a_health", test_signal_ids=["<id>"], true_labels={"<id>": "<label>"})`
 
 to project training and test segments into PCA space. Healthy segments
 cluster together; anomalies appear as outliers. `true_labels` is optional
-annotation for the legend.
+annotation for the legend; take a label only from the user, never from a
+file name or a signal id.
 
 ## Important Notes
 

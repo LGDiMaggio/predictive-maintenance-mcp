@@ -65,12 +65,10 @@ import json
 import re
 from pathlib import Path
 
-import pytest
 from mcp.server.mcpserver import MCPServer
 
 from _semantic_guards import PLUGIN_DIR, coverage_list, list_differences
 from predictive_maintenance_mcp.mcp_tools import register_all
-from test_diagnostic_invariants import known_defect
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 LEDGER_FILE = FIXTURES / "capability_claims.json"
@@ -140,16 +138,6 @@ class TestReleasedSurface:
 
 
 class TestPublishedToolLists:
-    @pytest.mark.xfail(
-        strict=True,
-        raises=AssertionError,
-        reason=known_defect(
-            "A-P-6",
-            "the plugin README's MCP Tool Coverage list does not match the "
-            "registered tools and prompts (it claims all of them and omits "
-            "generate_diagnostic_report)",
-        ),
-    )
     def test_plugin_readme_lists_every_registered_endpoint(self):
         readme = (PLUGIN_DIR / "README.md").read_text(encoding="utf-8")
         differences = list_differences(coverage_list(readme), registered())

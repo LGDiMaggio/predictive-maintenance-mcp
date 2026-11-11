@@ -20,8 +20,10 @@ Follow the quick-screening skill workflow:
 2. Statistical features — `analyze_statistics(signal_id="<id>")` (RMS, Crest
    Factor, Kurtosis)
 3. FFT snapshot — `analyze_fft(signal_id="<id>")` (top spectral peaks)
-4. ISO 20816-3 severity — `assess_severity(signal_id="<id>", machine_group=2, support_type="rigid")`
-   (if refused for an undeclared unit, confirm the unit with the user and
+4. ISO 20816-3 severity — `assess_severity(signal_id="<id>", machine_group=<group>, support_type="<support type>")`
+   (pass the group and support type as the user states them; when they were
+   not stated, leave them out and say that the zone uses the default group 2
+   / rigid; if refused for an undeclared unit, confirm the unit with the user and
    re-load with `load_signal(filepath="<file>", signal_unit="mm/s", overwrite=True)`)
 5. Produce a screening card with overall health status
 

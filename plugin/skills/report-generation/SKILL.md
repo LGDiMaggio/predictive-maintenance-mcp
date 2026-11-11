@@ -1,4 +1,5 @@
 ---
+name: report-generation
 description: >
   Generate professional diagnostic reports (HTML, DOCX) for vibration analysis
   using the predictive-maintenance-mcp server. Use this skill when the user says
@@ -45,22 +46,50 @@ tools take `signal_id` — the handle returned by load_signal.
 
 ### Step 3 — Gather Parameters and Generate
 
+Values in angle brackets are placeholders, not your machine's values: fill
+them only from what `get_signal_info` reports for the signal or from what the
+user states (`rpm` in revolutions per minute), and ask when neither gives
+them.
+
 **Time-domain plot**:
 `plot_signal(signal_id="<id>", time_range=[0.0, 2.0], show_statistics=True)`
 
 **FFT report**:
-`generate_fft_report(signal_id="<id>", max_freq=5000, num_peaks=15, rpm=1797)`
+`generate_fft_report(signal_id="<id>", max_freq=5000, num_peaks=15, rpm=<rpm>)`
 (`rpm` is optional — when given, harmonic markers are drawn at 1x/2x/3x RPM)
 
 **Envelope report**:
-`generate_envelope_report(signal_id="<id>", filter_low=500, filter_high=5000, max_freq=500, bearing_freqs={"BPFO": 107.4, "BPFI": 162.2}, rpm=1797)`
-(`bearing_freqs` overlays expected fault frequency markers; pass `rpm` only as the
-measured shaft speed: it overrides the speed the signal declares, and without
-either the shaft-order and sideband tests do not run)
+`generate_envelope_report(signal_id="<id>", filter_low=500, filter_high=5000, max_freq=500, bearing_freqs=<reference frequencies>)`
+(`bearing_freqs` overlays expected fault frequency markers. When the
+connected server's schema for this tool lists an `rpm` parameter, the report
+takes the shaft speed the signal declares, and `rpm=<rpm>` passes a measured
+speed the user states, which overrides the declared one; without a speed the
+shaft-order and sideband tests do not run. If the schema does not list `rpm`,
+omit it, and do not say that the report used a shaft speed or performed
+shaft-order or sideband checks)
+
+`bearing_matches` and `bearing_assessment` are not the bearing evidence:
+report the claim of `check_bearing_faults`, and with a server whose check
+returns no `claim`, relay neither.
+
+If a `check_bearing_faults` result, or a non-null `bearing_faults` block of a
+`diagnose_vibration` result, has no `claim` field, the server predates the
+bearing claim: infer or relay no bearing fault type or bearing assessment
+from it (its `overall_assessment`, `most_likely_fault`, `fault_checks`,
+bearing sentence or Bearing recommendations), and tell the user that this
+bearing guidance needs a server whose `check_bearing_faults` returns
+`claim`. The `evidence_strength` of such a `diagnose_vibration` result, and
+its "Fault evidence strength" sentence, also count the bearing finding, so
+neither is relayed; results that do not rest on the bearing check, such as
+the ISO 20816-3 zone and its action, are relayed as usual.
 
 **ISO 20816-3 report**:
-`generate_iso_report(signal_id="<id>", machine_group=2, support_type="rigid")`
-- machine_group is 1 (large, >300 kW) or 2 (medium, 15-300 kW)
+`generate_iso_report(signal_id="<id>", machine_group=<group>, support_type="<support type>")`
+- machine_group is 1 (large, >300 kW) or 2 (medium, 15-300 kW) and
+  support_type is rigid or flexible: pass them as the user states them;
+  `generate_iso_report` does not read a declared measurement point. When they
+  were not stated, leave them out and say that the zone uses the default
+  group 2 / rigid
 - The signal must have a DECLARED unit; if the assessment is refused, re-load
   with `load_signal(filepath="<file>", signal_unit="mm/s", overwrite=True)`
   after confirming the unit with the user.

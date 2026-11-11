@@ -17,16 +17,27 @@ Follow the bearing-diagnosis skill workflow:
    (declare the unit only if known; ask, never guess; raw binary
    `.bin`/`.raw`/`.dat` files also need `sample_format` and `sampling_rate`, or
    a companion `<stem>_metadata.json`), then
-   `get_signal_info(signal_id="<id>")`
+   `get_signal_info(signal_id="<id>")`. Values in angle brackets below are
+   placeholders, not your machine's values: fill them only from what
+   `get_signal_info` reports or from what the user states (`rpm` in
+   revolutions per minute), and ask when neither gives them
 2. Statistical screening: `analyze_statistics(signal_id="<id>")`
 3. FFT analysis: `analyze_fft(signal_id="<id>")`
 4. Bearing characteristic frequencies: ask for the bearing designation if
-   unknown, then `search_bearing_catalog(bearing_id="6205")` or
-   `calculate_bearing_characteristic_frequencies(num_balls=9, ball_diameter_mm=7.94, pitch_diameter_mm=39.04, rpm=1797)`
-5. Envelope line test (the bearing evidence): `check_bearing_faults(signal_id="<id>", rpm=1797, bearing_id="6205")`
-6. ISO 20816-3 severity: `assess_severity(signal_id="<id>", machine_group=2, support_type="rigid")`
-7. Reports: `generate_envelope_report(signal_id="<id>", rpm=1797)` +
-   `generate_fft_report(signal_id="<id>")`, optionally
+   unknown, then `search_bearing_catalog(bearing_id="<bearing designation>")` or
+   `calculate_bearing_characteristic_frequencies(num_balls=<n>, ball_diameter_mm=<mm>, pitch_diameter_mm=<mm>, rpm=<rpm>)`
+5. Envelope line test (the bearing evidence): `check_bearing_faults(signal_id="<id>", rpm=<rpm>, bearing_id="<bearing designation>")`,
+   or `frequencies=<reference frequencies>` in place of `bearing_id` when the
+   frequencies come from the signal's declaration or from the user
+6. ISO 20816-3 severity: `assess_severity(signal_id="<id>", machine_group=<group>, support_type="<support type>")`;
+   pass the group and support type as the user states them, and when they
+   were not stated, leave them out and say that the zone uses the default
+   group 2 / rigid
+7. Reports: `generate_envelope_report(signal_id="<id>", rpm=<rpm>)` with the
+   same shaft speed as step 5, passing `rpm` only when the connected server's
+   schema for this tool lists it (if it does not list `rpm`, omit it, and do
+   not say that the report used that speed or performed the shaft-order and
+   sideband checks that a speed enables) + `generate_fft_report(signal_id="<id>")`, optionally
    `generate_diagnostic_report_docx(signal_id="<id>", sections={"Summary": "..."})`.
    The envelope report's `bearing_matches` and `bearing_assessment` are not
    the bearing evidence: report the claim of `check_bearing_faults`, and with
@@ -54,5 +65,10 @@ returns `claim`. The `evidence_strength` of such a `diagnose_vibration`
 result, and its "Fault evidence strength" sentence, also count the bearing
 finding, so neither is relayed; results that do not rest on the bearing
 check, such as the ISO 20816-3 zone and its action, are relayed as usual.
+A null `bearing_faults` block is not a clean bearing check: when a bearing was
+given, the check did not run, and the result says nothing about the bearing.
+When the result has a `bearing_check` block, quote its `status`, and its
+`reason` and `remedy` when the status is `not_computed`; only `assessed` says
+anything about the bearing.
 Use cautious language: the result supports the engineer's decision, it does
 not replace it.

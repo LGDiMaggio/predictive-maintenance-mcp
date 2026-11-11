@@ -1,4 +1,5 @@
 ---
+name: gear-diagnosis
 description: >
   Gear fault diagnosis workflow using vibration analysis via the
   predictive-maintenance-mcp server. Use this skill when the user says "gear
@@ -67,10 +68,13 @@ Inspect the spectrum for:
 
 Systematic check of the expected GMF against the envelope spectrum:
 
-Call `check_bearing_faults(signal_id="<id>", rpm=1500, frequencies={"GMF": 800.0})`
+Call `check_bearing_faults(signal_id="<id>", rpm=<rpm>, frequencies=<{"GMF": GMF in Hz}>)`
 
 (The `frequencies` route accepts any labeled frequency — it is the
-out-of-catalog / gearbox path.)
+out-of-catalog / gearbox path. Values in angle brackets are placeholders, not
+your machine's values: take the speed (`rpm` in revolutions per minute) and
+the tooth count from the user or from what `get_signal_info` reports, and
+compute GMF from them.)
 
 ### Step 4 — Envelope Analysis (for Modulation)
 
@@ -91,7 +95,11 @@ spectral view that highlights persistent gear-mesh patterns.
 
 ### Step 6 — ISO Severity Context
 
-Call `assess_severity(signal_id="<id>", machine_group=2, support_type="rigid")`.
+Call `assess_severity(signal_id="<id>", machine_group=<group>, support_type="<support type>")`.
+
+Pass the group and support type as the user states them; `assess_severity`
+does not read a declared measurement point. When they were not stated, leave
+them out and say that the zone uses the default group 2 / rigid.
 
 Report the zone (A/B/C/D) and urgency. The verdict requires a DECLARED signal
 unit — if refused, confirm the unit with the user and re-load with
@@ -114,7 +122,7 @@ statistics.
 
 ### Step 8 — Report Generation
 
-Call `generate_fft_report(signal_id="<id>", max_freq=5000, num_peaks=15, rpm=1500)`
+Call `generate_fft_report(signal_id="<id>", max_freq=5000, num_peaks=15, rpm=<rpm>)`
 and optionally `generate_diagnostic_report_docx(signal_id="<id>", sections={"summary": "..."})`.
 
 ## Important Notes

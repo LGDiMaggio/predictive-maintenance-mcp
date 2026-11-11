@@ -84,6 +84,11 @@ Given one or more vibration signals, execute a complete diagnostic workflow:
   `sampling_rate` up front (or point to a companion `<stem>_metadata.json`) —
   a raw load without them is refused with the exact re-call to make
 - Call `get_signal_info(signal_id="<id>")` to verify sampling rate and metadata
+- Values in angle brackets in the calls below, such as `<rpm>`,
+  `<bearing designation>` or `<reference frequencies>`, are placeholders, not
+  the machine's values: fill them only from what `get_signal_info` reports
+  for the signal or from what the user states, and ask when neither gives
+  them. `rpm` is the shaft speed in revolutions per minute
 - Call `plot_signal(signal_id="<id>")` for a visual record
 
 ### Phase 2: Statistical Screening
@@ -104,12 +109,13 @@ Based on screening results:
 
 **If a bearing check applies** (bearing designation or frequencies known;
 low kurtosis does not rule it out):
-- Establish expected frequencies: `search_bearing_catalog(bearing_id="6205")`
+- Establish expected frequencies: `search_bearing_catalog(bearing_id="<bearing designation>")`
   for a catalog bearing, or
-  `calculate_bearing_characteristic_frequencies(num_balls=9, ball_diameter_mm=7.94, pitch_diameter_mm=39.04, contact_angle_deg=0.0, rpm=1797)`
+  `calculate_bearing_characteristic_frequencies(num_balls=<n>, ball_diameter_mm=<mm>, pitch_diameter_mm=<mm>, contact_angle_deg=<deg>, rpm=<rpm>)`
   from user-provided geometry
-- Call `check_bearing_faults(signal_id="<id>", rpm=1797, bearing_id="6205")`
-  (or pass `frequencies={"BPFO": 107.4}` when geometry came from the user)
+- Call `check_bearing_faults(signal_id="<id>", rpm=<rpm>, bearing_id="<bearing designation>")`
+  (or pass `frequencies=<reference frequencies>` when the frequencies came
+  from user-provided geometry, the signal's declaration or the user)
 - Read the check, never your own matching of envelope peaks: name the
   outcome as returned (`no_indication`, `inconclusive`, `indicated` or
   `several_types`) and quote `overall_assessment` verbatim. `claim.level`,
@@ -129,11 +135,16 @@ low kurtosis does not rule it out):
   the ISO 20816-3 zone and its action, are relayed as usual. `outcome_reason`
   and `next_step` describe the evidence outcome before the claim: when
   `claim.level` is not `single_spectrum_evidence`, do not relay them to name
-  a fault type or a single element.
+  a fault type or a single element. A null `bearing_faults` block is not a
+  clean bearing check: when a bearing was given, the check did not run, and
+  the result says nothing about the bearing. When the result has a
+  `bearing_check` block, quote its `status`, and its `reason` and `remedy`
+  when the status is `not_computed`; only `assessed` says anything about the
+  bearing.
 
 **If gear fault suspected** (GMF harmonics visible):
 - Compute GMF = teeth x RPM / 60 (ask for the tooth count once, up front)
-- Call `check_bearing_faults(signal_id="<id>", rpm=1500, frequencies={"GMF": 800.0})`
+- Call `check_bearing_faults(signal_id="<id>", rpm=<rpm>, frequencies=<{"GMF": GMF in Hz}>)`
 - Run envelope analysis centered near the GMF band
 
 **If unbalance, misalignment or looseness is asked about** (optional; a
@@ -169,30 +180,55 @@ bearing or gear check never needs it):
   with every observed pattern; its ISO 20816-3 zone is context only
 - `diagnose_vibration` reads the same spectral lines of the same signal: the
   agreement of the two repeats the observation and corroborates nothing
+- `assess_shaft_fault_evidence` is not yet in a published release
 
 **If general vibration concern**:
 - Focus on the ISO 20816-3 assessment (Phase 5)
 
-**One-call option**: when RPM and bearing are known,
-`diagnose_vibration(signal_id="<id>", rpm=1797, bearing_id="6205", machine_group=2, support_type="rigid")`
-runs FFT + PSD + STFT + bearing checks + ISO severity in one pass.
+**One-call option**: `diagnose_vibration(signal_id="<id>")`
+runs FFT + PSD + STFT + bearing checks + ISO severity in one pass. It takes
+`rpm`, `bearing_id`, `machine_group` and `support_type` from the signal's
+declared measurement and measurement point when they are omitted, and an
+explicit value overrides the declaration: pass one only when the user states
+it, as `rpm=<rpm>`, `bearing_id="<bearing designation>"`,
+`machine_group=<group>` or `support_type="<support type>"`. If no RPM is
+supplied and neither the signal's measurement nor its measurement point
+declares a speed, `diagnose_vibration` refuses the call and returns remedies.
+Ask the user for the operating speed or follow the declared-data remedies.
+Relay
+`parameter_sources`, which says where each value came from; when it gives
+`default` for `machine_group` or `support_type`, say that the zone uses the
+default group 2 / rigid. A result without `parameter_sources` comes from a
+server that does not read a declared point: there, pass the values the user
+states, and say that an omitted group or support type uses the default group
+2 / rigid.
 
 ### Phase 5: Severity Assessment
-- Call `assess_severity(signal_id="<id>", machine_group=2, support_type="rigid")`
+- Call `assess_severity(signal_id="<id>", machine_group=<group>, support_type="<support type>")`.
+  Pass the group and support type as the user states them; `assess_severity`
+  does not read a declared measurement point (`diagnose_vibration` does).
+  When they were not stated, leave them out and say that the zone uses the
+  default group 2 / rigid
 - Map findings to ISO zones A/B/C/D
 - If the verdict is refused (no declared unit), report the structured reason
   and remedy verbatim — do NOT guess a unit. Ask the user, then re-load with
   `load_signal(filepath="<file>", signal_unit="mm/s", overwrite=True)`
 
 ### Phase 6: Report Generation
-- Call `generate_fft_report(signal_id="<id>", rpm=1797)` for each analyzed signal
-- Call `generate_envelope_report(signal_id="<id>", bearing_freqs={"BPFO": 107.4}, rpm=1797)`
-  if a bearing check or an envelope analysis was performed. Its
+- Call `generate_fft_report(signal_id="<id>", rpm=<rpm>)` for each analyzed signal
+- Call `generate_envelope_report(signal_id="<id>", bearing_freqs=<reference frequencies>, rpm=<rpm>)`
+  if a bearing check or an envelope analysis was performed, with the same
+  reference frequencies and shaft speed as the line test. Pass `rpm` only
+  when the connected server's schema for this tool lists it; if it does not
+  list `rpm`, omit it, and do not say that the report used the line test's
+  speed or performed the shaft-order and sideband checks that a speed
+  enables. Its
   `bearing_matches` and `bearing_assessment` are not the bearing evidence:
   report the claim of `check_bearing_faults`, and with a server whose check
   returns no `claim`, relay neither
-- Call `generate_iso_report(signal_id="<id>", machine_group=2, support_type="rigid")`
-  for the ISO assessment
+- Call `generate_iso_report(signal_id="<id>", machine_group=<group>, support_type="<support type>")`
+  for the ISO assessment, with the group and support type as in Phase 5
+  (`generate_iso_report` does not read a declared measurement point either)
 - Call `generate_diagnostic_report_docx(signal_id="<id>", sections={"Summary": "..."})`
   for the final comprehensive document
 - Optionally formalize the zone action with

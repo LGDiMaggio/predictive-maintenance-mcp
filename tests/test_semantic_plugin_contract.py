@@ -36,6 +36,7 @@ from _semantic_guards import (
     plugin_markdown,
     renderer_section_keys,
     require,
+    unbound_endpoint_mentions,
     unhandled_values,
     unknown_features,
     unmarked_mentions,
@@ -130,6 +131,16 @@ def main_only_output_fields() -> set[str]:
     return current - old
 
 
+@functools.lru_cache(maxsize=None)
+def unreleased_endpoints() -> frozenset[str]:
+    """Registered tools and prompts that the last release does not have."""
+    server = MCPServer("semantic-plugin-contract-prompts")
+    register_all(server)
+    prompts = {p.name for p in server._prompt_manager._prompts.values()}
+    released_names = set(released()["tools"]) | set(released()["prompts"])
+    return frozenset((set(tool_surface()) | prompts) - released_names)
+
+
 def main_only_keywords() -> dict[str, set[str]]:
     """Parameters of released tools that the released server does not accept."""
     extra = {}
@@ -143,16 +154,6 @@ def main_only_keywords() -> dict[str, set[str]]:
 
 
 class TestPluginExamples:
-    @pytest.mark.xfail(
-        strict=True,
-        raises=AssertionError,
-        reason=known_defect(
-            "A-F1",
-            "plugin call examples pass literal machine values (speed, bearing "
-            "designation, characteristic frequencies, limits) that a model "
-            "executes as the user's machine instead of the declared context",
-        ),
-    )
     def test_examples_carry_no_literal_machine_context(self):
         _fail_on(
             [
@@ -162,16 +163,6 @@ class TestPluginExamples:
             ]
         )
 
-    @pytest.mark.xfail(
-        strict=True,
-        raises=AssertionError,
-        reason=known_defect(
-            "A-F2",
-            "plugin diagnose_vibration examples pass literal machine_group, "
-            "support_type, rpm or bearing_id, which override the values the "
-            "server resolves from a declared measurement point",
-        ),
-    )
     def test_diagnose_vibration_examples_leave_point_values_to_the_server(self):
         _fail_on(
             [
@@ -183,15 +174,6 @@ class TestPluginExamples:
             ]
         )
 
-    @pytest.mark.xfail(
-        strict=True,
-        raises=AssertionError,
-        reason=known_defect(
-            "A-F14",
-            "plugin examples load files from the shipped sample folders that "
-            "do not exist there",
-        ),
-    )
     def test_example_files_in_sample_folders_exist(self):
         _fail_on(
             [
@@ -203,16 +185,6 @@ class TestPluginExamples:
 
 
 class TestPluginValueDomains:
-    @pytest.mark.xfail(
-        strict=True,
-        raises=AssertionError,
-        reason=known_defect(
-            "A-F8",
-            "the prognostics skill offers feature names (peak_to_peak) that "
-            "the feature extractor does not produce, so the trend and RUL "
-            "tools refuse them",
-        ),
-    )
     def test_offered_feature_names_exist(self):
         signal = np.random.default_rng(0).standard_normal(1000)
         valid = set(extract_time_domain_features(signal))
@@ -224,15 +196,6 @@ class TestPluginValueDomains:
             ]
         )
 
-    @pytest.mark.xfail(
-        strict=True,
-        raises=AssertionError,
-        reason=known_defect(
-            "N1",
-            "the prognostics skill does not handle every estimate_rul status: "
-            "model_threshold_crossed and model_not_rising are missing",
-        ),
-    )
     def test_prognostics_skill_handles_every_rul_status(self):
         statuses = get_args(RULEstimationResult.model_fields["status"].annotation)
         missing = unhandled_values(plugin()["skills/prognostics/SKILL.md"], statuses)
@@ -263,16 +226,6 @@ class TestPluginValueDomains:
 
 
 class TestPluginRelayAndCompatibility:
-    @pytest.mark.xfail(
-        strict=True,
-        raises=AssertionError,
-        reason=known_defect(
-            "A-F3",
-            "documentation-search, report-generation and /pm-report call the "
-            "bearing line test or the envelope report without the claim-less "
-            "paragraph the bearing workflows carry for older servers",
-        ),
-    )
     def test_fallback_paragraph_on_every_report_surface(self):
         calls = {
             "check_bearing_faults",
@@ -287,16 +240,6 @@ class TestPluginRelayAndCompatibility:
             ]
         )
 
-    @pytest.mark.xfail(
-        strict=True,
-        raises=AssertionError,
-        reason=known_defect(
-            "A-F11",
-            "plugin text tells the model to read output fields the last "
-            "released server does not return (for example measurement), with "
-            "no availability sentence in that file",
-        ),
-    )
     def test_main_only_output_fields_carry_an_availability_sentence(self):
         fields = main_only_output_fields()
         require(fields, "no output field differs from the last release")
@@ -311,16 +254,6 @@ class TestPluginRelayAndCompatibility:
             ]
         )
 
-    @pytest.mark.xfail(
-        strict=True,
-        raises=AssertionError,
-        reason=known_defect(
-            "A-F12",
-            "plugin examples pass keywords the last released server does not "
-            "accept (generate_envelope_report rpm), with no availability "
-            "sentence in that section; the released server drops them silently",
-        ),
-    )
     def test_main_only_keywords_carry_an_availability_sentence(self):
         patterns = {
             f"{tool}({keyword}=)": rf"\b{re.escape(tool)}\([^)]*\b{re.escape(keyword)}\s*="
@@ -333,5 +266,20 @@ class TestPluginRelayAndCompatibility:
                 v
                 for source, text in plugin().items()
                 for v in unmarked_mentions(text, source, patterns)
+            ]
+        )
+
+    def test_unreleased_endpoints_carry_an_availability_sentence(self):
+        """A plugin file that names a tool or prompt the last release does not
+        have carries a sentence naming that endpoint with an availability
+        phrase (audit A-P-5: the released-surface check extended from fields
+        and keywords to endpoints)."""
+        names = unreleased_endpoints()
+        require(names, "every registered endpoint is in the last release")
+        _fail_on(
+            [
+                v
+                for source, text in plugin().items()
+                for v in unbound_endpoint_mentions(text, source, names)
             ]
         )
