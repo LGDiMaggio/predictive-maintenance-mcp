@@ -33,15 +33,23 @@ _SKIPPED_SUFFIXES = (".pyc", ".swp", ".bak", "~")
 
 def plugin_digest(plugin_dir: Path = PLUGIN_DIR) -> str:
     """SHA-256 over every file under *plugin_dir*: its relative path and its
-    bytes with CRLF read as LF, so a Windows checkout gives the same digest."""
+    bytes with CRLF read as LF, so a Windows checkout gives the same digest.
+
+    Files are hashed in the order of their relative POSIX paths compared as
+    plain, case-sensitive strings. Sorting ``Path`` objects would not do:
+    they compare case-insensitively on Windows and case-sensitively elsewhere.
+    """
     digest = hashlib.sha256()
     files = sorted(
-        p
-        for p in plugin_dir.rglob("*")
-        if p.is_file()
-        and not _SKIPPED_PARTS & set(p.parts)
-        and p.name not in _SKIPPED_NAMES
-        and not p.name.endswith(_SKIPPED_SUFFIXES)
+        (
+            p
+            for p in plugin_dir.rglob("*")
+            if p.is_file()
+            and not _SKIPPED_PARTS & set(p.parts)
+            and p.name not in _SKIPPED_NAMES
+            and not p.name.endswith(_SKIPPED_SUFFIXES)
+        ),
+        key=lambda p: p.relative_to(plugin_dir).as_posix(),
     )
     for path in files:
         digest.update(path.relative_to(plugin_dir).as_posix().encode("utf-8"))
@@ -112,6 +120,18 @@ class TestDigestControls:
         assert renamed != before
         (root / "NEW.md").write_bytes(b"")
         assert plugin_digest(root) != renamed
+
+    def test_files_are_ordered_case_sensitively_on_every_platform(self, tmp_path):
+        """README.md sorts before agents/ as a plain string; a Windows Path sort
+        puts it after, which made the recorded digest platform-dependent."""
+        root = tmp_path / "plugin"
+        (root / "agents").mkdir(parents=True)
+        (root / "agents" / "x.md").write_bytes(b"agent\n")
+        (root / "README.md").write_bytes(b"readme\n")
+        expected = hashlib.sha256()
+        for relative, data in (("README.md", b"readme\n"), ("agents/x.md", b"agent\n")):
+            expected.update(relative.encode("utf-8") + b"\0" + data + b"\0")
+        assert plugin_digest(root) == expected.hexdigest()
 
     def test_line_endings_do_not_change_the_digest(self, tmp_path):
         root = self._tree(tmp_path)
