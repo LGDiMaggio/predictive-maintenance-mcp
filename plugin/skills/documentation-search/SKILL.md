@@ -1,4 +1,5 @@
 ---
+name: documentation-search
 description: >
   Search machine manuals, bearing catalogs, and technical documentation using
   RAG-based retrieval via the predictive-maintenance-mcp server. Use this skill
@@ -49,7 +50,7 @@ structured data from a manual:
 
 ### Look Up a Bearing in the Catalog
 
-Call `search_bearing_catalog(bearing_id="6205")`.
+Call `search_bearing_catalog(bearing_id="<bearing designation>")`.
 
 - Accepts designations like "6205" or "SKF 6205-2RS" (prefixes resolved)
 - Returns verified geometry (number of balls, ball diameter, pitch diameter,
@@ -58,7 +59,12 @@ Call `search_bearing_catalog(bearing_id="6205")`.
 - The catalog contains only entries with physically valid, source-traced
   geometry. A miss returns a structured "not found" result with a
   suggestion — never invented geometry. In that case ask the user for the
-  geometry and use `calculate_bearing_characteristic_frequencies(num_balls=9, ball_diameter_mm=7.94, pitch_diameter_mm=39.04, contact_angle_deg=0.0, rpm=1797)`.
+  geometry and use `calculate_bearing_characteristic_frequencies(num_balls=<n>, ball_diameter_mm=<mm>, pitch_diameter_mm=<mm>, contact_angle_deg=<deg>, rpm=<rpm>)`.
+
+Values in angle brackets are placeholders, not your machine's values: take
+the designation and geometry from the user or the documentation, and the
+speed from what `get_signal_info` reports for the signal or from the user
+(`rpm` in revolutions per minute); ask when none gives them.
 
 ## Typical Workflows
 
@@ -73,12 +79,26 @@ Call `search_bearing_catalog(bearing_id="6205")`.
 1. `search_documentation(query="vibration limits <machine name>")`
 2. If insufficient, `read_manual_excerpt(file_name="<manual>.pdf", max_pages=10)`
 
-### "Look up bearing 6205 and check the signal against it"
+### "Look up this bearing and check the signal against it"
 
-1. `search_bearing_catalog(bearing_id="6205")` — geometry + frequency multipliers
-2. `check_bearing_faults(signal_id="<id>", rpm=1797, bearing_id="6205")` —
-   computes BPFO/BPFI/BSF/FTF at the given RPM and matches them against the
-   signal's envelope spectrum in one call
+1. `search_bearing_catalog(bearing_id="<bearing designation>")` — geometry + frequency multipliers
+2. `check_bearing_faults(signal_id="<id>", rpm=<rpm>, bearing_id="<bearing designation>")` —
+   computes BPFO/BPFI/BSF/FTF at the given speed and tests the line at each
+   against the local noise floor of the signal's envelope spectrum in one
+   call. Its `claim`, never your own matching of envelope peaks, decides what
+   may be said about a fault type: report it as the bearing-diagnosis skill
+   describes.
+
+If a `check_bearing_faults` result, or a non-null `bearing_faults` block of a
+`diagnose_vibration` result, has no `claim` field, the server predates the
+bearing claim: infer or relay no bearing fault type or bearing assessment
+from it (its `overall_assessment`, `most_likely_fault`, `fault_checks`,
+bearing sentence or Bearing recommendations), and tell the user that this
+bearing guidance needs a server whose `check_bearing_faults` returns
+`claim`. The `evidence_strength` of such a `diagnose_vibration` result, and
+its "Fault evidence strength" sentence, also count the bearing finding, so
+neither is relayed; results that do not rest on the bearing check, such as
+the ISO 20816-3 zone and its action, are relayed as usual.
 
 ## Important Notes
 

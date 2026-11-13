@@ -73,9 +73,16 @@ LEDGER = "tool:assess_asset_change"
 SKILL = "plugin:skills/bearing-diagnosis/SKILL.md"
 COMMAND = "plugin:commands/pm-diagnose.md"
 AGENT = "plugin:agents/diagnostic-pipeline.md"
+DOC_SEARCH = "plugin:skills/documentation-search/SKILL.md"
+REPORT_SKILL = "plugin:skills/report-generation/SKILL.md"
+REPORT_COMMAND = "plugin:commands/pm-report.md"
 
 PROMPTS = (PROMPT_MIN, PROMPT_FULL)
 PLUGIN = (SKILL, COMMAND, AGENT)
+#: Plugin surfaces that call the bearing line test or the envelope report
+#: outside the bearing workflows; they carry the fallback too (audit A-F3),
+#: and the two report surfaces the envelope-report sentence.
+REPORT_SURFACES = (DOC_SEARCH, REPORT_SKILL, REPORT_COMMAND)
 #: The workflows that run the bearing check.
 WORKFLOWS = PROMPTS + PLUGIN
 SCANNED = (
@@ -177,7 +184,7 @@ def surfaces() -> dict[str, str]:
         "prompt:diagnose_gear[minimal]": renders["prompts.diagnose_gear[minimal]"],
         "prompt:diagnose_gear[full]": renders["prompts.diagnose_gear[full]"],
     }
-    for key in (SKILL, COMMAND, AGENT, *EXEMPT):
+    for key in (SKILL, COMMAND, AGENT, *REPORT_SURFACES, *EXEMPT):
         if key.startswith("plugin:"):
             texts[key] = _plugin(key.removeprefix("plugin:"))
     return texts
@@ -521,8 +528,8 @@ REQUIRED_PHRASES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ),
     ("`next_step` only as Phase 4 allows", (AGENT,)),
     ("no overall health verdict", (AGENT,)),
-    (FALLBACK, PLUGIN),
-    (REPORT_FIELDS, PLUGIN),
+    (FALLBACK, (*PLUGIN, *REPORT_SURFACES)),
+    (REPORT_FIELDS, (*PLUGIN, REPORT_SKILL, REPORT_COMMAND)),
     ("counts the findings of the analyses that ran", (DIAGNOSIS,)),
     (f"{NOT_IDENTIFY_OR_CONFIRM} a fault type", (DIAGNOSIS,)),
     (f"'none' {NOT_HEALTHY}", (DIAGNOSIS,)),
@@ -552,9 +559,10 @@ REQUIRED_PHRASES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ),
     (f"{RELATIVE_EVIDENCE}, {NOT_CONFIRMED}", (LEDGER,)),
 )
-#: Phrases a surface carries more than once: the skill gives the fallback at
-#: the line test and again at the one-call diagnosis.
-REQUIRED_COUNTS: dict[tuple[str, str], int] = {(FALLBACK, SKILL): 2}
+#: Phrases a surface carries more than once. None today: each surface carries
+#: the fallback once (audit A-F15), and the skill's one-call diagnosis refers
+#: back to it.
+REQUIRED_COUNTS: dict[tuple[str, str], int] = {}
 
 
 def required_phrase_violations(surface: str, text: str) -> list[str]:
@@ -749,6 +757,14 @@ def test_healthy_only_in_negated_or_quoted_form(surface):
 
 @pytest.mark.parametrize("surface", SCANNED)
 def test_required_phrases_per_surface(surface):
+    _check(required_phrase_violations, surface)
+
+
+@pytest.mark.parametrize("surface", REPORT_SURFACES)
+def test_required_phrases_on_report_surfaces(surface):
+    """Only the pinned fallback and envelope-report sentence are required on
+    these surfaces (audit A-F3); the vocabulary guards of SCANNED do not
+    apply to them."""
     _check(required_phrase_violations, surface)
 
 

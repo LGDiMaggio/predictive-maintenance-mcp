@@ -613,6 +613,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   signal-explorer); other server tools stay unavailable to them. Under another
   registration name the agents still cannot reach the tools, and they say so
   instead of working around it. Plugin version 1.3.0.
+- **Plugin workflows take machine values from the signal or the user.** The
+  skills, commands and the diagnostic-pipeline agent no longer pass example
+  values (a shaft speed, a bearing designation, reference frequencies, a
+  machine group, a support type or a failure threshold) in their tool calls:
+  they use placeholders and say to fill them from `get_signal_info` or from
+  the user. The one-call `diagnose_vibration` examples leave the values of a
+  declared measurement point to the server, relay `parameter_sources` and name
+  the refusal when no speed is available from any source. The
+  `assess_severity` and `generate_iso_report` examples say that these tools do
+  not read a declared point and when the zone uses the default group 2 /
+  rigid. `generate_envelope_report` receives `rpm` only when the connected
+  server's tool lists it. A null `bearing_faults` block is reported as a
+  bearing check that did not run. Example file paths no longer name missing
+  sample files. Plugin version 1.4.0.
+- **Plugin prognostics, report and documentation guidance follow the current
+  server.** The prognostics skill handles every `estimate_rul` status,
+  including `model_threshold_crossed` and `model_not_rising`, names the
+  feature `range` instead of `peak_to_peak`, states the limits of the Kalman
+  interval, and treats an ISO 20816-3 zone boundary as a threshold only for
+  values comparable with the server's ISO assessment (band-limited velocity
+  RMS over 10-1000 Hz, or 2-1000 Hz below 600 rpm), not for the RMS of a
+  whole stored recording. The documentation-search and report-generation
+  skills and `/pm-report` carry the guidance for servers whose
+  `check_bearing_faults` returns no `claim`. The skills mark unreleased
+  fields and tools, every skill declares its `name`, and the plugin README
+  lists every registered tool and prompt. Plugin version 1.4.0.
 - **`estimate_rul` no longer reports a model-implied threshold crossing as
   no degradation trend.** When the slope test found a significant rise and
   the fitted curve, or the Kalman filter's level, was already at or above

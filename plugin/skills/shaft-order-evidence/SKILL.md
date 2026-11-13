@@ -1,4 +1,5 @@
 ---
+name: shaft-order-evidence
 description: >
   Experimental shaft-order evidence assessment for unbalance, misalignment and
   looseness using the predictive-maintenance-mcp server. Use this skill when the

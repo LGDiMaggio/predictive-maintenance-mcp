@@ -1,4 +1,5 @@
 ---
+name: signal-management
 description: >
   Signal loading, generation, and cache management using the
   predictive-maintenance-mcp server. Use this skill when the user says "load
@@ -52,6 +53,11 @@ Call `load_signal(filepath="real_train/baseline_1.csv", signal_unit="g")`.
   `ledger_status`, `snapshot_status` and the comparability grade against
   the point. An invalid object is refused with every problem named; a
   companion without the object loads exactly as before
+- **Availability**: the asset identity, the asset ledger and the
+  `measurement` and `companion_warning` fields described here are not yet in
+  a published release. If the connected server's results do not list a
+  `measurement` field, tell the user that asset identity and the asset
+  ledger are not available in this server version
 
 **Batch loading** (e.g. for model training) — pass a list; the batch is
 atomic and fail-fast (one error names the bad entries, nothing is loaded):

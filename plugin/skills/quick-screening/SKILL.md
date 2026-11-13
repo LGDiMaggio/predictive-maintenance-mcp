@@ -1,4 +1,5 @@
 ---
+name: quick-screening
 description: >
   Fast vibration health screening for industrial machinery using the
   predictive-maintenance-mcp server. Use this skill when the user says "quick
@@ -23,7 +24,7 @@ informs the engineer's decision — it is never a diagnosis by itself.
 Call `list_signals(scope="memory")` to show loaded signal_ids, or
 `list_signals(scope="disk")` for loadable files. If the user has not
 specified one, ask. Load with
-`load_signal(filepath="real_test/baseline_1.csv", signal_unit="g")` if
+`load_signal(filepath="<file>", signal_unit="g")` if
 needed — declaring `signal_unit` up front makes the ISO step work without a
 re-load. For raw binary files (`.bin`/`.raw`/`.dat`), also declare
 `sample_format` and `sampling_rate` (or provide a companion
@@ -55,7 +56,7 @@ attributes no fault. It is optional and not part of the screening card.
 
 ### Step 4 — ISO Severity Assessment
 
-Call `assess_severity(signal_id="<id>", machine_group=2, support_type="rigid")`.
+Call `assess_severity(signal_id="<id>", machine_group=<group>, support_type="<support type>")`.
 
 Report:
 - RMS velocity in mm/s
@@ -63,8 +64,10 @@ Report:
 - Severity description
 
 Notes:
-- Confirm machine_group (1 = large >300 kW, 2 = medium 15-300 kW) and
-  support_type with the user when known.
+- Pass machine_group (1 = large >300 kW, 2 = medium 15-300 kW) and
+  support_type (rigid or flexible) as the user states them; `assess_severity`
+  does not read a declared measurement point. When they were not stated,
+  leave them out and say that the zone uses the default group 2 / rigid.
 - The verdict requires a DECLARED signal unit. If it is refused, re-load with
   `load_signal(filepath="<file>", signal_unit="g", overwrite=True)` after
   confirming the unit with the user — units are never guessed.

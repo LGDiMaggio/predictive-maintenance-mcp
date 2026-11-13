@@ -1,4 +1,5 @@
 ---
+name: prognostics
 description: >
   Prognostic assessment workflow: trend analysis, degradation onset detection,
   and Remaining Useful Life (RUL) estimation using the predictive-maintenance-mcp
@@ -55,7 +56,7 @@ onset in one result.
 
 Parameters:
 - `feature_name`: `"rms"` (default), `"kurtosis"`, `"crest_factor"`,
-  `"peak_to_peak"`, ...
+  `"range"` (peak-to-peak), ...
 - `segment_duration` (default 0.1 s) and `overlap_ratio` (default 0.5)
 - `onset_threshold_sigma`: baseline standard deviations that trigger onset
   detection (default 3.0; lower to 2.0 for more sensitivity, with more false
@@ -68,7 +69,7 @@ Feature guidance:
 | rms | General degradation | Most common, ISO 20816 aligned |
 | kurtosis | Bearing degradation | Peaks early, then may drop |
 | crest_factor | Impulsive faults | Sensitive to early damage |
-| peak_to_peak | Looseness, imbalance | Good for mechanical looseness |
+| range | Looseness, imbalance | Good for mechanical looseness |
 
 Interpreting the result:
 - `trend_direction` is decided by the slope p-value (< 0.05), not by eye
@@ -95,43 +96,80 @@ RUL needs at least 3 measurements of the same machine over time, as either:
   file (batch load works:
   `load_signal(filepath=["session_day0.csv", "session_day7.csv", "session_day14.csv"], signal_unit="mm/s")`)
   and pass the ids as `signal_ids` — each recording is reduced to a single
-  feature value.
+  feature value. That value is computed over the whole recording in the
+  recording's own declared unit, with no unit conversion and no frequency
+  band. It is not the band-limited velocity RMS that the server's ISO 20816-3
+  assessment evaluates (10-1000 Hz, or 2-1000 Hz when the operating speed
+  supplied or declared for the assessment is below 600 rpm), even when the
+  recording is declared in mm/s, so an ISO zone boundary is not a threshold
+  for it (see Step 2).
 
 Timestamps are required, one per measurement, strictly increasing, in the
 unit you choose (`time_unit`, default "hours").
 
 ### Step 2 — Choose the Failure Threshold
 
-Ask the user — do NOT guess. If the indicator is broadband velocity RMS in
-mm/s, the ISO zone C/D boundary for the machine is the standard choice (the
-same table assess_severity uses): 4.5 (group 2 rigid), 7.1 (group 1 rigid /
-group 2 flexible), or 11.0 mm/s (group 1 flexible). A site maintenance policy
-threshold also works.
+Ask the user — do NOT guess. A threshold must be justified for the indicator
+actually trended: its feature, how it was computed (frequency band, whole
+recording or segment), its unit and the measurement conditions. An ISO
+20816-3 zone C/D boundary (the same table assess_severity uses: 4.5 (group 2
+rigid), 7.1 (group 1 rigid / group 2 flexible), or 11.0 mm/s (group 1
+flexible)) is a threshold for the series only when its values are
+demonstrably comparable with that assessment: velocity RMS over the server's
+ISO 20816-3 evaluation band (10-1000 Hz, or 2-1000 Hz when the operating
+speed supplied or declared for the assessment is below 600 rpm), measured
+under comparable conditions, for the machine's actual group and support. A
+mm/s unit alone does not establish that, and the
+RMS of a whole stored recording is not band-limited. A site maintenance
+policy threshold also works when it was set for the same indicator and
+conditions.
 
 ### Step 3 — Estimate
 
-Call `estimate_rul(feature_values=[2.1, 2.4, 2.9, 3.5], timestamps=[0, 168, 336, 504], failure_threshold=4.5, time_unit="hours", method="linear")`
+Call `estimate_rul(feature_values=[2.1, 2.4, 2.9, 3.5], timestamps=[0, 168, 336, 504], failure_threshold=<threshold>, time_unit="hours", method="linear")`
 
 or, from stored recordings:
 
-Call `estimate_rul(signal_ids=["session_day0", "session_day7", "session_day14"], timestamps=[0, 7, 14], failure_threshold=4.5, feature_name="rms", time_unit="days")`
+Call `estimate_rul(signal_ids=["session_day0", "session_day7", "session_day14"], timestamps=[0, 7, 14], failure_threshold=<threshold>, feature_name="rms", time_unit="days")`
+
+`<threshold>` is the value chosen in Step 2, in the unit of the series.
 
 Method choice:
 - `"linear"` — steady degradation (default)
 - `"exponential"` — accelerating degradation curves
 - `"kalman"` — needs approximately uniform measurement spacing; also returns
-  a 95% RUL interval
+  a nominal 95% RUL interval (`rul_interval_95`) whose coverage is not
+  validated
 
 ### Step 4 — Interpret the Result Honestly
 
-Possible statuses:
+Possible statuses (quote the result's `message` for each):
 - `"estimated"`: RUL in `time_unit`, with `fit_r_squared` (goodness of fit —
   NOT a confidence) and `observation_horizon`. If RUL extends far beyond the
   observed horizon, the result says so — relay that caution verbatim
-- `"no_degradation_trend"`: flat/insignificant series — no RUL number is
-  produced. Recommend continuing to collect measurements
-- `"threshold_already_exceeded"`: the last measurement is at/above the
-  threshold — inspection is due now, there is no remaining life to estimate
+- `"no_degradation_trend"`: the slope test found no statistically significant
+  increasing trend, or could not be computed: no time to the threshold is
+  estimated, and nothing about the machine's health follows. The `message`
+  says what the slope test supports
+- `"model_threshold_crossed"`: the latest measurement is below the
+  threshold, but the fitted model places the indicator at or above it at that
+  time: a model estimate, not an observed exceedance or a confirmed failure,
+  and no time to the threshold is estimated. Report `modelled_current_value`
+  next to `current_value`, the measured value
+- `"model_not_rising"`: the slope test finds a significant increasing trend,
+  but the requested model's rate at the latest measurement is not positive,
+  so the model projects no crossing and no time to the threshold is
+  estimated. The trend test and the model disagree; the `message` names the
+  follow-up
+- `"threshold_already_exceeded"`: the latest measurement is at or above the
+  threshold supplied in the call. The threshold is an indicator limit, not an
+  observed component failure, and no time to it is estimated
+
+For `kalman`, `model_threshold_crossed` and `model_not_rising` can change
+with the time unit of the timestamps, and `rul_interval_95` and
+`precision_heuristic` change with both the time unit and the value scale of
+the series. `precision_heuristic` is a heuristic, not a probability of
+correctness.
 
 Report: trend significance (p-value), fit quality, RUL with its time unit,
 observation horizon, and urgency relative to the next maintenance window.

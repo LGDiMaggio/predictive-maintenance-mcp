@@ -102,11 +102,12 @@ This plugin provides domain expertise for the predictive-maintenance-mcp server 
 - **Spectral & Statistical Analysis**: analyze_fft, analyze_envelope, analyze_statistics, extract_features_from_signal, compute_power_spectral_density, compute_spectrogram_stft
 - **Diagnostics & Health Assessment**: assess_severity, check_bearing_faults, diagnose_vibration, calculate_bearing_characteristic_frequencies, search_bearing_catalog, train_anomaly_model, predict_anomalies, assess_shaft_fault_evidence (unreleased, experimental)
 - **Documentation**: list_machine_manuals, read_manual_excerpt, extract_manual_specs, search_documentation
-- **Reports**: plot_signal, generate_fft_report, generate_envelope_report, generate_iso_report, generate_diagnostic_report_docx, generate_pca_visualization_report, generate_feature_comparison_report, list_html_reports
+- **Reports**: plot_signal, generate_fft_report, generate_envelope_report, generate_iso_report, generate_diagnostic_report, generate_diagnostic_report_docx, generate_pca_visualization_report, generate_feature_comparison_report, list_html_reports
 - **Prognostics**: analyze_signal_trend, estimate_rul, forecast_asset_indicator (unreleased)
 - **Decision Support**: generate_maintenance_recommendations
 - **Asset Health Ledger** (unreleased): declare_measurement_point, declare_healthy_baseline, get_asset_history, assess_asset_change
-- **Guided Prompts**: diagnose_bearing, diagnose_gear, quick_diagnostic_report
+- **Signal Import** (unreleased): inspect_signal_file, validate_signal_import, import_signal_file, get_signal_imports
+- **Guided Prompts**: diagnose_bearing, diagnose_gear, quick_diagnostic_report, guided_signal_import (unreleased)
 
 ## Standards Compliance
 

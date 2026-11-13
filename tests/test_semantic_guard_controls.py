@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import importlib.util
 import json
+import re
 import shutil
 from pathlib import Path
 
@@ -21,6 +22,7 @@ import _semantic_guards as guards
 from _semantic_guards import (
     PLUGIN_DIR,
     REPO_ROOT,
+    VERDICT_LABELS,
     Outcome,
     capture,
     capture_sync,
@@ -36,11 +38,14 @@ from _semantic_guards import (
     refused_or_accepted,
     require,
     renderer_section_keys,
+    sentences,
     shipped_sample_names,
+    unbound_endpoint_mentions,
     unhandled_values,
     unknown_features,
     unmarked_mentions,
     unread_docx_keys,
+    verdict_vocabulary,
 )
 
 
@@ -85,15 +90,20 @@ class TestPlaceholdersAndLiterals:
         assert found == ["s.md:1: diagnose_vibration(machine_group=2)"]
 
     def test_mutation_on_the_bearing_skill(self, tmp_path):
+        """The corrected skill passes no literal speed; putting the audit's
+        rpm=1797 back into its calls is reported (audit A-F1)."""
         path = _copy("skills/bearing-diagnosis/SKILL.md", tmp_path)
         text = path.read_text(encoding="utf-8")
-        before = [
-            v for v in literal_arguments(text, "skill", {"rpm"}) if "rpm=1797" in v
-        ]
-        assert before, "the real skill no longer carries rpm=1797; update this control"
-        mutated = text.replace("rpm=1797", "rpm=<rpm declared for the signal>")
-        after = [v for v in literal_arguments(mutated, "skill", {"rpm"}) if "1797" in v]
-        assert after == []
+        require(
+            "rpm=<rpm>" in text,
+            "the real skill no longer uses the rpm=<rpm> placeholder; update "
+            "this control",
+        )
+        assert literal_arguments(text, "skill", {"rpm"}) == []
+        mutated = text.replace("rpm=<rpm>", "rpm=1797")
+        after = literal_arguments(mutated, "skill", {"rpm"})
+        assert len(after) >= 3, after
+        assert all(v.endswith("(rpm=1797)") for v in after), after
 
 
 class TestValueDomains:
@@ -131,11 +141,22 @@ class TestValueDomains:
         text = _copy("skills/prognostics/SKILL.md", tmp_path).read_text(
             encoding="utf-8"
         )
-        assert any("peak_to_peak" in v for v in unknown_features(text, "skill", valid))
-        mutated = text.replace("peak_to_peak", "range")
-        assert not any(
-            "peak_to_peak" in v for v in unknown_features(mutated, "skill", valid)
+        require(
+            '"range"' in text and "| range |" in text,
+            "the real skill no longer offers range in its list and table; "
+            "update this control",
         )
+        assert not any(
+            "peak_to_peak" in v for v in unknown_features(text, "skill", valid)
+        )
+        # Put the refused name back where the audit found it (audit A-F8).
+        mutated = text.replace('"range"', '"peak_to_peak"').replace(
+            "| range |", "| peak_to_peak |"
+        )
+        hits = [
+            v for v in unknown_features(mutated, "skill", valid) if "peak_to_peak" in v
+        ]
+        assert len(hits) == 2, hits
 
 
 class TestDocxKeys:
@@ -177,11 +198,174 @@ class TestAvailability:
         text = _copy("skills/signal-management/SKILL.md", tmp_path).read_text(
             encoding="utf-8"
         )
-        assert unmarked_mentions(text, "skill", self.PATTERNS, per_section=False)
-        marked = text + "\nThe measurement object is not yet in a published release.\n"
-        assert (
-            unmarked_mentions(marked, "skill", self.PATTERNS, per_section=False) == []
+        assert unmarked_mentions(text, "skill", self.PATTERNS, per_section=False) == []
+        # Remove the availability bullet: the mentions are unmarked again
+        # (audit A-F11).
+        unmarked, n = re.subn(
+            r"- \*\*Availability\*\*:.*?not available in this server version\n",
+            "",
+            text.replace("\r\n", "\n"),
+            flags=re.S,
         )
+        require(n == 1, "the availability bullet changed; update this control")
+        assert unmarked_mentions(unmarked, "skill", self.PATTERNS, per_section=False)
+
+
+class TestEndpointAvailability:
+    NAMES = {"forecast_asset_indicator", "assess_shaft_fault_evidence"}
+
+    def test_sentences_split_list_items_and_full_stops(self):
+        text = "Intro one. Intro\ntwo.\n- item a\n- item b\n\n# Head\n| x | y |"
+        assert sentences(text) == [
+            "Intro one.",
+            "Intro two.",
+            "- item a",
+            "- item b",
+            "# Head",
+            "| x | y |",
+        ]
+
+    def test_an_unmarked_endpoint_is_reported(self):
+        text = "Call `forecast_asset_indicator(values=[1])`.\n"
+        assert unbound_endpoint_mentions(text, "s.md", self.NAMES) == [
+            "s.md:1: forecast_asset_indicator"
+        ]
+
+    def test_a_sentence_naming_it_covers_it(self):
+        text = (
+            "Call `forecast_asset_indicator(values=[1])`.\n\n"
+            "If the server does not list `forecast_asset_indicator`, say so.\n"
+            "- assess_shaft_fault_evidence (unreleased, experimental)\n"
+        )
+        assert unbound_endpoint_mentions(text, "s.md", self.NAMES) == []
+
+    def test_a_phrase_about_something_else_does_not_cover_it(self):
+        text = (
+            "Call `assess_shaft_fault_evidence(signal_ids=[])`.\n\n"
+            "If the tool does not list `rpm`, omit it.\n"
+        )
+        assert unbound_endpoint_mentions(text, "s.md", self.NAMES) == [
+            "s.md:1: assess_shaft_fault_evidence"
+        ]
+
+    def test_mutation_on_the_pipeline_agent(self, tmp_path):
+        """The agent names the unreleased shaft-order tool; without its
+        availability bullet it is reported, although the file still has an
+        availability phrase about rpm (audit A-P-5)."""
+        text = _copy("agents/diagnostic-pipeline.md", tmp_path).read_text(
+            encoding="utf-8"
+        )
+        names = {"assess_shaft_fault_evidence"}
+        assert unbound_endpoint_mentions(text, "agent", names) == []
+        mutated, n = re.subn(
+            r"\n- `assess_shaft_fault_evidence` is not yet in a published release",
+            "",
+            text,
+        )
+        require(n == 1, "the agent's availability bullet changed; update this control")
+        require(
+            "does not list" in " ".join(mutated.split()),
+            "the agent lost its rpm sentence",
+        )
+        assert [
+            v.split(": ", 1)[1]
+            for v in unbound_endpoint_mentions(mutated, "agent", names)
+        ] == ["assess_shaft_fault_evidence"]
+
+
+class TestVerdictVocabulary:
+    """S6 (FU-RC0-S6): role-aware, bound to no tripwire; never run against the
+    real plugin text as a requirement."""
+
+    @pytest.mark.parametrize(
+        "text, role",
+        [
+            ("- ISO Zone A + Kurtosis < 1 -> Healthy", "arrow-verdict"),
+            ("- Kurtosis not above 3 -> Healthy", "arrow-verdict"),
+            ("Zone D or kurtosis above 6 → **Critical**", "arrow-verdict"),
+            ("Overall: Healthy / Monitor / Suspicious / Critical", "overall-verdict"),
+            (
+                "| Anomaly ratio | Classification | Action |\n|---|---|---|\n"
+                "| Near 0 | Normal | No action needed |",
+                "table-verdict",
+            ),
+            (
+                "| Anomaly ratio | Classification | Action |\n|---|---|---|\n"
+                "| Near 0 | Normal | No action needed |",
+                "plugin-action",
+            ),
+            ("Schedule follow-up in 2-4 weeks.", "plugin-action"),
+            ("Schedule follow-up in 2-4 weeks.", "plugin-interval"),
+            ("Re-check in 2" + chr(0x2013) + "4 weeks.", "plugin-interval"),
+            ("No impulsive content means the bearing is healthy.", "absence-as-health"),
+            (
+                "A ratio without flags indicates that the machine is normal.",
+                "absence-as-health",
+            ),
+        ],
+    )
+    def test_each_verdict_role_is_reported(self, text, role):
+        roles = [v.split(": ")[1] for v in verdict_vocabulary(text, "s.md")]
+        assert role in roles, roles
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Relay `overall_health` as returned (`Healthy`, `Suspicious` or "
+            "`Faulty`) with its `anomaly_ratio`.",
+            "`no_indication` is not evidence that the bearing is free of defects.",
+            'Never report `no_indication` as "healthy" or "no fault".',
+            "Healthy segments cluster together; anomalies appear as outliers.",
+            'Never write "No action needed" for a refused assessment.',
+            "A ratio without flags does not show that the machine is healthy.",
+            "| Report Type | Tool | When to Use |\n|---|---|---|\n"
+            "| FFT Spectrum | `generate_fft_report()` | Normal |",
+            "Report the zone with its `zone_description` -> Unacceptable as returned",
+        ],
+    )
+    def test_projections_mentions_and_negations_are_not_reported(self, text):
+        assert verdict_vocabulary(text, "s.md") == []
+
+    def test_a_server_enum_value_is_still_a_verdict_in_a_verdict_role(self):
+        """The allow-list is not textual: "Healthy" and "Suspicious" are
+        overall_health values, and a plugin rule assigning them is reported
+        even when the server phrases contain them (RC-0 review finding 18)."""
+        server = ["Healthy", "Suspicious", "Faulty"]
+        text = "- Zone A -> Healthy\n- Zone C -> Suspicious"
+        assert len(verdict_vocabulary(text, "s.md", server_phrases=server)) == 2
+
+    def test_a_server_phrase_allows_an_action_it_contains(self):
+        text = "Monitor more frequently."
+        assert verdict_vocabulary(text, "s.md")
+        server = ["Monitor more frequently and plan an inspection."]
+        assert verdict_vocabulary(text, "s.md", server_phrases=server) == []
+
+    def test_role_matching_is_what_keeps_a_mention_quiet(self):
+        """A text-only matcher would report this sentence: the label is there,
+        the role is not."""
+        text = "Healthy segments cluster together; anomalies appear as outliers."
+        assert any(re.search(rf"\b{label}\b", text) for label in VERDICT_LABELS)
+        assert verdict_vocabulary(text, "s.md") == []
+
+    def test_mutation_on_the_screening_command(self, tmp_path):
+        """On a copy of the real /pm-screen command the guard reports the four
+        arrow verdicts of its decision logic (audit A-F5); replacing them with
+        projections of server fields removes every report. Not a tripwire:
+        the real file is not required to be clean."""
+        text = _copy("commands/pm-screen.md", tmp_path).read_text(encoding="utf-8")
+        arrows = [v for v in verdict_vocabulary(text, "cmd") if "arrow-verdict" in v]
+        require(
+            len(arrows) == 4,
+            f"the command's decision logic changed; update this control: {arrows}",
+        )
+        mutated = re.sub(
+            r"(?m)^- ISO Zone .*$",
+            "- Relay the zone with its `zone_description` as returned",
+            text,
+        )
+        assert [
+            v for v in verdict_vocabulary(mutated, "cmd") if "arrow-verdict" in v
+        ] == []
 
 
 class TestExampleFilesAndLists:

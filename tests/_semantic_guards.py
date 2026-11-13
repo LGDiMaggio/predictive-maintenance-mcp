@@ -247,6 +247,51 @@ def unmarked_mentions(
     return found
 
 
+#: An availability phrase as the endpoint check reads it: the sentences above,
+#: plus "(unreleased" opening a longer parenthesis such as "(unreleased,
+#: experimental)".
+ENDPOINT_AVAILABILITY_RE = re.compile(
+    AVAILABILITY_RE.pattern + r"|\(unreleased\b", re.IGNORECASE
+)
+_UNIT_SPLIT_RE = re.compile(r"\n[ \t]*\n|\n(?=[ \t]*(?:[-*]|\d+\.|#{1,6}|\|)[ \t])")
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
+
+
+def sentences(text: str) -> list[str]:
+    """Sentences of *text*: paragraphs, list items, headings and table rows are
+    split apart first, then each is split after a full stop, question or
+    exclamation mark, with whitespace collapsed."""
+    found = []
+    for unit in _UNIT_SPLIT_RE.split(text.replace("\r\n", "\n")):
+        found.extend(s for s in _SENTENCE_SPLIT_RE.split(" ".join(unit.split())) if s)
+    return found
+
+
+def unbound_endpoint_mentions(
+    text: str,
+    source: str,
+    names: Iterable[str],
+    availability: re.Pattern[str] = ENDPOINT_AVAILABILITY_RE,
+) -> list[str]:
+    """Endpoint *names* the text mentions without one sentence that names the
+    endpoint together with an availability phrase.
+
+    The sentence must name the endpoint itself: an availability phrase about
+    something else in the same file does not cover it.
+    """
+    units = sentences(text)
+    found = []
+    for name in sorted(set(names)):
+        pattern = re.compile(rf"(?<![A-Za-z0-9_]){re.escape(name)}(?![A-Za-z0-9_])")
+        first = pattern.search(text)
+        if first is None:
+            continue
+        if not any(pattern.search(s) and availability.search(s) for s in units):
+            line = text.count("\n", 0, first.start()) + 1
+            found.append(f"{source}:{line}: {name}")
+    return found
+
+
 _QUOTED_PATH_RE = re.compile(r"""["']([^"']+)["']""")
 
 
@@ -328,6 +373,135 @@ def list_differences(
         "missing": sorted(registered_set - listed_set),
         "unregistered": sorted(listed_set - registered_set),
     }
+
+
+# ---------------------------------------------------------------------------
+# Verdict vocabulary (S6; RC-0 plan KTD2). Bound to no tripwire: the labels
+# below are what the guard looks for, not a classification it applies.
+# ---------------------------------------------------------------------------
+
+#: Health and severity labels that are verdicts when the text assigns them.
+VERDICT_LABELS = (
+    "Healthy",
+    "Normal",
+    "Monitor",
+    "Suspicious",
+    "Critical",
+    "Faulty",
+    "Borderline",
+    "Anomalous",
+    "Unacceptable",
+)
+#: Actions only a server output or prompt may author (audit A F5, F7).
+PLUGIN_ACTIONS = (
+    "No action needed",
+    "Monitor more frequently",
+    "No immediate concerns",
+    "Schedule follow-up",
+)
+#: Server fields whose values a surface may project verbatim.
+PROJECTED_FIELDS = ("overall_health", "zone_description", "status", "claim")
+
+_LABEL_ALT = "|".join(VERDICT_LABELS)
+_QUOTE_CHARS = "*`\"'"
+_ARROW_VERDICT_RE = re.compile(rf"(?:->|→)\s*[{_QUOTE_CHARS}]*({_LABEL_ALT})\b")
+_OVERALL_VERDICT_RE = re.compile(
+    r"\b(?:Overall(?: health)?|Verdict|Classification|Health status)\b"
+    rf"[^:\n]{{0,20}}:\s*[{_QUOTE_CHARS}]*({_LABEL_ALT})\b"
+)
+_VERDICT_COLUMN_RE = re.compile(
+    r"\b(?:classification|verdict|health|overall|assessment|status)\b", re.I
+)
+_INTERVAL_RE = re.compile(r"\b\d+\s*[-–]\s*\d+\s*(?:hours|days|weeks|months)\b", re.I)
+_ABSENCE_AS_HEALTH_RE = re.compile(
+    r"\b(?:no|without)\b[^.\n]{0,80}?\b(?:means|indicates|implies|shows)\b"
+    r"(?:\s+that)?(?:\s+the\s+\w+)?(?:\s+is)?\s+"
+    r"(healthy|normal|fault-free|in good condition)\b",
+    re.I,
+)
+_NEGATED_RE = re.compile(r"\b(?:never|not|don't|do not)\b[^.;:]{0,40}$", re.I)
+
+
+def _cells(row: str) -> list[str]:
+    return [c.strip() for c in row.strip().strip("|").split("|")]
+
+
+def _bare(cell: str) -> str:
+    return cell.strip(_QUOTE_CHARS + " ")
+
+
+def verdict_vocabulary(
+    text: str,
+    source: str,
+    server_phrases: Iterable[str] = (),
+    projected_fields: Iterable[str] = PROJECTED_FIELDS,
+) -> list[str]:
+    """Health or severity verdicts, actions and intervals the text authors.
+
+    A label counts only in a verdict role: after an arrow (``-> Healthy``),
+    after ``Overall:`` and similar leads, or in a table column headed
+    classification, verdict, health, overall, assessment or status. Being a
+    server enum value does not make a label acceptable in such a role
+    ("Healthy" and "Suspicious" are ``overall_health`` values); only a line
+    that projects a named server field (``overall_health`` and the like) may
+    carry it. Actions and intervals are reported unless a server phrase
+    contains them. A negated mention ("never write ...") is not reported, and
+    neither is absence read as health in a negated sentence.
+    """
+    fields = tuple(projected_fields)
+    phrases = [p.lower() for p in server_phrases]
+    found: list[str] = []
+    lines = text.replace("\r\n", "\n").split("\n")
+
+    def projects(line: str) -> bool:
+        return any(f"`{field}`" in line for field in fields)
+
+    def report(number: int, role: str, what: str) -> None:
+        found.append(f"{source}:{number}: {role}: {what}")
+
+    header: list[str] | None = None
+    for number, line in enumerate(lines, start=1):
+        stripped = line.strip()
+        if stripped.startswith("|"):
+            cells = _cells(stripped)
+            if header is None:
+                header = cells
+            elif not set("".join(cells)) <= set("-: "):
+                for title, cell in zip(header, cells):
+                    if (
+                        _VERDICT_COLUMN_RE.search(title)
+                        and _bare(cell) in VERDICT_LABELS
+                    ):
+                        if not projects(line):
+                            report(number, "table-verdict", _bare(cell))
+        else:
+            header = None
+        for pattern, role in (
+            (_ARROW_VERDICT_RE, "arrow-verdict"),
+            (_OVERALL_VERDICT_RE, "overall-verdict"),
+        ):
+            for m in pattern.finditer(line):
+                # An arrow assigns its label whatever its condition says
+                # ("Kurtosis not above 3 -> Healthy"), so negation only
+                # quiets the lead-in roles.
+                negated = role != "arrow-verdict" and _NEGATED_RE.search(
+                    line[: m.start()]
+                )
+                if not projects(line) and not negated:
+                    report(number, role, m.group(1))
+        for action in PLUGIN_ACTIONS:
+            for m in re.finditer(re.escape(action), line, re.I):
+                negated = _NEGATED_RE.search(line[: m.start()])
+                if not negated and not any(action.lower() in p for p in phrases):
+                    report(number, "plugin-action", m.group(0))
+        for m in _INTERVAL_RE.finditer(line):
+            negated = _NEGATED_RE.search(line[: m.start()])
+            if not negated and not any(m.group(0).lower() in p for p in phrases):
+                report(number, "plugin-interval", m.group(0))
+        for m in _ABSENCE_AS_HEALTH_RE.finditer(line):
+            if not re.search(r"\b(?:not|never)\b", line[: m.end()], re.I):
+                report(number, "absence-as-health", m.group(0))
+    return found
 
 
 # ---------------------------------------------------------------------------
