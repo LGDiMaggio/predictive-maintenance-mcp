@@ -199,8 +199,10 @@ class TestAvailability:
             encoding="utf-8"
         )
         assert unmarked_mentions(text, "skill", self.PATTERNS, per_section=False) == []
-        # Remove the availability bullet: the mentions are unmarked again
-        # (audit A-F11).
+        # Remove the availability bullet and the signal import's availability
+        # sentence: the mentions are unmarked again (audit A-F11). The check is
+        # file-scoped, so any availability sentence in the file covers them and
+        # both must go.
         unmarked, n = re.subn(
             r"- \*\*Availability\*\*:.*?not available in this server version\n",
             "",
@@ -208,6 +210,17 @@ class TestAvailability:
             flags=re.S,
         )
         require(n == 1, "the availability bullet changed; update this control")
+        assert (
+            unmarked_mentions(unmarked, "skill", self.PATTERNS, per_section=False) == []
+        )
+        unmarked, n = re.subn(
+            r"`inspect_signal_file`,\s+`validate_signal_import`,.*?"
+            r"make\s+`load_signal` read it\.",
+            "",
+            unmarked,
+            flags=re.S,
+        )
+        require(n == 1, "the import availability sentence changed; update this control")
         assert unmarked_mentions(unmarked, "skill", self.PATTERNS, per_section=False)
 
 
