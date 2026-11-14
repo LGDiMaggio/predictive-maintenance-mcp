@@ -44,6 +44,24 @@ Client ──load_signal("bearing_001.csv")──▶ Repository ──signal_id�
                                          (10 GB cap)
 ```
 
+### Block 1, text exports: Signal Import (`signal_import/`)
+
+The signal import turns a delimited-text export into signals in four operations: inspect (read-only and bounded), configure (a draft that carries no basis), validate (the whole file, writing nothing) and import (the record first, then the signal store, then the asset ledger). It sits in front of the existing validators, measurement identity, signal store and asset ledger. The interpretation contract and the strict decoder live in `signal_acquisition/` (`import_config.py`, `text_scan.py`, `line_breaks.py`, `text_decoder.py`), so the ledger replays an imported channel from the original file with the same decoder, without importing the import service.
+
+| Module | Purpose |
+|--------|---------|
+| `inspection.py` | Read-only inspection: regions, dialect, columns, the values the file states |
+| `configure.py` | Draft configuration from an inspection, with no basis |
+| `attestation.py` | Bases, overrides, the canonical configuration and its digest |
+| `timebase.py` | Assessment of time columns against a uniform grid |
+| `validation/` | Validation of a configuration against the whole file and the recorded history |
+| `statements.py` | One statement per value an import writes |
+| `records.py` | Append-only import records under `PMM_IMPORT_DIR` |
+| `service.py` | Import, restore and the record index |
+| `contracts.py` | Typed results; file text only as `FileText` |
+
+**Dependency direction**: `mcp_tools` → `signal_import` → `asset_ledger`, `signal_acquisition`, `file_text`, `path_safety`, `signal_validation`. The ledger never imports `signal_import`.
+
 ### Block 2: Signal Processing (`signal_processing/`)
 
 Pure spectral analysis functions. No file I/O, no MCP dependency.
@@ -163,8 +181,23 @@ src/
 ├── signal_acquisition/                # ISO 13374 Block 1
 │   ├── __init__.py                    #   re-exports loaders + repository
 │   ├── loaders.py                     #   multi-format signal loading
+│   ├── import_config.py               #   text-import interpretation contract
+│   ├── line_breaks.py                 #   one definition of a physical line
+│   ├── text_scan.py                   #   bounded read-only text scan
+│   ├── text_decoder.py                #   strict text decoder (import + replay)
 │   ├── measurement.py                 #   companion measurement contract (leaf)
 │   └── repository.py                  #   LRU signal cache
+│
+├── signal_import/                     # ISO 13374 Block 1, text exports
+│   ├── inspection.py                  #   read-only inspection
+│   ├── configure.py                   #   draft configuration
+│   ├── attestation.py                 #   bases, overrides, digest
+│   ├── timebase.py                    #   time-column assessment
+│   ├── validation/                    #   whole-file validation
+│   ├── statements.py                  #   one statement per value
+│   ├── records.py                     #   append-only import records
+│   ├── service.py                     #   import, restore, index
+│   └── contracts.py                   #   typed results
 │
 ├── signal_processing/                 # ISO 13374 Block 2
 │   ├── __init__.py                    #   re-exports spectral functions

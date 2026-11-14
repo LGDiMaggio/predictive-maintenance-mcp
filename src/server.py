@@ -377,6 +377,8 @@ mcp = MCPServer(
       then import_signal_file with the import_digest of a 'ready'
       validation; get_signal_imports lists the imports, and
       import_signal_file(import_id=...) restores one after a restart
+    - When a load_signal refusal names inspect_signal_file, follow it; never
+      edit, convert or re-save the original file to make it load
     - Every value an import writes needs the user's own basis: ask for each
       required confirmation, never originate a basis, never accept all
       proposals at once

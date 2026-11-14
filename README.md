@@ -107,7 +107,7 @@ What comes back is the server's evidence, not the model's opinion: in the envelo
 
 The file name carries the fault label, but the server never reads names. Ask which frequencies matched and with what deviation: the answer rests on the spectrum alone.
 
-**Use your own data.** Put a single-column CSV without a header row where the server can read it (a folder of yours under `data/signals/`, or an absolute path), add a `<name>_metadata.json` next to it with `sampling_rate` and `signal_unit` (for example `"g"`), and ask for the analysis stating the shaft speed. Details and traps: [Use Your Own Data](docs/QUICKSTART_ENGINEER.md#use-your-own-data).
+**Use your own data.** Put a single-column CSV without a header row where the server can read it (a folder of yours under `data/signals/`, or an absolute path), add a `<name>_metadata.json` next to it with `sampling_rate` and `signal_unit` (for example `"g"`), and ask for the analysis stating the shaft speed. Details and traps: [Use Your Own Data](docs/QUICKSTART_ENGINEER.md#use-your-own-data). An export with a header, a units row, a preamble or several channels goes through the signal import instead, which reads the file as it is and asks you for every value it cannot verify (on the main branch, not yet in a published release): [Signal Import Guide](docs/IMPORT_GUIDE.md).
 
 > **Other clients**: Claude Code, VS Code, Cursor and any other MCP client: [INSTALL.md, Manual Setup](INSTALL.md#manual-setup-windows--macos--linux).
 

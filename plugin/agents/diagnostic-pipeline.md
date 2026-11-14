@@ -48,10 +48,12 @@ tools:
   - mcp__predictive-maintenance__generate_iso_report
   - mcp__predictive-maintenance__generate_maintenance_recommendations
   - mcp__predictive-maintenance__get_signal_info
+  - mcp__predictive-maintenance__inspect_signal_file
   - mcp__predictive-maintenance__list_signals
   - mcp__predictive-maintenance__load_signal
   - mcp__predictive-maintenance__plot_signal
   - mcp__predictive-maintenance__search_bearing_catalog
+  - mcp__predictive-maintenance__validate_signal_import
 ---
 
 # Diagnostic Pipeline Agent
@@ -83,6 +85,19 @@ Given one or more vibration signals, execute a complete diagnostic workflow:
 - For raw binary files (`.bin`/`.raw`/`.dat`), also declare `sample_format` and
   `sampling_rate` up front (or point to a companion `<stem>_metadata.json`) —
   a raw load without them is refused with the exact re-call to make
+- A text export that `load_signal` refuses with a remedy naming
+  `inspect_signal_file`, or one with a header, a units row, a preamble or
+  several channels, goes through the signal import. `inspect_signal_file`,
+  `validate_signal_import` and `import_signal_file` are not yet in a published
+  release: if the server does not list `inspect_signal_file`, say that the
+  signal import is not available in this server version and stop for that
+  file. Call `inspect_signal_file(filepath="<file>")`, then
+  `validate_signal_import(filepath="<file>", config=...)` with only the values
+  and bases the user gave in the task. Never supply a basis yourself and never
+  call `import_signal_file`: at `needs_confirmation`, stop for that file and
+  return its `required_confirmations` list to the user; at `invalid`, return
+  the issues; at `ready`, return the statements verbatim with the
+  `import_digest`, and leave the import to the user
 - Call `get_signal_info(signal_id="<id>")` to verify sampling rate and metadata
 - Values in angle brackets in the calls below, such as `<rpm>`,
   `<bearing designation>` or `<reference frequencies>`, are placeholders, not
@@ -271,6 +286,9 @@ Present a concise summary to the user:
   results do not answer a question, say that the analysis does not answer it
 - If information is missing (RPM, bearing type, machine group, signal unit),
   ask the user ONCE at the beginning, then proceed autonomously
+- Never supply a basis for a signal import and never import a file: an import
+  needs the user's own confirmations (Phase 1). Never edit, convert or re-save
+  a signal file
 - Process all signals the user specified — do not stop after the first one
 - Generate reports for every analysis performed
 - All processing is local — confirm this to the user if they ask
