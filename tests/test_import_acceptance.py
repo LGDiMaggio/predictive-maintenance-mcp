@@ -32,8 +32,10 @@ intended outcomes are the plan's catalog, compared in review, not here.
 from __future__ import annotations
 
 import copy
+import gzip
 import hashlib
 import json
+import re
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -46,7 +48,9 @@ from import_corpus import (
     CORPUS_ACQUIRED,
     CORPUS_ROWS,
     CORPUS_RPM,
+    GZIP_OS_UNKNOWN,
     CorpusFixture,
+    gzip_renamed,
     seventeen_digits,
 )
 from predictive_maintenance_mcp import config
@@ -434,6 +438,34 @@ async def ok(client: Client, name: str, arguments: dict[str, Any]) -> dict[str, 
 # ---------------------------------------------------------------------------
 # The frozen corpus
 # ---------------------------------------------------------------------------
+
+
+class TestPlatformIndependentBytes:
+    """The frozen digests hold on every operating system only if no generator
+    lets the platform choose a byte (a gzip header's OS field once did)."""
+
+    def test_the_gzip_fixture_is_a_platform_independent_gzip_stream(self):
+        data = gzip_renamed()
+        assert data[:4] == b"\x1f\x8b\x08\x00", "gzip magic, deflate, no flags"
+        assert data[4:8] == b"\x00\x00\x00\x00", "no timestamp"
+        assert data[9] == GZIP_OS_UNKNOWN, f"OS byte {data[9]} names a platform"
+        assert data[10] == 0x01, "one final stored deflate block"
+        plain = gzip.decompress(data)
+        assert plain.startswith(b"time,acc\n")
+        assert plain.count(b"\n") == 1 + 256
+
+    def test_the_corpus_calls_no_zlib_backed_compressor(self):
+        source = (Path(__file__).resolve().parent / "import_corpus.py").read_text(
+            encoding="utf-8"
+        )
+        found = re.findall(
+            r"\b(?:gzip|zlib|bz2|lzma)\.(?:compress\w*|open|GzipFile|BZ2File|LZMAFile)\s*\(",
+            source,
+        )
+        assert found == [], f"platform-dependent compressor calls: {found}"
+        assert (
+            '.encode("utf-16")' not in source
+        ), "the utf-16 codec follows the host's order"
 
 
 class TestCorpusIsFrozen:

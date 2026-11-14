@@ -7,8 +7,9 @@ test needs them. Rows are generated from a closed formula, never from a random
 source, so every run produces the same bytes.
 """
 
-import gzip
 import math
+import struct
+import zlib
 from typing import Callable, NamedTuple, Sequence
 
 RATE_HZ = 25600
@@ -253,8 +254,9 @@ def european_utf8_bom(rows: int = CORPUS_ROWS) -> bytes:
 
 
 def european_utf16_bom(rows: int = CORPUS_ROWS) -> bytes:
-    """F13: the same export in UTF-16 with a byte-order mark."""
-    return _european_text(rows).encode("utf-16")
+    """F13: the same export in UTF-16 with a byte-order mark, written
+    little-endian explicitly (the ``utf-16`` codec follows the host's order)."""
+    return b"\xff\xfe" + _european_text(rows).encode("utf-16-le")
 
 
 def european_sep_line(rows: int = CORPUS_ROWS) -> bytes:
@@ -401,9 +403,24 @@ def semicolon_comma_rows(rows: int = CORPUS_ROWS) -> bytes:
     return lines_to_bytes([f"{row % 7},0;{row % 9 + 1},5" for row in range(rows)])
 
 
+#: Byte 9 of a gzip header names the operating system that wrote it; 255 is
+#: "unknown". ``gzip.compress`` leaves it to zlib, which writes its build
+#: platform's code (10 on Windows, 3 on Linux, 19 on macOS), so the bytes would
+#: differ by platform.
+GZIP_OS_UNKNOWN = 255
+
+
 def gzip_renamed(rows: int = 256) -> bytes:
-    """H10: a gzip stream (to be saved under a ``.csv`` name)."""
-    return gzip.compress(_plain_with(_plain_row, rows), mtime=0)
+    """H10: a gzip stream (to be saved under a ``.csv`` name), built byte by
+    byte (RFC 1952 header with no timestamp and an unknown OS, one stored
+    RFC 1951 block, CRC-32 and length), so no zlib build or version changes it."""
+    payload = _plain_with(_plain_row, rows)
+    if len(payload) > 0xFFFF:
+        raise ValueError("one stored deflate block holds at most 65535 bytes")
+    header = b"\x1f\x8b\x08\x00" + b"\x00\x00\x00\x00" + bytes([0, GZIP_OS_UNKNOWN])
+    stored = b"\x01" + struct.pack("<HH", len(payload), len(payload) ^ 0xFFFF) + payload
+    trailer = struct.pack("<II", zlib.crc32(payload), len(payload))
+    return header + stored + trailer
 
 
 def seventeen_digits(rows: int = CORPUS_ROWS) -> bytes:
