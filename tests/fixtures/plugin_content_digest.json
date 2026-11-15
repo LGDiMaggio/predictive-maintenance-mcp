@@ -3,6 +3,10 @@
     {
       "version": "1.4.0",
       "digest": "b9a52b1d59c3ed4241cfa22127329908494f5a65725a834d24b308cdb6b91dbe"
+    },
+    {
+      "version": "1.4.1",
+      "digest": "3cb9310e214f19e8b3543e1ba74797911b8f753930f5205e72ee74fc47251c1b"
     }
   ]
 }

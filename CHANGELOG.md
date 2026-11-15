@@ -14,28 +14,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   data, trailer) with line numbers, the delimiter and decimal mark, each
   column by its physical index and the values the file states, with a draft
   configuration. `validate_signal_import` checks a configuration against the
-  whole file, writing nothing: every value the import writes needs a basis
-  that names the user's act, a value accepted from the file must equal what
-  the cited line says, and the outcome is `ready` (with an `import_digest`),
-  `needs_confirmation` or `invalid`, with one statement per value and a
-  read-only pre-check of the asset ledger. `import_signal_file` imports a
+  whole file, writing nothing: every value the import writes requires an
+  appropriate recorded basis, except the dialect and the data lines when
+  decoding the configured data region proves their structure (a proof that
+  covers that region only, not the completeness of the acquisition); a value
+  accepted from the file must equal what the cited line says; and the outcome
+  is `ready` (with an `import_digest`), `needs_confirmation` or `invalid`,
+  with one statement per value and a read-only pre-check of the asset
+  ledger. `import_signal_file` imports a
   `ready` configuration: it validates the file again and refuses with
   "validate again" if anything changed, writes an append-only import record
-  under `PMM_IMPORT_DIR`, stores every channel as `<stem>_c<index>` (all or
-  none), and records each bound channel in the asset ledger with its own
+  under `PMM_IMPORT_DIR`, stores every channel (all or none) under a signal
+  id derived from the file path, folder components included, with
+  `_c<column-index>` appended (an explicit `signal_id_prefix` changes that
+  base), and records each bound channel in the asset ledger with its own
   interpretation; with `import_id` alone it restores a recorded import after
   a restart, from the unchanged original file, without new confirmations.
   `get_signal_imports` lists the imports or reads one record. The
   `guided_signal_import` prompt walks the steps. Bases sent through these
   tools are recorded as caller-asserted: they record what the caller
-  claimed, never who the caller is. No sample array reaches the client, and
-  text from the file reaches it only in `file_text` fields. Files are read
-  only from the data directory and `PMM_IMPORT_ROOTS`; the original file is
-  never modified. Over SSE or streamable HTTP the four tools refuse every
-  call unless the server was started from its command line on a loopback
+  claimed, never who the caller is. No sample array reaches the client: at
+  most three raw values per column, and text from the file only in
+  `file_text` fields. Files are read only from the data directory and
+  `PMM_IMPORT_ROOTS`; the original file is never modified. Over SSE or
+  streamable HTTP the four tools refuse every call unless the server was
+  started from its command line on a loopback
   address and the call reaches it directly; setting `PMM_IMPORT_ALLOW_REMOTE`
   with a network transport bound to any other address stops the server at
-  startup. See `docs/IMPORT_GUIDE.md`. Not yet in a published release.
+  startup. When a configuration restores an interpretation that an earlier,
+  later superseded declaration of the same measurement used, validation
+  reports it as a notice and the import proceeds; the assessment scores the
+  snapshot that interpretation already produced. See `docs/IMPORT_GUIDE.md`.
+  Not yet in a published release.
 - **`StoredSignalInfo.import_provenance` (additive).** `get_signal_info` and
   `list_signals` show, for an imported signal, its `import_id`, column,
   label as file text, time-base source, scaling, samples digest and the
@@ -51,6 +61,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   plain `load_signal` declaration for a measurement an import recorded is
   refused, on the same asset or another. Ledger results show such a
   measurement's location as `import <id> column <index>`.
+- **Plugin 1.4.1: the signal import in the plugin.** The `signal-management`
+  skill walks the import of a text export with the user: inspection,
+  confirmations, validation, the statements, the import, and the restore after
+  a restart. The `diagnostic-pipeline` agent inspects and validates such an
+  export with only the values the user gave, returns the confirmations still
+  needed or the statements, and never imports. Both say that the import tools
+  are not yet in a published release and what to tell the user when the
+  connected server does not list them.
+- **Signal import documentation.** `docs/IMPORT_GUIDE.md` describes the
+  time-base rules, the vocabulary of an import configuration, the values a
+  file can supply and how to delete an import record; the README, the
+  engineer quickstart, the adapter guide and the architecture guide point text
+  exports with a header, a units row, a preamble or several channels to the
+  import.
 - **Plugin: an optional `shaft-order-evidence` skill.** It tells a client
   model when to call `assess_shaft_fault_evidence` and how to read it: quote
   its `summary` and statements verbatim, read `pattern_observed` as an

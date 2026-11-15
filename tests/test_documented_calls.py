@@ -39,6 +39,12 @@ resource as a tool). This guard makes silent drift impossible:
   vocabulary and aliases, and the id / free-text length caps. The
   companion-file paragraph that enumerates the honored keys must name the
   ``measurement`` object next to every raw declaration parameter.
+- ``docs/IMPORT_GUIDE.md`` gets the call-shape and retired-names sweeps PLUS
+  a vocabulary-parity check: each row of its marked vocabulary table must
+  equal a closed vocabulary of the signal import (bases, time-base sources,
+  roles, quantities, units, sensitivity units and sources, DC policies, time
+  units, dialect and encoding tokens, value statuses, validation outcomes),
+  both ways, and the role row must name exactly the importable roles.
 
 If this test fails after an intentional signature change, fix the docs, not
 the guard: the docs are a public API surface.
@@ -46,7 +52,7 @@ the guard: the docs are a public API surface.
 
 import re
 from pathlib import Path
-from typing import Optional
+from typing import Optional, get_args
 
 import pytest
 from mcp.server.mcpserver import MCPServer
@@ -69,13 +75,32 @@ from predictive_maintenance_mcp.signal_acquisition.measurement import (
     REQUIRED_MEASUREMENT_FIELDS,
     VALID_DIRECTIONS,
 )
+from predictive_maintenance_mcp.signal_acquisition.import_config import (
+    DC_POLICIES,
+    DECIMAL_MARKS,
+    DELIMITERS,
+    ELECTRICAL_UNITS,
+    ENCODINGS,
+    IMPORTABLE_ROLES,
+    QUANTITIES,
+    ROLES,
+    SENSITIVITY_SOURCES,
+    SENSITIVITY_UNITS,
+    TIME_BASE_SOURCES,
+    TIME_UNITS,
+    VALUE_STATUSES,
+)
+from predictive_maintenance_mcp.signal_acquisition.measurement import UNIT_FAMILIES
 from predictive_maintenance_mcp.signal_acquisition.repository import VALID_SIGNAL_UNITS
+from predictive_maintenance_mcp.signal_import.attestation import BASES
+from predictive_maintenance_mcp.signal_import.contracts import ValidationOutcome
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_DIR = REPO_ROOT / "plugin"
 README = REPO_ROOT / "README.md"
 TOOL_CATALOG = REPO_ROOT / "docs" / "TOOL_CATALOG.md"
 ADAPTER_GUIDE = REPO_ROOT / "docs" / "ADAPTER_GUIDE.md"
+IMPORT_GUIDE = REPO_ROOT / "docs" / "IMPORT_GUIDE.md"
 
 # A documented call: snake_case identifier (>= 1 underscore, all lowercase —
 # every registered endpoint matches this) IMMEDIATELY followed by "(" so that
@@ -1094,6 +1119,280 @@ class TestAdapterGuideDocumentedCalls:
 
 
 # ---------------------------------------------------------------------------
+# docs/IMPORT_GUIDE.md: the import vocabulary cannot drift from the code
+# ---------------------------------------------------------------------------
+
+#: Markers delimiting the import guide's vocabulary table. Only the rows
+#: between them are parsed, so no other table of the guide can satisfy them.
+IMPORT_VOCAB_START = "<!-- import-vocabulary:start -->"
+IMPORT_VOCAB_END = "<!-- import-vocabulary:end -->"
+
+#: Sentences of the 'Meaning' cells that state what the code enforces, each
+#: with the row that carries it. A lost negation or a rewritten claim fails.
+IMPORT_VOCAB_PINNED = {
+    "role": "the others are shown and never imported",
+    "basis": (
+        "`user_accepted_profile_value` is reserved: this version has no import "
+        "profiles and refuses it"
+    ),
+    "outcome": "Only `ready` returns an `import_digest`",
+}
+
+#: The role sentence that names the importable roles, read for its roles.
+_IMPORTABLE_ROLES_RE = re.compile(
+    r"\bOnly ((?:`[a-z_]+`(?:, | or | and )?)+) columns become signals\b"
+)
+
+
+def expected_import_vocabulary() -> dict[str, frozenset[str]]:
+    """Each row of the guide's vocabulary table and the closed vocabulary the
+    code accepts for it, read from the code, never a hand-kept copy."""
+    return {
+        "basis": frozenset(BASES),
+        "time_base_source": frozenset(TIME_BASE_SOURCES),
+        "role": frozenset(ROLES),
+        "quantity": frozenset(QUANTITIES),
+        "unit": frozenset(u for units in UNIT_FAMILIES.values() for u in units),
+        "source_unit": frozenset(ELECTRICAL_UNITS),
+        "sensitivity_unit": frozenset(SENSITIVITY_UNITS),
+        "sensitivity_source": frozenset(SENSITIVITY_SOURCES),
+        "dc_policy": frozenset(DC_POLICIES),
+        "time_unit": frozenset(TIME_UNITS),
+        "delimiter": frozenset(DELIMITERS),
+        "decimal": frozenset(DECIMAL_MARKS),
+        "encoding": frozenset(ENCODINGS),
+        "value_status": frozenset(VALUE_STATUSES),
+        "outcome": frozenset(get_args(ValidationOutcome)),
+    }
+
+
+def validate_import_vocabulary_table(text: str) -> list[str]:
+    """One violation string per way the import guide's vocabulary can drift.
+
+    Checks, all derived from the code's own exports and cell-anchored by the
+    header's 'Values' and 'Meaning' columns:
+    - row parity both ways against :func:`expected_import_vocabulary`, with
+      duplicate rows reported by name (a row moved out of the markers is a
+      missing row);
+    - each 'Values' cell equals its code vocabulary as a set of backticked
+      values: a missing value and a phantom value both fail;
+    - the role row names exactly ``IMPORTABLE_ROLES`` as the roles that become
+      signals, and the pinned 'Meaning' sentences stay, negations included.
+    """
+    where = "docs/IMPORT_GUIDE.md"
+    rows = _marked_table_rows(text, IMPORT_VOCAB_START, IMPORT_VOCAB_END)
+    if rows is None:
+        return [
+            f"{where}: import-vocabulary markers missing or misordered: the "
+            f"vocabulary table must sit between '{IMPORT_VOCAB_START}' and "
+            f"'{IMPORT_VOCAB_END}'"
+        ]
+    violations = []
+    duplicated = sorted(name for name, lines in rows.items() if len(lines) > 1)
+    if duplicated:
+        violations.append(
+            f"{where}: duplicate vocabulary row(s) for {duplicated}: each field "
+            f"must have exactly one row"
+        )
+    expected = expected_import_vocabulary()
+    phantom = sorted(set(rows) - set(expected))
+    missing = sorted(set(expected) - set(rows))
+    if phantom:
+        violations.append(
+            f"{where} documents vocabulary row(s) the code has not: {phantom}"
+        )
+    if missing:
+        violations.append(f"{where} omits vocabulary row(s) the code has: {missing}")
+
+    header = _marked_table_header(text, IMPORT_VOCAB_START, IMPORT_VOCAB_END)
+    columns = {}
+    for label in ("values", "meaning"):
+        if header is None or label not in header:
+            violations.append(
+                f"{where}: the vocabulary table header lacks a '{label}' column"
+            )
+        else:
+            columns[label] = header.index(label)
+
+    def cell(name: str, label: str) -> Optional[str]:
+        return _table_cell(rows, columns, name, label)
+
+    for name, vocabulary in expected.items():
+        values = cell(name, "values")
+        if values is None:
+            continue
+        documented = set(_BACKTICKED_RE.findall(values))
+        absent = sorted(vocabulary - documented)
+        extra = sorted(documented - vocabulary)
+        if absent:
+            violations.append(
+                f"{where}: 'Values' cell for '{name}' is missing value(s) {absent}"
+            )
+        if extra:
+            violations.append(
+                f"{where}: 'Values' cell for '{name}' lists value(s) {extra} the "
+                f"code does not accept"
+            )
+    role_meaning = cell("role", "meaning")
+    if role_meaning is not None:
+        match = _IMPORTABLE_ROLES_RE.search(role_meaning)
+        named = set(_BACKTICKED_RE.findall(match.group(1))) if match else set()
+        if named != set(IMPORTABLE_ROLES):
+            violations.append(
+                f"{where}: the role row must say 'Only {', '.join(f'`{r}`' for r in IMPORTABLE_ROLES)} "
+                f"columns become signals' (found {sorted(named)})"
+            )
+    for name, sentence in IMPORT_VOCAB_PINNED.items():
+        meaning = cell(name, "meaning")
+        if meaning is not None and " ".join(sentence.split()) not in " ".join(
+            meaning.split()
+        ):
+            violations.append(f"{where}: the '{name}' row no longer says {sentence!r}")
+    return violations
+
+
+class TestImportGuideVocabulary:
+    def test_guide_table_matches_the_code(self):
+        violations = validate_import_vocabulary_table(
+            IMPORT_GUIDE.read_text(encoding="utf-8")
+        )
+        assert violations == [], "\n".join(violations)
+
+    def test_parity_check_actually_parses_rows(self):
+        rows = _marked_table_rows(
+            IMPORT_GUIDE.read_text(encoding="utf-8"),
+            IMPORT_VOCAB_START,
+            IMPORT_VOCAB_END,
+        )
+        assert rows is not None, "import-vocabulary markers not found"
+        assert set(rows) == set(expected_import_vocabulary())
+
+    def test_every_vocabulary_is_closed_and_non_empty(self):
+        assert all(expected_import_vocabulary().values())
+        assert set(expected_import_vocabulary()["unit"]) == set(VALID_SIGNAL_UNITS)
+
+    # --- mutations: each kind of drift goes red ---
+
+    @staticmethod
+    def _text() -> str:
+        return IMPORT_GUIDE.read_text(encoding="utf-8")
+
+    @staticmethod
+    def _row(text: str, name: str) -> str:
+        return next(
+            line for line in text.splitlines() if line.startswith(f"| `{name}` |")
+        )
+
+    def test_mutation_substitute_value_goes_red(self):
+        mutated = self._text().replace("`teds`", "`tedz`")
+        violations = validate_import_vocabulary_table(mutated)
+        assert any("teds" in v and "missing" in v for v in violations), violations
+        assert any("tedz" in v for v in violations), violations
+
+    def test_mutation_substitute_row_name_goes_red(self):
+        mutated = self._text().replace("| `time_unit` |", "| `time_units` |")
+        violations = validate_import_vocabulary_table(mutated)
+        assert any("time_units" in v for v in violations), violations
+        assert any("omits" in v and "'time_unit'" in v for v in violations), violations
+
+    def test_mutation_negate_role_sentence_goes_red(self):
+        mutated = self._text().replace(
+            "the others are shown and never imported",
+            "the others are shown and imported",
+        )
+        violations = validate_import_vocabulary_table(mutated)
+        assert any("'role' row" in v for v in violations), violations
+
+    def test_mutation_negate_importable_roles_goes_red(self):
+        mutated = self._text().replace(
+            "Only `vibration` columns become signals",
+            "Only `vibration` columns never become signals",
+        )
+        violations = validate_import_vocabulary_table(mutated)
+        assert any("columns become signals" in v for v in violations), violations
+
+    def test_mutation_widen_importable_roles_goes_red(self):
+        mutated = self._text().replace(
+            "Only `vibration` columns become signals",
+            "Only `vibration` and `displacement` columns become signals",
+        )
+        violations = validate_import_vocabulary_table(mutated)
+        assert any("displacement" in v for v in violations), violations
+
+    def test_mutation_negate_profile_refusal_goes_red(self):
+        mutated = self._text().replace(
+            "profiles and refuses it", "profiles and accepts it"
+        )
+        violations = validate_import_vocabulary_table(mutated)
+        assert any("'basis' row" in v for v in violations), violations
+
+    def test_mutation_duplicate_row_goes_red(self):
+        text = self._text()
+        row = self._row(text, "decimal")
+        mutated = text.replace(row, "| `decimal` | `.` | The decimal mark. |\n" + row)
+        violations = validate_import_vocabulary_table(mutated)
+        assert any("duplicate" in v and "decimal" in v for v in violations), violations
+
+    def test_mutation_relocate_row_outside_markers_goes_red(self):
+        text = self._text()
+        row = self._row(text, "encoding")
+        mutated = text.replace(row + "\n", "").replace(
+            IMPORT_VOCAB_END, IMPORT_VOCAB_END + "\n\n" + row
+        )
+        violations = validate_import_vocabulary_table(mutated)
+        assert any("omits" in v and "encoding" in v for v in violations), violations
+
+    def test_mutation_add_phantom_row_goes_red(self):
+        mutated = self._text().replace(
+            IMPORT_VOCAB_END,
+            "| `profile` | `default` | An import profile. |\n" + IMPORT_VOCAB_END,
+        )
+        violations = validate_import_vocabulary_table(mutated)
+        assert any("profile" in v and "has not" in v for v in violations), violations
+
+    def test_mutation_add_phantom_value_goes_red(self):
+        mutated = self._text().replace("`ms`, `us`, `ns`", "`ms`, `us`, `ns`, `min`")
+        violations = validate_import_vocabulary_table(mutated)
+        assert any(
+            "min" in v and "does not accept" in v for v in violations
+        ), violations
+
+    @pytest.mark.parametrize("marker", [IMPORT_VOCAB_START, IMPORT_VOCAB_END])
+    def test_mutation_remove_marker_goes_red(self, marker):
+        mutated = self._text().replace(marker, "")
+        violations = validate_import_vocabulary_table(mutated)
+        assert any("markers" in v for v in violations), violations
+
+    def test_mutation_value_in_the_wrong_column_goes_red(self):
+        text = self._text()
+        row = self._row(text, "dc_policy")
+        mutated = text.replace(
+            row, "| `dc_policy` | none | The mean is kept (`keep`). |"
+        )
+        violations = validate_import_vocabulary_table(mutated)
+        assert any("dc_policy" in v and "keep" in v for v in violations), violations
+
+
+class TestImportGuideDocumentedCalls:
+    def test_all_calls_executable(self, endpoints):
+        text = IMPORT_GUIDE.read_text(encoding="utf-8")
+        violations = validate_documented_calls(text, endpoints, "docs/IMPORT_GUIDE.md")
+        assert violations == [], "\n".join(violations)
+
+    def test_guide_contains_calls(self):
+        """Anti-rot: the guide documents the import's calls."""
+        calls = {
+            name
+            for name, _, _ in extract_calls(IMPORT_GUIDE.read_text(encoding="utf-8"))
+        }
+        assert {
+            "inspect_signal_file",
+            "validate_signal_import",
+            "import_signal_file",
+        } <= calls, calls
+
+
+# ---------------------------------------------------------------------------
 # MCP prompt templates: every rendered call template is executable
 # ---------------------------------------------------------------------------
 
@@ -1134,6 +1433,7 @@ def _golden_path_texts() -> dict[str, str]:
     texts["README.md"] = README.read_text(encoding="utf-8")
     texts["docs/TOOL_CATALOG.md"] = TOOL_CATALOG.read_text(encoding="utf-8")
     texts["docs/ADAPTER_GUIDE.md"] = ADAPTER_GUIDE.read_text(encoding="utf-8")
+    texts["docs/IMPORT_GUIDE.md"] = IMPORT_GUIDE.read_text(encoding="utf-8")
     texts.update(rendered_prompt_texts())
     return texts
 

@@ -20,7 +20,7 @@ The server reads a signal file and the companion metadata file next to it. Three
 
 ### The signal file
 
-- One channel per file: a CSV with a single column of acceleration or velocity samples and **no header row**. A header row is refused when the file is loaded, naming the first value that is not a number; a time column in first position is analysed as if it were the signal.
+- One channel per file for `load_signal`: a CSV with a single column of acceleration or velocity samples and **no header row**. A header row is refused when the file is loaded, naming the first value that is not a number, and the refusal names `inspect_signal_file`; a time column in first position is analysed as if it were the signal. An export with a header, a units row, a preamble, a time column or several channels goes through the signal import instead, which reads the file as it is and asks you for every value it cannot verify: see the [Signal Import Guide](IMPORT_GUIDE.md). The signal import is on the main branch and not yet in a published release.
 - Formats: CSV, TXT, MAT, WAV, NPY, Parquet, and raw binary (`.bin`, `.raw`, `.dat`) with the decode parameters declared in the companion, see the [Adapter Guide](ADAPTER_GUIDE.md#supported-formats).
 - Where: a folder of yours under `data/signals/` (for example `data/signals/pump_p101/`), or an absolute path given in the prompt. Keep your files out of `real_train/` and `real_test/`: those folders hold the labelled samples that the anomaly workflows treat as references.
 
