@@ -34,10 +34,13 @@ writes into a signal or the asset ledger needs your confirmation.
    The file is read and validated again. If anything changed since the
    validation (a byte of the file, a value, a basis), the import is refused
    with "validate again". Otherwise the import record is written, every
-   channel is stored as `<file name>_c<index>` (all of them or none), and each
-   bound channel is recorded in the asset ledger with its own
-   interpretation. The signals are then analyzed by `signal_id` like any
-   loaded signal.
+   channel is stored (all of them or none) under the `signal_id` the import
+   returns for it, and each bound channel is recorded in the asset ledger with
+   its own interpretation. By default a `signal_id` is derived from the file
+   path, including its folder components, with `_c<column-index>` appended;
+   an explicit `signal_id_prefix` changes that base, and replay preserves
+   recorded ids. The signals are then analyzed by `signal_id` like any loaded
+   signal.
 
 ## What a confirmation means
 
@@ -65,10 +68,21 @@ line that prints it, for these fields only:
 
 Validation checks that the cited line prints that value. Every other value is
 stated by you, or accepted from an earlier import of the same bytes or from the
-measurement point's declaration: the dialect, the data lines, the asset,
-measurement point, direction and sensor of each channel, the load and the
-operating state. A column label, a file name or a folder name never supplies a
-value.
+measurement point's declaration: the asset, measurement point, direction and
+sensor of each channel, the load and the operating state. A column label, a
+file name or a folder name never supplies a value.
+
+Validation may accept dialect and data_lines without a caller-supplied basis
+when decoding the configured data region provides the required structural
+proof. If that proof is unavailable, the corresponding caller-supplied basis
+is required. This proof concerns the configured data region only: it does not
+show that every row of the original acquisition lies inside that region.
+
+**Known limitation.** The current importer may identify a later numeric block
+as the data region when earlier rows contain malformed values. This can
+exclude earlier samples without a warning. Before importing, verify the
+proposed data start and sample count against the expected acquisition. If they
+cannot be verified or are inconsistent, do not import.
 
 ## The time base
 
@@ -178,6 +192,9 @@ started on `127.0.0.1` on the machine that holds the file.
 ## Limits of this version
 
 - Delimited text only (`.csv`, `.txt`), UTF-8 or Windows-1252.
+- Separator and decimal-mark declarations written inside the file, for
+  example in preamble tags, are not read. Check the proposed delimiter and
+  decimal mark against the file's own declaration before confirming them.
 - Acceleration and velocity channels only; other columns are shown but never
   become signals. A channel in mV or V needs its sensor sensitivity.
 - A column of raw converter counts has no scaling route in this version: the

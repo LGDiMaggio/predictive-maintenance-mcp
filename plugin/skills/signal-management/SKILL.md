@@ -118,8 +118,11 @@ in this server version, and never edit or re-save the file to make
    import; at `ready`, present the statements to the user verbatim
 4. Only after the user approves the statements, call
    `import_signal_file(filepath="<file>", config=..., import_digest=...)` with
-   the `import_digest` of the `ready` validation. Each channel is stored as
-   `<file name>_c<index>` and analyzed by its `signal_id`
+   the `import_digest` of the `ready` validation. Use the signal_id returned
+   for each imported channel. By default, the ID is derived from the file
+   path, including its folder components, with `_c<column-index>` appended.
+   An explicit signal_id_prefix changes that base, and replay preserves
+   recorded IDs. Do not construct signal IDs by guessing from the filename.
 
 After a restart, `get_signal_imports()` lists the recorded imports and
 `import_signal_file(import_id=...)` stores an import's signals again without

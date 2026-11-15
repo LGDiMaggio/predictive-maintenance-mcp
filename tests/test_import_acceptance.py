@@ -35,7 +35,9 @@ import copy
 import gzip
 import hashlib
 import json
+import logging
 import re
+import sys
 from pathlib import Path
 from typing import Any, Callable, Optional
 
@@ -56,6 +58,7 @@ from import_corpus import (
 from predictive_maintenance_mcp import config
 from predictive_maintenance_mcp.asset_ledger.service import _decode_import
 from predictive_maintenance_mcp.asset_ledger.store import LedgerStore
+from predictive_maintenance_mcp.mcp_tools import import_tools
 from predictive_maintenance_mcp.path_safety import PathRefused, open_import_file
 from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
 from predictive_maintenance_mcp.signal_acquisition.text_decoder import (
@@ -435,6 +438,37 @@ async def ok(client: Client, name: str, arguments: dict[str, Any]) -> dict[str, 
     return result.structured_content
 
 
+def service_refusal(call: Callable[[], Any]) -> str:
+    """The text of the refusal the service raises for the same input."""
+    try:
+        call()
+    except (PathRefused, TextScanRefused, ConfigurationError) as refused:
+        return str(refused)
+    raise AssertionError("the service did not refuse this input")
+
+
+def assert_refused_as_the_service(result: Any, tool_name: str, message: str) -> None:
+    """An MCP refusal carries the service's own refusal text. A crash is an
+    ``is_error`` result too, but its text is the SDK's masked one or the
+    crash's own message, so it fails here."""
+    assert result.is_error, result.structured_content
+    texts = [getattr(item, "text", None) for item in result.content]
+    assert texts == [f"Error executing tool {tool_name}: {message}"], texts
+
+
+def log_problems(records: list[logging.LogRecord]) -> list[str]:
+    """Log records that show a crash: a traceback attached (``exc_info``,
+    which ``getMessage()`` never contains), a traceback written into the
+    message, or a level of ERROR and above."""
+    return [
+        f"{record.name}:{record.levelname}:{record.getMessage()}"
+        for record in records
+        if record.exc_info
+        or record.levelno >= logging.ERROR
+        or "Traceback" in record.getMessage()
+    ]
+
+
 # ---------------------------------------------------------------------------
 # The frozen corpus
 # ---------------------------------------------------------------------------
@@ -511,61 +545,146 @@ def test_each_fixture_reaches_its_frozen_outcome_through_the_service(
 async def test_each_fixture_reaches_its_frozen_outcome_through_mcp(
     fixture_id, expected, corpus_root, clean_store, package_caplog
 ):
-    """The tools return what the service returns, at the same caps."""
+    """The tools return what the service returns, at the same caps; a refusal
+    carries the service's refusal text, and no branch logs a crash."""
     fixture = CATALOG[fixture_id]
-    want = expected[fixture_id]
     path = corpus_root / fixture.file_name
     path.write_bytes(fixture.build())
     async with Client(server(), mode="legacy") as client:
-        inspected = await tool(client, "inspect_signal_file", {"filepath": str(path)})
-        if "refused" in want["inspection"]:
-            assert inspected.is_error, inspected.structured_content
-            return
-        assert not inspected.is_error, inspected.content
-        body = inspected.structured_content
-        assert inspection_summary(body["inspection"]) == want["inspection"]
-        if "draft" in want:
-            draft = await tool(
-                client,
-                "validate_signal_import",
-                {"filepath": str(path), "config": body["draft"]["configuration"]},
+        await _drive_through_mcp(client, fixture, path, expected[fixture_id])
+    assert log_problems(package_caplog.records) == []
+
+
+async def _drive_through_mcp(
+    client: Client, fixture: CorpusFixture, path: Path, want: dict[str, Any]
+) -> None:
+    inspected = await tool(client, "inspect_signal_file", {"filepath": str(path)})
+    if "refused" in want["inspection"]:
+        message = service_refusal(lambda: inspect_signal_file(str(path)))
+        assert_refused_as_the_service(inspected, "inspect_signal_file", message)
+        return
+    assert not inspected.is_error, inspected.content
+    body = inspected.structured_content
+    assert inspection_summary(body["inspection"]) == want["inspection"]
+    if "draft" in want:
+        drafted = body["draft"]["configuration"]
+        draft = await tool(
+            client, "validate_signal_import", {"filepath": str(path), "config": drafted}
+        )
+        if want["draft"] == CONFIGURATION_REFUSED:
+            message = service_refusal(
+                lambda: validate_import(str(path), drafted, channel=SERVICE_CHANNEL)
             )
-            if want["draft"] == CONFIGURATION_REFUSED:
-                assert draft.is_error, draft.structured_content
-            else:
-                assert not draft.is_error, draft.content
-                assert validation_summary(draft.structured_content) == want["draft"]
-        if "configured" in want:
-            conf = CONFIGURATIONS[fixture_id]()
-            checked = await tool(
-                client,
-                "validate_signal_import",
-                {"filepath": str(path), "config": conf},
+            assert_refused_as_the_service(draft, "validate_signal_import", message)
+        else:
+            assert not draft.is_error, draft.content
+            assert validation_summary(draft.structured_content) == want["draft"]
+    if "configured" not in want:
+        return
+    conf = CONFIGURATIONS[fixture.fixture_id]()
+    checked = await tool(
+        client, "validate_signal_import", {"filepath": str(path), "config": conf}
+    )
+    if want["configured"] == CONFIGURATION_REFUSED:
+        message = service_refusal(
+            lambda: validate_import(str(path), conf, channel=SERVICE_CHANNEL)
+        )
+        assert_refused_as_the_service(checked, "validate_signal_import", message)
+        return
+    assert not checked.is_error, checked.content
+    validated = checked.structured_content
+    summary = validation_summary(validated)
+    assert summary == {k: want["configured"][k] for k in summary}
+    if validated["outcome"] != "ready":
+        return
+    assert validated["caller_asserted"] is True
+    imported = await ok(
+        client,
+        "import_signal_file",
+        {
+            "filepath": str(path),
+            "config": conf,
+            "import_digest": validated["import_digest"],
+            "signal_id_prefix": prefix_of(fixture),
+        },
+    )
+    assert imported["import_id"] == want["configured"]["import_id"]
+    assert {
+        str(c["column"]): c["samples_digest"] for c in imported["channels"]
+    } == want["configured"]["digests"]
+
+
+def _crash(*args: Any, **kwargs: Any) -> Any:
+    raise RuntimeError("control crash")
+
+
+class TestTheMcpRefusalChecksAreNotVacuous:
+    """Negative controls: a crash is an ``is_error`` result too, so the corpus
+    test's refusal and log checks must reject one."""
+
+    @pytest.mark.anyio
+    async def test_a_crashed_inspection_fails_the_refusal_check(
+        self, corpus_root, clean_store, monkeypatch
+    ):
+        fixture = CATALOG["H01"]
+        path = corpus_root / fixture.file_name
+        path.write_bytes(fixture.build())
+        message = service_refusal(lambda: inspect_signal_file(str(path)))
+        arguments = {"filepath": str(path)}
+        async with Client(server(), mode="legacy") as client:
+            refused = await tool(client, "inspect_signal_file", arguments)
+            monkeypatch.setattr(import_tools, "_inspect", _crash)
+            crashed = await tool(client, "inspect_signal_file", arguments)
+        assert_refused_as_the_service(refused, "inspect_signal_file", message)
+        assert crashed.is_error, "the old is_error-only check would accept it"
+        with pytest.raises(AssertionError):
+            assert_refused_as_the_service(crashed, "inspect_signal_file", message)
+
+    @pytest.mark.anyio
+    async def test_a_crashed_validation_fails_the_refusal_check(
+        self, corpus_root, clean_store, monkeypatch
+    ):
+        fixture = CATALOG["F02"]
+        path = corpus_root / fixture.file_name
+        path.write_bytes(fixture.build())
+        async with Client(server(), mode="legacy") as client:
+            body = await ok(client, "inspect_signal_file", {"filepath": str(path)})
+            drafted = body["draft"]["configuration"]
+            message = service_refusal(
+                lambda: validate_import(str(path), drafted, channel=SERVICE_CHANNEL)
             )
-            if want["configured"] == CONFIGURATION_REFUSED:
-                assert checked.is_error, checked.structured_content
-                return
-            assert not checked.is_error, checked.content
-            validated = checked.structured_content
-            summary = validation_summary(validated)
-            assert summary == {k: want["configured"][k] for k in summary}
-            if validated["outcome"] == "ready":
-                assert validated["caller_asserted"] is True
-                imported = await ok(
-                    client,
-                    "import_signal_file",
-                    {
-                        "filepath": str(path),
-                        "config": conf,
-                        "import_digest": validated["import_digest"],
-                        "signal_id_prefix": prefix_of(fixture),
-                    },
-                )
-                assert imported["import_id"] == want["configured"]["import_id"]
-                assert {
-                    str(c["column"]): c["samples_digest"] for c in imported["channels"]
-                } == want["configured"]["digests"]
-    assert all("Traceback" not in r.getMessage() for r in package_caplog.records)
+            arguments = {"filepath": str(path), "config": drafted}
+            refused = await tool(client, "validate_signal_import", arguments)
+            monkeypatch.setattr(import_tools, "validate_import", _crash)
+            crashed = await tool(client, "validate_signal_import", arguments)
+        assert_refused_as_the_service(refused, "validate_signal_import", message)
+        assert crashed.is_error, "the old is_error-only check would accept it"
+        with pytest.raises(AssertionError):
+            assert_refused_as_the_service(crashed, "validate_signal_import", message)
+
+    def test_the_log_check_sees_what_get_message_hides(self):
+        def record(level: int, *, with_traceback: bool = False) -> logging.LogRecord:
+            exc_info = None
+            if with_traceback:
+                try:
+                    raise RuntimeError("control crash")
+                except RuntimeError:
+                    exc_info = sys.exc_info()
+            return logging.LogRecord(
+                "predictive_maintenance_mcp.control",
+                level,
+                __file__,
+                1,
+                "a refusal",
+                None,
+                exc_info,
+            )
+
+        hidden = record(logging.DEBUG, with_traceback=True)
+        assert "Traceback" not in hidden.getMessage(), "what the old check read"
+        assert log_problems([hidden]) != []
+        assert log_problems([record(logging.ERROR)]) != []
+        assert log_problems([record(logging.DEBUG), record(logging.INFO)]) == []
 
 
 # ---------------------------------------------------------------------------

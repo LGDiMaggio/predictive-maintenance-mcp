@@ -156,7 +156,14 @@ def lvm_style_export(rows: int = CORPUS_ROWS) -> bytes:
 
 def lvm_comma_both(rows: int = CORPUS_ROWS) -> bytes:
     """F02: tags declaring a comma delimiter and a comma decimal mark, with
-    data written that way."""
+    data written that way.
+
+    Intended outcome: refused, because the delimiter equals the decimal mark.
+    Observed and frozen: the tags are not read, so inspection proposes a
+    comma delimiter and a point decimal mark, splits each value into two
+    columns and reports field_count_mismatch. This is a documented limitation
+    of the importer (the import guide's limits), not support for separator
+    declarations in tags."""
     head = [
         "Recorder_File,",
         "Separator,Comma",

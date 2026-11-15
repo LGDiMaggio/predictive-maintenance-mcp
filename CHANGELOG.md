@@ -21,8 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   read-only pre-check of the asset ledger. `import_signal_file` imports a
   `ready` configuration: it validates the file again and refuses with
   "validate again" if anything changed, writes an append-only import record
-  under `PMM_IMPORT_DIR`, stores every channel as `<stem>_c<index>` (all or
-  none), and records each bound channel in the asset ledger with its own
+  under `PMM_IMPORT_DIR`, stores every channel (all or none) under a signal
+  id derived from the file path, folder components included, with
+  `_c<column-index>` appended (an explicit `signal_id_prefix` replaces that
+  base), and records each bound channel in the asset ledger with its own
   interpretation; with `import_id` alone it restores a recorded import after
   a restart, from the unchanged original file, without new confirmations.
   `get_signal_imports` lists the imports or reads one record. The
