@@ -14,16 +14,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   data, trailer) with line numbers, the delimiter and decimal mark, each
   column by its physical index and the values the file states, with a draft
   configuration. `validate_signal_import` checks a configuration against the
-  whole file, writing nothing: every value the import writes needs a basis
-  that names the user's act, a value accepted from the file must equal what
-  the cited line says, and the outcome is `ready` (with an `import_digest`),
-  `needs_confirmation` or `invalid`, with one statement per value and a
-  read-only pre-check of the asset ledger. `import_signal_file` imports a
+  whole file, writing nothing: every value the import writes requires an
+  appropriate recorded basis, except the dialect and the data lines when
+  decoding the configured data region proves their structure (a proof that
+  covers that region only, not the completeness of the acquisition); a value
+  accepted from the file must equal what the cited line says; and the outcome
+  is `ready` (with an `import_digest`), `needs_confirmation` or `invalid`,
+  with one statement per value and a read-only pre-check of the asset
+  ledger. `import_signal_file` imports a
   `ready` configuration: it validates the file again and refuses with
   "validate again" if anything changed, writes an append-only import record
   under `PMM_IMPORT_DIR`, stores every channel (all or none) under a signal
   id derived from the file path, folder components included, with
-  `_c<column-index>` appended (an explicit `signal_id_prefix` replaces that
+  `_c<column-index>` appended (an explicit `signal_id_prefix` changes that
   base), and records each bound channel in the asset ledger with its own
   interpretation; with `import_id` alone it restores a recorded import after
   a restart, from the unchanged original file, without new confirmations.

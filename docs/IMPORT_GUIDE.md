@@ -2,8 +2,13 @@
 
 The signal import reads delimited-text exports (`.csv` and `.txt`) that
 `load_signal` cannot read as they are: files with a header, a units row, a
-preamble or several channels. Nothing is assumed: every value the import
-writes into a signal or the asset ledger needs your confirmation.
+preamble or several channels. Values written into a signal or the asset
+ledger must have an appropriate recorded basis, which may come from a caller
+statement, accepted file evidence, or an eligible prior import or
+measurement-point declaration. Dialect and data lines may instead be accepted
+without caller-supplied bases when validation proves their structure for the
+configured region. That proof does not establish completeness of the original
+acquisition.
 
 ## The four steps
 
@@ -21,8 +26,9 @@ writes into a signal or the asset ledger needs your confirmation.
    cites.
 3. **Validate** with `validate_signal_import(filepath=..., config=...)`. It reads
    the whole file, writes nothing, and returns one of three outcomes:
-   - `ready`: every value has a basis its evidence supports; an
-     `import_digest` is returned;
+   - `ready`: every value has a basis its evidence supports, except the
+     dialect and the data lines when the configured data region proves their
+     structure instead; an `import_digest` is returned;
    - `needs_confirmation`: `required_confirmations` lists what you still have
      to state or choose;
    - `invalid`: a contradiction or a problem in the file that no confirmation
@@ -75,8 +81,7 @@ file name or a folder name never supplies a value.
 Validation may accept dialect and data_lines without a caller-supplied basis
 when decoding the configured data region provides the required structural
 proof. If that proof is unavailable, the corresponding caller-supplied basis
-is required. This proof concerns the configured data region only: it does not
-show that every row of the original acquisition lies inside that region.
+is required.
 
 **Known limitation.** The current importer may identify a later numeric block
 as the data region when earlier rows contain malformed values. This can
@@ -193,8 +198,10 @@ started on `127.0.0.1` on the machine that holds the file.
 
 - Delimited text only (`.csv`, `.txt`), UTF-8 or Windows-1252.
 - Separator and decimal-mark declarations written inside the file, for
-  example in preamble tags, are not read. Check the proposed delimiter and
-  decimal mark against the file's own declaration before confirming them.
+  example in preamble tags, are not read as configuration evidence. If the
+  file contains such a declaration, compare the proposed delimiter and decimal
+  mark against it before importing, including when validation does not ask
+  for confirmation.
 - Acceleration and velocity channels only; other columns are shown but never
   become signals. A channel in mV or V needs its sensor sensitivity.
 - A column of raw converter counts has no scaling route in this version: the
