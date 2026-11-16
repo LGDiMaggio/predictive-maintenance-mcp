@@ -85,7 +85,7 @@ def resolve_signal(
 # ---------------------------------------------------------------------------
 # Refusal boundary (issue #73)
 #
-# Since mcp 2.3.0, ``Tool.run`` (mcp/server/mcpserver/tools/base.py) forwards
+# Since mcp 2.1.0, ``Tool.run`` (mcp/server/mcpserver/tools/base.py) forwards
 # the text of ``ToolError`` / ``ResourceError`` only; any other exception
 # reaches the model as the bare ``Error executing tool <name>`` and its message
 # survives only in the server log (mcp 2.0.x appended the text for every
@@ -127,7 +127,7 @@ def _log_conversion(
 ) -> None:
     """Keep the trail the SDK drops once a refusal is typed as ``ToolError``.
 
-    mcp >= 2.3 logs a ``ToolError`` as one INFO line with no traceback, so a
+    mcp >= 2.1 logs a ``ToolError`` as one INFO line with no traceback, so a
     ``ValueError`` a library raised (``json.JSONDecodeError`` on a corrupt
     model metadata file, a numpy shape error) would lose the frame that
     locates it. One bounded line records the original type and its

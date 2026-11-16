@@ -1403,6 +1403,21 @@ class TestGeneratePCAReport:
         assert result["summary"]["total_segments"] > 0
 
     @pytest.mark.asyncio
+    async def test_pca_report_overlap_just_below_one_advances_one_sample(
+        self, tools, repo, reports_dir, models_dir, mock_ctx
+    ):
+        """10000 samples, 9000-sample segments, ratio 0.9999: one sample
+        between segment starts, so 1001 segments."""
+        result = await tools["generate_pca_visualization_report"](
+            model_name="test_pca_model",
+            test_signal_ids=["report_test"],
+            segment_duration=0.9,
+            overlap_ratio=0.9999,
+            ctx=mock_ctx,
+        )
+        assert result["summary"]["total_segments"] == 10000 - 9000 + 1
+
+    @pytest.mark.asyncio
     async def test_pca_report_with_true_labels(
         self, tools, repo, reports_dir, models_dir, mock_ctx
     ):
@@ -1490,6 +1505,18 @@ class TestGenerateFeatureComparisonReport:
             features_to_plot=["rms", "kurtosis", "crest_factor"],
         )
         assert len(result["metadata"]["features_plotted"]) == 3
+
+    @pytest.mark.asyncio
+    async def test_feature_comparison_overlap_just_below_one_advances_one_sample(
+        self, tools, multi_signal_ids, reports_dir
+    ):
+        """10000 samples, 9000-sample segments, ratio 0.9999: 1001 segments."""
+        result = await tools["generate_feature_comparison_report"](
+            signal_groups={"A": ["healthy_1"]},
+            segment_duration=0.9,
+            overlap_ratio=0.9999,
+        )
+        assert result["metadata"]["segments_per_group"] == {"A": 10000 - 9000 + 1}
 
     @pytest.mark.asyncio
     async def test_feature_comparison_unknown_id_raises(

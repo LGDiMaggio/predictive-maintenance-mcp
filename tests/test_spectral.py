@@ -255,6 +255,12 @@ class TestComputePSD:
         result = compute_psd(signal, fs=1000, nperseg=256)
         assert len(result["top_peaks"]) > 0
 
+    def test_psd_returns_the_segment_it_used(self):
+        """nperseg is reduced to the signal length, noverlap to half of it."""
+        signal = np.random.default_rng(0).standard_normal(100)
+        result = compute_psd(signal, fs=1000, nperseg=256, noverlap=128)
+        assert (result["nperseg"], result["noverlap"]) == (100, 50)
+
     def test_psd_frequency_resolution(self, sine_signal):
         signal, fs = sine_signal
         result = compute_psd(signal, fs, nperseg=1024)
@@ -293,6 +299,12 @@ class TestComputeSTFT:
         signal = np.random.randn(100)
         result = compute_stft_spectrogram(signal, fs=1000, nperseg=256)
         assert result["num_time_bins"] > 0
+
+    def test_stft_returns_the_segment_it_used(self):
+        """nperseg is reduced to the signal length, noverlap to half of it."""
+        signal = np.random.default_rng(1).standard_normal(100)
+        result = compute_stft_spectrogram(signal, fs=1000, nperseg=256, noverlap=128)
+        assert (result["nperseg"], result["noverlap"]) == (100, 50)
 
 
 class TestComputeEnvelopeSpectrum:

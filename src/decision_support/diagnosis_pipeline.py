@@ -6,9 +6,10 @@ and anomaly detection (OneClassSVM) into a single coherent diagnostic
 result with an evidence-strength rating and actionable recommendations.
 
 The ``evidence_strength`` field is categorical (none/weak/moderate/strong)
-and counts the findings of the analyses that ran, a bearing finding once. It
-never rests on severity alone, is never presented as a probability, and never
-names or confirms a fault type.
+and counts the findings of the analyses that ran, a bearing finding once.
+Severity alone grades it "weak" (zone C) or "moderate" (zone D), never
+"strong". It is never presented as a probability and never names or confirms
+a fault type.
 """
 
 import json
@@ -726,7 +727,7 @@ def _synthesize_diagnosis(
                 "Anomaly model detected suspicious patterns — increase monitoring frequency."
             )
 
-    # Overall evidence strength — from corroborating findings, NOT severity.
+    # Overall evidence strength from the points above; severity alone stays below "strong".
     if evidence_points == 0.0:
         evidence_strength = "none"
     elif evidence_points < 2.0:

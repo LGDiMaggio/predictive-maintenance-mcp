@@ -49,7 +49,11 @@ from ..report_generator import (
     timestamped_report_name,
 )
 from ..signal_processing.features import extract_time_domain_features
-from ..signal_validation import validate_expected_frequencies, validate_rpm
+from ..signal_validation import (
+    validate_expected_frequencies,
+    validate_overlap_ratio,
+    validate_rpm,
+)
 from ._call_origin import SignalFileAccess, signal_file_access
 from ._utils import refusal_boundary, resolve_model_paths, resolve_signal
 
@@ -691,7 +695,7 @@ async def generate_pca_visualization_report(
                              "real_test_InnerRaceFault_vload_6": "faulty"}
                     When provided, legend shows both true and predicted labels for validation.
         segment_duration: Segment duration in seconds (default: 0.1s for ML)
-        overlap_ratio: Overlap ratio 0-1 (default: 0.5)
+        overlap_ratio: Overlap ratio, at least 0 and below 1 (default: 0.5)
         ctx: MCP context. Unused — see this module's docstring on logging.
 
     Returns:
@@ -699,7 +703,7 @@ async def generate_pca_visualization_report(
 
     Raises:
         FileNotFoundError: If the model does not exist.
-        ValueError: If a signal_id is not loaded or has no sampling rate.
+        ValueError: If a signal_id is not loaded or has no sampling rate, or overlap_ratio is not at least 0 and below 1.
 
     Example (with validation):
         >>> generate_pca_visualization_report(
@@ -709,6 +713,7 @@ async def generate_pca_visualization_report(
         ...                  "real_test_InnerRaceFault_vload_6": "faulty"}
         ... )
     """
+    overlap_ratio = validate_overlap_ratio(overlap_ratio)
     logger.info(f"Generating PCA visualization for model '{model_name}'...")
 
     # Load model, scaler, PCA — validate the name and contain every derived
@@ -747,9 +752,14 @@ async def generate_pca_visualization_report(
             fs = sig_info.sampling_rate
             last_sampling_rate = fs
 
-            # Segment and extract features (per-signal sampling rate)
+            # Segment and extract features (per-signal sampling rate). A ratio
+            # close to 1 can leave less than one sample between segment starts:
+            # advance one sample, as the anomaly tools' segmentation does. A
+            # segment of no samples keeps its earlier outcome.
             segment_length_samples = int(segment_duration * fs)
             hop_length = int(segment_length_samples * (1 - overlap_ratio))
+            if segment_length_samples >= 1:
+                hop_length = max(1, hop_length)
 
             # Guard: a signal shorter than one segment yields an empty feature
             # matrix and an opaque sklearn "X has 0 features" error at
@@ -979,7 +989,7 @@ async def generate_feature_comparison_report(
                       Example: {"Healthy": ["real_train_baseline_1"],
                                "Faulty": ["real_train_OuterRaceFault_1"]}
         segment_duration: Segment duration in seconds (default: 0.1s for ML)
-        overlap_ratio: Overlap ratio 0-1 (default: 0.5)
+        overlap_ratio: Overlap ratio, at least 0 and below 1 (default: 0.5)
         features_to_plot: List of feature names to plot (default: all 17 features)
         ctx: MCP context. Unused — see this module's docstring on logging.
 
@@ -987,7 +997,7 @@ async def generate_feature_comparison_report(
         Dictionary with file path, metadata, and summary
 
     Raises:
-        ValueError: If a signal_id is not loaded or has no sampling rate.
+        ValueError: If a signal_id is not loaded or has no sampling rate, or overlap_ratio is not at least 0 and below 1.
 
     Example:
         >>> generate_feature_comparison_report(
@@ -998,6 +1008,7 @@ async def generate_feature_comparison_report(
         ...     }
         ... )
     """
+    overlap_ratio = validate_overlap_ratio(overlap_ratio)
     logger.info(
         f"Generating feature comparison report for {len(signal_groups)} groups..."
     )
@@ -1038,9 +1049,12 @@ async def generate_feature_comparison_report(
             fs = sig_info.sampling_rate
             last_sampling_rate = fs
 
-            # Segment and extract features (per-signal sampling rate)
+            # Segment and extract features (per-signal sampling rate); at least
+            # one sample between segment starts, as above.
             segment_length_samples = int(segment_duration * fs)
             hop_length = int(segment_length_samples * (1 - overlap_ratio))
+            if segment_length_samples >= 1:
+                hop_length = max(1, hop_length)
 
             for start in range(
                 0, len(signal_data) - segment_length_samples + 1, hop_length

@@ -198,7 +198,9 @@ def compute_psd(
 
     Returns:
         Dict with keys: top_peaks, total_power, freq_range_hz,
-        frequency_resolution, num_freq_bins.
+        frequency_resolution, num_freq_bins, and nperseg and noverlap (the
+        segment length and overlap actually used, after the reductions
+        below).
     """
     if nperseg > len(signal):
         nperseg = len(signal)
@@ -245,6 +247,8 @@ def compute_psd(
         "freq_range_hz": [round(float(freqs[0]), 3), round(float(freqs[-1]), 3)],
         "frequency_resolution": round(float(freq_res), 4),
         "num_freq_bins": len(freqs),
+        "nperseg": int(nperseg),
+        "noverlap": int(noverlap),
     }
 
 
@@ -268,7 +272,8 @@ def compute_stft_spectrogram(
 
     Returns:
         Dict with summary: time/freq bin counts, max power location,
-        energy per frequency band.
+        energy per frequency band, and nperseg and noverlap (the segment
+        length and overlap actually used, after the reductions below).
     """
     if nperseg > len(signal):
         nperseg = len(signal)
@@ -306,6 +311,8 @@ def compute_stft_spectrogram(
         "max_power_freq_hz": round(max_power_freq, 3),
         "max_power_time_s": round(max_power_time, 4),
         "energy_per_band": energy_per_band,
+        "nperseg": int(nperseg),
+        "noverlap": int(noverlap),
     }
 
 

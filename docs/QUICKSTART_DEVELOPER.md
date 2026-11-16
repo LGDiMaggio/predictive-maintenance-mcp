@@ -135,7 +135,7 @@ def register(mcp):
 `mcp.tool()(refusal_boundary(fn))` line in `register()` = an LLM-accessible
 tool that is also directly importable in tests. The boundary re-raises the
 `ValueError`/`FileNotFoundError` refusals a tool raises as `ToolError`, the
-only type mcp 2.3+ forwards to the model, so the message reaches the model
+only type mcp 2.1+ forwards to the model, so the message reaches the model
 instead of stopping in the server log; `tests/test_error_contract.py` fails
 any registration that skips it.
 

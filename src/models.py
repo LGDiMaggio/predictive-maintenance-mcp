@@ -298,8 +298,19 @@ class PSDResult(BaseModel):
     signal_id: str = Field(description="Signal identifier used")
     num_samples: int = Field(description="Number of samples analyzed")
     sampling_rate: float = Field(description="Sampling rate (Hz)")
-    nperseg: int = Field(description="Samples per segment")
-    noverlap: int = Field(description="Overlap between segments")
+    nperseg: int = Field(
+        description=(
+            "Samples per segment actually used: the requested nperseg, reduced "
+            "to the number of samples when larger"
+        )
+    )
+    noverlap: int = Field(
+        description=(
+            "Overlap between segments actually used, in samples: the requested "
+            "noverlap, or half the segment when the request is not smaller than "
+            "the segment"
+        )
+    )
     window: str = Field(description="Window function used")
     top_peaks: list[SpectralPeak] = Field(description="Top spectral peaks by power")
     total_power: float = Field(description="Total integrated power")
@@ -322,8 +333,19 @@ class STFTResult(BaseModel):
     signal_id: str = Field(description="Signal identifier used")
     num_samples: int = Field(description="Number of samples analyzed")
     sampling_rate: float = Field(description="Sampling rate (Hz)")
-    nperseg: int = Field(description="Samples per segment")
-    noverlap: int = Field(description="Overlap between segments")
+    nperseg: int = Field(
+        description=(
+            "Samples per segment actually used: the requested nperseg, reduced "
+            "to the number of samples when larger"
+        )
+    )
+    noverlap: int = Field(
+        description=(
+            "Overlap between segments actually used, in samples: the requested "
+            "noverlap, or half the segment when the request is not smaller than "
+            "the segment"
+        )
+    )
     window: str = Field(description="Window function used")
     num_time_bins: int = Field(description="Number of time bins")
     num_freq_bins: int = Field(description="Number of frequency bins")
@@ -1212,8 +1234,9 @@ class DiagnosisResult(BaseModel):
         description=(
             "Combined evidence across the analyses that ran: 'none', 'weak', "
             "'moderate', or 'strong'. It counts findings (ISO severity zone C or "
-            "D, the bearing claim, the anomaly model) and never rests on "
-            "severity alone. A strongest spectral line at 1x or 2x shaft speed "
+            "D, the bearing claim, the anomaly model). Severity alone grades it "
+            "'weak' (zone C) or 'moderate' (zone D), never 'strong'. A strongest "
+            "spectral line at 1x or 2x shaft speed "
             "is reported in overall_diagnosis as a measurement and is not "
             "counted. It is not a probability and "
             "does not identify or confirm a fault type. A bearing finding counts "

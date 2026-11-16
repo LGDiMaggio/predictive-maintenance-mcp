@@ -83,6 +83,23 @@ FS = 10000.0
 #: Standard gravity, m/s^2 per g (ISO 80000-3), defined independently of src.
 STANDARD_GRAVITY = 9.80665
 
+#: The project refusal for an envelope input shorter than the band-pass
+#: filter's padding allows, with the count of the analyzed samples.
+ENVELOPE_TOO_SHORT = (
+    "analyze_envelope needs at least 28 samples for its band-pass filter, got "
+    "{n} in the analyzed segment. Load a longer recording, or pass a longer "
+    "segment_duration (None analyzes the whole recording)."
+)
+
+#: The project refusal for an FFT limit below the first frequency bin of a
+#: 1 s segment at FS (first bin fs / N = 1 Hz), with the limit as passed.
+FFT_BELOW_FIRST_BIN = (
+    "max_frequency must be at least the first frequency bin of the analyzed "
+    "segment, 1 Hz (10000 Hz / 10000 samples), got {max_frequency}. Pass a "
+    "larger max_frequency, omit it to analyze up to the Nyquist frequency, or "
+    "analyze a longer segment (segment_duration) for finer frequency bins."
+)
+
 #: 6205 deep-groove ball bearing as documented by the CWRU Bearing Data
 #: Center (drive end, SKF 6205-2RS JEM): Z, Bd (mm), Pd (mm).
 Z_6205, BD_6205, PD_6205 = 9, 7.94, 39.04
@@ -354,15 +371,6 @@ class TestSamplingFrequency:
         assert result.freq_range_hz[1] == pytest.approx(fs / 2.0, abs=1e-3)
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(
-        strict=True,
-        raises=AssertionError,
-        reason=known_defect(
-            "psd-nperseg-echo",
-            "compute_power_spectral_density clamps nperseg to the signal length "
-            "but echoes the requested value",
-        ),
-    )
     async def test_psd_echo_matches_the_segment_actually_used(self, load_csv, mock_ctx):
         """nperseg larger than the signal: the echoed nperseg must be the one
         whose ``fs / nperseg`` is the reported resolution."""
@@ -379,6 +387,70 @@ class TestSamplingFrequency:
             f"echoed nperseg={result.nperseg} but resolution "
             f"{result.frequency_resolution} Hz = fs/{FS / result.frequency_resolution:g}"
         )
+        # The whole signal is one segment; the overlap is half of it.
+        assert (result.nperseg, result.noverlap) == (1000, 500)
+
+    @pytest.mark.asyncio
+    async def test_stft_echo_matches_the_segment_actually_used(
+        self, load_csv, mock_ctx
+    ):
+        rng = np.random.default_rng(7)
+        await load_csv("inv_fs_stft_short", rng.standard_normal(1000))
+
+        result = await compute_spectrogram_stft(
+            ctx=mock_ctx, signal_id="inv_fs_stft_short", nperseg=4096, noverlap=2048
+        )
+
+        assert (result.nperseg, result.noverlap) == (1000, 500)
+        # A one-sided STFT of an n-sample segment has n // 2 + 1 frequency bins.
+        assert result.num_freq_bins == result.nperseg // 2 + 1
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "nperseg, noverlap, used",
+        [
+            (128, 200, (128, 64)),  # only the overlap is reduced
+            (128, 127, (128, 127)),  # an overlap one below the segment is kept
+            (10000, 5000, (10000, 5000)),  # a segment equal to the signal is kept
+        ],
+        ids=["overlap-reduced", "overlap-kept", "segment-equal-to-signal"],
+    )
+    async def test_psd_and_stft_report_the_settings_they_used(
+        self, load_csv, mock_ctx, nperseg, noverlap, used
+    ):
+        rng = np.random.default_rng(nperseg + noverlap)
+        await load_csv("inv_fs_settings", rng.standard_normal(10000))
+
+        psd = await compute_power_spectral_density(
+            ctx=mock_ctx,
+            signal_id="inv_fs_settings",
+            nperseg=nperseg,
+            noverlap=noverlap,
+        )
+        stft = await compute_spectrogram_stft(
+            ctx=mock_ctx,
+            signal_id="inv_fs_settings",
+            nperseg=nperseg,
+            noverlap=noverlap,
+        )
+
+        assert (psd.nperseg, psd.noverlap) == used
+        assert (stft.nperseg, stft.noverlap) == used
+
+    @pytest.mark.asyncio
+    async def test_psd_effective_settings_reach_the_client(self, load_csv, mcp):
+        rng = np.random.default_rng(9)
+        await load_csv("inv_wire_psd", rng.standard_normal(1000))
+
+        async with Client(mcp, mode="legacy") as client:
+            result = await client.call_tool(
+                "compute_power_spectral_density",
+                {"signal_id": "inv_wire_psd", "nperseg": 4096, "noverlap": 2048},
+            )
+
+        assert not result.is_error
+        assert result.structured_content["nperseg"] == 1000
+        assert result.structured_content["noverlap"] == 500
 
     @pytest.mark.asyncio
     async def test_stft_frequency_axis_ends_at_nyquist(self, load_csv, mock_ctx):
@@ -859,38 +931,154 @@ class TestInvalidInputs:
             assert "1 non-finite" in str(refusal)
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(
-        strict=True,
-        raises=ValueError,
-        reason=known_defect(
-            "envelope-short-signal",
-            "analyze_envelope on a 20-sample signal surfaces scipy's padlen "
-            "ValueError, not a project refusal",
-        ),
-    )
     async def test_envelope_on_a_too_short_signal_is_a_project_refusal(
         self, load_csv, mock_ctx
     ):
         await load_csv("inv_env_short", _sine(0.1, 50.0)[:20])
 
-        await _outcome(analyze_envelope(ctx=mock_ctx, signal_id="inv_env_short"))
+        result, refusal = await _outcome(
+            analyze_envelope(ctx=mock_ctx, signal_id="inv_env_short")
+        )
+
+        assert result is None
+        assert str(refusal) == ENVELOPE_TOO_SHORT.format(n=20)
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(
-        strict=True,
-        raises=ValueError,
-        reason=known_defect(
-            "fft-max-frequency-below-first-bin",
-            "analyze_fft surfaces numpy's empty-sequence argmax ValueError",
-        ),
-    )
+    @pytest.mark.parametrize("n, refused", [(27, True), (28, False)])
+    async def test_envelope_length_boundary(self, load_csv, mock_ctx, n, refused):
+        """The band-pass filter needs more than its 27 samples of padding."""
+        await load_csv(f"inv_env_{n}", _sine(0.1, 50.0)[:n])
+
+        result, refusal = await _outcome(
+            analyze_envelope(ctx=mock_ctx, signal_id=f"inv_env_{n}")
+        )
+
+        if refused:
+            assert str(refusal) == ENVELOPE_TOO_SHORT.format(n=n)
+        else:
+            assert refusal is None
+            assert result.num_samples == n
+
+    def test_envelope_minimum_is_the_core_filters_shortest_input(self):
+        """Both 28-sample minimums (the tool's refusal and the diagnosis
+        pipeline's) equal the shortest input the envelope core's band-pass
+        filter accepts on the default band, measured on the core itself, so a
+        change of the core's filter in either direction names the drift."""
+        from predictive_maintenance_mcp.decision_support import diagnosis_pipeline
+        from predictive_maintenance_mcp.mcp_tools import analysis_tools
+        from predictive_maintenance_mcp.signal_processing.spectral import (
+            envelope_spectrum_arrays,
+        )
+
+        def accepted(n: int) -> bool:
+            try:
+                envelope_spectrum_arrays(_sine(0.1, 50.0)[:n], FS, (500.0, 5000.0))
+            except ValueError:
+                return False
+            return True
+
+        shortest = next(n for n in range(2, 512) if accepted(n))
+
+        assert analysis_tools._ENVELOPE_MIN_SAMPLES == shortest
+        assert diagnosis_pipeline._ENVELOPE_FILTER_MIN_SAMPLES == shortest
+
+    @pytest.mark.asyncio
+    async def test_envelope_counts_the_selected_segment(self, load_csv, mock_ctx):
+        """A 1 s recording is long enough; a 2 ms segment of it is not."""
+        await load_csv("inv_env_segment", _sine(0.1, 50.0))
+
+        short, refusal = await _outcome(
+            analyze_envelope(
+                ctx=mock_ctx, signal_id="inv_env_segment", segment_duration=0.002
+            )
+        )
+        whole, none = await _outcome(
+            analyze_envelope(
+                ctx=mock_ctx, signal_id="inv_env_segment", segment_duration=None
+            )
+        )
+
+        assert short is None
+        assert str(refusal) == ENVELOPE_TOO_SHORT.format(n=20)
+        assert none is None
+        assert whole.num_samples == int(FS)
+
+    @pytest.mark.asyncio
     async def test_fft_max_frequency_below_first_bin_is_a_project_refusal(
         self, load_csv, mock_ctx
     ):
         await load_csv("inv_fft_maxf", _sine(0.1, 50.0))  # 1 s: first bin 1 Hz
 
-        await _outcome(
+        result, refusal = await _outcome(
             analyze_fft(ctx=mock_ctx, signal_id="inv_fft_maxf", max_frequency=0.5)
+        )
+
+        assert result is None
+        assert str(refusal) == FFT_BELOW_FIRST_BIN.format(max_frequency="0.5")
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "max_frequency", [0.0, -1.0, math.nan], ids=["zero", "negative", "nan"]
+    )
+    async def test_fft_max_frequency_without_a_bin_is_refused(
+        self, load_csv, mock_ctx, max_frequency
+    ):
+        await load_csv("inv_fft_maxf_bad", _sine(0.1, 50.0))
+
+        result, refusal = await _outcome(
+            analyze_fft(
+                ctx=mock_ctx, signal_id="inv_fft_maxf_bad", max_frequency=max_frequency
+            )
+        )
+
+        assert result is None
+        assert str(refusal) == FFT_BELOW_FIRST_BIN.format(
+            max_frequency=repr(max_frequency)
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "max_frequency, bins", [(1.0, 1), (math.inf, int(FS) // 2 - 1)]
+    )
+    async def test_fft_max_frequency_at_or_above_the_first_bin_is_analyzed(
+        self, load_csv, mock_ctx, max_frequency, bins
+    ):
+        """The first bin itself is a valid limit; infinity keeps every bin."""
+        await load_csv("inv_fft_maxf_ok", _sine(0.1, 50.0))
+
+        result, refusal = await _outcome(
+            analyze_fft(
+                ctx=mock_ctx, signal_id="inv_fft_maxf_ok", max_frequency=max_frequency
+            )
+        )
+
+        assert refusal is None
+        assert result.total_bins == bins
+
+    @pytest.mark.asyncio
+    async def test_short_input_refusals_reach_the_client(self, load_csv, mcp):
+        """The model receives the project text, not the library's."""
+        await load_csv("inv_wire_env", _sine(0.1, 50.0)[:20])
+        await load_csv("inv_wire_fft", _sine(0.1, 50.0))
+
+        async with Client(mcp, mode="legacy") as client:
+            envelope = await client.call_tool(
+                "analyze_envelope", {"signal_id": "inv_wire_env"}
+            )
+            fft = await client.call_tool(
+                "analyze_fft", {"signal_id": "inv_wire_fft", "max_frequency": 0.5}
+            )
+
+        def text(result):
+            return " ".join(c.text for c in result.content if c.type == "text")
+
+        assert envelope.is_error and fft.is_error
+        assert text(envelope) == (
+            "Error executing tool analyze_envelope: " + ENVELOPE_TOO_SHORT.format(n=20)
+        )
+        assert text(fft) == (
+            "Error executing tool analyze_fft: "
+            + FFT_BELOW_FIRST_BIN.format(max_frequency="0.5")
         )
 
     @pytest.mark.asyncio

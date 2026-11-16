@@ -217,6 +217,13 @@ Fixture history:
   calculate_bearing_characteristic_frequencies keeps its dict[str, float]
   schema.
   Generated under mcp 2.3.0 and pydantic 2.12.0 (uv.lock).
+- Segment and evidence-strength descriptions (2026-11-13): regenerated
+  intentionally: descriptions only, no property or type changed.
+  diagnose_vibration: the evidence_strength description says that severity
+  alone grades it 'weak' or 'moderate', never 'strong'.
+  compute_power_spectral_density and compute_spectrogram_stft: nperseg and
+  noverlap describe the values used.
+  Generated under mcp 2.3.0 and pydantic 2.12.0 (uv.lock).
 """
 
 from __future__ import annotations
