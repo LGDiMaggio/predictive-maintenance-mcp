@@ -569,6 +569,33 @@ class TestSynthesisEdgeCases:
         assert result["iso_severity"]["zone"] == "D"
         assert result["evidence_strength"] != "strong"
 
+    def test_evidence_strength_description_states_what_severity_alone_grades(self):
+        """The output-schema description and the grading agree: severity alone
+        grades 'weak' at zone C and 'moderate' at zone D, never 'strong'."""
+        from predictive_maintenance_mcp.models import DiagnosisResult
+
+        description = DiagnosisResult.model_fields["evidence_strength"].description
+        assert (
+            "Severity alone grades it 'weak' (zone C) or 'moderate' (zone D), "
+            "never 'strong'."
+        ) in description
+        assert "never rests on severity alone" not in description
+
+        graded = {}
+        for rms in (3.5, 10.0):  # zone C and zone D for group 2, rigid
+            signal, fs = self._make_signal(rms, 70)  # 70 Hz is not 1x/2x of 50 Hz
+            result = diagnose_vibration(
+                signal,
+                fs,
+                rpm=3000,
+                signal_unit="mm/s",
+                anomaly_model_name="nonexistent_model_severity_alone",
+            )
+            assert result["bearing_faults"] is None
+            assert result["anomaly_detection"] is None
+            graded[result["iso_severity"]["zone"]] = result["evidence_strength"]
+        assert graded == {"C": "weak", "D": "moderate"}
+
     def test_1x_strongest_line_is_a_measurement_not_unbalance(self):
         """A strongest line at 1x is stated as a measurement: no fault, no
         evidence point, no balance check (it used to say 'possible

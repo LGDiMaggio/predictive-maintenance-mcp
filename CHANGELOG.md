@@ -608,6 +608,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   check also covers `tools/`.
 
 ### Fixed
+- `compute_power_spectral_density` and `compute_spectrogram_stft` report the
+  segment parameters actually used. When `nperseg` exceeds the signal length,
+  each tool reduces it to the number of samples. When `noverlap` is not
+  smaller than the effective segment length, each tool reduces it to half that
+  length. The returned `nperseg` and `noverlap` now report these effective
+  settings rather than the requested values. The existing spectral
+  calculations and numerical summaries are unchanged.
+- **`analyze_fft` and `analyze_envelope` refuse input they cannot analyze,
+  with a remedy.** `analyze_fft` refuses a `max_frequency` below the first
+  frequency bin of the analyzed segment, which includes zero, negative values
+  and NaN. `analyze_envelope` refuses an analyzed segment of fewer than 28
+  samples, the minimum its band-pass filter needs. Both calls used to fail
+  with a numpy or scipy message that named no remedy.
+- **`diagnose_vibration`: the `evidence_strength` description states what
+  severity alone can grade.** It said that the grade never rests on severity
+  alone. It now says that severity alone grades it `weak` (zone C) or
+  `moderate` (zone D), never `strong`. The grading is unchanged.
+- **`overlap_ratio` must be at least 0 and below 1** in
+  `extract_features_from_signal`, `train_anomaly_model`,
+  `generate_pca_visualization_report` and
+  `generate_feature_comparison_report`; other values are refused with a
+  remedy. In `extract_features_from_signal` and the two report tools, a value
+  of 1 failed with a Python error and values above 1 produced no segments;
+  `train_anomaly_model` already advanced one sample at a time for those
+  values. Negative values skipped samples between segments in all four tools.
+  In `extract_features_from_signal` and the two report tools, a value close to
+  1 that left less than one sample between segment starts now advances one
+  sample at a time instead of failing. The tool descriptions said 0-1.
+  `analyze_signal_trend` keeps its own limit of 0 to 0.9.
+- **`generate_test_signal` places sample `k` at `k / sampling_rate` seconds.**
+  The samples were spread evenly over the requested duration including its end
+  point, one interval wider than the declared rate implies, so a tone read at
+  the declared rate sat slightly above its nominal frequency: about 1 % for a
+  0.01 s signal, negligible at the default 10 s. For a given `random_seed` the
+  generated values change slightly.
+- **`assess_severity` refuses a direct `rms_velocity_mm_s` that is not a
+  finite number.** A NaN reading or a reading of positive infinity, which an
+  MCP client can send as the string "NaN" or "Infinity", was graded Zone D,
+  and its value came back as `null` in a field declared as a number. Negative
+  infinity was already refused as a negative reading and is now refused as a
+  non-finite one. Other negative readings are refused as before. The zone
+  boundaries and the machine group and support defaults are unchanged.
 - **`calculate_bearing_characteristic_frequencies` and
   `compute_spectrogram_stft` work over MCP again.** Both tools failed on
   every valid call made through an MCP client, while direct Python calls
@@ -785,7 +827,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   measurement recorded earlier from a CSV with an internal blank line is
   not revisited automatically, and a later re-processing run reports it
   as not reprocessable. Tool signatures and output schemas are unchanged.
-- **Tool refusals reach the model again under mcp 2.3+.** Since mcp 2.3.0 the
+- **Tool refusals reach the model again under mcp 2.1+.** Since mcp 2.1.0 the
   SDK forwards only `ToolError`/`ResourceError` text; the plain `ValueError`/
   `FileNotFoundError` the tools raise for an unknown `signal_id`, a missing
   file or a missing manual arrived as the bare `Error executing tool <name>`,

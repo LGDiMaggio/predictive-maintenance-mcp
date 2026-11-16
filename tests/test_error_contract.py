@@ -9,7 +9,7 @@ Two rails, one contract:
 Forbidden everywhere: dicts with an ``"error"`` key returned as success and
 JSON built by interpolating exception text into f-strings.
 
-Since mcp 2.3 only ``ToolError``/``ResourceError`` text reaches the model
+Since mcp 2.1 only ``ToolError``/``ResourceError`` text reaches the model
 (issue #73), so every tool is registered behind ``refusal_boundary``; see the
 banner in ``mcp_tools/_utils.py``. ``TestRefusalsReachTheClient`` pins what
 the client actually receives.
@@ -19,6 +19,7 @@ import importlib
 import inspect
 import json
 import logging
+import math
 import re
 from pathlib import Path
 from unittest.mock import AsyncMock
@@ -254,7 +255,7 @@ def _payload_has_error_key(value) -> bool:
 class TestFailuresRaise:
     """Known failure paths raise a ``ToolError``, never an error-shaped dict.
 
-    ``ToolError`` is the type mcp >= 2.3 forwards to the model (#73).
+    ``ToolError`` is the type mcp >= 2.1 forwards to the model (#73).
     """
 
     @pytest.mark.asyncio
@@ -270,11 +271,11 @@ class TestFailuresRaise:
             if inspect.isawaitable(result):
                 result = await result
         except ToolError:
-            return  # raised, and typed so mcp >= 2.3 forwards the text (#73)
+            return  # raised, and typed so mcp >= 2.1 forwards the text (#73)
         except Exception as exc:
             pytest.fail(
                 f"{tool_name} raised {type(exc).__name__}, not a ToolError: "
-                f"mcp >= 2.3 reports it to the model as the bare 'Error "
+                f"mcp >= 2.1 reports it to the model as the bare 'Error "
                 f"executing tool {tool_name}'. A refusal belongs behind "
                 f"refusal_boundary; a genuine crash needs its own fix."
             )
@@ -512,6 +513,28 @@ REFUSAL_CASES = [
         {"signal_id": "__not_loaded__", "bearing_id": "6205", "rpm": 0.0},
         "rpm must be positive and finite",
     ),
+    # A JSON client cannot send a NaN number; the string form passes argument
+    # validation and must still be refused, not graded.
+    (
+        "assess_severity",
+        {"rms_velocity_mm_s": "NaN"},
+        "rms_velocity_mm_s must be a finite number, got nan",
+    ),
+    (
+        "assess_severity",
+        {"rms_velocity_mm_s": "Infinity"},
+        "rms_velocity_mm_s must be a finite number, got inf",
+    ),
+    (
+        "extract_features_from_signal",
+        {"signal_id": "__not_loaded__", "overlap_ratio": 1.0},
+        "overlap_ratio must be at least 0 and below 1, got 1.0",
+    ),
+    (
+        "train_anomaly_model",
+        {"healthy_signal_ids": ["__not_loaded__"], "overlap_ratio": -0.5},
+        "overlap_ratio must be at least 0 and below 1, got -0.5",
+    ),
     (
         "assess_shaft_fault_evidence",
         {"signal_ids": [], "rpm": 1500.0},
@@ -608,7 +631,7 @@ class TestRefusalsReachTheClient:
 class TestConversionKeepsTheDiagnosticTrail:
     """The boundary's own log line tells a library ``ValueError`` from a refusal.
 
-    mcp >= 2.3 logs every ``ToolError`` as one INFO line with no traceback,
+    mcp >= 2.1 logs every ``ToolError`` as one INFO line with no traceback,
     so without this line a ``json.JSONDecodeError`` escaping a tool body
     would reach the operator as text only, with no frame to locate it. Both
     tests drive ``tool.fn`` directly, so they hold on mcp 2.0.x as well.
@@ -737,3 +760,59 @@ class TestSourceGuards:
             if hits:
                 offenders[path.name] = hits
         assert offenders == {}, f"error-keyed dict literals found in: {offenders}"
+
+
+#: Every tool whose overlap_ratio segments a signal for feature extraction,
+#: with arguments that would fail later (no such signal or model) if the
+#: ratio were accepted: the overlap refusal must come first.
+OVERLAP_TOOLS = {
+    "extract_features_from_signal": {"signal_id": "__not_loaded__"},
+    "train_anomaly_model": {"healthy_signal_ids": ["__not_loaded__"]},
+    "generate_pca_visualization_report": {"model_name": "__no_model__"},
+    "generate_feature_comparison_report": {"signal_groups": {"A": ["__not_loaded__"]}},
+}
+
+
+class TestOverlapRatioBoundary:
+    """overlap_ratio must be at least 0 and below 1 in every feature-extraction
+    tool; the refusal is a runtime check, so the input schemas do not change."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "ratio", [1.0, -0.1, math.nan], ids=["one", "negative", "nan"]
+    )
+    @pytest.mark.parametrize("tool_name", sorted(OVERLAP_TOOLS))
+    async def test_out_of_range_ratio_is_refused_before_any_read(
+        self, tools, sandbox_dirs, tmp_path, mock_ctx, tool_name, ratio
+    ):
+        kwargs = dict(OVERLAP_TOOLS[tool_name], overlap_ratio=ratio)
+        if "ctx" in inspect.signature(tools[tool_name].fn).parameters:
+            kwargs["ctx"] = mock_ctx
+
+        with pytest.raises(ValueError) as caught:
+            result = tools[tool_name].fn(**kwargs)
+            if inspect.isawaitable(result):
+                await result
+
+        assert str(caught.value) == (
+            f"overlap_ratio must be at least 0 and below 1, got {ratio!r} (from "
+            "the overlap_ratio parameter). Use the default 0.5, or a value from 0 "
+            "up to but not including 1."
+        )
+        # sandbox_dirs points the report and model folders here; nothing is written.
+        assert list((tmp_path / "reports").iterdir()) == []
+        assert list((tmp_path / "models").iterdir()) == []
+
+    @pytest.mark.parametrize("tool_name", sorted(OVERLAP_TOOLS))
+    def test_description_states_the_interval(self, tools, tool_name):
+        description = tools[tool_name].description
+        assert "at least 0 and below 1" in description
+        assert "0-1" not in description
+
+    @pytest.mark.parametrize("tool_name", sorted(OVERLAP_TOOLS))
+    def test_input_schema_is_unchanged(self, tools, tool_name):
+        assert tools[tool_name].parameters["properties"]["overlap_ratio"] == {
+            "default": 0.5,
+            "title": "Overlap Ratio",
+            "type": "number",
+        }

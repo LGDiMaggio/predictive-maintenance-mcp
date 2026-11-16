@@ -736,6 +736,47 @@ class TestAssessSeverityExtended:
         assert "omit rpm" in msg
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "reading",
+        [float("nan"), float("inf"), float("-inf")],
+        ids=["nan", "inf", "-inf"],
+    )
+    @pytest.mark.parametrize(
+        "thresholds",
+        [None, {"warning": 1.0, "alarm": 2.0, "danger": 3.0}],
+        ids=["iso-table", "custom-thresholds"],
+    )
+    async def test_non_finite_direct_reading_is_refused(
+        self, tools, repo, mock_ctx, reading, thresholds
+    ):
+        """A NaN or infinite direct reading is refused before any zone is
+        graded; it used to fall through the zone ladder to Zone D."""
+        with pytest.raises(ValueError) as exc_info:
+            await tools["assess_severity"](
+                ctx=mock_ctx, rms_velocity_mm_s=reading, thresholds=thresholds
+            )
+
+        assert str(exc_info.value) == (
+            f"rms_velocity_mm_s must be a finite number, got {reading!r} (from "
+            "the rms_velocity_mm_s parameter). Pass the measured broadband RMS "
+            "velocity in mm/s, or pass signal_id instead to assess a stored "
+            "recording."
+        )
+
+    @pytest.mark.asyncio
+    async def test_zero_and_negative_direct_readings_keep_their_outcomes(
+        self, tools, repo, mock_ctx
+    ):
+        """0 mm/s is a valid reading (Zone A); a negative one keeps the zone
+        engine's own refusal."""
+        zero = await tools["assess_severity"](ctx=mock_ctx, rms_velocity_mm_s=0.0)
+        assert zero.zone == "A"
+        assert zero.rms_velocity_mm_s == 0.0
+
+        with pytest.raises(ValueError, match="rms_velocity_mm_s must be >= 0"):
+            await tools["assess_severity"](ctx=mock_ctx, rms_velocity_mm_s=-1.0)
+
+    @pytest.mark.asyncio
     async def test_omitted_operating_speed_is_unchanged(self, tools, repo, mock_ctx):
         signal_route = await tools["assess_severity"](
             ctx=mock_ctx, signal_id="iso_test"

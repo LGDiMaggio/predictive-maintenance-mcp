@@ -94,6 +94,8 @@ from ..signal_processing.features import (
 from ..signal_validation import (
     InvalidInputError,
     validate_expected_frequencies,
+    validate_finite_number,
+    validate_overlap_ratio,
     validate_rpm,
 )
 from ._utils import (
@@ -123,7 +125,7 @@ async def _extract_features_from_ids(
     Args:
         signal_ids: Stored signal IDs (from load_signal)
         segment_duration: Segment duration in seconds
-        overlap_ratio: Overlap ratio (0-1)
+        overlap_ratio: Overlap ratio, at least 0 and below 1 (checked by the calling tool)
 
     Returns:
         Tuple of (all_features_list, {signal_id: sampling_rate})
@@ -160,7 +162,7 @@ async def _extract_and_transform_validation_features(
     Args:
         signal_ids: Stored signal IDs (from load_signal)
         segment_duration: Segment duration in seconds
-        overlap_ratio: Overlap ratio (0-1)
+        overlap_ratio: Overlap ratio, at least 0 and below 1 (checked by the calling tool)
         scaler: Fitted StandardScaler
         pca: Fitted PCA transformer
 
@@ -267,9 +269,9 @@ async def assess_severity(
     Raises:
         ValueError: On route misuse (both/neither inputs), undeclared
             signal unit, missing sampling rate, Nyquist below the ISO
-            band, declared power below 15 kW, negative RMS, invalid
-            custom thresholds, or a given rpm that is not a positive finite
-            number.
+            band, declared power below 15 kW, a negative or non-finite RMS,
+            invalid custom thresholds, or a given rpm that is not a positive
+            finite number.
     """
     if (signal_id is None) == (rms_velocity_mm_s is None):
         raise ValueError(
@@ -334,7 +336,18 @@ async def assess_severity(
         }
     else:
         # --- Direct-RMS route (former check_vibration_alert) ----------
-        rms = float(rms_velocity_mm_s)
+        # A NaN reading fails every comparison of the zone ladder and would be
+        # graded Zone D; infinity has no zone either. Refused before grading.
+        # A negative reading still reaches the zone engine's own refusal.
+        rms = validate_finite_number(
+            rms_velocity_mm_s,
+            name="rms_velocity_mm_s",
+            source="the rms_velocity_mm_s parameter",
+            remedy=(
+                "Pass the measured broadband RMS velocity in mm/s, or pass "
+                "signal_id instead to assess a stored recording"
+            ),
+        )
         frequency_range = "not applicable — direct RMS velocity reading"
         unit_conversion = False
         original_unit = "mm/s"
@@ -430,7 +443,7 @@ async def train_anomaly_model(
     Args:
         healthy_signal_ids: Stored signal IDs with healthy machine data (for training)
         segment_duration: Segment duration in seconds (default: 0.1)
-        overlap_ratio: Overlap ratio 0-1 (default: 0.5)
+        overlap_ratio: Overlap ratio, at least 0 and below 1 (default: 0.5)
         model_type: 'OneClassSVM' or 'LocalOutlierFactor' (default: 'OneClassSVM')
         pca_variance: Cumulative variance to explain with PCA (default: 0.95)
         fault_signal_ids: Optional stored signal IDs for HYPERPARAMETER TUNING (semi-supervised)
@@ -444,11 +457,13 @@ async def train_anomaly_model(
 
     Raises:
         ValueError: If a signal_id is not loaded or has no sampling rate,
-            or model_name/model_type is invalid.
+            model_name/model_type is invalid, or overlap_ratio is not at
+            least 0 and below 1.
     """
-    # Fail fast on an unsafe model_name before doing any expensive work or
-    # touching the filesystem (the write happens in step 6).
+    # Fail fast on an unsafe model_name or overlap_ratio before doing any
+    # expensive work or touching the filesystem (the write happens in step 6).
     validate_name_component(model_name, kind="model_name")
+    overlap_ratio = validate_overlap_ratio(overlap_ratio)
 
     logger.info(
         f"Training {model_type} model on {len(healthy_signal_ids)} healthy signals..."

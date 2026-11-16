@@ -20,6 +20,8 @@ from predictive_maintenance_mcp.signal_validation import (
     BAD_SAMPLE_REMEDY,
     InvalidInputError,
     validate_expected_frequencies,
+    validate_finite_number,
+    validate_overlap_ratio,
     validate_positive_finite,
     validate_expected_frequency,
     validate_finite_samples,
@@ -420,3 +422,116 @@ class TestUntrustedValuesStayOutOfMessages:
         with pytest.raises(InvalidInputError) as caught:
             validate_positive_finite(-3.5, name="rpm", remedy="declare it")
         assert "-3.5" in str(caught.value)
+
+    def test_finite_number_names_a_text_value_by_its_type(self):
+        with pytest.raises(InvalidInputError) as caught:
+            validate_finite_number(self.HOSTILE, name="reading", remedy="Pass it")
+        message = str(caught.value)
+        assert "ZQ" not in message and "clear_signals" not in message
+        assert "of type str" in message and "not a number" in message
+
+    def test_overlap_ratio_names_a_text_value_by_its_type(self):
+        with pytest.raises(InvalidInputError) as caught:
+            validate_overlap_ratio(self.HOSTILE)
+        message = str(caught.value)
+        assert "ZQ" not in message and "clear_signals" not in message
+        assert "of type str" in message and "not a number" in message
+
+
+# ---------------------------------------------------------------------------
+# Finite reading (the direct RMS route of the severity tool)
+# ---------------------------------------------------------------------------
+
+RMS_REMEDY = (
+    "Pass the measured broadband RMS velocity in mm/s, or pass signal_id "
+    "instead to assess a stored recording"
+)
+
+
+class TestValidateFiniteNumber:
+    @pytest.mark.parametrize(
+        "value", [0.0, 0, 3.5, np.float64(2.25), np.int64(7), -1.0]
+    )
+    def test_finite_numbers_are_returned_as_float_whatever_their_sign(self, value):
+        result = validate_finite_number(value, name="reading", remedy="Pass it")
+
+        assert result == float(value)
+        assert type(result) is float
+
+    @pytest.mark.parametrize("value", [math.nan, math.inf, -math.inf, 10**400])
+    def test_non_finite_values_are_refused(self, value):
+        with pytest.raises(
+            InvalidInputError, match="reading must be a finite number, got"
+        ):
+            validate_finite_number(value, name="reading", remedy="Pass it")
+
+    def test_the_rms_refusal_reads_as_approved(self):
+        with pytest.raises(InvalidInputError) as caught:
+            validate_finite_number(
+                math.nan,
+                name="rms_velocity_mm_s",
+                source="the rms_velocity_mm_s parameter",
+                remedy=RMS_REMEDY,
+            )
+
+        assert str(caught.value) == (
+            "rms_velocity_mm_s must be a finite number, got nan (from the "
+            "rms_velocity_mm_s parameter). Pass the measured broadband RMS "
+            "velocity in mm/s, or pass signal_id instead to assess a stored "
+            "recording."
+        )
+        assert _raised_in_src(caught.value)
+
+    @pytest.mark.parametrize("value", [True, np.bool_(True), "3.0", None])
+    def test_values_that_are_not_numbers_are_refused_by_type(self, value):
+        with pytest.raises(InvalidInputError) as caught:
+            validate_finite_number(value, name="reading", remedy="Pass it")
+
+        message = str(caught.value)
+        assert message.startswith(
+            "reading must be a finite number, got a value of type "
+        )
+        assert "which is not a number" in message
+
+
+# ---------------------------------------------------------------------------
+# Overlap ratio of the feature-extraction tools
+# ---------------------------------------------------------------------------
+
+
+class TestValidateOverlapRatio:
+    @pytest.mark.parametrize("value", [0, 0.0, 0.5, 0.9, 0.999, 1 - 1e-12])
+    def test_values_from_zero_to_below_one_are_returned_as_float(self, value):
+        result = validate_overlap_ratio(value)
+
+        assert result == float(value)
+        assert type(result) is float
+
+    @pytest.mark.parametrize(
+        "value", [1, 1.0, 1.5, 5.0, -0.1, -1e-12, math.nan, math.inf, -math.inf]
+    )
+    def test_values_outside_the_interval_are_refused(self, value):
+        with pytest.raises(
+            InvalidInputError, match="overlap_ratio must be at least 0 and below 1, got"
+        ):
+            validate_overlap_ratio(value)
+
+    def test_the_refusal_reads_as_approved(self):
+        with pytest.raises(InvalidInputError) as caught:
+            validate_overlap_ratio(1.0)
+
+        assert str(caught.value) == (
+            "overlap_ratio must be at least 0 and below 1, got 1.0 (from the "
+            "overlap_ratio parameter). Use the default 0.5, or a value from 0 up "
+            "to but not including 1."
+        )
+        assert _raised_in_src(caught.value)
+
+    @pytest.mark.parametrize("value", [True, np.bool_(False), "0.5", None])
+    def test_values_that_are_not_numbers_are_refused_by_type(self, value):
+        with pytest.raises(InvalidInputError) as caught:
+            validate_overlap_ratio(value)
+
+        assert str(caught.value).startswith(
+            "overlap_ratio must be at least 0 and below 1, got a value of type "
+        )

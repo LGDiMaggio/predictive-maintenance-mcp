@@ -235,8 +235,9 @@ async def generate_test_signal(
 
     rng = np.random.default_rng(random_seed)
 
-    # Time parameters
-    t = np.linspace(0, duration, int(sampling_rate * duration))
+    # Time parameters: sample k at k / sampling_rate seconds, the rate the
+    # companion metadata declares.
+    t = np.arange(int(sampling_rate * duration)) / sampling_rate
 
     # Generate signal based on type
     if signal_type == "bearing_fault":

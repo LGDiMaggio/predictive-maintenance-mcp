@@ -4,7 +4,9 @@ expected fault frequencies.
 The single source of truth for "is this input fit to analyze" at the input
 boundaries: the signal store's loads, the asset ledger's re-reads, the
 raw-binary decoder, the ledger snapshot, test-signal generation, the MCP tools
-that take a shaft speed, and the public diagnostic entry points that accept
+that take a shaft speed, the overlap ratio of the feature-extraction tools and
+the direct RMS reading of the severity tool, and the public diagnostic entry
+points that accept
 arrays or speeds directly from Python (ISO severity, the bearing checks and
 the diagnosis pipeline) call the validators below instead of rolling their own
 comparison. Lower-level numeric transforms such as
@@ -43,7 +45,9 @@ __all__ = [
     "InvalidInputError",
     "validate_expected_frequencies",
     "validate_expected_frequency",
+    "validate_finite_number",
     "validate_finite_samples",
+    "validate_overlap_ratio",
     "validate_positive_finite",
     "validate_rpm",
     "validate_sampling_rate",
@@ -90,6 +94,10 @@ _OPTIONAL_RPM_REMEDY = (
 
 _EXPECTED_FREQUENCY_REMEDY = "pass each expected frequency in Hz as a number above zero"
 
+_OVERLAP_RATIO_REMEDY = (
+    "Use the default 0.5, or a value from 0 up to but not including 1"
+)
+
 
 def validate_positive_finite(
     value: Any,
@@ -132,6 +140,97 @@ def validate_positive_finite(
         raise InvalidInputError(
             f"{name} must be positive and finite ({name} > 0), got "
             f"{value!r}{where} — {remedy}."
+        )
+    return number
+
+
+def _as_float(value: Any) -> float:
+    """``float(value)``, with an integer too large for a float read as infinite."""
+    try:
+        return float(value)
+    except OverflowError:
+        return math.inf
+
+
+def _is_real_number(value: Any) -> bool:
+    """True for a real number; booleans are not numbers here."""
+    return not isinstance(value, (bool, np.bool_)) and isinstance(value, numbers.Real)
+
+
+def validate_finite_number(
+    value: Any,
+    *,
+    name: str,
+    source: str = "",
+    remedy: str,
+) -> float:
+    """Return *value* as a float when it is a finite real number.
+
+    The sign is not judged: a caller with its own rule for negative values
+    keeps that rule and its message (the ISO zone engine refuses a negative
+    RMS).
+
+    Args:
+        value: The quantity as passed. Booleans are refused even though Python
+            treats them as integers.
+        name: What the quantity is called in the caller's vocabulary.
+        source: Where the value came from, appended to the message when given.
+        remedy: What the caller should do instead, as a sentence without its
+            final period.
+
+    Returns:
+        The value as a Python float.
+
+    Raises:
+        InvalidInputError: If the value is not a real number, or is NaN or
+            infinite (an integer too large for a float counts as infinite).
+    """
+    where = f" (from {source})" if source else ""
+    if not _is_real_number(value):
+        raise InvalidInputError(
+            f"{name} must be a finite number, got a value of type "
+            f"{type(value).__name__}, which is not a number{where}. {remedy}."
+        )
+    number = _as_float(value)
+    if not math.isfinite(number):
+        raise InvalidInputError(
+            f"{name} must be a finite number, got {value!r}{where}. {remedy}."
+        )
+    return number
+
+
+def validate_overlap_ratio(
+    value: Any, *, source: str = "the overlap_ratio parameter"
+) -> float:
+    """Return *value* as a float when it is an overlap ratio from 0 to below 1.
+
+    At 1 successive segments would not advance, above 1 or below 0 samples
+    would be skipped between segments; NaN is refused with them.
+
+    Args:
+        value: The overlap between successive segments, as a fraction of the
+            segment length.
+        source: Where the value came from, appended to the message when given.
+
+    Returns:
+        The ratio as a Python float.
+
+    Raises:
+        InvalidInputError: If the value is not a real number, or is not at
+            least 0 and below 1.
+    """
+    where = f" (from {source})" if source else ""
+    if not _is_real_number(value):
+        raise InvalidInputError(
+            f"overlap_ratio must be at least 0 and below 1, got a value of type "
+            f"{type(value).__name__}, which is not a number{where}. "
+            f"{_OVERLAP_RATIO_REMEDY}."
+        )
+    number = _as_float(value)
+    if not 0.0 <= number < 1.0:
+        raise InvalidInputError(
+            f"overlap_ratio must be at least 0 and below 1, got {value!r}{where}. "
+            f"{_OVERLAP_RATIO_REMEDY}."
         )
     return number
 

@@ -192,6 +192,77 @@ class TestGenerateTestSignal:
         finally:
             repo.clear_all()
 
+    @staticmethod
+    def _closed_form(signal_type: str, t: np.ndarray) -> np.ndarray:
+        """Noise-free content of the generator, at the given sample times."""
+        if signal_type == "imbalance":  # 1500 RPM
+            return np.sin(2 * np.pi * 25.0 * t)
+        return (  # gear_fault: 200 Hz mesh tone and two harmonics
+            np.sin(2 * np.pi * 200.0 * t)
+            + 0.5 * np.sin(2 * np.pi * 400.0 * t)
+            + 0.3 * np.sin(2 * np.pi * 600.0 * t)
+        )
+
+    async def _generate(self, mcp, mock_ctx, signal_type, duration, fs=10000.0):
+        from predictive_maintenance_mcp.signal_acquisition.repository import (
+            get_repository,
+        )
+
+        tools = {t.name: t.fn for t in mcp._tool_manager._tools.values()}
+        repo = get_repository()
+        repo.clear_all()
+        try:
+            result = await tools["generate_test_signal"](
+                signal_type=signal_type,
+                duration=duration,
+                sampling_rate=fs,
+                noise_level=0.0,
+                random_seed=0,
+                ctx=mock_ctx,
+            )
+            return np.asarray(repo.get_signal(result.signal_id), dtype=float)
+        finally:
+            repo.clear_all()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "signal_type, duration",
+        [
+            ("imbalance", 0.01),
+            ("gear_fault", 0.05),
+            ("imbalance", 0.001),
+            ("imbalance", 0.00333),  # 33.3 samples: truncated to 33
+        ],
+    )
+    async def test_samples_sit_at_the_declared_rate(
+        self, mcp, data_dir, mock_ctx, signal_type, duration
+    ):
+        """Sample k is taken at k / sampling_rate seconds."""
+        fs = 10000.0
+        values = await self._generate(mcp, mock_ctx, signal_type, duration, fs)
+
+        n = int(fs * duration)
+        assert len(values) == n
+        np.testing.assert_allclose(
+            values, self._closed_form(signal_type, np.arange(n) / fs), rtol=0, atol=1e-9
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "signal_type, period_samples", [("imbalance", 400), ("gear_fault", 50)]
+    )
+    async def test_tones_repeat_after_whole_periods_at_the_declared_rate(
+        self, mcp, data_dir, mock_ctx, signal_type, period_samples
+    ):
+        """Read at 10 kHz, a 25 Hz tone repeats every 400 samples and the
+        200/400/600 Hz gear content every 50: the frequencies are the
+        nominal ones, not shifted by the sample spacing."""
+        values = await self._generate(mcp, mock_ctx, signal_type, 0.1)
+
+        np.testing.assert_allclose(
+            values[period_samples:], values[:-period_samples], rtol=0, atol=1e-9
+        )
+
     @pytest.mark.asyncio
     async def test_consecutive_runs_never_collide(self, mcp, data_dir, mock_ctx):
         """Timestamped filenames: two runs → two distinct files and ids."""

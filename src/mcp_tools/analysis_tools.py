@@ -41,9 +41,15 @@ from ..signal_processing.spectral import (
     select_leading_segment,
 )
 from ..signal_processing.features import extract_time_domain_features
+from ..signal_validation import validate_overlap_ratio
 from ._utils import refusal_boundary, resolve_signal
 
 logger = logging.getLogger(__name__)
+
+#: Samples the envelope core's band-pass filter needs: scipy's default
+#: sosfiltfilt padding for a 4th-order Butterworth band-pass in second-order
+#: sections is 27, and the signal must be longer.
+_ENVELOPE_MIN_SAMPLES = 28
 
 
 def _select_segment(
@@ -97,7 +103,9 @@ async def analyze_fft(
     Args:
         ctx: MCP context. Unused — see this module's docstring on logging.
         signal_id: ID of the stored signal (from load_signal).
-        max_frequency: Maximum frequency to analyze (default: Nyquist frequency)
+        max_frequency: Maximum frequency to analyze (default: Nyquist frequency).
+            Must be at least the first frequency bin of the analyzed segment
+            (sampling rate / segment samples).
         segment_duration: Duration in seconds to analyze (default: leading
             1.0 s). Set to None to analyze the full signal.
         random_seed: Seed for random segment position (default: None =
@@ -107,8 +115,9 @@ async def analyze_fft(
         FFTResult with top peaks, dominant peak, and spectrum stats.
 
     Raises:
-        ValueError: If the signal_id is not loaded, or the stored signal
-            has no sampling rate.
+        ValueError: If the signal_id is not loaded, the stored signal has no
+            sampling rate, or max_frequency is below the first frequency bin
+            of the analyzed segment.
     """
     signal_data, info = resolve_signal(signal_id)
     sampling_rate = info.sampling_rate
@@ -138,8 +147,19 @@ async def analyze_fft(
     # the diagnosis pipeline's fft_summary coincide with these numbers.
     frequencies, magnitudes = amplitude_spectrum(signal_data, sampling_rate)
 
-    # Apply maximum frequency limit if specified
+    # Apply maximum frequency limit if specified. A limit below the first bin
+    # (zero, negative or NaN included) would leave no bin to analyze; it is
+    # judged against the computed first bin, exactly as the mask below is.
     if max_frequency is not None:
+        if not max_frequency >= frequencies[0]:
+            raise ValueError(
+                f"max_frequency must be at least the first frequency bin of the "
+                f"analyzed segment, {frequencies[0]:g} Hz ({sampling_rate:g} Hz / "
+                f"{N} samples), got {max_frequency!r}. Pass a larger "
+                f"max_frequency, omit it to analyze up to the Nyquist frequency, "
+                f"or analyze a longer segment (segment_duration) for finer "
+                f"frequency bins."
+            )
         freq_limit_idx = frequencies <= max_frequency
         frequencies = frequencies[freq_limit_idx]
         magnitudes = magnitudes[freq_limit_idx]
@@ -246,7 +266,8 @@ async def analyze_envelope(
 
     Raises:
         ValueError: If the signal_id is not loaded, the stored signal
-            has no sampling rate, or the band is invalid vs Nyquist.
+            has no sampling rate, the band is invalid vs Nyquist, or the
+            analyzed segment has fewer than 28 samples.
     """
     signal_data, info = resolve_signal(signal_id)
     sampling_rate = info.sampling_rate
@@ -266,6 +287,14 @@ async def analyze_envelope(
         logger.info(
             f"Analyzing full signal ({signal_duration_sec:.1f}s, "
             f"{full_signal_length} samples)"
+        )
+
+    if len(signal_data) < _ENVELOPE_MIN_SAMPLES:
+        raise ValueError(
+            f"analyze_envelope needs at least {_ENVELOPE_MIN_SAMPLES} samples for "
+            f"its band-pass filter, got {len(signal_data)} in the analyzed "
+            f"segment. Load a longer recording, or pass a longer segment_duration "
+            f"(None analyzes the whole recording)."
         )
 
     # Single envelope engine: band validation (raise, never clamp),
@@ -420,15 +449,15 @@ async def extract_features_from_signal(
     Args:
         signal_id: ID of the stored signal (from load_signal).
         segment_duration: Duration of each segment in seconds (default: 0.1)
-        overlap_ratio: Overlap between segments, 0-1 (default: 0.5 = 50%)
+        overlap_ratio: Overlap between segments, at least 0 and below 1 (default: 0.5 = 50%)
         ctx: MCP context. Unused — see this module's docstring on logging.
 
     Returns:
         FeatureExtractionResult with features matrix and metadata
 
     Raises:
-        ValueError: If the signal_id is not loaded, or the stored signal
-            has no sampling rate.
+        ValueError: If the signal_id is not loaded, the stored signal has
+            no sampling rate, or overlap_ratio is not at least 0 and below 1.
 
     Example:
         extract_features_from_signal(
@@ -437,15 +466,20 @@ async def extract_features_from_signal(
             overlap_ratio=0.5
         )
     """
+    overlap_ratio = validate_overlap_ratio(overlap_ratio)
     logger.info(f"Extracting features from '{signal_id}'...")
 
     signal_data, info = resolve_signal(signal_id)
     sampling_rate = info.sampling_rate
     logger.info(f"Using sampling rate: {sampling_rate} Hz")
 
-    # Calculate segment parameters
+    # Calculate segment parameters. A ratio close to 1 can leave less than one
+    # sample between segment starts: advance one sample, as the anomaly tools'
+    # segmentation does. A segment of no samples keeps its earlier outcome.
     segment_length_samples = int(segment_duration * sampling_rate)
     hop_length = int(segment_length_samples * (1 - overlap_ratio))
+    if segment_length_samples >= 1:
+        hop_length = max(1, hop_length)
 
     # Extract segments
     segments = []
@@ -499,8 +533,12 @@ async def compute_power_spectral_density(
 
     Args:
         signal_id: ID of the stored signal.
-        nperseg: Samples per FFT segment (default 256).
-        noverlap: Overlap between segments (default 128).
+        nperseg: Samples per FFT segment (default 256). A value larger than
+            the signal is reduced to the signal length; the result reports the
+            value used.
+        noverlap: Overlap between segments (default 128). A value not smaller
+            than the segment is set to half the segment; the result reports
+            the value used.
         window: Window function (default 'hann').
     """
     signal_data, info = resolve_signal(signal_id)
@@ -518,8 +556,8 @@ async def compute_power_spectral_density(
         signal_id=signal_id,
         num_samples=info.num_samples,
         sampling_rate=fs,
-        nperseg=nperseg,
-        noverlap=noverlap,
+        nperseg=result["nperseg"],
+        noverlap=result["noverlap"],
         window=window,
         top_peaks=[SpectralPeak(**p) for p in result["top_peaks"]],
         total_power=result["total_power"],
@@ -542,8 +580,12 @@ async def compute_spectrogram_stft(
 
     Args:
         signal_id: ID of the stored signal.
-        nperseg: Samples per STFT segment (default 256).
-        noverlap: Overlap between segments (default 128).
+        nperseg: Samples per STFT segment (default 256). A value larger than
+            the signal is reduced to the signal length; the result reports the
+            value used.
+        noverlap: Overlap between segments (default 128). A value not smaller
+            than the segment is set to half the segment; the result reports
+            the value used.
         window: Window function (default 'hann').
     """
     signal_data, info = resolve_signal(signal_id)
@@ -559,8 +601,8 @@ async def compute_spectrogram_stft(
         signal_id=signal_id,
         num_samples=info.num_samples,
         sampling_rate=fs,
-        nperseg=nperseg,
-        noverlap=noverlap,
+        nperseg=result["nperseg"],
+        noverlap=result["noverlap"],
         window=window,
         num_time_bins=result["num_time_bins"],
         num_freq_bins=result["num_freq_bins"],

@@ -390,6 +390,36 @@ class TestExtractFeatures:
         assert result.num_segments == 2
 
     @pytest.mark.asyncio
+    async def test_overlap_just_below_one_advances_one_sample(
+        self, tools, repo, mock_ctx
+    ):
+        """A ratio below 1 that leaves less than one sample between segment
+        starts advances one sample at a time: 10000 samples and 9000-sample
+        segments give 1001 segments."""
+        result = await tools["extract_features_from_signal"](
+            signal_id="sine50",
+            segment_duration=0.9,
+            overlap_ratio=0.9999,
+            ctx=mock_ctx,
+        )
+        assert result.segment_length_samples == 9000
+        assert result.num_segments == 10000 - 9000 + 1
+
+    @pytest.mark.asyncio
+    async def test_negative_segment_duration_keeps_its_empty_outcome(
+        self, tools, repo, mock_ctx
+    ):
+        """The one-sample hop applies only to a segment of at least one
+        sample; a negative duration still yields no segment at once."""
+        result = await tools["extract_features_from_signal"](
+            signal_id="sine50",
+            segment_duration=-0.1,
+            overlap_ratio=0.5,
+            ctx=mock_ctx,
+        )
+        assert result.num_segments == 0
+
+    @pytest.mark.asyncio
     async def test_unknown_signal_id_raises(self, tools, repo, mock_ctx):
         with pytest.raises(ValueError, match="load_signal"):
             await tools["extract_features_from_signal"](
