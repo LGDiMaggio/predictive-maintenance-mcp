@@ -76,14 +76,17 @@ from .records import (
     ImportRecordMissing,
     ImportRecordStore,
 )
-from .statements import position_words
+from .statements import excluded_list, excluded_verb, position_words
 from .validation import Validated, validate_for_import
 
 __all__ = [
+    "COMPLETENESS_KEYS",
     "ImportRefused",
     "Presence",
     "SignalImportService",
+    "check_result",
     "record_locations",
+    "recorded_channels",
 ]
 
 logger = logging.getLogger(__name__)
@@ -113,8 +116,9 @@ class ImportRefused(ValueError):
         code: What was refused (``validate_again``, ``import_digest_malformed``,
             ``import_id_malformed``, ``signal_id_invalid``,
             ``signal_id_taken``, ``source_unavailable``,
-            ``determinism_failure``, ``record_incomplete``; the MCP adapter
-            adds ``remote_import_refused``, ``mixed_modes`` and
+            ``determinism_failure``, ``record_incomplete``,
+            ``record_predates_row_check``; the MCP adapter adds
+            ``remote_import_refused``, ``mixed_modes`` and
             ``incomplete_request``).
     """
 
@@ -238,7 +242,7 @@ def record_locations(record: ImportRecord) -> list[str]:
     return seen
 
 
-def _recorded_channels(record: Optional[ImportRecord]) -> dict[int, dict[str, Any]]:
+def recorded_channels(record: Optional[ImportRecord]) -> dict[int, dict[str, Any]]:
     """The channels of the latest outcome that stored their samples, by
     column (empty when no outcome stored any)."""
     if record is None:
@@ -258,6 +262,39 @@ def _recorded_channels(record: Optional[ImportRecord]) -> dict[int, dict[str, An
         if stored:
             return stored
     return {}
+
+
+#: The keys of an import's check for rows left out of its data range, in the
+#: provenance of every channel it stores.
+COMPLETENESS_KEYS: tuple[str, ...] = ("partial_acquisition", "excluded_rows")
+
+_UPDATED_NOTICE = (
+    "This interpretation was imported before with another result, or none, of the "
+    "check for rows left out of the data range; its stored channels and its import "
+    "record now carry the current result."
+)
+
+
+def check_result(provenance: Any) -> Optional[tuple[bool, list[Any]]]:
+    """The check result a channel's provenance records, or None when it
+    records none (a channel stored before the check existed)."""
+    if not isinstance(provenance, Mapping) or any(
+        key not in provenance for key in COMPLETENESS_KEYS
+    ):
+        return None
+    partial = provenance["partial_acquisition"]
+    excluded = provenance["excluded_rows"]
+    if not isinstance(partial, bool) or not isinstance(excluded, list):
+        return None
+    return partial, excluded
+
+
+def _partial_notice(excluded: list[Mapping[str, Any]]) -> str:
+    return (
+        f"This import is recorded as a partial acquisition: {excluded_list(excluded)} "
+        f"could be part of the acquisition and {excluded_verb(excluded)} left out as "
+        f"the user acknowledged."
+    )
 
 
 def _bases_for(attestation: Mapping[str, Any], column: int) -> dict[str, str]:
@@ -391,7 +428,26 @@ class SignalImportService:
             existing: Optional[ImportRecord] = records.read(import_id)
         except ImportRecordMissing:
             existing = None
-        stored_before = _recorded_channels(existing)
+        stored_before = recorded_channels(existing)
+        # The check result this validation computed from its census, the same
+        # for every channel of the file; never from the acknowledgments'
+        # reasons, so a repeat with another reason computes the same result.
+        completeness = validated.completeness or {
+            "partial_acquisition": False,
+            "excluded_rows": [],
+        }
+        current = (
+            bool(completeness["partial_acquisition"]),
+            list(completeness["excluded_rows"]),
+        )
+        # The record's latest stored outcome carries another result, or none
+        # (it was recorded before the check existed, or an outcome append
+        # failed after the channels were stored): this import brings it up to
+        # date.
+        outdated = bool(stored_before) and any(
+            check_result(item.get("provenance")) != current
+            for item in stored_before.values()
+        )
         columns = [entry.column for entry in decode.channels]
         notices: list[str] = []
         if stored_before and set(stored_before) == set(columns):
@@ -441,6 +497,8 @@ class SignalImportService:
                 "caller_asserted": caller,
                 "bases": _bases_for(validated.attestation, column),
                 "overrides": _overrides_for(validated.attestation, column),
+                "partial_acquisition": current[0],
+                "excluded_rows": [dict(block) for block in current[1]],
             }
             decoded.append(
                 DecodedChannel(
@@ -517,8 +575,12 @@ class SignalImportService:
         materialized = self._materialize(decoded, presence, overwrite, notices)
         status: ImportStatus = "already_imported" if stored_before else "imported"
         inserted = any(presence[item.signal_id] != "same" for item in decoded)
-        if inserted or not stored_before:
+        if inserted or not stored_before or outdated:
             self._append_outcome(records, import_id, status, decoded, materialized)
+        if outdated:
+            notices.append(_UPDATED_NOTICE)
+        if current[0]:
+            notices.append(_partial_notice(current[1]))
 
         # Step 6: the ledger, per bound channel that is stored.
         ledger_outcomes = self._record_in_ledger(
@@ -601,7 +663,7 @@ class SignalImportService:
         _check_import_id(import_id)
         records = self.records
         record = records.read(import_id)
-        stored = _recorded_channels(record)
+        stored = recorded_channels(record)
         if not stored:
             raise ImportRefused(
                 "record_incomplete",
@@ -609,6 +671,22 @@ class SignalImportService:
                 f"channels, so there is nothing to restore from it alone. Import "
                 f"the file again with validate_signal_import and "
                 f"import_signal_file.",
+            )
+        if any(
+            check_result(item.get("provenance")) is None for item in stored.values()
+        ):
+            # Re-materialization validates nothing: it can restore only a check
+            # result the record carries, never present an unchecked import as
+            # complete.
+            raise ImportRefused(
+                "record_predates_row_check",
+                f"Import {import_id[:12]} was recorded before the check for rows left "
+                f"out of its data range existed, so restoring it from its record "
+                f"alone could present a partial acquisition as complete. Nothing was "
+                f"stored. Import the file again with validate_signal_import and "
+                f"import_signal_file, using the interpretation get_signal_imports "
+                f"shows for it; the import keeps this import_id and the signal ids it "
+                f"was stored under.",
             )
         locations = record_locations(record)
         runtime = _latest(record, "runtime") or {}
@@ -694,6 +772,9 @@ class SignalImportService:
                 records, import_id, "rematerialized", decoded, materialized
             )
         notices.extend(self._ledger_disagreements(record, decoded, by_column))
+        recorded = check_result(decoded[0].import_provenance)
+        if recorded is not None and recorded[0]:
+            notices.append(_partial_notice(recorded[1]))
         return ImportResult(
             status="rematerialized",
             import_id=import_id,
@@ -786,6 +867,13 @@ class SignalImportService:
                 for item in bound
             },
             holders=holders,
+            completeness={
+                item.signal_id: {
+                    key: item.import_provenance[key] for key in COMPLETENESS_KEYS
+                }
+                for item in bound
+                if all(key in item.import_provenance for key in COMPLETENESS_KEYS)
+            },
         )
         return {outcome["signal_id"]: outcome for outcome in outcomes}
 

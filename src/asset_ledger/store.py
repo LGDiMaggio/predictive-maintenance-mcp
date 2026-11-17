@@ -64,6 +64,18 @@ and the upper layers; the reader validates only the envelope):
     ``declaration_version``, ``point_declaration_version``}]),
     ``declared_by``, ``note``, ``declared_at``.
 
+``acquisition_completeness_recorded``
+    ``measurement_id``, ``import_id``, ``partial_acquisition`` (whether the
+    import leaves out rows that could be part of the acquisition, as the user
+    acknowledged), ``excluded_rows`` ([{``first_line``, ``last_line``,
+    ``rows``}], sorted by ``first_line``, empty when nothing is left out).
+    Written only by the signal import, for a bound channel, before that
+    measurement's declaration, and only when this ledger's latest note for the
+    same measurement and import differs or is missing. It never enters a
+    declaration, a fingerprint, a context digest or a snapshot; the view keeps
+    the latest one per measurement and import in a map of its own, and it
+    creates no measurement.
+
 Byte rules
     The record delimiter is the single byte 0x0A. The writer serializes
     compact canonical JSON with ``ensure_ascii=True`` (a declared deviation
@@ -143,6 +155,7 @@ __all__ = [
     "EVENT_MEASUREMENT_RECORDED",
     "EVENT_HEALTH_SNAPSHOT_COMPUTED",
     "EVENT_BASELINE_DECLARED",
+    "EVENT_ACQUISITION_COMPLETENESS_RECORDED",
     "EVENT_TYPES",
     "ENVELOPE_KEYS",
     "LEDGER_SUFFIX",
@@ -185,6 +198,7 @@ EVENT_MEASUREMENT_POINT_DECLARED = "measurement_point_declared"
 EVENT_MEASUREMENT_RECORDED = "measurement_recorded"
 EVENT_HEALTH_SNAPSHOT_COMPUTED = "health_snapshot_computed"
 EVENT_BASELINE_DECLARED = "baseline_declared"
+EVENT_ACQUISITION_COMPLETENESS_RECORDED = "acquisition_completeness_recorded"
 
 #: Event types this version writes. The reader keeps unknown types untouched
 #: (weak versioning: only additions, never renames); the writer refuses them
@@ -194,6 +208,7 @@ EVENT_TYPES: tuple[str, ...] = (
     EVENT_MEASUREMENT_RECORDED,
     EVENT_HEALTH_SNAPSHOT_COMPUTED,
     EVENT_BASELINE_DECLARED,
+    EVENT_ACQUISITION_COMPLETENESS_RECORDED,
 )
 
 #: Keys every readable record must carry (the envelope, in canonical order).
@@ -1292,8 +1307,8 @@ def build_asset_view(
 
     Returns:
         ``{asset_id, event_count, points, measurements,
-        ordered_measurement_ids, reattributed, baselines, integrity,
-        end_offset}`` where ``points[point_id] = {history, current}``
+        ordered_measurement_ids, reattributed, baselines, completeness,
+        integrity, end_offset}`` where ``points[point_id] = {history, current}``
         (``current`` is the latest payload as recorded; every ``history``
         entry is a copy of its payload plus ``recorded_at``, the envelope's
         server instant, so a query can tell which measurements were
@@ -1315,7 +1330,11 @@ def build_asset_view(
         instant, missing values last) then file order, and
         ``baselines[point_id] = {history, current}``
         with ``current`` ``None`` after a withdrawal (empty
-        ``measurement_ids``; every history entry carries ``withdrawn``).
+        ``measurement_ids``; every history entry carries ``withdrawn``);
+        ``completeness[measurement_id][import_id]`` is the latest
+        ``acquisition_completeness_recorded`` payload for that measurement and
+        import, kept apart from the measurements (a note whose declaration was
+        never written creates no measurement).
     """
     view_integrity = dict(integrity)
     view_integrity.setdefault("asset_id_mismatches", 0)
@@ -1325,6 +1344,7 @@ def build_asset_view(
     points: dict[str, dict[str, Any]] = {}
     measurements: dict[str, dict[str, Any]] = {}
     baselines: dict[str, dict[str, Any]] = {}
+    completeness: dict[str, dict[str, dict[str, Any]]] = {}
     first_seen: dict[str, int] = {}
     seen_ids: set[str] = set()
     event_count = 0
@@ -1394,6 +1414,14 @@ def build_asset_view(
             slot["history"].append(entry)
             slot["current"] = None if not members else payload
 
+        elif event_type == EVENT_ACQUISITION_COMPLETENESS_RECORDED:
+            measurement_id = payload.get("measurement_id")
+            import_id = payload.get("import_id")
+            if not isinstance(measurement_id, str) or not isinstance(import_id, str):
+                malformed += 1
+                continue
+            completeness.setdefault(measurement_id, {})[import_id] = payload
+
         else:
             key = event_type if isinstance(event_type, str) else repr(event_type)
             ignored[key] = ignored.get(key, 0) + 1
@@ -1445,6 +1473,7 @@ def build_asset_view(
         "ordered_measurement_ids": ordered,
         "reattributed": reattributed,
         "baselines": baselines,
+        "completeness": completeness,
         "integrity": view_integrity,
         "end_offset": end_offset,
     }

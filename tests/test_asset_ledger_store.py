@@ -1435,6 +1435,7 @@ class TestView:
             "ordered_measurement_ids": [],
             "reattributed": [],
             "baselines": {},
+            "completeness": {},
             "integrity": {
                 **store.read("Q-0").integrity,
                 "ignored_event_types": {},
@@ -1442,3 +1443,45 @@ class TestView:
             },
             "end_offset": 0,
         }
+
+
+class TestCompletenessProjection:
+    """The notes of an import's check result: the latest per measurement and
+    import, in a map of their own, never a measurement."""
+
+    def _note(self, measurement_id, import_id, partial, *, asset=ASSET):
+        return make_event(
+            store_module.EVENT_ACQUISITION_COMPLETENESS_RECORDED,
+            asset,
+            {
+                "measurement_id": measurement_id,
+                "import_id": import_id,
+                "partial_acquisition": partial,
+                "excluded_rows": (
+                    [{"first_line": 2, "last_line": 9, "rows": 8}] if partial else []
+                ),
+            },
+        )
+
+    def test_the_type_is_written_and_projected_apart(self, store):
+        assert store_module.EVENT_ACQUISITION_COMPLETENESS_RECORDED in EVENT_TYPES
+        first, second = "a" * 64, "b" * 64
+        store.append(ASSET, self._note("m1", first, True))
+        store.append(ASSET, self._note("m1", second, False))
+        store.append(ASSET, self._note("m1", first, False))
+        view = store.read_view(ASSET)
+        assert view["measurements"] == {} and view["ordered_measurement_ids"] == []
+        assert view["completeness"]["m1"][first]["partial_acquisition"] is False
+        assert view["completeness"]["m1"][second]["partial_acquisition"] is False
+        assert view["integrity"]["ignored_event_types"] == {}
+
+    def test_a_note_without_its_ids_is_counted_as_malformed(self, store):
+        broken = make_event(
+            store_module.EVENT_ACQUISITION_COMPLETENESS_RECORDED,
+            ASSET,
+            {"measurement_id": "m1", "partial_acquisition": True, "excluded_rows": []},
+        )
+        store.append(ASSET, broken)
+        view = store.read_view(ASSET)
+        assert view["completeness"] == {}
+        assert view["integrity"]["malformed_payloads"] == 1

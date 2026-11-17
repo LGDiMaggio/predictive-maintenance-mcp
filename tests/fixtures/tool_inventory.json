@@ -1829,7 +1829,7 @@
         "$defs": {
           "AttestationInput": {
             "additionalProperties": false,
-            "description": "Who confirmed what: one basis per field path (``time_base``,\n``dialect``, ``data_lines``, ``companion``, ``defaults.acquired_at``,\n``defaults.rpm``, ``defaults.load``, ``defaults.operating_state``,\n``channels[<column>].unit``, ``.scaling``, ``.dc_policy``, ``.binding``),\nthe overrides of file declarations with their reasons, keyed by the same\npaths, and an optional declared_by.",
+            "description": "Who confirmed what: one basis per field path (``time_base``,\n``dialect``, ``data_lines``, ``companion``, ``defaults.acquired_at``,\n``defaults.rpm``, ``defaults.load``, ``defaults.operating_state``,\n``channels[<column>].unit``, ``.scaling``, ``.dc_policy``, ``.binding``),\nthe overrides of file declarations with their reasons, keyed by the same\npaths, the exclusions the user acknowledged, and an optional declared_by.",
             "properties": {
               "bases": {
                 "anyOf": [
@@ -1857,6 +1857,21 @@
                 ],
                 "default": null,
                 "title": "Declared By"
+              },
+              "exclusions": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "$ref": "#/$defs/ExclusionInput"
+                    },
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Exclusions"
               },
               "overrides": {
                 "anyOf": [
@@ -2277,6 +2292,86 @@
               }
             },
             "title": "DialectInput",
+            "type": "object"
+          },
+          "ExclusionInput": {
+            "additionalProperties": false,
+            "description": "One acknowledgment that the import leaves out a block of rows that\ncould be part of the acquisition. Copy source_sha256, import_id,\nfirst_line, last_line and rows from the excluded_data_rows finding of the\nlatest validation of this file and configuration, and give the user's\nreason for leaving these rows out. It applies only together with the\nuser's basis for data_lines, and only while every value matches; after\nany change to the file or the configuration, validate again. Never send an\nacknowledgment the user did not give.",
+            "properties": {
+              "first_line": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "First Line"
+              },
+              "import_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Import Id"
+              },
+              "last_line": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Last Line"
+              },
+              "reason": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Reason"
+              },
+              "rows": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Rows"
+              },
+              "source_sha256": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Source Sha256"
+              }
+            },
+            "title": "ExclusionInput",
             "type": "object"
           },
           "ImportConfiguration": {
@@ -3108,7 +3203,7 @@
         "$defs": {
           "AttestationInput": {
             "additionalProperties": false,
-            "description": "Who confirmed what: one basis per field path (``time_base``,\n``dialect``, ``data_lines``, ``companion``, ``defaults.acquired_at``,\n``defaults.rpm``, ``defaults.load``, ``defaults.operating_state``,\n``channels[<column>].unit``, ``.scaling``, ``.dc_policy``, ``.binding``),\nthe overrides of file declarations with their reasons, keyed by the same\npaths, and an optional declared_by.",
+            "description": "Who confirmed what: one basis per field path (``time_base``,\n``dialect``, ``data_lines``, ``companion``, ``defaults.acquired_at``,\n``defaults.rpm``, ``defaults.load``, ``defaults.operating_state``,\n``channels[<column>].unit``, ``.scaling``, ``.dc_policy``, ``.binding``),\nthe overrides of file declarations with their reasons, keyed by the same\npaths, the exclusions the user acknowledged, and an optional declared_by.",
             "properties": {
               "bases": {
                 "anyOf": [
@@ -3136,6 +3231,21 @@
                 ],
                 "default": null,
                 "title": "Declared By"
+              },
+              "exclusions": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "$ref": "#/$defs/ExclusionInput"
+                    },
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Exclusions"
               },
               "overrides": {
                 "anyOf": [
@@ -3556,6 +3666,86 @@
               }
             },
             "title": "DialectInput",
+            "type": "object"
+          },
+          "ExclusionInput": {
+            "additionalProperties": false,
+            "description": "One acknowledgment that the import leaves out a block of rows that\ncould be part of the acquisition. Copy source_sha256, import_id,\nfirst_line, last_line and rows from the excluded_data_rows finding of the\nlatest validation of this file and configuration, and give the user's\nreason for leaving these rows out. It applies only together with the\nuser's basis for data_lines, and only while every value matches; after\nany change to the file or the configuration, validate again. Never send an\nacknowledgment the user did not give.",
+            "properties": {
+              "first_line": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "First Line"
+              },
+              "import_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Import Id"
+              },
+              "last_line": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Last Line"
+              },
+              "reason": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Reason"
+              },
+              "rows": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Rows"
+              },
+              "source_sha256": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Source Sha256"
+              }
+            },
+            "title": "ExclusionInput",
             "type": "object"
           },
           "ImportConfiguration": {

@@ -34,9 +34,17 @@ Canonical form (schema ``pmm-text-import-config/1``)::
                                "line": 8, ...}
         },
         "overrides": {"channels[3].unit": "header unit is a typo"},
-        "declared_by": "J. Engineer"
+        "declared_by": "J. Engineer",
+        "exclusions": [{"source_sha256": "<64 hex>", "import_id": "<64 hex>",
+                        "first_line": 2, "last_line": 101, "rows": 100,
+                        "reason": "warm-up before the run"}]
       }
     }
+
+``exclusions`` is present only when it acknowledges at least one block of
+rows the data range leaves out, so a configuration without one keeps its
+canonical form and its ``import_digest``. It enters the digest, never the
+``import_id`` it is bound to.
 
 A basis names the user's act, never the server's or the assistant's: a value
 the file states, the data derive, an earlier import or the point declaration
@@ -74,6 +82,7 @@ __all__ = [
     "TRANSPORTS",
     "BASIS_CITATIONS",
     "OVERRIDABLE_FIELDS",
+    "MAX_EXCLUSIONS",
     "ConfigurationError",
     "parse_field",
     "is_caller_asserted",
@@ -168,7 +177,17 @@ OVERRIDABLE_FIELDS: tuple[str, ...] = (
     "defaults.acquired_at",
 )
 
-_ATTESTATION_FIELDS = ("schema", "bases", "overrides", "declared_by")
+_ATTESTATION_FIELDS = ("schema", "bases", "overrides", "declared_by", "exclusions")
+_EXCLUSION_FIELDS = (
+    "source_sha256",
+    "import_id",
+    "first_line",
+    "last_line",
+    "rows",
+    "reason",
+)
+#: Exclusion acknowledgments one configuration may name.
+MAX_EXCLUSIONS = 256
 _CONFIGURATION_FIELDS = ("schema", "interpretation", "attestation")
 _ENTRY_FIELDS = ("basis", "line", "column", "import_id", "declaration_version")
 _PLAIN_FIELDS = ("dialect", "data_lines", "time_base", "companion")
@@ -516,6 +535,14 @@ def _normalize_overrides(
         if parsed is None:
             problems.add(entry_path, "is not a field this version confirms")
             continue
+        if parsed[0] == "data_lines":
+            problems.add(
+                entry_path,
+                "takes no override: rows the data range leaves out are acknowledged "
+                "in attestation.exclusions, bound to this file, this configuration "
+                "and the exact rows",
+            )
+            continue
         if not _check_field(field, parsed, interpretation, problems, for_override=True):
             continue
         if reason is None:
@@ -525,6 +552,103 @@ def _normalize_overrides(
         if text is not None:
             overrides[field] = text
     return overrides
+
+
+def _line_number(value: object) -> Optional[int]:
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value if 1 <= value < _LINE_LIMIT else None
+
+
+def _normalize_exclusions(
+    given: object, path: str, problems: _Problems
+) -> list[dict[str, Any]]:
+    """The exclusion acknowledgments of an attestation, sorted by first line.
+
+    Each names the file (``source_sha256``), the interpretation
+    (``import_id``), the exact block of rows (``first_line``, ``last_line``,
+    ``rows``) and the user's reason; validation decides whether it matches
+    what the file and the configuration leave out."""
+    if given is None:
+        return []
+    if not isinstance(given, list):
+        problems.add(path, f"is {_shown(given)}: pass a list of objects")
+        return []
+    if len(given) > MAX_EXCLUSIONS:
+        problems.add(path, f"names {len(given)} exclusions, over {MAX_EXCLUSIONS}")
+        return []
+    kept: list[dict[str, Any]] = []
+    seen: set[tuple[int, int]] = set()
+    for index, entry in enumerate(given):
+        entry_path = f"{path}[{index}]"
+        if not isinstance(entry, Mapping):
+            problems.add(entry_path, f"is {_shown(entry)}: pass an object")
+            continue
+        valid = True
+        for key in entry:
+            if key not in _EXCLUSION_FIELDS:
+                problems.add(
+                    entry_path, f"has an unknown key {_shown(key)}", kind="unknown_key"
+                )
+                valid = False
+        for key in ("source_sha256", "import_id"):
+            if not is_import_id(entry.get(key)):
+                problems.add(
+                    f"{entry_path}.{key}",
+                    "must be 64 lowercase hexadecimal characters",
+                    kind="missing" if entry.get(key) is None else "invalid",
+                )
+                valid = False
+        first = _line_number(entry.get("first_line"))
+        if first is None:
+            problems.add(f"{entry_path}.first_line", "must be an integer, 1 or more")
+            valid = False
+        last = _line_number(entry.get("last_line"))
+        if last is None or (first is not None and last < first):
+            problems.add(
+                f"{entry_path}.last_line", "must be an integer, not before first_line"
+            )
+            valid = False
+            last = None
+        rows = entry.get("rows")
+        if (
+            isinstance(rows, bool)
+            or not isinstance(rows, int)
+            or rows < 1
+            or (first is not None and last is not None and rows > last - first + 1)
+        ):
+            problems.add(
+                f"{entry_path}.rows",
+                "must be an integer from 1 to the number of lines from first_line "
+                "to last_line",
+            )
+            valid = False
+        reason: Optional[str] = None
+        if entry.get("reason") is None:
+            problems.add(f"{entry_path}.reason", "needs a reason", kind="missing")
+            valid = False
+        else:
+            reason = _free_text(
+                "reason", entry.get("reason"), f"{entry_path}.reason", problems
+            )
+            valid = valid and reason is not None
+        if not valid or first is None or last is None:
+            continue
+        if (first, last) in seen:
+            problems.add(entry_path, f"names lines {first} to {last} twice")
+            continue
+        seen.add((first, last))
+        kept.append(
+            {
+                "source_sha256": entry["source_sha256"],
+                "import_id": entry["import_id"],
+                "first_line": first,
+                "last_line": last,
+                "rows": rows,
+                "reason": reason,
+            }
+        )
+    return sorted(kept, key=lambda item: (item["first_line"], item["last_line"]))
 
 
 def _normalize_attestation(
@@ -588,12 +712,20 @@ def _normalize_attestation(
         declared_by = _free_text(
             "declared_by", declared_by, f"{path}.declared_by", problems
         )
-    return {
+    exclusions = _normalize_exclusions(
+        value.get("exclusions"), f"{path}.exclusions", problems
+    )
+    canonical: dict[str, Any] = {
         "schema": ATTESTATION_SCHEMA,
         "bases": dict(sorted(bases.items())),
         "overrides": dict(sorted(overrides.items())),
         "declared_by": declared_by,
     }
+    if exclusions:
+        # Absent when empty, so every configuration without acknowledgments
+        # keeps its canonical attestation and its import_digest.
+        canonical["exclusions"] = exclusions
+    return canonical
 
 
 def normalize_configuration(configuration: object) -> dict[str, Any]:

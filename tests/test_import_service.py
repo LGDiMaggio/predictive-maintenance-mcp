@@ -6,6 +6,8 @@ signal store is a fresh ``SignalRepository``; the record and ledger
 directories are the autouse sandboxes of ``conftest``.
 """
 
+import copy
+import hashlib
 import os
 from pathlib import Path
 from typing import Any, Optional
@@ -923,3 +925,396 @@ def test_an_attestation_edited_after_validation_is_validate_again(write, repo, s
         )
     assert refused.value.code == "validate_again"
     assert repo.signal_count == 0
+
+
+# ---------------------------------------------------------------------------
+# The check for rows left out of the data range, recorded on every import
+# ---------------------------------------------------------------------------
+
+STATED = {"basis": "user_stated"}
+PARTIAL = {
+    "partial_acquisition": True,
+    "excluded_rows": [{"first_line": 2, "last_line": 51, "rows": 50}],
+}
+NOTHING_LEFT_OUT = {"partial_acquisition": False, "excluded_rows": []}
+PARTIAL_NOTICE = (
+    "This import is recorded as a partial acquisition: lines 2 to 51 (50 rows) could "
+    "be part of the acquisition and are left out as the user acknowledged."
+)
+UPDATED_NOTICE = (
+    "This interpretation was imported before with another result, or none, of the "
+    "check for rows left out of the data range; its stored channels and its import "
+    "record now carry the current result."
+)
+PREDATES = (
+    "was recorded before the check for rows left out of its data range existed, so "
+    "restoring it from its record alone could present a partial acquisition as "
+    "complete. Nothing was stored. Import the file again with validate_signal_import "
+    "and import_signal_file, using the interpretation get_signal_imports shows for "
+    "it; the import keeps this import_id and the signal ids it was stored under."
+)
+
+
+def split_file(write, name: str = "split.csv") -> Path:
+    """400 rows with a blank line on line 52: lines 2 to 51 lie above a data
+    range that starts at line 53."""
+    lines = [header((1,))] + rows(400)
+    lines.insert(51, "")
+    return write(name, corpus.lines_to_bytes(lines))
+
+
+def split_configuration(path: Path, reason: str = "rows before the run") -> dict:
+    conf = configuration(
+        interpretation(data_lines={"first": 53}),
+        {**bases(), "dialect": STATED, "data_lines": STATED},
+    )
+    asked = validate_import(str(path), conf, channel="python_api")
+    assert [(i.code, i.line) for i in asked.issues if i.effect != "notice"] == [
+        ("excluded_data_rows", 2)
+    ]
+    conf["attestation"]["exclusions"] = [
+        {
+            "source_sha256": asked.source_sha256,
+            "import_id": asked.import_id,
+            "first_line": 2,
+            "last_line": 51,
+            "rows": 50,
+            "reason": reason,
+        }
+    ]
+    return conf
+
+
+def check_of(provenance: dict) -> dict:
+    return {key: provenance[key] for key in ("partial_acquisition", "excluded_rows")}
+
+
+def latest_stored(record) -> list[dict]:
+    for event in reversed(record.events):
+        if event.kind == "outcome" and any(
+            item.get("materialized") for item in event.payload["channels"]
+        ):
+            return event.payload["channels"]
+    return []
+
+
+def kinds(record) -> list[str]:
+    return [event.kind for event in record.events]
+
+
+def run(service, path: Path, conf: dict):
+    result = ready(path, conf)
+    return service.import_(
+        str(path), conf, result.import_digest, channel="python_api", transport=None
+    )
+
+
+def seed_predating(
+    path: Path,
+    conf: dict,
+    tmp_path: Path,
+    monkeypatch,
+    recorded: Optional[dict] = None,
+) -> str:
+    """The import record a build before the check wrote for this file and
+    interpretation: imported into a scratch record directory, then written
+    into the real one line by line, its attestation without acknowledgments
+    and its outcome's provenance without the check's keys (or with
+    *recorded* in their place). The signal store starts empty, as after the
+    restart that installs the check."""
+    from predictive_maintenance_mcp.signal_import.attestation import (
+        import_digest as digest_of,
+    )
+
+    real = config.get_import_dir()
+    monkeypatch.setenv("PMM_IMPORT_DIR", str(tmp_path / "older-records"))
+    imported = run(SignalImportService(SignalRepository()), path, conf)
+    older = ImportRecordStore(config.get_import_dir()).read(imported.import_id)
+    monkeypatch.setenv("PMM_IMPORT_DIR", str(real))
+    store = ImportRecordStore(real)
+    store.write_interpretation(
+        older.source_sha256, older.size_bytes, older.interpretation
+    )
+    for event in older.events:
+        payload = copy.deepcopy(event.payload)
+        if event.kind == "attestation":
+            payload["attestation"].pop("exclusions", None)
+            payload["import_digest"] = digest_of(
+                imported.import_id,
+                payload["attestation"],
+                channel=payload["confirmation_channel"],
+                transport=payload["transport"],
+            )
+        if event.kind == "outcome":
+            for item in payload["channels"]:
+                for key in ("partial_acquisition", "excluded_rows"):
+                    item["provenance"].pop(key)
+                if recorded is not None:
+                    item["provenance"].update(copy.deepcopy(recorded))
+        store.append_event(imported.import_id, event.kind, payload)
+    return imported.import_id
+
+
+class TestCheckResult:
+    def test_first_import_records_the_partial_result_everywhere(
+        self, write, repo, service
+    ):
+        from predictive_maintenance_mcp.mcp_tools.import_tools import _record_view
+
+        path = split_file(write)
+        outcome = run(service, path, split_configuration(path))
+        assert outcome.status == "imported"
+        assert outcome.notices == [PARTIAL_NOTICE]
+        info = repo.get_signal_info(outcome.channels[0].signal_id)
+        assert check_of(info["import_provenance"]) == PARTIAL
+        record = service.get_import(outcome.import_id)
+        assert [check_of(item["provenance"]) for item in latest_stored(record)] == [
+            PARTIAL
+        ]
+        view = _record_view(record)
+        assert view.acquisition_completeness.model_dump() == PARTIAL
+        assert [e.model_dump() for e in view.attestations[0].exclusions] == [
+            {
+                "first_line": 2,
+                "last_line": 51,
+                "rows": 50,
+                "reason": "rows before the run",
+            }
+        ]
+
+    def test_a_clean_import_records_that_nothing_was_left_out(
+        self, write, repo, service
+    ):
+        from predictive_maintenance_mcp.mcp_tools.import_tools import _record_view
+
+        path = three_channel_file(write)
+        conf = configuration(interpretation((1, 2, 3)), bases((1, 2, 3)))
+        outcome = run(service, path, conf)
+        assert outcome.notices == []
+        for channel in outcome.channels:
+            info = repo.get_signal_info(channel.signal_id)
+            assert check_of(info["import_provenance"]) == NOTHING_LEFT_OUT
+        record = service.get_import(outcome.import_id)
+        assert all(
+            check_of(item["provenance"]) == NOTHING_LEFT_OUT
+            for item in latest_stored(record)
+        )
+        assert _record_view(record).acquisition_completeness.model_dump() == (
+            NOTHING_LEFT_OUT
+        )
+
+    def test_a_repeat_with_the_same_digest_writes_nothing(self, write, repo, service):
+        path = split_file(write)
+        conf = split_configuration(path)
+        first = run(service, path, conf)
+        record = service.get_import(first.import_id)
+        info = repo.get_signal_info(first.channels[0].signal_id)
+        again = run(service, path, conf)
+        assert again.status == "already_imported"
+        assert again.notices == [PARTIAL_NOTICE]
+        assert kinds(service.get_import(first.import_id)) == kinds(record)
+        assert repo.get_signal_info(first.channels[0].signal_id) == info
+
+    def test_another_reason_appends_one_attestation_and_nothing_else(
+        self, write, repo, service
+    ):
+        from predictive_maintenance_mcp.mcp_tools.import_tools import _record_view
+
+        path = split_file(write)
+        first = run(service, path, split_configuration(path))
+        before = kinds(service.get_import(first.import_id))
+        info = repo.get_signal_info(first.channels[0].signal_id)
+        run(service, path, split_configuration(path, reason="instrument warm-up"))
+        record = service.get_import(first.import_id)
+        assert kinds(record) == before + ["attestation"]
+        assert repo.get_signal_info(first.channels[0].signal_id) == info
+        reasons = [
+            [e.reason for e in view.exclusions]
+            for view in _record_view(record).attestations
+        ]
+        assert reasons == [["rows before the run"], ["instrument warm-up"]]
+
+    def test_a_repeat_after_eviction_stores_the_same_result_again(
+        self, write, repo, service
+    ):
+        path = split_file(write)
+        conf = split_configuration(path)
+        first = run(service, path, conf)
+        before = kinds(service.get_import(first.import_id))
+        repo.clear_all()
+        again = run(service, path, conf)
+        assert again.notices == [PARTIAL_NOTICE]
+        assert (
+            check_of(
+                repo.get_signal_info(first.channels[0].signal_id)["import_provenance"]
+            )
+            == PARTIAL
+        )
+        assert kinds(service.get_import(first.import_id)) == before + ["outcome"]
+
+    def test_a_record_from_before_the_check_is_brought_up_to_date(
+        self, write, repo, service, tmp_path, monkeypatch
+    ):
+        from predictive_maintenance_mcp.mcp_tools.import_tools import _record_view
+
+        path = split_file(write)
+        conf = split_configuration(path)
+        import_id = seed_predating(path, conf, tmp_path, monkeypatch)
+        seeded = service.get_import(import_id)
+        assert _record_view(seeded).acquisition_completeness is None
+        outcome = run(service, path, conf)
+        assert outcome.status == "already_imported"
+        assert outcome.notices == [UPDATED_NOTICE, PARTIAL_NOTICE]
+        assert (
+            check_of(
+                repo.get_signal_info(outcome.channels[0].signal_id)["import_provenance"]
+            )
+            == PARTIAL
+        )
+        record = service.get_import(import_id)
+        assert kinds(record) == kinds(seeded) + ["attestation", "outcome"]
+        assert _record_view(record).acquisition_completeness.model_dump() == PARTIAL
+
+    def test_a_clean_record_from_before_the_check_records_false(
+        self, write, repo, service, tmp_path, monkeypatch
+    ):
+        path = three_channel_file(write)
+        conf = configuration(interpretation((1, 2, 3)), bases((1, 2, 3)))
+        import_id = seed_predating(path, conf, tmp_path, monkeypatch)
+        seeded = kinds(service.get_import(import_id))
+        outcome = run(service, path, conf)
+        assert outcome.notices == [UPDATED_NOTICE]
+        record = service.get_import(import_id)
+        assert kinds(record) == seeded + ["outcome"]
+        assert all(
+            check_of(item["provenance"]) == NOTHING_LEFT_OUT
+            for item in latest_stored(record)
+        )
+
+    def test_a_record_with_another_result_needs_the_current_acknowledgment(
+        self, write, repo, service, tmp_path, monkeypatch
+    ):
+        path = split_file(write)
+        conf = split_configuration(path)
+        other = {
+            "partial_acquisition": True,
+            "excluded_rows": [{"first_line": 2, "last_line": 40, "rows": 39}],
+        }
+        import_id = seed_predating(path, conf, tmp_path, monkeypatch, recorded=other)
+        stale = copy.deepcopy(conf)
+        stale["attestation"]["exclusions"][0].update(last_line=40, rows=39)
+        result = validate_import(str(path), stale, channel="python_api")
+        assert result.outcome == "invalid"
+        assert [i.code for i in result.issues if i.effect == "invalid"] == [
+            "basis_mismatch"
+        ]
+        seeded = kinds(service.get_import(import_id))
+        outcome = run(service, path, conf)
+        assert outcome.notices == [UPDATED_NOTICE, PARTIAL_NOTICE]
+        assert kinds(service.get_import(import_id)) == seeded + [
+            "attestation",
+            "outcome",
+        ]
+
+    def test_a_failed_outcome_append_is_completed_by_the_repeat(
+        self, write, repo, service, tmp_path, monkeypatch
+    ):
+        from predictive_maintenance_mcp.asset_ledger.store import LedgerWriteError
+        from predictive_maintenance_mcp.mcp_tools.import_tools import _record_view
+
+        path = split_file(write)
+        conf = split_configuration(path)
+        import_id = seed_predating(path, conf, tmp_path, monkeypatch)
+        real = ImportRecordStore.append_event
+        failed = {"done": False}
+
+        def once(self, import_id, kind, payload):
+            if kind == "outcome" and not failed["done"]:
+                failed["done"] = True
+                raise LedgerWriteError("the record store could not write the line")
+            return real(self, import_id, kind, payload)
+
+        monkeypatch.setattr(ImportRecordStore, "append_event", once)
+        with pytest.raises(LedgerWriteError):
+            run(service, path, conf)
+        assert repo.signal_count == 1
+        before = kinds(service.get_import(import_id))
+        outcome = run(service, path, conf)
+        assert outcome.notices == [UPDATED_NOTICE, PARTIAL_NOTICE]
+        record = service.get_import(import_id)
+        assert kinds(record) == before + ["outcome"]
+        assert _record_view(record).acquisition_completeness.model_dump() == PARTIAL
+
+    def test_rematerialization_restores_the_recorded_result(self, write, repo, service):
+        path = split_file(write)
+        first = run(service, path, split_configuration(path))
+        recorded = repo.get_signal_info(first.channels[0].signal_id)[
+            "import_provenance"
+        ]
+        repo.clear_all()
+        restored = service.rematerialize(first.import_id)
+        assert restored.status == "rematerialized"
+        assert restored.notices == [PARTIAL_NOTICE]
+        info = repo.get_signal_info(first.channels[0].signal_id)
+        assert info["import_provenance"] == recorded
+
+    def test_rematerialization_of_a_record_from_before_the_check_is_refused(
+        self, write, repo, service, tmp_path, monkeypatch
+    ):
+        path = split_file(write)
+        conf = split_configuration(path)
+        import_id = seed_predating(path, conf, tmp_path, monkeypatch)
+        before = kinds(service.get_import(import_id))
+
+        def never(*args, **kwargs):  # pragma: no cover - must not run
+            raise AssertionError("a file was opened")
+
+        monkeypatch.setattr(
+            "predictive_maintenance_mcp.signal_import.service.open_import_file", never
+        )
+        with pytest.raises(ImportRefused) as refused:
+            service.rematerialize(import_id)
+        assert refused.value.code == "record_predates_row_check"
+        assert str(refused.value) == f"Import {import_id[:12]} {PREDATES}"
+        assert repo.signal_count == 0
+        assert kinds(service.get_import(import_id)) == before
+
+    def test_rematerialization_after_the_record_was_brought_up_to_date(
+        self, write, repo, service, tmp_path, monkeypatch
+    ):
+        path = split_file(write)
+        conf = split_configuration(path)
+        import_id = seed_predating(path, conf, tmp_path, monkeypatch)
+        run(service, path, conf)
+        repo.clear_all()
+        restored = service.rematerialize(import_id)
+        assert restored.notices == [PARTIAL_NOTICE]
+        info = repo.get_signal_info(restored.channels[0].signal_id)
+        assert check_of(info["import_provenance"]) == PARTIAL
+
+    def test_the_record_view_reads_null_without_a_result(
+        self, write, repo, service, tmp_path, monkeypatch
+    ):
+        from predictive_maintenance_mcp.mcp_tools.import_tools import _record_view
+
+        from predictive_maintenance_mcp.signal_import import normalize_configuration
+
+        path = split_file(write)
+        import_id = seed_predating(
+            path, split_configuration(path), tmp_path, monkeypatch
+        )
+        assert (
+            _record_view(service.get_import(import_id)).acquisition_completeness is None
+        )
+        # A record whose interpretation was written but no outcome stored a
+        # channel (an import refused right after its first line).
+        store = ImportRecordStore(config.get_import_dir())
+        data = path.read_bytes()
+        canonical = normalize_configuration(
+            configuration(interpretation(data_lines={"first": 60}), bases())
+        )["interpretation"]
+        written = store.write_interpretation(
+            hashlib.sha256(data).hexdigest(), len(data), canonical
+        )
+        view = _record_view(store.read(written.import_id))
+        assert view.acquisition_completeness is None

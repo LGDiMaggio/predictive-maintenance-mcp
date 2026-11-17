@@ -224,6 +224,18 @@ Fixture history:
   compute_power_spectral_density and compute_spectrogram_stft: nperseg and
   noverlap describe the values used.
   Generated under mcp 2.3.0 and pydantic 2.12.0 (uv.lock).
+- Rows a data range leaves out (2026-11-16): regenerated intentionally:
+  ADDITIVE only. get_signal_imports: each recorded confirmation
+  (ImportAttestationView) gains exclusions (ImportExclusionView: first_line,
+  last_line, rows, reason), and the import record gains the optional
+  acquisition_completeness (ImportAcquisitionView: partial_acquisition and
+  excluded_rows of ExcludedRowsView), null for an outcome recorded before
+  the check. Descriptions only elsewhere, no property, enum value or type
+  changed: import_provenance on load_signal, get_signal_info and
+  generate_test_signal names the check's two keys; get_asset_history names
+  acquisition_completeness on each measurement; inspect_signal_file's
+  reading says its run may continue across damaged rows.
+  Generated under mcp 2.3.0 and pydantic 2.12.0 (uv.lock).
 """
 
 from __future__ import annotations

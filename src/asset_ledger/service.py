@@ -185,6 +185,7 @@ from .snapshot import (
     snapshot_id as compute_snapshot_id,
 )
 from .store import (
+    EVENT_ACQUISITION_COMPLETENESS_RECORDED,
     EVENT_BASELINE_DECLARED,
     EVENT_HEALTH_SNAPSHOT_COMPUTED,
     EVENT_MEASUREMENT_POINT_DECLARED,
@@ -939,6 +940,11 @@ def _describe(exc: BaseException) -> str:
     return text if text else type(exc).__name__
 
 
+class _CompletenessNotRecorded(LedgerError):
+    """The note of an import's check result could not be written: nothing
+    more is written for that measurement in this call."""
+
+
 class _Batch:
     """One :func:`record_measurements` call: store, directories, caches."""
 
@@ -951,6 +957,7 @@ class _Batch:
         provenance_overrides: Optional[Mapping[str, str]],
         import_refs: Optional[Mapping[str, Mapping[str, Any]]] = None,
         holders: Optional[Mapping[str, Sequence[str]]] = None,
+        completeness: Optional[Mapping[str, Mapping[str, Any]]] = None,
     ) -> None:
         self.store = store
         self.data_dir = data_dir
@@ -959,6 +966,7 @@ class _Batch:
         self.provenance_overrides = provenance_overrides
         self.import_refs = dict(import_refs or {})
         self.holders = {key: list(value) for key, value in (holders or {}).items()}
+        self.completeness = dict(completeness or {})
         self.processing_id = compute_processing_id(policy)
         self.states: dict[str, _AssetState] = {}
         self.index: Optional[dict[str, str]] = None
@@ -996,6 +1004,9 @@ class _Batch:
         file_info: Optional[dict[str, Any]] = None
         try:
             file_info = self._file_block(info, identity)
+            # An imported measurement's check result first, so a declaration
+            # recorded by an import never stands without it.
+            self._record_completeness(outcome, signal_id)
             state = self._record_declaration(outcome, declaration, file_info, signal_id)
         except _LEDGER_FAILURES as exc:
             outcome["ledger_status"] = "not_recorded"
@@ -1052,6 +1063,69 @@ class _Batch:
             content_sha256=digest,
             size_bytes=int(size),
         )
+
+    def _record_completeness(self, outcome: dict[str, Any], signal_id: str) -> None:
+        """Append the note of an imported channel's check result, unless this
+        ledger's latest note for the same measurement and import is equal
+        (decided under the lock, after the delta merge). A failed write raises
+        :class:`_CompletenessNotRecorded` with the reason the channel reports."""
+        result = self.completeness.get(signal_id)
+        import_ref = self.import_refs.get(signal_id)
+        if result is None or import_ref is None:
+            return
+        asset_id = outcome["asset_id"]
+        measurement_id = outcome["measurement_id"]
+        import_id = str(import_ref["import_id"])
+        state = self.state_for(asset_id)
+        payload = {
+            "measurement_id": measurement_id,
+            "import_id": import_id,
+            "partial_acquisition": bool(result["partial_acquisition"]),
+            "excluded_rows": [
+                {
+                    "first_line": int(block["first_line"]),
+                    "last_line": int(block["last_line"]),
+                    "rows": int(block["rows"]),
+                }
+                for block in result["excluded_rows"]
+            ],
+        }
+        decided: dict[str, Any] = {}
+
+        def build_event(delta: list[dict[str, Any]]) -> Optional[dict[str, Any]]:
+            state.merge(delta)
+            notes = state.view.get("completeness") or {}
+            if (notes.get(measurement_id) or {}).get(import_id) == payload:
+                return None
+            event = make_event(
+                EVENT_ACQUISITION_COMPLETENESS_RECORDED, asset_id, payload
+            )
+            decided["event"] = event
+            return event
+
+        try:
+            appended = self.store.append_versioned(
+                asset_id, state.end_offset, build_event
+            )
+        except _LEDGER_FAILURES as exc:
+            declared, _ = state.latest_recorded(measurement_id)
+            what = (
+                "the asset ledger could not record whether this import leaves out "
+                f"rows that could be part of the acquisition ({_describe(exc)})"
+            )
+            raise _CompletenessNotRecorded(
+                f"{what}; the measurement's earlier declaration stays as it was, "
+                f"without that record; repeat the import"
+                if declared is not None
+                else f"{what}, so nothing was recorded for this measurement; repeat "
+                f"the import"
+            ) from exc
+        event = decided.get("event")
+        if appended.appended and event is not None:
+            state.appended_versioned(event, appended.offset_after)
+            outcome["event_ids"].append(event["event_id"])
+        else:
+            state.end_offset = appended.offset_after
 
     def _record_declaration(
         self,
@@ -1346,6 +1420,7 @@ def record_measurements(
     provenance_overrides: Optional[Mapping[str, str]] = None,
     import_refs: Optional[Mapping[str, Mapping[str, Any]]] = None,
     holders: Optional[Mapping[str, Sequence[str]]] = None,
+    completeness: Optional[Mapping[str, Mapping[str, Any]]] = None,
 ) -> list[dict[str, Any]]:
     """Record loaded signals in the asset ledger and derive their snapshots.
 
@@ -1371,6 +1446,14 @@ def record_measurements(
         holders: For an import, ``{measurement_id: [asset_id, ...]}``: the
             assets its bounded read of every ledger found holding the
             measurement, which complete the global index when it lags.
+        completeness: For imported channels, ``{signal_id:
+            {"partial_acquisition", "excluded_rows"}}``, the result of the
+            import's check for rows left out of the data range. Each is
+            recorded as an ``acquisition_completeness_recorded`` note before
+            the measurement's declaration (unless the latest note for the same
+            measurement and import is equal), never inside the declaration;
+            when the note cannot be written the channel is ``not_recorded``
+            and nothing more is written for it.
 
     Returns:
         One outcome dict per info, in order, with exactly
@@ -1410,6 +1493,7 @@ def record_measurements(
         provenance_overrides,
         import_refs=import_refs,
         holders=holders,
+        completeness=completeness,
     )
     return [batch.record(info) for info in infos]
 
@@ -3563,6 +3647,15 @@ def _measurement_entry(
     point_id = current.get("measurement_point_id")
     point = _current_point(view, point_id) if isinstance(point_id, str) else None
     assessment = assess_measurement_comparability(dict(current), point)
+    # The check result of the import behind the CURRENT declaration, never a
+    # later note of another import of the same measurement.
+    import_ref = current.get("import_ref")
+    import_id = import_ref.get("import_id") if isinstance(import_ref, dict) else None
+    note = (
+        ((view.get("completeness") or {}).get(measurement_id) or {}).get(import_id)
+        if isinstance(import_id, str)
+        else None
+    )
     return {
         "measurement_id": measurement_id,
         "measurement_point_id": point_id,
@@ -3584,6 +3677,14 @@ def _measurement_entry(
             "grade": assessment["grade"],
             "codes": [str(entry["code"]) for entry in assessment["qualifications"]],
         },
+        "acquisition_completeness": (
+            None
+            if not isinstance(note, dict)
+            else {
+                "partial_acquisition": note.get("partial_acquisition"),
+                "excluded_rows": list(note.get("excluded_rows") or []),
+            }
+        ),
     }
 
 
@@ -3625,9 +3726,13 @@ def asset_history(
         crest_factor, kurtosis, unit from the last snapshot recorded, which
         after a restored declaration may not be the one the assessment
         scores; or None),
-        comparability (grade and codes against the point)}``; the
-        declarations and baselines map each selected point to ``{current,
-        history, history_truncated}``.
+        comparability (grade and codes against the point),
+        acquisition_completeness (``{partial_acquisition, excluded_rows}``
+        from the note of the current declaration's import, or None when that
+        import recorded none: a signal loaded another way or imported before
+        the check; no snapshot or assessment reads it)}``; the declarations
+        and baselines map each selected point to ``{current, history,
+        history_truncated}``.
 
     Raises:
         ValueError: Invalid ids or ``max_measurements`` < 1; ``LedgerError``

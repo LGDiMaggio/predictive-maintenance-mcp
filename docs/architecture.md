@@ -106,7 +106,7 @@ data/ledger/
 └── _measurements.jsonl.lock
 ```
 
-Four event types (`measurement_point_declared`, `measurement_recorded`, `health_snapshot_computed`, `baseline_declared`) share one envelope with a content-derived `event_id`, so a retried write is absorbed as a duplicate. Files are only appended to, never rewritten; a tolerant binary reader reports every integrity problem instead of failing. The ledger holds indicators, declarations and file references (location, SHA-256, size), never waveforms.
+Five event types (`measurement_point_declared`, `measurement_recorded`, `health_snapshot_computed`, `baseline_declared`, `acquisition_completeness_recorded`) share one envelope with a content-derived `event_id`, so a retried write is absorbed as a duplicate. The last one records, for an imported measurement, whether its import leaves out rows that could be part of the acquisition; no snapshot or assessment reads it. Files are only appended to, never rewritten; a tolerant binary reader reports every integrity problem instead of failing. The ledger holds indicators, declarations and file references (location, SHA-256, size), never waveforms.
 
 **Dependency direction**: `mcp_tools` → `asset_ledger` → `signal_acquisition` → `config`, `path_safety`, `signal_validation`. The ledger package also calls the pure engines of `signal_processing`, `diagnostics` and `prognostics`; it never imports the signal repository, `models.py` or MCP, and the ledger directory is resolved at the tool boundary (`config.get_ledger_dir()`) and passed by argument.
 

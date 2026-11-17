@@ -1081,7 +1081,25 @@ class TestLedgerPrecheck:
         early = _bound(first=2)
         early["data_lines"] = {"first": 2, "last": 401}
         early_bases = {**_bound_bases(), "data_lines": {"basis": "user_stated"}}
-        result = validate(path, configuration(early, early_bases))
+        # The rows after the stated last line could be part of the acquisition:
+        # the range asks first, and an acknowledgment of exactly those rows
+        # leaves them out.
+        asked = validate(path, configuration(early, early_bases))
+        assert [(i.code, i.line) for i in asked.issues if i.effect != "notice"] == [
+            ("excluded_data_rows", 402)
+        ]
+        acknowledged = configuration(early, early_bases)
+        acknowledged["attestation"]["exclusions"] = [
+            {
+                "source_sha256": asked.source_sha256,
+                "import_id": asked.import_id,
+                "first_line": 402,
+                "last_line": 1001,
+                "rows": 600,
+                "reason": "only the early window is compared",
+            }
+        ]
+        result = validate(path, acknowledged)
         assert result.outcome == "ready", result.issues
         _record(
             store,
@@ -4746,3 +4764,313 @@ def test_module_writes_nothing():
     flags = re.search(r"_READ_FLAGS = ([^\n]+(?:\n +[^\n]+)*)", source)
     assert flags is not None and "O_RDONLY" in flags.group(1)
     assert not re.search(r"O_(WRONLY|RDWR|CREAT|TRUNC|APPEND|EXCL)", flags.group(1))
+
+
+# ---------------------------------------------------------------------------
+# Rows the data range leaves out: the gate, the acknowledgment, the proofs
+# ---------------------------------------------------------------------------
+
+
+def _split_file(write, name: str = "split.csv") -> Path:
+    """400 rows, a blank line on line 52: lines 2 to 51 lie above a data range
+    that starts at line 53."""
+    lines = ["time [s],acc [g]"] + rows(400)
+    lines.insert(51, "")
+    return write(name, corpus.lines_to_bytes(lines))
+
+
+def _split_interpretation() -> dict[str, Any]:
+    return interpretation(data_lines={"first": 53})
+
+
+def _every_basis(**extra: Any) -> dict[str, Any]:
+    return standard_bases(
+        dialect={"basis": "user_stated"}, data_lines={"basis": "user_stated"}, **extra
+    )
+
+
+def _exclusion(**changes: Any) -> dict[str, Any]:
+    entry = {
+        "source_sha256": "a" * 64,
+        "import_id": "b" * 64,
+        "first_line": 2,
+        "last_line": 4,
+        "rows": 3,
+        "reason": "rows before the run",
+    }
+    entry.update(changes)
+    return entry
+
+
+class TestExcludedRowsGate:
+    def test_malformed_exclusions_are_refused_in_one_message(self):
+        conf = configuration(interpretation(), standard_bases())
+        conf["attestation"]["exclusions"] = [
+            "not an object",
+            {
+                "source_sha256": "XYZ",
+                "import_id": "a" * 63,
+                "first_line": 0,
+                "last_line": True,
+                "rows": 0,
+                "reason": "",
+                "extra": 1,
+            },
+            {**_exclusion(first_line=5, last_line=3, rows=1), "reason": None},
+            _exclusion(),
+            _exclusion(reason="said twice"),
+        ]
+        with pytest.raises(ConfigurationError) as refused:
+            normalize_configuration(conf)
+        problems = [(p.path, p.text) for p in refused.value.problems]
+        hex64 = "must be 64 lowercase hexadecimal characters"
+        assert (
+            "attestation.exclusions[0]",
+            "is 'not an object': pass an object",
+        ) in problems
+        assert ("attestation.exclusions[1]", "has an unknown key 'extra'") in problems
+        assert ("attestation.exclusions[1].source_sha256", hex64) in problems
+        assert ("attestation.exclusions[1].import_id", hex64) in problems
+        assert (
+            "attestation.exclusions[1].first_line",
+            "must be an integer, 1 or more",
+        ) in problems
+        assert (
+            "attestation.exclusions[1].last_line",
+            "must be an integer, not before first_line",
+        ) in problems
+        assert (
+            "attestation.exclusions[1].rows",
+            "must be an integer from 1 to the number of lines from first_line to "
+            "last_line",
+        ) in problems
+        assert any(
+            path == "attestation.exclusions[1].reason"
+            and text.startswith("is refused: ")
+            for path, text in problems
+        )
+        assert (
+            "attestation.exclusions[2].last_line",
+            "must be an integer, not before first_line",
+        ) in problems
+        assert ("attestation.exclusions[2].reason", "needs a reason") in problems
+        assert ("attestation.exclusions[4]", "names lines 2 to 4 twice") in problems
+        for given, text in (
+            ("rows 2 to 4", "is 'rows 2 to 4': pass a list of objects"),
+            (
+                [_exclusion(first_line=n, last_line=n, rows=1) for n in range(1, 258)],
+                "names 257 exclusions, over 256",
+            ),
+        ):
+            conf["attestation"]["exclusions"] = given
+            with pytest.raises(ConfigurationError) as refused:
+                normalize_configuration(conf)
+            assert ("attestation.exclusions", text) in [
+                (p.path, p.text) for p in refused.value.problems
+            ]
+
+    def test_the_acknowledgment_enters_the_digest_and_never_the_identity(self):
+        plain = normalize_configuration(
+            configuration(interpretation(), standard_bases())
+        )
+        empty = configuration(interpretation(), standard_bases())
+        empty["attestation"]["exclusions"] = []
+        assert normalize_configuration(empty) == plain
+        given = configuration(interpretation(), standard_bases())
+        given["attestation"]["exclusions"] = [
+            _exclusion(first_line=9, last_line=9, rows=1),
+            _exclusion(),
+        ]
+        acknowledged = normalize_configuration(given)
+        assert acknowledged["interpretation"] == plain["interpretation"]
+        assert [e["first_line"] for e in acknowledged["attestation"]["exclusions"]] == [
+            2,
+            9,
+        ]
+        identity = compute_import_id("c" * 64, 100, plain["interpretation"])
+        assert import_digest(
+            identity, acknowledged["attestation"], channel="python_api", transport=None
+        ) != import_digest(
+            identity, plain["attestation"], channel="python_api", transport=None
+        )
+
+    def test_the_new_code_is_registered_and_every_emitted_code_is(self, write):
+        from predictive_maintenance_mcp.signal_acquisition.import_config import (
+            ISSUE_CODES,
+        )
+
+        assert ISSUE_CODES[-1] == "excluded_data_rows"
+        path = _split_file(write)
+        result = validate(path, configuration(_split_interpretation(), _every_basis()))
+        emitted = {issue.code for issue in result.issues}
+        assert "excluded_data_rows" in emitted
+        assert emitted <= set(ISSUE_CODES)
+
+    def test_an_unclean_census_never_proves_the_data_range(self, write):
+        path = _split_file(write)
+        bases = _every_basis()
+        bases.pop("data_lines")
+        result = validate(path, configuration(_split_interpretation(), bases))
+        assert result.outcome == "needs_confirmation"
+        assert "missing_basis" in [
+            i.code for i in result.issues if i.field == "data_lines"
+        ]
+        statement = next(s for s in result.statements if s.field == "data_lines")
+        assert "parse this way" not in statement.text
+
+    def test_a_damaged_configured_header_proves_no_dialect(self, write):
+        lines = ["0.5,NaN"] + rows(400)
+        path = write("damaged_header.csv", corpus.lines_to_bytes(lines))
+        result = validate(path, configuration(interpretation(), standard_bases()))
+        assert "missing_basis" in [
+            i.code for i in result.issues if i.field == "dialect"
+        ]
+        clean = standard_file(write, name="clean.csv", header="time,acc")
+        proven = validate(
+            clean,
+            configuration(
+                interpretation(),
+                {
+                    "time_base": {"basis": "user_stated"},
+                    "channels[1].unit": {"basis": "user_stated"},
+                },
+            ),
+        )
+        assert proven.outcome == "ready", proven.issues
+
+    def test_a_damaged_configured_units_line_alone_denies_the_dialect_proof(self):
+        from predictive_maintenance_mcp.signal_import.region_audit import RegionAudit
+        from predictive_maintenance_mcp.signal_import.validation._checks import (
+            _structure_proofs,
+        )
+        from predictive_maintenance_mcp.signal_import.validation._evidence import (
+            _Evidence,
+        )
+
+        interp = interpretation(
+            dialect={
+                "encoding": "utf-8",
+                "delimiter": ",",
+                "decimal": ".",
+                "header_line": 1,
+                "units_line": 2,
+            },
+            data_lines={"first": 3, "last": None},
+        )
+        # The scan agrees with the configured header and units lines, so only
+        # the census's damage check can deny the proof.
+        evidence = _Evidence(
+            header=["time", "acc"],
+            units=["s", "g"],
+            preamble=[],
+            head_rows=[],
+            unique_reading=(",", ".", 3),
+            encoding="utf-8",
+            header_line=1,
+            units_line=2,
+            scanned_structure=(1, 2),
+        )
+        decoded = object()
+
+        def dialect_proven(kinds: dict) -> bool:
+            audit = RegionAudit(None, (), kinds)
+            return _structure_proofs(interp, evidence, decoded, audit)["dialect"]
+
+        assert dialect_proven({}) is True
+        assert dialect_proven({2: "damaged"}) is False
+        assert dialect_proven({1: "damaged"}) is False
+        assert dialect_proven({2: "text"}) is True
+
+    def test_an_annotated_first_sample_left_out_is_never_complete(self, write):
+        data = [f"{row}," for row in rows(400)]
+        lines = ["time,acc,", f"{rows(1)[0]},first sample"] + data[1:]
+        path = write("annotated.csv", corpus.lines_to_bytes(lines))
+        bases = {
+            "time_base": {"basis": "user_stated"},
+            "channels[1].unit": {"basis": "user_stated"},
+            "data_lines": {"basis": "user_stated"},
+        }
+        result = validate(
+            path, configuration(interpretation(data_lines={"first": 3}), bases)
+        )
+        assert result.outcome == "needs_confirmation"
+        found = [i for i in result.issues if i.code == "excluded_data_rows"]
+        assert [(i.effect, i.line) for i in found] == [("needs_confirmation", 2)]
+
+    def test_a_start_at_an_annotated_row_still_asks_about_a_marked_row_above(
+        self, write
+    ):
+        data = list(rows(400))
+        lines = ["time,acc,", f"{data[0]},7", f"{data[1]},first sample"] + [
+            f"{row}," for row in data[2:]
+        ]
+        path = write("annotated_start.csv", corpus.lines_to_bytes(lines))
+        bases = {
+            "time_base": {"basis": "user_stated"},
+            "channels[1].unit": {"basis": "user_stated"},
+            "data_lines": {"basis": "user_stated"},
+        }
+        result = validate(
+            path, configuration(interpretation(data_lines={"first": 3}), bases)
+        )
+        assert result.outcome == "needs_confirmation"
+        found = [i for i in result.issues if i.code == "excluded_data_rows"]
+        assert [(i.effect, i.line) for i in found] == [("needs_confirmation", 2)]
+
+    def test_a_damaged_configured_units_line_proves_no_dialect(self, write):
+        def dialect_issues(units: str) -> list[str]:
+            path = write(
+                f"units_{len(units)}.csv",
+                corpus.lines_to_bytes(["time,acc", units] + rows(400)),
+            )
+            interp = interpretation(
+                dialect={
+                    "encoding": "utf-8",
+                    "delimiter": ",",
+                    "decimal": ".",
+                    "header_line": 1,
+                    "units_line": 2,
+                },
+                data_lines={"first": 3},
+            )
+            bases = {
+                "time_base": {"basis": "user_stated"},
+                "channels[1].unit": {"basis": "user_stated"},
+            }
+            result = validate(path, configuration(interp, bases))
+            return [i.code for i in result.issues if i.field == "dialect"]
+
+        assert "missing_basis" in dialect_issues("0.5,NaN")
+        assert "missing_basis" not in dialect_issues("s,g")
+
+    def test_a_file_rewritten_between_census_and_decode_is_refused(
+        self, write, monkeypatch
+    ):
+        from predictive_maintenance_mcp.signal_import import region_audit
+
+        path = _split_file(write)
+        real = region_audit.census
+
+        def rewrite_after(file, *args, **kwargs):
+            found = real(file, *args, **kwargs)
+            stat = path.stat()
+            os.utime(path, ns=(stat.st_atime_ns, stat.st_mtime_ns + 5_000_000_000))
+            return found
+
+        monkeypatch.setattr(region_audit, "census", rewrite_after)
+        result = validate(path, configuration(_split_interpretation(), _every_basis()))
+        assert result.outcome == "invalid"
+        assert [i.code for i in result.issues if i.effect == "invalid"] == [
+            "source_changed"
+        ]
+
+    def test_file_text_travels_only_in_the_token(self, write):
+        lines = ["time [s],acc [g]"] + rows(400)
+        lines.insert(51, "Section two: <<run 2>>")
+        path = write("sections.csv", corpus.lines_to_bytes(lines))
+        result = validate(path, configuration(_split_interpretation(), _every_basis()))
+        (finding,) = [i for i in result.issues if i.code == "excluded_data_rows"]
+        assert "separated from the data rows by a text line" in finding.message
+        assert finding.token is not None
+        assert finding.token.as_dict()["file_text"] == "Section two: <<run 2>>"
+        assert "Section two" not in finding.message and "<<" not in finding.message

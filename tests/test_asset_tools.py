@@ -778,6 +778,13 @@ class TestGetAssetHistory:
         }
         assert newest["indicators"]["unit"] == "g" and newest["indicators"]["rms"] > 0
         assert newest["comparability"]["grade"] == "comparable"
+        # Loaded by load_signal, not imported: no result of the check for rows
+        # left out is recorded for them, which says nothing about such rows.
+        assert [m["acquisition_completeness"] for m in asset["measurements"]] == [
+            None,
+            None,
+            None,
+        ]
         assert asset["point_declarations"][POINT]["current"]["declaration_version"] == 1
         assert asset["baselines"] == {}
         assert asset["reattributed"] == []

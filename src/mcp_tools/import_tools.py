@@ -39,7 +39,9 @@ from ..signal_import.records import ImportRecord, ImportRecordIndexEntry
 from ..signal_import.service import (
     ImportRefused,
     SignalImportService,
+    check_result,
     record_locations,
+    recorded_channels,
 )
 from ..signal_import.validation import validate_import
 from ._call_origin import (  # noqa: F401 (re-exported for server.main)
@@ -233,18 +235,37 @@ class BasisInput(_Input):
     declaration_version: Optional[int] = None
 
 
+class ExclusionInput(_Input):
+    """One acknowledgment that the import leaves out a block of rows that
+    could be part of the acquisition. Copy source_sha256, import_id,
+    first_line, last_line and rows from the excluded_data_rows finding of the
+    latest validation of this file and configuration, and give the user's
+    reason for leaving these rows out. It applies only together with the
+    user's basis for data_lines, and only while every value matches; after
+    any change to the file or the configuration, validate again. Never send an
+    acknowledgment the user did not give."""
+
+    source_sha256: Optional[str] = None
+    import_id: Optional[str] = None
+    first_line: Optional[int] = None
+    last_line: Optional[int] = None
+    rows: Optional[int] = None
+    reason: Optional[str] = None
+
+
 class AttestationInput(_Input):
     """Who confirmed what: one basis per field path (``time_base``,
     ``dialect``, ``data_lines``, ``companion``, ``defaults.acquired_at``,
     ``defaults.rpm``, ``defaults.load``, ``defaults.operating_state``,
     ``channels[<column>].unit``, ``.scaling``, ``.dc_policy``, ``.binding``),
     the overrides of file declarations with their reasons, keyed by the same
-    paths, and an optional declared_by."""
+    paths, the exclusions the user acknowledged, and an optional declared_by."""
 
     schema_: Optional[str] = Field(None, alias="schema")
     bases: Optional[dict[str, BasisInput]] = None
     overrides: Optional[dict[str, str]] = None
     declared_by: Optional[str] = None
+    exclusions: Optional[list[ExclusionInput]] = None
 
 
 class ImportConfiguration(_Input):
@@ -314,6 +335,15 @@ class ImportIndexItem(_Output):
     unreadable_lines: int = 0
 
 
+class ImportExclusionView(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    first_line: int
+    last_line: int
+    rows: int
+    reason: str
+
+
 class ImportAttestationView(_Output):
     """One confirmation recorded for an import."""
 
@@ -323,6 +353,30 @@ class ImportAttestationView(_Output):
     caller_asserted: Optional[bool] = None
     bases: dict[str, str] = Field(default_factory=dict)
     overrides: list[str] = Field(default_factory=list)
+    exclusions: list[ImportExclusionView] = Field(default_factory=list)
+
+
+class ExcludedRowsView(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    first_line: int
+    last_line: int
+    rows: int
+
+
+class ImportAcquisitionView(_Output):
+    """Whether an import leaves out rows that could be part of the acquisition.
+
+    Attributes:
+        partial_acquisition: True when the import leaves out rows that could be
+            part of the acquisition, as the user acknowledged; false when the
+            check found no such row. Unrelated to a snapshot's snapshot_status.
+        excluded_rows: Each block left out, with its first_line, last_line and
+            rows.
+    """
+
+    partial_acquisition: bool
+    excluded_rows: list[ExcludedRowsView] = Field(default_factory=list)
 
 
 class ImportRecordView(_Output):
@@ -337,6 +391,10 @@ class ImportRecordView(_Output):
             most recent first.
         attestations: Every confirmation recorded, in order.
         channels: Column and signal id per channel of its latest outcome.
+        acquisition_completeness: The result of the check for rows left out of
+            the data range, from its latest outcome; null when that outcome was
+            recorded before the check existed, which says nothing about rows
+            left out.
         unreadable_lines: Later lines that could not be read.
     """
 
@@ -347,6 +405,7 @@ class ImportRecordView(_Output):
     locations: list[FileText] = Field(default_factory=list)
     attestations: list[ImportAttestationView] = Field(default_factory=list)
     channels: list[ImportedChannelEntry] = Field(default_factory=list)
+    acquisition_completeness: Optional[ImportAcquisitionView] = None
     unreadable_lines: list[int] = Field(default_factory=list)
 
 
@@ -418,6 +477,16 @@ def _record_view(record: ImportRecord) -> ImportRecordView:
                     if isinstance(entry, dict)
                 },
                 overrides=sorted(attestation.get("overrides") or {}),
+                exclusions=[
+                    ImportExclusionView(
+                        first_line=entry["first_line"],
+                        last_line=entry["last_line"],
+                        rows=entry["rows"],
+                        reason=entry["reason"],
+                    )
+                    for entry in attestation.get("exclusions") or []
+                    if isinstance(entry, dict)
+                ],
             )
         )
     return ImportRecordView(
@@ -428,7 +497,32 @@ def _record_view(record: ImportRecord) -> ImportRecordView:
         locations=locations,
         attestations=attestations,
         channels=channels,
+        acquisition_completeness=_acquisition_view(record),
         unreadable_lines=list(record.unreadable_lines),
+    )
+
+
+def _acquisition_view(record: ImportRecord) -> Optional[ImportAcquisitionView]:
+    """The check result of the record's latest outcome that stored channels;
+    None when no outcome stored channels or any of them carries no result."""
+    results = [
+        check_result(item.get("provenance"))
+        for item in recorded_channels(record).values()
+    ]
+    first = results[0] if results else None
+    if first is None or any(result != first for result in results):
+        return None
+    partial, excluded = first
+    return ImportAcquisitionView(
+        partial_acquisition=partial,
+        excluded_rows=[
+            ExcludedRowsView(
+                first_line=block["first_line"],
+                last_line=block["last_line"],
+                rows=block["rows"],
+            )
+            for block in excluded
+        ],
     )
 
 

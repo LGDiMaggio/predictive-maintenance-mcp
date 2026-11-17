@@ -1123,3 +1123,288 @@ def test_module_has_no_writer():
         "open(",
     ):
         assert forbidden not in source.replace("open_import_file(", "")
+
+
+# ---------------------------------------------------------------------------
+# Runs continue across damaged rows
+# ---------------------------------------------------------------------------
+
+
+def _plain(count: int = corpus.CORPUS_ROWS, header: str = "time,acc") -> list[str]:
+    return [header] + [corpus._plain_row(row) for row in range(count)]
+
+
+def _header_line(result):
+    found = region(result, "header")
+    return None if found is None else found.first_line
+
+
+class TestRunsAcrossDamagedRows:
+    def test_a_nan_row_inside_the_data_is_reported_not_skipped(self, write):
+        result = inspect_signal_file(str(write("nan.csv", corpus.bad_token("NaN"))))
+        assert result.dialect.proposal.data_first_line == 2
+        assert _header_line(result) == 1
+        bridged = [i for i in result.issues if i.line == 102]
+        assert [(i.code, i.columns) for i in bridged] == [("non_finite_token", [1])]
+        assert bridged[0].message == (
+            "Line 102 lies inside the data rows, and field 1 is not a finite number. "
+            "If field 1 is imported as a channel or a time column, validation refuses "
+            "the data region at this line; re-export the acquisition."
+        )
+        # Lines 2 to 300 of the scanned head, the damaged one not counted.
+        assert result.dialect.proposal.rows == 298
+
+    def test_a_short_row_no_longer_moves_the_start(self, write):
+        result = inspect_signal_file(str(write("short.csv", corpus.short_row())))
+        assert result.dialect.proposal.data_first_line == 2
+        assert _header_line(result) == 1
+
+    def test_one_damaged_row_never_chooses_the_reading(self, write):
+        result = inspect_signal_file(
+            str(write("thousands.csv", corpus.thousands_comma_decimal()))
+        )
+        proposal = result.dialect.proposal
+        assert (proposal.delimiter, proposal.decimal) == (";", ",")
+        assert [(i.code, i.line) for i in result.issues if i.line == 102] == [
+            ("thousands_separator", 102)
+        ]
+
+    @pytest.mark.parametrize("separator", ["", "time,acc"])
+    def test_blank_and_text_lines_still_end_a_run(self, write, separator):
+        lines = _plain()
+        lines.insert(101, separator)
+        result = inspect_signal_file(
+            str(write("split.csv", corpus.lines_to_bytes(lines)))
+        )
+        assert result.dialect.proposal.data_first_line == 103
+
+    @pytest.mark.parametrize(
+        "replace, first",
+        [
+            ({2: "0.000000,NaN"}, 3),
+            ({line: f"{corpus._time(line - 2)},NaN" for line in range(2, 51)}, 51),
+            ({line: "NaN,NaN" for line in range(2, 51)}, 51),
+        ],
+        ids=["first-row", "warm-up", "all-nan"],
+    )
+    def test_damaged_rows_above_the_data_are_never_the_header(
+        self, write, replace, first
+    ):
+        lines = _plain()
+        for line, text in replace.items():
+            lines[line - 1] = text
+        result = inspect_signal_file(
+            str(write("warm.csv", corpus.lines_to_bytes(lines)))
+        )
+        assert result.dialect.proposal.data_first_line == first
+        assert _header_line(result) == 1
+        assert region(result, "preamble") is None
+
+    def test_one_column_nan_rows_above_and_inside(self, write):
+        lines = ["acc"] + [f"{corpus.sample(row, 0):.6f}" for row in range(2048)]
+        lines[1] = "NaN"
+        lines[101] = "NaN"
+        result = inspect_signal_file(
+            str(write("one.csv", corpus.lines_to_bytes(lines)))
+        )
+        assert result.dialect.proposal.data_first_line == 3
+        assert _header_line(result) == 1
+        assert [(i.code, i.line) for i in result.issues if i.line == 102] == [
+            ("non_finite_token", 102)
+        ]
+
+    def test_three_decimal_values_keep_their_reading(self, write):
+        lines = ["a;b"] + [
+            f"{corpus.sample(row, 0):.3f};{corpus.sample(row, 1):.3f}"
+            for row in range(2048)
+        ]
+        lines[500] = "1;2"
+        result = inspect_signal_file(
+            str(write("three.csv", corpus.lines_to_bytes(lines)))
+        )
+        assert result.dialect.status == "proposed"
+        proposal = result.dialect.proposal
+        assert (proposal.delimiter, proposal.decimal) == (";", ".")
+        assert "ambiguous_dialect" not in codes(result)
+
+    def test_the_time_column_keeps_its_physical_lines_past_a_damaged_row(self, write):
+        nan = inspect_signal_file(str(write("nan.csv", corpus.bad_token("NaN"))))
+        time_stats = column(nan, 0).time_stats
+        assert time_stats.rows == 299
+        assert "time_gap" not in time_stats.finding_codes
+        short = inspect_signal_file(str(write("short.csv", corpus.short_row())))
+        assert column(short, 0).time_stats.rows == 100
+
+    def test_many_damaged_rows_stay_within_the_budget(self, write):
+        lines = _plain()
+        for line in range(4, 301, 3):
+            lines[line - 1] = f"{corpus._time(line - 2)},NaN"
+        result = inspect_signal_file(
+            str(write("many.csv", corpus.lines_to_bytes(lines)))
+        )
+        assert result.dialect.proposal.data_first_line == 2
+        bridged = [i for i in result.issues if i.code == "non_finite_token"]
+        assert len(bridged) == 11
+        assert bridged[-1].message == (
+            f"{99 - 10} more rows in the scanned data are damaged in the same way: "
+            f"a field is not a finite number."
+        )
+        assert len(result.model_dump_json().encode("utf-8")) <= OUTPUT_BUDGET_BYTES
+
+    def test_a_lone_clean_row_before_a_damaged_block_starts_no_run(self, write):
+        lines = _plain()
+        for line in range(3, 51):
+            lines[line - 1] = f"{corpus._time(line - 2)},NaN"
+        result = inspect_signal_file(
+            str(write("lone.csv", corpus.lines_to_bytes(lines)))
+        )
+        assert result.dialect.proposal.data_first_line == 51
+
+    def test_an_annotated_first_sample_starts_the_run(self, write):
+        data = [f"{corpus._plain_row(r)}," for r in range(400)]
+        clean = inspect_signal_file(
+            str(write("clean.csv", corpus.lines_to_bytes(["time,acc,"] + data)))
+        )
+        first = list(data)
+        first[0] = f"{corpus._plain_row(0)},first sample"
+        annotated = inspect_signal_file(
+            str(write("first.csv", corpus.lines_to_bytes(["time,acc,"] + first)))
+        )
+        assert annotated.dialect.proposal.data_first_line == 2
+        assert _header_line(annotated) == 1
+        assert annotated.dialect.proposal.rows == clean.dialect.proposal.rows
+        middle = list(data)
+        middle[48] = f"{corpus._plain_row(48)},note"
+        inside = inspect_signal_file(
+            str(write("middle.csv", corpus.lines_to_bytes(["time,acc,"] + middle)))
+        )
+        assert inside.dialect.proposal.data_first_line == 2
+        assert inside.dialect.proposal.rows == clean.dialect.proposal.rows
+
+    def test_a_value_with_its_unit_above_single_field_rows_starts_no_run(self, write):
+        data = [f"{corpus.sample(r, 0):.6f}," for r in range(400)]
+        unit = inspect_signal_file(
+            str(write("unit.csv", corpus.lines_to_bytes(["25600,Hz"] + data)))
+        )
+        assert unit.dialect.proposal.data_first_line == 2
+        assert _header_line(unit) is None
+        headed = inspect_signal_file(
+            str(write("headed.csv", corpus.lines_to_bytes(["acc,"] + data)))
+        )
+        assert headed.dialect.proposal.data_first_line == 2
+        # A note on the first of single-field rows reads the same way: the run
+        # starts after it, validation asks about that row, and the header
+        # stays the header.
+        noted = list(data)
+        noted[0] = f"{corpus.sample(0, 0):.6f},first sample"
+        one = inspect_signal_file(
+            str(write("one_noted.csv", corpus.lines_to_bytes(["acc,"] + noted)))
+        )
+        assert one.dialect.proposal.data_first_line == 3
+        assert _header_line(one) == 1
+        # Rows padded with an always-empty field, or a value of another kind.
+        for name, top in (
+            ("pad", "25600,,Hz"),
+            ("two", "25600,Hz"),
+            ("num", "25600,,2"),
+        ):
+            padded = [f"{corpus.sample(r, 0):.6f},," for r in range(400)]
+            result = inspect_signal_file(
+                str(write(f"{name}.csv", corpus.lines_to_bytes([top] + padded)))
+            )
+            assert result.dialect.proposal.data_first_line == 2, name
+            assert _header_line(result) is None, name
+        # Above rows without a trailing delimiter the line stays the header.
+        plain = [f"{corpus.sample(r, 0):.6f}" for r in range(400)]
+        kept = inspect_signal_file(
+            str(write("plain.csv", corpus.lines_to_bytes(["25600,Hz"] + plain)))
+        )
+        assert kept.dialect.proposal.data_first_line == 2
+        assert _header_line(kept) == 1
+
+    def test_a_number_in_the_empty_last_column_is_an_annotation_too(self, write):
+        data = [f"{corpus._plain_row(r)}," for r in range(400)]
+        clean = inspect_signal_file(
+            str(write("clean.csv", corpus.lines_to_bytes(["time,acc,"] + data)))
+        )
+        marked = list(data)
+        marked[0] = f"{corpus._plain_row(0)},7"
+        marked[48] = f"{corpus._plain_row(48)},3"
+        result = inspect_signal_file(
+            str(write("marked.csv", corpus.lines_to_bytes(["time,acc,"] + marked)))
+        )
+        assert result.dialect.proposal.data_first_line == 2
+        assert _header_line(result) == 1
+        assert result.dialect.proposal.rows == clean.dialect.proposal.rows
+
+    def test_a_value_in_a_column_empty_in_every_row_does_not_split_the_run(self, write):
+        data = [f"{corpus._time(r)},,{corpus.sample(r, 0):.6f}" for r in range(400)]
+        clean = inspect_signal_file(
+            str(write("gap.csv", corpus.lines_to_bytes(["time,,acc"] + data)))
+        )
+        noted = list(data)
+        noted[48] = f"{corpus._time(48)},note,{corpus.sample(48, 0):.6f}"
+        result = inspect_signal_file(
+            str(write("noted.csv", corpus.lines_to_bytes(["time,,acc"] + noted)))
+        )
+        assert result.dialect.proposal.data_first_line == 2
+        assert result.dialect.proposal.rows == clean.dialect.proposal.rows
+
+    def test_a_dated_row_with_a_channel_fewer_does_not_split_the_run(self, write):
+        data = [
+            f"2026-08-20T13:42:00,{corpus.sample(r, 0):.6f},{corpus.sample(r, 1):.6f}"
+            for r in range(400)
+        ]
+        data[98] = "2026-08-20T13:42:00,0.125000"
+        result = inspect_signal_file(
+            str(write("dated.csv", corpus.lines_to_bytes(["date,acc_x,acc_y"] + data)))
+        )
+        assert result.dialect.proposal.data_first_line == 2
+        assert _header_line(result) == 1
+
+    def test_the_count_of_the_rest_is_given_for_each_damage_code(self, write):
+        lines = _plain()
+        damaged = list(range(4, 301, 3))
+        for position, line in enumerate(damaged):
+            value = "NaN" if position < 12 else ""
+            lines[line - 1] = f"{corpus._time(line - 2)},{value}"
+        result = inspect_signal_file(
+            str(write("mixed.csv", corpus.lines_to_bytes(lines)))
+        )
+        assert result.dialect.proposal.data_first_line == 2
+        counts = [i for i in result.issues if "more rows in the scanned" in i.message]
+        assert [(i.code, i.message) for i in counts] == [
+            (
+                "non_finite_token",
+                "2 more rows in the scanned data are damaged in the same way: a field "
+                "is not a finite number.",
+            ),
+            (
+                "non_numeric_token",
+                f"{len(damaged) - 12} more rows in the scanned data are damaged in "
+                f"the same way: a field is an empty field.",
+            ),
+        ]
+
+    def test_the_count_of_the_rest_tells_the_kinds_of_one_code_apart(self, write):
+        lines = _plain()
+        damaged = list(range(4, 301, 3))
+        values = ["NaN"] * 10 + [""] + ["0x10"] * (len(damaged) - 11)
+        for line, value in zip(damaged, values):
+            lines[line - 1] = f"{corpus._time(line - 2)},{value}"
+        result = inspect_signal_file(
+            str(write("kinds.csv", corpus.lines_to_bytes(lines)))
+        )
+        counts = [i for i in result.issues if "in the scanned data" in i.message]
+        assert [(i.code, i.message) for i in counts] == [
+            (
+                "non_numeric_token",
+                "1 more row in the scanned data is damaged in the same way: a field "
+                "is an empty field.",
+            ),
+            (
+                "non_numeric_token",
+                f"{len(damaged) - 11} more rows in the scanned data are damaged in "
+                f"the same way: a field is not a plain decimal number.",
+            ),
+        ]
