@@ -227,9 +227,10 @@ class TestKalmanDegradationState:
         assert result["rul"] == pytest.approx((40.0 - x[0]) / x[1])
 
     @pytest.mark.parametrize(
-        "level, rate", [(10.0, 0.5), (12.0, 0.5), (5.0, 0.0), (5.0, -0.1)]
+        "level, rate",
+        [(10.0, 0.5), (12.0, 0.5), (5.0, 0.0), (5.0, -0.1), (5.0, float("nan"))],
     )
     def test_no_rul_at_the_threshold_or_without_a_rising_rate(self, level, rate):
-        """The boundaries estimate_rul's own outcome predicates copy."""
+        """The boundaries of the outcome decision estimate_rul shares with the estimator."""
         state = {"final_level": level, "final_rate": rate, "covariance": np.eye(2)}
         assert kalman_rul_from_state(state, failure_threshold=10.0) is None

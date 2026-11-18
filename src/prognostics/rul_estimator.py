@@ -20,10 +20,72 @@ RUL is correct.
 from __future__ import annotations
 
 import math
-from typing import Iterable, Sequence
+from typing import Iterable, NamedTuple, Sequence
 
 import numpy as np
 from scipy import stats
+
+
+class ThresholdOutcome(NamedTuple):
+    """Where a degradation model stands against the threshold at the latest measurement."""
+
+    crossed: bool  # the model is at or above the threshold by the latest measurement
+    rising: bool  # the model's rate at the latest measurement is positive
+
+    @property
+    def estimable(self) -> bool:
+        """Whether the model rises and has not crossed, the condition for a time to the threshold.
+
+        The time itself is not checked here: a fit whose numbers overflowed can
+        pass with a time that is not finite.
+        """
+        return self.rising and not self.crossed
+
+
+def threshold_outcome(
+    failure_threshold: float,
+    modelled_last: float,
+    rising: bool,
+    time_to_crossing: float | None = None,
+) -> ThresholdOutcome:
+    """Decide where a model stands against *failure_threshold* at the latest measurement.
+
+    Every estimator here and the estimate_rul tool take this decision from
+    this one function, so they cannot disagree on it.
+
+    A rising fitted curve reports its own time to the threshold, and the
+    crossing is decided on it (zero or negative: reached by the latest
+    measurement), the terms the estimators report their numbers in. Without
+    one, as for a curve that does not rise or a filtered state, the crossing
+    is decided on the model's value at the latest measurement.
+
+    Args:
+        failure_threshold: Indicator limit.
+        modelled_last: The model's value at the latest measurement.
+        rising: Whether the model's rate at the latest measurement is positive.
+        time_to_crossing: A rising fitted curve's time from the latest
+            measurement to the threshold; *None* otherwise.
+    """
+    if time_to_crossing is not None:
+        crossed = time_to_crossing <= 0
+    else:
+        crossed = modelled_last >= failure_threshold
+    return ThresholdOutcome(crossed=crossed, rising=rising)
+
+
+def fit_threshold_outcome(fit: dict, failure_threshold: float) -> ThresholdOutcome:
+    """The outcome of a fit from ``fit_linear_degradation`` or ``fit_exponential_degradation``.
+
+    A fit rises exactly when it reports a crossing time, which it does when
+    its slope (or growth rate) is positive.
+    """
+    time_to_crossing = fit["time_to_crossing"]
+    return threshold_outcome(
+        failure_threshold,
+        fit["fitted_last_value"],
+        rising=time_to_crossing is not None,
+        time_to_crossing=time_to_crossing,
+    )
 
 
 def _validate_series(
@@ -169,7 +231,7 @@ def estimate_rul_linear(
             are not strictly increasing.
     """
     fit = fit_linear_degradation(feature_series, timestamps, failure_threshold)
-    if fit is None or fit["time_to_crossing"] is None or fit["time_to_crossing"] <= 0:
+    if fit is None or not fit_threshold_outcome(fit, failure_threshold).estimable:
         return None
 
     return {
@@ -276,7 +338,7 @@ def estimate_rul_exponential(
         return None
 
     fit = fit_exponential_degradation(feature_series, timestamps, failure_threshold)
-    if fit is None or fit["time_to_crossing"] is None or fit["time_to_crossing"] <= 0:
+    if fit is None or not fit_threshold_outcome(fit, failure_threshold).estimable:
         return None
 
     return {

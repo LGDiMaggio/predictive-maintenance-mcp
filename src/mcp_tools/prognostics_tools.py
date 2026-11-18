@@ -44,10 +44,15 @@ from ..signal_processing.features import extract_time_domain_features
 from ..signal_acquisition.repository import get_repository
 from ._utils import refusal_boundary, resolve_signal
 from ..prognostics import analyze_trend, detect_degradation_onset
-from ..prognostics.kalman_rul import kalman_degradation_state, kalman_rul_from_state
+from ..prognostics.kalman_rul import (
+    kalman_degradation_state,
+    kalman_rul_from_state,
+    kalman_threshold_outcome,
+)
 from ..prognostics.rul_estimator import (
     fit_exponential_degradation,
     fit_linear_degradation,
+    fit_threshold_outcome,
     validate_positive_for_exponential,
 )
 from ..prognostics import indicator_forecast
@@ -88,15 +93,17 @@ class _MethodWording(NamedTuple):
 
     places: str  # subject of "places the indicator at <value>"
     extrapolates: str  # object of "This extrapolates <...>"
-    not_rising: str  # why the model projects no crossing
+    # Why the model projects no crossing. None for linear: its fit is the slope
+    # test's own regression (same values, same timestamps), and that test calls
+    # a trend increasing only when the slope is positive, so a series that
+    # reaches the linear fit always gives a rising line.
+    not_rising: Optional[str] = None
 
 
 _FITTED_LINE = "the fitted linear trend"
 _FITTED_CURVE = "the fitted exponential curve"
 _WORDING = {
-    "linear": _MethodWording(
-        _FITTED_LINE, _FITTED_LINE, f"{_FITTED_LINE} does not rise"
-    ),
+    "linear": _MethodWording(_FITTED_LINE, _FITTED_LINE),
     "exponential": _MethodWording(
         _FITTED_CURVE, _FITTED_CURVE, f"{_FITTED_CURVE} does not rise"
     ),
@@ -273,9 +280,10 @@ def _model_outcome(
 ) -> _ModelOutcome:
     """Fit or filter the series with *method* and place it against the threshold.
 
-    The crossing is decided on each model's own terms (the fitted time to
-    the threshold, or the filtered level), which are the terms the public
-    estimators use, so every estimate keeps their numbers.
+    Whether the model has crossed and whether it rises come from the same
+    outcome functions the public estimators use (``fit_threshold_outcome``,
+    ``kalman_threshold_outcome``), so the tool and the estimators decide
+    alike and every estimate keeps the estimators' numbers.
     """
     if method == "kalman":
         dts = np.diff(t)
@@ -289,6 +297,7 @@ def _model_outcome(
                 "to a regular interval."
             )
         state = kalman_degradation_state(values, sampling_interval=mean_dt)
+        decision = kalman_threshold_outcome(state, failure_threshold)
         estimate = kalman_rul_from_state(state, failure_threshold)
         extra = {}
         if estimate is not None:
@@ -299,8 +308,8 @@ def _model_outcome(
             }
         return _ModelOutcome(
             modelled=state["final_level"],
-            crossed=state["final_level"] >= failure_threshold,
-            rising=state["final_rate"] > 0,
+            crossed=decision.crossed,
+            rising=decision.rising,
             fit_r_squared=None,
             rul=None if estimate is None else float(estimate["rul"]),
             extra=extra,
@@ -310,20 +319,14 @@ def _model_outcome(
         fit_linear_degradation if method == "linear" else fit_exponential_degradation
     )
     fit = fit_series(values, t, failure_threshold)
-    time_to_crossing = fit["time_to_crossing"]
-    rising = time_to_crossing is not None
-    crossed = (
-        time_to_crossing <= 0
-        if rising
-        else fit["fitted_last_value"] >= failure_threshold
-    )
-    estimated = rising and not crossed
+    decision = fit_threshold_outcome(fit, failure_threshold)
+    estimated = decision.estimable
     return _ModelOutcome(
         modelled=fit["fitted_last_value"],
-        crossed=crossed,
-        rising=rising,
+        crossed=decision.crossed,
+        rising=decision.rising,
         fit_r_squared=fit["fit_r_squared"],
-        rul=float(time_to_crossing) if estimated else None,
+        rul=float(fit["time_to_crossing"]) if estimated else None,
         extra=(
             {"estimated_rate": round(fit["slope"], 6)}
             if estimated and method == "linear"
@@ -559,10 +562,14 @@ async def estimate_rul(
             **common,
         )
     if not outcome.rising:
+        if wording.not_rising is None:
+            raise RuntimeError(
+                f"estimate_rul has no wording for a {method} model that does not rise: "
+                "its fit is the slope test's own regression, so it rises whenever "
+                "that test passes"
+            )
         follow_up = "Compare with method='linear' and review the latest measurements."
-        if method == "linear":
-            follow_up = "Review the latest measurements."
-        elif method == "kalman":
+        if method == "kalman":
             follow_up = f"{_KALMAN_OUTCOME_NOTE} {follow_up}"
         return RULEstimationResult(
             status="model_not_rising",

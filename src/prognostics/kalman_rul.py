@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import numpy as np
 
+from .rul_estimator import ThresholdOutcome, threshold_outcome
+
 
 def kalman_degradation_state(
     feature_series: list[float],
@@ -91,6 +93,17 @@ def kalman_degradation_state(
     return {"final_level": float(x[0]), "final_rate": float(x[1]), "covariance": P}
 
 
+def kalman_threshold_outcome(state: dict, failure_threshold: float) -> ThresholdOutcome:
+    """The outcome of a state from ``kalman_degradation_state``.
+
+    The crossing is decided on the filtered level, and the filter rises when
+    its rate at the latest measurement is positive.
+    """
+    return threshold_outcome(
+        failure_threshold, state["final_level"], rising=state["final_rate"] > 0
+    )
+
+
 def kalman_rul_from_state(state: dict, failure_threshold: float) -> dict | None:
     """Extrapolate a filtered state linearly to *failure_threshold*.
 
@@ -115,17 +128,14 @@ def kalman_rul_from_state(state: dict, failure_threshold: float) -> dict | None:
         Returns *None* when the filtered level is already at or above the
         threshold, or the filtered rate is not positive.
     """
+    # No RUL when the filtered level has reached the threshold or the rate
+    # is not rising (the decision estimate_rul's outcomes rest on as well).
+    if not kalman_threshold_outcome(state, failure_threshold).estimable:
+        return None
+
     final_level = state["final_level"]
     final_rate = state["final_rate"]
     P = state["covariance"]
-
-    # Threshold already exceeded.
-    if final_level >= failure_threshold:
-        return None
-
-    # Cannot estimate RUL if degradation is not progressing.
-    if final_rate <= 0:
-        return None
 
     # Extrapolate: RUL = (threshold - level) / rate.
     rul = (failure_threshold - final_level) / final_rate
