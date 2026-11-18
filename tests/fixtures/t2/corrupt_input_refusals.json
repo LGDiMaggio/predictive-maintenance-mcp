@@ -1,0 +1,25 @@
+{
+  "about": "Characterization of today's outputs, not a requirement. A difference means the output changed: regenerate with T2_CHARACTERIZATION_WRITE=1 and review the change. The anomaly family's strings are left out.",
+  "case": "corrupt_input_refusals",
+  "description": "rpm 0 through both tools; a NaN sample and fs 0 through the pipeline",
+  "observed": {
+    "rpm_zero": {
+      "diagnose_vibration": {
+        "type": "InvalidInputError",
+        "message": "rpm must be positive and finite (rpm > 0), got 0.0 (from the rpm parameter) — pass the measured shaft speed in revolutions per minute, or omit rpm when it is unknown; do not estimate one."
+      },
+      "generate_diagnostic_report": {
+        "type": "InvalidInputError",
+        "message": "rpm must be positive and finite (rpm > 0), got 0.0 (from the rpm parameter) — pass the measured shaft speed in revolutions per minute; do not estimate one, and ask for it when it is unknown."
+      }
+    },
+    "nan_sample_pipeline": {
+      "type": "InvalidInputError",
+      "message": "signal contains 1 non-finite sample(s) (NaN or infinity) out of 20000; first at sample index 100 — re-export or re-acquire the capture, or cut it at the source to a contiguous run of valid samples; filling, interpolating or deleting individual samples is not a fix, because it invents a measurement or shifts every later sample in time."
+    },
+    "fs_zero_pipeline": {
+      "type": "InvalidInputError",
+      "message": "fs must be positive and finite (fs > 0), got 0.0 — pass the sampling frequency the signal was acquired at, in Hz."
+    }
+  }
+}

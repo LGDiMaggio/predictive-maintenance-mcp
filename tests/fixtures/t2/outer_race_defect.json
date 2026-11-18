@@ -1,0 +1,109 @@
+{
+  "about": "Characterization of today's outputs, not a requirement. A difference means the output changed: regenerate with T2_CHARACTERIZATION_WRITE=1 and review the change. The anomaly family's strings are left out.",
+  "case": "outer_race_defect",
+  "description": "Synthetic outer-race defect of a 6205 at -15 dB SNR",
+  "observed": {
+    "diagnose_vibration": {
+      "overall_diagnosis": "ISO Severity: Zone D (Unacceptable) — RMS velocity 34.10 mm/s. Dominant frequency: 29.9 Hz (shaft: 29.9 Hz). The strongest line of the spectrum is at 1.00 times the declared shaft frequency (within 10 % of 1x). Its dominance does not identify a fault, and it is not counted as a finding. This check cannot distinguish the 1x response of a machine in normal condition from unbalance, a bent or bowed rotor, eccentricity, misalignment, mechanical looseness or a soft foot, a worn or damaged coupling, a resonance near running speed, vibration transmitted from another machine, or a component at the electrical supply frequency, which lies close to 1x on a two-pole motor. Narrowing these down needs more than this check, such as a finer analysis of the line's frequency, a baseline from the same machine at the same condition, phase, a second radial or an axial channel, or several speeds. Establishing a cause needs a physical check of the machine. Another analysis that reads this same line of the same signal repeats the observation and does not corroborate it. Bearing analysis: The envelope evidence of this single spectrum is consistent with an outer-race defect: the outer-race line (BPFO) at 107.40 Hz stands 15.8 dB above the local noise floor. The line test assumes the record's background is random measurement noise, which this single acquisition does not verify; the result is not a confirmed fault. Combined evidence across the analyses that ran: strong. It counts findings, is not a probability, and does not identify or confirm a fault type.",
+      "recommendations": [
+        "IMMEDIATE ACTION: Stop machine and inspect.",
+        "Bearing 6205: confirm the single-spectrum indication with a comparable measurement or an inspection of the outer race."
+      ],
+      "evidence_strength": "strong",
+      "bearing_check": {
+        "status": "assessed",
+        "reason_code": null,
+        "reason": null,
+        "remedy": null
+      },
+      "claim": {
+        "level": "single_spectrum_evidence",
+        "conditions": []
+      },
+      "iso_status": "assessed",
+      "iso_zone": "D",
+      "parameter_sources": {
+        "rpm": "explicit",
+        "bearing_id": "explicit",
+        "machine_group": "default",
+        "support_type": "default"
+      }
+    },
+    "generate_diagnostic_report": {
+      "verdict": "The envelope evidence of this single spectrum is consistent with an outer-race defect: the outer-race line (BPFO) at 107.40 Hz stands 15.8 dB above the local noise floor. The line test assumes the record's background is random measurement noise, which this single acquisition does not verify; the result is not a confirmed fault. Bearing 6205: confirm the single-spectrum indication with a comparable measurement or an inspection of the outer race.",
+      "fault_canonical": "outer_race",
+      "evidence_strength": "strong",
+      "evidence_strength_note": "Evidence strength counts the findings of the analyses that ran, a bearing finding once. It is not a confidence score, it is not a probability, and it does not identify or confirm a fault type.",
+      "bearing_check": {
+        "status": "assessed",
+        "reason_code": null,
+        "reason": null,
+        "remedy": null
+      },
+      "statements": [
+        "The envelope evidence of this single spectrum is consistent with an outer-race defect: the outer-race line (BPFO) at 107.40 Hz stands 15.8 dB above the local noise floor. The line test assumes the record's background is random measurement noise, which this single acquisition does not verify; the result is not a confirmed fault. Bearing 6205: confirm the single-spectrum indication with a comparable measurement or an inspection of the outer race.",
+        "ISO 20816-3: RMS velocity 34.10 mm/s places this machine in Zone D (Unacceptable) for machine group 2 on a rigid support. Vibration severity may cause damage. Immediate action required!",
+        "Envelope line test for bearing 6205 at 29.9 Hz shaft speed. The outer-race line (BPFO) at 107.40 Hz stands 15.8 dB above the local noise floor, and further lines of its kinematics also stand above the floor in the same spectrum. The inner-race line (BPFI) does not stand above the local noise floor in this record and band. The rolling-element line (2 x BSF) does not stand above the local noise floor in this record and band. The cage line (FTF) does not stand above the local noise floor in this record and band.",
+        "The largest share of STFT energy is in the 2000-5000 Hz band (51% of the total). This percentage describes the measured signal and does not identify a fault. The relative distribution across frequency bands can change with the measured physical quantity (for example, acceleration versus velocity).",
+        "above the floor, corroborated",
+        "not above the floor",
+        "No healthy baseline was supplied for this machine, so the readings below are absolute rather than relative. Whether this condition is new, stable, or worsening cannot be determined from a single acquisition.",
+        "Lines counted for the outer-race line (BPFO): the line at 107.40 Hz (15.8 dB above the local noise floor), with harmonic 2 at 214.70 Hz (14.2 dB). Each stands above the local noise floor of this spectrum in its line test: the tested lines share a nominal false-alarm level of 1 % per check, and each further line is tested at 1 %. Lines of one spectrum are not independent evidence and do not confirm a fault.",
+        "Dominant frequency in the raw spectrum: 29.9 Hz.",
+        "Evidence strength counts the findings of the analyses that ran, a bearing finding once. It is not a confidence score, it is not a probability, and it does not identify or confirm a fault type.",
+        "Immediate shutdown recommended",
+        "Vibration levels are unacceptable and may cause damage. Immediate shutdown and inspection recommended.",
+        "ISO Zone D is classified as unacceptable.",
+        "Bearing 6205: confirm the single-spectrum indication with a comparable measurement or an inspection of the outer race.",
+        "Single-spectrum envelope evidence is not a confirmed fault; this step confirms or excludes it.",
+        "The envelope evidence of this single spectrum is consistent with an outer-race defect: the outer-race line (BPFO) at 107.40 Hz stands 15.8 dB above the local noise floor. The line test assumes the record's background is random measurement noise, which this single acquisition does not verify; the result is not a confirmed fault.",
+        "Envelope spectrum with the FTF, BPFO, BSF and BPFI search windows overlaid. Each shaded band is the ±5% window around the line its check tests (2 x BSF for the rolling element). A peak inside a window is not a finding by itself: the check counts a line only when it stands above the local noise floor and a further line it predicts does too. The emphasised window (BPFO) holds the candidate line of the bearing statement in this report."
+      ],
+      "recommendations": [
+        {
+          "action": "Immediate shutdown recommended",
+          "urgency": "critical",
+          "description": "Vibration levels are unacceptable and may cause damage. Immediate shutdown and inspection recommended.",
+          "motivation": "ISO Zone D is classified as unacceptable.",
+          "evidence": [
+            "ISO 20816-3: RMS velocity 34.10 mm/s places this machine in Zone D (Unacceptable) for machine group 2 on a rigid support. Vibration severity may cause damage. Immediate action required!"
+          ]
+        },
+        {
+          "action": "Bearing 6205: confirm the single-spectrum indication with a comparable measurement or an inspection of the outer race.",
+          "urgency": "medium",
+          "description": "Single-spectrum envelope evidence is not a confirmed fault; this step confirms or excludes it.",
+          "motivation": "The envelope evidence of this single spectrum is consistent with an outer-race defect: the outer-race line (BPFO) at 107.40 Hz stands 15.8 dB above the local noise floor. The line test assumes the record's background is random measurement noise, which this single acquisition does not verify; the result is not a confirmed fault.",
+          "evidence": [
+            "Envelope line test for bearing 6205 at 29.9 Hz shaft speed. The outer-race line (BPFO) at 107.40 Hz stands 15.8 dB above the local noise floor, and further lines of its kinematics also stand above the floor in the same spectrum. The inner-race line (BPFI) does not stand above the local noise floor in this record and band. The rolling-element line (2 x BSF) does not stand above the local noise floor in this record and band. The cage line (FTF) does not stand above the local noise floor in this record and band."
+          ]
+        }
+      ],
+      "provenance": {
+        "signal_id": "t2_outer_race_defect",
+        "rpm": 1797.0,
+        "bearing_id": "6205",
+        "machine_group": 2,
+        "support_type": "rigid"
+      }
+    },
+    "report_path": {
+      "pipeline_evidence_strength": [
+        "strong"
+      ],
+      "block_status": {
+        "iso": "assessed",
+        "bearing_match": "assessed",
+        "spectral_energy": "assessed"
+      },
+      "baseline_comparison": {
+        "status": "absent",
+        "statement": "No healthy baseline was supplied for this machine, so the readings below are absolute rather than relative. Whether this condition is new, stable, or worsening cannot be determined from a single acquisition.",
+        "remedy": "Re-run the diagnosis with a baseline signal id from the same machine in a known-good state."
+      },
+      "iso_standard_note": "Zone boundaries from ISO 10816-3:2009 (four-zone A-D scheme). ISO 20816-3:2022 supersedes that edition and merges zones A and B; the A/B boundary is kept here for practitioner familiarity.",
+      "disagreements": [],
+      "statements_missing_from_html": []
+    }
+  }
+}

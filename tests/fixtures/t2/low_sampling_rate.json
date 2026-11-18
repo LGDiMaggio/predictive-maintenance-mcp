@@ -1,0 +1,36 @@
+{
+  "about": "Characterization of today's outputs, not a requirement. A difference means the output changed: regenerate with T2_CHARACTERIZATION_WRITE=1 and review the change. The anomaly family's strings are left out.",
+  "case": "low_sampling_rate",
+  "description": "White noise at fs 1000 Hz, catalog bearing 6205",
+  "observed": {
+    "diagnose_vibration": {
+      "overall_diagnosis": "ISO Severity: not assessed — ISO assessment not possible: at fs=1000 Hz the usable upper band edge 475 Hz (0.95 x Nyquist 500 Hz) does not reach the 1000 Hz top of the ISO 20816-3 evaluation band — the 10-1000 Hz band would be only partially covered. Re-acquire the signal at fs >= 2106 Hz. Dominant frequency: 134.2 Hz (shaft: 25.0 Hz). Bearing analysis: not computed. At fs=1000 Hz the envelope band of the bearing check, from 500 Hz to just below the Nyquist frequency (500 Hz), is empty, so no envelope spectrum could be computed for bearing '6205'. No bearing check ran, so this diagnosis says nothing about the condition of the bearing. Combined evidence across the analyses that ran: none. It counts findings, is not a probability, and does not identify or confirm a fault type.",
+      "recommendations": [
+        "Resolve the condition in 'reason' — e.g. re-acquire the signal at fs >= 2106 Hz so the full ISO 20816-3 evaluation band (up to 1 kHz) is covered — then re-run the diagnosis. The spectral/bearing/anomaly blocks in this result are unaffected.",
+        "Re-acquire the signal at a higher sampling rate, then re-run the diagnosis. The envelope band of the bearing check runs from 500 Hz to just below half the sampling rate: it is empty at 1002 Hz or less, and it reaches its full width, 500 to 5000 Hz, only above 10 kHz."
+      ],
+      "evidence_strength": "none",
+      "bearing_check": {
+        "status": "not_computed",
+        "reason_code": "envelope_band_unusable",
+        "reason": "At fs=1000 Hz the envelope band of the bearing check, from 500 Hz to just below the Nyquist frequency (500 Hz), is empty, so no envelope spectrum could be computed for bearing '6205'.",
+        "remedy": "Re-acquire the signal at a higher sampling rate, then re-run the diagnosis. The envelope band of the bearing check runs from 500 Hz to just below half the sampling rate: it is empty at 1002 Hz or less, and it reaches its full width, 500 to 5000 Hz, only above 10 kHz."
+      },
+      "claim": null,
+      "iso_status": "refused",
+      "iso_zone": null,
+      "parameter_sources": {
+        "rpm": "explicit",
+        "bearing_id": "explicit",
+        "machine_group": "default",
+        "support_type": "default"
+      }
+    },
+    "generate_diagnostic_report": {
+      "refused": {
+        "type": "ValueError",
+        "message": "Invalid bandpass band: filter_high=499 Hz must be greater than filter_low=500 Hz — re-specify the band edges in (low, high) order."
+      }
+    }
+  }
+}

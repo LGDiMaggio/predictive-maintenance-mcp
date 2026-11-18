@@ -1,0 +1,10 @@
+{
+  "about": "Characterization of today's outputs, not a requirement. A difference means the output changed: regenerate with T2_CHARACTERIZATION_WRITE=1 and review the change. The anomaly family's strings are left out.",
+  "case": "composer_baseline_other_bearing",
+  "description": "The advisory's baseline comparison against a baseline analysed for 6203",
+  "observed": {
+    "status": "refused",
+    "statement": "Baseline comparison was refused: the signal was analysed against bearing '6205' and the baseline against '6203'. A delta between measurements taken under different conditions would look like a change in machine condition.",
+    "remedy": "Supply a baseline acquired from the same measurement point under the same declared conditions."
+  }
+}
