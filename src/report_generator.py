@@ -8,8 +8,11 @@ Reports are saved in the reports/ directory as:
     Requires ``python-docx``: ``pip install predictive-maintenance-mcp[docx]``
 """
 
+import contextlib
 import itertools
 import logging
+import sys
+import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Any, Optional, List, Sequence
@@ -45,12 +48,69 @@ except ImportError:
 
 # Optional PDF support. The PDF rendering converts the SAME HTML document the
 # HTML rendering writes, so the two cannot diverge in what they claim.
-try:
-    from weasyprint import HTML as WeasyHTML
+_PDF_MISSING_PACKAGE = (
+    "PDF rendering requires the optional dependency: "
+    "pip install predictive-maintenance-mcp[pdf]. The HTML rendering "
+    "needs nothing extra."
+)
+_PDF_MISSING_NATIVE_LIBRARIES = (
+    "PDF rendering is unavailable: WeasyPrint is installed but cannot load "
+    "its native libraries (Pango and the libraries it depends on). Install "
+    "them following WeasyPrint's installation instructions for this "
+    "platform, then restart the server. The HTML rendering needs nothing "
+    "extra."
+)
 
-    HAS_PDF = True
-except ImportError:  # pragma: no cover - exercised by the missing-dep path
-    HAS_PDF = False
+
+def _is_native_library_load_failure(exc: OSError) -> bool:
+    """Tell cffi failing to load a shared library apart from any other OSError.
+
+    WeasyPrint loads Pango and the libraries it depends on through cffi's
+    ``dlopen``. When one cannot be loaded, cffi raises a plain ``OSError``
+    from its own code, so the innermost frame lies in the ``cffi`` package
+    (seen on Linux and Windows). A subclass such as ``PermissionError`` or
+    ``FileNotFoundError``, or an ``OSError`` raised anywhere else, is a
+    different failure.
+    """
+    if type(exc) is not OSError:
+        return False
+    frames = traceback.extract_tb(exc.__traceback__)
+    return bool(frames) and Path(frames[-1].filename).parent.name == "cffi"
+
+
+def _load_weasyprint() -> tuple[Any, Optional[str], Optional[BaseException]]:
+    """Import WeasyPrint's ``HTML`` class, or say why PDF rendering is unavailable.
+
+    Exactly two failures mean "unavailable": the Python package is not
+    installed (``ImportError``), or it is installed but cffi cannot load its
+    native libraries (``_is_native_library_load_failure``). Every other
+    exception propagates unchanged, including an ``OSError`` that is not such
+    a load failure.
+
+    WeasyPrint prints a notice to stdout before it raises that load failure,
+    and stdout carries the MCP protocol when the server runs over stdio. So
+    ``sys.stdout`` points at stderr for the import statement only: it is
+    restored as soon as the import returns or raises, before any transport
+    takes over stdout.
+
+    Returns:
+        ``(HTML class, None, None)`` when WeasyPrint loads, otherwise
+        ``(None, message for the PDF refusal, the exception raised)``.
+    """
+    try:
+        with contextlib.redirect_stdout(sys.stderr):
+            from weasyprint import HTML
+    except ImportError as exc:
+        return None, _PDF_MISSING_PACKAGE, exc
+    except OSError as exc:
+        if not _is_native_library_load_failure(exc):
+            raise
+        return None, _PDF_MISSING_NATIVE_LIBRARIES, exc
+    return HTML, None, None
+
+
+WeasyHTML, _PDF_UNAVAILABLE_MESSAGE, _PDF_IMPORT_ERROR = _load_weasyprint()
+HAS_PDF = WeasyHTML is not None
 
 
 #: Process-local sequence for report filenames — the Windows clock can
@@ -438,7 +498,8 @@ def save_integrated_diagnostic_report(
 
     Raises:
         ValueError: If a format is unknown, or if 'pdf' is requested and the
-            optional PDF dependency is not installed.
+            optional PDF dependency is not installed or cannot load its
+            native libraries. Nothing is written in that case.
     """
     from .decision_support.advisory import collect_statements
     from .integrated_report import create_integrated_diagnostic_report
@@ -451,10 +512,8 @@ def save_integrated_diagnostic_report(
         )
     if "pdf" in requested and not HAS_PDF:
         raise ValueError(
-            "PDF rendering requires the optional dependency: "
-            "pip install predictive-maintenance-mcp[pdf]. The HTML rendering "
-            "needs nothing extra."
-        )
+            _PDF_UNAVAILABLE_MESSAGE or _PDF_MISSING_PACKAGE
+        ) from _PDF_IMPORT_ERROR
 
     generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     html = create_integrated_diagnostic_report(
