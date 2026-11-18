@@ -277,6 +277,37 @@ CONFIGURATIONS.update(
 )
 
 
+#: Fixtures with one damaged row inside the data region: their draft,
+#: completed with only the rate and the unit (the route on which they once
+#: imported with the earlier rows left out), must refuse the damaged line.
+DRAFT_ROUTE_FIXTURES = frozenset(
+    {"H05a", "H05b", "H07a", "H07b"}
+    | {
+        fixture_id
+        for fixture_id in CATALOG
+        if fixture_id.startswith("H06-") and fixture_id != "H06-arabic_indic"
+    }
+)
+
+
+def draft_route_configuration(draft: dict[str, Any]) -> dict[str, Any]:
+    """The inspection's draft with a stated rate, the time column and the
+    acceleration channel, confirmed by the rate and unit bases alone."""
+    interpretation = copy.deepcopy(draft["interpretation"])
+    interpretation["time_base"] = _stated_rate()
+    interpretation["time_columns"] = [{"column": 0, "time_unit": "s"}]
+    interpretation["defaults"] = {}
+    interpretation["channels"] = [_channel(1)]
+    return {
+        "schema": draft["schema"],
+        "interpretation": interpretation,
+        "attestation": {
+            "bases": {"time_base": STATED, "channels[1].unit": STATED},
+            "overrides": {},
+        },
+    }
+
+
 def _untimed_configuration(
     dialect: dict[str, Any], first: int, columns: tuple[int, ...]
 ) -> Callable[[], dict[str, Any]]:
@@ -371,6 +402,10 @@ def observe(fixture: CorpusFixture, folder: Path) -> dict[str, Any]:
     if inspected.status == "importable":
         draft = configure_import(inspected)
         observed["draft"], _ = validate_or_refuse(path, draft.configuration)
+        if fixture.fixture_id in DRAFT_ROUTE_FIXTURES:
+            observed["draft_route"], _ = validate_or_refuse(
+                path, draft_route_configuration(draft.configuration)
+            )
     build = CONFIGURATIONS.get(fixture.fixture_id)
     if build is not None:
         configured, result = validate_or_refuse(path, build())
@@ -579,6 +614,15 @@ async def _drive_through_mcp(
         else:
             assert not draft.is_error, draft.content
             assert validation_summary(draft.structured_content) == want["draft"]
+    if "draft_route" in want:
+        completed = draft_route_configuration(body["draft"]["configuration"])
+        routed = await tool(
+            client,
+            "validate_signal_import",
+            {"filepath": str(path), "config": completed},
+        )
+        assert not routed.is_error, routed.content
+        assert validation_summary(routed.structured_content) == want["draft_route"]
     if "configured" not in want:
         return
     conf = CONFIGURATIONS[fixture.fixture_id]()

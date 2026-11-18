@@ -10,7 +10,7 @@ writes anywhere.
 """
 
 import math
-from typing import Any, Mapping, Optional
+from typing import Any, Mapping, Optional, Sequence
 
 from ...file_text import LABEL_CHARS, TOKEN_CHARS, FileText
 from ...signal_acquisition.import_config import scaling_divisor
@@ -18,7 +18,8 @@ from ...signal_acquisition.text_decoder import DecodeResult
 from .. import statements as st
 from ..contracts import ValidatedChannel
 from ..inspection import HEAD_TOKENS
-from ._common import _Run, _citation, _origin
+from ..region_audit import ExcludedBlock
+from ._common import _Run, _citation, _delimiter_words, _origin
 from ._evidence import _Evidence, _Preamble, _unit_token
 
 
@@ -35,22 +36,39 @@ def _head_tokens(evidence: _Evidence, column: int) -> list[FileText]:
 
 
 def _structure_statements(
-    run: _Run, decode: DecodeResult, proofs: Mapping[str, bool]
+    run: _Run,
+    decode: DecodeResult,
+    proofs: Mapping[str, bool],
+    excluded: Sequence[ExcludedBlock] = (),
 ) -> None:
+    """The dialect and data-range statements. A proven statement says only
+    what was checked; a data range that leaves acknowledged rows out says so,
+    and the proven clause never appears for it (it needs a basis)."""
     dialect = run.interpretation["dialect"]
-    delimiter = {"tab": "a tab", "whitespace": "runs of spaces"}.get(
-        dialect["delimiter"], f"'{dialect['delimiter']}'"
+    delimiter = _delimiter_words(dialect["delimiter"])
+    note = (
+        st.partial_acquisition_note([b.as_range() for b in excluded])
+        if excluded
+        else ""
     )
-    for path, text in (
+    for path, text, proof, extra in (
         (
             "dialect",
             f"The file is read as {dialect['encoding']} text with {delimiter} "
             f"between fields and '{dialect['decimal']}' as the decimal mark",
+            "the configured data rows parse this way, and no other reading of the "
+            "scanned rows does.",
+            "",
         ),
         (
             "data_lines",
             f"The data rows are lines {decode.first_line} to {decode.last_line} "
             f"({decode.row_count} samples per channel)",
+            f"the configured data rows parse this way, no other reading of the "
+            f"scanned rows does, and no line above line {decode.first_line} has the "
+            f"data's columns, is a damaged data row, or is a row of numbers in "
+            f"another number of fields.",
+            note,
         ),
     ):
         entry = run.basis(path)
@@ -61,7 +79,8 @@ def _structure_statements(
                 basis=entry["basis"] if entry else None,
                 origin=_origin(entry),
                 caller_asserted=run.caller,
-                proven=proofs[path],
+                proof=proof if proofs[path] else None,
+                note=extra,
             )
         )
 

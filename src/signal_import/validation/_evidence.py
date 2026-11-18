@@ -29,7 +29,9 @@ from ..inspection import (
     _number,
     _readings,
     _split,
+    _value_with_unit_above,
 )
+from ..region_audit import RowShape, shape_of, skip_unexplained
 
 #: Data rows of the scanned head used for first tokens and time candidates.
 _HEAD_ROWS = 300
@@ -107,14 +109,25 @@ def _evidence(scan: TextScan, interpretation: Mapping[str, Any]) -> _Evidence:
         split = _split(lines[number], delimiter)
         return None if split is None else [f.strip() for f in split]
 
-    # The inspection rule: a units row, then a header, just above the data
-    # (R9 compares the configured rows with these); for evidence, the same
-    # rule above any data rows a trimmed range leaves out.
+    last_line = interpretation["data_lines"]["last"]
+    region: list[str] = []
+    for number in sorted(n for n in lines if n >= first):
+        if (last_line is not None and number > last_line) or not lines[number].strip(
+            " \t"
+        ):
+            break
+        region.append(lines[number])
+    shape = shape_of(region[:_HEAD_ROWS], delimiter, decimal_mark)
+
+    # The inspection rule: a units row, then a header, just above the data,
+    # past any damaged or ragged rows right above it (R9 compares the
+    # configured rows with these); for evidence, the same rule above any data
+    # rows a trimmed range leaves out.
     scanned_header, scanned_units = _rows_above(
-        scan, first, delimiter, decimal_mark, skip_data=False
+        scan, first, delimiter, decimal_mark, skip_data=False, shape=shape
     )
     found_header, found_units = _rows_above(
-        scan, first, delimiter, decimal_mark, skip_data=True
+        scan, first, delimiter, decimal_mark, skip_data=True, shape=shape
     )
     header_line = (
         dialect["header_line"] if dialect["header_line"] is not None else found_header
@@ -197,17 +210,42 @@ def _evidence(scan: TextScan, interpretation: Mapping[str, Any]) -> _Evidence:
 
 
 def _rows_above(
-    scan: TextScan, first: int, delimiter: str, decimal_mark: str, *, skip_data: bool
+    scan: TextScan,
+    first: int,
+    delimiter: str,
+    decimal_mark: str,
+    *,
+    skip_data: bool,
+    shape: Optional[RowShape] = None,
 ) -> tuple[Optional[int], Optional[int]]:
     """``(header line, units line)`` by the inspection rule: a units row,
-    then a header, just above the data region; with *skip_data*, above the
+    then a header, just above the data region, past the damaged or ragged
+    rows right above it (never a header); with *skip_data*, above the
     numeric rows just before it too (data rows a trimmed range leaves out)."""
+    preceding = [line for line in scan.head_lines if line.number < first]
+    skipped = 0
+    beside = bool(preceding) and preceding[-1].number == first - 1
+    if shape is not None and beside:
+        skipped = skip_unexplained(
+            [line.text for line in reversed(preceding)], shape, include_data=skip_data
+        )
+        following = next(
+            (line.text for line in scan.head_lines if line.number == first), None
+        )
+        if (
+            not skipped
+            and following is not None
+            and _value_with_unit_above(
+                preceding[-1].text, following, delimiter, decimal_mark
+            )
+        ):
+            # As inspection: a value with its unit just above the data is a
+            # row left out, never the header.
+            skipped = 1
     above = [
-        line
-        for line in scan.head_lines
-        if line.number < first and line.text.strip(" \t")
+        line for line in preceding[: len(preceding) - skipped] if line.text.strip(" \t")
     ]
-    if skip_data:
+    if skip_data and not (shape is not None and beside):
         while above:
             fields = [f for f in (_split(above[-1].text, delimiter) or []) if f.strip()]
             if not fields or any(_number(f, decimal_mark) is None for f in fields):

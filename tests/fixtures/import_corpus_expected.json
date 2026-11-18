@@ -541,9 +541,17 @@
   "draft": {
    "refused": "configuration"
   },
+  "draft_route": {
+   "issues": [
+    "missing_basis:needs_confirmation",
+    "ragged_row:invalid"
+   ],
+   "outcome": "invalid",
+   "row_count": null
+  },
   "inspection": {
    "columns_total": 2,
-   "data_first_line": 103,
+   "data_first_line": 2,
    "decimal": ".",
    "delimiter": ",",
    "dialect": "proposed",
@@ -553,7 +561,7 @@
    ],
    "issues": [],
    "regions": [
-    "preamble",
+    "header",
     "data"
    ],
    "status": "importable"
@@ -572,9 +580,17 @@
   "draft": {
    "refused": "configuration"
   },
+  "draft_route": {
+   "issues": [
+    "missing_basis:needs_confirmation",
+    "ragged_row:invalid"
+   ],
+   "outcome": "invalid",
+   "row_count": null
+  },
   "inspection": {
    "columns_total": 2,
-   "data_first_line": 103,
+   "data_first_line": 2,
    "decimal": ".",
    "delimiter": ",",
    "dialect": "proposed",
@@ -584,7 +600,7 @@
    ],
    "issues": [],
    "regions": [
-    "preamble",
+    "header",
     "data"
    ],
    "status": "importable"
@@ -634,9 +650,17 @@
   "draft": {
    "refused": "configuration"
   },
+  "draft_route": {
+   "issues": [
+    "missing_basis:needs_confirmation",
+    "non_numeric_token:invalid"
+   ],
+   "outcome": "invalid",
+   "row_count": null
+  },
   "inspection": {
    "columns_total": 2,
-   "data_first_line": 103,
+   "data_first_line": 2,
    "decimal": ".",
    "delimiter": ",",
    "dialect": "proposed",
@@ -644,9 +668,10 @@
     "utf-8",
     "proposed"
    ],
-   "issues": [],
+   "issues": [
+    "non_numeric_token"
+   ],
    "regions": [
-    "preamble",
     "header",
     "data"
    ],
@@ -666,9 +691,17 @@
   "draft": {
    "refused": "configuration"
   },
+  "draft_route": {
+   "issues": [
+    "missing_basis:needs_confirmation",
+    "non_numeric_token:invalid"
+   ],
+   "outcome": "invalid",
+   "row_count": null
+  },
   "inspection": {
    "columns_total": 2,
-   "data_first_line": 103,
+   "data_first_line": 2,
    "decimal": ".",
    "delimiter": ",",
    "dialect": "proposed",
@@ -676,9 +709,10 @@
     "utf-8",
     "proposed"
    ],
-   "issues": [],
+   "issues": [
+    "non_numeric_token"
+   ],
    "regions": [
-    "preamble",
     "header",
     "data"
    ],
@@ -698,9 +732,17 @@
   "draft": {
    "refused": "configuration"
   },
+  "draft_route": {
+   "issues": [
+    "missing_basis:needs_confirmation",
+    "non_finite_token:invalid"
+   ],
+   "outcome": "invalid",
+   "row_count": null
+  },
   "inspection": {
    "columns_total": 2,
-   "data_first_line": 103,
+   "data_first_line": 2,
    "decimal": ".",
    "delimiter": ",",
    "dialect": "proposed",
@@ -708,9 +750,10 @@
     "utf-8",
     "proposed"
    ],
-   "issues": [],
+   "issues": [
+    "non_finite_token"
+   ],
    "regions": [
-    "preamble",
     "header",
     "data"
    ],
@@ -730,9 +773,17 @@
   "draft": {
    "refused": "configuration"
   },
+  "draft_route": {
+   "issues": [
+    "missing_basis:needs_confirmation",
+    "non_numeric_token:invalid"
+   ],
+   "outcome": "invalid",
+   "row_count": null
+  },
   "inspection": {
    "columns_total": 2,
-   "data_first_line": 103,
+   "data_first_line": 2,
    "decimal": ".",
    "delimiter": ",",
    "dialect": "proposed",
@@ -740,9 +791,10 @@
     "utf-8",
     "proposed"
    ],
-   "issues": [],
+   "issues": [
+    "non_numeric_token"
+   ],
    "regions": [
-    "preamble",
     "header",
     "data"
    ],
@@ -762,9 +814,17 @@
   "draft": {
    "refused": "configuration"
   },
+  "draft_route": {
+   "issues": [
+    "missing_basis:needs_confirmation",
+    "non_finite_token:invalid"
+   ],
+   "outcome": "invalid",
+   "row_count": null
+  },
   "inspection": {
    "columns_total": 2,
-   "data_first_line": 103,
+   "data_first_line": 2,
    "decimal": ".",
    "delimiter": ",",
    "dialect": "proposed",
@@ -772,9 +832,10 @@
     "utf-8",
     "proposed"
    ],
-   "issues": [],
+   "issues": [
+    "non_finite_token"
+   ],
    "regions": [
-    "preamble",
     "header",
     "data"
    ],
@@ -794,9 +855,17 @@
   "draft": {
    "refused": "configuration"
   },
+  "draft_route": {
+   "issues": [
+    "missing_basis:needs_confirmation",
+    "non_finite_token:invalid"
+   ],
+   "outcome": "invalid",
+   "row_count": null
+  },
   "inspection": {
    "columns_total": 2,
-   "data_first_line": 103,
+   "data_first_line": 2,
    "decimal": ".",
    "delimiter": ",",
    "dialect": "proposed",
@@ -804,9 +873,10 @@
     "utf-8",
     "proposed"
    ],
-   "issues": [],
+   "issues": [
+    "non_finite_token"
+   ],
    "regions": [
-    "preamble",
     "header",
     "data"
    ],
@@ -826,9 +896,17 @@
   "draft": {
    "refused": "configuration"
   },
+  "draft_route": {
+   "issues": [
+    "missing_basis:needs_confirmation",
+    "non_numeric_token:invalid"
+   ],
+   "outcome": "invalid",
+   "row_count": null
+  },
   "inspection": {
    "columns_total": 2,
-   "data_first_line": 103,
+   "data_first_line": 2,
    "decimal": ".",
    "delimiter": ",",
    "dialect": "proposed",
@@ -836,9 +914,10 @@
     "utf-8",
     "proposed"
    ],
-   "issues": [],
+   "issues": [
+    "non_numeric_token"
+   ],
    "regions": [
-    "preamble",
     "header",
     "data"
    ],
@@ -858,9 +937,17 @@
   "draft": {
    "refused": "configuration"
   },
+  "draft_route": {
+   "issues": [
+    "missing_basis:needs_confirmation",
+    "non_finite_token:invalid"
+   ],
+   "outcome": "invalid",
+   "row_count": null
+  },
   "inspection": {
    "columns_total": 2,
-   "data_first_line": 103,
+   "data_first_line": 2,
    "decimal": ".",
    "delimiter": ",",
    "dialect": "proposed",
@@ -868,9 +955,10 @@
     "utf-8",
     "proposed"
    ],
-   "issues": [],
+   "issues": [
+    "non_finite_token"
+   ],
    "regions": [
-    "preamble",
     "header",
     "data"
    ],
@@ -890,9 +978,17 @@
   "draft": {
    "refused": "configuration"
   },
+  "draft_route": {
+   "issues": [
+    "missing_basis:needs_confirmation",
+    "non_numeric_token:invalid"
+   ],
+   "outcome": "invalid",
+   "row_count": null
+  },
   "inspection": {
    "columns_total": 2,
-   "data_first_line": 103,
+   "data_first_line": 2,
    "decimal": ".",
    "delimiter": ",",
    "dialect": "proposed",
@@ -900,9 +996,10 @@
     "utf-8",
     "proposed"
    ],
-   "issues": [],
+   "issues": [
+    "non_numeric_token"
+   ],
    "regions": [
-    "preamble",
     "header",
     "data"
    ],
@@ -922,9 +1019,17 @@
   "draft": {
    "refused": "configuration"
   },
+  "draft_route": {
+   "issues": [
+    "missing_basis:needs_confirmation",
+    "thousands_separator:invalid"
+   ],
+   "outcome": "invalid",
+   "row_count": null
+  },
   "inspection": {
    "columns_total": 2,
-   "data_first_line": 103,
+   "data_first_line": 2,
    "decimal": ".",
    "delimiter": ";",
    "dialect": "proposed",
@@ -932,9 +1037,10 @@
     "utf-8",
     "proposed"
    ],
-   "issues": [],
+   "issues": [
+    "thousands_separator"
+   ],
    "regions": [
-    "preamble",
     "header",
     "data"
    ],
@@ -954,18 +1060,26 @@
   "draft": {
    "refused": "configuration"
   },
+  "draft_route": {
+   "issues": [
+    "missing_basis:needs_confirmation",
+    "thousands_separator:invalid"
+   ],
+   "outcome": "invalid",
+   "row_count": null
+  },
   "inspection": {
-   "columns_total": 3,
+   "columns_total": 2,
    "data_first_line": 2,
-   "decimal": ".",
-   "delimiter": ",",
+   "decimal": ",",
+   "delimiter": ";",
    "dialect": "proposed",
    "encoding": [
     "utf-8",
     "proposed"
    ],
    "issues": [
-    "field_count_mismatch"
+    "thousands_separator"
    ],
    "regions": [
     "header",

@@ -308,6 +308,8 @@ ISSUE_CODES: tuple[str, ...] = (
     "source_changed",
     # remote access
     "remote_import_disabled",
+    # rows the data range leaves out
+    "excluded_data_rows",
 )
 
 #: Most fields a data row may hold; every column index is below it.

@@ -172,8 +172,9 @@ class DialectReading(_Output):
         delimiter: ``,``, ``;``, ``tab`` or ``whitespace``.
         decimal: ``.`` or ``,``.
         fields: Fields per data row under this reading.
-        data_first_line: First line of its longest run of consistent rows.
-        rows: Rows in that run among the scanned lines.
+        data_first_line: First line of its longest run of consistent rows; the
+            run may continue across damaged rows, which are reported as issues.
+        rows: Well-formed rows in that run among the scanned lines.
         numeric_ratio: Share of the run's fields that are numbers.
     """
 

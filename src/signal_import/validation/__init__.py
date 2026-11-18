@@ -30,10 +30,21 @@ one:
 - the structure (encoding, dialect, header and units rows, data range)
   needs a basis unless the whole file parses as configured, no other
   reading parses the scanned data, the encoding is unambiguous and the
-  header and units rows are the ones the inspection rule finds; a header
-  or units row the configuration leaves out or names elsewhere is still
-  evidence, and every other line above the data is read for printed
-  values;
+  header and units rows are the ones the inspection rule finds and are not
+  damaged data rows; the data range is proven only without a stated last
+  line and when the census below finds no line it leaves out that could be
+  part of the acquisition; a header or units row the configuration leaves
+  out or names elsewhere is still evidence, and every other line above the
+  data is read for printed values;
+- every line above the configured data start, and after a stated last line,
+  is classified by the census in ``..region_audit``; each block of rows that
+  could be part of the acquisition asks before ``ready``, and only a basis
+  for ``data_lines`` together with an acknowledgment bound to this file,
+  this interpretation and that exact block resolves it, kept as a notice
+  (an import then records a partial acquisition); while the dialect still
+  needs confirmation no acknowledgment resolves a block, and a range that
+  leaves out more blocks than an acknowledgment can name cannot be
+  resolved;
 - every value the file prints (a rate or interval, a sensitivity with its
   unit, a unit, the shaft speed, the acquisition instant) is compared with
   the configuration, not only the line a basis cites: a contradiction is

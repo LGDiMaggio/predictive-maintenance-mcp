@@ -45,9 +45,12 @@ from ..contracts import (
     ValidationOutcome,
     ValidationResult,
 )
+from .. import region_audit as _region_audit
 from ..inspection import _LABEL_UNIT, MIN_WAVEFORM_ROWS, _bracketed
 from ..records import ImportRecordStore
+from ..region_audit import ExcludedBlock
 from ._checks import (
+    _check_excluded_rows,
     _check_stated_defaults,
     _check_time_like_channel,
     _check_units,
@@ -185,6 +188,9 @@ class Validated(NamedTuple):
         formats: The ``import_format`` of each decoded channel, by column.
         holders: For each bound measurement, the assets the bounded history
             read shows holding it as a current measurement.
+        completeness: The result of the check for rows left out of the data
+            range, ``{partial_acquisition, excluded_rows}``, from the census
+            of this validation (None when the parse stopped).
     """
 
     result: ValidationResult
@@ -195,6 +201,7 @@ class Validated(NamedTuple):
     identities: dict[int, dict[str, Any]]
     formats: dict[int, dict[str, Any]]
     holders: dict[str, list[str]]
+    completeness: Optional[dict[str, Any]] = None
 
 
 def validate_import(
@@ -296,6 +303,14 @@ def validate_for_import(
             file.path.with_name(f"{file.path.stem}_metadata.json")
         )
         evidence = _evidence(scan, interpretation)
+        # Every line the data range leaves out, read through this descriptor
+        # before the decode, whose closing check covers both reads.
+        audit = _region_audit.census(
+            file,
+            interpretation,
+            header_line=evidence.header_line,
+            units_line=evidence.units_line,
+        )
         try:
             # Digest mode keeps no samples; the decoder streams each channel's
             # digest and moments (R19's mean and ratio) block by block.
@@ -341,6 +356,8 @@ def validate_for_import(
     the_import_id: Optional[str] = None
     formats: dict[int, dict[str, Any]] = {}
     holders: dict[str, list[str]] = {}
+    excluded: list[ExcludedBlock] = []
+    proofs = _structure_proofs(interpretation, evidence, decode, audit)
 
     if decode is not None:
         if decode.row_count < MIN_WAVEFORM_ROWS:
@@ -363,6 +380,11 @@ def validate_for_import(
         _check_printed(run, evidence, decode.field_count)
         the_import_id = compute_import_id(
             decode.source_sha256, decode.size_bytes, interpretation
+        )
+        # A pending DC policy is validated as 'keep', so the finding quotes the
+        # import_id this interpretation has once the user states it.
+        excluded = _check_excluded_rows(
+            run, audit, decode, evidence, proofs, the_import_id
         )
         defaults, shift = _effective_defaults(run, evidence)
         identities = _identities(run, decode, defaults)
@@ -397,9 +419,8 @@ def validate_for_import(
             for identity in identities.values()
         }
         channels_out = _channel_results(run, decode, evidence, identities)
-    proofs = _structure_proofs(interpretation, evidence, decode)
     if decode is not None:
-        _structure_statements(run, decode, proofs)
+        _structure_statements(run, decode, proofs, excluded)
     _check_value_bases(run, evidence, prior, points)
     _required_bases(run, evidence, proofs, companion)
     _statements(run, channels_out, identities, shift, declared_value)
@@ -443,6 +464,16 @@ def validate_for_import(
         import_id=the_import_id,
         import_digest=digest,
     )
+    completeness = (
+        None
+        if decode is None
+        else {
+            "partial_acquisition": bool(audit.blocks),
+            "excluded_rows": [
+                b.as_range() for b in sorted(audit.blocks, key=lambda b: b.first_line)
+            ],
+        }
+    )
     return Validated(
         result=result,
         decode=decode,
@@ -452,4 +483,5 @@ def validate_for_import(
         identities=identities,
         formats=formats,
         holders=holders,
+        completeness=completeness,
     )

@@ -284,10 +284,16 @@ class StoredSignalInfo(BaseModel):
             "import_id, the physical column and its 1-based position, the "
             "column label and file name as escaped file text, the time-base "
             "source, the scaling, the samples digest, the decoder contract, "
-            "the confirmation channel and, per configured value, its basis "
+            "the confirmation channel, per configured value its basis "
             "(caller_asserted is true when the bases arrived as MCP tool "
             "arguments: they record what the caller claimed, never who the "
-            "caller is). None for every other load."
+            "caller is), and the result of the check for rows left out of the "
+            "data range: partial_acquisition (true when rows that could be part "
+            "of the acquisition are left out as the user acknowledged, false "
+            "when the check found none) and excluded_rows (each block's "
+            "first_line, last_line and rows). Both keys are absent for a signal "
+            "imported before that check existed, which says nothing about rows "
+            "left out. None for every other load."
         ),
     )
 
@@ -1908,10 +1914,15 @@ class AssetHistoryResult(BaseModel):
             "newest first (measurement_id, measurement_point_id, acquired_at, "
             "signal_id, location, declaration_version, rpm, direction, "
             "sensor_id, lineages, snapshot_count, indicators preview from the "
-            "latest snapshot, comparability grade and codes against the point), "
-            "measurement_count, truncated, point_declarations and baselines "
-            "(current plus history per point), reattributed, integrity, "
-            "event_count, ledger_bytes"
+            "latest snapshot, comparability grade and codes against the point, "
+            "and acquisition_completeness: whether the import behind the "
+            "current declaration leaves out rows that could be part of the "
+            "acquisition, as partial_acquisition and excluded_rows, or null "
+            "when no result is recorded for it, as for a signal loaded another "
+            "way or imported before the check; it is not a health indicator and "
+            "is unrelated to snapshot_status), measurement_count, truncated, "
+            "point_declarations and baselines (current plus history per point), "
+            "reattributed, integrity, event_count, ledger_bytes"
         ),
     )
     known_assets: list[str] = Field(

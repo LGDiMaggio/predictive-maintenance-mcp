@@ -506,8 +506,10 @@ class TestFailuresAndRollback:
         calls = {"n": 0}
 
         def flaky(self, asset_id, offset, build):
+            # Each bound channel appends its completeness note, then its
+            # declaration: call 4 is the second channel's declaration.
             calls["n"] += 1
-            if calls["n"] == 2:
+            if calls["n"] == 4:
                 raise OSError(28, "No space left on device")
             return real(self, asset_id, offset, build)
 

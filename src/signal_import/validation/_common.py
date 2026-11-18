@@ -102,6 +102,13 @@ def _printed(raw: str) -> FileText:
     return FileText.of(raw.strip(), cap=PREAMBLE_LINE_CHARS)
 
 
+def _delimiter_words(delimiter: str) -> str:
+    """A delimiter as statements and findings name it."""
+    return {"tab": "a tab", "whitespace": "runs of spaces"}.get(
+        delimiter, f"'{delimiter}'"
+    )
+
+
 def _decimal(text: Optional[str]) -> Optional[Decimal]:
     """A decimal string as a finite Decimal; None when it is absent or not a
     finite number (a hand-written ledger may hold ``NaN``), so it never

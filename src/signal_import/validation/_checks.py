@@ -12,6 +12,7 @@ writes anywhere.
 
 import re
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Any, Mapping, Optional
 
 from ...signal_acquisition.measurement import (
@@ -19,10 +20,13 @@ from ...signal_acquisition.measurement import (
     build_import_identity,
     shift_acquired_at,
 )
+from ...file_text import PREAMBLE_LINE_CHARS, FileText
 from ...signal_acquisition.text_decoder import DecodeResult
 from .. import statements as st
 from ..inspection import _classify_unit, _unit_text
-from ._common import _ASK, _Run, _decimal, _printed
+from ..attestation import MAX_EXCLUSIONS
+from ..region_audit import BlockTally, ExcludedBlock, RegionAudit, three_significant
+from ._common import _ASK, _Run, _decimal, _delimiter_words, _printed
 from ._evidence import (
     _Evidence,
     _Preamble,
@@ -537,14 +541,17 @@ def _structure_proofs(
     interpretation: Mapping[str, Any],
     evidence: _Evidence,
     decode: Optional[DecodeResult],
+    audit: Optional[RegionAudit] = None,
 ) -> dict[str, bool]:
     """Whether the parse proves ``dialect`` and ``data_lines`` (R9).
 
     The whole file must decode as configured and the scanned data must have
     exactly one reading, the configured one. The dialect also needs an
-    unambiguous encoding (a Windows-1252 decode alone proves none) and the
-    header and units rows the inspection rule finds above the data; the data
-    range needs no stated last line.
+    unambiguous encoding (a Windows-1252 decode alone proves none), the
+    header and units rows the inspection rule finds above the data, and
+    configured header and units lines that are not damaged data rows; the
+    data range needs no stated last line and a census that found no line
+    above the data start that could be part of the acquisition.
     """
     dialect = interpretation["dialect"]
     parsed = (
@@ -557,14 +564,397 @@ def _structure_proofs(
             interpretation["data_lines"]["first"],
         )
     )
+    kinds = audit.kinds if audit is not None else {}
+    undamaged = all(
+        kinds.get(line) != "damaged"
+        for line in (dialect["header_line"], dialect["units_line"])
+        if line is not None
+    )
     return {
         "dialect": parsed
         and evidence.encoding == dialect["encoding"]
         and evidence.encoding != "cp1252"
         and evidence.scanned_structure
-        == (dialect["header_line"], dialect["units_line"]),
-        "data_lines": parsed and interpretation["data_lines"]["last"] is None,
+        == (dialect["header_line"], dialect["units_line"])
+        and undamaged,
+        "data_lines": parsed
+        and interpretation["data_lines"]["last"] is None
+        and audit is not None
+        and audit.complete
+        and audit.clean,
     }
+
+
+# ---------------------------------------------------------------------------
+# Rows the data range leaves out
+# ---------------------------------------------------------------------------
+
+_SEPARATORS = {
+    "above": {
+        "header": "a header line",
+        "units": "a units line",
+        "blank": "a blank line",
+        "text": "a text line",
+        "nothing": "nothing (they are directly above the data)",
+    },
+    "below": {
+        "header": "a text line",
+        "units": "a text line",
+        "blank": "a blank line",
+        "text": "a text line",
+        "nothing": "nothing (they are directly below the data)",
+    },
+}
+
+#: The same, for a block of one row.
+_SEPARATOR_ONE_ROW = {
+    side: {
+        **phrases,
+        "nothing": f"nothing (it is directly {side} the data)",
+    }
+    for side, phrases in _SEPARATORS.items()
+}
+
+_SIDE_WORDS = {"above": "above the data start", "below": "below the data end"}
+
+#: Blocks named one by one when more blocks are left out than an
+#: acknowledgment can name; one summary finding counts the rest.
+_NAMED_PAST_LIMIT = 10
+
+
+def _listed(entries: list[str], more: int) -> str:
+    return ", ".join(entries) + (f", and {more} more" if more else "")
+
+
+def _composition(block: ExcludedBlock) -> str:
+    damaged = [row for row in block.listed if row.kind == "damaged"]
+    ragged = [row for row in block.listed if row.kind == "ragged"]
+    parts = []
+    if block.data_rows:
+        parts.append(f"{block.data_rows} with the data's columns")
+    if block.damaged:
+        named = [f"line {r.line}, where field {r.field} {r.problem}" for r in damaged]
+        parts.append(
+            f"{block.damaged} damaged ({_listed(named, block.damaged - len(damaged))})"
+        )
+    if block.ragged:
+        named = [
+            f"line {r.line}, {r.count} field{'' if r.count == 1 else 's'}"
+            for r in ragged
+        ]
+        parts.append(
+            f"{block.ragged} with numbers in another number of fields "
+            f"({_listed(named, block.ragged - len(ragged))})"
+        )
+    return "; ".join(parts)
+
+
+def _excluded_finding(block: ExcludedBlock, rate: str, next_step: str) -> str:
+    side = _SIDE_WORDS[block.side]
+    if block.rows == 1:
+        head = (
+            f"Line {block.first_line} {side} holds 1 row that could be part of the "
+            f"acquisition"
+        )
+    else:
+        head = (
+            f"Lines {block.first_line} to {block.last_line} {side} hold {block.rows} "
+            f"rows that could be part of the acquisition"
+        )
+    seconds = three_significant(Decimal(block.rows) / Decimal(rate))
+    if block.rows == 1:
+        body = (
+            f"At {rate} Hz it would span {seconds} s. It is separated from the data "
+            f"rows by {_SEPARATOR_ONE_ROW[block.side][block.separator]}. The import "
+            f"would leave this row out, so it might not be the complete acquisition."
+        )
+    else:
+        body = (
+            f"At {rate} Hz they would span {seconds} s. They are separated from the "
+            f"data rows by {_SEPARATORS[block.side][block.separator]}. The import "
+            f"would leave them out, so it might not be the complete acquisition."
+        )
+    return f"{head}: {_composition(block)}. {body} {next_step}"
+
+
+def _too_many_step() -> str:
+    return (
+        f"This configuration leaves out more blocks than an acknowledgment can name "
+        f"({MAX_EXCLUSIONS}), so no acknowledgment can resolve it: re-export the "
+        f"acquisition so that these rows can be read, or configure a data line range "
+        f"that leaves fewer blocks out, then validate again."
+    )
+
+
+def _remaining_summary(
+    blocks: list[ExcludedBlock], tallies: tuple[BlockTally, ...]
+) -> str:
+    """The summary finding for every block past the named ones: exact
+    counts, and per side the lines from the first to the last of them."""
+    spans: dict[str, list[int]] = {}
+    count = rows = 0
+    pieces = [BlockTally(b.side, 1, b.rows, b.first_line, b.last_line) for b in blocks]
+    pieces += tallies
+    for piece in pieces:
+        span = spans.setdefault(piece.side, [piece.first_line, piece.last_line])
+        span[0] = min(span[0], piece.first_line)
+        span[1] = max(span[1], piece.last_line)
+        count += piece.blocks
+        rows += piece.rows
+    where = " and ".join(
+        f"lines {spans[side][0]} to {spans[side][1]} {_SIDE_WORDS[side]}"
+        for side in ("above", "below")
+        if side in spans
+    )
+    return (
+        f"Beyond the blocks named above, {where} hold {count} more blocks of rows "
+        f"that could be part of the acquisition ({rows} rows in all); they are not "
+        f"named one by one."
+    )
+
+
+def _ask_about(run: _Run, block: ExcludedBlock, rate: str, next_step: str) -> None:
+    """One block's excluded_data_rows finding, asking with *next_step*."""
+    run.issue(
+        "excluded_data_rows",
+        "needs_confirmation",
+        _excluded_finding(block, rate, next_step),
+        field_path="data_lines",
+        line=block.first_line,
+        token=_separator_token(block),
+    )
+
+
+def _report_past_the_limit(
+    run: _Run, audit: RegionAudit, rate: str, next_step: str
+) -> None:
+    """More blocks than an acknowledgment can name: the first
+    :data:`_NAMED_PAST_LIMIT` in line order, each with *next_step*, then one
+    summary finding for the rest. Every finding asks; none can be resolved."""
+    blocks = list(audit.blocks)
+    for block in blocks[:_NAMED_PAST_LIMIT]:
+        _ask_about(run, block, rate, next_step)
+    rest = blocks[_NAMED_PAST_LIMIT:]
+    run.issue(
+        "excluded_data_rows",
+        "needs_confirmation",
+        _remaining_summary(rest, audit.tallies),
+        field_path="data_lines",
+        line=rest[0].first_line if rest else audit.tallies[0].first_line,
+    )
+
+
+def _acknowledge_step(block: ExcludedBlock, sha: str, import_id: str) -> str:
+    if block.rows == 1:
+        rows, they, them = "this row", "it", "it"
+    else:
+        rows, they, them = "these rows", "they", "them"
+    return (
+        f"Ask the user whether {rows} should be left out of the import. If {they} "
+        f"should be imported, do not import: re-export the acquisition so that {they} "
+        f"can be read. If {they} should be left out, the user can confirm the data "
+        f"line range with a basis for 'data_lines' and acknowledge the exclusion in "
+        f"attestation.exclusions with source_sha256 {sha}, import_id {import_id}, "
+        f"first_line {block.first_line}, last_line {block.last_line}, rows "
+        f"{block.rows} and their reason for leaving {them} out."
+    )
+
+
+def _excluded_notice(block: ExcludedBlock) -> str:
+    if block.rows == 1:
+        head = (
+            f"Line {block.first_line} (1 row that could be part of the acquisition) "
+            f"is left out"
+        )
+    else:
+        head = (
+            f"Lines {block.first_line} to {block.last_line} ({block.rows} rows that "
+            f"could be part of the acquisition) are left out"
+        )
+    return (
+        f"{head} as the user acknowledged; the acknowledgment and its reason are "
+        f"recorded. This import is recorded as a partial acquisition and may not be "
+        f"the complete acquisition."
+    )
+
+
+def _separator_token(block: ExcludedBlock):
+    if block.separator in ("header", "units", "text") and block.separator_text:
+        # The census kept the line stripped and cut one character past the
+        # cap; stripping it again could drop whitespace at the cut and, with
+        # it, the truncation flag.
+        return FileText.of(block.separator_text, cap=PREAMBLE_LINE_CHARS)
+    return None
+
+
+def _dialect_gate(
+    run: _Run, evidence: _Evidence, proofs: Mapping[str, bool]
+) -> Optional[str]:
+    """Why no acknowledgment may resolve an exclusion yet, or None: the
+    dialect or the encoding still needs confirmation, or the scanned rows
+    read better under another delimiter and decimal mark than the configured
+    ones (tied readings settled by a dialect basis pass)."""
+    dialect = run.interpretation["dialect"]
+    unique = evidence.unique_reading
+    if unique is not None and unique[:2] != (dialect["delimiter"], dialect["decimal"]):
+        return (
+            f"the scanned rows read better with {_delimiter_words(unique[0])} between "
+            f"fields and '{unique[1]}' as the decimal mark than with the configured "
+            f"reading"
+        )
+    if not proofs["dialect"] and run.basis("dialect") is None:
+        if unique is not None and evidence.encoding == "cp1252":
+            return "the text encoding needs confirmation"
+        return "the delimiter and decimal mark need confirmation"
+    return None
+
+
+def _check_excluded_rows(
+    run: _Run,
+    audit: RegionAudit,
+    decode: DecodeResult,
+    evidence: _Evidence,
+    proofs: Mapping[str, bool],
+    import_id: str,
+) -> list[ExcludedBlock]:
+    """Every row the data range leaves out that could be part of the
+    acquisition asks before ``ready``; only a basis for ``data_lines``
+    together with an acknowledgment bound to this file, this interpretation
+    and the exact block resolves it, kept as a notice. Returns the resolved
+    blocks."""
+    rate = run.interpretation["time_base"]["sampling_rate_hz"]
+    blocks = list(audit.blocks)
+    # The dialect gate first: past the limit too, an unsettled dialect is the
+    # step the named blocks give.
+    gate = _dialect_gate(run, evidence, proofs)
+    gate_step = (
+        None
+        if gate is None
+        else f"No acknowledgment can resolve this while {gate}: settle the dialect "
+        f"first, then validate again."
+    )
+    if audit.block_count > MAX_EXCLUSIONS:
+        _report_past_the_limit(run, audit, rate, gate_step or _too_many_step())
+        return []
+    if gate_step is not None:
+        for block in blocks:
+            _ask_about(run, block, rate, gate_step)
+        return []
+    by_lines = {(b.first_line, b.last_line): b for b in blocks}
+    matched: set[tuple[int, int]] = set()
+    for ack in run.attestation.get("exclusions") or []:
+        first, last = ack["first_line"], ack["last_line"]
+        block = by_lines.get((first, last))
+        span = f"line {first}" if first == last else f"lines {first} to {last}"
+        problem: Optional[str] = None
+        if ack["source_sha256"] != decode.source_sha256:
+            problem = (
+                f"The exclusion acknowledgment for {span} was given for another file "
+                f"(source_sha256 {ack['source_sha256']}). Remove it, or validate the "
+                f"file it was given for."
+            )
+        elif ack["import_id"] != import_id:
+            problem = (
+                f"The exclusion acknowledgment for {span} was given for another "
+                f"configuration of this file (import_id {ack['import_id']}). Validate "
+                f"this configuration and acknowledge the rows it leaves out."
+            )
+        elif not blocks:
+            problem = (
+                f"The exclusion acknowledgment names {span}, but this configuration "
+                f"leaves out no row that could be part of the data. Remove it."
+            )
+        elif block is None:
+            problem = (
+                f"The exclusion acknowledgment names {span}, which this configuration "
+                f"does not leave out as one block. Use the lines the "
+                f"excluded_data_rows finding gives."
+            )
+        elif ack["rows"] != block.rows:
+            named = "1 row" if ack["rows"] == 1 else f"{ack['rows']} rows"
+            problem = (
+                f"The exclusion acknowledgment names {named} for {span}, where this "
+                f"configuration leaves out {block.rows}. Use the count the "
+                f"excluded_data_rows finding gives."
+            )
+        if problem is not None:
+            run.issue(
+                "basis_mismatch",
+                "invalid",
+                problem,
+                field_path="attestation.exclusions",
+                line=first,
+            )
+        else:
+            matched.add((first, last))
+    based = run.basis("data_lines") is not None
+    resolved: list[ExcludedBlock] = []
+    for block in blocks:
+        if based and (block.first_line, block.last_line) in matched:
+            run.issue(
+                "excluded_data_rows",
+                "notice",
+                _excluded_notice(block),
+                field_path="data_lines",
+                line=block.first_line,
+                token=_separator_token(block),
+            )
+            resolved.append(block)
+        else:
+            _ask_about(
+                run,
+                block,
+                rate,
+                _acknowledge_step(block, decode.source_sha256, import_id),
+            )
+    if blocks and len(resolved) == len(blocks):
+        _check_instant_beside_exclusions(run, audit, evidence)
+    return resolved
+
+
+def _check_instant_beside_exclusions(
+    run: _Run, audit: RegionAudit, evidence: _Evidence
+) -> None:
+    """An acquisition instant accepted from the preamble may describe a row
+    the data range leaves out: it needs its own confirmation when such a row
+    lies above the run inspection found under the configured reading, or no
+    unique reading exists."""
+    if run.interpretation["defaults"]["acquired_at"] is None:
+        return
+    entry = run.basis("defaults.acquired_at")
+    if entry is None or entry["basis"] != "user_accepted_file_value":
+        return
+    if run.override("defaults.acquired_at") is not None:
+        return
+    above = [b for b in audit.blocks if b.side == "above"]
+    if not above:
+        return
+    dialect = run.interpretation["dialect"]
+    unique = evidence.unique_reading
+    found = (
+        unique is not None
+        and unique[:2] == (dialect["delimiter"], dialect["decimal"])
+        and not audit.rows_above(unique[2])
+    )
+    if found:
+        return
+    first = run.interpretation["data_lines"]["first"]
+    left_out = sum(b.rows for b in above)
+    if left_out == 1:
+        rows, which = "1 row", "that row"
+    else:
+        rows, which = f"{left_out} rows", "one of those rows"
+    run.issue(
+        "printed_value_unverified",
+        "needs_confirmation",
+        f"The data start leaves out {rows} above it that could be part of the "
+        f"acquisition, so the acquisition instant printed on line {entry['line']} "
+        f"may describe {which} rather than the first imported sample. Ask the user "
+        f"whether it applies to line {first}; to keep it, name an override for "
+        f"'defaults.acquired_at' with a reason.",
+        field_path="defaults.acquired_at",
+        line=entry["line"],
+    )
 
 
 def _required_bases(

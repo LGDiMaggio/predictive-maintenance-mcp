@@ -41,6 +41,9 @@ __all__ = [
     "binding_statement",
     "default_statement",
     "structure_statement",
+    "excluded_list",
+    "excluded_verb",
+    "partial_acquisition_note",
     "companion_statement",
 ]
 
@@ -372,21 +375,53 @@ def structure_statement(
     basis: Optional[str],
     origin: Optional[str],
     caller_asserted: bool,
-    proven: bool,
+    proof: Optional[str] = None,
+    note: str = "",
 ) -> Statement:
     """The dialect or the data range: confirmed, proven by the parse, or
-    neither (*proven* says whether the parse proves it)."""
+    neither (*proof* is what the parse checked when it proves the value, None
+    when it does not). *note* follows a confirmed value (a partial
+    acquisition); a proven value never carries one, since a value with a note
+    needs a basis."""
     if basis is not None:
         text = f"{text}, {basis_words(basis, caller_asserted)}."
-    elif proven:
-        text = (
-            f"{text}: the whole file parses this way and no other reading of "
-            f"the scanned data does."
-        )
+        if note:
+            text = f"{text} {note}"
+    elif proof is not None:
+        text = f"{text}: {proof}"
     else:
         text = f"{text}, {basis_words(None, caller_asserted)}."
     return _statement(
         field, text, origin=origin, basis=basis, caller_asserted=caller_asserted
+    )
+
+
+def excluded_list(blocks: Sequence[Mapping[str, Any]]) -> str:
+    """Each block left out, ``lines 2 to 101 (100 rows)`` or ``line 2
+    (1 row)``, joined with ``; ``."""
+    return "; ".join(
+        (
+            f"line {block['first_line']} (1 row)"
+            if block["rows"] == 1
+            else f"lines {block['first_line']} to {block['last_line']} "
+            f"({block['rows']} rows)"
+        )
+        for block in blocks
+    )
+
+
+def excluded_verb(blocks: Sequence[Mapping[str, Any]]) -> str:
+    """``is`` for one block of one row, ``are`` otherwise: the verb the
+    :func:`excluded_list` subject takes."""
+    return "is" if len(blocks) == 1 and blocks[0]["rows"] == 1 else "are"
+
+
+def partial_acquisition_note(blocks: Sequence[Mapping[str, Any]]) -> str:
+    """What a data-range statement adds for an import that leaves rows out."""
+    return (
+        f"This import is recorded as a partial acquisition: {excluded_list(blocks)} "
+        f"could be part of the acquisition and {excluded_verb(blocks)} left out as "
+        f"the user acknowledged, and the acknowledgment with its reason is recorded."
     )
 
 
