@@ -5385,7 +5385,7 @@
             "type": "string"
           },
           "p10": {
-            "description": "P10 of the step, in the declared unit",
+            "description": "Nominal P10 of the step, in the declared unit",
             "title": "P10",
             "type": "number"
           },
@@ -5395,7 +5395,7 @@
             "type": "number"
           },
           "p90": {
-            "description": "P90 of the step, in the declared unit",
+            "description": "Nominal P90 of the step, in the declared unit",
             "title": "P90",
             "type": "number"
           },

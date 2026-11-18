@@ -1514,9 +1514,9 @@ class IndicatorForecastAnchor(BaseModel):
     step: int = Field(description="Step number, 1 = the first projected bin")
     bin_start: str = Field(description="Start of the step's bin, UTC ISO 8601")
     bin_end: str = Field(description="End of the step's bin, UTC ISO 8601")
-    p10: float = Field(description="P10 of the step, in the declared unit")
+    p10: float = Field(description="Nominal P10 of the step, in the declared unit")
     p50: float = Field(description="P50 (median) of the step, in the declared unit")
-    p90: float = Field(description="P90 of the step, in the declared unit")
+    p90: float = Field(description="Nominal P90 of the step, in the declared unit")
 
 
 class IndicatorForecastHistory(BaseModel):

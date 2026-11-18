@@ -236,6 +236,12 @@ Fixture history:
   acquisition_completeness on each measurement; inspect_signal_file's
   reading says its run may continue across damaged rows.
   Generated under mcp 2.3.0 and pydantic 2.12.0 (uv.lock).
+- Nominal anchor quantiles (2026-11-18): regenerated intentionally: two
+  descriptions only, no property, enum value or type changed.
+  forecast_asset_indicator: the p10 and p90 descriptions of each anchor
+  (IndicatorForecastAnchor) say the quantiles are nominal, as the p10 and p90
+  column descriptions already do.
+  Generated under mcp 2.3.0 and pydantic 2.12.0 (uv.lock).
 """
 
 from __future__ import annotations

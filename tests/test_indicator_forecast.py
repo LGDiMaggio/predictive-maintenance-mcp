@@ -11,6 +11,7 @@ environment, from the worktree root::
 
 import ast
 import json
+import math
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -88,6 +89,32 @@ def write_golden():
     )
 
 
+POSITIVE_SIGN_DETAIL = (
+    "Every observed value is positive, but P10 falls below zero: the band is the "
+    "method's symmetric Gaussian band and does not respect the indicator's sign."
+)
+NEGATIVE_SIGN_DETAIL = (
+    "Every observed value is negative, but P90 rises above zero: the band is the "
+    "method's symmetric Gaussian band and does not respect the indicator's sign."
+)
+ZERO_OR_POSITIVE_SIGN_DETAIL = (
+    "Every observed value is zero or positive, but P10 falls below zero: the band is "
+    "the method's symmetric Gaussian band and does not respect the indicator's sign."
+)
+ZERO_OR_NEGATIVE_SIGN_DETAIL = (
+    "Every observed value is zero or negative, but P90 rises above zero: the band is "
+    "the method's symmetric Gaussian band and does not respect the indicator's sign."
+)
+
+
+def _sign_details(result):
+    return [
+        w["detail"]
+        for w in result["warnings"]
+        if w["code"] == "interval_crosses_observed_sign"
+    ]
+
+
 class TestForecastPayload:
     def test_forecast_status_and_shape(self):
         obs, vals = _series()
@@ -128,6 +155,64 @@ class TestForecastPayload:
         r = _forecast(obs, vals)
         assert r["last_observed_at"].endswith("Z")
         assert r["anchors"][0]["bin_start"].endswith("Z")
+
+    def test_median_repeats_the_last_bin_value_not_the_last_reading(self):
+        """With six readings per 1h bin under 'mean', P50 is the last bin's
+        mean (36 / 6 = 6.0), not its last reading (9.0)."""
+        obs, vals = _series(
+            n=288, step=timedelta(minutes=10), end=NOW - timedelta(minutes=10)
+        )
+        vals[-6:] = [3.0, 4.0, 5.0, 7.0, 8.0, 9.0]
+        r = _forecast(obs, vals, horizon_steps=6)
+        assert r["history"]["last_bin_points"] == 6
+        assert r["history"]["last_value"] == 9.0
+        assert r["p50"] == [6.0] * 6
+
+    def test_seasonal_fallback_step_widens_by_sqrt_two_end_to_end(self):
+        """A missing reading empties the most recent bin at one phase, so that
+        step repeats the season before and its half-band is sqrt(2) times its
+        neighbours'.
+
+        Checked at rel 1e-9 on the unrounded quantiles reached from the call
+        arguments through the tool's own grid preparation, and on the payload
+        at its rounding (six significant digits, about 1e-4 on these widths).
+        """
+        obs, _ = _series(n=120)
+        rng = np.random.default_rng(12)
+        base = np.sin(2 * np.pi * np.arange(24) / 24) * 3 + 10
+        vals = list(np.round(np.tile(base, 5) + rng.normal(0, 0.2, 120), 6))
+        source_of_step_6 = 120 - 24 + 5
+        del obs[source_of_step_6], vals[source_of_step_6]
+        call = dict(
+            observed_at=obs,
+            values=vals,
+            indicator="velocity RMS",
+            unit="mm/s",
+            resolution="1h",
+            horizon_steps=24,
+            backend="seasonal_naive",
+            aggregation="mean",
+            season_length_steps=24,
+        )
+        _, grid = s.prepare_series(**call, now=NOW)
+        out = rf.reference_forecast(
+            grid.values,
+            backend="seasonal_naive",
+            horizon_steps=24,
+            season_length_steps=24,
+            max_supported_horizon_steps=24,
+        )
+        assert list(out.seasons_back[4:7]) == [1, 2, 1]
+        assert out.p50[5] == vals[120 - 48 + 5]
+        half = out.p90 - out.p50
+        for neighbour in (4, 6):
+            assert half[5] / half[neighbour] == pytest.approx(math.sqrt(2), rel=1e-9)
+        r = _forecast(**call)
+        payload_half = np.subtract(r["p90"], r["p50"])
+        for neighbour in (4, 6):
+            assert payload_half[5] / payload_half[neighbour] == pytest.approx(
+                math.sqrt(2), rel=2e-3
+            )
 
     @pytest.mark.parametrize(
         "aggregation, phrase",
@@ -634,7 +719,7 @@ class TestWarnings:
         vals = list(np.round(0.2 + np.abs(rng.normal(0, 0.15, 60)), 6))
         r = _forecast(obs, vals, horizon_steps=24)
         assert min(r["p10"]) < 0
-        assert "interval_crosses_observed_sign" in [w["code"] for w in r["warnings"]]
+        assert _sign_details(r) == [POSITIVE_SIGN_DETAIL]
 
     def test_interval_crosses_observed_sign_for_a_negative_series(self):
         rng = np.random.default_rng(3)
@@ -642,12 +727,64 @@ class TestWarnings:
         vals = list(np.round(-0.2 - np.abs(rng.normal(0, 0.15, 60)), 6))
         r = _forecast(obs, vals, horizon_steps=24)
         assert max(r["p90"]) > 0
-        details = [
-            w["detail"]
-            for w in r["warnings"]
-            if w["code"] == "interval_crosses_observed_sign"
-        ]
-        assert "P90 rises above zero" in details[0]
+        assert _sign_details(r) == [NEGATIVE_SIGN_DETAIL]
+
+    @pytest.mark.parametrize(
+        "sign", [1.0, -1.0], ids=["zero_or_positive", "zero_or_negative"]
+    )
+    def test_a_zero_reading_keeps_the_sign_warning(self, sign):
+        """One zero reading (a stopped machine, a dropout written as 0.0) in an
+        otherwise one-signed series still gets the sign warning, in its own
+        wording."""
+        rng = np.random.default_rng(3)
+        obs, _ = _series(n=60)
+        vals = list(np.round(sign * (0.2 + np.abs(rng.normal(0, 0.15, 60))), 6))
+        vals[0] = 0.0
+        r = _forecast(obs, vals, horizon_steps=24)
+        if sign > 0:
+            assert min(r["p10"]) < 0
+            assert _sign_details(r) == [ZERO_OR_POSITIVE_SIGN_DETAIL]
+        else:
+            assert max(r["p90"]) > 0
+            assert _sign_details(r) == [ZERO_OR_NEGATIVE_SIGN_DETAIL]
+
+    def test_a_zero_reading_with_the_band_above_zero_has_no_sign_warning(self):
+        obs, vals = _series()
+        vals = [0.0] + [v + 10.0 for v in vals[1:]]
+        r = _forecast(obs, vals)
+        assert r["history"]["min_value"] == 0.0 and min(r["p10"]) > 0
+        assert _sign_details(r) == []
+
+    def test_a_zero_reading_with_the_band_below_zero_has_no_sign_warning(self):
+        obs, vals = _series()
+        vals = [0.0] + [-(v + 10.0) for v in vals[1:]]
+        r = _forecast(obs, vals)
+        assert r["history"]["max_value"] == 0.0 and max(r["p90"]) < 0
+        assert min(r["p10"]) < 0
+        assert _sign_details(r) == []
+
+    @pytest.mark.parametrize(
+        "raw, sign",
+        [
+            ([0.5, 1.0, 2.0], "positive"),
+            ([0.0, 1.0, -0.0], "zero_or_positive"),
+            ([-0.5, -1.0, -2.0], "negative"),
+            ([0.0, -1.0, -2.0], "zero_or_negative"),
+            ([-1.0, 0.0, 1.0], None),
+            ([0.0, -0.0, 0.0], None),
+        ],
+    )
+    def test_observed_sign_cases(self, raw, sign):
+        assert f._observed_sign(np.array(raw)) == sign
+
+    def test_an_all_zero_series_is_refused_before_the_sign_check(self):
+        obs, _ = _series(n=60)
+        r = _forecast(obs, [0.0] * 60)
+        assert (r["status"], r["reason_code"]) == (
+            "insufficient_history",
+            "no_variation",
+        )
+        assert r["warnings"] == []
 
     def test_a_mixed_sign_series_has_no_sign_warning(self):
         obs, vals = _series()
@@ -666,6 +803,86 @@ class TestWarnings:
             "isolated_origin",
             "interval_crosses_observed_sign",
         )
+
+
+#: A spring daylight-saving change, from UTC+1 to UTC+2, at 01:00 UTC.
+DST_CHANGE = datetime(2026, 3, 29, 1, 0, tzinfo=timezone.utc)
+HOUR = timedelta(hours=1)
+
+
+def _local_clock_offset(t):
+    return 1 if t < DST_CHANGE else 2
+
+
+def _local_clock_cycle(t):
+    """A daily cycle that follows local clock time, without noise."""
+    hour = (t.hour + _local_clock_offset(t)) % 24
+    return 10.0 + 3.0 * math.sin(2.0 * math.pi * hour / 24.0)
+
+
+class TestDaylightSavingChange:
+    """The grid is UTC, so a cycle that follows local clock time moves by one
+    step at a daylight-saving change: for up to one season the seasonal median
+    repeats bins one step out of phase with that cycle, and the pairs one
+    season apart that span the change are what widens the band."""
+
+    @pytest.mark.parametrize(
+        "origin_hours, out_of_phase_steps",
+        [(1, 23), (6, 18), (12, 12), (23, 1), (72, 0)],
+    )
+    def test_repeated_bins_are_out_of_phase_for_one_season(
+        self, origin_hours, out_of_phase_steps
+    ):
+        """Hourly history from 14 days before the change, written with its
+        local offset as a local-time export would write it; the first forecast
+        bin starts origin_hours after the change."""
+        now = DST_CHANGE + origin_hours * HOUR
+        first = DST_CHANGE - 336 * HOUR
+        times = [first + i * HOUR for i in range(336 + origin_hours)]
+        values = [_local_clock_cycle(t) for t in times]
+        observed_at = [
+            t.astimezone(timezone(timedelta(hours=_local_clock_offset(t)))).isoformat()
+            for t in times
+        ]
+        call = dict(
+            observed_at=observed_at,
+            values=values,
+            indicator="velocity RMS",
+            unit="mm/s",
+            resolution="1h",
+            horizon_steps=24,
+            backend="seasonal_naive",
+            aggregation="mean",
+            season_length_steps=24,
+        )
+        _, grid = s.prepare_series(**call, now=now)
+        assert grid.step_us == 3_600_000_000
+        assert np.all(grid.instants_us % grid.step_us == 0)
+        out = rf.reference_forecast(
+            grid.values,
+            backend="seasonal_naive",
+            horizon_steps=24,
+            season_length_steps=24,
+            max_supported_horizon_steps=24,
+        )
+        # Every forecast bin lies after the change, on the cycle's new phase.
+        expected = [_local_clock_cycle(now + k * HOUR) for k in range(24)]
+        off = np.abs(out.p50 - expected) > 1e-9
+        assert off.tolist() == [True] * out_of_phase_steps + [False] * (
+            24 - out_of_phase_steps
+        )
+        # Same-phase pairs differ only where they span the change, and they
+        # alone give the band its width.
+        lagged = np.subtract(values[24:], values[:-24])
+        spans = np.array(
+            [times[i] < DST_CHANGE <= times[i + 24] for i in range(lagged.size)]
+        )
+        assert np.all(lagged[~spans] == 0.0) and np.any(lagged[spans] != 0.0)
+        assert out.sigma > 0
+        assert out.sigma == pytest.approx(math.sqrt(np.mean(lagged**2)), rel=1e-12)
+        r = _forecast(**call, now=now)
+        assert r["status"] == "forecast"
+        assert r["forecast_start"] == s.format_instant(s.epoch_us(now))
 
 
 class TestProvenance:
@@ -826,6 +1043,65 @@ def test_interpretation_is_pinned():
         "fault detection, a failure probability or a remaining-useful-life estimate, and "
         "it says nothing about the condition of the machine."
     )
+
+
+INTERVAL_NOTE_TEXT = (
+    "P10 and P90 are nominal quantiles under the method's assumption of independent "
+    "increments with no trend, estimated from the differences between observed bins "
+    "one step apart, or one season apart with the seasonal naive backend; their "
+    "coverage on this series is not validated. Under a sustained trend, values tend "
+    "to leave the band on the trend side more often as the horizon grows. With the "
+    "naive backend, on noise-like fluctuation around a level the band tends to be "
+    "wider than the data need; on smooth variation that persists from step to step "
+    "it tends to be narrower beyond the first step. On cyclic data, the direction "
+    "depends on the horizon and phase; it can be narrower at some horizons but not "
+    "necessarily near the cycle length. These comparisons do not establish the "
+    "seasonal naive backend's coverage. Values that an export interpolated or held, "
+    "rather than recorded or averaged, make the band narrower than the data warrant. "
+    "The band is not a probability of crossing any limit and must not be compared "
+    "with alarm or ISO zone boundaries."
+)
+NAIVE_NOTE_TEXT = (
+    "Naive reference: the median repeats the last observed bin value at every step by "
+    "construction. A flat median is a property of the method, not a prediction that "
+    "the indicator will stay stable. For an indicator with a regular cycle, the "
+    "seasonal naive backend, with the cycle declared as its season, repeats the cycle "
+    "instead of holding the last value."
+)
+SEASONAL_NOTE_TEXT = (
+    "Seasonal naive reference: each step's median repeats the most recent observed bin "
+    "at the same phase of the declared season, by construction. A repeating median is "
+    "a property of the method, not a prediction that the pattern will continue. When "
+    "the most recent bin at a phase is empty, that step repeats an earlier season and "
+    "its band is wider, so the band need not widen steadily with the step. The grid is "
+    "in UTC, so a daylight-saving change shifts a cycle tied to local clock time by "
+    "one hour: for about one season after the change, repeated bins can be out of "
+    "phase with that cycle, and differences that span the change can widen the band."
+)
+
+
+def test_interval_and_method_notes_are_pinned():
+    assert f.INTERVAL_NOTE == INTERVAL_NOTE_TEXT
+    assert f.METHOD_NOTES == {
+        "naive": NAIVE_NOTE_TEXT,
+        "seasonal_naive": SEASONAL_NOTE_TEXT,
+    }
+
+
+@pytest.mark.parametrize(
+    "backend, method_note",
+    [("naive", NAIVE_NOTE_TEXT), ("seasonal_naive", SEASONAL_NOTE_TEXT)],
+    ids=["naive", "seasonal_naive"],
+)
+def test_every_forecast_carries_the_pinned_notes(backend, method_note):
+    obs, _ = _series(n=120, seed=11)
+    rng = np.random.default_rng(12)
+    base = np.sin(2 * np.pi * np.arange(24) / 24) * 3 + 10
+    vals = list(np.round(np.tile(base, 5) + rng.normal(0, 0.2, 120), 6))
+    season = 24 if backend == "seasonal_naive" else None
+    r = _forecast(obs, vals, backend=backend, season_length_steps=season)
+    assert r["status"] == "forecast"
+    assert (r["interval_note"], r["method_note"]) == (INTERVAL_NOTE_TEXT, method_note)
 
 
 @pytest.mark.parametrize("module", MODULES, ids=lambda m: m.__name__.rsplit(".", 1)[-1])

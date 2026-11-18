@@ -6,6 +6,7 @@ the uncentred RMS of grid-adjacent differences. The coverage screens keep the
 nominal level, the measured rate and the out-of-model case apart.
 """
 
+import functools
 import math
 from statistics import NormalDist
 
@@ -13,10 +14,13 @@ import numpy as np
 import pytest
 from scipy.stats import beta
 
+from predictive_maintenance_mcp.prognostics import indicator_forecast
 from predictive_maintenance_mcp.prognostics import reference_forecast as rf
 from predictive_maintenance_mcp.signal_validation import InvalidInputError
 
 Z90 = NormalDist().inv_cdf(0.9)
+REPLICATES = 400
+NOMINAL_INSIDE = 0.80
 
 
 def _run(values, horizon=6, backend="naive", season=None, max_supported=None):
@@ -36,6 +40,29 @@ def _clopper_pearson(k, n, alpha=0.05):
     lo = beta.ppf(alpha / 2, k, n - k + 1) if k > 0 else 0.0
     hi = beta.ppf(1 - alpha / 2, k + 1, n - k) if k < n else 1.0
     return lo, hi
+
+
+@functools.lru_cache(maxsize=None)
+def persistent_increments_inside() -> int:
+    """Naive-band hits at h = 12 on integrated AR(1) increments (phi 0.8).
+
+    400 seeded series of 212 bins, history the first 200: smooth variation
+    that persists from step to step, outside the method's assumption of
+    independent increments. Shared by the coverage screen and the check that
+    the interval note states the narrow direction.
+    """
+    inside = 0
+    for seed in range(REPLICATES):
+        rng = np.random.default_rng(60_000 + seed)
+        shocks = rng.normal(size=212)
+        increments = np.empty(212)
+        increments[0] = shocks[0] / math.sqrt(1 - 0.8**2)
+        for i in range(1, 212):
+            increments[i] = 0.8 * increments[i - 1] + shocks[i]
+        series = 50.0 + np.cumsum(increments)
+        out = _run(series[:200], horizon=12)
+        inside += int(out.p10[11] <= series[211] <= out.p90[11])
+    return inside
 
 
 class TestNaive:
@@ -233,6 +260,125 @@ class TestCoverageScreens:
             above += int(walk[523] > out.p90[23])
         lo, _ = _clopper_pearson(above, n)
         assert lo > 0.10, (above, lo)
+
+    def test_multi_step_band_is_near_nominal_on_driftless_random_walks(self):
+        """Screen at h = 6 and h = 24 on one family: 400 walks, 500 bins of
+        history.
+
+        Under the model the walk's spread grows with sqrt(h), as the band does,
+        so the share inside P10..P90 is 0.80 at every horizon. Each
+        Clopper-Pearson 95 % interval must contain 0.80.
+        """
+        inside = {6: 0, 24: 0}
+        for seed in range(REPLICATES):
+            rng = np.random.default_rng(30_000 + seed)
+            walk = np.cumsum(rng.normal(size=524))
+            out = _run(walk[:500], horizon=24)
+            for h in inside:
+                actual = walk[499 + h]
+                inside[h] += int(out.p10[h - 1] <= actual <= out.p90[h - 1])
+        for h, k in inside.items():
+            lo, hi = _clopper_pearson(k, REPLICATES)
+            assert lo <= NOMINAL_INSIDE <= hi, (h, k, lo, hi)
+
+    def test_seasonal_band_is_near_nominal_on_seasonal_random_walks(self):
+        """Seasonal naive under its own model, m = 24: each bin is the bin one
+        season back plus a Gaussian step. 400 series, 480 bins of history.
+
+        Step 1 repeats one season back (k = 1) and step 25 two seasons back
+        (k = 2), where the band is sqrt(2) wider. Each Clopper-Pearson 95 %
+        interval must contain 0.80.
+        """
+        m = 24
+        inside = {1: 0, 2: 0}
+        for seed in range(REPLICATES):
+            rng = np.random.default_rng(40_000 + seed)
+            series = np.cumsum(rng.normal(size=528).reshape(-1, m), axis=0).ravel()
+            out = _run(series[:480], horizon=48, backend="seasonal_naive", season=m)
+            for k, step in ((1, 1), (2, 25)):
+                assert out.seasons_back[step - 1] == k
+                actual = series[479 + step]
+                inside[k] += int(out.p10[step - 1] <= actual <= out.p90[step - 1])
+        for k, hits in inside.items():
+            lo, hi = _clopper_pearson(hits, REPLICATES)
+            assert lo <= NOMINAL_INSIDE <= hi, (k, hits, lo, hi)
+
+    def test_band_is_wider_than_needed_on_noise_around_a_level(self):
+        """Out-of-model family, the wide direction: independent noise around a
+        level, 200 bins, naive at h = 6.
+
+        The band assumes the variation accumulates from step to step; noise
+        around a level does not, so nearly every actual falls inside. The
+        Clopper-Pearson lower bound must exceed 0.95.
+        """
+        inside = 0
+        for seed in range(REPLICATES):
+            rng = np.random.default_rng(50_000 + seed)
+            series = 10.0 + rng.normal(size=206)
+            out = _run(series[:200], horizon=6)
+            inside += int(out.p10[5] <= series[205] <= out.p90[5])
+        lo, _ = _clopper_pearson(inside, REPLICATES)
+        assert lo > 0.95, (inside, lo)
+
+    def test_band_is_narrower_than_needed_on_persistent_variation(self):
+        """Out-of-model family, the narrow direction and a documented
+        limitation: integrated AR(1) increments (phi 0.8), naive at h = 12.
+
+        Increments that persist from step to step carry the series away from
+        the last bin faster than independent increments would, so actuals
+        leave the band far more often than nominal. The Clopper-Pearson upper
+        bound must stay below 0.60.
+        """
+        inside = persistent_increments_inside()
+        _, hi = _clopper_pearson(inside, REPLICATES)
+        assert hi < 0.60, (inside, hi)
+
+    def test_one_step_coverage_at_the_ten_pair_minimum_is_recorded(self):
+        """Characterization at the smallest history the band accepts: 11 bins,
+        10 adjacent pairs, naive at h = 1, 400 seeded driftless walks.
+
+        Pinned to the count these seeds give (318 of 400, 0.795, Clopper-Pearson
+        95 % interval 0.752 to 0.834). With sigma estimated from 10 pairs the
+        rate is expected somewhat below nominal; this records the measured
+        rate and asserts nothing about calibration.
+        """
+        inside = 0
+        for seed in range(REPLICATES):
+            walk = np.cumsum(np.random.default_rng(70_000 + seed).normal(size=12))
+            out = _run(walk[:11], horizon=1)
+            assert out.difference_pairs == rf.MIN_DIFFERENCE_PAIRS
+            inside += int(out.p10[0] <= walk[11] <= out.p90[0])
+        assert inside == 318
+
+
+#: The interval note's statement of the narrow direction, which the
+#: persistent family above measures.
+NARROWER_CLAUSE = (
+    "on smooth variation that persists from step to step it tends to be narrower "
+    "beyond the first step"
+)
+
+
+def note_states_the_narrow_direction(note: str, inside: int, n: int) -> bool:
+    """The note may drop its narrower-band clause only once the persistent
+    family no longer covers below nominal."""
+    _, hi = _clopper_pearson(inside, n)
+    return NARROWER_CLAUSE in " ".join(note.split()) or hi >= NOMINAL_INSIDE
+
+
+class TestIntervalNoteEvidence:
+    def test_the_note_states_the_narrow_direction_while_the_band_under_covers(self):
+        inside = persistent_increments_inside()
+        assert note_states_the_narrow_direction(
+            indicator_forecast.INTERVAL_NOTE, inside, REPLICATES
+        ), (inside, _clopper_pearson(inside, REPLICATES))
+
+    def test_control_the_predicate_needs_the_clause_only_under_under_coverage(self):
+        under, nominal = 160, 320
+        with_clause = f"The band, {NARROWER_CLAUSE}, and so on."
+        assert not note_states_the_narrow_direction("No clause.", under, REPLICATES)
+        assert note_states_the_narrow_direction(with_clause, under, REPLICATES)
+        assert note_states_the_narrow_direction("No clause.", nominal, REPLICATES)
 
 
 def test_literal_vocabularies():
