@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Signal import: the configuration's attestation accepts an optional
+  `exclusions` list for acknowledged rows left out of the data range. Every
+  import records whether it leaves such rows out: in the stored signal's
+  `import_provenance`, in `get_signal_imports` (`acquisition_completeness`,
+  and the acknowledgments of each confirmation) and, for a channel bound to a
+  measurement, in the asset ledger, which `get_asset_history` shows for each
+  measurement. An import that leaves rows out is recorded as a partial
+  acquisition.
 - **Signal import: four tools and a guided prompt for delimited-text
   exports.** `inspect_signal_file` reads a `.csv` or `.txt` export without
   writing anything and reports its regions (preamble, header, units row,
@@ -365,6 +373,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `aggregate_corroboration`, both null under the default rule.
 
 ### Changed
+- Signal import: restoring a recorded import by `import_id` is refused when
+  the import was recorded before this check existed; importing the file again
+  records the check and makes it restorable.
 - **Breaking: signal files are closed to network clients by default.** Over
   SSE or streamable HTTP, unless a call comes directly from this machine through
   a loopback bind, `load_signal`, `list_signals(scope="disk")`,
@@ -650,6 +661,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   infinity was already refused as a negative reading and is now refused as a
   non-finite one. Other negative readings are refused as before. The zone
   boundaries and the machine group and support defaults are unchanged.
+- Signal import: validation no longer reaches `ready` when rows the data
+  range leaves out could be part of the acquisition. A malformed row, a blank
+  line or a repeated header near the start of an export could move the
+  proposed data start and leave earlier rows out without a warning, and a
+  configured last data line could leave later rows out the same way.
+  Validation now examines every line above the data start and after a
+  configured last data line, names any such rows, and imports without them
+  only when the user confirms the data range and acknowledges the exclusion
+  for that file, that configuration and those rows. A damaged row can also no
+  longer change which delimiter and decimal mark a file is read with. A
+  configuration that left such rows out and passed validation before now
+  needs the confirmation and the acknowledgment, so importing it again returns
+  "validate again".
 - **`calculate_bearing_characteristic_frequencies` and
   `compute_spectrogram_stft` work over MCP again.** Both tools failed on
   every valid call made through an MCP client, while direct Python calls

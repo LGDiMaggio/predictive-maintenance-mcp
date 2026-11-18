@@ -370,8 +370,10 @@ class TestRecording:
         calls = {"n": 0}
 
         def flaky(self, asset_id, offset, build):
+            # Each bound channel appends its completeness note, then its
+            # declaration: call 4 is the second channel's declaration.
             calls["n"] += 1
-            if calls["n"] == 2:
+            if calls["n"] == 4:
                 raise OSError(28, "No space left on device")
             return real(self, asset_id, offset, build)
 
@@ -1120,3 +1122,208 @@ class TestRemainingBranches:
         )
         [entry] = block["results"]
         assert entry["reason_code"] == "file_inaccessible"
+
+
+# ---------------------------------------------------------------------------
+# The check for rows left out, noted in the ledger
+# ---------------------------------------------------------------------------
+
+NOTE = "acquisition_completeness_recorded"
+TRIMMED = {
+    "partial_acquisition": True,
+    "excluded_rows": [{"first_line": 2, "last_line": 102, "rows": 101}],
+}
+WHOLE = {"partial_acquisition": False, "excluded_rows": []}
+
+
+def trimmed_file(write) -> Path:
+    header = "time [s],acc [g]"
+    data = [f"{row / RATE:.6f},{corpus.sample(row, 0):.6f}" for row in range(400)]
+    return write("trim.csv", corpus.lines_to_bytes([header] + data))
+
+
+def bound_configuration(path: Path, first: int) -> dict[str, Any]:
+    """One bound channel, every basis stated; when *first* leaves rows out,
+    the acknowledgment copied from the finding that names them."""
+    stated = {"basis": "user_stated"}
+    conf = {
+        "schema": "pmm-text-import-config/1",
+        "interpretation": {
+            "schema": "pmm-text-import/1",
+            "dialect": {
+                "encoding": "utf-8",
+                "delimiter": ",",
+                "decimal": ".",
+                "header_line": 1,
+            },
+            "data_lines": {"first": first},
+            "time_base": {"source": "stated", "sampling_rate_hz": "25600"},
+            "time_columns": [{"column": 0, "time_unit": "s"}],
+            "defaults": {"asset_id": ASSET, "acquired_at": ACQUIRED},
+            "channels": [
+                {
+                    "column": 1,
+                    "role": "vibration",
+                    "quantity": "acceleration",
+                    "unit": "g",
+                    "binding": {
+                        "measurement_point_id": "motor_de",
+                        "direction": "horizontal",
+                    },
+                }
+            ],
+        },
+        "attestation": {
+            "bases": {
+                "time_base": stated,
+                "defaults.acquired_at": stated,
+                "channels[1].unit": stated,
+                "channels[1].binding": stated,
+                "dialect": stated,
+                "data_lines": stated,
+            },
+            "overrides": {},
+        },
+    }
+    if first > 2:
+        asked = validate_import(str(path), conf, channel="python_api")
+        conf["attestation"]["exclusions"] = [
+            {
+                "source_sha256": asked.source_sha256,
+                "import_id": asked.import_id,
+                "first_line": 2,
+                "last_line": first - 1,
+                "rows": first - 2,
+                "reason": "the run started at this line",
+            }
+        ]
+    return conf
+
+
+def types_of(asset: str = ASSET) -> list[str]:
+    return [event["event_type"] for event in events()]
+
+
+def shown(measurement_id: str) -> Optional[dict[str, Any]]:
+    history = ledger_service.asset_history(store(), ASSET)
+    entries = [
+        e for e in history["measurements"] if e["measurement_id"] == measurement_id
+    ]
+    assert len(entries) == 1
+    return entries[0]["acquisition_completeness"]
+
+
+class TestCompletenessInTheLedger:
+    def test_first_import_notes_the_result_before_the_declaration(self, write, service):
+        path = trimmed_file(write)
+        outcome = run_import(service, path, bound_configuration(path, 103))
+        assert outcome.channels[0].ledger_status == "recorded"
+        assert types_of() == [
+            NOTE,
+            EVENT_MEASUREMENT_RECORDED,
+            EVENT_HEALTH_SNAPSHOT_COMPUTED,
+        ]
+        note = events()[0]["payload"]
+        assert note == {
+            "measurement_id": measurement(outcome),
+            "import_id": outcome.import_id,
+            **TRIMMED,
+        }
+        assert shown(measurement(outcome)) == TRIMMED
+
+    def test_a_repeat_appends_no_ledger_event(self, write, service, repo):
+        path = trimmed_file(write)
+        conf = bound_configuration(path, 103)
+        run_import(service, path, conf)
+        ledger = config.get_ledger_dir() / f"{ASSET}.jsonl"
+        size = ledger.stat().st_size
+        again = run_import(service, path, conf)
+        assert again.channels[0].ledger_status == "already_recorded"
+        assert ledger.stat().st_size == size
+
+    @pytest.mark.parametrize("first, result", [(103, TRIMMED), (2, WHOLE)])
+    def test_a_declaration_without_a_note_gets_only_the_note(
+        self, write, service, repo, monkeypatch, first, result
+    ):
+        path = trimmed_file(write)
+        conf = bound_configuration(path, first)
+        # A build before the check recorded the declaration and its snapshot
+        # but no note; the store is empty, as after the restart that installs
+        # the check.
+        with monkeypatch.context() as older:
+            older.setattr(
+                ledger_service._Batch,
+                "_record_completeness",
+                lambda self, outcome, signal_id: None,
+            )
+            run_import(service, path, conf)
+        assert NOTE not in types_of()
+        before = types_of()
+        repo.clear_all()
+        outcome = run_import(service, path, conf)
+        assert outcome.channels[0].ledger_status == "already_recorded"
+        assert types_of() == before + [NOTE]
+        assert shown(measurement(outcome)) == result
+
+    def test_supersession_and_restore_show_the_current_imports_result(
+        self, write, service, repo
+    ):
+        path = trimmed_file(write)
+        partial_conf = bound_configuration(path, 103)
+        first = run_import(service, path, partial_conf)
+        mid = measurement(first)
+        whole = run_import(
+            service, path, bound_configuration(path, 2), signal_id_prefix="whole"
+        )
+        assert whole.channels[0].ledger_status == "superseded"
+        assert shown(mid) == WHOLE
+        notes = [e["payload"] for e in events() if e["event_type"] == NOTE]
+        assert [n["import_id"] for n in notes] == [first.import_id, whole.import_id]
+        count = len(events())
+        restored = run_import(service, path, partial_conf)
+        assert restored.channels[0].ledger_status == "superseded"
+        assert [e["event_type"] for e in events()[count:]] == [
+            EVENT_MEASUREMENT_RECORDED
+        ]
+        assert shown(mid) == TRIMMED
+
+    def test_a_failed_note_on_a_recorded_declaration_names_it(
+        self, write, service, repo, monkeypatch
+    ):
+        from predictive_maintenance_mcp.asset_ledger.store import LedgerLockTimeout
+
+        path = trimmed_file(write)
+        conf = bound_configuration(path, 103)
+        with monkeypatch.context() as older:
+            older.setattr(
+                ledger_service._Batch,
+                "_record_completeness",
+                lambda self, outcome, signal_id: None,
+            )
+            run_import(service, path, conf)
+        before = events()
+        repo.clear_all()
+        real = LedgerStore.append_versioned
+        calls = {"n": 0}
+
+        def flaky(self, asset_id, offset, build):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise LedgerLockTimeout("the ledger lock stayed busy")
+            return real(self, asset_id, offset, build)
+
+        monkeypatch.setattr(LedgerStore, "append_versioned", flaky)
+        outcome = run_import(service, path, conf)
+        channel = outcome.channels[0]
+        assert channel.materialized is True
+        assert channel.ledger_status == "not_recorded"
+        assert channel.reason == (
+            "the asset ledger could not record whether this import leaves out rows "
+            "that could be part of the acquisition (the ledger lock stayed busy); the "
+            "measurement's earlier declaration stays as it was, without that record; "
+            "repeat the import"
+        )
+        assert events() == before
+        again = run_import(service, path, conf)
+        assert again.channels[0].ledger_status == "already_recorded"
+        assert types_of()[len(before) :] == [NOTE]

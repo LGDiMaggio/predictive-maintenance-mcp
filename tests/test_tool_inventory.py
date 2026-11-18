@@ -106,6 +106,12 @@ Fixture history:
   ADDITIVE. check_bearing_faults gains the optional corroboration_rule
   (default any_line, the released rule; controlled_union_v1 is experimental).
   No tool added or removed; counts 44/0/4.
+- Rows a data range leaves out (2026-11-16): regenerated intentionally:
+  ADDITIVE. The configuration model of validate_signal_import and
+  import_signal_file gains the optional attestation.exclusions (default
+  null), a list of ExclusionInput (source_sha256, import_id, first_line,
+  last_line, rows, reason), and the attestation description names it. No
+  tool added or removed; counts 44/0/4.
 
 Snapshot recipe (run from the repo root):
     python -c "from tests.test_tool_inventory import build_inventory, \\

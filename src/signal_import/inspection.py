@@ -80,6 +80,15 @@ from .contracts import (
     TimeStats,
     ValueStatus,
 )
+from .region_audit import (
+    RowShape,
+    _is_date_text,
+    _shaped_cells,
+    classify,
+    column_classes,
+    fields_of,
+    skip_unexplained,
+)
 from .timebase import TimeBaseRefused, assess_time_base, parse_time_tokens
 
 __all__ = [
@@ -125,7 +134,6 @@ _NUMBER = {
     ",": re.compile(r"[+-]?(?:\d+(?:,\d*)?|,\d+)(?:[eE][+-]?\d+)?"),
 }
 _ANY_NUMBER = re.compile(r"[+-]?(?:\d+(?:[.,]\d*)?|[.,]\d+)(?:[eE][+-]?\d+)?")
-_WHITESPACE_RUN = re.compile(r"[ \t]+")
 _DIGIT = re.compile("[0-9]")
 _SEPARATOR = re.compile("[:=]")
 _DELIMITER_CHAR = re.compile("[ \t]")
@@ -192,12 +200,9 @@ _CONFIRM_COMPANION = "that the companion metadata file next to this file is not 
 # ---------------------------------------------------------------------------
 
 
-def _fields(text: str, delimiter: str) -> list[str]:
-    """The fields of *text* under *delimiter*, however many."""
-    if delimiter == "whitespace":
-        stripped = text.strip(" \t")
-        return _WHITESPACE_RUN.split(stripped) if stripped else [""]
-    return text.split("\t" if delimiter == "tab" else delimiter)
+#: The fields of a line under a delimiter, however many (one definition,
+#: shared with the row classifier).
+_fields = fields_of
 
 
 def _split(text: str, delimiter: str) -> Optional[list[str]]:
@@ -288,15 +293,37 @@ class _Reading:
     fields: int
     numeric: frozenset[int]
     trailing_empty: bool
-    rows: tuple[tuple[str, ...], ...]
+    rows: tuple[tuple[str, ...], ...]  # the run's well-formed rows
+    #: Head-line indexes of the damaged and ragged rows the run continues
+    #: across (each followed by a well-formed row of the run).
+    bridged: tuple[int, ...] = ()
 
     @property
     def numeric_ratio(self) -> float:
         return len(self.numeric) / self.fields
 
     @property
-    def score(self) -> tuple[int, float]:
-        return (len(self.rows), round(self.numeric_ratio, 9))
+    def extent(self) -> int:
+        """Rows from the run's first to its last, bridged rows included."""
+        return self.last - self.first + 1
+
+    @property
+    def score(self) -> tuple[int, float, int]:
+        # Extent first, so a reading one damaged row splits does not lose on
+        # length; then the numeric share of the well-formed rows; then their
+        # count, so a reading under which many rows are damaged cannot tie.
+        return (self.extent, round(self.numeric_ratio, 9), len(self.rows))
+
+    @property
+    def shape(self) -> RowShape:
+        return RowShape(
+            self.delimiter,
+            self.decimal,
+            self.fields,
+            self.numeric,
+            column_classes(self.rows, self.fields, self.numeric, self.decimal),
+            self.trailing_empty,
+        )
 
     def matches(self, row: Optional[_Row]) -> bool:
         return (
@@ -306,30 +333,120 @@ class _Reading:
         )
 
 
+def _value_with_unit(row: Optional[_Row], below: Optional[_Row]) -> bool:
+    """*row* holds the one number *below* holds, in the same column, and
+    only non-numbers in the columns *below* leaves empty, and *below* ends
+    with a delimiter (25600,Hz above 0.001, or 0.001,,): it may be a value
+    with its unit rather than a sample, and the row classifier reads it as a
+    data row left out, so no run starts on it and no header is read from it.
+    A note on the first of single-value rows reads the same way. Above rows
+    without a trailing delimiter the classifier reads such a line as text, and
+    it stays a header candidate as before."""
+    if row is None or below is None or not below.trailing_empty:
+        return False
+    held = {index for index, field in enumerate(below.fields) if field}
+    if len(held) != 1 or held != below.numeric or not held <= row.numeric:
+        return False
+    extra = {index for index, field in enumerate(row.fields) if field} - held
+    return bool(extra) and not extra & row.numeric
+
+
+def _value_with_unit_above(
+    above: str, below: str, delimiter: str, decimal: str
+) -> bool:
+    """:func:`_value_with_unit` for two lines of text under a reading."""
+    return _value_with_unit(
+        _row(above, delimiter, decimal), _row(below, delimiter, decimal)
+    )
+
+
 def _best_run(
     lines: tuple[ScannedLine, ...], delimiter: str, decimal: str
 ) -> Optional[_Reading]:
+    """The best run of rows of one shape under a reading. A run starts at a
+    well-formed row; damaged and ragged rows never start it, but it continues
+    across them when a well-formed row follows and its well-formed rows still
+    outnumber them. Blank and text lines end it."""
     best: Optional[_Reading] = None
     start = 0
-    while start < len(lines):
+    count = len(lines)
+    while start < count:
         first = _row(lines[start].text, delimiter, decimal)
         if first is None:
             start += 1
             continue
+        nxt = (
+            _row(lines[start + 1].text, delimiter, decimal)
+            if start + 1 < count
+            else None
+        )
+        if _value_with_unit(first, nxt):
+            # Not a run's first row: validation asks about it as a row left
+            # out.
+            start += 1
+            continue
+        if not first.trailing_empty and nxt is not None:
+            # A value in the empty last field the data rows end with is an
+            # annotation in that column, as the row classifier reads it (a
+            # number there too: it is no column of the data). Not when one
+            # filled field would remain: above single-value rows that line
+            # may be values of another kind (25600,,2), so the run starts
+            # after it and validation asks about it.
+            if (
+                nxt.trailing_empty
+                and sum(1 for field in nxt.fields if field) > 1
+                and len(nxt.fields) == len(first.fields) - 1
+                and nxt.numeric == first.numeric - {len(nxt.fields)}
+            ):
+                first = _Row(first.fields[:-1], nxt.numeric, True)
+        shape = RowShape(
+            delimiter,
+            decimal,
+            len(first.fields),
+            first.numeric,
+            column_classes([first.fields], len(first.fields), first.numeric, decimal),
+            first.trailing_empty,
+        )
+
+        def same(index: int) -> Optional[_Row]:
+            row = _row(lines[index].text, delimiter, decimal)
+            if row is None:
+                return None
+            width = len(first.fields)
+            if len(row.fields) == width:
+                return row if row.numeric == first.numeric else None
+            if first.trailing_empty and len(row.fields) == width + 1:
+                # The annotation is dropped before the columns are compared.
+                numeric = row.numeric - {width}
+                if numeric == first.numeric:
+                    return _Row(row.fields[:width], numeric, True)
+            return None
+
         rows = [first.fields]
+        bridged: list[int] = []
         trailing = first.trailing_empty
         end = start
-        while end + 1 < len(lines):
-            nxt = _row(lines[end + 1].text, delimiter, decimal)
-            if (
-                nxt is None
-                or len(nxt.fields) != len(first.fields)
-                or (nxt.numeric != first.numeric)
-            ):
+        while end + 1 < count:
+            nxt = same(end + 1)
+            if nxt is not None:
+                rows.append(nxt.fields)
+                trailing = trailing or nxt.trailing_empty
+                end += 1
+                continue
+            gap: list[int] = []
+            probe = end + 1
+            while probe < count and classify(
+                lines[probe].text, shape, adjacent=True
+            ).kind in ("damaged", "ragged"):
+                gap.append(probe)
+                probe += 1
+            resumed = same(probe) if gap and probe < count else None
+            if resumed is None or len(rows) + 1 <= len(bridged) + len(gap):
                 break
-            rows.append(nxt.fields)
-            trailing = trailing or nxt.trailing_empty
-            end += 1
+            bridged.extend(gap)
+            rows.append(resumed.fields)
+            trailing = trailing or resumed.trailing_empty
+            end = probe
         reading = _Reading(
             delimiter=delimiter,
             decimal=decimal,
@@ -339,6 +456,7 @@ def _best_run(
             numeric=first.numeric,
             trailing_empty=trailing,
             rows=tuple(rows),
+            bridged=tuple(bridged),
         )
         if best is None or reading.score > best.score:
             best = reading
@@ -534,14 +652,6 @@ def _stats(values: list[float]) -> Optional[ColumnStats]:
     )
 
 
-def _is_date_text(token: str, decimal: str) -> bool:
-    try:
-        parse_time_tokens([token], decimal_mark=decimal)
-    except TimeBaseRefused as refused:
-        return refused.datetime_text
-    return False
-
-
 def _time_stats(
     tokens: list[str],
     decimal: str,
@@ -579,6 +689,78 @@ def _time_stats(
         finding_codes=[finding.code for finding in assessment.findings],
     )
     return stats, assessment.proposed_rate_hz if unit_status == "detected" else None
+
+
+#: Damaged rows inside the proposed data region reported one by one.
+MAX_BRIDGED_ISSUES = 10
+
+
+def _bridged_issues(best: _Reading, lines: tuple[ScannedLine, ...]) -> list[Issue]:
+    """One issue per damaged row the data run continues across, at most
+    :data:`MAX_BRIDGED_ISSUES`, then a count of the rest for each kind of
+    damage."""
+    damaged = []
+    shape = best.shape
+    for index in best.bridged:
+        found = classify(lines[index].text, shape, adjacent=True)
+        if found.kind == "damaged" and found.code is not None:
+            damaged.append((lines[index].number, found))
+    issues = [
+        Issue(
+            code=found.code or "non_numeric_token",
+            message=(
+                f"Line {number} lies inside the data rows, and field {found.field} "
+                f"{found.problem}. If field {found.field} is imported as a channel "
+                f"or a time column, validation refuses the data region at this "
+                f"line; re-export the acquisition."
+            ),
+            line=number,
+            columns=list(found.columns),
+        )
+        for number, found in damaged[:MAX_BRIDGED_ISSUES]
+    ]
+    # One count per kind of damage (the decoder's code and phrase), in the
+    # order each kind first appears, so each count names what its rows share.
+    rest: dict[tuple[str, str], int] = {}
+    for _number, found in damaged[MAX_BRIDGED_ISSUES:]:
+        kind = (found.code or "non_numeric_token", found.problem or "")
+        rest[kind] = rest.get(kind, 0) + 1
+    issues.extend(
+        Issue(
+            code=code,
+            message=(
+                f"1 more row in the scanned data is damaged in the same way: a "
+                f"field {problem}."
+                if count == 1
+                else f"{count} more rows in the scanned data are damaged in the "
+                f"same way: a field {problem}."
+            ),
+        )
+        for (code, problem), count in rest.items()
+    )
+    return issues
+
+
+def _time_tokens(
+    best: _Reading, lines: tuple[ScannedLine, ...], index: int
+) -> list[str]:
+    """A time candidate's tokens over the run, row for row from its first
+    line, so their positions stay the physical lines: a damaged row whose
+    field in this column is still a number keeps its place, and the tokens
+    stop at the first row whose field is not."""
+    bridged = set(best.bridged)
+    well_formed = iter(best.rows)
+    shape = best.shape
+    tokens: list[str] = []
+    for position in range(best.first, best.last + 1):
+        if position not in bridged:
+            tokens.append(next(well_formed)[index])
+            continue
+        fields = _shaped_cells(lines[position].text, shape)
+        if len(fields) != best.fields or _number(fields[index], best.decimal) is None:
+            break
+        tokens.append(fields[index])
+    return tokens
 
 
 def _index_list(indexes: list[int]) -> str:
@@ -901,13 +1083,33 @@ def _inspect(
         candidates=[_reading_model(reading, lines) for reading in readings],
     )
 
+    issues.extend(_bridged_issues(best, lines))
+
     # The data run, and whether it goes on past the scanned head.
     reaches_head_end = best.last == len(lines) - 1
     continues = reaches_head_end and scan.head_truncated
     data_last = None if continues else lines[best.last].number
 
-    # Units row and header: the non-blank lines just above the data.
-    above = [line for line in lines[: best.first] if line.text.strip(" \t")]
+    # Units row and header: the non-blank lines just above the data, past
+    # the damaged or ragged rows right above it, which are never the header
+    # and belong to no region.
+    skipped = skip_unexplained(
+        [line.text for line in reversed(lines[: best.first])], best.shape
+    )
+    if (
+        not skipped
+        and best.first > 0
+        and _value_with_unit_above(
+            lines[best.first - 1].text,
+            lines[best.first].text,
+            best.delimiter,
+            best.decimal,
+        )
+    ):
+        # The run starts after a value with its unit, a row left out that
+        # validation asks about: it is no header either.
+        skipped = 1
+    above = [line for line in lines[: best.first - skipped] if line.text.strip(" \t")]
     units_line: Optional[ScannedLine] = None
     header_line: Optional[ScannedLine] = None
     if above and _is_units_row(_split(above[-1].text, best.delimiter) or []):
@@ -1166,7 +1368,11 @@ def _inspect(
                 if not exact:
                     case_folded_time_units.append(index)
             time_stats, rate = _time_stats(
-                tokens, best.decimal, data_first, time_unit, unit_status
+                _time_tokens(best, lines, index),
+                best.decimal,
+                data_first,
+                time_unit,
+                unit_status,
             )
             if rate is not None:
                 candidates.append(

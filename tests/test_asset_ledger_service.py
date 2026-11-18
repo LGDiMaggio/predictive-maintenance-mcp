@@ -3898,3 +3898,243 @@ class TestNonDefaultPolicyRemedies:
         assert first["next_call"] is None
         assert "repeat this call with the same policy" in first["message"]
         assert "assess_asset_change" not in first["message"]
+
+
+# ---------------------------------------------------------------------------
+# The note of an import's check result (acquisition completeness)
+# ---------------------------------------------------------------------------
+
+NOTE = store_module.EVENT_ACQUISITION_COMPLETENESS_RECORDED
+IMPORT_A = "a" * 64
+PARTIAL_RESULT = {
+    "partial_acquisition": True,
+    "excluded_rows": [{"first_line": 2, "last_line": 101, "rows": 100}],
+}
+CLEAN_RESULT = {"partial_acquisition": False, "excluded_rows": []}
+NOT_RECORDED = (
+    "the asset ledger could not record whether this import leaves out rows that "
+    "could be part of the acquisition ({error})"
+)
+
+
+def record_noted(
+    store: LedgerStore,
+    data_dir: Path,
+    info: dict[str, Any],
+    values: np.ndarray,
+    result: Optional[dict[str, Any]] = PARTIAL_RESULT,
+) -> dict[str, Any]:
+    sid = info["signal_id"]
+    return record(
+        store,
+        data_dir,
+        [info],
+        {sid: values},
+        import_refs={
+            sid: {"import_id": IMPORT_A, "decoder_contract": "pmm-text-decoder/1"}
+        },
+        completeness={} if result is None else {sid: copy.deepcopy(result)},
+    )[0]
+
+
+def event_types(store: LedgerStore, asset: str = ASSET) -> list[str]:
+    return [event["event_type"] for event in events_of(store, asset)]
+
+
+def failing_once(monkeypatch, call: int, error: Exception) -> None:
+    """Make the *call*-th versioned append raise *error*."""
+    real = LedgerStore.append_versioned
+    calls = {"n": 0}
+
+    def flaky(self, asset_id, offset, build):
+        calls["n"] += 1
+        if calls["n"] == call:
+            raise error
+        return real(self, asset_id, offset, build)
+
+    monkeypatch.setattr(LedgerStore, "append_versioned", flaky)
+
+
+class TestCompletenessNotes:
+    def test_the_note_is_written_before_the_declaration(self, store, data_dir):
+        values = noise(1)
+        info = make_info(data_dir / "m01.csv", values)
+        outcome = record_noted(store, data_dir, info, values)
+        assert outcome["ledger_status"] == "recorded"
+        assert event_types(store) == [
+            NOTE,
+            EVENT_MEASUREMENT_RECORDED,
+            EVENT_HEALTH_SNAPSHOT_COMPUTED,
+        ]
+        assert payloads(store, NOTE) == [
+            {
+                "measurement_id": outcome["measurement_id"],
+                "import_id": IMPORT_A,
+                **PARTIAL_RESULT,
+            }
+        ]
+        history = service.asset_history(store, ASSET)
+        assert history["measurements"][0]["acquisition_completeness"] == PARTIAL_RESULT
+
+    def test_an_equal_note_is_never_appended_twice_and_a_different_one_is(
+        self, store, data_dir
+    ):
+        values = noise(1)
+        info = make_info(data_dir / "m01.csv", values)
+        record_noted(store, data_dir, info, values)
+        again = record_noted(store, data_dir, copy.deepcopy(info), values)
+        assert again["ledger_status"] == "already_recorded"
+        assert event_types(store).count(NOTE) == 1
+        changed = record_noted(
+            store, data_dir, copy.deepcopy(info), values, result=CLEAN_RESULT
+        )
+        assert changed["ledger_status"] == "already_recorded"
+        assert event_types(store).count(NOTE) == 2
+        assert event_types(store).count(EVENT_MEASUREMENT_RECORDED) == 1
+        history = service.asset_history(store, ASSET)
+        assert history["measurements"][0]["acquisition_completeness"] == CLEAN_RESULT
+
+    def test_a_failed_note_records_nothing_for_a_new_measurement(
+        self, store, data_dir, monkeypatch
+    ):
+        from predictive_maintenance_mcp.asset_ledger.store import LedgerLockTimeout
+
+        values = noise(1)
+        info = make_info(data_dir / "m01.csv", values)
+        error = LedgerLockTimeout("the ledger lock stayed busy")
+        failing_once(monkeypatch, 1, error)
+        outcome = record_noted(store, data_dir, info, values)
+        assert outcome["ledger_status"] == "not_recorded"
+        assert outcome["reason"] == (
+            NOT_RECORDED.format(error="the ledger lock stayed busy")
+            + ", so nothing was recorded for this measurement; repeat the import"
+        )
+        assert outcome["snapshot_status"] == "skipped"
+        assert event_types(store) == []
+        again = record_noted(store, data_dir, copy.deepcopy(info), values)
+        assert again["ledger_status"] == "recorded"
+        assert event_types(store) == [
+            NOTE,
+            EVENT_MEASUREMENT_RECORDED,
+            EVENT_HEALTH_SNAPSHOT_COMPUTED,
+        ]
+
+    def test_a_failed_note_beside_an_earlier_declaration_leaves_it_as_it_was(
+        self, store, data_dir, monkeypatch
+    ):
+        from predictive_maintenance_mcp.asset_ledger.store import LedgerLockTimeout
+
+        values = noise(1)
+        info = make_info(data_dir / "m01.csv", values)
+        record_noted(store, data_dir, info, values, result=None)
+        before = events_of(store)
+        failing_once(monkeypatch, 1, LedgerLockTimeout("the ledger lock stayed busy"))
+        outcome = record_noted(store, data_dir, copy.deepcopy(info), values)
+        assert outcome["ledger_status"] == "not_recorded"
+        assert outcome["reason"] == (
+            NOT_RECORDED.format(error="the ledger lock stayed busy")
+            + "; the measurement's earlier declaration stays as it was, without that "
+            "record; repeat the import"
+        )
+        assert events_of(store) == before
+        again = record_noted(store, data_dir, copy.deepcopy(info), values)
+        assert again["ledger_status"] == "already_recorded"
+        assert event_types(store)[len(before) :] == [NOTE]
+
+    def test_an_orphan_note_creates_no_measurement(self, store, data_dir, monkeypatch):
+        values = noise(1)
+        info = make_info(data_dir / "m01.csv", values)
+        failing_once(monkeypatch, 2, OSError(28, "No space left on device"))
+        outcome = record_noted(store, data_dir, info, values)
+        assert outcome["ledger_status"] == "not_recorded"
+        assert event_types(store) == [NOTE]
+        view = store.read_view(ASSET)
+        assert view["measurements"] == {} and view["ordered_measurement_ids"] == []
+        assert outcome["measurement_id"] not in store.read_index()
+        history = service.asset_history(store, ASSET)
+        assert history is None or history["measurements"] == []
+
+    def test_declarations_and_snapshots_are_identical_without_the_note_step(
+        self, tmp_path, data_dir, monkeypatch
+    ):
+        declare_point(LedgerStore(tmp_path / "with"))
+        declare_point(LedgerStore(tmp_path / "without"))
+        infos = []
+        for index in range(3):
+            values = noise(index)
+            infos.append((make_info(data_dir / f"m{index}.csv", values), values))
+        with_notes = LedgerStore(tmp_path / "with")
+        for info, values in infos:
+            record_noted(with_notes, data_dir, copy.deepcopy(info), values)
+        monkeypatch.setattr(
+            service._Batch, "_record_completeness", lambda self, outcome, sid: None
+        )
+        without = LedgerStore(tmp_path / "without")
+        for info, values in infos:
+            record_noted(without, data_dir, copy.deepcopy(info), values)
+
+        def kept(store: LedgerStore) -> list[tuple[str, str, str]]:
+            return [
+                (
+                    e["event_type"],
+                    e["event_id"],
+                    store_module.canonical_json(e["payload"]),
+                )
+                for e in events_of(store)
+                if e["event_type"] != NOTE
+            ]
+
+        assert kept(with_notes) == kept(without)
+        assert event_types(with_notes).count(NOTE) == 3
+        assert event_types(without).count(NOTE) == 0
+
+    def test_a_reader_that_does_not_know_the_note_counts_it_and_ignores_it(
+        self, store, data_dir, monkeypatch
+    ):
+        values = noise(1)
+        record_noted(store, data_dir, make_info(data_dir / "m01.csv", values), values)
+        read = store.read(ASSET)
+        known = store_module.build_asset_view(
+            ASSET, read.events, read.integrity, end_offset=read.end_offset
+        )
+        monkeypatch.setattr(
+            store_module, "EVENT_ACQUISITION_COMPLETENESS_RECORDED", "not_a_known_type"
+        )
+        older = store_module.build_asset_view(
+            ASSET, read.events, read.integrity, end_offset=read.end_offset
+        )
+        assert older["integrity"]["ignored_event_types"] == {NOTE: 1}
+        assert older["completeness"] == {}
+        assert known["integrity"]["ignored_event_types"] == {}
+
+        def rest(view: dict[str, Any]) -> dict[str, Any]:
+            view = copy.deepcopy(view)
+            view.pop("completeness")
+            view["integrity"].pop("ignored_event_types")
+            return view
+
+        assert rest(older) == rest(known)
+
+    def test_assessments_never_read_the_note(self, store, data_dir):
+        declare_point(store)
+        for index in range(4):
+            values = noise(index)
+            info = make_info(
+                data_dir / f"m{index}.csv", values, acquired_at=acquired(index)
+            )
+            record_noted(store, data_dir, info, values)
+        read = store.read(ASSET)
+        with_notes = store_module.build_asset_view(ASSET, read.events, read.integrity)
+        without = store_module.build_asset_view(
+            ASSET, [e for e in read.events if e["event_type"] != NOTE], read.integrity
+        )
+        assert with_notes["completeness"]
+        assert assess_change(with_notes, ASSET, POINT) == assess_change(
+            without, ASSET, POINT
+        )
+
+    def test_a_measurement_loaded_another_way_shows_no_result(self, store, data_dir):
+        values = noise(1)
+        record_one(store, data_dir, make_info(data_dir / "m01.csv", values), values)
+        history = service.asset_history(store, ASSET)
+        assert history["measurements"][0]["acquisition_completeness"] is None

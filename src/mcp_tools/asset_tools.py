@@ -293,9 +293,12 @@ async def get_asset_history(
     max_measurements measurements newest first (identity, acquired_at,
     signal_id, file location, declaration version, lineages, a preview of
     the indicators of the last snapshot recorded, comparability grade and
-    codes against the point), the point declarations and baselines with their
-    history, the measurements re-attributed to another asset, and the
-    integrity block. measurement_point_id restricts the history to one
+    codes against the point, and acquisition_completeness: whether the import
+    behind the current declaration leaves out rows that could be part of the
+    acquisition, or null when no result is recorded), the point declarations
+    and baselines with their history, the measurements re-attributed to
+    another asset, and the integrity block. measurement_point_id restricts the
+    history to one
     point and needs asset_id. An unknown asset or point is a typed
     'not_found' naming the known ids, not an exception. After a declaration
     was changed and restored, the preview can still show the snapshot of

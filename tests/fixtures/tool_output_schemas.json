@@ -6085,7 +6085,7 @@
           }
         ],
         "default": null,
-        "description": "Set only for a signal created by import_signal_file: the import_id, the physical column and its 1-based position, the column label and file name as escaped file text, the time-base source, the scaling, the samples digest, the decoder contract, the confirmation channel and, per configured value, its basis (caller_asserted is true when the bases arrived as MCP tool arguments: they record what the caller claimed, never who the caller is). None for every other load.",
+        "description": "Set only for a signal created by import_signal_file: the import_id, the physical column and its 1-based position, the column label and file name as escaped file text, the time-base source, the scaling, the samples digest, the decoder contract, the confirmation channel, per configured value its basis (caller_asserted is true when the bases arrived as MCP tool arguments: they record what the caller claimed, never who the caller is), and the result of the check for rows left out of the data range: partial_acquisition (true when rows that could be part of the acquisition are left out as the user acknowledged, false when the check found none) and excluded_rows (each block's first_line, last_line and rows). Both keys are absent for a signal imported before that check existed, which says nothing about rows left out. None for every other load.",
         "title": "Import Provenance"
       },
       "load_timestamp": {
@@ -6209,7 +6209,7 @@
           }
         ],
         "default": null,
-        "description": "History of the asset (status 'found' only): summary, measurements newest first (measurement_id, measurement_point_id, acquired_at, signal_id, location, declaration_version, rpm, direction, sensor_id, lineages, snapshot_count, indicators preview from the latest snapshot, comparability grade and codes against the point), measurement_count, truncated, point_declarations and baselines (current plus history per point), reattributed, integrity, event_count, ledger_bytes",
+        "description": "History of the asset (status 'found' only): summary, measurements newest first (measurement_id, measurement_point_id, acquired_at, signal_id, location, declaration_version, rpm, direction, sensor_id, lineages, snapshot_count, indicators preview from the latest snapshot, comparability grade and codes against the point, and acquisition_completeness: whether the import behind the current declaration leaves out rows that could be part of the acquisition, as partial_acquisition and excluded_rows, or null when no result is recorded for it, as for a signal loaded another way or imported before the check; it is not a health indicator and is unrelated to snapshot_status), measurement_count, truncated, point_declarations and baselines (current plus history per point), reattributed, integrity, event_count, ledger_bytes",
         "title": "Asset"
       },
       "assets": {
@@ -6284,6 +6284,30 @@
   },
   "get_signal_imports": {
     "$defs": {
+      "ExcludedRowsView": {
+        "additionalProperties": false,
+        "properties": {
+          "first_line": {
+            "title": "First Line",
+            "type": "integer"
+          },
+          "last_line": {
+            "title": "Last Line",
+            "type": "integer"
+          },
+          "rows": {
+            "title": "Rows",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "first_line",
+          "last_line",
+          "rows"
+        ],
+        "title": "ExcludedRowsView",
+        "type": "object"
+      },
       "FileText": {
         "properties": {
           "file_text": {
@@ -6300,6 +6324,28 @@
           "file_text"
         ],
         "title": "FileText",
+        "type": "object"
+      },
+      "ImportAcquisitionView": {
+        "additionalProperties": false,
+        "description": "Whether an import leaves out rows that could be part of the acquisition.\n\nAttributes:\n    partial_acquisition: True when the import leaves out rows that could be\n        part of the acquisition, as the user acknowledged; false when the\n        check found no such row. Unrelated to a snapshot's snapshot_status.\n    excluded_rows: Each block left out, with its first_line, last_line and\n        rows.",
+        "properties": {
+          "excluded_rows": {
+            "items": {
+              "$ref": "#/$defs/ExcludedRowsView"
+            },
+            "title": "Excluded Rows",
+            "type": "array"
+          },
+          "partial_acquisition": {
+            "title": "Partial Acquisition",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "partial_acquisition"
+        ],
+        "title": "ImportAcquisitionView",
         "type": "object"
       },
       "ImportAttestationView": {
@@ -6337,6 +6383,13 @@
             "default": null,
             "title": "Confirmation Channel"
           },
+          "exclusions": {
+            "items": {
+              "$ref": "#/$defs/ImportExclusionView"
+            },
+            "title": "Exclusions",
+            "type": "array"
+          },
           "overrides": {
             "items": {
               "type": "string"
@@ -6365,6 +6418,35 @@
           "recorded_at"
         ],
         "title": "ImportAttestationView",
+        "type": "object"
+      },
+      "ImportExclusionView": {
+        "additionalProperties": false,
+        "properties": {
+          "first_line": {
+            "title": "First Line",
+            "type": "integer"
+          },
+          "last_line": {
+            "title": "Last Line",
+            "type": "integer"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "rows": {
+            "title": "Rows",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "first_line",
+          "last_line",
+          "rows",
+          "reason"
+        ],
+        "title": "ImportExclusionView",
         "type": "object"
       },
       "ImportIndexItem": {
@@ -6450,8 +6532,19 @@
       },
       "ImportRecordView": {
         "additionalProperties": false,
-        "description": "One import record.\n\nAttributes:\n    import_id: The interpretation's identity.\n    source_sha256: SHA-256 of the file bytes.\n    size_bytes: The file size.\n    interpretation: The canonical interpretation it imports.\n    locations: Every location the file was imported from, as file text,\n        most recent first.\n    attestations: Every confirmation recorded, in order.\n    channels: Column and signal id per channel of its latest outcome.\n    unreadable_lines: Later lines that could not be read.",
+        "description": "One import record.\n\nAttributes:\n    import_id: The interpretation's identity.\n    source_sha256: SHA-256 of the file bytes.\n    size_bytes: The file size.\n    interpretation: The canonical interpretation it imports.\n    locations: Every location the file was imported from, as file text,\n        most recent first.\n    attestations: Every confirmation recorded, in order.\n    channels: Column and signal id per channel of its latest outcome.\n    acquisition_completeness: The result of the check for rows left out of\n        the data range, from its latest outcome; null when that outcome was\n        recorded before the check existed, which says nothing about rows\n        left out.\n    unreadable_lines: Later lines that could not be read.",
         "properties": {
+          "acquisition_completeness": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ImportAcquisitionView"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
           "attestations": {
             "items": {
               "$ref": "#/$defs/ImportAttestationView"
@@ -6634,7 +6727,7 @@
           }
         ],
         "default": null,
-        "description": "Set only for a signal created by import_signal_file: the import_id, the physical column and its 1-based position, the column label and file name as escaped file text, the time-base source, the scaling, the samples digest, the decoder contract, the confirmation channel and, per configured value, its basis (caller_asserted is true when the bases arrived as MCP tool arguments: they record what the caller claimed, never who the caller is). None for every other load.",
+        "description": "Set only for a signal created by import_signal_file: the import_id, the physical column and its 1-based position, the column label and file name as escaped file text, the time-base source, the scaling, the samples digest, the decoder contract, the confirmation channel, per configured value its basis (caller_asserted is true when the bases arrived as MCP tool arguments: they record what the caller claimed, never who the caller is), and the result of the check for rows left out of the data range: partial_acquisition (true when rows that could be part of the acquisition are left out as the user acknowledged, false when the check found none) and excluded_rows (each block's first_line, last_line and rows). Both keys are absent for a signal imported before that check existed, which says nothing about rows left out. None for every other load.",
         "title": "Import Provenance"
       },
       "load_timestamp": {
@@ -7107,7 +7200,7 @@
       },
       "DialectReading": {
         "additionalProperties": false,
-        "description": "One reading of the data rows.\n\nAttributes:\n    delimiter: ``,``, ``;``, ``tab`` or ``whitespace``.\n    decimal: ``.`` or ``,``.\n    fields: Fields per data row under this reading.\n    data_first_line: First line of its longest run of consistent rows.\n    rows: Rows in that run among the scanned lines.\n    numeric_ratio: Share of the run's fields that are numbers.",
+        "description": "One reading of the data rows.\n\nAttributes:\n    delimiter: ``,``, ``;``, ``tab`` or ``whitespace``.\n    decimal: ``.`` or ``,``.\n    fields: Fields per data row under this reading.\n    data_first_line: First line of its longest run of consistent rows; the\n        run may continue across damaged rows, which are reported as issues.\n    rows: Well-formed rows in that run among the scanned lines.\n    numeric_ratio: Share of the run's fields that are numbers.",
         "properties": {
           "data_first_line": {
             "title": "Data First Line",
@@ -8013,7 +8106,7 @@
               }
             ],
             "default": null,
-            "description": "Set only for a signal created by import_signal_file: the import_id, the physical column and its 1-based position, the column label and file name as escaped file text, the time-base source, the scaling, the samples digest, the decoder contract, the confirmation channel and, per configured value, its basis (caller_asserted is true when the bases arrived as MCP tool arguments: they record what the caller claimed, never who the caller is). None for every other load.",
+            "description": "Set only for a signal created by import_signal_file: the import_id, the physical column and its 1-based position, the column label and file name as escaped file text, the time-base source, the scaling, the samples digest, the decoder contract, the confirmation channel, per configured value its basis (caller_asserted is true when the bases arrived as MCP tool arguments: they record what the caller claimed, never who the caller is), and the result of the check for rows left out of the data range: partial_acquisition (true when rows that could be part of the acquisition are left out as the user acknowledged, false when the check found none) and excluded_rows (each block's first_line, last_line and rows). Both keys are absent for a signal imported before that check existed, which says nothing about rows left out. None for every other load.",
             "title": "Import Provenance"
           },
           "load_timestamp": {

@@ -81,13 +81,35 @@ file name or a folder name never supplies a value.
 Validation may accept dialect and data_lines without a caller-supplied basis
 when decoding the configured data region provides the required structural
 proof. If that proof is unavailable, the corresponding caller-supplied basis
-is required.
+is required. The proof also fails when a line above the configured data start,
+or below a configured last data line, could be part of the data.
 
-**Known limitation.** The current importer may identify a later numeric block
-as the data region when earlier rows contain malformed values. This can
-exclude earlier samples without a warning. Before importing, verify the
-proposed data start and sample count against the expected acquisition. If they
-cannot be verified or are inconsistent, do not import.
+**Rows left out of the data range.** Validation examines every line above the
+configured data start and, when you configure a last data line, every line
+after it. When any of them could be part of the acquisition (rows with the
+data's columns, damaged data rows, or rows of numbers in another number of
+fields), validation returns `needs_confirmation` and names them: their lines,
+how many rows, and what separates them from the data. The warning identifies
+the potentially excluded rows and reports their estimated duration at the
+sampling rate the configuration gives, whatever its source. Blank lines and
+lines of text after a configured last data line, such as a footer, are not
+counted. If those rows should be imported, do not import: re-export the
+acquisition so that they can be read. If they should be left out, confirm the
+data line range with a basis for `data_lines` and acknowledge the exclusion in
+`attestation.exclusions` with the values the finding gives: the file's
+`source_sha256`, the configuration's `import_id`, the first and last line, the
+number of rows and your reason for leaving them out. An acknowledgment applies
+only to that file, that configuration and those rows; after any change,
+validate again. It never applies while the dialect still needs confirmation.
+
+Every import records the result of this check: in the stored signal's
+`import_provenance` (`partial_acquisition` and `excluded_rows`), in the import
+record's `acquisition_completeness` shown by `get_signal_imports`, and, for a
+channel bound to a measurement, in the asset ledger, which `get_asset_history`
+shows for each measurement. An import that leaves rows out is recorded as a
+partial acquisition. A signal or import record created before this check
+existed shows no result; importing the file again records it, and until then
+such a record cannot be restored by `import_id`.
 
 ## The time base
 
