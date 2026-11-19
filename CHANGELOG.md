@@ -619,6 +619,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   check also covers `tools/`.
 
 ### Fixed
+- **The server starts when WeasyPrint is installed but cannot load its native
+  libraries.** Importing the server no longer fails when the `pdf` extra is
+  installed and WeasyPrint cannot load Pango and the libraries it depends on.
+  `generate_diagnostic_report` then refuses any request whose `formats`
+  include `pdf`, writes no file, and says that the native libraries are
+  missing; when the WeasyPrint package itself is missing, the refusal keeps
+  its install hint for the `pdf` extra. Import-time exceptions outside the
+  specifically handled cffi OSError case continue to propagate. The HTML
+  rendering is unchanged. The notice WeasyPrint prints when its native
+  libraries are missing goes to stderr, so it does not reach the MCP protocol
+  on stdout.
 - `compute_power_spectral_density` and `compute_spectrogram_stft` report the
   segment parameters actually used. When `nperseg` exceeds the signal length,
   each tool reduces it to the number of samples. When `noverlap` is not
