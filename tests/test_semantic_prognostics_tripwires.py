@@ -404,17 +404,6 @@ def daily_cycle_inside_count() -> int:
 
 
 class TestForecastIntervalNote:
-    @pytest.mark.xfail(
-        strict=True,
-        raises=AssertionError,
-        reason=known_defect(
-            "B3-F1",
-            "the forecast interval note says the band is wider than needed on "
-            "an indicator that fluctuates around a level, while the naive band "
-            "covers well below its nominal 80 % on a daily cycle at a 12-hour "
-            "horizon",
-        ),
-    )
     def test_interval_note_agrees_with_coverage_on_a_cyclic_indicator(self):
         inside = daily_cycle_inside_count()
         assert note_consistent_with_coverage(

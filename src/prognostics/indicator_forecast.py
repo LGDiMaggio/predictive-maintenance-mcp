@@ -88,26 +88,60 @@ METHOD_NOTES = {
     "naive": (
         "Naive reference: the median repeats the last observed bin value at every step "
         "by construction. A flat median is a property of the method, not a prediction "
-        "that the indicator will stay stable."
+        "that the indicator will stay stable. For an indicator with a regular cycle, "
+        "the seasonal naive backend, with the cycle declared as its season, repeats "
+        "the cycle instead of holding the last value."
     ),
     "seasonal_naive": (
         "Seasonal naive reference: each step's median repeats the most recent observed "
         "bin at the same phase of the declared season, by construction. A repeating "
         "median is a property of the method, not a prediction that the pattern will "
-        "continue."
+        "continue. When the most recent bin at a phase is empty, that step repeats an "
+        "earlier season and its band is wider, so the band need not widen steadily "
+        "with the step. The grid is in UTC, so a daylight-saving change shifts a cycle "
+        "tied to local clock time by one hour: for about one season after the change, "
+        "repeated bins can be out of phase with that cycle, and differences that span "
+        "the change can widen the band."
     ),
 }
 
 INTERVAL_NOTE = (
     "P10 and P90 are nominal quantiles under the method's assumption of independent "
-    "increments with no trend, estimated from the differences between the supplied "
-    "values; their coverage on this series is not validated. Under a sustained trend, "
-    "values tend to leave the band on the trend side more often as the horizon grows. "
-    "On an indicator that fluctuates around a level, the band is wider than the data "
-    "need. Values an export interpolated or held, rather than recorded or averaged, "
-    "make the band narrower than the data warrant. The band is not a probability of "
-    "crossing any limit and must not be compared with alarm or ISO zone boundaries."
+    "increments with no trend, estimated from the differences between observed bins "
+    "one step apart, or one season apart with the seasonal naive backend; their "
+    "coverage on this series is not validated. Under a sustained trend, values tend "
+    "to leave the band on the trend side more often as the horizon grows. With the "
+    "naive backend, on noise-like fluctuation around a level the band tends to be "
+    "wider than the data need; on smooth variation that persists from step to step "
+    "it tends to be narrower beyond the first step. On cyclic data, the direction "
+    "depends on the horizon and phase; it can be narrower at some horizons but not "
+    "necessarily near the cycle length. These comparisons do not establish the "
+    "seasonal naive backend's coverage. Values that an export interpolated or held, "
+    "rather than recorded or averaged, make the band narrower than the data warrant. "
+    "The band is not a probability of crossing any limit and must not be compared "
+    "with alarm or ISO zone boundaries."
 )
+
+SIGN_WARNING_DETAILS = {
+    "positive": (
+        "Every observed value is positive, but P10 falls below zero: the band is the "
+        "method's symmetric Gaussian band and does not respect the indicator's sign."
+    ),
+    "zero_or_positive": (
+        "Every observed value is zero or positive, but P10 falls below zero: the band "
+        "is the method's symmetric Gaussian band and does not respect the indicator's "
+        "sign."
+    ),
+    "negative": (
+        "Every observed value is negative, but P90 rises above zero: the band is the "
+        "method's symmetric Gaussian band and does not respect the indicator's sign."
+    ),
+    "zero_or_negative": (
+        "Every observed value is zero or negative, but P90 rises above zero: the band "
+        "is the method's symmetric Gaussian band and does not respect the indicator's "
+        "sign."
+    ),
+}
 
 _VALUES_MEANING = (
     "Values are the {aggregation} of {indicator} in each {resolution} bin, in {unit}, "
@@ -509,18 +543,24 @@ def _projection(
     }
 
 
+def _observed_sign(raw: np.ndarray) -> Optional[str]:
+    if np.all(raw > 0):
+        return "positive"
+    if np.all(raw < 0):
+        return "negative"
+    if np.all(raw >= 0) and np.any(raw > 0):
+        return "zero_or_positive"
+    if np.all(raw <= 0) and np.any(raw < 0):
+        return "zero_or_negative"
+    return None
+
+
 def _sign_crossing(grid: RegularGrid, outcome: ReferenceForecast) -> Optional[str]:
-    raw = grid.raw_values
-    if np.all(raw > 0) and np.min(outcome.p10) < 0:
-        return (
-            "Every observed value is positive, but P10 falls below zero: the band is the "
-            "method's symmetric Gaussian band and does not respect the indicator's sign."
-        )
-    if np.all(raw < 0) and np.max(outcome.p90) > 0:
-        return (
-            "Every observed value is negative, but P90 rises above zero: the band is the "
-            "method's symmetric Gaussian band and does not respect the indicator's sign."
-        )
+    sign = _observed_sign(grid.raw_values)
+    if sign in ("positive", "zero_or_positive") and np.min(outcome.p10) < 0:
+        return SIGN_WARNING_DETAILS[sign]
+    if sign in ("negative", "zero_or_negative") and np.max(outcome.p90) > 0:
+        return SIGN_WARNING_DETAILS[sign]
     return None
 
 
