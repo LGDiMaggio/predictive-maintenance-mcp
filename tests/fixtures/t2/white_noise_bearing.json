@@ -1,0 +1,96 @@
+{
+  "about": "Characterization of today's outputs, not a requirement. A difference means the output changed: regenerate with T2_CHARACTERIZATION_WRITE=1 and review the change. The anomaly family's strings are left out.",
+  "case": "white_noise_bearing",
+  "description": "Unit-variance white noise in g, catalog bearing 6205",
+  "observed": {
+    "diagnose_vibration": {
+      "overall_diagnosis": "ISO Severity: Zone D (Unacceptable) — RMS velocity 5.84 mm/s. Dominant frequency: 5896.0 Hz (shaft: 29.9 Hz). Bearing analysis: No eligible line at a tested characteristic frequency stands above the local noise floor in this record and band. This is not evidence that the bearing is free of defects. Combined evidence across the analyses that ran: moderate. It counts findings, is not a probability, and does not identify or confirm a fault type.",
+      "recommendations": [
+        "IMMEDIATE ACTION: Stop machine and inspect."
+      ],
+      "evidence_strength": "moderate",
+      "bearing_check": {
+        "status": "assessed",
+        "reason_code": null,
+        "reason": null,
+        "remedy": null
+      },
+      "claim": {
+        "level": "withheld",
+        "conditions": [
+          "no_indication"
+        ]
+      },
+      "iso_status": "assessed",
+      "iso_zone": "D",
+      "parameter_sources": {
+        "rpm": "explicit",
+        "bearing_id": "explicit",
+        "machine_group": "default",
+        "support_type": "default"
+      }
+    },
+    "generate_diagnostic_report": {
+      "verdict": "No eligible line at a tested characteristic frequency stands above the local noise floor in this record and band. This is not evidence that the bearing is free of defects. Broadband vibration is elevated (Zone D), and the envelope evidence names no bearing fault type, so bearing and non-bearing sources both remain possible.",
+      "fault_canonical": null,
+      "evidence_strength": "moderate",
+      "evidence_strength_note": "Evidence strength counts the findings of the analyses that ran, a bearing finding once. It is not a confidence score, it is not a probability, and it does not identify or confirm a fault type.",
+      "bearing_check": {
+        "status": "assessed",
+        "reason_code": null,
+        "reason": null,
+        "remedy": null
+      },
+      "statements": [
+        "No eligible line at a tested characteristic frequency stands above the local noise floor in this record and band. This is not evidence that the bearing is free of defects. Broadband vibration is elevated (Zone D), and the envelope evidence names no bearing fault type, so bearing and non-bearing sources both remain possible.",
+        "ISO 20816-3: RMS velocity 5.84 mm/s places this machine in Zone D (Unacceptable) for machine group 2 on a rigid support. Vibration severity may cause damage. Immediate action required!",
+        "Envelope line test for bearing 6205 at 29.9 Hz shaft speed. The outer-race line (BPFO) does not stand above the local noise floor in this record and band. The inner-race line (BPFI) does not stand above the local noise floor in this record and band. The rolling-element line (2 x BSF) does not stand above the local noise floor in this record and band. The cage line (FTF) does not stand above the local noise floor in this record and band.",
+        "The largest share of STFT energy is in the 2000-5000 Hz band (49% of the total). This percentage describes the measured signal and does not identify a fault. The relative distribution across frequency bands can change with the measured physical quantity (for example, acceleration versus velocity).",
+        "not above the floor",
+        "No healthy baseline was supplied for this machine, so the readings below are absolute rather than relative. Whether this condition is new, stable, or worsening cannot be determined from a single acquisition.",
+        "Dominant frequency in the raw spectrum: 5896.0 Hz.",
+        "Evidence strength counts the findings of the analyses that ran, a bearing finding once. It is not a confidence score, it is not a probability, and it does not identify or confirm a fault type.",
+        "Immediate shutdown recommended",
+        "Vibration levels are unacceptable and may cause damage. Immediate shutdown and inspection recommended.",
+        "ISO Zone D is classified as unacceptable.",
+        "Envelope spectrum with the FTF, BPFO, BSF and BPFI search windows overlaid. Each shaded band is the ±5% window around the line its check tests (2 x BSF for the rolling element). A peak inside a window is not a finding by itself: the check counts a line only when it stands above the local noise floor and a further line it predicts does too. No window is emphasised: the bearing statement in this report names no candidate line."
+      ],
+      "recommendations": [
+        {
+          "action": "Immediate shutdown recommended",
+          "urgency": "critical",
+          "description": "Vibration levels are unacceptable and may cause damage. Immediate shutdown and inspection recommended.",
+          "motivation": "ISO Zone D is classified as unacceptable.",
+          "evidence": [
+            "ISO 20816-3: RMS velocity 5.84 mm/s places this machine in Zone D (Unacceptable) for machine group 2 on a rigid support. Vibration severity may cause damage. Immediate action required!"
+          ]
+        }
+      ],
+      "provenance": {
+        "signal_id": "t2_white_noise_bearing",
+        "rpm": 1797.0,
+        "bearing_id": "6205",
+        "machine_group": 2,
+        "support_type": "rigid"
+      }
+    },
+    "report_path": {
+      "pipeline_evidence_strength": [
+        "moderate"
+      ],
+      "block_status": {
+        "iso": "assessed",
+        "bearing_match": "assessed",
+        "spectral_energy": "assessed"
+      },
+      "baseline_comparison": {
+        "status": "absent",
+        "statement": "No healthy baseline was supplied for this machine, so the readings below are absolute rather than relative. Whether this condition is new, stable, or worsening cannot be determined from a single acquisition.",
+        "remedy": "Re-run the diagnosis with a baseline signal id from the same machine in a known-good state."
+      },
+      "iso_standard_note": "Zone boundaries from ISO 10816-3:2009 (four-zone A-D scheme). ISO 20816-3:2022 supersedes that edition and merges zones A and B; the A/B boundary is kept here for practitioner familiarity.",
+      "disagreements": [],
+      "statements_missing_from_html": []
+    }
+  }
+}

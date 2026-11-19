@@ -1,0 +1,54 @@
+{
+  "about": "Characterization of today's outputs, not a requirement. A difference means the output changed: regenerate with T2_CHARACTERIZATION_WRITE=1 and review the change. The anomaly family's strings are left out.",
+  "case": "composer_controlled_union",
+  "description": "The advisory on the outer-race defect with an experimental controlled_union_v1 bearing result",
+  "observed": {
+    "verdict": {
+      "statement": "The envelope evidence of this single spectrum is consistent with an outer-race defect: the outer-race line (BPFO) at 107.40 Hz stands 15.8 dB above the local noise floor. The line test assumes the record's background is random measurement noise, which this single acquisition does not verify; the result is not a confirmed fault. This check used the experimental controlled_union_v1 corroboration rule, selected for this call. That rule was evaluated on synthetic signals only, so that evaluation establishes nothing about real machines, and its result is not comparable with a result of the released rule. Bearing 6205: confirm the single-spectrum indication with a comparable measurement or an inspection of the outer race.",
+      "fault_canonical": "outer_race",
+      "fault_acronym": "BPFO"
+    },
+    "bearing_match": {
+      "status": "assessed",
+      "statement": "Envelope line test for bearing 6205 at 29.9 Hz shaft speed. The outer-race line (BPFO) at 107.40 Hz stands 15.8 dB above the local noise floor, and further lines of its kinematics also stand above the floor in the same spectrum. The inner-race line (BPFI) does not stand above the local noise floor in this record and band. The rolling-element line (2 x BSF) does not stand above the local noise floor in this record and band. The cage line (FTF) does not stand above the local noise floor in this record and band. This check used the experimental controlled_union_v1 corroboration rule, selected for this call. That rule was evaluated on synthetic signals only, so that evaluation establishes nothing about real machines, and its result is not comparable with a result of the released rule.",
+      "claim_level": "single_spectrum_evidence"
+    },
+    "recommendations": [
+      {
+        "action": "Immediate shutdown recommended",
+        "urgency": "critical",
+        "description": "Vibration levels are unacceptable and may cause damage. Immediate shutdown and inspection recommended.",
+        "motivation": "ISO Zone D is classified as unacceptable.",
+        "evidence": [
+          "ISO 20816-3: RMS velocity 34.10 mm/s places this machine in Zone D (Unacceptable) for machine group 2 on a rigid support. Vibration severity may cause damage. Immediate action required!"
+        ]
+      },
+      {
+        "action": "Bearing 6205: confirm the single-spectrum indication with a comparable measurement or an inspection of the outer race.",
+        "urgency": "medium",
+        "description": "Single-spectrum envelope evidence is not a confirmed fault; this step confirms or excludes it.",
+        "motivation": "The envelope evidence of this single spectrum is consistent with an outer-race defect: the outer-race line (BPFO) at 107.40 Hz stands 15.8 dB above the local noise floor. The line test assumes the record's background is random measurement noise, which this single acquisition does not verify; the result is not a confirmed fault. This check used the experimental controlled_union_v1 corroboration rule, selected for this call. That rule was evaluated on synthetic signals only, so that evaluation establishes nothing about real machines, and its result is not comparable with a result of the released rule.",
+        "evidence": [
+          "Envelope line test for bearing 6205 at 29.9 Hz shaft speed. The outer-race line (BPFO) at 107.40 Hz stands 15.8 dB above the local noise floor, and further lines of its kinematics also stand above the floor in the same spectrum. The inner-race line (BPFI) does not stand above the local noise floor in this record and band. The rolling-element line (2 x BSF) does not stand above the local noise floor in this record and band. The cage line (FTF) does not stand above the local noise floor in this record and band. This check used the experimental controlled_union_v1 corroboration rule, selected for this call. That rule was evaluated on synthetic signals only, so that evaluation establishes nothing about real machines, and its result is not comparable with a result of the released rule."
+        ]
+      }
+    ],
+    "baseline_comparison": {
+      "status": "absent",
+      "statement": "No healthy baseline was supplied for this machine, so the readings below are absolute rather than relative. Whether this condition is new, stable, or worsening cannot be determined from a single acquisition.",
+      "remedy": "Re-run the diagnosis with a baseline signal id from the same machine in a known-good state."
+    },
+    "evidence_statements": [
+      "Lines counted for the outer-race line (BPFO): the line at 107.40 Hz (15.8 dB above the local noise floor), with harmonic 2 at 214.70 Hz (14.2 dB). Each stands above the local noise floor of this spectrum in its line test: the tested lines share a nominal false-alarm level of 1 % per check, and each further line is tested at 1 %. Lines of one spectrum are not independent evidence and do not confirm a fault.",
+      "This check used the experimental controlled_union_v1 corroboration rule, selected for this call. That rule was evaluated on synthetic signals only, so that evaluation establishes nothing about real machines, and its result is not comparable with a result of the released rule.",
+      "ISO 20816-3: RMS velocity 34.10 mm/s places this machine in Zone D (Unacceptable) for machine group 2 on a rigid support. Vibration severity may cause damage. Immediate action required!",
+      "The largest share of STFT energy is in the 2000-5000 Hz band (51% of the total). This percentage describes the measured signal and does not identify a fault. The relative distribution across frequency bands can change with the measured physical quantity (for example, acceleration versus velocity).",
+      "Dominant frequency in the raw spectrum: 29.9 Hz."
+    ],
+    "claim": {
+      "level": "single_spectrum_evidence",
+      "conditions": [],
+      "policy_version": 2
+    }
+  }
+}

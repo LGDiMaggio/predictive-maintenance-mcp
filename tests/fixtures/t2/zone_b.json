@@ -1,0 +1,91 @@
+{
+  "about": "Characterization of today's outputs, not a requirement. A difference means the output changed: regenerate with T2_CHARACTERIZATION_WRITE=1 and review the change. The anomaly family's strings are left out.",
+  "case": "zone_b",
+  "description": "Velocity tone of 2.00 mm/s RMS at 157 Hz (ISO zone B), no bearing",
+  "observed": {
+    "diagnose_vibration": {
+      "overall_diagnosis": "ISO Severity: Zone B (Acceptable) — RMS velocity 2.00 mm/s. Dominant frequency: 157.0 Hz (shaft: 25.0 Hz). Combined evidence across the analyses that ran: none. It counts findings, is not a probability, and does not identify or confirm a fault type.",
+      "recommendations": [
+        "Continue routine monitoring per maintenance schedule."
+      ],
+      "evidence_strength": "none",
+      "bearing_check": {
+        "status": "not_requested",
+        "reason_code": null,
+        "reason": null,
+        "remedy": null
+      },
+      "claim": null,
+      "iso_status": "assessed",
+      "iso_zone": "B",
+      "parameter_sources": {
+        "rpm": "explicit",
+        "bearing_id": "none",
+        "machine_group": "default",
+        "support_type": "default"
+      }
+    },
+    "generate_diagnostic_report": {
+      "verdict": "No bearing fault verdict was reached, because characteristic-frequency matching was not attempted.",
+      "fault_canonical": null,
+      "evidence_strength": "none",
+      "evidence_strength_note": "Evidence strength counts the findings of the analyses that ran, a bearing finding once. It is not a confidence score, it is not a probability, and it does not identify or confirm a fault type.",
+      "bearing_check": {
+        "status": "not_requested",
+        "reason_code": null,
+        "reason": null,
+        "remedy": null
+      },
+      "statements": [
+        "No bearing fault verdict was reached, because characteristic-frequency matching was not attempted.",
+        "ISO 20816-3: RMS velocity 2.00 mm/s places this machine in Zone B (Acceptable) for machine group 2 on a rigid support. Acceptable for unrestricted long-term operation.",
+        "Bearing characteristic-frequency matching was not attempted: no bearing designation was supplied for this signal, so BPFO, BPFI, BSF and FTF could not be computed. Without it, a spectral peak cannot be attributed to a specific bearing element.",
+        "Re-run generate_diagnostic_report with bearing_id set to the bearing's designation (search_bearing_catalog lists the designations the bearing catalog holds).",
+        "The largest share of STFT energy is in the 100-500 Hz band (100% of the total). This percentage describes the measured signal and does not identify a fault. The relative distribution across frequency bands can change with the measured physical quantity (for example, acceleration versus velocity).",
+        "No healthy baseline was supplied for this machine, so the readings below are absolute rather than relative. Whether this condition is new, stable, or worsening cannot be determined from a single acquisition.",
+        "Dominant frequency in the raw spectrum: 157.0 Hz.",
+        "Evidence strength counts the findings of the analyses that ran, a bearing finding once. It is not a confidence score, it is not a probability, and it does not identify or confirm a fault type.",
+        "Schedule inspection",
+        "Vibration levels are elevated. Schedule a visual and operational inspection.",
+        "ISO Zone B is classified as acceptable.",
+        "Envelope spectrum. No bearing designation was supplied, so no characteristic-frequency bands are drawn and a peak cannot be attributed to a specific bearing element from this figure."
+      ],
+      "recommendations": [
+        {
+          "action": "Schedule inspection",
+          "urgency": "medium",
+          "description": "Vibration levels are elevated. Schedule a visual and operational inspection.",
+          "motivation": "ISO Zone B is classified as acceptable.",
+          "evidence": [
+            "ISO 20816-3: RMS velocity 2.00 mm/s places this machine in Zone B (Acceptable) for machine group 2 on a rigid support. Acceptable for unrestricted long-term operation."
+          ]
+        }
+      ],
+      "provenance": {
+        "signal_id": "t2_zone_b",
+        "rpm": 1500.0,
+        "bearing_id": null,
+        "machine_group": 2,
+        "support_type": "rigid"
+      }
+    },
+    "report_path": {
+      "pipeline_evidence_strength": [
+        "none"
+      ],
+      "block_status": {
+        "iso": "assessed",
+        "bearing_match": "absent",
+        "spectral_energy": "assessed"
+      },
+      "baseline_comparison": {
+        "status": "absent",
+        "statement": "No healthy baseline was supplied for this machine, so the readings below are absolute rather than relative. Whether this condition is new, stable, or worsening cannot be determined from a single acquisition.",
+        "remedy": "Re-run the diagnosis with a baseline signal id from the same machine in a known-good state."
+      },
+      "iso_standard_note": "Zone boundaries from ISO 10816-3:2009 (four-zone A-D scheme). ISO 20816-3:2022 supersedes that edition and merges zones A and B; the A/B boundary is kept here for practitioner familiarity.",
+      "disagreements": [],
+      "statements_missing_from_html": []
+    }
+  }
+}
