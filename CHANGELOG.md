@@ -659,6 +659,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   1 that left less than one sample between segment starts now advances one
   sample at a time instead of failing. The tool descriptions said 0-1.
   `analyze_signal_trend` keeps its own limit of 0 to 0.9.
+- `predict_anomalies` handles very high-overlap windows without a zero or
+  negative hop. For non-empty segments, the minimum hop is one sample, and
+  reported worst-segment start times follow the same hop. Results for windows
+  whose hop was already valid, and handling of zero- or negative-length
+  segments, are unchanged.
 - **`generate_test_signal` places sample `k` at `k / sampling_rate` seconds.**
   The samples were spread evenly over the requested duration including its end
   point, one interval wider than the declared rate implies, so a tone read at

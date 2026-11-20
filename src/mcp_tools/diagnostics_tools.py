@@ -954,6 +954,14 @@ async def predict_anomalies(
 
     segment_length_samples = int(segment_duration * sampling_rate_val)
     hop_length = int(segment_length_samples * (1 - overlap_ratio))
+    hop_s = segment_duration * (1 - overlap_ratio)
+    # A ratio close to 1, or a ratio of 1 or above in a model saved before
+    # the ratio was checked, can leave less than one sample between segment
+    # starts: advance one sample, as training does, and report start times
+    # at that pace. A segment of no samples keeps its earlier outcome.
+    if segment_length_samples >= 1 and hop_length < 1:
+        hop_length = 1
+        hop_s = 1 / sampling_rate_val
 
     # Guard: a signal shorter than one segment yields an empty feature matrix
     # and an opaque sklearn "X has 0 features" error at scaler.transform.
@@ -999,7 +1007,6 @@ async def predict_anomalies(
 
     # Worst segments: lowest decision score (or, without scores, the
     # first predicted anomalies), capped at 10 entries.
-    hop_s = segment_duration * (1 - overlap_ratio)
     if scores is not None:
         worst_idx = np.argsort(scores)[:10]
     else:
