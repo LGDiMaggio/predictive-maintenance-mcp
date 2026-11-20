@@ -34,7 +34,10 @@ from ..decision_support.diagnosis_pipeline import (
     diagnose_vibration as _diagnose_vibration,
 )
 from ..diagnostics.bearing_analyzer import check_frequency_set
-from ..diagnostics.bearing_claims import acquisition_eligibility_from_companion
+from ..diagnostics.bearing_claims import (
+    CLAIM_SENTENCES,
+    acquisition_eligibility_from_companion,
+)
 from ..figures import build_annotated_envelope_figure
 from ..models import StoredSignalInfo
 from ..path_safety import safe_resolve
@@ -484,7 +487,18 @@ async def generate_envelope_report(
     # clamped silently). min(5000, Nyquist-1) matches the digital-filter
     # corner realized below and compute_envelope_spectrum's own default.
     if filter_high is None:
-        filter_high = min(5000.0, sampling_rate / 2 - 1.0)
+        default_high = min(5000.0, sampling_rate / 2 - 1.0)
+        if 0 < filter_low < 5000.0 and default_high <= filter_low:
+            raise ValueError(
+                f"At fs={sampling_rate:g} Hz the envelope band of this report, "
+                f"from {filter_low:g} Hz to just below the Nyquist frequency "
+                f"({sampling_rate / 2:g} Hz), is empty, so no envelope spectrum "
+                f"can be computed. Re-acquire the signal at a higher sampling "
+                f"rate, then re-run the report, or pass filter_low and "
+                f"filter_high below the Nyquist frequency, with filter_low below "
+                f"filter_high."
+            )
+        filter_high = default_high
 
     # U9 band-validation sweep: an invalid band vs Nyquist raises — this
     # used to feed scipy an unnormalizable corner (or silently mis-filter).
@@ -1164,7 +1178,18 @@ def _envelope_figure(
     Uses the same spectrum computation the bearing check consumed, so the
     figure cannot show a line the check never tested; its windows and their
     emphasis follow the check's tested lines and claim.
+
+    When the default envelope band (500 Hz to ``min(5000, fs/2 - 1)``) is
+    empty, at fs <= 1002 Hz, there is no spectrum to draw: the description
+    then holds only its caption, the statement of why the report carries no
+    figure, which the report returns and renders in the figure's place.
     """
+    if min(5000.0, fs / 2.0 - 1.0) <= 500.0:
+        return {
+            "caption": CLAIM_SENTENCES["figure_absent_empty_band"].format(
+                fs=fs, nyquist=fs / 2.0
+            )
+        }
     band = resolve_envelope_band(fs, None)
     env_frequencies, env_magnitudes = envelope_spectrum_arrays(signal, fs, band)
     check = diagnosis.get("bearing_check") or {}
@@ -1193,9 +1218,10 @@ async def generate_diagnostic_report(
     """Generate the integrated diagnostic report — one document, whole case.
 
     Runs the full diagnosis, then renders signal overview, ISO severity,
-    anomaly state, characteristic-frequency matching, spectral energy, an
-    annotated envelope spectrum, and recommended actions into a single
-    self-contained document.
+    anomaly state, characteristic-frequency matching, spectral energy, and
+    recommended actions into a single self-contained document. An annotated
+    envelope spectrum is included when the default envelope band is usable;
+    otherwise, the report explains why the envelope spectrum figure is absent.
 
     AUTHORSHIP CONTRACT — this matters more than it may appear. Every
     evaluative sentence in the returned ``statements`` list was written by

@@ -345,22 +345,22 @@ BASELINES: dict[str, Case] = {
     )
 }
 
-#: Cases where generate_diagnostic_report raises today instead of returning a
-#: report. At fs <= 1002 Hz its annotated envelope figure asks for the empty
-#: default envelope band and the band check refuses it ("Invalid bandpass
-#: band: filter_high=499 Hz must be greater than filter_low=500 Hz ..."),
-#: while diagnose_vibration on the same signal reports the bearing check as
-#: not computed. A report-path defect that is not about who authors the
-#: interpretation: characterized here as the refusal it is, not fixed.
-REPORT_REFUSED_TODAY = frozenset({"low_sampling_rate"})
+REPORTED_CASES = tuple(CASES)
 
-#: Cases where both tools return.
-REPORTED_CASES = tuple(cid for cid in CASES if cid not in REPORT_REFUSED_TODAY)
+#: Same-input cases kept out of the parity predicates until their tripwires
+#: are reviewed for them. On the low-rate case the two tools recommend the
+#: same actions and state different verdicts today, so adding it changes the
+#: set of known-defect tripwires.
+PARITY_NOT_YET_REVIEWED = frozenset({"low_sampling_rate"})
 
-#: Cases whose two tools receive the same parameters and both return: the
-#: parity predicates apply to these only (a point declaration reaches the
-#: diagnosis, not the report).
-SAME_INPUT_CASES = tuple(cid for cid in REPORTED_CASES if CASES[cid].point is None)
+#: Cases whose two tools receive the same parameters and both return, less
+#: those not yet reviewed: the parity predicates apply to these only (a point
+#: declaration reaches the diagnosis, not the report).
+SAME_INPUT_CASES = tuple(
+    cid
+    for cid in REPORTED_CASES
+    if CASES[cid].point is None and cid not in PARITY_NOT_YET_REVIEWED
+)
 
 
 # ---------------------------------------------------------------------------
@@ -454,16 +454,14 @@ _METADATA_BLOCK = re.compile(
 )
 
 
-def _report(
-    box: Sandbox, monkeypatch, signal_id: str, *, advisories: list, **kwargs
-) -> dict:
+def _report(box: Sandbox, monkeypatch, signal_id: str, **kwargs) -> dict:
     """Run generate_diagnostic_report (HTML) and keep what it built inside.
 
     Two spies wrap the module's own functions and record their results
-    unchanged: the advisory the report built, in *advisories* (kept by the
-    caller even when the report then raises), and the pipeline diagnoses (the
+    unchanged: the advisory the report built, and the pipeline diagnoses (the
     first author, run again inside the report path).
     """
+    advisories: list[dict] = []
     diagnoses: list[dict] = []
     with monkeypatch.context() as patched:
         for name, sink in (
@@ -537,21 +535,7 @@ def run_case(case_id: str, box: Sandbox, monkeypatch) -> dict:
             "rpm": case.rpm,
             "bearing_id": None if case.point is not None else case.bearing_id,
         }
-        advisories: list[dict] = []
-        if case_id in REPORT_REFUSED_TODAY:
-            runs["report_refusal"] = _refusal(
-                lambda: _report(
-                    box, monkeypatch, signal_id, advisories=advisories, **report_args
-                )
-            )
-            require(len(advisories) == 1, "the advisory is built before the refusal")
-            runs["advisory"] = advisories[0]
-        else:
-            runs.update(
-                _report(
-                    box, monkeypatch, signal_id, advisories=advisories, **report_args
-                )
-            )
+        runs.update(_report(box, monkeypatch, signal_id, **report_args))
     finally:
         get_repository().clear_signal(signal_id)
     _require_no_model(box)
@@ -568,12 +552,7 @@ def run_baseline_case(case_id: str, box: Sandbox, monkeypatch) -> dict:
     baseline = store(box, f"t2_{case_id}", BASELINES[case_id])
     try:
         runs = _report(
-            box,
-            monkeypatch,
-            primary,
-            advisories=[],
-            rpm=RPM_ZONES,
-            baseline_signal_id=baseline,
+            box, monkeypatch, primary, rpm=RPM_ZONES, baseline_signal_id=baseline
         )
     finally:
         get_repository().clear_signal(primary)
@@ -698,12 +677,6 @@ def characterization(runs: dict) -> dict:
     """Both surfaces of one run, as the goldens hold them."""
     dv = runs["dv"]
     iso = dv["iso_severity"]
-    if "report_refusal" in runs:
-        report_side = {
-            "generate_diagnostic_report": {"refused": runs["report_refusal"]}
-        }
-    else:
-        report_side = report_projection(runs)
     return _json(
         {
             "diagnose_vibration": {
@@ -716,7 +689,7 @@ def characterization(runs: dict) -> dict:
                 "iso_zone": iso.get("zone"),
                 "parameter_sources": dv["parameter_sources"],
             },
-            **report_side,
+            **report_projection(runs),
         }
     )
 
