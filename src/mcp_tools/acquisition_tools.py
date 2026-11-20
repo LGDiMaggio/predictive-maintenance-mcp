@@ -344,6 +344,14 @@ async def load_signal(
     diagnosis, report, and prognostics tool (the load -> analyze ->
     diagnose -> report flow uses signal_id as the single handle).
 
+    Ledger side effect: when the file's companion declares a "measurement"
+    object, the load also attempts to record the measurement in the local
+    append-only asset ledger. Loading and recording succeed separately: the
+    returned measurement.ledger_status reports the outcome ('recorded',
+    'superseded', 'already_recorded', or 'not_recorded' with a reason), and
+    a ledger problem never fails the load. Details under "Asset ledger"
+    below.
+
     Batch form: pass a LIST of file paths (e.g. for training sets). The
     batch is fail-fast and atomic — all paths and derived ids are
     validated up front, and on the first problem ONE error names the
