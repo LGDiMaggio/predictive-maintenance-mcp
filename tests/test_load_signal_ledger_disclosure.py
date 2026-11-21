@@ -10,6 +10,7 @@ through the tool itself, on synthetic signals, and each load succeeds.
 """
 
 import re
+import textwrap
 from typing import Callable
 from unittest.mock import AsyncMock
 
@@ -178,11 +179,21 @@ def test_a_lost_load_and_record_clause_is_named(old, new, clause):
     ]
 
 
-def _paragraph(description: str, start: str) -> str:
-    """The paragraph that starts with ``start``, as indented in the description."""
-    found = [p for p in _paragraphs(description) if p.startswith(start)]
+#: The end of a paragraph: its last line break and the blank line after it.
+_PARAGRAPH_END = re.compile(r"\n[ \t]*\n")
+
+
+def _paragraph_span(description: str, start: str) -> tuple[int, int]:
+    """Where the paragraph that starts with ``start`` sits in the description:
+    from the start of its first line, with whatever indentation the description
+    has, through the blank line after it."""
+    found = [
+        m.start() for m in re.finditer(rf"(?m)^[ \t]*{re.escape(start)}", description)
+    ]
     assert len(found) == 1, f"no single paragraph starts with {start!r}"
-    return "    " + found[0] + "\n\n"
+    end = _PARAGRAPH_END.search(description, found[0])
+    assert end, f"no blank line follows the paragraph {start!r}"
+    return found[0], end.end()
 
 
 def _move_before(starts: tuple[str, ...], anchor: str) -> Callable[[str], str]:
@@ -190,18 +201,19 @@ def _move_before(starts: tuple[str, ...], anchor: str) -> Callable[[str], str]:
     before the paragraph that starts with ``anchor``."""
 
     def mutate(description: str) -> str:
-        moved = [_paragraph(description, start) for start in starts]
-        for paragraph in moved:
-            description = description.replace(paragraph, "", 1)
-        target = "    " + anchor
-        assert description.count(target) == 1, f"{anchor!r} is not a single anchor"
-        return description.replace(target, "".join(moved) + target, 1)
+        spans = [_paragraph_span(description, start) for start in starts]
+        moved = "".join(description[begin:end] for begin, end in spans)
+        for begin, end in sorted(spans, reverse=True):
+            description = description[:begin] + description[end:]
+        target, _ = _paragraph_span(description, anchor)
+        return description[:target] + moved + description[target:]
 
     return mutate
 
 
 def _delete_ledger_paragraph(description: str) -> str:
-    return description.replace(_paragraph(description, DESCRIPTION_PARAGRAPH), "", 1)
+    begin, end = _paragraph_span(description, DESCRIPTION_PARAGRAPH)
+    return description[:begin] + description[end:]
 
 
 AFTER_ARGS = f"{DESCRIPTION_PARAGRAPH!r} comes after 'Args:'"
@@ -226,12 +238,43 @@ ORDER_MUTATIONS = {
 }
 
 
+def _body_indented(description: str) -> bool:
+    """Whether every non-blank line after the first is indented."""
+    body = description.partition("\n")[2]
+    return all(line.startswith(" ") for line in body.split("\n") if line.strip())
+
+
+def _reindented(description: str) -> str:
+    """The description in the other docstring layout: body lines indented by four
+    spaces if it is served without indentation (Python 3.13 and later strip it),
+    and without indentation if it is served indented (earlier versions)."""
+    first, _, body = description.partition("\n")
+    if _body_indented(description):
+        return first + "\n" + textwrap.dedent(body)
+    return first + "\n" + textwrap.indent(body, "    ")
+
+
+LAYOUTS = {"as served": lambda description: description, "re-indented": _reindented}
+
+
+def test_the_two_layouts_differ_only_in_indentation():
+    served = load_signal_description()
+    reindented = _reindented(served)
+    assert reindented != served
+    assert _body_indented(served) != _body_indented(reindented)
+    words = [" ".join(p.split()) for p in _paragraphs(served)]
+    assert [" ".join(p.split()) for p in _paragraphs(reindented)] == words
+
+
+@pytest.mark.parametrize("layout", sorted(LAYOUTS))
 @pytest.mark.parametrize("case", sorted(ORDER_MUTATIONS))
-def test_the_order_guard_names_a_misplaced_ledger_paragraph(case):
-    description = load_signal_description()
+def test_the_order_guard_names_a_misplaced_ledger_paragraph(case, layout):
+    description = LAYOUTS[layout](load_signal_description())
     assert disclosure_order_violations(description) == []
     mutate, expected = ORDER_MUTATIONS[case]
-    assert disclosure_order_violations(mutate(description)) == expected
+    mutated = mutate(description)
+    assert mutated != description, f"{case}: the mutation changed nothing"
+    assert disclosure_order_violations(mutated) == expected
 
 
 VOCABULARY_MUTATIONS = {
