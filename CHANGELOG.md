@@ -373,6 +373,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `aggregate_corroboration`, both null under the default rule.
 
 ### Changed
+- **Docker image contents.** An image built from the repository contains the
+  server, the project's `LICENSE` and the bearing catalog. It no longer copies
+  the signals, trained models, reports or machine manuals of the working copy
+  it is built from. `docker-compose.yml` mounts those folders at run time as
+  before; with `docker run`, mount them yourself (see `docs/DEPLOYMENT.md`).
 - Signal import: restoring a recorded import by `import_id` is refused when
   the import was recorded before this check existed; importing the file again
   records the check and makes it restorable.

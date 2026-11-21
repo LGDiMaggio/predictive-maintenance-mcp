@@ -23,11 +23,17 @@ pins everything that decides the verdict, on synthetic archives:
   root ``LICENSE`` alone, and a ``.gitattributes`` that export-ignores every
   sample folder and was applied, in zip and tarball form, including the real
   output of ``git archive``;
+* the image mode, on synthetic container filesystems: nothing in the folders
+  an image keeps empty, only the allowed resource files, the MIT ``LICENSE``
+  in the image and in the project's dist-info, no copy of a sample file, and
+  no ``.mat`` file except a library's own recorded test file, each exemption
+  condition proven necessary by dropping it;
 * the committed manifest still describes the tracked sample files, and the
   repository ``LICENSE``, ``data/LICENSE`` and ``.gitattributes`` say what the
   check assumes.
 """
 
+import base64
 import hashlib
 import io
 import json
@@ -1287,3 +1293,526 @@ class TestRepository:
             path.name for pattern in patterns for path in REPO_ROOT.glob(pattern)
         )
         assert found == ["LICENSE"]
+
+
+# ---------------------------------------------------------------------------
+# Image mode
+# ---------------------------------------------------------------------------
+
+SITE = artifact_licensing.IMAGE_SITE_PACKAGES
+SCIPY_DIST = f"{SITE}/scipy-1.17.1.dist-info"
+MAT_FOLDER = f"{SITE}/scipy/io/matlab/tests/data"
+PROJECT_DIST = f"{SITE}/{DIST_INFO}"
+FIXTURE_MAT = b"MATLAB 5.0 MAT-file, synthetic test fixture" + bytes(range(64))
+CLEAN_IMAGE = {
+    "app/LICENSE": _mit().encode(),
+    f"{PROJECT_DIST}/licenses/LICENSE": _mit().encode(),
+    f"{PROJECT_DIST}/METADATA": b"Metadata-Version: 2.4\n",
+    "app/resources/bearing_catalogs/README.md": b"# Bearing catalogs\n",
+    "app/resources/bearing_catalogs/common_bearings_catalog.json": b"{}\n",
+    "app/src/server.py": b"print('server')\n",
+    f"{SITE}/nolicense-1.0.dist-info/METADATA": b"Metadata-Version: 2.1\n",
+}
+
+
+def _record_line(path: str, content: bytes) -> str:
+    """A RECORD row computed independently of the module under test."""
+    digest = base64.urlsafe_b64encode(hashlib.sha256(content).digest()).rstrip(b"=")
+    return f"{path},sha256={digest.decode('ascii')},{len(content)}"
+
+
+def _image_tar(path: Path, files: dict, dirs=(), links=()) -> Path:
+    """Write a filesystem tar. ``links`` holds ``(kind, name, target)`` with
+    kind ``sym`` or ``hard``."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tarfile.open(path, "w") as archive:
+        for name in dirs:
+            info = tarfile.TarInfo(name)
+            info.type = tarfile.DIRTYPE
+            archive.addfile(info)
+        for name, content in files.items():
+            info = tarfile.TarInfo(name)
+            info.size = len(content)
+            archive.addfile(info, io.BytesIO(content))
+        for kind, name, target in links:
+            info = tarfile.TarInfo(name)
+            info.type = tarfile.SYMTYPE if kind == "sym" else tarfile.LNKTYPE
+            info.linkname = target
+            archive.addfile(info)
+    return path
+
+
+def _scipy(files: dict, record=None, dist=SCIPY_DIST) -> dict:
+    """``files`` (relative to site-packages) plus a scipy RECORD listing them,
+    or the given ``record`` rows."""
+    rows = (
+        record
+        if record is not None
+        else [_record_line(name, content) for name, content in files.items()]
+    )
+    members = {f"{SITE}/{name}": content for name, content in files.items()}
+    members[f"{dist}/RECORD"] = ("\n".join(rows) + "\n").encode()
+    return members
+
+
+def _run_image(
+    tmp_path: Path, files=None, repo=None, links=(), dirs=()
+) -> results.Result:
+    image = _image_tar(
+        tmp_path / "image.tar", {**CLEAN_IMAGE, **(files or {})}, dirs=dirs, links=links
+    )
+    config = artifact_licensing.ImageLicensingConfig(
+        image=str(image), repo_root=repo or _repo(tmp_path)
+    )
+    return artifact_licensing.run_image_licensing(config)
+
+
+def _mat_findings(result: results.Result) -> dict:
+    return {
+        finding.evidence["member"]: finding.evidence["problems"]
+        for finding in result.findings
+        if finding.rule == "image-mat-file"
+    }
+
+
+EXEMPT_NAME = "scipy/io/matlab/tests/data/fixture.mat"
+REASONS = {
+    "location": "it is not directly in an exempt test-data folder of the site-packages",
+    "ownership": "no single installed distribution lists it in its RECORD",
+    "integrity": "its SHA-256 and size match no RECORD entry",
+    "size": f"it is larger than {artifact_licensing.MAT_EXEMPT_MAX_BYTES} bytes",
+    "regular": "it is a link or special file, not a regular file",
+}
+
+
+class TestImageMode:
+    def test_a_clean_image_passes_and_lists_license_gaps(self, tmp_path):
+        result = _run_image(tmp_path, dirs=("app/data", "app/models", "app/reports"))
+        assert result.status == "pass", result.findings
+        assert result.facts["license_file_gaps"] == ["nolicense-1.0.dist-info"]
+        assert result.facts["mat_exempt"]["count"] == 0
+
+    @pytest.mark.parametrize(
+        "member",
+        [
+            "app/models/x_model.pkl",
+            "app/data/signals/x.csv",
+            "app/data/cache/x.npy",
+            "app/reports/r.html",
+        ],
+    )
+    def test_a_file_in_a_folder_the_image_keeps_empty_fails(self, tmp_path, member):
+        result = _run_image(tmp_path, {member: b"x"})
+        assert result.status == "fail"
+        assert ("image-forbidden-path", member) in {
+            (f.rule, f.evidence.get("member")) for f in result.findings
+        }
+
+    @pytest.mark.parametrize(
+        "member",
+        [
+            "app/resources/machine_manuals/operator.pdf",
+            "app/resources/machine_manuals/README.md",
+            "app/resources/machine_manuals/test_pump_manual.pdf",
+            "app/resources/cache/test_pump_manual_extraction.json",
+            "app/resources/cache/rag_index_tfidf.pkl",
+        ],
+    )
+    def test_a_resource_outside_the_allowlist_fails(self, tmp_path, member):
+        result = _run_image(tmp_path, {member: b"x"})
+        assert ("image-resource-not-allowed", member) in {
+            (f.rule, f.evidence.get("member")) for f in result.findings
+        }
+
+    def test_a_renamed_copy_of_a_sample_file_fails(self, tmp_path):
+        result = _run_image(tmp_path, {"usr/share/x.bin": SAMPLE_CSV})
+        finding = next(
+            f for f in result.findings if f.rule == "third-party-data-content"
+        )
+        assert finding.evidence["matches"] == SAMPLE_CSV_PATH
+
+    def test_a_missing_image_license_fails(self, tmp_path):
+        files = {k: v for k, v in CLEAN_IMAGE.items() if k != "app/LICENSE"}
+        image = _image_tar(tmp_path / "image.tar", files)
+        result = artifact_licensing.run_image_licensing(
+            artifact_licensing.ImageLicensingConfig(str(image), _repo(tmp_path))
+        )
+        assert "image-license-missing" in _rules(result)
+
+    def test_a_missing_project_license_fails(self, tmp_path):
+        files = {
+            k: v for k, v in CLEAN_IMAGE.items() if not k.endswith("licenses/LICENSE")
+        }
+        image = _image_tar(tmp_path / "image.tar", files)
+        result = artifact_licensing.run_image_licensing(
+            artifact_licensing.ImageLicensingConfig(str(image), _repo(tmp_path))
+        )
+        assert "image-license-missing" in _rules(result)
+
+    def test_a_non_mit_image_license_fails(self, tmp_path):
+        result = _run_image(tmp_path, {"app/LICENSE": b"Apache License 2.0\n"})
+        assert "license-text" in _rules(result)
+
+    @pytest.mark.parametrize(
+        ("rule", "files"),
+        [
+            ("image-forbidden-path", {"app/models/x_model.pkl": b"x"}),
+            ("image-resource-not-allowed", {"app/resources/x.pdf": b"x"}),
+            ("third-party-data-content", {"usr/share/x.bin": SAMPLE_CSV}),
+            ("license-text", {"app/LICENSE": b"Apache License 2.0\n"}),
+            ("image-mat-file", {"app/x.mat": b"x"}),
+        ],
+    )
+    def test_each_rule_alone_catches_its_fixture(
+        self, tmp_path, monkeypatch, rule, files
+    ):
+        result = _run_image(tmp_path / "with", files)
+        assert rule in _rules(result)
+        owner = {
+            "image-forbidden-path": artifact_licensing._image_folder_findings,
+            "image-resource-not-allowed": artifact_licensing._image_resource_findings,
+            "third-party-data-content": artifact_licensing._image_content_findings,
+            "license-text": artifact_licensing._image_license_findings,
+            "image-mat-file": artifact_licensing._image_mat_findings,
+        }[rule]
+        monkeypatch.setattr(
+            artifact_licensing,
+            "IMAGE_RULES",
+            tuple(r for r in artifact_licensing.IMAGE_RULES if r is not owner),
+        )
+        assert rule not in _rules(_run_image(tmp_path / "without", files))
+
+
+class TestImageModeErrors:
+    def test_an_empty_tar_is_an_error(self, tmp_path):
+        image = _image_tar(tmp_path / "image.tar", {})
+        result = artifact_licensing.run_image_licensing(
+            artifact_licensing.ImageLicensingConfig(str(image), _repo(tmp_path))
+        )
+        assert result.status == "error"
+        assert "artifact-unreadable" in _rules(result)
+
+    def test_a_truncated_stream_is_an_error(self, tmp_path):
+        image = _image_tar(tmp_path / "image.tar", CLEAN_IMAGE)
+        truncated = tmp_path / "truncated.tar"
+        truncated.write_bytes(image.read_bytes()[:700])
+        result = artifact_licensing.run_image_licensing(
+            artifact_licensing.ImageLicensingConfig(str(truncated), _repo(tmp_path))
+        )
+        assert result.status == "error"
+
+    @pytest.mark.parametrize(
+        "cut",
+        ["at-last-header", "inside-last-header", "no-end-marker", "trailing-junk"],
+    )
+    def test_an_export_that_does_not_end_cleanly_is_an_error(self, tmp_path, cut):
+        # The forbidden member comes last, after both license files, so a cut
+        # before it would otherwise read as a complete, passing image.
+        image = _image_tar(
+            tmp_path / "image.tar", {**CLEAN_IMAGE, "app/models/x_model.pkl": b"x"}
+        )
+        data = image.read_bytes()
+        with tarfile.open(image) as archive:
+            last = archive.getmembers()[-1].offset
+            end = archive.offset
+        damaged = {
+            "at-last-header": data[:last],
+            "inside-last-header": data[: last + 100],
+            "no-end-marker": data[:end],
+            "trailing-junk": data + b"\x01" * 512,
+        }[cut]
+        (tmp_path / "damaged.tar").write_bytes(damaged)
+        result = artifact_licensing.run_image_licensing(
+            artifact_licensing.ImageLicensingConfig(
+                str(tmp_path / "damaged.tar"), _repo(tmp_path)
+            )
+        )
+        assert result.status == "error"
+        assert "artifact-unreadable" in _rules(result)
+
+    def test_a_missing_file_is_an_error(self, tmp_path):
+        result = artifact_licensing.run_image_licensing(
+            artifact_licensing.ImageLicensingConfig(
+                str(tmp_path / "absent.tar"), _repo(tmp_path)
+            )
+        )
+        assert result.status == "error"
+        assert "artifact-not-found" in _rules(result)
+
+    def test_a_missing_manifest_is_an_error(self, tmp_path):
+        image = _image_tar(tmp_path / "image.tar", CLEAN_IMAGE)
+        result = artifact_licensing.run_image_licensing(
+            artifact_licensing.ImageLicensingConfig(
+                str(image), _repo(tmp_path, manifest=None)
+            )
+        )
+        assert result.status == "error"
+        assert "manifest-unusable" in _rules(result)
+
+
+class TestImageMatExemption:
+    def test_a_recorded_scipy_test_file_is_exempt_and_listed(self, tmp_path):
+        result = _run_image(tmp_path, _scipy({EXEMPT_NAME: FIXTURE_MAT}))
+        assert result.status == "pass", result.findings
+        exempt = result.facts["mat_exempt"]
+        assert exempt["count"] == 1
+        assert exempt["bytes"] == len(FIXTURE_MAT)
+        assert exempt["distributions"] == ["scipy-1.17.1.dist-info"]
+        assert exempt["files"] == [
+            {
+                "path": f"{SITE}/{EXEMPT_NAME}",
+                "size": len(FIXTURE_MAT),
+                "sha256": hashlib.sha256(FIXTURE_MAT).hexdigest(),
+            }
+        ]
+
+    def test_a_mat_file_in_app_data_fails_both_rules(self, tmp_path):
+        result = _run_image(tmp_path, {"app/data/signals/x.mat": FIXTURE_MAT})
+        assert "app/data/signals/x.mat" in _mat_findings(result)
+        assert "image-forbidden-path" in _rules(result)
+
+    @pytest.mark.parametrize(
+        "member",
+        [
+            "app/x.mat",
+            "tmp/x.mat",
+            "root/x.mat",
+            "home/u/x.mat",
+            "opt/x.mat",
+            "usr/share/x.mat",
+            f"{SITE}/predictive_maintenance_mcp/x.mat",
+            f"{SITE}/torch/x.mat",
+            f"{SITE}/scipy/io/x.mat",
+            f"{MAT_FOLDER}/sub/x.mat",
+            "app/X.MAT",
+            "tmp/x.Mat",
+        ],
+    )
+    def test_a_mat_file_outside_the_exempt_folder_fails(self, tmp_path, member):
+        problems = _mat_findings(_run_image(tmp_path, {member: FIXTURE_MAT}))
+        assert REASONS["location"] in problems[member]
+
+    def test_a_file_the_record_does_not_list_fails(self, tmp_path):
+        files = _scipy({}, record=[])
+        files[f"{MAT_FOLDER}/fixture.mat"] = FIXTURE_MAT
+        problems = _mat_findings(_run_image(tmp_path, files))[
+            f"{MAT_FOLDER}/fixture.mat"
+        ]
+        assert problems == [REASONS["ownership"], REASONS["integrity"]]
+
+    @pytest.mark.parametrize(
+        "record_content",
+        [FIXTURE_MAT[:-1] + b"\x00", FIXTURE_MAT + b"\x00"],
+        ids=["hash-differs", "size-differs"],
+    )
+    def test_a_file_whose_hash_or_size_differs_from_its_record_fails(
+        self, tmp_path, record_content
+    ):
+        files = _scipy(
+            {EXEMPT_NAME: FIXTURE_MAT},
+            record=[_record_line(EXEMPT_NAME, record_content)],
+        )
+        problems = _mat_findings(_run_image(tmp_path, files))[f"{SITE}/{EXEMPT_NAME}"]
+        assert problems == [REASONS["integrity"]]
+
+    def test_a_recorded_file_over_the_size_limit_fails(self, tmp_path):
+        big = b"M" * (artifact_licensing.MAT_EXEMPT_MAX_BYTES + 1)
+        problems = _mat_findings(_run_image(tmp_path, _scipy({EXEMPT_NAME: big})))
+        assert problems[f"{SITE}/{EXEMPT_NAME}"] == [REASONS["size"]]
+
+    def test_a_copy_of_a_sample_file_in_the_exempt_folder_still_fails(self, tmp_path):
+        # The exemption never suppresses the copy rule: SAMPLE_CSV is in the
+        # test manifest, small and recorded, and lies in the exempt folder.
+        result = _run_image(tmp_path, _scipy({EXEMPT_NAME: SAMPLE_CSV}))
+        assert _mat_findings(result) == {}
+        finding = next(
+            f for f in result.findings if f.rule == "third-party-data-content"
+        )
+        assert finding.evidence["member"] == f"{SITE}/{EXEMPT_NAME}"
+
+    @pytest.mark.parametrize("kind", ["sym", "hard"])
+    def test_a_link_named_mat_in_the_exempt_folder_fails(self, tmp_path, kind):
+        files = _scipy({}, record=[_record_line(EXEMPT_NAME, b"")])
+        files["app/src/server.py"] = b"print('server')\n"
+        result = _run_image(
+            tmp_path,
+            files,
+            links=[(kind, f"{SITE}/{EXEMPT_NAME}", "app/src/server.py")],
+        )
+        assert _mat_findings(result)[f"{SITE}/{EXEMPT_NAME}"] == [REASONS["regular"]]
+
+    def test_two_scipy_distributions_make_the_owner_ambiguous(self, tmp_path):
+        files = {
+            **_scipy({EXEMPT_NAME: FIXTURE_MAT}),
+            **_scipy({EXEMPT_NAME: FIXTURE_MAT}, dist=f"{SITE}/scipy-1.16.0.dist-info"),
+        }
+        problems = _mat_findings(_run_image(tmp_path, files))[f"{SITE}/{EXEMPT_NAME}"]
+        assert problems == [REASONS["ownership"]]
+
+    def test_a_missing_record_trusts_nothing(self, tmp_path):
+        files = {
+            f"{SITE}/{EXEMPT_NAME}": FIXTURE_MAT,
+            f"{SCIPY_DIST}/METADATA": b"Metadata-Version: 2.1\n",
+        }
+        problems = _mat_findings(_run_image(tmp_path, files))[f"{SITE}/{EXEMPT_NAME}"]
+        assert problems == [REASONS["ownership"], REASONS["integrity"]]
+
+    def test_a_record_that_is_a_link_trusts_nothing(self, tmp_path):
+        files = {
+            f"{SITE}/{EXEMPT_NAME}": FIXTURE_MAT,
+            f"{SCIPY_DIST}/METADATA": b"Metadata-Version: 2.1\n",
+            "tmp/record.txt": (_record_line(EXEMPT_NAME, FIXTURE_MAT) + "\n").encode(),
+        }
+        result = _run_image(
+            tmp_path, files, links=[("sym", f"{SCIPY_DIST}/RECORD", "tmp/record.txt")]
+        )
+        problems = _mat_findings(result)[f"{SITE}/{EXEMPT_NAME}"]
+        assert problems == [REASONS["ownership"], REASONS["integrity"]]
+
+    def test_another_interpreter_folder_is_not_exempt(self, tmp_path):
+        other = "usr/local/lib/python3.12/site-packages"
+        files = {
+            f"{other}/{EXEMPT_NAME}": FIXTURE_MAT,
+            f"{other}/scipy-1.17.1.dist-info/RECORD": (
+                _record_line(EXEMPT_NAME, FIXTURE_MAT) + "\n"
+            ).encode(),
+        }
+        problems = _mat_findings(_run_image(tmp_path, files))[f"{other}/{EXEMPT_NAME}"]
+        assert REASONS["location"] in problems
+
+
+#: One fixture per exemption condition, each failing that condition alone.
+_SINGLE_CONDITION_FIXTURES = {
+    "_mat_location": lambda: (
+        _scipy({"scipy/io/fixture.mat": FIXTURE_MAT}),
+        (),
+        f"{SITE}/scipy/io/fixture.mat",
+    ),
+    "_mat_ownership": lambda: (
+        {
+            **_scipy({EXEMPT_NAME: FIXTURE_MAT}),
+            **_scipy({EXEMPT_NAME: FIXTURE_MAT}, dist=f"{SITE}/scipy-1.16.0.dist-info"),
+        },
+        (),
+        f"{SITE}/{EXEMPT_NAME}",
+    ),
+    "_mat_integrity": lambda: (
+        _scipy(
+            {EXEMPT_NAME: FIXTURE_MAT},
+            record=[_record_line(EXEMPT_NAME, FIXTURE_MAT + b"\x00")],
+        ),
+        (),
+        f"{SITE}/{EXEMPT_NAME}",
+    ),
+    "_mat_size": lambda: (
+        _scipy({EXEMPT_NAME: b"M" * (artifact_licensing.MAT_EXEMPT_MAX_BYTES + 1)}),
+        (),
+        f"{SITE}/{EXEMPT_NAME}",
+    ),
+    "_mat_regular": lambda: (
+        {**_scipy({}, record=[_record_line(EXEMPT_NAME, b"")])},
+        [("sym", f"{SITE}/{EXEMPT_NAME}", "app/src/server.py")],
+        f"{SITE}/{EXEMPT_NAME}",
+    ),
+}
+
+
+class TestImageMatExemptionRemovalProofs:
+    """Each exemption condition is needed: its fixture fails with every
+    condition in place and passes once that condition alone is dropped."""
+
+    @pytest.mark.parametrize("condition", sorted(_SINGLE_CONDITION_FIXTURES))
+    def test_dropping_one_condition_lets_its_fixture_through(
+        self, tmp_path, monkeypatch, condition
+    ):
+        files, links, member = _SINGLE_CONDITION_FIXTURES[condition]()
+        with_all = _mat_findings(_run_image(tmp_path / "all", files, links=links))
+        assert len(with_all[member]) == 1
+        target = getattr(artifact_licensing, condition)
+        monkeypatch.setattr(
+            artifact_licensing,
+            "MAT_EXEMPTION_CONDITIONS",
+            tuple(
+                c
+                for c in artifact_licensing.MAT_EXEMPTION_CONDITIONS
+                if c is not target
+            ),
+        )
+        without = _mat_findings(_run_image(tmp_path / "without", files, links=links))
+        assert member not in without
+
+    def test_an_empty_exemption_table_exempts_nothing(self, tmp_path, monkeypatch):
+        files = _scipy({EXEMPT_NAME: FIXTURE_MAT})
+        assert _mat_findings(_run_image(tmp_path / "table", files)) == {}
+        monkeypatch.setattr(artifact_licensing, "MAT_EXEMPTIONS", ())
+        problems = _mat_findings(_run_image(tmp_path / "empty", files))
+        assert REASONS["location"] in problems[f"{SITE}/{EXEMPT_NAME}"]
+
+
+class TestImageCli:
+    def test_the_image_mode_writes_the_result_and_exits_0(self, tmp_path, capsys):
+        image = _image_tar(tmp_path / "image.tar", CLEAN_IMAGE)
+        out = tmp_path / "image.json"
+        code = audit_main.main(
+            [
+                "artifact-licensing",
+                "--image",
+                str(image),
+                "--repo-root",
+                str(_repo(tmp_path)),
+                "--json-out",
+                str(out),
+            ]
+        )
+        assert code == 0
+        doc = json.loads(out.read_text(encoding="utf-8"))
+        results.validate_result(doc)
+        assert doc["facts"]["image"] == "image.tar"
+        assert (
+            "artifact-licensing pass (local): image image.tar"
+            in capsys.readouterr().out
+        )
+
+    def test_a_failing_image_exits_1_and_names_the_member(self, tmp_path, capsys):
+        image = _image_tar(
+            tmp_path / "image.tar", {**CLEAN_IMAGE, "app/models/x_model.pkl": b"x"}
+        )
+        code = audit_main.main(
+            [
+                "artifact-licensing",
+                "--image",
+                str(image),
+                "--repo-root",
+                str(_repo(tmp_path)),
+            ]
+        )
+        assert code == 1
+        assert "app/models/x_model.pkl" in capsys.readouterr().out
+
+    def test_the_image_is_read_from_standard_input(self, tmp_path, monkeypatch, capsys):
+        image = _image_tar(tmp_path / "image.tar", CLEAN_IMAGE)
+
+        class _Stdin:
+            buffer = io.BytesIO(image.read_bytes())
+
+        monkeypatch.setattr(artifact_licensing.sys, "stdin", _Stdin())
+        code = audit_main.main(
+            ["artifact-licensing", "--image", "-", "--repo-root", str(_repo(tmp_path))]
+        )
+        assert code == 0
+        assert "image stdin" in capsys.readouterr().out
+
+    def test_image_and_dist_together_are_refused(self, tmp_path):
+        with pytest.raises(SystemExit) as exc:
+            audit_main.main(
+                [
+                    "artifact-licensing",
+                    "--image",
+                    "-",
+                    "--dist",
+                    str(tmp_path),
+                    "--repo-root",
+                    str(_repo(tmp_path)),
+                ]
+            )
+        assert exc.value.code == 2

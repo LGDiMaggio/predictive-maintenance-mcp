@@ -26,6 +26,7 @@ This page explains what runs where, which failure scenarios are covered and whic
 | | `tests.yml`, jobs `lint`, `type-check`, `format-check` | flake8 syntax and undefined-name errors, mypy against the frozen baseline, Black over `src`, `tests`, `benchmarks` and `tools` |
 | | `tests.yml`, job `package-smoke` (Ubuntu, Python 3.11) | Builds the sdist and the wheel, checks both with `python -m tools.audit artifact-licensing` (MIT license metadata, the MIT `LICENSE` as the only license file, no file from `data/` and no copy of the third-party sample data), installs the wheel into a fresh virtual environment outside the checkout, and runs the stdio smoke harness against the installed console script |
 | Release tag `v*` | `publish.yml`, job `smoke` | The licensing check on the exact sdist and wheel the build job produced, then the harness on that wheel; the TestPyPI and PyPI uploads wait for both |
+| Manual (Run workflow) | `docker-image.yml`, job `image` (Ubuntu) | Checks the Docker build context and the image's `COPY` lines with probe builds whose files are exported to a folder (`python -m tools.audit docker-probe`), builds the image, and checks its files with `python -m tools.audit artifact-licensing`: no file from the working copy's `data/`, `models/` or `reports/` folders, no resource file outside the allowlist, no `.mat` file other than the SciPy test files recorded by the installed SciPy package, the MIT `LICENSE`, and a license file for each installed package, listing the packages that ship none |
 | Weekly (Mondays 05:17 UTC), manual (Run workflow), and pull requests that change `.github/workflows/audit.yml` or `tools/audit/` | `audit.yml`, job `suite` | The full test suite at the declared dependency floors (Python 3.11) and at the newest in-range releases (Python 3.11, 3.12 and 3.14) |
 | | `audit.yml`, job `package-smoke` | The wheel on Ubuntu (Python 3.11, 3.13, 3.14), Windows (3.12) and macOS (3.12), and the sdist on Ubuntu (3.12) |
 | | `audit.yml`, job `upstream` | The compatibility inventory against PyPI release data, GitHub releases, and the protocol revisions the installed MCP SDK knows |
@@ -67,7 +68,8 @@ Nothing in it writes to the repository or the issue tracker.
 
 ### Not covered
 
-- The Docker image: it is not built in CI.
+- The Docker image on pull requests and pushes: only the manual `docker-image.yml` workflow builds and checks it.
+- Model weight files inside the Docker image: the image check does not look for them.
 - Running the Windows installer script and the macOS setup steps. Their documented commands are checked statically (names, flags, paths), but nothing executes them.
 - The SSE and streamable-HTTP transports at runtime. Only stdio is exercised; transport values in the documentation are checked statically.
 - Optional extras such as `docx`, `pdf`, `ocr` and `vector-search`: no audited environment installs them.

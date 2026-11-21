@@ -50,6 +50,37 @@ stores unchanged, are ``git archive`` output filtered by the committed
    lies under a path it export-ignores, so the archive is proven to come from
    a revision that excludes the sample data and to have been filtered by it.
 
+Image mode
+----------
+``--image PATH`` (``-`` reads standard input) checks the filesystem of a
+Docker image as ``docker export`` writes it, streamed, never unpacked:
+
+1. It is a readable, non-empty, uncompressed tar that ends with its
+   end-of-archive marker, so an export cut short is an error, never a pass.
+2. No file lies under ``app/data/``, ``app/models/`` or ``app/reports/``
+   (:data:`IMAGE_EMPTY_FOLDERS`): signals, trained models and reports come
+   from the operator at run time. Empty folders are fine.
+3. Under ``app/resources/`` it holds only :data:`IMAGE_RESOURCE_FILES`.
+4. No file, under any name, is a copy of a sample file (rule 3 above). Only
+   files whose size matches a manifest size are read, so multi-gigabyte
+   libraries are skipped.
+5. ``app/LICENSE`` and the project's dist-info ``LICENSE`` are present and
+   pass rule 5.
+6. No member anywhere is a ``.mat`` file, except a test file an installed
+   library ships and records (:data:`MAT_EXEMPTIONS`). Such a file is exempt
+   only when all of these hold: it lies directly in the library's test-data
+   folder in the image's site-packages (:data:`IMAGE_SITE_PACKAGES`); exactly
+   one installed distribution of that library exists and its ``RECORD`` lists
+   the file; the file's SHA-256 and size equal that ``RECORD`` entry; it is at
+   most :data:`MAT_EXEMPT_MAX_BYTES` bytes; and it is a regular file, not a
+   link. Rules 2 to 4 still apply to an exempt file.
+
+Each installed distribution whose dist-info carries no license file is
+listed in the result's facts (``license_file_gaps``). That list is evidence
+for a reader, not a verdict on any package's terms, and it never fails the
+run. The exempt ``.mat`` files are listed in the facts too (``mat_exempt``),
+so a change between two builds is visible.
+
 The manifest
 ------------
 The manifest is the one place that names the third-party data: its roots, its
@@ -65,6 +96,8 @@ beyond ``build``.
 from __future__ import annotations
 
 import argparse
+import base64
+import csv
 import email.parser
 import hashlib
 import json
@@ -72,6 +105,7 @@ import posixpath
 import re
 import stat
 import subprocess
+import sys
 import tarfile
 import tomllib
 import zipfile
@@ -79,9 +113,9 @@ import zlib
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from email.message import Message
-from functools import partial
+from functools import lru_cache, partial
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import IO, Any, Optional, Union, cast
 
 from tools.audit import results
 from tools.audit.package_smoke import ArtifactError, find_artifact
@@ -89,29 +123,45 @@ from tools.audit.results import Finding
 
 __all__ = [
     "ARCHIVE_DATA_FILES",
+    "IMAGE_EMPTY_FOLDERS",
+    "IMAGE_LICENSE",
+    "IMAGE_RESOURCE_FILES",
+    "IMAGE_RULES",
+    "IMAGE_SITE_PACKAGES",
     "LICENSE_FILE",
     "MANIFEST_RELPATH",
+    "MAT_EXEMPTIONS",
+    "MAT_EXEMPTION_CONDITIONS",
+    "MAT_EXEMPT_MAX_BYTES",
     "MIT_CLASSIFIER",
     "MIT_LICENSE_LINES",
     "ArchiveLicensingConfig",
     "Artifact",
     "ArtifactLicensingConfig",
+    "ImageFiles",
+    "ImageLicensingConfig",
     "Manifest",
+    "MatFile",
     "add_arguments",
     "build_manifest",
     "check_archive",
     "check_artifact",
+    "check_image",
     "content_hashes",
     "export_ignored_paths",
+    "image_license_gaps",
+    "image_mat_exemptions",
     "load_manifest",
     "manifest_entry",
     "mit_license_problem",
+    "read_image_filesystem",
     "read_sdist",
     "read_source_archive",
     "read_wheel",
     "run",
     "run_archive_licensing",
     "run_artifact_licensing",
+    "run_image_licensing",
     "write_manifest",
 ]
 
@@ -458,11 +508,15 @@ def read_sdist(path: Path, sizes: Iterable[int] = ()) -> Artifact:
     return artifact
 
 
-def _extract(archive: tarfile.TarFile, member: tarfile.TarInfo) -> bytes:
+def _open_member(archive: tarfile.TarFile, member: tarfile.TarInfo) -> IO[bytes]:
     handle = archive.extractfile(member)
     if handle is None:
         raise ValueError(f"member {member.name} cannot be read")
-    return handle.read()
+    return handle
+
+
+def _extract(archive: tarfile.TarFile, member: tarfile.TarInfo) -> bytes:
+    return _open_member(archive, member).read()
 
 
 def read_source_archive(path: Path, sizes: Iterable[int] = ()) -> Artifact:
@@ -908,6 +962,482 @@ def check_archive(
 
 
 # ---------------------------------------------------------------------------
+# Image mode
+# ---------------------------------------------------------------------------
+
+#: Application folders an image keeps empty: signals, trained models and
+#: reports come from the operator at run time (docker-compose.yml mounts them).
+IMAGE_EMPTY_FOLDERS = ("app/data", "app/models", "app/reports")
+
+#: The only files an image may hold under ``app/resources/``.
+IMAGE_RESOURCE_FILES = (
+    "app/resources/bearing_catalogs/README.md",
+    "app/resources/bearing_catalogs/common_bearings_catalog.json",
+)
+
+#: The project's LICENSE inside the image.
+IMAGE_LICENSE = f"app/{LICENSE_FILE}"
+
+#: The project's own distribution, whose dist-info carries the MIT LICENSE.
+_PROJECT_DIST_INFO = re.compile(r"predictive_maintenance_mcp-[^/]+\.dist-info")
+
+#: A file inside an installed distribution's dist-info folder.
+_SITE_DIST_INFO = re.compile(
+    r"(?P<dist>(?:.+/)?site-packages/[^/]+\.dist-info)/(?P<rest>.+)"
+)
+
+#: The site-packages folder of the image's interpreter (``python:3.11-slim``).
+IMAGE_SITE_PACKAGES = "usr/local/lib/python3.11/site-packages"
+
+#: The libraries whose own ``.mat`` test files an image may carry, as
+#: ``(distribution, folder relative to site-packages)``. An entry widens what
+#: an image may hold: add one only with evidence that the files are the
+#: library's own.
+MAT_EXEMPTIONS: tuple[tuple[str, str], ...] = (
+    ("scipy", "scipy/io/matlab/tests/data/"),
+)
+
+#: The largest exempt ``.mat`` file. SciPy 1.17.1's largest test file is
+#: 20,225 bytes; the smallest sample recording is over a megabyte.
+MAT_EXEMPT_MAX_BYTES = 65_536
+
+_READ_CHUNK = 1 << 20
+_EMPTY_SHA256 = hashlib.sha256(b"").hexdigest()
+_TAIL_BYTES = 1 << 20
+
+
+@dataclass(frozen=True)
+class MatFile:
+    """One ``.mat`` member: its size, whether it is a regular file, and its
+    SHA-256 (hex). A link or special member carries no data, so its size is 0
+    and its hash is the empty content's."""
+
+    size: int
+    regular: bool
+    sha256: str
+
+
+@dataclass
+class ImageFiles:
+    """What the image rules need from one exported container filesystem.
+
+    ``members`` maps each path that is not a directory (relative to the
+    filesystem root) to its size. ``hashes`` holds the content hashes of the
+    regular files whose size matches a manifest size, ``licenses`` the text of
+    ``app/LICENSE`` and of the project's dist-info LICENSE, and
+    ``dist_infos`` whether each installed distribution's dist-info folder
+    carries a license file. ``mats`` describes every ``.mat`` member, and
+    ``records`` holds the ``RECORD`` text of each dist-info of a library named
+    in :data:`MAT_EXEMPTIONS` (``None`` when it is not a readable file).
+    """
+
+    name: str
+    members: dict[str, int] = field(default_factory=dict)
+    hashes: dict[str, set[str]] = field(default_factory=dict)
+    licenses: dict[str, str] = field(default_factory=dict)
+    dist_infos: dict[str, bool] = field(default_factory=dict)
+    mats: dict[str, MatFile] = field(default_factory=dict)
+    records: dict[str, Optional[str]] = field(default_factory=dict)
+
+
+def _is_project_license(dist: str, rest: str) -> bool:
+    return _PROJECT_DIST_INFO.fullmatch(posixpath.basename(dist)) is not None and (
+        rest in (LICENSE_FILE, f"licenses/{LICENSE_FILE}")
+    )
+
+
+@lru_cache(maxsize=None)
+def _dist_info_pattern(library: str) -> re.Pattern[str]:
+    return re.compile(
+        rf"{re.escape(IMAGE_SITE_PACKAGES)}/{re.escape(library)}-[^/]+\.dist-info"
+    )
+
+
+def _exempt_dist_info(dist: str, library: str) -> bool:
+    """Whether ``dist`` is a dist-info of ``library`` directly in the image's
+    site-packages."""
+    return _dist_info_pattern(library).fullmatch(dist) is not None
+
+
+def _is_exempt_record(dist: str, rest: str) -> bool:
+    return rest == "RECORD" and any(
+        _exempt_dist_info(dist, library) for library, _ in MAT_EXEMPTIONS
+    )
+
+
+class _TailReader:
+    """Passes reads through, counting the bytes and keeping the last ones."""
+
+    def __init__(self, raw: IO[bytes]) -> None:
+        self.raw = raw
+        self.total = 0
+        self.tail = bytearray()
+
+    def read(self, size: int = -1) -> bytes:
+        data = self.raw.read(size)
+        self.total += len(data)
+        self.tail += data
+        del self.tail[:-_TAIL_BYTES]
+        return data
+
+
+def _require_end_of_archive(reader: _TailReader, offset: int, name: str) -> None:
+    """Raise unless the stream ends with the tar's all-zero end-of-archive blocks.
+
+    ``tarfile`` ends a stream without error when the data stops at or inside a
+    member header, so a cut ``docker export`` would otherwise read as complete.
+    """
+    while reader.read(_READ_CHUNK):
+        pass
+    trailer = reader.total - offset
+    start = len(reader.tail) - trailer
+    if trailer < 2 * tarfile.BLOCKSIZE or start < 0 or any(reader.tail[start:]):
+        raise ValueError(f"{name} ends before the tar end-of-archive marker")
+
+
+def _hash_stream(handle: IO[bytes]) -> str:
+    digest = hashlib.sha256()
+    for chunk in iter(partial(handle.read, _READ_CHUNK), b""):
+        digest.update(chunk)
+    return digest.hexdigest()
+
+
+def read_image_filesystem(
+    stream: IO[bytes], name: str, sizes: Iterable[int] = ()
+) -> ImageFiles:
+    """Read a container filesystem tar, as ``docker export`` writes it.
+
+    The tar (uncompressed, as ``docker export`` writes it) is read as a stream,
+    member by member. A file is read only when its size matches a manifest
+    size, it is one of the license files the rules compare, it is a ``.mat``
+    file (hashed in chunks), or it is the ``RECORD`` of a library named in
+    :data:`MAT_EXEMPTIONS`.
+
+    Raises:
+        ValueError: When the stream is not a readable tar, ends before the
+            tar's end-of-archive marker, or holds no file.
+    """
+    wanted = set(sizes)
+    image = ImageFiles(name=name)
+    reader = _TailReader(stream)
+    try:
+        with tarfile.open(fileobj=cast(IO[bytes], reader), mode="r|") as archive:
+            for member in archive:
+                path = posixpath.normpath(member.name.lstrip("/"))
+                if member.isdir() or path in ("", "."):
+                    continue
+                regular = member.isfile()
+                image.members[path] = member.size if regular else 0
+                site = _SITE_DIST_INFO.fullmatch(path)
+                is_license = path == IMAGE_LICENSE
+                is_record = False
+                if site is not None:
+                    dist, rest = site.group("dist"), site.group("rest")
+                    has_license = rest.startswith("licenses/") or (
+                        re.fullmatch(_LICENSE_NAME, rest) is not None
+                    )
+                    image.dist_infos[dist] = image.dist_infos.get(dist, False) or (
+                        has_license
+                    )
+                    is_license = is_license or _is_project_license(dist, rest)
+                    is_record = _is_exempt_record(dist, rest)
+                    if is_record and not regular:
+                        image.records[dist] = None
+                is_mat = path.casefold().endswith(".mat")
+                if not regular:
+                    if is_mat:
+                        image.mats[path] = MatFile(0, False, _EMPTY_SHA256)
+                    continue
+                if not (member.size in wanted or is_license or is_record):
+                    if is_mat:
+                        handle = _open_member(archive, member)
+                        image.mats[path] = MatFile(
+                            member.size, True, _hash_stream(handle)
+                        )
+                    continue
+                content = _extract(archive, member)
+                if is_mat:
+                    image.mats[path] = MatFile(
+                        member.size, True, hashlib.sha256(content).hexdigest()
+                    )
+                if member.size in wanted:
+                    image.hashes[path] = content_hashes(content)
+                if is_license:
+                    image.licenses[path] = content.decode("utf-8", errors="replace")
+                if is_record:
+                    image.records[dist] = content.decode("utf-8", errors="replace")
+            _require_end_of_archive(reader, archive.offset, name)
+    except (tarfile.TarError, OSError, EOFError, zlib.error) as exc:
+        raise ValueError(f"{name} is not a readable filesystem tar: {exc}") from None
+    if not image.members:
+        raise ValueError(f"{name} holds no files")
+    return image
+
+
+def image_license_gaps(image: ImageFiles) -> list[str]:
+    """Installed distributions whose dist-info carries no license file."""
+    return sorted(
+        posixpath.basename(dist) for dist, has in image.dist_infos.items() if not has
+    )
+
+
+def _site_relative(path: str) -> Optional[str]:
+    prefix = f"{IMAGE_SITE_PACKAGES}/"
+    return path[len(prefix) :] if path.startswith(prefix) else None
+
+
+@lru_cache(maxsize=8)
+def _record_entries(text: str) -> dict[str, tuple[str, str]]:
+    """``RECORD`` rows as ``{path: (hash, size)}``; malformed rows are skipped.
+
+    Cached, since every ``.mat`` member is checked against the same text;
+    callers only read the result.
+    """
+    entries: dict[str, tuple[str, str]] = {}
+    for row in csv.reader(text.splitlines()):
+        if len(row) == 3:
+            entries[row[0]] = (row[1], row[2])
+    return entries
+
+
+def _library_dist_infos(image: ImageFiles, library: str) -> list[str]:
+    return sorted(dist for dist in image.dist_infos if _exempt_dist_info(dist, library))
+
+
+def _record_hash(sha256: str) -> str:
+    """A hex SHA-256 in ``RECORD`` form: ``sha256=`` and unpadded urlsafe base64."""
+    encoded = base64.urlsafe_b64encode(bytes.fromhex(sha256)).rstrip(b"=")
+    return "sha256=" + encoded.decode("ascii")
+
+
+def _mat_location(image: ImageFiles, path: str, mat: MatFile) -> Optional[str]:
+    relative = _site_relative(path)
+    if relative is not None and any(
+        relative.startswith(folder) and "/" not in relative[len(folder) :]
+        for _, folder in MAT_EXEMPTIONS
+    ):
+        return None
+    return "it is not directly in an exempt test-data folder of the site-packages"
+
+
+def _mat_ownership(image: ImageFiles, path: str, mat: MatFile) -> Optional[str]:
+    relative = _site_relative(path)
+    if relative is not None:
+        for library, _ in MAT_EXEMPTIONS:
+            infos = _library_dist_infos(image, library)
+            text = image.records.get(infos[0]) if len(infos) == 1 else None
+            if text is not None and relative in _record_entries(text):
+                return None
+    return "no single installed distribution lists it in its RECORD"
+
+
+def _mat_integrity(image: ImageFiles, path: str, mat: MatFile) -> Optional[str]:
+    relative = _site_relative(path)
+    expected = (_record_hash(mat.sha256), str(mat.size))
+    for library, _ in MAT_EXEMPTIONS:
+        for dist in _library_dist_infos(image, library):
+            text = image.records.get(dist)
+            if (
+                relative is not None
+                and text is not None
+                and _record_entries(text).get(relative) == expected
+            ):
+                return None
+    return "its SHA-256 and size match no RECORD entry"
+
+
+def _mat_size(image: ImageFiles, path: str, mat: MatFile) -> Optional[str]:
+    if mat.size <= MAT_EXEMPT_MAX_BYTES:
+        return None
+    return f"it is larger than {MAT_EXEMPT_MAX_BYTES} bytes"
+
+
+def _mat_regular(image: ImageFiles, path: str, mat: MatFile) -> Optional[str]:
+    return None if mat.regular else "it is a link or special file, not a regular file"
+
+
+#: What exempts a ``.mat`` member (image rule 6); each returns why it does not
+#: hold, or None. Tests drop one at a time to prove that each one is needed.
+MAT_EXEMPTION_CONDITIONS: tuple[
+    Callable[[ImageFiles, str, MatFile], Optional[str]], ...
+] = (_mat_location, _mat_ownership, _mat_integrity, _mat_size, _mat_regular)
+
+
+def _mat_problems(image: ImageFiles, path: str) -> list[str]:
+    mat = image.mats[path]
+    return [
+        reason
+        for condition in MAT_EXEMPTION_CONDITIONS
+        if (reason := condition(image, path, mat)) is not None
+    ]
+
+
+def image_mat_exemptions(image: ImageFiles) -> list[dict[str, Any]]:
+    """The ``.mat`` members image rule 6 exempts, with their size and SHA-256."""
+    return [
+        {"path": path, "size": image.mats[path].size, "sha256": image.mats[path].sha256}
+        for path in sorted(image.mats)
+        if not _mat_problems(image, path)
+    ]
+
+
+def _image_mat_findings(
+    image: ImageFiles, manifest: Manifest, repo_license: str
+) -> list[Finding]:
+    """Image rule 6: no ``.mat`` file, except a library's own recorded test
+    files."""
+    findings: list[Finding] = []
+    for path in sorted(image.mats):
+        problems = _mat_problems(image, path)
+        if problems:
+            findings.append(
+                _finding(
+                    "image-mat-file",
+                    f"image member {path}",
+                    f"The image holds the .mat file {path}: " + "; ".join(problems),
+                    member=path,
+                    problems=problems,
+                    image=image.name,
+                )
+            )
+    return findings
+
+
+def _image_folder_findings(
+    image: ImageFiles, manifest: Manifest, repo_license: str
+) -> list[Finding]:
+    """Image rule 2: nothing under the folders an image keeps empty."""
+    findings: list[Finding] = []
+    for path in sorted(image.members):
+        folder = next(
+            (top for top in IMAGE_EMPTY_FOLDERS if path.startswith(f"{top}/")), None
+        )
+        if folder is not None:
+            findings.append(
+                _finding(
+                    "image-forbidden-path",
+                    f"image member {path}",
+                    f"The image holds {path}, under {folder}/, which an image "
+                    "keeps empty",
+                    member=path,
+                    image=image.name,
+                )
+            )
+    return findings
+
+
+def _image_resource_findings(
+    image: ImageFiles, manifest: Manifest, repo_license: str
+) -> list[Finding]:
+    """Image rule 3: only the allowed files under app/resources/."""
+    return [
+        _finding(
+            "image-resource-not-allowed",
+            f"image member {path}",
+            f"The image holds {path}, which is not one of the resource files an "
+            "image may carry",
+            member=path,
+            image=image.name,
+        )
+        for path in sorted(image.members)
+        if path.startswith("app/resources/") and path not in IMAGE_RESOURCE_FILES
+    ]
+
+
+def _image_content_findings(
+    image: ImageFiles, manifest: Manifest, repo_license: str
+) -> list[Finding]:
+    """Image rule 4: no copy of a sample file, under any name."""
+    findings: list[Finding] = []
+    for path in sorted(image.hashes):
+        match = next(
+            (
+                manifest.by_hash[digest]
+                for digest in sorted(image.hashes[path])
+                if digest in manifest.by_hash
+            ),
+            None,
+        )
+        if match is not None:
+            findings.append(
+                _finding(
+                    "third-party-data-content",
+                    f"image member {path}",
+                    f"The image member {path} is a copy of the sample file {match}",
+                    member=path,
+                    matches=match,
+                    image=image.name,
+                )
+            )
+    return findings
+
+
+def _image_license_findings(
+    image: ImageFiles, manifest: Manifest, repo_license: str
+) -> list[Finding]:
+    """Image rule 5: the image LICENSE and the project's dist-info LICENSE are
+    the repository's MIT License."""
+    findings: list[Finding] = []
+    project = sorted(path for path in image.licenses if path != IMAGE_LICENSE)
+    if IMAGE_LICENSE not in image.licenses:
+        findings.append(
+            _finding(
+                "image-license-missing",
+                "image LICENSE",
+                f"The image has no {IMAGE_LICENSE}",
+                image=image.name,
+            )
+        )
+    if not project:
+        findings.append(
+            _finding(
+                "image-license-missing",
+                "image project dist-info LICENSE",
+                "The project's dist-info in the image carries no LICENSE",
+                image=image.name,
+            )
+        )
+    for path in sorted(image.licenses):
+        text = image.licenses[path]
+        problem = mit_license_problem(text)
+        if problem is None and _lines(text) != _lines(repo_license):
+            problem = "it differs from the repository LICENSE"
+        if problem is not None:
+            findings.append(
+                _finding(
+                    "license-text",
+                    f"image {path}",
+                    f"The image {path} is not the repository's MIT License: "
+                    f"{problem}",
+                    member=path,
+                    image=image.name,
+                )
+            )
+    return findings
+
+
+#: The image rules, in order. Tests drop one at a time to prove that each
+#: fixture fails because of its own rule.
+IMAGE_RULES: tuple[Callable[[ImageFiles, Manifest, str], list[Finding]], ...] = (
+    _image_folder_findings,
+    _image_resource_findings,
+    _image_content_findings,
+    _image_license_findings,
+    _image_mat_findings,
+)
+
+
+def check_image(
+    image: ImageFiles, manifest: Manifest, repo_license: str
+) -> list[Finding]:
+    """Every rule violation in one image filesystem (rules of the image mode)."""
+    findings: list[Finding] = []
+    for rule in IMAGE_RULES:
+        findings += rule(image, manifest, repo_license)
+    return findings
+
+
+# ---------------------------------------------------------------------------
 # The run
 # ---------------------------------------------------------------------------
 
@@ -1128,6 +1658,71 @@ def run_archive_licensing(config: ArchiveLicensingConfig) -> results.Result:
     return _result(config.variant, started_at, facts, errors, findings)
 
 
+#: The ``--image`` value that reads the filesystem tar from standard input.
+STDIN = "-"
+
+
+@dataclass
+class ImageLicensingConfig:
+    """Inputs of one image-mode run (``--image PATH``, ``-`` for stdin)."""
+
+    image: str
+    repo_root: Path = REPO_ROOT
+    variant: Optional[str] = None
+
+
+def _image_name(source: str) -> str:
+    return "stdin" if source == STDIN else Path(source).name
+
+
+def _read_image(source: str, sizes: Iterable[int]) -> ImageFiles:
+    if source == STDIN:
+        return read_image_filesystem(sys.stdin.buffer, _image_name(source), sizes)
+    path = Path(source)
+    if not path.is_file():
+        raise FileNotFoundError(f"{path} does not exist")
+    with open(path, "rb") as handle:
+        return read_image_filesystem(handle, _image_name(source), sizes)
+
+
+def run_image_licensing(config: ImageLicensingConfig) -> results.Result:
+    """Inspect one exported container filesystem and report."""
+    started_at = results.utc_now()
+    name = _image_name(config.image)
+    errors: list[Finding] = []
+    facts: dict[str, Any] = {"image": name}
+    manifest, repo_license = _reference_inputs(Path(config.repo_root), errors, facts)
+
+    image: Optional[ImageFiles] = None
+    if manifest is not None:
+        try:
+            image = _read_image(config.image, manifest.sizes)
+        except FileNotFoundError as exc:
+            errors.append(_error("artifact-not-found", f"image {name}", str(exc)))
+        except ValueError as exc:
+            errors.append(_error("artifact-unreadable", f"image {name}", str(exc)))
+
+    findings: list[Finding] = list(errors)
+    if not errors and image is not None and repo_license is not None:
+        exempt = image_mat_exemptions(image)
+        facts["members"] = len(image.members)
+        facts["license_file_gaps"] = image_license_gaps(image)
+        facts["mat_exempt"] = {
+            "count": len(exempt),
+            "bytes": sum(item["size"] for item in exempt),
+            "distributions": sorted(
+                posixpath.basename(dist)
+                for library, _ in MAT_EXEMPTIONS
+                for dist in _library_dist_infos(image, library)
+            ),
+            "files": exempt,
+        }
+        findings += _repo_license_findings(repo_license)
+        findings += check_image(image, manifest, repo_license)
+
+    return _result(config.variant, started_at, facts, errors, findings)
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
@@ -1148,6 +1743,13 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         help=(
             "a source archive (.zip or .tar.gz, one root folder) as git archive "
             "or GitHub writes it; repeatable"
+        ),
+    )
+    inputs.add_argument(
+        "--image",
+        help=(
+            "a container filesystem tar as docker export writes it; "
+            f"{STDIN} reads it from standard input"
         ),
     )
     parser.add_argument(
@@ -1171,6 +1773,13 @@ def run(args: argparse.Namespace) -> int:
             )
         )
         checked = ", ".join(result.facts.get("archives") or [])
+    elif args.image:
+        result = run_image_licensing(
+            ImageLicensingConfig(
+                image=args.image, repo_root=args.repo_root, variant=args.variant
+            )
+        )
+        checked = f"image {result.facts.get('image')}"
     else:
         result = run_artifact_licensing(
             ArtifactLicensingConfig(
