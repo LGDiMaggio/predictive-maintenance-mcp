@@ -325,7 +325,7 @@ Claude will automatically discover and call your new tool.
 
 1. **One thin orchestrator, one module per block** — `server.py` only creates the MCPServer instance; every tool lives as an importable module-level function in `src/mcp_tools/`. This makes tools easy to understand, test, and deploy.
 
-2. **Tools are pure functions** — Each tool takes parameters, does computation, returns structured data. No side effects except file I/O (reports, models).
+2. **Tools return structured data**: each tool takes parameters, computes, and returns structured data. Some tools also write local files: reports, trained models, generated test signals, import records and the append-only asset ledger. `load_signal` attempts to record every measurement whose companion declares a `measurement` object there, and reports the outcome in `measurement.ledger_status`.
 
 3. **Declared, never guessed**: the sampling rate and the signal unit come from the companion `_metadata.json` or from the `load_signal` call. A missing unit yields a structured refusal with a remedy, not a default.
 

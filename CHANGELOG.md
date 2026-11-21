@@ -373,6 +373,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `aggregate_corroboration`, both null under the default rule.
 
 ### Changed
+- The server instructions now open with their scope: they apply to calls to this
+  server's tools and to statements attributed to their results, and do not set
+  the format, length or sections of other workflows in the session. Rule 6 is
+  worded for that scope, the request for replies of at most 300 words is
+  removed, and the evidence rules, the declared-unit rule, the `load_signal`
+  ledger rule and the rule on text read from files and the ledger now sit within
+  the first 4,096 characters. The `load_signal` description states near its
+  start that a load also attempts to record a declared measurement in the asset
+  ledger and that `measurement.ledger_status` reports the outcome. The developer
+  quickstart no longer says that tools have no side effects besides reports and
+  models.
 - Signal import: restoring a recorded import by `import_id` is refused when
   the import was recorded before this check existed; importing the file again
   records the check and makes it restorable.
