@@ -124,22 +124,27 @@ def _bearing_table(block: dict[str, Any]) -> str:
 
 def _figure_card(figure: Optional[dict[str, Any]]) -> str:
     """The figure of the line tests, or a note that it is absent."""
-    if not figure:
+    if figure and "kind" in figure:
         return (
-            '<div class="card">'
+            '<div class="chart-container">'
             '<h2 class="card-title">Envelope spectrum</h2>'
-            "<p>This report carries no envelope spectrum figure, so the line "
-            "tests can be checked only against the values in the table "
-            "above.</p>"
+            f"{figure_to_svg(figure)}"
+            f'<p style="margin-top:1rem;{_MUTED}font-size:0.9rem;">'
+            f'{_esc(figure["caption"])}</p>'
             "</div>"
         )
 
+    if figure:
+        note = figure["caption"]
+    else:
+        note = (
+            "This report carries no envelope spectrum figure, so the line "
+            "tests can be checked only against the values in the table above."
+        )
     return (
-        '<div class="chart-container">'
+        '<div class="card">'
         '<h2 class="card-title">Envelope spectrum</h2>'
-        f"{figure_to_svg(figure)}"
-        f'<p style="margin-top:1rem;{_MUTED}font-size:0.9rem;">'
-        f'{_esc(figure["caption"])}</p>'
+        f"<p>{_esc(note)}</p>"
         "</div>"
     )
 
