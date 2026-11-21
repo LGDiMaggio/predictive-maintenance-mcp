@@ -27,10 +27,77 @@
       }
     },
     "generate_diagnostic_report": {
-      "refused": {
-        "type": "ValueError",
-        "message": "Invalid bandpass band: filter_high=499 Hz must be greater than filter_low=500 Hz — re-specify the band edges in (low, high) order."
+      "verdict": "No bearing fault verdict was reached, because characteristic-frequency matching was not computed for bearing '6205'.",
+      "fault_canonical": null,
+      "evidence_strength": "none",
+      "evidence_strength_note": "Evidence strength counts the findings of the analyses that ran, a bearing finding once. It is not a confidence score, it is not a probability, and it does not identify or confirm a fault type.",
+      "bearing_check": {
+        "status": "not_computed",
+        "reason_code": "envelope_band_unusable",
+        "reason": "At fs=1000 Hz the envelope band of the bearing check, from 500 Hz to just below the Nyquist frequency (500 Hz), is empty, so no envelope spectrum could be computed for bearing '6205'.",
+        "remedy": "Re-acquire the signal at a higher sampling rate, then re-run the diagnosis. The envelope band of the bearing check runs from 500 Hz to just below half the sampling rate: it is empty at 1002 Hz or less, and it reaches its full width, 500 to 5000 Hz, only above 10 kHz."
+      },
+      "statements": [
+        "No bearing fault verdict was reached, because characteristic-frequency matching was not computed for bearing '6205'.",
+        "ISO severity was not assessed. ISO assessment not possible: at fs=1000 Hz the usable upper band edge 475 Hz (0.95 x Nyquist 500 Hz) does not reach the 1000 Hz top of the ISO 20816-3 evaluation band — the 10-1000 Hz band would be only partially covered. Re-acquire the signal at fs >= 2106 Hz.",
+        "Resolve the condition in 'reason' — e.g. re-acquire the signal at fs >= 2106 Hz so the full ISO 20816-3 evaluation band (up to 1 kHz) is covered — then re-run the diagnosis. The spectral/bearing/anomaly blocks in this result are unaffected.",
+        "Bearing characteristic-frequency matching was not computed. At fs=1000 Hz the envelope band of the bearing check, from 500 Hz to just below the Nyquist frequency (500 Hz), is empty, so no envelope spectrum could be computed for bearing '6205'. No bearing check ran, so this report says nothing about the condition of the bearing.",
+        "Re-acquire the signal at a higher sampling rate, then re-run the diagnosis. The envelope band of the bearing check runs from 500 Hz to just below half the sampling rate: it is empty at 1002 Hz or less, and it reaches its full width, 500 to 5000 Hz, only above 10 kHz.",
+        "The largest share of STFT energy is in the 100-500 Hz band (81% of the total). This percentage describes the measured signal and does not identify a fault. The relative distribution across frequency bands can change with the measured physical quantity (for example, acceleration versus velocity).",
+        "No healthy baseline was supplied for this machine, so the readings below are absolute rather than relative. Whether this condition is new, stable, or worsening cannot be determined from a single acquisition.",
+        "Dominant frequency in the raw spectrum: 134.2 Hz.",
+        "Evidence strength counts the findings of the analyses that ran, a bearing finding once. It is not a confidence score, it is not a probability, and it does not identify or confirm a fault type.",
+        "The severity verdict is unavailable until this is resolved.",
+        "ISO assessment not possible: at fs=1000 Hz the usable upper band edge 475 Hz (0.95 x Nyquist 500 Hz) does not reach the 1000 Hz top of the ISO 20816-3 evaluation band — the 10-1000 Hz band would be only partially covered. Re-acquire the signal at fs >= 2106 Hz.",
+        "The bearing check is unavailable until this is resolved.",
+        "At fs=1000 Hz the envelope band of the bearing check, from 500 Hz to just below the Nyquist frequency (500 Hz), is empty, so no envelope spectrum could be computed for bearing '6205'.",
+        "This report carries no envelope spectrum figure: at fs=1000 Hz the default envelope band, from 500 Hz to just below the Nyquist frequency (500 Hz), is empty."
+      ],
+      "recommendations": [
+        {
+          "action": "Resolve the condition in 'reason' — e.g. re-acquire the signal at fs >= 2106 Hz so the full ISO 20816-3 evaluation band (up to 1 kHz) is covered — then re-run the diagnosis. The spectral/bearing/anomaly blocks in this result are unaffected.",
+          "urgency": "medium",
+          "description": "The severity verdict is unavailable until this is resolved.",
+          "motivation": "ISO assessment not possible: at fs=1000 Hz the usable upper band edge 475 Hz (0.95 x Nyquist 500 Hz) does not reach the 1000 Hz top of the ISO 20816-3 evaluation band — the 10-1000 Hz band would be only partially covered. Re-acquire the signal at fs >= 2106 Hz.",
+          "evidence": [
+            "ISO severity was not assessed. ISO assessment not possible: at fs=1000 Hz the usable upper band edge 475 Hz (0.95 x Nyquist 500 Hz) does not reach the 1000 Hz top of the ISO 20816-3 evaluation band — the 10-1000 Hz band would be only partially covered. Re-acquire the signal at fs >= 2106 Hz."
+          ]
+        },
+        {
+          "action": "Re-acquire the signal at a higher sampling rate, then re-run the diagnosis. The envelope band of the bearing check runs from 500 Hz to just below half the sampling rate: it is empty at 1002 Hz or less, and it reaches its full width, 500 to 5000 Hz, only above 10 kHz.",
+          "urgency": "medium",
+          "description": "The bearing check is unavailable until this is resolved.",
+          "motivation": "At fs=1000 Hz the envelope band of the bearing check, from 500 Hz to just below the Nyquist frequency (500 Hz), is empty, so no envelope spectrum could be computed for bearing '6205'.",
+          "evidence": [
+            "Bearing characteristic-frequency matching was not computed. At fs=1000 Hz the envelope band of the bearing check, from 500 Hz to just below the Nyquist frequency (500 Hz), is empty, so no envelope spectrum could be computed for bearing '6205'. No bearing check ran, so this report says nothing about the condition of the bearing."
+          ]
+        }
+      ],
+      "provenance": {
+        "signal_id": "t2_low_sampling_rate",
+        "rpm": 1500.0,
+        "bearing_id": "6205",
+        "machine_group": 2,
+        "support_type": "rigid"
       }
+    },
+    "report_path": {
+      "pipeline_evidence_strength": [
+        "none"
+      ],
+      "block_status": {
+        "iso": "refused",
+        "bearing_match": "refused",
+        "spectral_energy": "assessed"
+      },
+      "baseline_comparison": {
+        "status": "absent",
+        "statement": "No healthy baseline was supplied for this machine, so the readings below are absolute rather than relative. Whether this condition is new, stable, or worsening cannot be determined from a single acquisition.",
+        "remedy": "Re-run the diagnosis with a baseline signal id from the same machine in a known-good state."
+      },
+      "iso_standard_note": null,
+      "disagreements": [],
+      "statements_missing_from_html": []
     }
   }
 }

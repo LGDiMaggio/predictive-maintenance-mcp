@@ -369,7 +369,8 @@ def resolve_envelope_band(
         The (low, high) band edges in Hz.
 
     Raises:
-        ValueError: If the band is invalid for this sampling rate.
+        ValueError: If the band is invalid for this sampling rate, or the
+            default band is empty (fs <= 1002 Hz).
     """
     nyquist = fs / 2.0
     if frequency_range is None:
@@ -378,14 +379,22 @@ def resolve_envelope_band(
         # NO-OP at fs=10000 Hz (5000 -> nyquist-1 = 4999), the exact edge
         # the historical (500, 5000) default already resolved to.
         band_low, band_high = 500.0, min(5000.0, nyquist - 1.0)
+        if band_high <= band_low:
+            raise ValueError(
+                f"At fs={fs:g} Hz the default envelope band, from 500 Hz to just "
+                f"below the Nyquist frequency ({nyquist:g} Hz), is empty, so no "
+                f"envelope spectrum can be computed. Re-acquire the signal at a "
+                f"higher sampling rate, then re-run the analysis. The default "
+                f"envelope band runs from 500 Hz to just below half the sampling "
+                f"rate: it is empty at 1002 Hz or less, and it reaches its full "
+                f"width, 500 to 5000 Hz, only above 10 kHz."
+            )
     else:
         # An EXPLICIT band is honored verbatim (fail loud, never clamp).
         band_low, band_high = float(frequency_range[0]), float(frequency_range[1])
 
     # Single validation path. The explicit band is checked as requested (an
-    # upper edge above Nyquist is a hard error); the default is pre-capped,
-    # so it only trips when the band is genuinely unusable (low >= high at
-    # a very low fs).
+    # upper edge above Nyquist is a hard error).
     validate_bandpass_band(band_low, band_high, fs)
     return band_low, band_high
 
