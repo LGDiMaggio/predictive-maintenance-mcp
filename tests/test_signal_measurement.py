@@ -1088,6 +1088,105 @@ class TestPackaging:
         }
         assert "data/ledger/" in lines
 
+    #: What the runtime stage of the Dockerfile may copy from the build
+    #: context: the server, the license and the bearing catalog, by path.
+    RUNTIME_COPY_SOURCES = {
+        "src/",
+        "LICENSE",
+        "resources/bearing_catalogs/README.md",
+        "resources/bearing_catalogs/common_bearings_catalog.json",
+    }
+
+    @classmethod
+    def _runtime_sources_outside_allowlist(cls, dockerfile: str) -> list:
+        from tools.audit import docker_probe
+
+        sources = {
+            source
+            for line in docker_probe.runtime_copy_lines(dockerfile)
+            for source in docker_probe.copy_sources(line)
+        }
+        return sorted(sources - cls.RUNTIME_COPY_SOURCES)
+
+    def test_the_image_copies_only_named_files_from_the_context(self):
+        dockerfile = (REPO_ROOT / "Dockerfile").read_text("utf-8")
+        assert self._runtime_sources_outside_allowlist(dockerfile) == []
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            "COPY models/ ./models/",
+            "COPY resources/ ./resources/",
+            "COPY data/ ./data/",
+            "COPY . .",
+            "ADD reports/ ./reports/",
+        ],
+    )
+    def test_a_broad_copy_line_is_caught(self, line):
+        dockerfile = (REPO_ROOT / "Dockerfile").read_text("utf-8")
+        assert self._runtime_sources_outside_allowlist(dockerfile + line + "\n")
+
+    def test_the_build_stage_copies_the_license_and_readme(self):
+        from tools.audit import docker_probe
+
+        instructions = docker_probe.dockerfile_instructions(
+            (REPO_ROOT / "Dockerfile").read_text("utf-8")
+        )
+        last_from = max(
+            i
+            for i, line in enumerate(instructions)
+            if line.split()[0].upper() == "FROM"
+        )
+        builder_copies = [
+            source
+            for line in instructions[:last_from]
+            if line.split()[0].upper() == "COPY"
+            for source in docker_probe.copy_sources(line)
+        ]
+        assert {"pyproject.toml", "README.md", "LICENSE", "src/"} <= set(builder_copies)
+
+    def test_dockerignore_is_an_allowlist(self):
+        lines = [
+            line.strip()
+            for line in (REPO_ROOT / ".dockerignore").read_text("utf-8").splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        ]
+        assert lines[0] == "*"
+        reincludes = {line for line in lines if line.startswith("!")}
+        assert reincludes == {
+            "!pyproject.toml",
+            "!README.md",
+            "!LICENSE",
+            "!src/",
+            "!src/**",
+            "!resources/bearing_catalogs/README.md",
+            "!resources/bearing_catalogs/common_bearings_catalog.json",
+        }
+        assert not {"LICENSE", "/LICENSE", "README.md", "src", "src/"} & set(lines)
+
+    def test_image_resource_files_agree_across_the_three_places_naming_them(self):
+        """The context allowlist, the runtime COPY lines and the image check
+        name the same resource files, so none can drift alone."""
+        from tools.audit import artifact_licensing, docker_probe
+
+        dockerfile = (REPO_ROOT / "Dockerfile").read_text("utf-8")
+        copied = {
+            source
+            for line in docker_probe.runtime_copy_lines(dockerfile)
+            for source in docker_probe.copy_sources(line)
+            if source.startswith("resources/")
+        }
+        allowed = {
+            line.strip()[1:]
+            for line in (REPO_ROOT / ".dockerignore").read_text("utf-8").splitlines()
+            if line.strip().startswith("!resources/")
+        }
+        checked = {
+            path.removeprefix("app/")
+            for path in artifact_licensing.IMAGE_RESOURCE_FILES
+        }
+        assert copied == allowed == checked
+
     def test_manifest_prunes_the_ledger(self):
         lines = {
             line.strip()

@@ -252,6 +252,10 @@ Then configure IIS, Caddy, or nginx as the reverse proxy (see Option A above).
    curl https://mcp.yourdomain.com/sse
    ```
 
+The image contains the server, the project's license and the bearing catalog. It does not contain the signals, trained models or reports of the working copy it is built from, or any machine manuals. `docker-compose.yml` mounts the repository's `data/`, `models/`, `reports/` and `resources/` folders into the container; with `docker run`, mount your own folders at `/app/data/signals`, `/app/models`, `/app/reports` and `/app/resources/machine_manuals`.
+
+The image does not include the native libraries that PDF rendering needs. In a container started from it, `generate_diagnostic_report` refuses any request whose `formats` include `pdf` and writes no diagnostic report file; a request for HTML alone is not affected.
+
 ---
 
 ## Option D — Azure App Service (Cloud)
@@ -286,11 +290,13 @@ For enterprises using Azure (no Docker needed):
 
 ### Using Azure Container Instances (if Docker is allowed)
 
+The project does not provide a prebuilt image. Build the image from this repository, push it to a container registry your subscription can pull from, and use its name in the command below.
+
 ```bash
 az container create \
   --resource-group myResourceGroup \
   --name mcp-server \
-  --image ghcr.io/lgdimaggio/predictive-maintenance-mcp:latest \
+  --image <your-registry>/predictive-maintenance-mcp:<tag> \
   --ports 8000 \
   --environment-variables MCP_TRANSPORT=sse MCP_HOST=0.0.0.0 MCP_PORT=8000
 ```

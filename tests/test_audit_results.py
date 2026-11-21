@@ -161,6 +161,7 @@ class TestCli:
             "smoke",
             "package-smoke",
             "artifact-licensing",
+            "docker-probe",
             "upstream",
             "floors",
             "lock-reqs",

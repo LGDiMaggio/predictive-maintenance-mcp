@@ -1,0 +1,99 @@
+name: Docker image
+
+# Manual only (Run workflow). Builds the image from this repository and checks
+# what it contains; nothing is pushed to a registry.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# The checkout leaves out the folders listed as roots in
+# tools/audit/third_party_data.json (pinned by tests/test_workflow_policy.py).
+jobs:
+  image:
+    name: Build and check the Docker image
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    # bash -eo pipefail: a failing `docker export` fails the step, rather
+    # than the check reading a partial stream.
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        sparse-checkout: |
+          /*
+          !/data/real_bearings/
+          !/data/signals/real_train/
+          !/data/signals/real_test/
+        sparse-checkout-cone-mode: false
+
+    - name: Set up Python
+      uses: actions/setup-python@v7
+      with:
+        python-version: "3.11"
+
+    # The default build installs the full extra with its CUDA wheels; a local
+    # build of it used about 25 GB of disk, more than the runner has free.
+    - name: Free disk space and record it
+      run: |
+        df -h /
+        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+        df -h /
+
+    # Blocking. Files planted in a temporary build context must not reach an
+    # image, through .dockerignore or through the runtime COPY lines. The
+    # recursive weight exclusions are a known gap, reported as such.
+    - name: Probe the build context and the COPY lines
+      run: |
+        python -m tools.audit docker-probe --expect-missing weights --json-out results/docker-probe.json
+
+    - name: Build the image
+      run: |
+        start=$(date +%s)
+        docker build --progress=plain -t pmm-image-check .
+        echo "build seconds: $(( $(date +%s) - start ))"
+        docker image ls pmm-image-check
+
+    # Blocking. No file from the working copy's data/, models/ or reports/, no
+    # resource file outside the allowlist, no .mat file other than SciPy's own
+    # recorded test files, the MIT LICENSE, and the license files listed.
+    - name: Check the image's files
+      run: |
+        cid=$(docker create pmm-image-check)
+        docker export "$cid" | python -m tools.audit artifact-licensing --image - --variant docker-image --json-out results/image-licensing.json
+        docker rm "$cid"
+
+    # Blocking. An image that defeats the COPY boundary must fail the check.
+    - name: Check that the image check catches a planted file
+      run: |
+        mkdir -p bypass/planted
+        printf 'planted by the docker-image workflow\n' > bypass/planted/x_model.pkl
+        printf 'FROM pmm-image-check\nCOPY planted/ /app/models/\n' > bypass/Dockerfile
+        docker build --progress=plain -t pmm-image-bypass bypass
+        cid=$(docker create pmm-image-bypass)
+        set +e
+        docker export "$cid" | python -m tools.audit artifact-licensing --image - --variant docker-image-bypass --json-out results/image-bypass.json > bypass.txt
+        code=$?
+        set -e
+        docker rm "$cid"
+        cat bypass.txt
+        test "$code" -eq 1
+        grep -q "app/models/x_model.pkl" bypass.txt
+
+    - name: Record disk use
+      if: always()
+      run: |
+        df -h /
+        docker system df
+
+    - name: Upload the results
+      if: always()
+      uses: actions/upload-artifact@v7
+      with:
+        name: docker-image-results
+        path: results/
+        if-no-files-found: warn
