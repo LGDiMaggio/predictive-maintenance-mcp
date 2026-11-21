@@ -630,6 +630,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   check also covers `tools/`.
 
 ### Fixed
+- **Signals sampled at 1002 Hz or less no longer fail with a misleading band-edge message.** At these rates the
+  default envelope band, from 500 Hz to just below the Nyquist frequency, is empty, and three tools refused with a
+  message asking the caller to re-specify band edges it had not passed. `generate_diagnostic_report` now produces
+  the report, with or without a bearing: the report carries no envelope spectrum figure and says why, and a
+  requested bearing check shows the same reason and remedy as `diagnose_vibration`. Where `check_bearing_faults`,
+  or `generate_envelope_report` without `filter_high`, refused, the message now names the sampling rate and the
+  remedy. The asset ledger stores the new message for new snapshots of such measurements; snapshot identifiers do
+  not change, and earlier snapshots keep their text. `diagnose_vibration`, bands passed explicitly and results at
+  higher sampling rates are unchanged.
 - **The server starts when WeasyPrint is installed but cannot load its native
   libraries.** Importing the server no longer fails when the `pdf` extra is
   installed and WeasyPrint cannot load Pango and the libraries it depends on.
