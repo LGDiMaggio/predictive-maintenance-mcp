@@ -1,45 +1,19 @@
-# Git
-.git
-.gitignore
-
-# Python
-__pycache__
-*.pyc
-*.pyo
-*.egg-info
-dist
-build
-.eggs
-
-# Virtual environments
-.venv
-venv
-env
-
-# IDE
-.vscode
-.idea
-*.swp
-*.swo
-
-# OS
-.DS_Store
-Thumbs.db
+# Allowlist: the build context holds only what the image needs. Everything is
+# left out first, then the files the Dockerfile copies are let back in by name.
+*
+!pyproject.toml
+!README.md
+!LICENSE
+!src/
+!src/**
+!resources/bearing_catalogs/README.md
+!resources/bearing_catalogs/common_bearings_catalog.json
 
 # Asset health ledger: operator data, never baked into an image
 data/ledger/
 
-# Test and dev files
-tests/
-*.pytest_cache
-.coverage
-htmlcov
-coverage.xml
+# Python bytecode inside src/
+**/__pycache__
+**/*.py[cod]
 
-# Docs not needed in container
-*.md
-!README.md
-LICENSE
-CITATION.cff
-.zenodo.json
-assets/
+# Exclusions that must win over the re-includes above go below this line.

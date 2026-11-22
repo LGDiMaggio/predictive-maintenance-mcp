@@ -5,8 +5,10 @@ own module and this file only routes to it. Subcommands::
 
     smoke               stdio protocol smoke harness against a server command
     package-smoke       build artifact -> fresh venv -> smoke harness
-    artifact-licensing  built wheel and sdist, or source archives: MIT license
-                        only, no sample data
+    artifact-licensing  built wheel and sdist, source archives, or a Docker
+                        image filesystem: MIT license only, no sample data
+    docker-probe        Docker build context and COPY lines: planted files
+                        must not reach an image
     upstream            compatibility inventory vs upstream release data
     floors              constraints pinning runtime deps to their declared floors
     lock-reqs           uv.lock -> pinned requirements for the vulnerability audit
@@ -73,8 +75,14 @@ DISPATCH: dict[str, Entry] = {
         "tools.audit.artifact_licensing",
         "add_arguments",
         "run",
-        "check the built wheel and sdist, or source archives: MIT license only, "
-        "no sample data",
+        "check the built wheel and sdist, source archives, or a Docker image "
+        "filesystem: MIT license only, no sample data",
+    ),
+    "docker-probe": Entry(
+        "tools.audit.docker_probe",
+        "add_arguments",
+        "run",
+        "probe the Docker build context and COPY lines with planted files",
     ),
     "upstream": Entry(
         "tools.audit.upstream",

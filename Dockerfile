@@ -6,8 +6,9 @@ WORKDIR /app
 # Install build dependencies
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
-# Copy dependency files first for layer caching
-COPY pyproject.toml ./
+# Copy dependency files first for layer caching. The LICENSE goes into the
+# installed package's metadata; README.md is the package's long description.
+COPY pyproject.toml README.md LICENSE ./
 COPY src/ ./src/
 
 # Install the package (with uvicorn for SSE/HTTP transport)
@@ -22,15 +23,15 @@ WORKDIR /app
 COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
-# Copy application files
+# Copy application files: the server, the project's license and the bearing
+# catalog, each by its exact path. Signals, trained models, reports and
+# machine manuals are not copied; docker-compose.yml mounts them at run time.
 COPY src/ ./src/
-COPY data/ ./data/
-COPY resources/ ./resources/
-COPY models/ ./models/
-COPY reports/ ./reports/
+COPY LICENSE ./LICENSE
+COPY resources/bearing_catalogs/README.md resources/bearing_catalogs/common_bearings_catalog.json ./resources/bearing_catalogs/
 
-# Create required directories
-RUN mkdir -p /app/reports /app/models /app/resources/cache
+# Create the folders the server and the mounts expect
+RUN mkdir -p /app/data /app/models /app/reports /app/resources/cache /app/resources/machine_manuals
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
