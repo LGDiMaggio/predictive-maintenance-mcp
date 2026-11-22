@@ -438,6 +438,11 @@ CLAIM_SENTENCES: dict[str, str] = {
         "No window is emphasised: the bearing statement in this report names no "
         "candidate line."
     ),
+    "figure_absent_empty_band": (
+        "This report carries no envelope spectrum figure: at fs={fs:g} Hz the "
+        "default envelope band, from 500 Hz to just below the Nyquist frequency "
+        "({nyquist:g} Hz), is empty."
+    ),
     "figure_annotation": "{name} {line_hz:.2f} Hz",
     "figure_annotation_candidate": (
         "{name} {line_hz:.2f} Hz: strongest bin {peak_hz:.1f} Hz, {level_db:.1f} dB "
