@@ -242,6 +242,13 @@ Fixture history:
   (IndicatorForecastAnchor) say the quantiles are nominal, as the p10 and p90
   column descriptions already do.
   Generated under mcp 2.3.0 and pydantic 2.12.0 (uv.lock).
+- Severity axis provenance (2026-11-21): regenerated intentionally: one
+  property added and one default changed, no property removed and no type
+  changed. VibrationSeverityResult (assess_severity, and the assessed
+  iso_severity of diagnose_vibration) gains axis_source ('measurement' or
+  'none', default 'none'); axis stays a string, its default changes from
+  'vertical' to 'not_declared' and its description is rewritten.
+  Generated under mcp 2.3.0 and pydantic 2.12.0 (uv.lock).
 """
 
 from __future__ import annotations

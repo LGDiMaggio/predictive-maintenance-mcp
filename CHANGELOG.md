@@ -639,6 +639,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   remedy. The asset ledger stores the new message for new snapshots of such measurements; snapshot identifiers do
   not change, and earlier snapshots keep their text. `diagnose_vibration`, bands passed explicitly and results at
   higher sampling rates are unchanged.
+- `assess_severity` and the assessed `iso_severity` block of `diagnose_vibration` returned `axis: "vertical"`
+  whatever the measurement declared. `axis` now carries the direction declared by the stored signal's companion
+  `measurement` object, or `"not_declared"` when none is declared and on the `rms_velocity_mm_s` route; the new
+  `axis_source` field says which (`"measurement"` or `"none"`). The type of `axis` is unchanged, but its value
+  changes wherever no direction, or a direction other than vertical, is declared. Zones and the other existing
+  fields are unchanged.
 - **The server starts when WeasyPrint is installed but cannot load its native
   libraries.** Importing the server no longer fails when the `pdf` extra is
   installed and WeasyPrint cannot load Pango and the libraries it depends on.
