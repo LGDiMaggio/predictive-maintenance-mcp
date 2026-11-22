@@ -216,6 +216,15 @@ def _validate_custom_thresholds(thresholds: dict[str, float]) -> dict[str, float
     return {"warning": w, "alarm": a, "danger": d}
 
 
+def _declared_axis(
+    identity: Optional[dict[str, Any]],
+) -> tuple[str, Literal["measurement", "none"]]:
+    """The measurement direction a stored signal declares, and its source."""
+    if isinstance(identity, dict) and identity.get("direction") is not None:
+        return identity["direction"], "measurement"
+    return "not_declared", "none"
+
+
 async def assess_severity(
     ctx: Context,
     signal_id: Optional[str] = None,
@@ -297,6 +306,7 @@ async def assess_severity(
         # assess_vibration_severity) ----------------------------------
         signal_data, info = resolve_signal(signal_id)
         fs = info.sampling_rate
+        axis, axis_source = _declared_axis(info.measurement)
 
         unit = info.signal_unit
         if unit is None:
@@ -351,6 +361,7 @@ async def assess_severity(
         frequency_range = "not applicable — direct RMS velocity reading"
         unit_conversion = False
         original_unit = "mm/s"
+        axis, axis_source = "not_declared", "none"
         logger.info(f"Assessing severity for a direct reading of {rms:.2f} mm/s")
         zone_info = classify_zone(rms, machine_group, support_type)
         zone_block = {
@@ -387,6 +398,8 @@ async def assess_severity(
         rms_velocity_mm_s=round(rms, 4),
         machine_group=machine_group,
         support_type=str(support_type).lower(),
+        axis=axis,
+        axis_source=axis_source,
         frequency_range=frequency_range,
         unit_conversion_performed=unit_conversion,
         original_unit=original_unit,
@@ -2085,7 +2098,10 @@ async def diagnose_vibration(
             remedy=iso_block["remedy"],
         )
     else:
-        iso_model = VibrationSeverityResult(**iso_block)
+        axis, axis_source = _declared_axis(identity)
+        iso_model = VibrationSeverityResult(
+            **{**iso_block, "axis": axis, "axis_source": axis_source}
+        )
 
     logger.info(f"Diagnosis complete: {result['evidence_strength']} fault evidence")
     if iso_block.get("status") == "refused":

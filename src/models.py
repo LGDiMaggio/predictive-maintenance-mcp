@@ -1062,7 +1062,25 @@ class VibrationSeverityResult(BaseModel):
         description="ISO 20816-3 machine group: 1 (large, >300 kW) or 2 (medium, 15-300 kW)"
     )
     support_type: str = Field(description="Support type: 'rigid' or 'flexible'")
-    axis: str = Field("vertical", description="Measurement axis (informational)")
+    axis: str = Field(
+        "not_declared",
+        description=(
+            "Measurement direction declared by the stored signal's companion "
+            "measurement object, as normalized ('horizontal', 'vertical', 'axial', "
+            "'x', 'y' or 'z'); 'not_declared' when none is declared or on the "
+            "rms_velocity_mm_s route. This field is informational, does not determine "
+            "the ISO severity zone, and does not establish whether the zone "
+            "thresholds apply to that measurement direction."
+        ),
+    )
+    axis_source: Literal["measurement", "none"] = Field(
+        "none",
+        description=(
+            "Where axis comes from: 'measurement' (the companion's measurement "
+            "object) or 'none' (no direction declared, or the rms_velocity_mm_s "
+            "route)"
+        ),
+    )
     zone: str = Field(description="ISO zone: A, B, C, or D")
     zone_description: str = Field(description="Zone description")
     severity_level: str = Field(
