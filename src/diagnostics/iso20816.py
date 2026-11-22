@@ -404,7 +404,7 @@ def assess_severity_with_axis(
     fs: float,
     machine_group: Literal[1, 2] = 2,
     support_type: Literal["rigid", "flexible"] = "rigid",
-    axis: str = "vertical",
+    axis: str = "not_declared",
     signal_unit: str = "g",
     operating_speed_rpm: Optional[float] = None,
     machine_power_kw: Optional[float] = None,

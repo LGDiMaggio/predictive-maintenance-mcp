@@ -702,9 +702,19 @@
         "title": "Alert Level"
       },
       "axis": {
-        "default": "vertical",
-        "description": "Measurement axis (informational)",
+        "default": "not_declared",
+        "description": "Measurement direction declared by the stored signal's companion measurement object, as normalized ('horizontal', 'vertical', 'axial', 'x', 'y' or 'z'); 'not_declared' when none is declared or on the rms_velocity_mm_s route. This field is informational, does not determine the ISO severity zone, and does not establish whether the zone thresholds apply to that measurement direction.",
         "title": "Axis",
+        "type": "string"
+      },
+      "axis_source": {
+        "default": "none",
+        "description": "Where axis comes from: 'measurement' (the companion's measurement object) or 'none' (no direction declared, or the rms_velocity_mm_s route)",
+        "enum": [
+          "measurement",
+          "none"
+        ],
+        "title": "Axis Source",
         "type": "string"
       },
       "boundaries": {
@@ -4829,9 +4839,19 @@
             "title": "Alert Level"
           },
           "axis": {
-            "default": "vertical",
-            "description": "Measurement axis (informational)",
+            "default": "not_declared",
+            "description": "Measurement direction declared by the stored signal's companion measurement object, as normalized ('horizontal', 'vertical', 'axial', 'x', 'y' or 'z'); 'not_declared' when none is declared or on the rms_velocity_mm_s route. This field is informational, does not determine the ISO severity zone, and does not establish whether the zone thresholds apply to that measurement direction.",
             "title": "Axis",
+            "type": "string"
+          },
+          "axis_source": {
+            "default": "none",
+            "description": "Where axis comes from: 'measurement' (the companion's measurement object) or 'none' (no direction declared, or the rms_velocity_mm_s route)",
+            "enum": [
+              "measurement",
+              "none"
+            ],
+            "title": "Axis Source",
             "type": "string"
           },
           "boundaries": {

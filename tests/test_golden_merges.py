@@ -39,6 +39,14 @@ Deliberate change (T1 PR D, 2026-10-23): the per-check ``detected``,
 significance-tested evidence, so they were removed from the four bearing
 cases in the same way and are pinned by expected-value tests from the
 signals' construction; every other key and golden case is unchanged.
+
+Deliberate change (2026-11-21): ``axis`` of an assessed severity result
+now reports the measurement direction declared by the stored signal's
+companion, or "not_declared" when none is declared, instead of always
+"vertical", so it was removed from the three ``assess_severity`` signal-route
+cases in the same way and is pinned by the expected-value tests of
+``tests/test_severity_axis_provenance.py``; every other key and golden case
+is unchanged.
 """
 
 import json

@@ -623,7 +623,6 @@
       }
     ],
     "signal_route_default": {
-      "axis": "vertical",
       "boundaries": {
         "AB": 1.4,
         "BC": 2.8,
@@ -644,7 +643,6 @@
       "zone_description": "Vibration severity may cause damage. Immediate action required!"
     },
     "signal_route_group1_flexible": {
-      "axis": "vertical",
       "boundaries": {
         "AB": 3.5,
         "BC": 7.1,
@@ -665,7 +663,6 @@
       "zone_description": "Vibration severity may cause damage. Immediate action required!"
     },
     "signal_route_vel3": {
-      "axis": "vertical",
       "boundaries": {
         "AB": 1.4,
         "BC": 2.8,
