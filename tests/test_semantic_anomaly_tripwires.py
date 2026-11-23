@@ -388,15 +388,6 @@ def fault_tuned(sandbox, trained):
 
 class TestTrainingReport:
 
-    @pytest.mark.xfail(
-        strict=True,
-        raises=AssertionError,
-        reason=known_defect(
-            "B1-F4-metric",
-            "validation_accuracy is described as balanced accuracy but is the "
-            "pooled accuracy over unequal healthy and fault window counts",
-        ),
-    )
     def test_reported_accuracy_is_the_balanced_one_its_description_names(
         self, fault_tuned
     ):
@@ -413,15 +404,6 @@ class TestTrainingReport:
             fault_tuned.validation_metrics,
         )
 
-    @pytest.mark.xfail(
-        strict=True,
-        raises=AssertionError,
-        reason=known_defect(
-            "B1-F4-mode",
-            "a one-class model tuned with fault signals is recorded as "
-            "training_mode 'supervised', which its docstring says it is not",
-        ),
-    )
     def test_metadata_does_not_call_a_one_class_model_supervised(
         self, sandbox, fault_tuned
     ):
@@ -430,16 +412,6 @@ class TestTrainingReport:
             != "supervised"
         )
 
-    @pytest.mark.xfail(
-        strict=True,
-        raises=AssertionError,
-        reason=known_defect(
-            "B1-F4-specificity",
-            "train_anomaly_model computes the specificity on "
-            "healthy_validation_ids but returns no validation value when no "
-            "fault signals are given",
-        ),
-    )
     def test_healthy_validation_returns_a_validation_value(self, sandbox, trained):
         validation = sandbox.load("rc0_hv", healthy(50))
         outcome = train(
@@ -466,15 +438,6 @@ class TestTrainingReport:
         recorded = json.dumps(metadata(sandbox.models, DIAGNOSIS_MODEL))
         assert sklearn.__version__ in recorded, recorded[:400]
 
-    @pytest.mark.xfail(
-        strict=True,
-        raises=AssertionError,
-        reason=known_defect(
-            "B1-F9",
-            "LOF metadata records the requested n_neighbors while the saved "
-            "estimator, trained on fewer windows, uses fewer",
-        ),
-    )
     def test_metadata_describes_the_saved_estimator(self, sandbox):
         tiny = sandbox.load("rc0_tiny", healthy(7, seconds=0.2))
         outcome = train(
@@ -497,28 +460,10 @@ class TestTrainingReport:
 
         assert refused_or_accepted(outcome, accept), outcome.error or seen
 
-    @pytest.mark.xfail(
-        strict=True,
-        raises=AssertionError,
-        reason=known_defect(
-            "B1-F10-segment",
-            "segment_duration=0 reaches a numpy error instead of a refusal "
-            "the project wrote",
-        ),
-    )
     def test_zero_segment_duration_is_refused_by_the_project(self, trained):
         error = train(healthy_signal_ids=trained.ids, segment_duration=0.0).error
         assert is_project_refusal(error), repr(error)
 
-    @pytest.mark.xfail(
-        strict=True,
-        raises=AssertionError,
-        reason=known_defect(
-            "B1-F10-pca",
-            "pca_variance=1.0 reaches a scikit-learn parameter error instead "
-            "of a refusal the project wrote",
-        ),
-    )
     def test_full_pca_variance_is_refused_by_the_project(self, trained):
         error = train(healthy_signal_ids=trained.ids, pca_variance=1.0).error
         assert is_project_refusal(error), repr(error)
@@ -549,16 +494,6 @@ def pca_counts_agree(report: Outcome, prediction: Outcome) -> bool:
 
 
 class TestPcaReport:
-    @pytest.mark.xfail(
-        strict=True,
-        raises=AssertionError,
-        reason=known_defect(
-            "B1-F7-segmentation",
-            "the PCA report segments with its own default window instead of "
-            "the model's recorded segmentation, so it counts different "
-            "windows than predict_anomalies",
-        ),
-    )
     def test_pca_report_uses_the_models_segmentation(self, sandbox, trained):
         outcome = train(
             healthy_signal_ids=trained.ids,
@@ -582,15 +517,6 @@ class TestPcaReport:
             prediction.error or prediction.result.num_segments,
         )
 
-    @pytest.mark.xfail(
-        strict=True,
-        raises=AssertionError,
-        reason=known_defect(
-            "B1-F7-one-component",
-            "the PCA report fails with an unexpected error on a model whose "
-            "PCA kept one component",
-        ),
-    )
     def test_pca_report_handles_a_one_component_model(self, sandbox, trained):
         outcome = train(
             healthy_signal_ids=trained.ids,

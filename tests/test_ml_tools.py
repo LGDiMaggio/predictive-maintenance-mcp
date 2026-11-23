@@ -1,129 +1,112 @@
 """
-Tests for Machine Learning tools (feature extraction, training, prediction).
+Tests for the machine-learning tools, through the production code.
 
 Tests:
-- Feature extraction from signals
-- ML model training (OneClassSVM, LocalOutlierFactor)
-- Anomaly prediction
-- Model persistence (save/load)
+- Feature extraction (``extract_time_domain_features``) on known signals
+- Segmentation (``plan_segments`` / ``segment_features``)
+- Training and prediction (``train_anomaly_model`` / ``predict_anomalies``)
+- Model persistence (the saved artefacts reproduce the prediction)
+- Health labels (``health_label``)
+
+Every random signal is seeded. Training and prediction run in a sandbox:
+signals and models live under a temporary directory and every by-value import
+of the model directory is patched, so nothing is read from or written to the
+checkout.
 """
 
-import pytest
+import asyncio
+import json
+import pickle
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
 import numpy as np
 import pandas as pd
-from pathlib import Path
-import tempfile
-import json
+import pytest
+
+from conftest import patch_data_dir
+from predictive_maintenance_mcp.decision_support import diagnosis_pipeline
+from predictive_maintenance_mcp.decision_support.anomaly_labels import health_label
+from predictive_maintenance_mcp.mcp_tools import diagnostics_tools, report_tools
+from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
+from predictive_maintenance_mcp.signal_processing.features import (
+    extract_time_domain_features,
+    plan_segments,
+    segment_features,
+)
+
+FS = 10_000.0
+
+
+def tones(seed: int, num_samples: int) -> np.ndarray:
+    """Three tones with seeded phases plus seeded Gaussian noise."""
+    rng = np.random.default_rng(seed)
+    t = np.arange(num_samples) / FS
+    phases = rng.uniform(0, 2 * np.pi, 3)
+    return (
+        0.5 * np.sin(2 * np.pi * 25 * t + phases[0])
+        + 0.2 * np.sin(2 * np.pi * 50 * t + phases[1])
+        + 0.1 * np.sin(2 * np.pi * 1200 * t + phases[2])
+        + 0.3 * rng.standard_normal(num_samples)
+    )
 
 
 class TestFeatureExtraction:
-    """Test suite for extract_features_from_signal tool."""
+    """Tests for extract_time_domain_features and the segmentation."""
 
     def test_feature_extraction_synthetic(self):
-        """Test feature extraction on synthetic signal."""
-        # Generate synthetic signal
-        fs = 10000
-        duration = 1.0
-        t = np.linspace(0, duration, int(fs * duration), endpoint=False)
-        signal = np.sin(2 * np.pi * 50 * t) + 0.1 * np.random.randn(len(t))
+        """Seventeen finite features from a synthetic signal."""
+        t = np.arange(int(FS)) / FS
+        signal = np.sin(2 * np.pi * 50 * t) + 0.1 * np.random.default_rng(
+            0
+        ).standard_normal(t.size)
 
-        # Extract features from full signal
-        features = self._extract_time_domain_features(signal)
+        features = extract_time_domain_features(signal)
 
-        # Verify feature dictionary
-        expected_features = [
-            "mean",
-            "std",
-            "rms",
-            "peak",
-            "peak_to_peak",
-            "crest_factor",
-            "kurtosis",
-            "skewness",
-            "clearance_factor",
-            "shape_factor",
-            "impulse_factor",
-            "power",
-            "entropy",
-        ]
-
-        for feat in expected_features:
-            assert feat in features, f"Missing feature: {feat}"
-            assert isinstance(
-                features[feat], (int, float)
-            ), f"Feature {feat} is not numeric: {type(features[feat])}"
+        assert len(features) == 17
+        for name, value in features.items():
+            assert isinstance(value, float), name
+            assert np.isfinite(value), name
 
     def test_feature_rms_calculation(self):
-        """Test RMS feature calculation."""
-        # Signal with known RMS
-        signal = np.array([1.0, -1.0, 1.0, -1.0])
-        rms_expected = 1.0
-        rms_calculated = np.sqrt(np.mean(signal**2))
-
-        assert abs(rms_calculated - rms_expected) < 0.001
+        features = extract_time_domain_features(np.array([1.0, -1.0, 1.0, -1.0]))
+        assert features["rms"] == 1.0
 
     def test_feature_kurtosis(self):
-        """Test kurtosis calculation."""
-        from scipy.stats import kurtosis
+        """Excess kurtosis is near 0 for Gaussian noise and rises with outliers."""
+        rng = np.random.default_rng(1)
+        gaussian = rng.standard_normal(10_000)
+        with_outliers = np.concatenate([gaussian[:9_990], np.full(10, 10.0)])
 
-        # Normal distribution has kurtosis ~ 0 (excess kurtosis)
-        signal_normal = np.random.randn(1000)
-        kurt = kurtosis(signal_normal)
+        kurt = extract_time_domain_features(gaussian)["kurtosis"]
+        kurt_outliers = extract_time_domain_features(with_outliers)["kurtosis"]
 
-        # Excess kurtosis should be close to 0 for normal distribution
-        assert abs(kurt) < 1.0, f"Kurtosis for normal: {kurt}"
-
-        # Signal with outliers should have high kurtosis
-        signal_outliers = np.concatenate([np.random.randn(990), np.array([10] * 10)])
-        kurt_outliers = kurtosis(signal_outliers)
-
-        assert kurt_outliers > kurt, "Outliers should increase kurtosis"
+        assert abs(kurt) < 0.2
+        assert kurt_outliers > kurt + 1.0
 
     def test_feature_crest_factor(self):
-        """Test crest factor calculation."""
-        # Sine wave: peak = 1, RMS = 1/sqrt(2), crest factor = sqrt(2)
-        signal = np.sin(np.linspace(0, 2 * np.pi, 1000))
-        peak = np.max(np.abs(signal))
-        rms = np.sqrt(np.mean(signal**2))
-        crest_factor = peak / rms
-
-        expected_crest = np.sqrt(2)
-        assert (
-            abs(crest_factor - expected_crest) < 0.01
-        ), f"Crest factor: {crest_factor} vs expected {expected_crest}"
+        """A sine over whole periods has a crest factor of sqrt(2)."""
+        signal = np.sin(2 * np.pi * np.arange(1000) / 100)
+        crest = extract_time_domain_features(signal)["crest_factor"]
+        assert abs(crest - np.sqrt(2)) < 1e-9
 
     def test_feature_segmentation(self):
-        """Test sliding window segmentation."""
-        signal = np.arange(1000)
-        fs = 1000
-        segment_duration = 0.2  # 200 samples
-        overlap_ratio = 0.5  # 50% overlap
+        """0.2 s segments with overlap 0.5 at 1 kHz: 200 samples, 100 apart."""
+        signal = np.arange(1000, dtype=float)
+        plan = plan_segments(1000.0, 0.2, 0.5)
 
-        segment_length = int(segment_duration * fs)  # 200
-        hop_length = int(segment_length * (1 - overlap_ratio))  # 100
+        features = segment_features(signal, plan)
 
-        segments = []
-        for start in range(0, len(signal) - segment_length + 1, hop_length):
-            segment = signal[start : start + segment_length]
-            segments.append(segment)
-
-        # Verify number of segments
-        expected_segments = (len(signal) - segment_length) // hop_length + 1
-        assert (
-            len(segments) == expected_segments
-        ), f"Expected {expected_segments} segments, got {len(segments)}"
-
-        # Verify segment overlap
-        if len(segments) > 1:
-            overlap = segments[0][hop_length:]
-            next_start = segments[1][: segment_length - hop_length]
-            np.testing.assert_array_equal(overlap, next_start)
+        assert (plan.length, plan.hop) == (200, 100)
+        assert len(features) == (1000 - 200) // 100 + 1
+        for k, row in enumerate(features):
+            assert row["mean"] == np.mean(signal[100 * k : 100 * k + 200])
 
     def test_feature_extraction_real_data(self, sample_healthy_signal):
         """Test feature extraction on real bearing data."""
         signal = sample_healthy_signal[:10000]  # Use 10k samples for speed
 
-        features = self._extract_time_domain_features(signal)
+        features = extract_time_domain_features(signal)
 
         # All features should be finite
         for key, value in features.items():
@@ -137,242 +120,125 @@ class TestFeatureExtraction:
             features["crest_factor"] > 1.0
         ), f"Crest factor should be > 1, got {features['crest_factor']}"
 
-    def _extract_time_domain_features(self, signal):
-        """Helper: Extract time-domain features."""
-        from scipy.stats import kurtosis, skew, entropy
 
-        mean_val = np.mean(signal)
-        std_val = np.std(signal)
-        rms_val = np.sqrt(np.mean(signal**2))
-        peak_val = np.max(np.abs(signal))
-        peak_to_peak_val = np.ptp(signal)
+@pytest.fixture
+def sandbox(tmp_path, monkeypatch):
+    """Signals and models under a temporary directory."""
+    signals, models = tmp_path / "signals", tmp_path / "models"
+    signals.mkdir()
+    models.mkdir()
+    patch_data_dir(monkeypatch, signals)
+    for module in (diagnostics_tools, diagnosis_pipeline, report_tools):
+        monkeypatch.setattr(module, "MODELS_DIR", models)
+    repo = get_repository()
+    loaded: list[str] = []
 
-        crest_factor_val = peak_val / (rms_val + 1e-10)
-        kurtosis_val = kurtosis(signal)
-        skewness_val = skew(signal)
-
-        shape_factor_val = rms_val / (np.mean(np.abs(signal)) + 1e-10)
-        impulse_factor_val = peak_val / (np.mean(np.abs(signal)) + 1e-10)
-        clearance_factor_val = peak_val / (
-            np.mean(np.sqrt(np.abs(signal))) ** 2 + 1e-10
+    def load(signal_id: str, values: np.ndarray) -> str:
+        path = signals / f"{signal_id}.csv"
+        pd.DataFrame(values).to_csv(path, index=False, header=False)
+        repo.load_signal(
+            path.name,
+            signal_id=signal_id,
+            sampling_rate=FS,
+            signal_unit="g",
+            overwrite=True,
         )
+        loaded.append(signal_id)
+        return signal_id
 
-        power_val = np.mean(signal**2)
-        hist, _ = np.histogram(signal, bins=50)
-        hist = hist / (np.sum(hist) + 1e-10)
-        entropy_val = entropy(hist + 1e-10)
+    yield SimpleNamespace(load=load, models=models)
+    for signal_id in loaded:
+        repo.clear_signal(signal_id)
 
-        return {
-            "mean": mean_val,
-            "std": std_val,
-            "rms": rms_val,
-            "peak": peak_val,
-            "peak_to_peak": peak_to_peak_val,
-            "crest_factor": crest_factor_val,
-            "kurtosis": kurtosis_val,
-            "skewness": skewness_val,
-            "shape_factor": shape_factor_val,
-            "impulse_factor": impulse_factor_val,
-            "clearance_factor": clearance_factor_val,
-            "power": power_val,
-            "entropy": entropy_val,
-        }
+
+def train(**kwargs):
+    return asyncio.run(diagnostics_tools.train_anomaly_model(ctx=AsyncMock(), **kwargs))
+
+
+def predict(signal_id: str, model_name: str):
+    return asyncio.run(
+        diagnostics_tools.predict_anomalies(signal_id, model_name, ctx=AsyncMock())
+    )
 
 
 class TestMLTraining:
-    """Test suite for train_anomaly_model tool."""
+    """Tests for train_anomaly_model."""
 
-    def test_oneclass_svm_training(self):
-        """Test OneClassSVM model training."""
-        from sklearn.svm import OneClassSVM
-        from sklearn.preprocessing import StandardScaler
+    @pytest.mark.parametrize("model_type", ["OneClassSVM", "LocalOutlierFactor"])
+    def test_train_and_predict(self, sandbox, model_type):
+        """A training record scores fewer flagged windows than a record with a
+        large added disturbance, and the label follows the ratio."""
+        training = [
+            sandbox.load(f"ml_h{seed}", tones(seed, 20_000)) for seed in (1, 2, 3)
+        ]
+        train(healthy_signal_ids=training, model_type=model_type, model_name="ml_model")
+        healthy = training[0]
+        disturbed = sandbox.load(
+            "ml_disturbed",
+            tones(51, 20_000) + 5.0 * np.random.default_rng(52).standard_normal(20_000),
+        )
 
-        # Generate training data (healthy)
-        X_train = np.random.randn(100, 5)
+        healthy_result = predict(healthy, "ml_model")
+        disturbed_result = predict(disturbed, "ml_model")
 
-        # Standardize
-        scaler = StandardScaler()
-        X_scaled = scaler.fit_transform(X_train)
+        for result in (healthy_result, disturbed_result):
+            assert result.num_segments == (20_000 - 1_000) // 500 + 1
+            assert result.anomaly_ratio == result.anomaly_count / result.num_segments
+            assert result.overall_health == health_label(result.anomaly_ratio)
+        assert disturbed_result.anomaly_ratio > healthy_result.anomaly_ratio
 
-        # Train model
-        model = OneClassSVM(kernel="rbf", gamma="auto", nu=0.1)
-        model.fit(X_scaled)
+    def test_pca_dimensionality_reduction(self, sandbox):
+        """PCA keeps at least the requested share of the variance."""
+        training = [sandbox.load(f"ml_p{seed}", tones(seed, 20_000)) for seed in (4, 5)]
+        result = train(healthy_signal_ids=training, model_name="ml_pca")
+        assert result.num_features_original == 17
+        assert result.num_features_pca < 17
+        assert result.variance_explained >= 0.95
 
-        # Predict on training data (should mostly be +1)
-        predictions = model.predict(X_scaled)
-        inlier_ratio = np.sum(predictions == 1) / len(predictions)
+    def test_model_persistence(self, sandbox):
+        """The saved artefacts, loaded back, reproduce predict_anomalies."""
+        training = [sandbox.load(f"ml_s{seed}", tones(seed, 20_000)) for seed in (6, 7)]
+        train(healthy_signal_ids=training, model_name="ml_saved")
+        probe_values = tones(60, 20_000)
+        probe = sandbox.load("ml_probe", probe_values)
+        parts = {}
+        for part in ("model", "scaler", "pca"):
+            with open(sandbox.models / f"ml_saved_{part}.pkl", "rb") as handle:
+                parts[part] = pickle.load(handle)  # a model this test just trained
+        metadata = json.loads(
+            (sandbox.models / "ml_saved_metadata.json").read_text(encoding="utf-8")
+        )
+        plan = plan_segments(
+            metadata["sampling_rate"],
+            metadata["segment_duration"],
+            metadata["overlap_ratio"],
+        )
+        rows = pd.DataFrame(segment_features(probe_values, plan)).values
+        flags = parts["model"].predict(
+            parts["pca"].transform(parts["scaler"].transform(rows))
+        )
 
-        assert (
-            inlier_ratio >= 0.8
-        ), f"Too many outliers in training data: {inlier_ratio}"
+        result = predict(probe, "ml_saved")
 
-    def test_local_outlier_factor(self):
-        """Test LocalOutlierFactor model."""
-        from sklearn.neighbors import LocalOutlierFactor
-
-        # Generate training data
-        X_train = np.random.randn(100, 5)
-
-        # Train model (novelty=True for prediction)
-        model = LocalOutlierFactor(novelty=True, contamination=0.1)
-        model.fit(X_train)
-
-        # Predict on similar data (should be inliers)
-        X_test = np.random.randn(20, 5)
-        predictions = model.predict(X_test)
-
-        # Most should be inliers (+1)
-        inlier_ratio = np.sum(predictions == 1) / len(predictions)
-        assert inlier_ratio > 0.5
-
-    def test_pca_dimensionality_reduction(self):
-        """Test PCA for feature reduction."""
-        from sklearn.decomposition import PCA
-
-        # Generate high-dimensional data
-        X = np.random.randn(100, 17)  # 17 features
-
-        # Apply PCA
-        pca = PCA(n_components=0.95)  # Keep 95% variance
-        X_reduced = pca.fit_transform(X)
-
-        # Reduced dimensions should be < 17
-        assert (
-            X_reduced.shape[1] < X.shape[1]
-        ), f"PCA didn't reduce dimensions: {X_reduced.shape[1]}"
-
-        # Variance explained should be >= 0.95
-        var_explained = np.sum(pca.explained_variance_ratio_)
-        assert var_explained >= 0.95, f"Variance explained: {var_explained}"
-
-    def test_model_persistence(self):
-        """Test model save/load with pickle."""
-        import pickle
-        from sklearn.svm import OneClassSVM
-
-        # Train model
-        X_train = np.random.randn(100, 5)
-        model = OneClassSVM()
-        model.fit(X_train)
-
-        # Save to temporary file
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pkl") as f:
-            pickle.dump(model, f)
-            temp_path = f.name
-
-        try:
-            # Load model
-            with open(temp_path, "rb") as f:
-                model_loaded = pickle.load(f)
-
-            # Predictions should match
-            X_test = np.random.randn(10, 5)
-            pred_original = model.predict(X_test)
-            pred_loaded = model_loaded.predict(X_test)
-
-            np.testing.assert_array_equal(pred_original, pred_loaded)
-        finally:
-            # Cleanup
-            Path(temp_path).unlink()
+        assert result.num_segments == len(flags)
+        assert result.anomaly_count == int(np.sum(flags == -1))
 
     def test_training_validation_split(
         self, sample_healthy_signal, sample_faulty_signal
     ):
-        """Test model training with validation."""
-        from sklearn.svm import OneClassSVM
-        from sklearn.preprocessing import StandardScaler
+        """The production features of both recordings are finite and share
+        their names."""
+        healthy = extract_time_domain_features(sample_healthy_signal[:50000])
+        faulty = extract_time_domain_features(sample_faulty_signal[:50000])
 
-        # Extract features from healthy (simplified)
-        healthy_features = self._simple_features(sample_healthy_signal[:50000])
-        faulty_features = self._simple_features(sample_faulty_signal[:50000])
-
-        # Train on healthy
-        scaler = StandardScaler()
-        X_train = scaler.fit_transform([healthy_features])
-
-        model = OneClassSVM()
-        model.fit(X_train)
-
-        # Validate: healthy should be +1, faulty should be -1
-        healthy_pred = model.predict(scaler.transform([healthy_features]))[0]
-        faulty_pred = model.predict(scaler.transform([faulty_features]))[0]
-
-        # This is probabilistic, but generally should work
-        # With OneClassSVM on a single sample, results may vary
-        # Soft check: healthy might also be -1 with 1 training sample
-        # assert healthy_pred == 1, "Healthy data misclassified"
-        # Faulty might still be +1 if features are similar, so soft check
-
-    def _simple_features(self, signal):
-        """Helper: Extract simple features."""
-        return [
-            np.mean(signal),
-            np.std(signal),
-            np.sqrt(np.mean(signal**2)),
-            np.max(np.abs(signal)),
-            np.ptp(signal),
-        ]
+        assert healthy.keys() == faulty.keys()
+        assert all(np.isfinite(v) for v in [*healthy.values(), *faulty.values()])
 
 
 class TestMLPrediction:
-    """Test suite for predict_anomalies tool."""
-
-    def test_anomaly_prediction_healthy(self):
-        """Test prediction on healthy-like data."""
-        from sklearn.svm import OneClassSVM
-        from sklearn.preprocessing import StandardScaler
-
-        # Train on healthy
-        np.random.seed(42)  # Reproducible
-        X_train = np.random.randn(100, 5)
-        scaler = StandardScaler()
-        X_scaled = scaler.fit_transform(X_train)
-
-        model = OneClassSVM(nu=0.1)
-        model.fit(X_scaled)
-
-        # Test on similar healthy data
-        X_test = np.random.randn(20, 5)
-        X_test_scaled = scaler.transform(X_test)
-        predictions = model.predict(X_test_scaled)
-
-        # Calculate anomaly ratio
-        anomaly_count = np.sum(predictions == -1)
-        anomaly_ratio = anomaly_count / len(predictions)
-
-        # Should be mostly normal (low anomaly ratio)
-        # OneClassSVM default nu=0.5 means up to 50% can be outliers
-        # Use nu=0.1 for tighter boundary
-        assert anomaly_ratio < 0.6, f"Too many anomalies: {anomaly_ratio}"
-
-    def test_anomaly_prediction_faulty(self):
-        """Test prediction on faulty-like data."""
-        from sklearn.svm import OneClassSVM
-        from sklearn.preprocessing import StandardScaler
-
-        # Train on healthy
-        X_train = np.random.randn(100, 5)
-        scaler = StandardScaler()
-        X_scaled = scaler.fit_transform(X_train)
-
-        model = OneClassSVM(nu=0.1)
-        model.fit(X_scaled)
-
-        # Test on anomalous data (shifted distribution)
-        X_test = np.random.randn(20, 5) + 5  # Shifted by 5 std devs
-        X_test_scaled = scaler.transform(X_test)
-        predictions = model.predict(X_test_scaled)
-
-        # Should detect many anomalies
-        anomaly_count = np.sum(predictions == -1)
-        anomaly_ratio = anomaly_count / len(predictions)
-
-        # Should have high anomaly ratio
-        assert anomaly_ratio > 0.5, f"Anomalies not detected: {anomaly_ratio}"
+    """Tests for the health label predict_anomalies and the diagnosis share."""
 
     def test_health_status_classification(self):
-        """Test overall health status determination."""
-        # Test different anomaly ratios
         test_cases = [
             (0.05, "Healthy"),  # 5% anomalies
             (0.15, "Suspicious"),  # 15% anomalies
@@ -380,16 +246,7 @@ class TestMLPrediction:
         ]
 
         for anomaly_ratio, expected_status in test_cases:
-            status = self._classify_health(anomaly_ratio)
+            status = health_label(anomaly_ratio)
             assert (
                 status == expected_status
             ), f"Ratio {anomaly_ratio}: expected {expected_status}, got {status}"
-
-    def _classify_health(self, anomaly_ratio):
-        """Helper: Classify health based on anomaly ratio."""
-        if anomaly_ratio < 0.1:
-            return "Healthy"
-        elif anomaly_ratio < 0.3:
-            return "Suspicious"
-        else:
-            return "Faulty"

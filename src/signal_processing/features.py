@@ -10,10 +10,12 @@ ISO 13374 Block 2 — Data Manipulation (feature extraction).
 import json
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import NamedTuple, Optional
 
 import numpy as np
 from scipy.stats import kurtosis, skew, entropy
+
+from ..signal_validation import InvalidInputError
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +105,95 @@ def extract_time_domain_features(segment: np.ndarray) -> dict[str, float]:
     }
 
 
+class SegmentPlan(NamedTuple):
+    """How a signal is cut into the windows an anomaly model scores."""
+
+    #: Samples per segment, at least one.
+    length: int
+    #: Samples between successive segment starts, at least one.
+    hop: int
+    #: Seconds between the start times reported for successive segments.
+    hop_s: float
+
+
+#: Remedy for a segment of no samples when the caller chose its duration.
+SEGMENT_DURATION_REMEDY = (
+    "Use a segment_duration of at least one sample period, {period:g} s at this rate"
+)
+#: Remedy for a segment of no samples when its duration comes from a model.
+MODEL_SEGMENT_REMEDY = (
+    "Retrain the model with a segment_duration of at least one sample period, "
+    "{period:g} s at this rate"
+)
+
+
+def plan_segments(
+    sampling_rate: float,
+    segment_duration: float,
+    overlap_ratio: float,
+    *,
+    remedy: str = SEGMENT_DURATION_REMEDY,
+) -> SegmentPlan:
+    """The one segmentation rule of the anomaly tools.
+
+    Training, ``predict_anomalies``, the diagnosis pipeline and the PCA report
+    all cut their windows with it, so one model, one signal and one rate give
+    the same windows everywhere. A segment holds
+    ``int(segment_duration * sampling_rate)`` samples and successive segments
+    start ``int(length * (1 - overlap_ratio))`` samples apart. When that leaves
+    less than one sample between starts (a ratio close to 1, or a ratio of 1 or
+    above in a model saved before the ratio was checked), segments advance one
+    sample and their start times are reported one sample period apart;
+    otherwise start times advance ``segment_duration * (1 - overlap_ratio)``
+    seconds per segment.
+
+    Args:
+        sampling_rate: Sampling frequency in Hz.
+        segment_duration: Duration of each segment in seconds.
+        overlap_ratio: Overlap between successive segments, as a fraction of
+            the segment length.
+        remedy: What the caller should do about a segment of no samples, a
+            sentence without its final period; ``{period}`` is replaced by
+            one sample period in seconds.
+
+    Returns:
+        The segment length, the hop in samples and the hop in seconds.
+
+    Raises:
+        InvalidInputError: If a segment would hold no samples at this rate.
+    """
+    length = int(segment_duration * sampling_rate)
+    if length < 1:
+        raise InvalidInputError(
+            f"A segment of {segment_duration:g} s holds no samples at "
+            f"{sampling_rate:g} Hz, so no features can be computed from it. "
+            f"{remedy.format(period=1.0 / sampling_rate)}."
+        )
+    hop = int(length * (1 - overlap_ratio))
+    hop_s = segment_duration * (1 - overlap_ratio)
+    if hop < 1:
+        hop = 1
+        hop_s = 1.0 / sampling_rate
+    return SegmentPlan(length=length, hop=hop, hop_s=hop_s)
+
+
+def segment_features(signal_data: np.ndarray, plan: SegmentPlan) -> list[dict]:
+    """Time-domain features of every segment *plan* cuts from *signal_data*.
+
+    Args:
+        signal_data: Raw signal array (1D).
+        plan: The segmentation from :func:`plan_segments`.
+
+    Returns:
+        List of feature dictionaries, one per segment; empty when the signal
+        is shorter than one segment.
+    """
+    return [
+        extract_time_domain_features(signal_data[start : start + plan.length])
+        for start in range(0, len(signal_data) - plan.length + 1, plan.hop)
+    ]
+
+
 def segment_and_extract_features(
     signal_data: np.ndarray,
     sampling_rate: float,
@@ -116,23 +207,17 @@ def segment_and_extract_features(
         signal_data: Raw signal array (1D).
         sampling_rate: Sampling frequency in Hz.
         segment_duration: Duration of each segment in seconds.
-        overlap_ratio: Overlap ratio between segments (0.0–1.0).
+        overlap_ratio: Overlap ratio between segments, at least 0 and below 1.
 
     Returns:
         List of feature dictionaries, one per segment.
+
+    Raises:
+        InvalidInputError: If a segment would hold no samples at this rate.
     """
-    segment_length_samples = int(segment_duration * sampling_rate)
-    hop_length = int(segment_length_samples * (1 - overlap_ratio))
-    if hop_length < 1:
-        hop_length = 1
-    features_list = []
-
-    for start in range(0, len(signal_data) - segment_length_samples + 1, hop_length):
-        segment = signal_data[start : start + segment_length_samples]
-        features = extract_time_domain_features(segment)
-        features_list.append(features)
-
-    return features_list
+    return segment_features(
+        signal_data, plan_segments(sampling_rate, segment_duration, overlap_ratio)
+    )
 
 
 def resolve_sampling_rate(
