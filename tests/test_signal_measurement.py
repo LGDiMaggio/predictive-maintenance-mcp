@@ -1161,6 +1161,7 @@ class TestPackaging:
             "!src/**",
             "!resources/bearing_catalogs/README.md",
             "!resources/bearing_catalogs/common_bearings_catalog.json",
+            "!docker/requirements-cpu.txt",
         }
         assert not {"LICENSE", "/LICENSE", "README.md", "src", "src/"} & set(lines)
 

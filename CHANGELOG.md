@@ -389,6 +389,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `aggregate_corroboration`, both null under the default rule.
 
 ### Changed
+- **CPU-only Docker image.** `docker build --build-arg TORCH_VARIANT=cpu`
+  installs the versions pinned in `uv.lock`, each verified against a recorded
+  hash, with PyTorch replaced by its CPU-only build of the same version and no
+  NVIDIA, CUDA or Triton component (`docker/requirements-cpu.txt`, written by
+  `python -m tools.cpu_requirements generate`). The image workflow builds this
+  variant and fails if the image holds any NVIDIA, CUDA or Triton component.
+  `docker compose` and a plain `docker build` keep the default variant. Both
+  build stages use `python:3.11-slim` pinned by digest.
 - **Docker image contents.** An image built from the repository contains the
   server, the project's `LICENSE` and the bearing catalog. It no longer copies
   the signals, trained models, reports or machine manuals of the working copy
@@ -948,6 +956,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   before anything is written and passes it into scoring as an override; the
   manual commit-then-rescore workaround from 3fe533a/5b8cd3e is no longer
   needed.
+- **Images built from the repository hold one version of each package.** The
+  runtime stage now replaces the base image's site-packages instead of copying
+  over it, so a second `pip`, `setuptools`, `wheel` or `packaging` of another
+  version no longer remains in the image.
 
 ## [0.13.0] - 2026-08-14
 
