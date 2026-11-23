@@ -15,9 +15,9 @@ what decides their verdicts without Docker:
 * ``docker-image.yml`` is the only workflow that builds the image, started by
   hand only, with a read-only token, a timeout, and the bypass check that an
   image defeating the ``COPY`` boundary fails;
-* the recursive weight exclusions are still missing from ``.dockerignore``
-  (a strict expected failure: it starts passing, and so fails, the day they
-  land, so the marker cannot outlive the gap).
+* the recursive weight exclusions stand in ``.dockerignore`` after every
+  re-include, and ``docker-image.yml`` no longer expects the weight control
+  to be missing.
 """
 
 from __future__ import annotations
@@ -336,13 +336,6 @@ class TestRunWithFakeDocker:
 class TestWeightExclusions:
     WEIGHT_PATTERNS = ("**/*.safetensors", "**/*.bin", "**/*.pt", "**/*.pth")
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "known gap: .dockerignore has no recursive weight exclusions yet; the "
-            "change that adds them removes this marker"
-        ),
-    )
     def test_dockerignore_excludes_weight_files_after_every_reinclude(self):
         lines = [
             line.strip()
@@ -386,6 +379,15 @@ class TestImageWorkflow:
         assert "artifact-licensing --image -" in runs
         assert "COPY planted/ /app/models/" in runs
         assert 'test "$code" -eq 1' in runs
+
+    def test_it_no_longer_expects_the_weight_control_missing(self, workflows):
+        """With the weight exclusions in place the flag would turn the weights
+        probe into an error (``weights_verdict``), so it must be gone."""
+        runs = "\n".join(
+            step.get("run", "")
+            for step in workflows["docker-image.yml"]["jobs"]["image"]["steps"]
+        )
+        assert "--expect-missing" not in runs
 
     #: Every way a workflow step can build an image.
     BUILD = re.compile(

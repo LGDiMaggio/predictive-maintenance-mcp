@@ -1160,7 +1160,8 @@
             "default": "naive",
             "enum": [
               "naive",
-              "seasonal_naive"
+              "seasonal_naive",
+              "chronos2"
             ],
             "title": "Backend",
             "type": "string"

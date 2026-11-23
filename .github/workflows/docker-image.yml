@@ -49,7 +49,7 @@ jobs:
     # recursive weight exclusions are a known gap, reported as such.
     - name: Probe the build context and the COPY lines
       run: |
-        python -m tools.audit docker-probe --expect-missing weights --json-out results/docker-probe.json
+        python -m tools.audit docker-probe --json-out results/docker-probe.json
 
     - name: Build the image
       run: |

@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `forecast_asset_indicator` accepts an optional `chronos2` backend that
+  projects the indicator with the Chronos-2 forecasting model, run locally,
+  when an operator installs the `forecast-chronos2` extra and the model files.
+  It is never the default. Each result carries the reference backend's values
+  at the forecast's anchor steps, and a call whose reference cannot be
+  computed is refused. History is limited to the most recent 2,048 bins (at
+  least 64 observed) and horizons to 144 steps; the model was evaluated only
+  on indicators sampled every 10 seconds and every 10 minutes. The projection
+  is not a fault detection, a failure probability or a remaining-useful-life
+  estimate.
+  - The extra is not part of `full` or the Docker image. Model files are
+    fetched by the operator at a pinned revision and verified by SHA-256
+    before loading; the server never downloads them.
+  - The extra pins chronos-forecasting 2.3.2 and bounds torch and
+    transformers; in the project's lock file these bounds also apply to the
+    versions shared with the full extra.
 - Signal import: the configuration's attestation accepts an optional
   `exclusions` list for acknowledged rows left out of the data range. Every
   import records whether it leaves such rows out: in the stored signal's

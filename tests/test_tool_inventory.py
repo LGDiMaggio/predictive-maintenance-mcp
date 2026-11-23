@@ -112,6 +112,9 @@ Fixture history:
   null), a list of ExclusionInput (source_sha256, import_id, first_line,
   last_line, rows, reason), and the attestation description names it. No
   tool added or removed; counts 44/0/4.
+- Optional Chronos-2 backend (2026-11-22): regenerated intentionally:
+  ADDITIVE. forecast_asset_indicator's backend enum gains 'chronos2' (default
+  still 'naive'). No tool added or removed; counts 44/0/4.
 
 Snapshot recipe (run from the repo root):
     python -c "from tests.test_tool_inventory import build_inventory, \\

@@ -12,7 +12,8 @@ Honest-prognosis contract:
   within-recording SCREENING tool. It looks at seconds of data inside
   one recording and cannot produce a prognosis.
 - ``forecast_asset_indicator`` projects one caller-supplied indicator
-  series with a statistical reference method. It is a projection of the
+  series with a statistical reference method or, where an operator has
+  installed it, the optional Chronos-2 model. It is a projection of the
   indicator, not a prognosis, and shares nothing with the RUL path.
 Logging note
 ------------
@@ -33,7 +34,7 @@ import json
 import logging
 import math
 from datetime import datetime, timezone
-from typing import Callable, Literal, NamedTuple, Optional
+from typing import Any, Awaitable, Callable, Literal, NamedTuple, Optional
 
 import numpy as np
 import pydantic_core
@@ -56,7 +57,10 @@ from ..prognostics.rul_estimator import (
     validate_positive_for_exponential,
 )
 from ..prognostics import indicator_forecast
-from ..prognostics.indicator_forecast import forecast_indicator
+from ..prognostics.indicator_forecast import (
+    forecast_indicator,
+    forecast_indicator_chronos2,
+)
 from ..signal_validation import (
     InvalidInputError,
     validate_finite_samples,
@@ -749,7 +753,8 @@ async def forecast_asset_indicator(
     Takes an indicator series the caller already has, for example velocity
     RMS from a data collector or a bearing temperature exported from a
     historian, and projects it forward on a regular UTC grid with a
-    statistical reference method, returning P10, P50 and P90 per step. It
+    statistical reference method or, where an operator has installed it,
+    the Chronos-2 forecasting model, returning P10, P50 and P90 per step. It
     reads nothing the server holds, no signal_id and no asset history: only
     the series passed in the call. The result is a projection of the
     indicator, not a fault detection, a failure probability or a
@@ -780,9 +785,18 @@ async def forecast_asset_indicator(
             observed history span (last instant minus first instant)
             returns insufficient_history with the largest supported
             horizon.
-        backend: 'naive' (default; repeats the last observed bin) or
-            'seasonal_naive' (repeats the same phase of the declared
-            season).
+        backend: 'naive' (default; repeats the last observed bin),
+            'seasonal_naive' (repeats the same phase of the declared season)
+            or 'chronos2' (the optional Chronos-2 model; available only where
+            an operator has installed and configured it, otherwise refused
+            with a remedy). With 'chronos2' the history needs at least 64
+            observed bins within its most recent 2,048 bins, horizon_steps is
+            at most 144, older bins are not used by the model, and the result
+            carries the reference backend's P10, P50 and P90 at the
+            forecast's anchor steps; season_length_steps, when given, selects
+            the seasonal_naive reference. The first 'chronos2' call in a
+            server process may be refused while the model loads; call again
+            as the refusal says.
         aggregation: How several values in one bin combine: 'mean'
             (default), 'median', 'max' or 'last'.
         season_length_steps: Season in grid steps as the user states it,
@@ -798,7 +812,9 @@ async def forecast_asset_indicator(
         amounts, max_supported_horizon_steps and a remedy). Quote
         interpretation, method_note and interval_note when reporting a
         projection. The history needs at least 10 difference pairs;
-        seasonal naive also needs two full seasons. A call whose band is too
+        seasonal naive also needs two full seasons. With 'chronos2', a call
+        whose reference cannot be computed is refused rather than answered
+        without its reference anchors. A call whose band is too
         narrow to report at the level of its values is refused, with a
         remedy. A forecast result exceeding the server's conservative
         32,000-byte serialized-output limit is refused. When possible, the
@@ -809,25 +825,29 @@ async def forecast_asset_indicator(
 
     now = datetime.now(timezone.utc)
 
-    def project(steps: int) -> IndicatorForecastResult:
-        return IndicatorForecastResult.model_validate(
-            forecast_indicator(
-                observed_at=observed_at,
-                values=values,
-                indicator=indicator,
-                unit=unit,
-                resolution=resolution,
-                horizon_steps=steps,
-                backend=backend,
-                aggregation=aggregation,
-                season_length_steps=season_length_steps,
-                now=now,
-                server_version=__version__,
-            )
+    async def project(steps: int) -> IndicatorForecastResult:
+        call: dict[str, Any] = dict(
+            observed_at=observed_at,
+            values=values,
+            indicator=indicator,
+            unit=unit,
+            resolution=resolution,
+            horizon_steps=steps,
+            aggregation=aggregation,
+            season_length_steps=season_length_steps,
+            now=now,
+            server_version=__version__,
         )
+        if backend == "chronos2":
+            # The model runs in the backend's own worker thread; awaiting it
+            # keeps the event loop free for every other call.
+            payload = await forecast_indicator_chronos2(**call)
+        else:
+            payload = forecast_indicator(backend=backend, **call)
+        return IndicatorForecastResult.model_validate(payload)
 
-    result = project(horizon_steps)
-    _refuse_oversized_result(result, horizon_steps, project)
+    result = await project(horizon_steps)
+    await _refuse_oversized_result(result, horizon_steps, project)
     return result
 
 
@@ -878,10 +898,10 @@ def client_result_bytes(result: IndicatorForecastResult) -> int:
     return call_tool_result_bytes(result) + RESULT_METADATA_ALLOWANCE
 
 
-def _refuse_oversized_result(
+async def _refuse_oversized_result(
     result: IndicatorForecastResult,
     horizon_steps: int,
-    project: Callable[[int], IndicatorForecastResult],
+    project: Callable[[int], Awaitable[IndicatorForecastResult]],
 ) -> None:
     """Refuse a result over MAX_RESULT_BYTES, naming a horizon checked to fit.
 
@@ -890,7 +910,8 @@ def _refuse_oversized_result(
     RETRY_RESERVE to spare; nothing is shortened or dropped from the
     requested result to make it fit. Every candidate is a forecast: a shorter
     horizon passes the sufficiency and precision checks the requested one
-    passed.
+    passed. With the chronos2 backend each candidate is a new inference in
+    the backend's worker, awaited without blocking the event loop.
 
     The binary search finds the longest horizon that fits only when the size
     grows with the horizon, which is not guaranteed: the isolated_origin
@@ -914,7 +935,7 @@ def _refuse_oversized_result(
     low, high = 1, horizon_steps - 1
     while low <= high:
         steps = (low + high) // 2
-        steps_size = client_result_bytes(project(steps))
+        steps_size = client_result_bytes(await project(steps))
         if steps_size <= budget - RETRY_RESERVE:
             fit, low = (steps, steps_size), steps + 1
         else:
