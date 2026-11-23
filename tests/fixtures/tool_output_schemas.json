@@ -5451,10 +5451,11 @@
             "type": "string"
           },
           "backend": {
-            "description": "Reference backend requested",
+            "description": "Backend requested",
             "enum": [
               "naive",
-              "seasonal_naive"
+              "seasonal_naive",
+              "chronos2"
             ],
             "title": "Backend",
             "type": "string"
@@ -5533,7 +5534,7 @@
             "type": "integer"
           },
           "difference_lag": {
-            "description": "Lag in steps of the difference pairs the backend uses",
+            "description": "Lag in steps of the difference pairs the backend uses; for 'chronos2', the pairs its reference backend uses",
             "title": "Difference Lag",
             "type": "integer"
           },
@@ -5637,11 +5638,91 @@
         "title": "IndicatorForecastHistory",
         "type": "object"
       },
+      "IndicatorForecastModel": {
+        "properties": {
+          "accelerate_version": {
+            "description": "Installed version used for this projection",
+            "title": "Accelerate Version",
+            "type": "string"
+          },
+          "chronos_forecasting_version": {
+            "description": "Installed version used for this projection",
+            "title": "Chronos Forecasting Version",
+            "type": "string"
+          },
+          "config_sha256": {
+            "description": "SHA-256 of config.json, verified before loading",
+            "title": "Config Sha256",
+            "type": "string"
+          },
+          "context_bins": {
+            "description": "Grid bins passed to the model, at most 2,048",
+            "title": "Context Bins",
+            "type": "integer"
+          },
+          "huggingface_hub_version": {
+            "description": "Installed version used for this projection",
+            "title": "Huggingface Hub Version",
+            "type": "string"
+          },
+          "repo_id": {
+            "description": "Hugging Face repository of the model: 'amazon/chronos-2'",
+            "title": "Repo Id",
+            "type": "string"
+          },
+          "revision": {
+            "description": "Revision whose files were verified by SHA-256 before loading",
+            "title": "Revision",
+            "type": "string"
+          },
+          "torch_threads": {
+            "description": "PyTorch threads, as read inside the inference thread",
+            "title": "Torch Threads",
+            "type": "integer"
+          },
+          "torch_version": {
+            "description": "Installed version used for this projection",
+            "title": "Torch Version",
+            "type": "string"
+          },
+          "transformers_version": {
+            "description": "Installed version used for this projection",
+            "title": "Transformers Version",
+            "type": "string"
+          },
+          "weights_licence": {
+            "description": "Licence declared for the model weights in the model card metadata of amazon/chronos-2: Apache-2.0; the repository ships no LICENSE file",
+            "title": "Weights Licence",
+            "type": "string"
+          },
+          "weights_sha256": {
+            "description": "SHA-256 of model.safetensors, verified before loading",
+            "title": "Weights Sha256",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo_id",
+          "revision",
+          "weights_sha256",
+          "config_sha256",
+          "weights_licence",
+          "chronos_forecasting_version",
+          "torch_version",
+          "transformers_version",
+          "accelerate_version",
+          "huggingface_hub_version",
+          "torch_threads",
+          "context_bins"
+        ],
+        "title": "IndicatorForecastModel",
+        "type": "object"
+      },
       "IndicatorForecastProvenance": {
         "description": "How the numbers were produced, for reproducing or comparing a run.",
         "properties": {
           "algorithm_version": {
-            "description": "Version of the numbers; the same inputs give the same numbers within one version",
+            "description": "Version of the numbers; the same inputs give the same numbers within one version. For 'indicator_forecast_chronos2', the same inputs give the same numbers only with the same model files, library versions, thread setting and platform; these are recorded in the model block, and other settings can change the last digits.",
             "title": "Algorithm Version",
             "type": "integer"
           },
@@ -5650,7 +5731,7 @@
             "description": "The declaration after defaults"
           },
           "family": {
-            "description": "Algorithm family, 'indicator_forecast'",
+            "description": "Algorithm family: 'indicator_forecast' for the reference backends, 'indicator_forecast_chronos2' for backend 'chronos2'",
             "title": "Family",
             "type": "string"
           },
@@ -5658,6 +5739,18 @@
             "description": "First 16 hex digits of a SHA-256 over the UTC instants, the values, the effective declaration and the algorithm version. Equal digests mean equal inputs.",
             "title": "Input Digest",
             "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/IndicatorForecastModel"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Backend 'chronos2' only: the verified model files and the libraries that produced the numbers. Version ranges are compatibility boundaries, not evidence that every combination within them was tested; the versions recorded here are the ones actually used."
           },
           "server_version": {
             "description": "Server version that produced the result",
@@ -5675,6 +5768,38 @@
         "title": "IndicatorForecastProvenance",
         "type": "object"
       },
+      "IndicatorForecastReference": {
+        "properties": {
+          "anchors": {
+            "description": "The reference's P10, P50 and P90 at the forecast's anchor steps, with absolute bin times: four steps when the horizon is 5 steps or more, and every distinct anchor step for shorter horizons",
+            "items": {
+              "$ref": "#/$defs/IndicatorForecastAnchor"
+            },
+            "title": "Anchors",
+            "type": "array"
+          },
+          "backend": {
+            "description": "Reference backend used: 'seasonal_naive' when season_length_steps was given, otherwise 'naive'",
+            "enum": [
+              "naive",
+              "seasonal_naive"
+            ],
+            "title": "Backend",
+            "type": "string"
+          },
+          "note": {
+            "title": "Note",
+            "type": "string"
+          }
+        },
+        "required": [
+          "backend",
+          "anchors",
+          "note"
+        ],
+        "title": "IndicatorForecastReference",
+        "type": "object"
+      },
       "IndicatorForecastWarning": {
         "description": "A caveat about the data or the projection, with a closed code.",
         "properties": {
@@ -5685,7 +5810,9 @@
               "observed_after_issued_at",
               "partial_last_bin",
               "isolated_origin",
-              "interval_crosses_observed_sign"
+              "interval_crosses_observed_sign",
+              "model_context_truncated",
+              "recent_gap_before_origin"
             ],
             "title": "Code",
             "type": "string"
@@ -5736,10 +5863,11 @@
         "title": "Available"
       },
       "backend": {
-        "description": "Reference backend that ran",
+        "description": "Backend that ran",
         "enum": [
           "naive",
-          "seasonal_naive"
+          "seasonal_naive",
+          "chronos2"
         ],
         "title": "Backend",
         "type": "string"
@@ -5927,6 +6055,18 @@
         "default": null,
         "description": "Why no projection was made (status 'insufficient_history' only)",
         "title": "Reason Code"
+      },
+      "reference": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/IndicatorForecastReference"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Backend 'chronos2' only: the reference backend's projection from the full supplied history at the forecast's anchor steps, for comparing the model with a simple reference at those steps. Not a per-step comparison."
       },
       "remedy": {
         "anyOf": [

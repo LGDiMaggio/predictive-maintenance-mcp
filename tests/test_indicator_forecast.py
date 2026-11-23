@@ -796,12 +796,15 @@ class TestWarnings:
         ]
 
     def test_warning_codes_are_the_closed_vocabulary(self):
+        # The last two are raised by the chronos2 backend only.
         assert f.WARNING_CODES == (
             "stale_history",
             "observed_after_issued_at",
             "partial_last_bin",
             "isolated_origin",
             "interval_crosses_observed_sign",
+            "model_context_truncated",
+            "recent_gap_before_origin",
         )
 
 

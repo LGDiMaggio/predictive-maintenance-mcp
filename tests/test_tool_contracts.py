@@ -249,6 +249,17 @@ Fixture history:
   'none', default 'none'); axis stays a string, its default changes from
   'vertical' to 'not_declared' and its description is rewritten.
   Generated under mcp 2.3.0 and pydantic 2.12.0 (uv.lock).
+- Optional Chronos-2 backend (2026-11-22): regenerated intentionally:
+  ADDITIVE, no property removed and no type changed. forecast_asset_indicator:
+  the backend enum (result and effective declaration) gains 'chronos2' and
+  both backend descriptions drop "Reference"; the warning-code enum gains
+  model_context_truncated and recent_gap_before_origin; the result gains the
+  optional reference block (IndicatorForecastReference: backend, anchors,
+  note) and the provenance the optional model block (IndicatorForecastModel);
+  the provenance family and algorithm_version descriptions and the history
+  difference_lag description are extended. Both
+  blocks are left out of a reference backend's result, not sent as null.
+  Generated under mcp 2.3.0 and pydantic 2.12.0 (uv.lock).
 """
 
 from __future__ import annotations

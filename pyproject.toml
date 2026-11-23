@@ -149,6 +149,17 @@ pdf = [
 sse = [
     "uvicorn>=0.30",
 ]
+# Optional Chronos-2 backend of forecast_asset_indicator. Deliberately NOT in
+# `full` (and so not in the Docker image). chronos-forecasting is pinned
+# exactly; torch and transformers are bounded to the minors the numerical
+# equivalence evidence covers. src/prognostics/chronos2_backend.py checks the
+# same ranges at run time (SUPPORTED_RANGES), so change both together and
+# follow the update procedure in docs/guides/forecast-model-backend.md.
+forecast-chronos2 = [
+    "chronos-forecasting==2.3.2",
+    "torch>=2.13,<2.15",
+    "transformers>=5.14,<5.21",
+]
 full = [
     "predictive-maintenance-mcp[docs,ml,viz,vector-search,ocr,docx,pdf,sse]",
 ]
@@ -244,7 +255,8 @@ init_forbid_extra = true
 #     plotly, weasyprint, docx
 #   - every module behind an optional extra, since the CI job installs only
 #     `pip install -e .[dev]`: PIL + pytesseract + pdf2image (ocr), faiss +
-#     sentence_transformers (vector-search), docx (docx), weasyprint (pdf)
+#     sentence_transformers (vector-search), docx (docx), weasyprint (pdf),
+#     torch + chronos (forecast-chronos2)
 #
 # Keep the second group in sync with [project.optional-dependencies]. A module
 # that is installed in a developer venv but absent in CI type-checks fine
@@ -265,6 +277,10 @@ module = [
     "pytesseract",
     "pdf2image",
     "PIL.*",
+    "torch",
+    "torch.*",
+    "chronos",
+    "chronos.*",
     "predictive_maintenance_mcp.*",
 ]
 ignore_missing_imports = true
@@ -293,6 +309,7 @@ markers = [
     "ml: marks tests that require ML models",
     "real_data: marks tests that use real bearing data samples",
     "research_data: marks tests that read the sample recordings under data/ (skipped unless PMM_RESEARCH_DATA=1)",
+    "chronos2_weights: marks tests that load the real Chronos-2 model files (skipped unless PMM_TEST_CHRONOS2_WEIGHTS=1)",
     "asyncio: marks tests as async (requires pytest-asyncio)",
 ]
 

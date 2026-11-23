@@ -17,3 +17,10 @@ data/ledger/
 **/*.py[cod]
 
 # Exclusions that must win over the re-includes above go below this line.
+
+# Model weight files, in any folder (the optional forecasting model's weights
+# stay on the operator's machine): after every re-include, so they win.
+**/*.safetensors
+**/*.bin
+**/*.pt
+**/*.pth
