@@ -30,6 +30,7 @@ from mcp.server.mcpserver import MCPServer, Context
 from .. import config
 from ..config import MODELS_DIR, REPORTS_DIR
 from ..decision_support.advisory import build_advisory
+from ..decision_support.anomaly_labels import expected_prediction
 from ..decision_support.diagnosis_pipeline import (
     diagnose_vibration as _diagnose_vibration,
 )
@@ -51,11 +52,18 @@ from ..report_generator import (
     save_diagnostic_report_docx,
     timestamped_report_name,
 )
-from ..signal_processing.features import extract_time_domain_features
+from ..signal_processing.features import (
+    MODEL_SEGMENT_REMEDY,
+    extract_time_domain_features,
+    plan_segments,
+    segment_features,
+)
 from ..signal_validation import (
+    InvalidInputError,
     validate_expected_frequencies,
     validate_overlap_ratio,
     validate_rpm,
+    validate_segment_duration,
 )
 from ._call_origin import SignalFileAccess, signal_file_access
 from ._utils import refusal_boundary, resolve_model_paths, resolve_signal
@@ -699,7 +707,10 @@ async def generate_pca_visualization_report(
     parameter to provide actual labels for validation visualization.
 
     Requires the test signals loaded via load_signal() first; each
-    signal's sampling rate comes from its stored metadata.
+    signal's sampling rate comes from its stored metadata. Each signal is
+    segmented with the model's training segment_duration and overlap_ratio,
+    at the signal's own stored rate, so both parameters must equal the values
+    the model recorded at training.
 
     Args:
         model_name: Name of trained model (e.g., 'bearing_health_model')
@@ -707,9 +718,13 @@ async def generate_pca_visualization_report(
         true_labels: Optional dict mapping signal_ids to true labels.
                     Format: {"real_test_baseline_3": "healthy",
                              "real_test_InnerRaceFault_vload_6": "faulty"}
+                    Accepted labels, in any case: healthy, normal or baseline for a
+                    healthy signal; faulty, fault, anomaly or anomalous for a faulty one.
                     When provided, legend shows both true and predicted labels for validation.
-        segment_duration: Segment duration in seconds (default: 0.1s for ML)
-        overlap_ratio: Overlap ratio, at least 0 and below 1 (default: 0.5)
+        segment_duration: Segment duration in seconds; must equal the model's
+            training segment_duration (default: 0.1, the training default)
+        overlap_ratio: Overlap ratio, at least 0 and below 1; must equal the
+            model's training overlap_ratio (default: 0.5, the training default)
         ctx: MCP context. Unused — see this module's docstring on logging.
 
     Returns:
@@ -717,7 +732,11 @@ async def generate_pca_visualization_report(
 
     Raises:
         FileNotFoundError: If the model does not exist.
-        ValueError: If a signal_id is not loaded or has no sampling rate, or overlap_ratio is not at least 0 and below 1.
+        ValueError: If a signal_id is not loaded or has no sampling rate,
+            overlap_ratio is not at least 0 and below 1, segment_duration is
+            not above 0, segment_duration or overlap_ratio differs from the
+            model's training values, a true label is not one of the accepted
+            labels, or the model kept only one PCA component.
 
     Example (with validation):
         >>> generate_pca_visualization_report(
@@ -727,7 +746,25 @@ async def generate_pca_visualization_report(
         ...                  "real_test_InnerRaceFault_vload_6": "faulty"}
         ... )
     """
-    overlap_ratio = validate_overlap_ratio(overlap_ratio)
+    overlap_refusal: Optional[InvalidInputError] = None
+    try:
+        overlap_ratio = validate_overlap_ratio(overlap_ratio)
+    except InvalidInputError as refusal:
+        # A ratio of 1 or above can still be the one a model saved before the
+        # ratio was checked recorded; that is decided once its metadata is
+        # read. Every other value is refused here, before any read.
+        if not (
+            isinstance(overlap_ratio, (int, float))
+            and not isinstance(overlap_ratio, bool)
+            and overlap_ratio >= 1
+        ):
+            raise
+        overlap_refusal = refusal
+    segment_duration = validate_segment_duration(segment_duration)
+    expected_by_signal = {
+        sid: expected_prediction(sid, label)
+        for sid, label in (true_labels or {}).items()
+    }
     logger.info(f"Generating PCA visualization for model '{model_name}'...")
 
     # Load model, scaler, PCA — validate the name and contain every derived
@@ -739,7 +776,18 @@ async def generate_pca_visualization_report(
     metadata_path = _model_paths.metadata
 
     if not model_path.exists():
+        if overlap_refusal is not None:
+            raise overlap_refusal
         raise FileNotFoundError(f"Model not found: {model_path}")
+
+    with open(metadata_path, "r") as f:
+        model_metadata = json.load(f)
+    if overlap_refusal is not None:
+        # Only exactly the recorded legacy ratio is accepted; the model is then
+        # scored one sample apart, as predict_anomalies scores it.
+        if float(overlap_ratio) != float(model_metadata["overlap_ratio"]):
+            raise overlap_refusal
+        overlap_ratio = float(overlap_ratio)
 
     with open(model_path, "rb") as f:
         model = pickle.load(f)
@@ -747,8 +795,25 @@ async def generate_pca_visualization_report(
         scaler = pickle.load(f)
     with open(pca_path, "rb") as f:
         pca = pickle.load(f)
-    with open(metadata_path, "r") as f:
-        model_metadata = json.load(f)
+
+    if pca.n_components_ < 2:
+        raise InvalidInputError(
+            f"Model '{model_name}' kept one PCA component, so the report has no "
+            f"second component to plot. Retrain it with a higher pca_variance to "
+            f"keep at least two components."
+        )
+    trained_duration = float(model_metadata["segment_duration"])
+    trained_overlap = float(model_metadata["overlap_ratio"])
+    if (segment_duration, overlap_ratio) != (trained_duration, trained_overlap):
+        raise InvalidInputError(
+            f"Model '{model_name}' was trained on segments of {trained_duration:g} s "
+            f"with overlap_ratio {trained_overlap:g}, and this call passed "
+            f"segment_duration={segment_duration:g} and "
+            f"overlap_ratio={overlap_ratio:g}. The report scores a signal only "
+            f"with the segmentation the model was trained on: pass "
+            f"segment_duration={trained_duration:g} and "
+            f"overlap_ratio={trained_overlap:g}."
+        )
 
     # Collect training data (reconstruct from model metadata if available)
     # For now, we'll just note that training data would be visualized
@@ -766,34 +831,24 @@ async def generate_pca_visualization_report(
             fs = sig_info.sampling_rate
             last_sampling_rate = fs
 
-            # Segment and extract features (per-signal sampling rate). A ratio
-            # close to 1 can leave less than one sample between segment starts:
-            # advance one sample, as the anomaly tools' segmentation does. A
-            # segment of no samples keeps its earlier outcome.
-            segment_length_samples = int(segment_duration * fs)
-            hop_length = int(segment_length_samples * (1 - overlap_ratio))
-            if segment_length_samples >= 1:
-                hop_length = max(1, hop_length)
+            # Segment and extract features (per-signal sampling rate) by the
+            # segmentation every anomaly consumer shares.
+            plan = plan_segments(
+                fs, segment_duration, overlap_ratio, remedy=MODEL_SEGMENT_REMEDY
+            )
 
             # Guard: a signal shorter than one segment yields an empty feature
             # matrix and an opaque sklearn "X has 0 features" error at
             # scaler.transform. Fail early with an actionable message instead.
-            if len(signal_data) < segment_length_samples:
+            if len(signal_data) < plan.length:
                 raise ValueError(
                     f"Signal '{sid}' ({len(signal_data)} samples) is shorter "
-                    f"than one {segment_duration}s segment at {fs:g} Hz — "
-                    f"provide a longer recording or a smaller segment_duration."
+                    f"than one {segment_duration}s segment at {fs:g} Hz. "
+                    f"Provide a recording at least one segment long, or retrain "
+                    f"the model with a smaller segment_duration."
                 )
 
-            features_list = []
-            for start in range(
-                0, len(signal_data) - segment_length_samples + 1, hop_length
-            ):
-                segment = signal_data[start : start + segment_length_samples]
-                features = extract_time_domain_features(segment)
-                features_list.append(features)
-
-            X_test = pd.DataFrame(features_list).values
+            X_test = pd.DataFrame(segment_features(signal_data, plan)).values
 
             # Apply preprocessing
             X_scaled = scaler.transform(X_test)
@@ -924,13 +979,11 @@ async def generate_pca_visualization_report(
                 predictions = test_data["predictions"]
                 true_label = true_labels[sid].lower()
 
-                # Determine expected predictions (1 = healthy, -1 = anomaly)
-                expected_prediction = (
-                    1 if true_label in ["healthy", "normal", "baseline"] else -1
-                )
+                # Expected predictions (1 = healthy, -1 = anomaly)
+                expected = expected_by_signal[sid]
 
                 # Count correct predictions
-                file_correct = int(np.sum(predictions == expected_prediction))
+                file_correct = int(np.sum(predictions == expected))
                 file_total = len(predictions)
                 correct_predictions += file_correct
                 total_with_labels += file_total

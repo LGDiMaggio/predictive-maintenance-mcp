@@ -4,8 +4,9 @@ expected fault frequencies.
 The single source of truth for "is this input fit to analyze" at the input
 boundaries: the signal store's loads, the asset ledger's re-reads, the
 raw-binary decoder, the ledger snapshot, test-signal generation, the MCP tools
-that take a shaft speed, the overlap ratio of the feature-extraction tools and
-the direct RMS reading of the severity tool, and the public diagnostic entry
+that take a shaft speed, the overlap ratio of the feature-extraction tools, the
+segment duration and PCA variance of the anomaly tools and the direct RMS
+reading of the severity tool, and the public diagnostic entry
 points that accept
 arrays or speeds directly from Python (ISO severity, the bearing checks and
 the diagnosis pipeline) call the validators below instead of rolling their own
@@ -48,9 +49,11 @@ __all__ = [
     "validate_finite_number",
     "validate_finite_samples",
     "validate_overlap_ratio",
+    "validate_pca_variance",
     "validate_positive_finite",
     "validate_rpm",
     "validate_sampling_rate",
+    "validate_segment_duration",
     "validate_signal_and_fs",
 ]
 
@@ -97,6 +100,10 @@ _EXPECTED_FREQUENCY_REMEDY = "pass each expected frequency in Hz as a number abo
 _OVERLAP_RATIO_REMEDY = (
     "Use the default 0.5, or a value from 0 up to but not including 1"
 )
+
+_SEGMENT_DURATION_REMEDY = "Use the default 0.1, or another number of seconds above 0"
+
+_PCA_VARIANCE_REMEDY = "Use the default 0.95, or another fraction above 0 and below 1"
 
 
 def validate_positive_finite(
@@ -231,6 +238,77 @@ def validate_overlap_ratio(
         raise InvalidInputError(
             f"overlap_ratio must be at least 0 and below 1, got {value!r}{where}. "
             f"{_OVERLAP_RATIO_REMEDY}."
+        )
+    return number
+
+
+def validate_segment_duration(
+    value: Any, *, source: str = "the segment_duration parameter"
+) -> float:
+    """Return *value* as a float when it is a finite number of seconds above 0.
+
+    Whether a segment of that length holds any sample depends on the sampling
+    rate, so that is checked where the rate is known
+    (``signal_processing.features.plan_segments``).
+
+    Args:
+        value: The length of one segment, in seconds.
+        source: Where the value came from, appended to the message when given.
+
+    Returns:
+        The duration as a Python float.
+
+    Raises:
+        InvalidInputError: If the value is not a real number, is NaN or
+            infinite, or is zero or negative.
+    """
+    where = f" (from {source})" if source else ""
+    if not _is_real_number(value):
+        raise InvalidInputError(
+            f"segment_duration must be a finite number of seconds above 0, got a "
+            f"value of type {type(value).__name__}, which is not a number{where}. "
+            f"{_SEGMENT_DURATION_REMEDY}."
+        )
+    number = _as_float(value)
+    if not (math.isfinite(number) and number > 0.0):
+        raise InvalidInputError(
+            f"segment_duration must be a finite number of seconds above 0, got "
+            f"{value!r}{where}. {_SEGMENT_DURATION_REMEDY}."
+        )
+    return number
+
+
+def validate_pca_variance(
+    value: Any, *, source: str = "the pca_variance parameter"
+) -> float:
+    """Return *value* as a float when it is a variance fraction above 0 and below 1.
+
+    It is the share of the variance the PCA components keep; scikit-learn
+    reads 1 and above as a component count, which this parameter never means.
+
+    Args:
+        value: The cumulative explained-variance fraction to keep.
+        source: Where the value came from, appended to the message when given.
+
+    Returns:
+        The fraction as a Python float.
+
+    Raises:
+        InvalidInputError: If the value is not a real number, or is not above
+            0 and below 1 (NaN included).
+    """
+    where = f" (from {source})" if source else ""
+    if not _is_real_number(value):
+        raise InvalidInputError(
+            f"pca_variance must be above 0 and below 1, got a value of type "
+            f"{type(value).__name__}, which is not a number{where}. "
+            f"{_PCA_VARIANCE_REMEDY}."
+        )
+    number = _as_float(value)
+    if not 0.0 < number < 1.0:
+        raise InvalidInputError(
+            f"pca_variance must be above 0 and below 1, got {value!r}{where}. "
+            f"{_PCA_VARIANCE_REMEDY}."
         )
     return number
 

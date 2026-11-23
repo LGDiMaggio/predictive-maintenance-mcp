@@ -1370,9 +1370,32 @@ class TestGeneratePCAReport:
         with open(md / f"{model_name}_pca.pkl", "wb") as f:
             pickle.dump(pca, f)
         with open(md / f"{model_name}_metadata.json", "w") as f:
-            json.dump({"sampling_rate": 10000.0, "model_type": "OneClassSVM"}, f)
+            json.dump(
+                {
+                    "sampling_rate": 10000.0,
+                    "model_type": "OneClassSVM",
+                    "segment_duration": 0.1,
+                    "overlap_ratio": 0.5,
+                },
+                f,
+            )
 
         return md
+
+    @staticmethod
+    def _variant(models_dir, name: str, **segmentation) -> str:
+        """The fixture model under *name*, recording another segmentation."""
+        for suffix in ("_model.pkl", "_scaler.pkl", "_pca.pkl"):
+            (models_dir / f"{name}{suffix}").write_bytes(
+                (models_dir / f"test_pca_model{suffix}").read_bytes()
+            )
+        metadata = json.loads(
+            (models_dir / "test_pca_model_metadata.json").read_text(encoding="utf-8")
+        )
+        (models_dir / f"{name}_metadata.json").write_text(
+            json.dumps({**metadata, **segmentation}), encoding="utf-8"
+        )
+        return name
 
     @pytest.mark.asyncio
     async def test_pca_report_no_test_signals(
@@ -1408,8 +1431,14 @@ class TestGeneratePCAReport:
     ):
         """10000 samples, 9000-sample segments, ratio 0.9999: one sample
         between segment starts, so 1001 segments."""
+        model_name = self._variant(
+            models_dir,
+            "test_pca_high_overlap",
+            segment_duration=0.9,
+            overlap_ratio=0.9999,
+        )
         result = await tools["generate_pca_visualization_report"](
-            model_name="test_pca_model",
+            model_name=model_name,
             test_signal_ids=["report_test"],
             segment_duration=0.9,
             overlap_ratio=0.9999,

@@ -29,7 +29,9 @@ from ..signal_processing.spectral import (
     resolve_envelope_band,
 )
 from ..signal_processing.features import (
-    extract_time_domain_features as _extract_time_domain_features,
+    MODEL_SEGMENT_REMEDY,
+    plan_segments,
+    segment_features,
 )
 from ..signal_acquisition.repository import VALID_SIGNAL_UNITS, normalize_signal_unit
 from ..signal_validation import (
@@ -47,6 +49,7 @@ from ..diagnostics.bearing_claims import (
     pipeline_statement,
 )
 from ..diagnostics.iso20816 import assess_severity_with_axis
+from .anomaly_labels import health_label
 
 logger = logging.getLogger(__name__)
 
@@ -258,21 +261,19 @@ def _run_anomaly_detection(
         with open(_model_paths.metadata, "r") as f:
             meta = json.load(f)
 
-        # Use model's training parameters for segmentation
-        segment_duration = meta.get("segment_duration", 0.1)
-        overlap_ratio = meta.get("overlap_ratio", 0.5)
-        segment_samples = int(segment_duration * fs)
-        hop = int(segment_samples * (1 - overlap_ratio))
+        # Segment with the model's training parameters, by the rule every
+        # anomaly consumer shares (one-sample minimum between segment starts).
+        plan = plan_segments(
+            fs,
+            meta.get("segment_duration", 0.1),
+            meta.get("overlap_ratio", 0.5),
+            remedy=MODEL_SEGMENT_REMEDY,
+        )
 
-        if segment_samples > len(signal):
-            segment_samples = len(signal)
-            hop = segment_samples
+        if plan.length > len(signal):
+            plan = plan._replace(length=len(signal), hop=len(signal))
 
-        # Extract features from segments
-        features_list = []
-        for start in range(0, len(signal) - segment_samples + 1, hop):
-            seg = signal[start : start + segment_samples]
-            features_list.append(_extract_time_domain_features(seg))
+        features_list = segment_features(signal, plan)
 
         if not features_list:
             return None
@@ -291,18 +292,11 @@ def _run_anomaly_detection(
             scores = model.decision_function(X_pca)
             anomaly_score = float(np.mean(scores))
 
-        if anomaly_ratio < 0.1:
-            health = "Healthy"
-        elif anomaly_ratio < 0.3:
-            health = "Suspicious"
-        else:
-            health = "Faulty"
-
         return {
             "anomaly_ratio": round(anomaly_ratio, 4),
             "anomaly_count": anomaly_count,
             "num_segments": len(predictions),
-            "overall_health": health,
+            "overall_health": health_label(anomaly_ratio),
             "anomaly_score": (
                 round(anomaly_score, 4) if anomaly_score is not None else None
             ),

@@ -83,20 +83,25 @@ from ..diagnostics.iso20816 import (
     check_power_scope,
 )
 from ..decision_support.alerts import check_custom_alert as _check_custom_alert
+from ..decision_support.anomaly_labels import health_label
 from ..decision_support.diagnosis_pipeline import (
     diagnose_vibration as _diagnose_vibration,
 )
 
 from ..signal_processing.features import (
-    extract_time_domain_features,
+    MODEL_SEGMENT_REMEDY,
+    plan_segments,
     segment_and_extract_features as _segment_and_extract_features,
+    segment_features,
 )
 from ..signal_validation import (
     InvalidInputError,
     validate_expected_frequencies,
     validate_finite_number,
     validate_overlap_ratio,
+    validate_pca_variance,
     validate_rpm,
+    validate_segment_duration,
 )
 from ._utils import (
     refusal_boundary,
@@ -109,11 +114,22 @@ from ._utils import (
 logger = logging.getLogger(__name__)
 
 
+class _SignalFeatures(NamedTuple):
+    """Window features of a list of stored signals, in signal order."""
+
+    #: One feature dictionary per window, all signals concatenated.
+    features: list[dict]
+    #: Each signal's stored sampling rate, by signal id.
+    rates: dict[str, float]
+    #: Number of windows each signal contributed, in signal order.
+    window_counts: list[int]
+
+
 async def _extract_features_from_ids(
     signal_ids: list[str],
     segment_duration: float,
     overlap_ratio: float,
-) -> tuple[list[dict], dict[str, float]]:
+) -> _SignalFeatures:
     """
     Resolve stored signals, segment them, and extract features.
 
@@ -124,14 +140,19 @@ async def _extract_features_from_ids(
 
     Args:
         signal_ids: Stored signal IDs (from load_signal)
-        segment_duration: Segment duration in seconds
+        segment_duration: Segment duration in seconds (checked by the calling tool)
         overlap_ratio: Overlap ratio, at least 0 and below 1 (checked by the calling tool)
 
     Returns:
-        Tuple of (all_features_list, {signal_id: sampling_rate})
+        The window features, the rate of each signal and each signal's
+        window count.
+
+    Raises:
+        InvalidInputError: If a segment holds no samples at a signal's rate.
     """
     all_features = []
     detected_rates: dict[str, float] = {}
+    window_counts: list[int] = []
 
     for sid in signal_ids:
         signal_data, info = resolve_signal(sid)
@@ -145,8 +166,9 @@ async def _extract_features_from_ids(
             signal_data, file_rate, segment_duration, overlap_ratio
         )
         all_features.extend(features)
+        window_counts.append(len(features))
 
-    return all_features, detected_rates
+    return _SignalFeatures(all_features, detected_rates, window_counts)
 
 
 async def _extract_and_transform_validation_features(
@@ -155,31 +177,45 @@ async def _extract_and_transform_validation_features(
     overlap_ratio: float,
     scaler,
     pca,
-) -> Optional[np.ndarray]:
+) -> tuple[Optional[np.ndarray], int]:
     """
     Extract features from stored validation signals and apply scaler + PCA.
 
     Args:
         signal_ids: Stored signal IDs (from load_signal)
-        segment_duration: Segment duration in seconds
+        segment_duration: Segment duration in seconds (checked by the calling tool)
         overlap_ratio: Overlap ratio, at least 0 and below 1 (checked by the calling tool)
         scaler: Fitted StandardScaler
         pca: Fitted PCA transformer
 
     Returns:
-        PCA-transformed feature matrix, or None if no features extracted
+        The PCA-transformed feature matrix, or None if no features were
+        extracted, and the number of signals that contributed a window.
     """
-    features_list, _ = await _extract_features_from_ids(
+    extracted = await _extract_features_from_ids(
         signal_ids, segment_duration, overlap_ratio
     )
+    contributing = sum(1 for count in extracted.window_counts if count)
 
-    if not features_list:
-        return None
+    if not extracted.features:
+        return None, contributing
 
-    features_df = pd.DataFrame(features_list)
+    features_df = pd.DataFrame(extracted.features)
     features_scaled = scaler.transform(features_df.values)
     features_pca = pca.transform(features_scaled)
-    return features_pca
+    return features_pca, contributing
+
+
+def _signals_with_windows_in(window_counts: list[int], start: int, stop: int) -> int:
+    """How many signals contributed windows to positions start..stop-1 of the
+    concatenated window list (signals in the order of *window_counts*)."""
+    contributing, first = 0, 0
+    for count in window_counts:
+        last = first + count
+        if count and first < stop and last > start:
+            contributing += 1
+        first = last
+    return contributing
 
 
 # ------------------------------------------------------------------
@@ -444,24 +480,39 @@ async def train_anomaly_model(
     **Training Mode:**
     - UNSUPERVISED: Train only on healthy data with automatic hyperparameters
     - SEMI-SUPERVISED: Train on healthy data, tune hyperparameters using validation set (healthy + fault)
+    The model metadata records the mode as training_mode "unsupervised" or "semi_supervised".
 
     **Note:** This is NOT supervised learning. OneClassSVM/LOF are trained ONLY on healthy data.
-    Fault data (if provided) is used ONLY for hyperparameter tuning after training.
+    Fault data (if provided) are used to choose the hyperparameters, and the reported fault
+    detection rate is measured on the same fault windows, so it is not a held-out figure.
 
     **Validation Strategy:**
-    - If healthy_validation_ids provided: Use those explicitly (no split)
-    - If healthy_validation_ids NOT provided: Automatic 80/20 split of training data
+    - If healthy_validation_ids provided: Use those explicitly (no split). Without
+      fault_signal_ids, only the healthy rate (specificity) is reported, in validation_metrics.
+    - If healthy_validation_ids NOT provided and fault_signal_ids provided: the healthy rate is
+      measured on the last 20% of the training windows, which come from the same signals as the
+      windows the model is fit on. A OneClassSVM is refit on the first 80% and saved; a
+      LocalOutlierFactor keeps its fit on all training windows, so its healthy rate is measured on
+      windows it was fit on. The model metadata records how many windows the saved estimator was
+      fit on.
     - If fault_signal_ids provided: Enable semi-supervised mode (hyperparameter tuning)
+    - With neither healthy_validation_ids nor fault_signal_ids: no validation is reported.
+    - With fault_signal_ids, validation_accuracy is the balanced accuracy, the mean of the healthy
+      rate and the fault detection rate, and validation_metrics also gives the pooled
+      overall_accuracy. validation_metrics gives the number of windows and signals behind each rate.
 
     Args:
         healthy_signal_ids: Stored signal IDs with healthy machine data (for training)
-        segment_duration: Segment duration in seconds (default: 0.1)
+        segment_duration: Segment duration in seconds, above 0 and at least one sample
+            period at each signal's rate (default: 0.1)
         overlap_ratio: Overlap ratio, at least 0 and below 1 (default: 0.5)
         model_type: 'OneClassSVM' or 'LocalOutlierFactor' (default: 'OneClassSVM')
-        pca_variance: Cumulative variance to explain with PCA (default: 0.95)
-        fault_signal_ids: Optional stored signal IDs for HYPERPARAMETER TUNING (semi-supervised)
+        pca_variance: Cumulative variance to explain with PCA, above 0 and below 1 (default: 0.95)
+        fault_signal_ids: Optional stored signal IDs for HYPERPARAMETER TUNING (semi-supervised);
+            the reported fault detection rate comes from the same signals
         healthy_validation_ids: Optional stored healthy signal IDs for validation (specificity check).
-                                  If not provided, 20% of training data will be used.
+                                  If not provided and fault_signal_ids are given, the last 20% of
+                                  the training windows will be used.
         model_name: Name for saved model files (default: 'anomaly_model')
         ctx: MCP context. Unused — see this module's docstring on logging.
 
@@ -470,24 +521,29 @@ async def train_anomaly_model(
 
     Raises:
         ValueError: If a signal_id is not loaded or has no sampling rate,
-            model_name/model_type is invalid, or overlap_ratio is not at
-            least 0 and below 1.
+            model_name/model_type is invalid, overlap_ratio is not at
+            least 0 and below 1, segment_duration is not above 0 or holds
+            no samples at a signal's rate, or pca_variance is not above 0
+            and below 1.
     """
-    # Fail fast on an unsafe model_name or overlap_ratio before doing any
-    # expensive work or touching the filesystem (the write happens in step 6).
+    # Fail fast on an unsafe model_name or an invalid parameter before doing
+    # any expensive work or touching the filesystem (the write happens in step 6).
     validate_name_component(model_name, kind="model_name")
     overlap_ratio = validate_overlap_ratio(overlap_ratio)
+    segment_duration = validate_segment_duration(segment_duration)
+    pca_variance = validate_pca_variance(pca_variance)
 
     logger.info(
         f"Training {model_type} model on {len(healthy_signal_ids)} healthy signals..."
     )
 
     # Step 1: Extract features from all healthy signals
-    all_features, detected_rates = await _extract_features_from_ids(
+    training = await _extract_features_from_ids(
         healthy_signal_ids, segment_duration, overlap_ratio
     )
+    detected_rates = training.rates
 
-    features_df = pd.DataFrame(all_features)
+    features_df = pd.DataFrame(training.features)
     X_train = features_df.values
 
     logger.info(f"Extracted {X_train.shape[0]} feature vectors from healthy data")
@@ -518,14 +574,14 @@ async def train_anomaly_model(
             logger.info("Evaluating hyperparameter grid...")
 
             # Prepare validation features for fault signals
-            X_fault = await _extract_and_transform_validation_features(
+            X_fault, _ = await _extract_and_transform_validation_features(
                 fault_signal_ids, segment_duration, overlap_ratio, scaler, pca
             )
 
             # Prepare validation features for healthy signals
             X_healthy_val = None
             if healthy_validation_ids:
-                X_healthy_val = await _extract_and_transform_validation_features(
+                X_healthy_val, _ = await _extract_and_transform_validation_features(
                     healthy_validation_ids, segment_duration, overlap_ratio, scaler, pca
                 )
 
@@ -613,14 +669,14 @@ async def train_anomaly_model(
             logger.info("- Hyperparameter tuning: Using validation set")
 
             # Prepare validation features for fault signals
-            X_fault = await _extract_and_transform_validation_features(
+            X_fault, _ = await _extract_and_transform_validation_features(
                 fault_signal_ids, segment_duration, overlap_ratio, scaler, pca
             )
 
             # Prepare healthy validation features
             X_healthy_val = None
             if healthy_validation_ids:
-                X_healthy_val = await _extract_and_transform_validation_features(
+                X_healthy_val, _ = await _extract_and_transform_validation_features(
                     healthy_validation_ids, segment_duration, overlap_ratio, scaler, pca
                 )
 
@@ -705,6 +761,8 @@ async def train_anomaly_model(
     validation_accuracy = None
     validation_details = None
     validation_metrics = None
+    # Windows the saved estimator is fit on (fewer when it is refit below).
+    estimator_fit_windows = int(X_pca.shape[0])
 
     if fault_signal_ids or healthy_validation_ids:
         # Part A: Validate on HEALTHY data
@@ -719,8 +777,10 @@ async def train_anomaly_model(
             )
 
             # Extract and transform features from validation signals
-            X_pca_healthy_val = await _extract_and_transform_validation_features(
-                healthy_validation_ids, segment_duration, overlap_ratio, scaler, pca
+            X_pca_healthy_val, healthy_signals = (
+                await _extract_and_transform_validation_features(
+                    healthy_validation_ids, segment_duration, overlap_ratio, scaler, pca
+                )
             )
 
             if X_pca_healthy_val is not None:
@@ -756,8 +816,13 @@ async def train_anomaly_model(
                 )
                 model_retrained.fit(X_pca_train)
                 model = model_retrained  # Use retrained model
+                estimator_fit_windows = int(split_idx)
 
                 logger.info("Model retrained on 80% of data for validation")
+
+            healthy_signals = _signals_with_windows_in(
+                training.window_counts, split_idx, len(X_pca)
+            )
 
             # Validate on 20% split
             healthy_predictions = model.predict(X_pca_healthy_val)
@@ -771,9 +836,12 @@ async def train_anomaly_model(
 
         # Part B: Validate on FAULT data (only if fault files were provided)
         X_fault_pca = None
+        fault_signals = 0
         if fault_signal_ids:
-            X_fault_pca = await _extract_and_transform_validation_features(
-                fault_signal_ids, segment_duration, overlap_ratio, scaler, pca
+            X_fault_pca, fault_signals = (
+                await _extract_and_transform_validation_features(
+                    fault_signal_ids, segment_duration, overlap_ratio, scaler, pca
+                )
             )
 
         if X_fault_pca is not None:
@@ -785,12 +853,18 @@ async def train_anomaly_model(
             fault_total = len(fault_predictions)
             fault_accuracy = anomaly_detected / fault_total
 
-            # Calculate overall balanced accuracy
-            # Overall accuracy = (healthy_correct + fault_correct) / (healthy_total + fault_total)
+            # Overall (pooled) accuracy = (healthy_correct + fault_correct) /
+            # (healthy_total + fault_total); balanced accuracy = the mean of
+            # the healthy rate and the fault detection rate, which needs both.
             total_correct = healthy_correct + anomaly_detected
             total_samples = healthy_total + fault_total
-            validation_accuracy = (
+            overall_accuracy = (
                 float(total_correct / total_samples) if total_samples > 0 else 0.0
+            )
+            validation_accuracy = (
+                float((healthy_accuracy + fault_accuracy) / 2)
+                if healthy_total > 0
+                else None
             )
 
             validation_details = (
@@ -802,16 +876,48 @@ async def train_anomaly_model(
                 "healthy_correct": int(healthy_correct),
                 "healthy_total": int(healthy_total),
                 "healthy_accuracy": float(healthy_accuracy),
+                "healthy_signals": int(healthy_signals),
                 "fault_detected": int(anomaly_detected),
                 "fault_total": int(fault_total),
                 "fault_accuracy": float(fault_accuracy),
-                "overall_accuracy": float(validation_accuracy),
+                "fault_signals": int(fault_signals),
+                "overall_accuracy": overall_accuracy,
+                "balanced_accuracy": validation_accuracy,
             }
 
             logger.info(
                 f"Fault validation: {anomaly_detected}/{fault_total} detected as anomalies ({fault_accuracy*100:.1f}%)"
             )
-            logger.info(f"Overall validation accuracy: {validation_accuracy*100:.1f}%")
+            logger.info(f"Overall validation accuracy: {overall_accuracy*100:.1f}%")
+            if validation_accuracy is not None:
+                logger.info(
+                    f"Balanced validation accuracy: {validation_accuracy*100:.1f}%"
+                )
+
+        elif healthy_total > 0:
+            # Healthy windows only: the specificity, with its denominators.
+            validation_details = (
+                f"Healthy: {healthy_correct}/{healthy_total} correct "
+                f"({healthy_accuracy*100:.1f}%)"
+            )
+            validation_metrics = {
+                "healthy_correct": int(healthy_correct),
+                "healthy_total": int(healthy_total),
+                "healthy_accuracy": float(healthy_accuracy),
+                "healthy_signals": int(healthy_signals),
+            }
+
+    # Record the neighbour count a LocalOutlierFactor actually uses:
+    # scikit-learn lowers it when the model has fewer training windows.
+    if model_type == "LocalOutlierFactor":
+        requested_neighbors = best_params["n_neighbors"]
+        effective_neighbors = int(model.n_neighbors_)
+        if effective_neighbors != requested_neighbors:
+            best_params = {
+                **best_params,
+                "n_neighbors": effective_neighbors,
+                "n_neighbors_requested": requested_neighbors,
+            }
 
     # Step 6: Save model, scaler, and PCA
     # Validate model_name and contain every derived path before writing —
@@ -837,7 +943,7 @@ async def train_anomaly_model(
     unique_rates = sorted(set(detected_rates.values()))
     metadata = {
         "model_type": model_type,
-        "training_mode": "supervised" if fault_signal_ids else "unsupervised",
+        "training_mode": "semi_supervised" if fault_signal_ids else "unsupervised",
         "feature_names": list(features_df.columns),
         "num_features_original": X_train.shape[1],
         "num_features_pca": X_pca.shape[1],
@@ -847,6 +953,8 @@ async def train_anomaly_model(
         "sampling_rates_detected": detected_rates,
         "segment_duration": segment_duration,
         "overlap_ratio": overlap_ratio,
+        "training_windows": int(X_train.shape[0]),
+        "estimator_fit_windows": estimator_fit_windows,
         "multi_rate_training": len(unique_rates) > 1,
         "validation_with_faults": fault_signal_ids is not None,
         "num_validation_files": len(fault_signal_ids) if fault_signal_ids else 0,
@@ -909,8 +1017,10 @@ async def predict_anomalies(
     Raises:
         FileNotFoundError: If the model does not exist (the message
             lists the models actually on disk).
-        ValueError: If the signal_id is not loaded, or no sampling rate
-            is available for segmentation.
+        ValueError: If the signal_id is not loaded, the model was trained
+            with per-file sampling rates and the signal has no stored rate,
+            a segment of the model holds no samples at the rate used, or the
+            signal is shorter than one segment.
     """
     logger.info(f"Predicting anomalies in '{signal_id}'...")
 
@@ -965,34 +1075,25 @@ async def predict_anomalies(
     segment_duration = metadata["segment_duration"]
     overlap_ratio = metadata["overlap_ratio"]
 
-    segment_length_samples = int(segment_duration * sampling_rate_val)
-    hop_length = int(segment_length_samples * (1 - overlap_ratio))
-    hop_s = segment_duration * (1 - overlap_ratio)
-    # A ratio close to 1, or a ratio of 1 or above in a model saved before
-    # the ratio was checked, can leave less than one sample between segment
-    # starts: advance one sample, as training does, and report start times
-    # at that pace. A segment of no samples keeps its earlier outcome.
-    if segment_length_samples >= 1 and hop_length < 1:
-        hop_length = 1
-        hop_s = 1 / sampling_rate_val
+    # The segmentation every anomaly consumer shares: at least one sample
+    # between segment starts (start times reported at that pace), and a
+    # segment of no samples refused.
+    plan = plan_segments(
+        sampling_rate_val, segment_duration, overlap_ratio, remedy=MODEL_SEGMENT_REMEDY
+    )
 
     # Guard: a signal shorter than one segment yields an empty feature matrix
     # and an opaque sklearn "X has 0 features" error at scaler.transform.
     # Fail early with an actionable message instead.
-    if len(signal_data) < segment_length_samples:
+    if len(signal_data) < plan.length:
         raise ValueError(
             f"Signal '{signal_id}' ({len(signal_data)} samples) is shorter than "
-            f"one {segment_duration}s segment at {sampling_rate_val:g} Hz — "
-            f"provide a longer recording or a smaller segment_duration."
+            f"one {segment_duration}s segment at {sampling_rate_val:g} Hz. "
+            f"Provide a recording at least one segment long, or retrain the model "
+            f"with a smaller segment_duration."
         )
 
-    features_list = []
-    for start in range(0, len(signal_data) - segment_length_samples + 1, hop_length):
-        segment = signal_data[start : start + segment_length_samples]
-        features = extract_time_domain_features(segment)
-        features_list.append(features)
-
-    X_test = pd.DataFrame(features_list).values
+    X_test = pd.DataFrame(segment_features(signal_data, plan)).values
 
     # Apply preprocessing
     X_scaled = scaler.transform(X_test)
@@ -1027,7 +1128,7 @@ async def predict_anomalies(
     worst_segments = [
         {
             "segment_index": int(i),
-            "start_time_s": round(float(i * hop_s), 4),
+            "start_time_s": round(float(i * plan.hop_s), 4),
             **({"score": round(float(scores[i]), 6)} if scores is not None else {}),
         }
         for i in worst_idx
@@ -1035,12 +1136,7 @@ async def predict_anomalies(
 
     # Assess overall health (thresholds on the anomaly ratio itself —
     # no separate "confidence" label is derived from them).
-    if anomaly_ratio < 0.1:
-        overall_health = "Healthy"
-    elif anomaly_ratio < 0.3:
-        overall_health = "Suspicious"
-    else:
-        overall_health = "Faulty"
+    overall_health = health_label(anomaly_ratio)
 
     logger.info(f"Analyzed {len(predictions)} segments")
     logger.info(f"Anomalies detected: {anomaly_count} ({anomaly_ratio*100:.1f}%)")
