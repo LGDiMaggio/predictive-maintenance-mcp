@@ -1,7 +1,7 @@
 name: Docker image
 
-# Manual only (Run workflow). Builds the image from this repository and checks
-# what it contains; nothing is pushed to a registry.
+# Manual only (Run workflow). Builds the official CPU image from this repository
+# (TORCH_VARIANT=cpu) and checks what it contains; nothing is pushed to a registry.
 on:
   workflow_dispatch:
 
@@ -45,27 +45,70 @@ jobs:
         df -h /
 
     # Blocking. Files planted in a temporary build context must not reach an
-    # image, through .dockerignore or through the runtime COPY lines. The
-    # recursive weight exclusions are a known gap, reported as such.
+    # image, through .dockerignore or through the runtime COPY lines. Weight
+    # files planted under src/ must not reach the build context either.
     - name: Probe the build context and the COPY lines
       run: |
         python -m tools.audit docker-probe --json-out results/docker-probe.json
 
+    # Blocking. The CPU dependency file still follows uv.lock: every pin is a
+    # locked version with locked hashes, torch is the CPU wheel, and there is no
+    # NVIDIA, CUDA or Triton distribution.
+    - name: Check the CPU dependency file against uv.lock
+      run: |
+        python -m tools.cpu_requirements check
+
     - name: Build the image
       run: |
         start=$(date +%s)
-        docker build --progress=plain -t pmm-image-check .
+        docker build --progress=plain --build-arg TORCH_VARIANT=cpu -t pmm-image-check .
         echo "build seconds: $(( $(date +%s) - start ))"
         docker image ls pmm-image-check
 
     # Blocking. No file from the working copy's data/, models/ or reports/, no
     # resource file outside the allowlist, no .mat file other than SciPy's own
-    # recorded test files, the MIT LICENSE, and the license files listed.
+    # recorded test files, the MIT LICENSE, the license files listed, and no
+    # NVIDIA, CUDA or Triton component (--cpu-only).
     - name: Check the image's files
       run: |
         cid=$(docker create pmm-image-check)
-        docker export "$cid" | python -m tools.audit artifact-licensing --image - --variant docker-image --json-out results/image-licensing.json
+        docker export "$cid" | python -m tools.audit artifact-licensing --image - --cpu-only --variant docker-image --json-out results/image-licensing.json
         docker rm "$cid"
+
+    # Blocking. The image holds exactly the pins of docker/requirements-cpu.txt
+    # (torch as its +cpu build), the project, and otherwise only what the pinned
+    # base image already held at the same version (pip).
+    - name: Check the installed packages against the CPU dependency file
+      run: |
+        mkdir -p results
+        base=$(grep -m1 -oE 'python:3\.11-slim@sha256:[0-9a-f]{64}' Dockerfile)
+        docker run --rm --entrypoint pip "$base" freeze --all > results/base-freeze.txt
+        docker run --rm --entrypoint pip pmm-image-check freeze --all > results/pip-freeze.txt
+        python -m tools.cpu_requirements check-freeze --freeze results/pip-freeze.txt --base results/base-freeze.txt
+
+    # Blocking. The server starts and its health check passes (F1).
+    - name: Start the container and wait for its health check
+      run: |
+        docker run -d --name pmm-f1 pmm-image-check
+        status=starting
+        for _ in $(seq 1 30); do
+          status=$(docker inspect --format '{{.State.Health.Status}}' pmm-f1)
+          if [ "$status" = healthy ] || [ "$status" = unhealthy ]; then break; fi
+          sleep 5
+        done
+        docker logs pmm-f1 > results/container-start.log 2>&1 || true
+        docker rm -f pmm-f1
+        echo "health: $status"
+        test "$status" = healthy
+
+    # Recorded. A second build without cache installs the same packages. Equal
+    # pip freeze output alone proves neither reproducibility nor equivalence.
+    - name: Rebuild without cache and compare the installed packages
+      run: |
+        docker build --progress=plain --no-cache --build-arg TORCH_VARIANT=cpu -t pmm-image-check-2 .
+        docker run --rm --entrypoint pip pmm-image-check-2 freeze --all > results/pip-freeze-2.txt
+        diff results/pip-freeze.txt results/pip-freeze-2.txt
+        docker image rm pmm-image-check-2
 
     # Blocking. An image that defeats the COPY boundary must fail the check.
     - name: Check that the image check catches a planted file
@@ -83,6 +126,23 @@ jobs:
         cat bypass.txt
         test "$code" -eq 1
         grep -q "app/models/x_model.pkl" bypass.txt
+
+    # Blocking. A CUDA library planted in the image must fail the CPU rule.
+    - name: Check that the CPU rule catches a planted CUDA library
+      run: |
+        mkdir -p gpu-bypass/planted
+        printf 'planted by the docker-image workflow\n' > gpu-bypass/planted/libcublas.so.13
+        printf 'FROM pmm-image-check\nCOPY planted/ /usr/local/lib/python3.11/site-packages/nvidia/cublas/lib/\n' > gpu-bypass/Dockerfile
+        docker build --progress=plain -t pmm-image-gpu-bypass gpu-bypass
+        cid=$(docker create pmm-image-gpu-bypass)
+        set +e
+        docker export "$cid" | python -m tools.audit artifact-licensing --image - --cpu-only --variant docker-image-gpu-bypass --json-out results/image-gpu-bypass.json > gpu-bypass.txt
+        code=$?
+        set -e
+        docker rm "$cid"
+        cat gpu-bypass.txt
+        test "$code" -eq 1
+        grep -q "image-gpu-component" gpu-bypass.txt
 
     - name: Record disk use
       if: always()

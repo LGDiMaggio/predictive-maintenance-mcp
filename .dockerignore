@@ -8,6 +8,7 @@
 !src/**
 !resources/bearing_catalogs/README.md
 !resources/bearing_catalogs/common_bearings_catalog.json
+!docker/requirements-cpu.txt
 
 # Asset health ledger: operator data, never baked into an image
 data/ledger/

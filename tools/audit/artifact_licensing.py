@@ -1711,6 +1711,8 @@ class ImageLicensingConfig:
     image: str
     repo_root: Path = REPO_ROOT
     variant: Optional[str] = None
+    #: Also apply the CPU image rule (:mod:`tools.audit.cpu_image`).
+    cpu_only: bool = False
 
 
 def _image_name(source: str) -> str:
@@ -1761,6 +1763,14 @@ def run_image_licensing(config: ImageLicensingConfig) -> results.Result:
         }
         findings += _repo_license_findings(repo_license)
         findings += check_image(image, manifest, repo_license)
+        if config.cpu_only:
+            from tools.audit.cpu_image import cpu_image_findings, gpu_component_counts
+
+            facts["cpu_only"] = {
+                rule: len(paths)
+                for rule, paths in gpu_component_counts(image.members).items()
+            }
+            findings += cpu_image_findings(image.members, name)
 
     return _result(config.variant, started_at, facts, errors, findings)
 
@@ -1802,10 +1812,21 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--json-out", type=Path, default=None, help="result path")
     parser.add_argument("--variant", default=None, help="free label for the run")
+    parser.add_argument(
+        "--cpu-only",
+        action="store_true",
+        help=(
+            "with --image: also fail on any NVIDIA, CUDA or Triton component "
+            "(the official CPU image)"
+        ),
+    )
 
 
 def run(args: argparse.Namespace) -> int:
     """``artifact-licensing`` subcommand: run, optionally write JSON, summarize."""
+    if getattr(args, "cpu_only", False) and not args.image:
+        print(f"{CHECK}: --cpu-only applies to --image only", file=sys.stderr)
+        return 2
     if args.archive:
         result = run_archive_licensing(
             ArchiveLicensingConfig(
@@ -1818,7 +1839,10 @@ def run(args: argparse.Namespace) -> int:
     elif args.image:
         result = run_image_licensing(
             ImageLicensingConfig(
-                image=args.image, repo_root=args.repo_root, variant=args.variant
+                image=args.image,
+                repo_root=args.repo_root,
+                variant=args.variant,
+                cpu_only=getattr(args, "cpu_only", False),
             )
         )
         checked = f"image {result.facts.get('image')}"

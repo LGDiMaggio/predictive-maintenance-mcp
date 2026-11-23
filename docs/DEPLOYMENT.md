@@ -254,6 +254,10 @@ Then configure IIS, Caddy, or nginx as the reverse proxy (see Option A above).
 
 The image contains the server, the project's license and the bearing catalog. It does not contain the signals, trained models or reports of the working copy it is built from, or any machine manuals. `docker-compose.yml` mounts the repository's `data/`, `models/`, `reports/` and `resources/` folders into the container; with `docker run`, mount your own folders at `/app/data/signals`, `/app/models`, `/app/reports` and `/app/resources/machine_manuals`.
 
+The project's image workflow (`.github/workflows/docker-image.yml`) builds the image with `--build-arg TORCH_VARIANT=cpu`. That build installs the dependencies listed in `docker/requirements-cpu.txt`: the versions pinned in `uv.lock`, each verified against a recorded hash, with PyTorch replaced by its CPU-only build of the same version and without any NVIDIA, CUDA or Triton component. `docker compose` and a plain `docker build` use the default variant, which resolves the dependencies when the image is built; on Linux x86_64 that resolution can include NVIDIA, CUDA and Triton components. To build the CPU-only image yourself, run `docker build --build-arg TORCH_VARIANT=cpu -t predictive-maintenance-mcp .`.
+
+GPU acceleration is outside the scope of the CPU-only image. If you add NVIDIA, CUDA or Triton components to an image you build, their own license terms apply.
+
 The image does not include the native libraries that PDF rendering needs. In a container started from it, `generate_diagnostic_report` refuses any request whose `formats` include `pdf` and writes no diagnostic report file; a request for HTML alone is not affected.
 
 ---

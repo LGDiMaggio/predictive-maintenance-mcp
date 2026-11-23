@@ -1,25 +1,50 @@
 # Multi-stage build for Predictive Maintenance MCP Server
-FROM python:3.11-slim AS builder
+#
+# TORCH_VARIANT selects how the dependencies are installed:
+#   default  ".[full]" and uvicorn, resolved when the image is built (local builds)
+#   cpu      docker/requirements-cpu.txt: the uv.lock pins of the full extra
+#            without any NVIDIA, CUDA or Triton component, hash-checked; the
+#            official image uses it (see tools/cpu_requirements.py)
+ARG TORCH_VARIANT=default
+
+# python:3.11-slim (Python 3.11.18, Debian trixie), pinned by its index digest
+FROM python:3.11-slim@sha256:07d4824036af339fa1b6ef769cc99d9c10a141769538b52b3b597c84f7a7b535 AS builder
+ARG TORCH_VARIANT
 
 WORKDIR /app
-
-# Install build dependencies
-RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
 # Copy dependency files first for layer caching. The LICENSE goes into the
 # installed package's metadata; README.md is the package's long description.
 COPY pyproject.toml README.md LICENSE ./
+COPY docker/requirements-cpu.txt ./docker/requirements-cpu.txt
 COPY src/ ./src/
 
-# Install the package (with uvicorn for SSE/HTTP transport)
-RUN pip install --no-cache-dir ".[full]" uvicorn
+# Install the package (with uvicorn for SSE/HTTP transport). The cpu variant
+# installs exactly the pinned files, then the project without dependencies
+# (built with the pinned setuptools), and checks that nothing is missing.
+RUN set -eu; \
+    case "$TORCH_VARIANT" in \
+      cpu) \
+        pip install --no-cache-dir --require-hashes --no-deps -r docker/requirements-cpu.txt; \
+        pip install --no-cache-dir --no-deps --no-build-isolation .; \
+        pip check ;; \
+      default) \
+        pip install --no-cache-dir --upgrade pip setuptools wheel; \
+        pip install --no-cache-dir ".[full]" uvicorn ;; \
+      *) \
+        echo "TORCH_VARIANT must be cpu or default, not '$TORCH_VARIANT'" >&2; \
+        exit 1 ;; \
+    esac
 
 # --- Production stage ---
-FROM python:3.11-slim
+FROM python:3.11-slim@sha256:07d4824036af339fa1b6ef769cc99d9c10a141769538b52b3b597c84f7a7b535
 
 WORKDIR /app
 
-# Copy installed packages from builder
+# Copy installed packages from builder. The builder's site-packages replaces the
+# base image's own (pip, setuptools, wheel, packaging) instead of merging into
+# it, so no second dist-info of another version survives next to the new one.
+RUN rm -rf /usr/local/lib/python3.11/site-packages
 COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
