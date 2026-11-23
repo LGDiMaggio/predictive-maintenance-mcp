@@ -1500,7 +1500,8 @@ class TrendAnalysisResult(BaseModel):
     )
 
 
-ForecastBackend = Literal["naive", "seasonal_naive"]
+ForecastBackend = Literal["naive", "seasonal_naive", "chronos2"]
+ForecastReferenceBackend = Literal["naive", "seasonal_naive"]
 ForecastAggregation = Literal["mean", "median", "max", "last"]
 ForecastStatus = Literal["forecast", "insufficient_history"]
 ForecastReasonCode = Literal[
@@ -1516,7 +1517,15 @@ ForecastWarningCode = Literal[
     "partial_last_bin",
     "isolated_origin",
     "interval_crosses_observed_sign",
+    "model_context_truncated",
+    "recent_gap_before_origin",
 ]
+
+
+def _absent_when_none(value: Any) -> bool:
+    """``exclude_if`` predicate: a field present only for some backends is left
+    out of the serialized result, not sent as null, when it does not apply."""
+    return value is None
 
 
 class IndicatorForecastWarning(BaseModel):
@@ -1560,7 +1569,10 @@ class IndicatorForecastHistory(BaseModel):
         description="Empty bins immediately before the last observed bin"
     )
     difference_lag: int = Field(
-        description="Lag in steps of the difference pairs the backend uses"
+        description=(
+            "Lag in steps of the difference pairs the backend uses; for "
+            "'chronos2', the pairs its reference backend uses"
+        )
     )
     difference_pairs: int = Field(
         description="Pairs of observed bins exactly difference_lag steps apart"
@@ -1587,21 +1599,65 @@ class IndicatorForecastDeclaration(BaseModel):
         description="How several values in one bin were combined"
     )
     horizon_steps: int = Field(description="Steps requested")
-    backend: ForecastBackend = Field(description="Reference backend requested")
+    backend: ForecastBackend = Field(description="Backend requested")
     season_length_steps: Optional[int] = Field(
         description="Season in grid steps (seasonal_naive only)"
     )
     quantile_levels: list[float] = Field(description="Quantile levels returned")
 
 
+_MODEL_VERSION_DESCRIPTION = "Installed version used for this projection"
+
+
+# No class docstring: it would become a new public schema description.
+class IndicatorForecastModel(BaseModel):
+    repo_id: str = Field(
+        description="Hugging Face repository of the model: 'amazon/chronos-2'"
+    )
+    revision: str = Field(
+        description="Revision whose files were verified by SHA-256 before loading"
+    )
+    weights_sha256: str = Field(
+        description="SHA-256 of model.safetensors, verified before loading"
+    )
+    config_sha256: str = Field(
+        description="SHA-256 of config.json, verified before loading"
+    )
+    weights_licence: str = Field(
+        description=(
+            "Licence declared for the model weights in the model card metadata of "
+            "amazon/chronos-2: Apache-2.0; the repository ships no LICENSE file"
+        )
+    )
+    chronos_forecasting_version: str = Field(description=_MODEL_VERSION_DESCRIPTION)
+    torch_version: str = Field(description=_MODEL_VERSION_DESCRIPTION)
+    transformers_version: str = Field(description=_MODEL_VERSION_DESCRIPTION)
+    accelerate_version: str = Field(description=_MODEL_VERSION_DESCRIPTION)
+    huggingface_hub_version: str = Field(description=_MODEL_VERSION_DESCRIPTION)
+    torch_threads: int = Field(
+        description="PyTorch threads, as read inside the inference thread"
+    )
+    context_bins: int = Field(
+        description="Grid bins passed to the model, at most 2,048"
+    )
+
+
 class IndicatorForecastProvenance(BaseModel):
     """How the numbers were produced, for reproducing or comparing a run."""
 
-    family: str = Field(description="Algorithm family, 'indicator_forecast'")
+    family: str = Field(
+        description=(
+            "Algorithm family: 'indicator_forecast' for the reference backends, "
+            "'indicator_forecast_chronos2' for backend 'chronos2'"
+        )
+    )
     algorithm_version: int = Field(
         description=(
             "Version of the numbers; the same inputs give the same numbers "
-            "within one version"
+            "within one version. For 'indicator_forecast_chronos2', the same "
+            "inputs give the same numbers only with the same model files, library "
+            "versions, thread setting and platform; these are recorded in the "
+            "model block, and other settings can change the last digits."
         )
     )
     effective_declaration: IndicatorForecastDeclaration = Field(
@@ -1615,6 +1671,34 @@ class IndicatorForecastProvenance(BaseModel):
         )
     )
     server_version: str = Field(description="Server version that produced the result")
+    model: Optional[IndicatorForecastModel] = Field(
+        None,
+        description=(
+            "Backend 'chronos2' only: the verified model files and the libraries "
+            "that produced the numbers. Version ranges are compatibility "
+            "boundaries, not evidence that every combination within them was "
+            "tested; the versions recorded here are the ones actually used."
+        ),
+        exclude_if=_absent_when_none,
+    )
+
+
+# No class docstring: it would become a new public schema description.
+class IndicatorForecastReference(BaseModel):
+    backend: ForecastReferenceBackend = Field(
+        description=(
+            "Reference backend used: 'seasonal_naive' when season_length_steps was "
+            "given, otherwise 'naive'"
+        )
+    )
+    anchors: list[IndicatorForecastAnchor] = Field(
+        description=(
+            "The reference's P10, P50 and P90 at the forecast's anchor steps, with "
+            "absolute bin times: four steps when the horizon is 5 steps or more, "
+            "and every distinct anchor step for shorter horizons"
+        )
+    )
+    note: str
 
 
 class IndicatorForecastResult(BaseModel):
@@ -1633,7 +1717,7 @@ class IndicatorForecastResult(BaseModel):
     )
     indicator: str = Field(description="What the values measure, as declared")
     unit: str = Field(description="Unit of the values and quantiles, as declared")
-    backend: ForecastBackend = Field(description="Reference backend that ran")
+    backend: ForecastBackend = Field(description="Backend that ran")
     resolution: str = Field(description="Grid step as declared")
     horizon_steps: int = Field(description="Steps requested")
     issued_at: str = Field(
@@ -1680,6 +1764,16 @@ class IndicatorForecastResult(BaseModel):
             "First, last and up to two interior steps with absolute bin times "
             "(status 'forecast' only)"
         ),
+    )
+    reference: Optional[IndicatorForecastReference] = Field(
+        None,
+        description=(
+            "Backend 'chronos2' only: the reference backend's projection from the "
+            "full supplied history at the forecast's anchor steps, for comparing "
+            "the model with a simple reference at those steps. Not a per-step "
+            "comparison."
+        ),
+        exclude_if=_absent_when_none,
     )
     reason_code: Optional[ForecastReasonCode] = Field(
         None,

@@ -31,6 +31,7 @@ from .mcp_tools._call_origin import (
     is_loopback_host,
     network_data_dir_access_enabled,
 )
+from .prognostics import chronos2_backend
 
 logger = logging.getLogger(__name__)
 
@@ -304,12 +305,19 @@ mcp = MCPServer(
     Indicator projection (not a prognosis):
     - forecast_asset_indicator projects one indicator series the user
       supplies (ISO 8601 instants with Z or a UTC offset, values, a declared
-      unit and resolution) with a statistical reference method, and returns
-      P10, P50 and P90 per step or a typed insufficient-history result; it
-      reads only the series passed in the call
+      unit and resolution) with a statistical reference method (naive,
+      seasonal_naive) or, where installed, the Chronos-2 model (chronos2),
+      and returns P10, P50 and P90 per step or a typed insufficient-history
+      result; it reads only the series passed in the call
     - Quote its interpretation, method_note and interval_note fields: the
       projection is not a fault detection, a failure probability or a
-      remaining-useful-life estimate, and its band is nominal
+      remaining-useful-life estimate, and its band is nominal for the
+      reference methods (naive, seasonal_naive); with chronos2 the band comes
+      from the model, and its coverage on the series is not validated
+    - With chronos2, report the reference anchors beside the model's values
+      and say that they cover a few steps only, not every step; if a chronos2
+      call is refused because the model is still loading, tell the user and
+      call again later rather than switching backend silently
     - Never derive a time to a threshold, a probability of crossing one or
       an ISO zone from projected values, and never pass them to estimate_rul
       or assess_severity, which treat every value as a measurement
@@ -702,6 +710,9 @@ def main():
     import_tools.configure_server_transport(args.transport, args.host)
 
     _setup_environment()
+    # Opt-in (PMM_FORECAST_MODEL_PRELOAD): starts the optional chronos2 model
+    # load in its own worker thread; never blocks startup.
+    chronos2_backend.preload_if_requested()
 
     logger.info("Starting Predictive Maintenance MCP Server...")
     logger.info(f"Transport: {args.transport}")

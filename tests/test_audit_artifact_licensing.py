@@ -316,9 +316,10 @@ class TestThirdPartyData:
         assert finding.evidence["matches"] == SAMPLE_CSV_PATH
 
     def test_a_renamed_copy_of_a_binary_sample_fails_on_content(self, tmp_path):
+        # Not ".bin": that suffix is refused as a model weight file (rule 7).
         dist = _clean_dist(
             tmp_path,
-            wheel={"members": {f"{NAME}/resources/blob.bin": SAMPLE_MAT}},
+            wheel={"members": {f"{NAME}/resources/blob.dat": SAMPLE_MAT}},
         )
         result = _run(tmp_path, dist=dist)
         assert [f.rule for f in result.findings] == ["third-party-data-content"]
@@ -1816,3 +1817,67 @@ class TestImageCli:
                 ]
             )
         assert exc.value.code == 2
+
+
+# ---------------------------------------------------------------------------
+# Model weight files in an artifact fail (rule 7)
+# ---------------------------------------------------------------------------
+
+#: One planted weight file per refused suffix, in folders a build could pick up,
+#: plus a case variant: the rule reads the member's own name, case-folded.
+WEIGHT_MEMBERS = (
+    (f"{NAME}/models/model.safetensors", ".safetensors"),
+    ("models/chronos-2/pytorch_model.bin", ".bin"),
+    (f"{NAME}/x.pt", ".pt"),
+    ("a/b/y.pth", ".pth"),
+    (f"{NAME}/W.SafeTensors", ".safetensors"),
+)
+
+
+class TestModelWeightFiles:
+    @pytest.mark.parametrize("member, suffix", WEIGHT_MEMBERS)
+    @pytest.mark.parametrize("kind", ["wheel", "sdist"])
+    def test_a_weight_file_in_a_built_artifact_fails(
+        self, tmp_path, kind, member, suffix
+    ):
+        dist = _clean_dist(tmp_path, **{kind: {"members": {member: b"\x00weights"}}})
+        result = _run(tmp_path, dist=dist)
+        assert result.status == "fail"
+        (finding,) = result.findings
+        assert finding.rule == "model-weight-file"
+        assert finding.title == (
+            f"The {kind} contains {member}, which is a model weight file ({suffix})"
+        )
+        assert finding.evidence["member"] == member
+        name = WHEEL_NAME if kind == "wheel" else SDIST_NAME
+        assert finding.evidence["artifact"] == name
+
+    @pytest.mark.parametrize("member, suffix", WEIGHT_MEMBERS)
+    def test_a_weight_file_in_a_source_archive_fails(
+        self, tmp_path, fmt, member, suffix
+    ):
+        archive = _source_archive(tmp_path, fmt, members={member: b"\x00weights"})
+        result = _run_archives(tmp_path, archive)
+        assert result.status == "fail"
+        (finding,) = result.findings
+        assert finding.rule == "model-weight-file"
+        assert finding.title == (
+            f"The archive {archive.name} contains {member}, which is a model weight "
+            f"file ({suffix})"
+        )
+        assert finding.evidence == {"member": member, "archive": archive.name}
+
+    @pytest.mark.parametrize(
+        "member", ["notes.bin.txt", "binary/readme.md", "src/pt.py", "a.pthx"]
+    )
+    def test_a_name_that_only_contains_a_suffix_passes(self, tmp_path, member):
+        dist = _clean_dist(tmp_path, sdist={"members": {member: b"x"}})
+        assert _run(tmp_path, dist=dist).status == "pass"
+
+    def test_the_suffixes_are_the_four_model_weight_formats(self):
+        assert artifact_licensing.WEIGHT_SUFFIXES == (
+            ".safetensors",
+            ".bin",
+            ".pt",
+            ".pth",
+        )

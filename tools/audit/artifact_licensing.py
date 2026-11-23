@@ -28,6 +28,9 @@ What one run checks
    with one copyright line and nothing else, and the shipped copies equal the
    repository's (line endings aside).
 6. The wheel, the sdist and ``pyproject.toml`` name the same version.
+7. No member, in any folder and in any letter case, is a model weight file
+   (:data:`WEIGHT_SUFFIXES`): the optional forecasting model's weights are
+   downloaded by the operator, and no artifact redistributes them.
 
 Status: ``error`` when any input is missing, ambiguous or unreadable (no
 evidence is never a pass), ``fail`` on any rule violation, ``pass`` otherwise.
@@ -49,6 +52,7 @@ stores unchanged, are ``git archive`` output filtered by the committed
 4. Its ``.gitattributes`` export-ignores every manifest root, and no member
    lies under a path it export-ignores, so the archive is proven to come from
    a revision that excludes the sample data and to have been filtered by it.
+5. Rule 7 above applies to every member: no model weight file.
 
 Image mode
 ----------
@@ -664,6 +668,44 @@ def _data_path_reason(kind: str, path: str) -> Optional[str]:
     return None
 
 
+#: Suffixes of model weight files (rule 7). The chronos2 forecasting backend
+#: loads its weights from a directory the operator downloads; no artifact may
+#: carry such a file, whatever its folder.
+WEIGHT_SUFFIXES = (".safetensors", ".bin", ".pt", ".pth")
+
+
+def model_weight_reason(path: str) -> Optional[str]:
+    """Why a member is a model weight file (rule 7), or None when it is not.
+
+    Matched on the member's own name, case-folded, so ``models/W.SafeTensors``
+    is caught as ``model.safetensors`` is.
+    """
+    name = posixpath.basename(path).casefold()
+    suffix = next((s for s in WEIGHT_SUFFIXES if name.endswith(s)), None)
+    if suffix is None:
+        return None
+    return f"is a model weight file ({suffix})"
+
+
+def _weight_findings(artifact: Artifact) -> list[Finding]:
+    """Members that are model weight files (rule 7)."""
+    label = _label(artifact)
+    findings: list[Finding] = []
+    for path in sorted(artifact.members):
+        reason = model_weight_reason(path)
+        if reason is not None:
+            findings.append(
+                _finding(
+                    "model-weight-file",
+                    f"{label} member {path}",
+                    f"The {label} contains {path}, which {reason}",
+                    member=path,
+                    **_source(artifact),
+                )
+            )
+    return findings
+
+
 def _license_metadata_problem(metadata: Message) -> Optional[str]:
     problems = []
     expression = metadata.get("License-Expression")
@@ -761,9 +803,9 @@ def _expected_license_file(artifact: Artifact) -> Optional[str]:
 def check_artifact(
     artifact: Artifact, manifest: Manifest, repo_license: str
 ) -> list[Finding]:
-    """Every rule violation in one artifact (rules 2 to 5 of the docstring)."""
+    """Every rule violation in one artifact (rules 2 to 5 and 7 of the docstring)."""
     kind = artifact.kind
-    findings = _data_findings(artifact, manifest)
+    findings = _data_findings(artifact, manifest) + _weight_findings(artifact)
 
     problem = _license_metadata_problem(artifact.metadata)
     if problem is not None:
@@ -911,7 +953,7 @@ def check_archive(
     """Every rule violation in one source archive (rules of the archive mode)."""
     label = _label(artifact)
     source = _source(artifact)
-    findings = _data_findings(artifact, manifest)
+    findings = _data_findings(artifact, manifest) + _weight_findings(artifact)
 
     missing = [path for path in ARCHIVE_DATA_FILES if path not in artifact.members]
     if missing:

@@ -67,7 +67,7 @@ The complete endpoint reference for the Predictive Maintenance MCP server: every
 |------|-------------|
 | `analyze_signal_trend` | Within-recording screening: feature trend + degradation onset in one call |
 | `estimate_rul` | Remaining Useful Life from repeated measurements over time (linear, exponential, Kalman) — refuses single-recording extrapolation |
-| `forecast_asset_indicator` | Projection of one indicator series you supply (ISO 8601 instants with an offset, declared unit and resolution) with a naive or seasonal-naive reference method: P10, P50 and P90 per step. A projection only, never a fault finding, a failure probability or a remaining life. Unreleased: main branch only |
+| `forecast_asset_indicator` | Projection of one indicator series you supply (ISO 8601 instants with an offset, declared unit and resolution) with a naive or seasonal-naive reference method or, where an operator has installed it, the Chronos-2 forecasting model: P10, P50 and P90 per step. A projection only, never a fault finding, a failure probability or a remaining life. Unreleased: main branch only |
 
 ## Decision Support (1)
 

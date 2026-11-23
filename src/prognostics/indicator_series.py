@@ -23,8 +23,9 @@ import numpy as np
 
 from ..signal_acquisition.measurement import normalize_acquired_at, validate_free_text
 from ..signal_validation import InvalidInputError, validate_finite_samples
+from .chronos2_backend import MAX_HORIZON_STEPS as CHRONOS2_MAX_HORIZON_STEPS
 
-BACKENDS = ("naive", "seasonal_naive")
+BACKENDS = ("naive", "seasonal_naive", "chronos2")
 AGGREGATIONS = ("mean", "median", "max", "last")
 
 #: Provisional product limits: they bound the work and the output and are not
@@ -63,9 +64,17 @@ class Declaration:
     season_length_steps: Optional[int]
 
     @property
+    def reference_backend(self) -> str:
+        """The reference backend: the backend itself, or the one chronos2 reports
+        beside the model (seasonal naive when a season is declared, else naive)."""
+        if self.backend != "chronos2":
+            return self.backend
+        return "seasonal_naive" if self.season_length_steps else "naive"
+
+    @property
     def lag(self) -> int:
-        """Difference lag the backend uses: 1, or the season length."""
-        if self.backend == "seasonal_naive" and self.season_length_steps:
+        """Difference lag of the reference backend: 1, or the season length."""
+        if self.reference_backend == "seasonal_naive" and self.season_length_steps:
             return self.season_length_steps
         return 1
 
@@ -322,6 +331,21 @@ def _check_declaration(
                 f"{MAX_HORIZON_DURATION.days}-day limit; at this resolution pass "
                 f"at most {allowed} steps."
             )
+    if (
+        backend == "chronos2"
+        and isinstance(horizon_steps, int)
+        and not isinstance(horizon_steps, bool)
+        and horizon_steps > CHRONOS2_MAX_HORIZON_STEPS
+    ):
+        problems.append(
+            f"horizon_steps must be at most {CHRONOS2_MAX_HORIZON_STEPS} with backend "
+            f"'chronos2', got {horizon_steps}. Call again with horizon_steps of at "
+            f"most {CHRONOS2_MAX_HORIZON_STEPS}, or use backend 'naive' or "
+            f"'seasonal_naive' for a longer horizon. The "
+            f"{CHRONOS2_MAX_HORIZON_STEPS}-step limit is an operating limit of this "
+            f"backend: it was evaluated only on indicators sampled every 10 seconds "
+            f"and every 10 minutes, and other sampling cadences were not evaluated."
+        )
 
     if backend not in BACKENDS:
         problems.append(f"backend must be one of {list(BACKENDS)}, got {backend!r}.")
@@ -331,23 +355,18 @@ def _check_declaration(
         )
 
     season: Optional[int] = None
-    if backend == "seasonal_naive":
-        if season_length_steps is None:
-            problems.append(
-                "season_length_steps is required for the seasonal_naive backend: "
-                "declare the season the user states, in grid steps, for example 24 "
-                "when the user says the pattern repeats daily at resolution '1h'; "
-                "it is never inferred."
-            )
-        elif (
-            not isinstance(season_length_steps, int)
-            or isinstance(season_length_steps, bool)
-            or season_length_steps < 2
-        ):
-            problems.append(
-                f"season_length_steps must be an integer of at least 2, got "
-                f"{season_length_steps!r}."
-            )
+    if backend == "seasonal_naive" and season_length_steps is None:
+        problems.append(
+            "season_length_steps is required for the seasonal_naive backend: "
+            "declare the season the user states, in grid steps, for example 24 "
+            "when the user says the pattern repeats daily at resolution '1h'; "
+            "it is never inferred."
+        )
+    elif backend in ("seasonal_naive", "chronos2") and season_length_steps is not None:
+        # With chronos2 the model never uses the season: it only selects the
+        # seasonal naive reference reported beside the model's values.
+        if (season_error := _season_problem(season_length_steps)) is not None:
+            problems.append(season_error)
         else:
             season = season_length_steps
     elif season_length_steps is not None:
@@ -393,6 +412,20 @@ def _check_declaration(
         season_length_steps=season,
     )
     return declaration, finite_values
+
+
+def _season_problem(season_length_steps: Any) -> Optional[str]:
+    """The refusal for a season that is not an integer of at least 2, else None."""
+    if (
+        not isinstance(season_length_steps, int)
+        or isinstance(season_length_steps, bool)
+        or season_length_steps < 2
+    ):
+        return (
+            f"season_length_steps must be an integer of at least 2, got "
+            f"{season_length_steps!r}."
+        )
+    return None
 
 
 def _parse_instants(observed_at: Sequence[Any], now: datetime) -> np.ndarray:
