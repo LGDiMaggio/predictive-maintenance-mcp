@@ -80,9 +80,14 @@ def data_dir(tmp_path, monkeypatch):
 
     models_dir = tmp_path / "models"
     models_dir.mkdir()
-    monkeypatch.setattr(
-        "predictive_maintenance_mcp.mcp_tools.diagnostics_tools.MODELS_DIR", models_dir
-    )
+    # Every by-value import of the model directory, so a diagnosis never
+    # loads a model from the checkout.
+    for module in (
+        "predictive_maintenance_mcp.mcp_tools.diagnostics_tools",
+        "predictive_maintenance_mcp.decision_support.diagnosis_pipeline",
+        "predictive_maintenance_mcp.mcp_tools.report_tools",
+    ):
+        monkeypatch.setattr(f"{module}.MODELS_DIR", models_dir)
 
     resources_dir = tmp_path / "resources"
     resources_dir.mkdir()
@@ -520,7 +525,7 @@ class TestAnomalyDetection:
         files = []
         for i in range(5):
             t = np.linspace(0, 1.0, fs, endpoint=False)
-            sig = 0.05 * np.random.randn(len(t))
+            sig = 0.05 * np.random.default_rng(100 + i).standard_normal(len(t))
             pd.DataFrame(sig).to_csv(
                 data_dir / f"train_{i}.csv", index=False, header=False
             )
@@ -1088,7 +1093,7 @@ class TestAnomalyDetectionExtended:
         files = []
         for i in range(5):
             t = np.linspace(0, 1.0, fs, endpoint=False)
-            sig = 0.05 * np.random.randn(len(t))
+            sig = 0.05 * np.random.default_rng(100 + i).standard_normal(len(t))
             pd.DataFrame(sig).to_csv(
                 data_dir / f"train_{i}.csv", index=False, header=False
             )
@@ -1106,7 +1111,9 @@ class TestAnomalyDetectionExtended:
         for i in range(3):
             t = np.linspace(0, 1.0, fs, endpoint=False)
             # Much higher amplitude + periodic component to simulate fault
-            sig = 2.0 * np.random.randn(len(t)) + 5.0 * np.sin(2 * np.pi * 100 * t)
+            sig = 2.0 * np.random.default_rng(200 + i).standard_normal(
+                len(t)
+            ) + 5.0 * np.sin(2 * np.pi * 100 * t)
             pd.DataFrame(sig).to_csv(
                 data_dir / f"fault_{i}.csv", index=False, header=False
             )

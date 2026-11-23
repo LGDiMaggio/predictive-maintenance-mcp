@@ -56,10 +56,13 @@ Parameters:
 - **model_type**: `"OneClassSVM"` or `"LocalOutlierFactor"`
 - **model_name**: name for the saved model files (echoed in the result;
   pass the same name to predict_anomalies later)
-- **fault_signal_ids** (optional): known-fault signal_ids used ONLY for
-  hyperparameter tuning (semi-supervised mode) — never for training
+- **fault_signal_ids** (optional): known-fault signal_ids used to tune the
+  hyperparameters (semi-supervised mode), never to fit the model. The
+  reported fault detection rate comes from the same signals, so it is not a
+  held-out figure
 - **healthy_validation_ids** (optional): held-out healthy signal_ids for the
-  specificity check (default: automatic 80/20 split)
+  specificity check. Without them, the check runs only when
+  fault_signal_ids are given, on the last 20% of the training windows
 - **segment_duration** / **overlap_ratio**: feature-extraction segmentation
   (defaults 0.1 s / 0.5)
 
@@ -102,10 +105,13 @@ says "different", not "why". Always follow up with physics-based analysis
 
 Call `generate_pca_visualization_report(model_name="pump_a_health", test_signal_ids=["<id>"], true_labels={"<id>": "<label>"})`
 
-to project training and test segments into PCA space. Healthy segments
-cluster together; anomalies appear as outliers. `true_labels` is optional
+to project the test segments into the model's PCA space. Healthy segments
+cluster together; anomalies appear as outliers. The report segments each
+signal with the model's training `segment_duration` and `overlap_ratio`:
+pass them if they are not the defaults. `true_labels` is optional
 annotation for the legend; take a label only from the user, never from a
-file name or a signal id.
+file name or a signal id. The report accepts healthy, normal or baseline for
+a healthy signal and faulty, fault, anomaly or anomalous for a faulty one.
 
 ## Important Notes
 

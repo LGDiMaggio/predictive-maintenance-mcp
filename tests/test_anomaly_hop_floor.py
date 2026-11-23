@@ -6,7 +6,7 @@ model saved before the ratio was checked, a ratio of 1 or above.
 predict_anomalies then advances one sample at a time, as training does,
 instead of failing with a Python error. A ratio that already leaves at least
 one sample between segment starts segments the signal exactly as before, and
-a segment of no samples keeps its earlier outcome.
+a segment of no samples is refused with the project's own message.
 
 Everything runs in a sandbox on seeded synthetic signals (tones plus Gaussian
 noise, 10 kHz, unit g): signals and models live under a temporary directory,
@@ -230,12 +230,10 @@ class TestHopOfAtLeastOneSample:
 class TestSegmentOfNoSamples:
 
     @pytest.mark.parametrize("ratio", [0.5, HIGH_OVERLAP, 1.0])
-    def test_zero_length_segment_keeps_its_outcome(
-        self, sandbox, trained, probe, ratio
-    ):
+    def test_zero_length_segment_is_refused(self, sandbox, trained, probe, ratio):
         """A segment duration of 0.00005 s at 10 kHz is int(0.5) = 0 samples.
-        The one-sample hop applies only to a segment of at least one sample,
-        so this keeps its earlier outcome, whatever the ratio."""
+        The one-sample hop applies only to a segment of at least one sample;
+        a segment of no samples is refused, whatever the ratio."""
         assert int(0.00005 * FS) == 0
         name = variant(
             sandbox.models,
@@ -248,11 +246,14 @@ class TestSegmentOfNoSamples:
         with pytest.raises(ValueError) as caught:
             predict(probe, name)
 
-        assert str(caught.value) == "range() arg 3 must not be zero"
+        assert str(caught.value) == (
+            "A segment of 5e-05 s holds no samples at 10000 Hz, so no features "
+            "can be computed from it. Retrain the model with a segment_duration "
+            "of at least one sample period, 0.0001 s at this rate."
+        )
 
-    def test_negative_length_segment_keeps_its_outcome(self, sandbox, trained, probe):
-        """A negative segment duration is a segment of no samples too: it
-        still yields no segment, and the scaler refuses the empty input."""
+    def test_negative_length_segment_is_refused(self, sandbox, trained, probe):
+        """A negative segment duration is a segment of no samples too."""
         name = variant(
             sandbox.models,
             trained,
@@ -264,4 +265,8 @@ class TestSegmentOfNoSamples:
         with pytest.raises(ValueError) as caught:
             predict(probe, name)
 
-        assert "Found array with 0 sample(s)" in str(caught.value)
+        assert str(caught.value) == (
+            "A segment of -0.1 s holds no samples at 10000 Hz, so no features "
+            "can be computed from it. Retrain the model with a segment_duration "
+            "of at least one sample period, 0.0001 s at this rate."
+        )

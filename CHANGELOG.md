@@ -657,6 +657,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   test and publish workflows declare read-only token permissions (the
   publish jobs keep only their trusted-publishing grant), and the Black
   check also covers `tools/`.
+- **`train_anomaly_model` reports the balanced accuracy, the specificity and
+  the estimator it saved.** `validation_accuracy` is now the balanced
+  accuracy its description names, the mean of the healthy rate and the fault
+  detection rate. It used to be the accuracy pooled over all validation
+  windows, so the value changes wherever the healthy and fault windows differ
+  in number. `validation_metrics` keeps the pooled value as
+  `overall_accuracy` and adds `balanced_accuracy` and the number of signals
+  behind each rate (`healthy_signals`, `fault_signals`). With
+  `healthy_validation_ids` and no `fault_signal_ids`, the healthy rate is now
+  returned in `validation_metrics` and `validation_details` instead of being
+  discarded. The model metadata records a model tuned with fault signals as
+  `training_mode` `"semi_supervised"` instead of `"supervised"`, records the
+  number of training windows (`training_windows`) and how many of them the
+  saved estimator was fit on (`estimator_fit_windows`), and, for a
+  LocalOutlierFactor with fewer training windows than the neighbour count it
+  requested, records the count it uses, with the requested one as
+  `n_neighbors_requested`. The tool description now says that the fault
+  detection rate is measured on the windows used for tuning, so it is not a
+  held-out figure, and which windows give the healthy rate. Before 1.0 this
+  is a behavior change of published fields: the next release bumps MINOR,
+  per the project's pre-1.0 rule.
+- **`generate_pca_visualization_report` scores a signal only with the
+  model's own segmentation and accepts a fixed set of true labels.**
+  `segment_duration` and `overlap_ratio` must equal the values the model
+  recorded at training; other values are refused with the model's values.
+  The report used to score windows of the length passed, 0.1 s by default,
+  whatever the model was trained on. A label in `true_labels` must be
+  healthy, normal or baseline, or faulty, fault, anomaly or anomalous, in any
+  case; any other label is refused, where it used to count as an expected
+  anomaly. No report file is written when a call is refused. Before 1.0 this
+  is a behavior change of published fields: the next release bumps MINOR,
+  per the project's pre-1.0 rule.
+- **Plugin 1.4.2: the anomaly-detection skill matches the tools.** It says
+  that the reported fault detection rate comes from the signals used for
+  tuning, when the training windows give the specificity check, that the
+  PCA report plots only the test segments and needs the model's own
+  segmentation, and which true labels the report accepts.
 
 ### Fixed
 - **Signals sampled at 1002 Hz or less no longer fail with a misleading band-edge message.** At these rates the
@@ -956,6 +993,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   before anything is written and passes it into scoring as an override; the
   manual commit-then-rescore workaround from 3fe533a/5b8cd3e is no longer
   needed.
+- **The anomaly tools refuse parameters they cannot use, with a remedy.**
+  `train_anomaly_model` refuses a `segment_duration` that is not a finite
+  number of seconds above 0 and a `pca_variance` that is not above 0 and
+  below 1, which failed with a numpy or scikit-learn message.
+  `train_anomaly_model`, `predict_anomalies` and
+  `generate_pca_visualization_report` refuse a segment that holds no samples
+  at the signal's sampling rate, which failed with a Python, numpy or
+  scikit-learn message. `generate_pca_visualization_report` refuses a model
+  that kept one PCA component, which failed with an index error. Before 1.0
+  these refusals are a behavior change: the next release bumps MINOR, per the
+  project's pre-1.0 rule.
+- **`diagnose_vibration` scores an anomaly model whose `overlap_ratio` leaves
+  less than one sample between segment starts.** It advances one sample at a
+  time, as training and `predict_anomalies` do. It used to drop its anomaly
+  block and report that no trained model was found; the model's verdict now
+  appears and counts toward `evidence_strength` like any anomaly verdict.
+  Training, `predict_anomalies`, the diagnosis and the PCA report now cut
+  windows by one shared rule: for a signal at least one segment long and
+  stored at the rate the model was trained at, they count the same windows.
+  Results for other models are unchanged.
 - **Images built from the repository hold one version of each package.** The
   runtime stage now replaces the base image's site-packages instead of copying
   over it, so a second `pip`, `setuptools`, `wheel` or `packaging` of another

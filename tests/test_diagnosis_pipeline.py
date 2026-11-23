@@ -8,12 +8,17 @@ import numpy as np
 import pytest
 
 from _bearing_scenarios import AE5_RECORDINGS
+from predictive_maintenance_mcp.decision_support import diagnosis_pipeline
 from predictive_maintenance_mcp.decision_support.diagnosis_pipeline import (
     _bearing_check,
     _synthesize_diagnosis,
     diagnose_vibration,
     _run_anomaly_detection,
-    _extract_time_domain_features,
+)
+from predictive_maintenance_mcp.signal_processing.features import (
+    extract_time_domain_features as _extract_time_domain_features,
+    plan_segments,
+    segment_features,
 )
 from predictive_maintenance_mcp.diagnostics.bearing_analyzer import (
     check_all_bearing_faults,
@@ -467,22 +472,39 @@ class TestAnomalyDetection:
         result = diagnose_vibration(signal, fs, rpm=1500, signal_unit="g")
         assert "anomaly_detection" in result
 
-    def test_with_real_model(self, healthy_signal):
-        """If bearing_health_model exists, anomaly detection should run."""
-        from pathlib import Path
+    def test_with_a_trained_model(self, healthy_signal, tmp_path, monkeypatch):
+        """With a model on disk (built here, never the checkout's), the block
+        is computed on the model's segmentation: 1 s at 10 kHz in 0.1 s
+        segments with overlap 0.5 is 19 segments."""
+        import pandas as pd
+        from sklearn.decomposition import PCA
+        from sklearn.preprocessing import StandardScaler
+        from sklearn.svm import OneClassSVM
 
-        model_path = (
-            Path(__file__).parent.parent / "models" / "bearing_health_model_model.pkl"
-        )
-        if not model_path.exists():
-            pytest.skip("No trained model available")
         signal, fs = healthy_signal
-        result = _run_anomaly_detection(signal, fs, model_name="bearing_health_model")
-        # May be None if fs mismatch with model, that's OK
-        if result is not None:
-            assert "anomaly_ratio" in result
-            assert "overall_health" in result
-            assert result["overall_health"] in ("Healthy", "Suspicious", "Faulty")
+        rows = pd.DataFrame(
+            segment_features(signal, plan_segments(fs, 0.1, 0.5))
+        ).values
+        scaler = StandardScaler().fit(rows)
+        pca = PCA(n_components=0.95).fit(scaler.transform(rows))
+        model = OneClassSVM(nu=0.1, gamma="scale").fit(
+            pca.transform(scaler.transform(rows))
+        )
+        for part, value in (("model", model), ("scaler", scaler), ("pca", pca)):
+            with open(tmp_path / f"sandbox_model_{part}.pkl", "wb") as handle:
+                pickle.dump(value, handle)
+        (tmp_path / "sandbox_model_metadata.json").write_text(
+            json.dumps({"segment_duration": 0.1, "overlap_ratio": 0.5}),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(diagnosis_pipeline, "MODELS_DIR", tmp_path)
+
+        result = _run_anomaly_detection(signal, fs, model_name="sandbox_model")
+
+        assert result is not None
+        assert result["num_segments"] == 19
+        assert result["anomaly_ratio"] == round(result["anomaly_count"] / 19, 4)
+        assert result["overall_health"] in ("Healthy", "Suspicious", "Faulty")
 
 
 class TestFeatureExtraction:
