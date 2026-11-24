@@ -71,6 +71,7 @@ from ..models import (
     ForecastBackend,
     IndicatorForecastResult,
     RULEstimationResult,
+    RULMeasurement,
     TrendAnalysisResult,
 )
 
@@ -148,6 +149,84 @@ _MULTI_MEASURE_ERROR = (
     "recording use analyze_signal_trend instead."
 )
 
+_FIRST_AT_OR_ABOVE = (
+    "estimate_rul assumes an indicator that rises toward failure_threshold, "
+    "but the first measurement ({first}) is already at or above the threshold "
+    "supplied in this call (failure_threshold = {threshold}), so the series is "
+    "refused and no time to the threshold is estimated. {latest} "
+    "This can mean that the indicator falls as the condition worsens, which "
+    "estimate_rul does not support, that the threshold does not suit this "
+    "indicator or its unit, or that the indicator was already at or above the "
+    "limit when the series began. The threshold is an indicator limit, not an "
+    "observed component failure. Ask the user which way the indicator moves as "
+    "the condition worsens and whether the threshold is given in the "
+    "indicator's unit; do not negate, shift or reorder the values to get past "
+    "this check."
+)
+_LATEST_AT_OR_ABOVE = (
+    "The latest measurement ({last}) is also at or above the threshold."
+)
+_LATEST_BELOW = "The latest measurement ({last}) is below the threshold."
+
+_UNITS_DIFFER = (
+    "The recordings in signal_ids declare different units: '{a}' (index {i}) "
+    "declares {va}, but '{b}' (index {j}) declares {vb}. estimate_rul converts "
+    "no units, so their {feature} values cannot form one series. Ask the "
+    "user which unit each recording was taken in: pass recordings declared in "
+    "one unit, or reload a recording whose unit was declared wrongly with its "
+    "correct signal_unit. Do not convert, drop or reorder recordings on your "
+    "own."
+)
+_ASSETS_DIFFER = (
+    "The recordings in signal_ids are declared for different assets: '{a}' "
+    "(index {i}) for asset '{va}', but '{b}' (index {j}) for asset '{vb}'. A "
+    "series for estimate_rul must hold repeated measurements of one machine. "
+    "Ask the user which recordings belong to the series and pass only those; "
+    "do not drop or reorder recordings on your own."
+)
+_POINTS_DIFFER = (
+    "The recordings in signal_ids are declared for different measurement "
+    "points: '{a}' (index {i}) for point '{va}', but '{b}' (index {j}) for point "
+    "'{vb}'. A series for estimate_rul must hold repeated measurements at one "
+    "measurement point. Ask the user which recordings belong to the series and "
+    "pass only those; do not drop or reorder recordings on your own."
+)
+_DIRECTIONS_DIFFER = (
+    "The recordings in signal_ids are declared with different measurement "
+    "directions: '{a}' (index {i}) declares {va}, but '{b}' (index {j}) "
+    "declares {vb}. Another direction is another measurement point, so their "
+    "values cannot form one series. Ask the user which recordings belong to "
+    "the series and pass only those; do not drop or reorder recordings on your "
+    "own."
+)
+_ORDER_DISAGREES = (
+    "The declared acquisition times of the recordings in signal_ids do not "
+    "follow the order of timestamps: '{b}' (index {j}) was acquired at {vb}, "
+    "which is not later than '{a}' (index {i}), acquired at {va}, while "
+    "timestamps place it later. Ask the user which is right, the timestamps or "
+    "the acquisition times the recordings declare; do not reorder the series "
+    "or change either on your own."
+)
+
+
+class _Recording(NamedTuple):
+    """What one stored recording declares about itself (None when undeclared)."""
+
+    signal_id: str
+    unit: Optional[str]
+    asset: Optional[str]
+    point: Optional[str]
+    direction: Optional[str]
+    acquired_at: Optional[str]
+
+
+_DECLARED_FIELDS = (
+    ("unit", _UNITS_DIFFER),
+    ("asset", _ASSETS_DIFFER),
+    ("point", _POINTS_DIFFER),
+    ("direction", _DIRECTIONS_DIFFER),
+)
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -204,6 +283,108 @@ def _truncate_series(
         [round(values[i], 6) for i in idx],
         [round(times[i], 4) for i in idx],
         True,
+    )
+
+
+def _recordings(signal_ids: list[str]) -> list[_Recording]:
+    """Read what each stored recording declares, without reducing any of them."""
+    repo = get_repository()
+    recordings: list[_Recording] = []
+    for sid in signal_ids:
+        try:
+            info = repo.get_signal_info(sid)
+        except KeyError as exc:
+            # Standard repository not-found message (available ids,
+            # eviction explanation, load_signal/list_signals remedy).
+            raise ValueError(str(exc.args[0])) from None
+        declared = info.get("measurement") or {}
+        recordings.append(
+            _Recording(
+                signal_id=sid,
+                unit=info.get("signal_unit"),
+                asset=declared.get("asset_id"),
+                point=declared.get("measurement_point_id"),
+                direction=declared.get("direction"),
+                acquired_at=declared.get("acquired_at"),
+            )
+        )
+    return recordings
+
+
+def _first_disagreement(declared: list[Optional[str]]) -> Optional[tuple[int, int]]:
+    """Indexes of the first declared value and of the first later one that differs."""
+    reference: Optional[int] = None
+    for index, value in enumerate(declared):
+        if value is None:
+            continue
+        if reference is None:
+            reference = index
+        elif value != declared[reference]:
+            return reference, index
+    return None
+
+
+def _check_recordings(recordings: list[_Recording], feature_name: str) -> None:
+    """Refuse recordings that cannot form one series, on what they declare."""
+    ids = [r.signal_id for r in recordings]
+    for field, template in _DECLARED_FIELDS:
+        declared = [getattr(r, field) for r in recordings]
+        pair = _first_disagreement(declared)
+        if pair is not None:
+            i, j = pair
+            raise ValueError(
+                template.format(
+                    a=ids[i],
+                    i=i,
+                    va=declared[i],
+                    b=ids[j],
+                    j=j,
+                    vb=declared[j],
+                    feature=feature_name,
+                )
+            )
+    # Timestamps are strictly increasing, so each declared acquisition must be
+    # strictly later than the previous recording that declares one. Stored
+    # instants are timezone-aware UTC.
+    previous: Optional[tuple[int, str]] = None
+    for index, recording in enumerate(recordings):
+        if recording.acquired_at is None:
+            continue
+        if previous is not None:
+            earlier_index, earlier = previous
+            if datetime.fromisoformat(recording.acquired_at) <= datetime.fromisoformat(
+                earlier
+            ):
+                raise ValueError(
+                    _ORDER_DISAGREES.format(
+                        a=ids[earlier_index],
+                        i=earlier_index,
+                        va=earlier,
+                        b=ids[index],
+                        j=index,
+                        vb=recording.acquired_at,
+                    )
+                )
+        previous = (index, recording.acquired_at)
+
+
+def _first_at_or_above_message(values: list[float], failure_threshold: float) -> str:
+    """The refusal of a series whose first measurement is at or above the threshold.
+
+    The latest measurement is stated apart from the first, so the refusal never
+    reads as a current exceedance when the latest value is below the threshold.
+    It is printed exactly when six significant digits would show it equal to a
+    threshold it differs from.
+    """
+    last = values[-1]
+    shown = f"{last:g}"
+    if last != failure_threshold and shown == f"{failure_threshold:g}":
+        shown = repr(last)
+    latest = (
+        _LATEST_AT_OR_ABOVE if last >= failure_threshold else _LATEST_BELOW
+    ).format(last=shown)
+    return _FIRST_AT_OR_ABOVE.format(
+        first=f"{values[0]:g}", threshold=f"{failure_threshold:g}", latest=latest
     )
 
 
@@ -368,14 +549,24 @@ async def estimate_rul(
        externally (e.g. RMS velocity trended by a data collector).
     2. `signal_ids`: one stored signal per measurement session (loaded
        via load_signal); each recording is reduced to a single
-       `feature_name` value.
+       `feature_name` value, computed over the whole stored recording in
+       its declared unit, with no unit conversion and no frequency band.
+       The series is refused when its recordings declare different
+       units, assets, measurement points or measurement directions, or when their declared
+       acquisition times (acquired_at) do not follow the order of
+       `timestamps`. Only declared values are compared, so an accepted
+       series is not thereby shown to come from one asset or point, or
+       in acquisition order.
 
     The degradation indicator is assumed to RISE toward
     `failure_threshold`, a limit the caller sets; reaching it is not an
-    observed component failure. A statistically significant increasing
-    trend (slope p-value < 0.05) is required before any RUL is computed.
-    Every value, timestamp and the threshold must be finite numbers, and
-    the exponential method needs every value to be positive whenever it
+    observed component failure. A series whose first measurement is
+    already at or above failure_threshold is refused, because no time to
+    the threshold can be estimated for an indicator assumed to rise
+    toward it. A statistically significant increasing trend (slope
+    p-value < 0.05) is required before any RUL is computed. Every value,
+    timestamp and the threshold must be finite numbers, and the
+    exponential method needs every value to be positive whenever it
     fits; such input is refused, never dropped.
 
     Outcomes (status): 'estimated' (time to the threshold computed);
@@ -393,12 +584,14 @@ async def estimate_rul(
         ctx: MCP context. Unused — see this module's docstring on logging.
         failure_threshold: Indicator limit, in the same units as the
             feature values; reaching it is not an observed component
-            failure. No universal default is
-            imposed — but when the indicator is broadband VELOCITY RMS
-            in mm/s, the standard choice is the ISO 10816-3:2009 zone
-            C/D boundary that assess_severity / get_zone_boundaries()
-            reports for the machine's group and support (single source
-            of truth — no boundaries restated here).
+            failure. No default is imposed. An ISO 20816-3 zone C/D
+            boundary, as assess_severity reports it for the machine's
+            group and support (boundary values from ISO 10816-3:2009), is
+            a threshold only for values comparable with that assessment:
+            velocity RMS over its evaluation band, measured under
+            comparable conditions. The whole-recording feature of the
+            signal_ids route is not band-limited, so a zone boundary is
+            not a threshold for it.
         timestamps: Measurement times in `time_unit`, strictly
             increasing (e.g. hours since first measurement).
         feature_values: Indicator values, one per measurement
@@ -406,7 +599,8 @@ async def estimate_rul(
         signal_ids: Stored signal IDs, one per measurement session
             (mutually exclusive with feature_values).
         feature_name: Time-domain feature used to reduce each signal
-            (default: "rms"). Ignored for feature_values input.
+            (default: "rms"). Ignored for feature_values input, where
+            the result reports feature_name as None.
         method: "linear" (default), "exponential", or "kalman"
             (kalman needs approximately uniform measurement spacing; its
             estimate can change with the time unit, and its interval has
@@ -415,10 +609,12 @@ async def estimate_rul(
             observation_horizon are expressed in this unit.
 
     Returns:
-        RULEstimationResult with status, rul (only when estimated),
-        modelled_current_value (only when model_threshold_crossed),
-        fit_r_squared (goodness of fit — NOT a confidence),
-        observation_horizon, and a plain-language message.
+        RULEstimationResult with status, rul and extrapolation_ratio
+        (only when estimated), modelled_current_value (only when
+        model_threshold_crossed), fit_r_squared (goodness of fit, NOT a
+        confidence), observation_horizon, measurements (signal_ids route
+        only: each recording's signal_id, value and declared unit), and
+        a plain-language message.
     """
     # --- Input route validation -----------------------------------
     if method not in ("linear", "exponential", "kalman"):
@@ -462,6 +658,7 @@ async def estimate_rul(
             "measurements chronologically and remove duplicates."
         )
 
+    recordings: Optional[list[_Recording]] = None
     if feature_values is not None:
         values = [float(v) for v in feature_values]
         validate_finite_samples(
@@ -475,7 +672,13 @@ async def estimate_rul(
         )
     else:
         assert signal_ids is not None
+        recordings = _recordings(signal_ids)
+        _check_recordings(recordings, feature_name)
         values = _measurement_series_from_signals(signal_ids, feature_name)
+
+    if values[0] >= failure_threshold:
+        raise ValueError(_first_at_or_above_message(values, failure_threshold))
+
     horizon = t[-1] - t[0]
     current_value = values[-1]
 
@@ -486,12 +689,22 @@ async def estimate_rul(
 
     common = dict(
         method=method,
-        feature_name=feature_name,
+        feature_name=None if recordings is None else feature_name,
         num_measurements=n,
         observation_horizon=round(horizon, 6),
         time_unit=time_unit,
         failure_threshold=failure_threshold,
         current_value=round(current_value, 6),
+        measurements=(
+            None
+            if recordings is None
+            else [
+                RULMeasurement(
+                    signal_id=r.signal_id, value=round(v, 6), signal_unit=r.unit
+                )
+                for r, v in zip(recordings, values)
+            ]
+        ),
     )
 
     # --- Gate 1: already at/above the failure threshold -----------
@@ -617,6 +830,7 @@ async def estimate_rul(
         status="estimated",
         trend_p_value=p_value,
         rul=round(rul, 4),
+        extrapolation_ratio=float(f"{rul / horizon:.6g}"),
         fit_r_squared=fit_r2,
         message=message,
         **common,

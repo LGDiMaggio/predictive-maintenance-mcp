@@ -112,12 +112,17 @@ Five event types (`measurement_point_declared`, `measurement_recorded`, `health_
 
 ### Block 5: Prognostics (`prognostics/`) — Implemented
 
-Remaining useful life estimation and trend analysis.
+Remaining useful life estimation from repeated measurements, within-recording trend screening, and projection of one caller-supplied indicator series.
 
 | Module | Purpose |
 |--------|---------|
 | `rul_estimator.py` | RUL estimation via linear extrapolation and exponential degradation models (multi-measurement series required) |
+| `kalman_rul.py` | RUL estimation with a two-state linear Kalman filter (level and rate) on uniformly spaced measurements |
 | `trend_analyzer.py` | Linear trend fitting with statistical significance and degradation onset detection |
+| `indicator_series.py` | Bins a caller-supplied indicator series onto a regular UTC grid, without interpolating, for projection |
+| `reference_forecast.py` | Naive and seasonal-naive reference projections: P50 with a nominal P10 to P90 band |
+| `chronos2_backend.py` | Optional Chronos-2 projection backend: availability and integrity checks, local model load and inference in its own worker thread |
+| `indicator_forecast.py` | Assembles the `forecast_asset_indicator` result: the projection or the reason the history cannot support one, warnings, provenance and fixed interpretation texts |
 
 ### Block 6: Decision Support (`decision_support/`)
 
@@ -145,7 +150,7 @@ Block 3: check_bearing_fault_peak(), check_all_bearing_faults()
 Block 4: assess_vibration_severity() ──▶ ISO 20816-3 zones
     │
     ▼
-Block 5: estimate_rul(), analyze_trend() ──▶ RUL & degradation forecasts
+Block 5: estimate_rul(), analyze_trend() ──▶ time to a caller-set threshold, trend screening
     │
     ▼
 Block 6: diagnose_vibration() ──▶ Structured DiagnosisResult
@@ -228,7 +233,11 @@ src/
 │   ├── __init__.py                    #   re-exports RUL + trend functions
 │   ├── rul_estimator.py               #   linear, exponential RUL
 │   ├── kalman_rul.py                  #   Kalman-filter RUL
-│   └── trend_analyzer.py              #   trend fitting, degradation onset
+│   ├── trend_analyzer.py              #   trend fitting, degradation onset
+│   ├── indicator_series.py            #   indicator series onto a UTC grid
+│   ├── reference_forecast.py          #   naive, seasonal-naive projections
+│   ├── chronos2_backend.py            #   optional Chronos-2 backend
+│   └── indicator_forecast.py          #   forecast_asset_indicator result
 │
 ├── document_reader.py                 # PDF extraction, bearing spec parsing
 ├── report_generator.py                # HTML/DOCX report generation
@@ -264,7 +273,7 @@ from predictive_maintenance_mcp.decision_support.diagnosis_pipeline import diagn
 
 ### Adding prognostic models
 
-1. Create `src/prognostics/your_model.py` (existing models: `rul_estimator.py`, `trend_analyzer.py`)
+1. Create `src/prognostics/your_model.py` (existing RUL and trend models: `rul_estimator.py`, `kalman_rul.py`, `trend_analyzer.py`)
 2. Implement RUL estimation or trend analysis
 3. Re-export in `prognostics/__init__.py`
 4. Wire into decision support pipeline

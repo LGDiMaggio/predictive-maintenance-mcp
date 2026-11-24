@@ -5158,7 +5158,49 @@
     "type": "object"
   },
   "estimate_rul": {
-    "description": "Remaining Useful Life estimate from repeated measurements over time.\n\nRUL is only physically meaningful when fitted on a degradation trend\nacross multiple measurements of the same machine (days/weeks/months).\n``fit_r_squared`` describes how well the degradation curve fits the\nobserved series; it is NOT a probability that the estimate is correct.\nExtrapolation beyond the observation horizon is inherently uncertain.",
+    "$defs": {
+      "RULMeasurement": {
+        "description": "One measurement of a signal_ids series given to estimate_rul.",
+        "properties": {
+          "signal_id": {
+            "description": "Stored signal the measurement was computed from",
+            "title": "Signal Id",
+            "type": "string"
+          },
+          "signal_unit": {
+            "anyOf": [
+              {
+                "enum": [
+                  "g",
+                  "m/s2",
+                  "mm/s",
+                  "m/s"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Unit the recording declares; None when it declares none",
+            "title": "Signal Unit"
+          },
+          "value": {
+            "description": "The recording's feature_name value, computed over the whole stored recording in its declared unit, with no unit conversion and no frequency band",
+            "title": "Value",
+            "type": "number"
+          }
+        },
+        "required": [
+          "signal_id",
+          "value",
+          "signal_unit"
+        ],
+        "title": "RULMeasurement",
+        "type": "object"
+      }
+    },
+    "description": "Remaining Useful Life estimate from repeated measurements over time.\n\nRUL is only physically meaningful when fitted on a degradation trend\nacross multiple measurements of the same machine (days/weeks/months).\n``fit_r_squared`` is a goodness-of-fit figure whose meaning depends on\nthe status and the method (see its description); it is NOT a\nprobability that the estimate is correct.\nExtrapolation beyond the observation horizon is inherently uncertain.",
     "properties": {
       "current_value": {
         "description": "Most recent measured indicator value",
@@ -5178,15 +5220,35 @@
         "description": "Estimated degradation rate in feature units per time_unit (linear/kalman)",
         "title": "Estimated Rate"
       },
+      "extrapolation_ratio": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Only when status='estimated': rul divided by observation_horizon, that is how many times the observed time span the estimate reaches beyond the latest measurement. No cap is applied. Above 1 the estimate reaches further ahead than the measurements span and the message adds a caution. For kalman it can change with the time unit of the timestamps, as rul can.",
+        "title": "Extrapolation Ratio"
+      },
       "failure_threshold": {
         "description": "Indicator limit set by the caller, in the indicator's units. Reaching it is not an observed component failure.",
         "title": "Failure Threshold",
         "type": "number"
       },
       "feature_name": {
-        "description": "Degradation indicator tracked (e.g. 'rms')",
-        "title": "Feature Name",
-        "type": "string"
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "description": "On the signal_ids route, the time-domain feature computed over each whole stored recording (for example 'rms'). None on the feature_values route, where the values are the caller's own and the server computes no feature.",
+        "title": "Feature Name"
       },
       "fit_r_squared": {
         "anyOf": [
@@ -5198,8 +5260,24 @@
           }
         ],
         "default": null,
-        "description": "R-squared of the fitted degradation curve on the observed data. Goodness of fit only \u2014 NOT a confidence or probability. None for the kalman method.",
+        "description": "Goodness of fit only, NOT a confidence or probability. With status 'no_degradation_trend' it is the R-squared of the slope test's straight line through the measured values, for every method (0 when it is undefined, as for a constant series). With 'estimated', 'model_threshold_crossed' or 'model_not_rising' it describes the requested model: for linear, the fitted line on the measured values; for exponential, the straight line fitted to the logarithm of the values, so it does not measure the fit on the original scale; None for kalman, which fits no curve. None with 'threshold_already_exceeded'.",
         "title": "Fit R Squared"
+      },
+      "measurements": {
+        "anyOf": [
+          {
+            "items": {
+              "$ref": "#/$defs/RULMeasurement"
+            },
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Only on the signal_ids route: one entry per measurement, in the order of timestamps, with the stored signal it came from, the value estimate_rul computed from it and the unit the recording declares. None on the feature_values route.",
+        "title": "Measurements"
       },
       "message": {
         "description": "Human-readable explanation of the outcome and its caveats",

@@ -42,6 +42,16 @@ def _families(seed: int, count: int):
         yield [float(v) for v in y], [float(x) for x in t]
 
 
+REFUSAL_START = "estimate_rul assumes an indicator that rises toward failure_threshold"
+
+
+def _refused_before_any_model(values, threshold):
+    """A series that starts at or above its threshold is refused before the slope
+    test runs, so it says nothing about the linear fit; its text is held in
+    tests/test_rul_series_checks.py."""
+    return values[0] >= threshold
+
+
 def _run(values, timestamps, threshold, method="linear"):
     """Call estimate_rul, which awaits nothing, without an event loop per call."""
     coroutine = prognostics_tools.estimate_rul(
@@ -85,6 +95,11 @@ def test_linear_estimate_rul_never_reports_a_line_that_does_not_rise():
             top + 3 * abs(top),
         ):
             if threshold <= last:
+                continue
+            if _refused_before_any_model(values, threshold):
+                with pytest.raises(ValueError) as refused:
+                    _run(values, timestamps, threshold)
+                assert str(refused.value).startswith(REFUSAL_START)
                 continue
             statuses.add(_run(values, timestamps, threshold).status)
     assert "model_not_rising" not in statuses

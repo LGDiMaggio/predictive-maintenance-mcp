@@ -260,6 +260,13 @@ Fixture history:
   difference_lag description are extended. Both
   blocks are left out of a reference backend's result, not sent as null.
   Generated under mcp 2.3.0 and pydantic 2.12.0 (uv.lock).
+- RUL series checks (2026-11-23): regenerated intentionally: two properties
+  added and one type widened, no property removed. estimate_rul
+  (RULEstimationResult) gains extrapolation_ratio (number or null) and
+  measurements (an array of RULMeasurement: signal_id, value, signal_unit; or
+  null); feature_name becomes string or null and stays required; the
+  fit_r_squared description and the model description are rewritten.
+  Generated under mcp 2.3.0 and pydantic 2.12.0 (uv.lock).
 """
 
 from __future__ import annotations
