@@ -296,9 +296,6 @@ note = """\
 Build isolation always fetches the newest setuptools; the weekly \
 package-smoke builds with it. 82 removed pkg_resources, 83 requires \
 Python >=3.10."""
-deprecations = [
-    { id = "license-table", due = 2027-02-18, note = "project.license as a TOML table ({ text = ... }) is deprecated (PEP 639). After the due date setuptools warns 'overdue' and raises only with SETUPTOOLS_ENFORCE_DEPRECATION=true. An SPDX string needs build-system setuptools>=77 and must not be combined with License :: classifiers.", url = "https://github.com/pypa/setuptools/blob/v84.0.0/setuptools/config/_apply_pyprojecttoml.py" },
-]
 
 [[component]]
 id = "build"
