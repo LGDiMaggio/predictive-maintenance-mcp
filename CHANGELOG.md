@@ -452,6 +452,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   variant and fails if the image holds any NVIDIA, CUDA or Triton component.
   `docker compose` and a plain `docker build` keep the default variant. Both
   build stages use `python:3.11-slim` pinned by digest.
+- **Package licence metadata in the PEP 639 form.** `pyproject.toml` declares
+  `license = "MIT"` and `license-files = ["LICENSE"]`, so the built metadata
+  carries `License-Expression: MIT` in place of the `License` field and the
+  licence classifier. Building from source needs setuptools 77.0.3 or later.
 - **Docker image contents.** An image built from the repository contains the
   server, the project's `LICENSE` and the bearing catalog. It no longer copies
   the signals, trained models, reports or machine manuals of the working copy

@@ -42,6 +42,7 @@ import numpy as np
 import pandas as pd
 import pytest
 from mcp.server.mcpserver import MCPServer
+from packaging.requirements import Requirement
 
 from conftest import write_raw_file
 from predictive_maintenance_mcp.signal_acquisition import measurement as m
@@ -1079,6 +1080,23 @@ class TestPackaging:
             assert setuptools_config["package-dir"][
                 f"predictive_maintenance_mcp.{sub}"
             ] == "src/" + sub.replace(".", "/")
+
+    def test_licence_is_declared_as_an_spdx_expression(self):
+        # The built metadata then carries License-Expression: MIT. setuptools
+        # before release 77 rejects the string form, and setuptools refuses it
+        # next to a "License ::" classifier, so the build floor and the
+        # classifier removal belong to the same declaration.
+        data = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text("utf-8"))
+        project = data["project"]
+        assert project["license"] == "MIT"
+        assert project.get("license-files") == ["LICENSE"]
+        assert [c for c in project["classifiers"] if c.startswith("License ::")] == []
+        (setuptools,) = [
+            requirement
+            for requirement in map(Requirement, data["build-system"]["requires"])
+            if requirement.name == "setuptools"
+        ]
+        assert not setuptools.specifier.contains("77.0.2")
 
     @pytest.mark.parametrize("ignore_file", [".gitignore", ".dockerignore"])
     def test_ledger_directory_is_ignored(self, ignore_file):
