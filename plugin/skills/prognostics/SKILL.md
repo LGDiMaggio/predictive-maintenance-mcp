@@ -104,6 +104,16 @@ RUL needs at least 3 measurements of the same machine over time, as either:
   recording is declared in mm/s, so an ISO zone boundary is not a threshold
   for it (see Step 2).
 
+The recordings of one series must not declare different units, assets,
+measurement points or measurement directions, and their declared acquisition times must follow the
+order of the timestamps; otherwise `estimate_rul` refuses the series and
+names the recordings that disagree. Relay the refusal and ask the user; do
+not convert units, drop recordings or reorder them to get past it. Only
+declared values are compared: a recording without a declared unit or
+measurement identity is not checked, so do not tell the user that an
+accepted series was confirmed as one machine, one point or in acquisition
+order.
+
 Timestamps are required, one per measurement, strictly increasing, in the
 unit you choose (`time_unit`, default "hours").
 
@@ -123,6 +133,12 @@ mm/s unit alone does not establish that, and the
 RMS of a whole stored recording is not band-limited. A site maintenance
 policy threshold also works when it was set for the same indicator and
 conditions.
+
+`estimate_rul` assumes an indicator that rises toward the threshold. A series
+whose first measurement is already at or above the threshold is refused: relay
+the refusal and ask the user which way the indicator moves as the condition
+worsens and whether the threshold suits it. Do not negate, shift or reorder the
+values.
 
 ### Step 3 — Estimate
 
@@ -144,9 +160,11 @@ Method choice:
 ### Step 4 — Interpret the Result Honestly
 
 Possible statuses (quote the result's `message` for each):
-- `"estimated"`: RUL in `time_unit`, with `fit_r_squared` (goodness of fit —
-  NOT a confidence) and `observation_horizon`. If RUL extends far beyond the
-  observed horizon, the result says so — relay that caution verbatim
+- `"estimated"`: RUL in `time_unit`, with `fit_r_squared` (goodness of fit,
+  NOT a confidence; for `exponential` it is computed on the logarithm of the
+  values), `observation_horizon` and `extrapolation_ratio` (the RUL divided by
+  the observation horizon). Report the ratio with the estimate; above 1 the
+  `message` carries a caution: relay it verbatim
 - `"no_degradation_trend"`: the slope test found no statistically significant
   increasing trend, or could not be computed: no time to the threshold is
   estimated, and nothing about the machine's health follows. The `message`
@@ -170,6 +188,10 @@ with the time unit of the timestamps, and `rul_interval_95` and
 `precision_heuristic` change with both the time unit and the value scale of
 the series. `precision_heuristic` is a heuristic, not a probability of
 correctness.
+
+With stored recordings (`signal_ids`), also report `measurements`: each
+recording's signal id, the value computed from it and its declared unit, so
+the user can check which value came from which recording.
 
 Report: trend significance (p-value), fit quality, RUL with its time unit,
 observation horizon, and urgency relative to the next maintenance window.

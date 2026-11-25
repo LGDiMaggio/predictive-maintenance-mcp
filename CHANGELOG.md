@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`estimate_rul` reports how far an estimate extrapolates and, for stored
+  recordings, which value came from which recording.** With status
+  `estimated`, the new `extrapolation_ratio` is the RUL divided by the
+  observation horizon. No cap is applied and the message is unchanged. On
+  the `signal_ids` route, the new `measurements` list gives each
+  recording's signal id, the value computed from it and its declared unit.
 - `forecast_asset_indicator` accepts an optional `chronos2` backend that
   projects the indicator with the Chronos-2 forecasting model, run locally,
   when an operator installs the `forecast-chronos2` extra and the model files.
@@ -389,6 +395,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `aggregate_corroboration`, both null under the default rule.
 
 ### Changed
+- **`estimate_rul` refuses a series whose first measurement is already at
+  or above `failure_threshold`.** The tool assumes an indicator that rises
+  toward its threshold, so no time to the threshold can be estimated for
+  such a series. A falling indicator above a low threshold used to be
+  reported as `threshold_already_exceeded` with "Inspect the machine
+  now"; the refusal names the rising assumption, the first and latest
+  measurements against the threshold and the readings the series leaves
+  open. It comes before every status, so every series whose first
+  measurement is at or above the threshold is refused, whatever its later
+  measurements; a series whose first measurement is below the threshold
+  keeps its outcome.
+  Present in 0.13.0 and earlier. Before 1.0 this is a behavior change of
+  published fields: the next release bumps MINOR, per the project's pre-1.0
+  rule.
+- **`estimate_rul` checks the stored recordings of a `signal_ids` series
+  against each other.** It refuses recordings that declare different
+  units, assets, measurement points or measurement directions, and recordings whose declared
+  acquisition times (`acquired_at`) do not follow the order of
+  `timestamps`, naming the first two recordings that disagree. Only
+  declared values are compared: a recording that declares no unit, asset,
+  point or acquisition time is not checked for it. Such a series used to
+  be fitted as one, giving an estimate or a no-trend result. Before 1.0
+  this is a behavior change of published fields: the next release bumps
+  MINOR, per the project's pre-1.0 rule.
+- **`estimate_rul` field and description corrections.** On the
+  `feature_values` route `feature_name` is now null instead of `rms`, since
+  the server computes no feature from caller values; on the `signal_ids`
+  route it still names the feature computed from each recording. The
+  `fit_r_squared` description now says what each status reports: on
+  `no_degradation_trend` the R-squared of the slope test's straight line for
+  every method, kalman included, and for the exponential method an
+  R-squared computed on the logarithm of the values; the numbers are
+  unchanged. The `failure_threshold` description no longer calls an ISO
+  zone C/D boundary the standard choice: such a boundary is a threshold only
+  for values comparable with the ISO assessment, which the whole-recording
+  feature of the `signal_ids` route is not. Before 1.0 a nullable
+  `feature_name` is a change to a published field: the next release bumps
+  MINOR, per the project's pre-1.0 rule.
+- **Plugin 1.4.3: the prognostics skill follows the new `estimate_rul`
+  checks.** It says which `signal_ids` series and which first measurements
+  the tool refuses, tells the model to relay the refusal and ask the user
+  rather than convert, drop, reorder or negate values, reports
+  `extrapolation_ratio` with an estimate and `measurements` for stored
+  recordings, and says that the exponential method's `fit_r_squared` is
+  computed on the logarithm of the values. Plugin version 1.4.3.
+- **The architecture guide lists every prognostics module.** Its Block 5
+  section adds the Kalman RUL, indicator-series, reference-projection,
+  Chronos-2 and projection-result modules, and no longer describes RUL
+  output as forecasts.
 - **CPU-only Docker image.** `docker build --build-arg TORCH_VARIANT=cpu`
   installs the versions pinned in `uv.lock`, each verified against a recorded
   hash, with PyTorch replaced by its CPU-only build of the same version and no
