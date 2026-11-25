@@ -40,7 +40,6 @@ from predictive_maintenance_mcp.mcp_tools.prognostics_tools import estimate_rul
 from predictive_maintenance_mcp.models import RULEstimationResult
 from predictive_maintenance_mcp.prognostics import indicator_forecast
 from predictive_maintenance_mcp.signal_acquisition.repository import get_repository
-from test_diagnostic_invariants import known_defect
 
 FS = 10_000.0
 
@@ -107,15 +106,6 @@ def mixed_units_handled(outcome: Outcome) -> bool:
 
 
 class TestSignalIdsRoute:
-    @pytest.mark.xfail(
-        strict=True,
-        raises=AssertionError,
-        reason=known_defect(
-            "B2-F5",
-            "estimate_rul reduces signal_ids recordings that declare different "
-            "units (mm/s and g) into one series without refusing or saying so",
-        ),
-    )
     def test_mixed_declared_units_are_refused_or_stated(self, load_csv):
         async def scenario():
             await load_csv("rc0_vel_0", _tone(1.0), "mm/s")
@@ -170,16 +160,6 @@ def falling_series_handled(outcome: Outcome) -> bool:
 
 
 class TestFallingIndicator:
-    @pytest.mark.xfail(
-        strict=True,
-        raises=AssertionError,
-        reason=known_defect(
-            "B2-F9",
-            "a falling indicator above a low failure threshold is reported as "
-            "an observed exceedance with 'Inspect the machine now', without "
-            "naming the rising-indicator assumption",
-        ),
-    )
     def test_falling_series_is_not_reported_as_an_exceedance_silently(self):
         outcome = _rul(
             failure_threshold=2.0,
@@ -237,15 +217,6 @@ EXP_Y = np.array([1.0, 1.25, 1.7, 2.1, 3.2, 3.6])
 
 
 class TestFieldContracts:
-    @pytest.mark.xfail(
-        strict=True,
-        raises=AssertionError,
-        reason=known_defect(
-            "B2-F15-label",
-            "estimate_rul echoes feature_name 'rms' for feature_values it did "
-            "not compute and whose feature the caller never named",
-        ),
-    )
     def test_feature_values_are_not_labelled_rms_by_default(self):
         outcome = _rul(
             failure_threshold=90.0,
@@ -257,15 +228,6 @@ class TestFieldContracts:
             outcome, lambda result: feature_label_honest(result, supplied=False)
         )
 
-    @pytest.mark.xfail(
-        strict=True,
-        raises=AssertionError,
-        reason=known_defect(
-            "B2-F15-kalman-r2",
-            "a kalman no_degradation_trend result reports fit_r_squared while "
-            "the field description says it is None for the kalman method",
-        ),
-    )
     def test_kalman_result_honours_the_r_squared_description(self):
         outcome = _rul(
             failure_threshold=4.5,
@@ -279,16 +241,6 @@ class TestFieldContracts:
             outcome, lambda result: kalman_r_squared_consistent(result, description)
         )
 
-    @pytest.mark.xfail(
-        strict=True,
-        raises=AssertionError,
-        reason=known_defect(
-            "B2-F10-r2",
-            "the exponential method's fit_r_squared is computed on the "
-            "logarithm of the values while its description says it is on "
-            "the observed data",
-        ),
-    )
     def test_exponential_r_squared_matches_its_description(self):
         outcome = _rul(
             failure_threshold=10.0,

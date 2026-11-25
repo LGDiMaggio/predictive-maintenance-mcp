@@ -11,10 +11,12 @@ recording produces segment-to-segment noise, not a degradation trend.
 The MCP tool layer enforces this precondition; the estimators here
 assume a valid timestamped series.
 
-Both estimators report ``fit_r_squared`` — the coefficient of
-determination of the fitted curve on the observed data. It measures
-goodness of fit only; it is NOT a probability that the extrapolated
-RUL is correct.
+Both estimators report ``fit_r_squared``, the coefficient of
+determination of their regression: the straight line on the observed
+values for the linear fit, and the straight line fitted to the
+logarithm of the values for the exponential fit. It measures goodness
+of fit only; it is NOT a probability that the extrapolated RUL is
+correct.
 """
 
 from __future__ import annotations

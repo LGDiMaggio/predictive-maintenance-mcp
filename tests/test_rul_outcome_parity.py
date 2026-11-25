@@ -109,6 +109,16 @@ def _estimator(method, values, timestamps, threshold):
     return kalman_rul_from_state(state, threshold)
 
 
+REFUSAL_START = "estimate_rul assumes an indicator that rises toward failure_threshold"
+
+
+def _refused_before_any_model(values, threshold):
+    """A series that starts at or above its threshold is refused before any model
+    is fitted, so it has no model outcome to compare; tests/test_rul_series_checks.py
+    holds its text. The estimator-only test above still covers these series."""
+    return values[0] >= threshold
+
+
 def _run(method, values, timestamps, threshold):
     """Call estimate_rul, which awaits nothing, without an event loop per call."""
     coroutine = prognostics_tools.estimate_rul(
@@ -148,6 +158,11 @@ def test_the_tool_agrees_with_the_estimator(method):
         if method == "exponential" and min(values) <= 0:
             continue
         for threshold in _thresholds(method, values, timestamps):
+            if _refused_before_any_model(values, threshold):
+                with pytest.raises(ValueError) as refused:
+                    _run(method, values, timestamps, threshold)
+                assert str(refused.value).startswith(REFUSAL_START)
+                continue
             result = _run(method, values, timestamps, threshold)
             if result.status not in MODEL_STATUSES:
                 continue

@@ -1300,13 +1300,32 @@ class DiagnosisResult(BaseModel):
 # ============================================================================
 
 
+class RULMeasurement(BaseModel):
+    """One measurement of a signal_ids series given to estimate_rul."""
+
+    signal_id: str = Field(
+        description="Stored signal the measurement was computed from"
+    )
+    value: float = Field(
+        description=(
+            "The recording's feature_name value, computed over the whole stored "
+            "recording in its declared unit, with no unit conversion and no "
+            "frequency band"
+        )
+    )
+    signal_unit: Optional[Literal["g", "m/s2", "mm/s", "m/s"]] = Field(
+        description="Unit the recording declares; None when it declares none"
+    )
+
+
 class RULEstimationResult(BaseModel):
     """Remaining Useful Life estimate from repeated measurements over time.
 
     RUL is only physically meaningful when fitted on a degradation trend
     across multiple measurements of the same machine (days/weeks/months).
-    ``fit_r_squared`` describes how well the degradation curve fits the
-    observed series; it is NOT a probability that the estimate is correct.
+    ``fit_r_squared`` is a goodness-of-fit figure whose meaning depends on
+    the status and the method (see its description); it is NOT a
+    probability that the estimate is correct.
     Extrapolation beyond the observation horizon is inherently uncertain.
     """
 
@@ -1336,7 +1355,14 @@ class RULEstimationResult(BaseModel):
     method: str = Field(
         description="Estimation method used: linear, exponential, or kalman"
     )
-    feature_name: str = Field(description="Degradation indicator tracked (e.g. 'rms')")
+    feature_name: Optional[str] = Field(
+        description=(
+            "On the signal_ids route, the time-domain feature computed over "
+            "each whole stored recording (for example 'rms'). None on the "
+            "feature_values route, where the values are the caller's own and "
+            "the server computes no feature."
+        )
+    )
     num_measurements: int = Field(description="Number of measurements in the series")
     observation_horizon: float = Field(
         description=(
@@ -1355,6 +1381,15 @@ class RULEstimationResult(BaseModel):
         )
     )
     current_value: float = Field(description="Most recent measured indicator value")
+    measurements: Optional[list[RULMeasurement]] = Field(
+        None,
+        description=(
+            "Only on the signal_ids route: one entry per measurement, in the order "
+            "of timestamps, with the stored signal it came from, the value "
+            "estimate_rul computed from it and the unit the recording declares. "
+            "None on the feature_values route."
+        ),
+    )
     modelled_current_value: Optional[float] = Field(
         None,
         description=(
@@ -1380,12 +1415,30 @@ class RULEstimationResult(BaseModel):
             "extrapolation to a caller-set limit, not a predicted failure time."
         ),
     )
+    extrapolation_ratio: Optional[float] = Field(
+        None,
+        description=(
+            "Only when status='estimated': rul divided by observation_horizon, "
+            "that is how many times the observed time span the estimate reaches "
+            "beyond the latest measurement. No cap is applied. Above 1 the "
+            "estimate reaches further ahead than the measurements span and the "
+            "message adds a caution. For kalman it can change with the time unit "
+            "of the timestamps, as rul can."
+        ),
+    )
     fit_r_squared: Optional[float] = Field(
         None,
         description=(
-            "R-squared of the fitted degradation curve on the observed data. "
-            "Goodness of fit only — NOT a confidence or probability. None for "
-            "the kalman method."
+            "Goodness of fit only, NOT a confidence or probability. With status "
+            "'no_degradation_trend' it is the R-squared of the slope test's "
+            "straight line through the measured values, for every method (0 "
+            "when it is undefined, as for a constant series). With "
+            "'estimated', 'model_threshold_crossed' or 'model_not_rising' it "
+            "describes the requested model: for linear, the fitted line on the "
+            "measured values; for exponential, the straight line fitted to the "
+            "logarithm of the values, so it does not measure the fit on the "
+            "original scale; None for kalman, which fits no curve. None with "
+            "'threshold_already_exceeded'."
         ),
     )
     estimated_rate: Optional[float] = Field(
