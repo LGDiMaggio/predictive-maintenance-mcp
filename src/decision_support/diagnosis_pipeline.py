@@ -45,11 +45,12 @@ from ..diagnostics.bearing_claims import (
     UNKNOWN,
     aggregate_statement,
     claim_actions,
-    counts_as_finding,
     pipeline_statement,
 )
 from ..diagnostics.iso20816 import assess_severity_with_axis
+from .advisory import ACCEPTABLE_ZONES, score_evidence_strength
 from .anomaly_labels import health_label
+from .statements import STATEMENTS
 
 logger = logging.getLogger(__name__)
 
@@ -539,66 +540,32 @@ def diagnose_vibration(
     }
 
 
-#: The window each order's sentence names: the ratio of the strongest line to
-#: the shaft frequency lies strictly between 0.9 and 1.1, or 1.9 and 2.1.
-_ORDER_LINE_WINDOWS = {1: "within 10 % of 1x", 2: "within 5 % of 2x"}
-
-#: What a strongest line at each order cannot separate. Normal running comes
-#: first; every listed reading can put the strongest line at that order, and
-#: no source validates the order alone as a fault indicator.
-_ORDER_LINE_READINGS = {
-    1: (
-        "the 1x response of a machine in normal condition from unbalance, a "
-        "bent or bowed rotor, eccentricity, misalignment, mechanical looseness "
-        "or a soft foot, a worn or damaged coupling, a resonance near running "
-        "speed, vibration transmitted from another machine, or a component at "
-        "the electrical supply frequency, which lies close to 1x on a two-pole "
-        "motor"
-    ),
-    2: (
-        "the 2x response of a machine in normal condition from misalignment, "
-        "mechanical looseness, a rub, a shaft crack, a shaft or rotor with "
-        "asymmetric stiffness, a resonance near twice running speed, the "
-        "passing tone of a rotor with two blades or lobes, vibration "
-        "transmitted from another machine, a component at the electrical "
-        "supply frequency, which lies close to 2x on a four-pole motor, or, on "
-        "a two-pole motor, the electromagnetic vibration at twice the supply "
-        "frequency, which lies close to 2x (exactly at 2x on a synchronous "
-        "motor)"
-    ),
+#: The window and readings statements of each shaft order.
+_ORDER_LINE_KEYS = {
+    1: ("diagnosis_shaft_order_window_1x", "diagnosis_shaft_order_readings_1x"),
+    2: ("diagnosis_shaft_order_window_2x", "diagnosis_shaft_order_readings_2x"),
 }
-
-#: What would narrow the readings down: information, not an action. Phase,
-#: baselines, channels and speeds strengthen or weaken readings; a cause is
-#: established on the machine.
-_ORDER_LINE_DISCRIMINATION = (
-    "Narrowing these down needs more than this check, such as a finer analysis "
-    "of the line's frequency, a baseline from the same machine at the same "
-    "condition, phase, a second radial or an axial channel, or several speeds. "
-    "Establishing a cause needs a physical check of the machine."
-)
-
-#: The same line read again, by this server or another analysis of the same
-#: signal, is the same observation.
-_ORDER_LINE_REPEAT = (
-    "Another analysis that reads this same line of the same signal repeats the "
-    "observation and does not corroborate it."
-)
 
 
 def _order_line_statement(order: int, ratio: float) -> str:
     """The measured-line sentence for a strongest line near *order* x shaft speed.
 
+    The window it names matches the test in :func:`_synthesize_diagnosis`: the
+    ratio lies strictly between 0.9 and 1.1, or 1.9 and 2.1. The readings list
+    normal running first; every listed reading can put the strongest line at
+    that order, and no source validates the order alone as a fault indicator.
+
     Args:
         order: 1 or 2.
         ratio: Frequency of the strongest line over the shaft frequency.
     """
-    return (
-        f"The strongest line of the spectrum is at {ratio:.2f} times the "
-        f"declared shaft frequency ({_ORDER_LINE_WINDOWS[order]}). Its dominance "
-        f"does not identify a fault, and it is not counted as a finding. This "
-        f"check cannot distinguish {_ORDER_LINE_READINGS[order]}. "
-        f"{_ORDER_LINE_DISCRIMINATION} {_ORDER_LINE_REPEAT}"
+    window_key, readings_key = _ORDER_LINE_KEYS[order]
+    return STATEMENTS["diagnosis_shaft_order_line"].format(
+        ratio=ratio,
+        window=STATEMENTS[window_key],
+        readings=STATEMENTS[readings_key],
+        discrimination=STATEMENTS["diagnosis_shaft_order_discrimination"],
+        repeat=STATEMENTS["diagnosis_shaft_order_repeat"],
     )
 
 
@@ -614,69 +581,70 @@ def _synthesize_diagnosis(
 ) -> tuple[str, str, list[str]]:
     """Combine analysis results into diagnosis, evidence strength, and recommendations.
 
-    The evidence strength is categorical (none/weak/moderate/strong) and
-    accumulates points from the findings of the analyses that ran:
+    Every sentence and action comes, by key, from :mod:`.statements` or from
+    the bearing claim (:mod:`..diagnostics.bearing_claims`), and the evidence
+    strength from :func:`.advisory.score_evidence_strength`, which owns the
+    points and the grades. This function only decides which statements apply
+    and in what order:
 
-    - ISO severity: zone C +1.0, zone D +2.0 (elevated broadband vibration
-      is direct physical evidence of a problem, but on its own it is not
-      corroborated). A refused ISO block (undeclared unit, insufficient
-      sampling rate) contributes NO evidence — no verdict, no points.
+    - ISO severity: the zone line; zone C and zone D add their action (a zone
+      outside A to C takes the zone D action), zones A and B none. A refused
+      ISO block states why and recommends its remedy.
     - Shaft-order line: a strongest spectral line at 1x or 2x shaft speed is
-      stated as a measurement with the readings it cannot distinguish, and
-      adds nothing. A shaft-rate line is expected on a rotating machine and
-      identifies no fault.
-    - Bearing claim (:mod:`..diagnostics.bearing_claims`): one finding,
-      +1.0, at single-spectrum evidence or qualified from an indicated or
-      several-types outcome; a withheld claim and one held back as
-      inconclusive add nothing. The bearing sentence and actions come from
-      the same claim (confirmation, inspection of every candidate alike, a
-      repeat or acquisition step; never a replacement). A bearing check that
-      was not computed (``bearing_check``) contributes NO evidence either;
-      the text states why and the remedy is recommended, as for a refused
-      ISO block.
-    - Anomaly model: Faulty +1.0, Suspicious +0.5.
-
-    Mapping: 0 -> "none", <2 -> "weak", <3 -> "moderate", >=3 -> "strong".
-    A quiet machine with no findings therefore gets "none" — severity alone
-    can never produce "strong". The sentence that reports it says it counts
-    findings, is not a probability and identifies no fault type.
+      stated as a measurement with the readings it cannot distinguish, with
+      no action.
+    - Bearing claim: the claim's sentence and actions (confirmation,
+      inspection of every candidate alike, a repeat or acquisition step; never
+      a replacement). A bearing check that was not computed (``bearing_check``)
+      states why and recommends its remedy, as a refused ISO block does.
+    - Anomaly model: its verdict line, and an action for "Faulty" or
+      "Suspicious".
+    - The aggregate sentence that reports the grade says it counts findings,
+      is not a probability and identifies no fault type; the routine
+      monitoring action applies when no other action does.
     """
     lines = []
     recommendations = []
-    evidence_points = 0.0
 
     # ISO severity assessment (may be a schema-level refusal)
     if iso_severity.get("status") == "refused":
-        lines.append(f"ISO Severity: not assessed — {iso_severity['reason']}")
+        lines.append(
+            STATEMENTS["diagnosis_iso_refused"].format(reason=iso_severity["reason"])
+        )
         recommendations.append(iso_severity["remedy"])
     else:
         zone = iso_severity["zone"]
         rms_vel = iso_severity["rms_velocity_mm_s"]
         # The severity word (Good/Acceptable/Unsatisfactory/Unacceptable) is
         # owned by iso20816._ZONE_INFO and arrives on the classification
-        # result as ``severity_level`` — render it instead of re-hardcoding
-        # the four labels here (they silently drift otherwise). The zone-keyed
-        # evidence/recommendation ladder below is unchanged.
+        # result as ``severity_level``: render it instead of re-hardcoding
+        # the four labels here (they silently drift otherwise).
         severity_word = iso_severity.get("severity_level", "")
-        severity_label = f" ({severity_word})" if severity_word else ""
-        lines.append(
-            f"ISO Severity: Zone {zone}{severity_label} — "
-            f"RMS velocity {rms_vel:.2f} mm/s."
-        )
+        if severity_word:
+            iso_line = STATEMENTS["diagnosis_iso_assessed"].format(
+                zone=zone, severity=severity_word, rms_velocity=rms_vel
+            )
+        else:
+            iso_line = STATEMENTS["diagnosis_iso_assessed_no_severity"].format(
+                zone=zone, rms_velocity=rms_vel
+            )
+        lines.append(iso_line)
 
-        if zone in ("A", "B"):
+        if zone in ACCEPTABLE_ZONES:
             pass  # Good/Acceptable: no fault evidence, no recommendation.
         elif zone == "C":
-            evidence_points += 1.0
-            recommendations.append("Schedule maintenance within next planned shutdown.")
-        else:  # Zone D — unacceptable (also the ladder's catch-all).
-            evidence_points += 2.0
-            recommendations.append("IMMEDIATE ACTION: Stop machine and inspect.")
+            recommendations.append(STATEMENTS["diagnosis_action_zone_c"])
+        else:  # Zone D, unacceptable (also the ladder's catch-all).
+            recommendations.append(STATEMENTS["diagnosis_action_zone_d"])
 
     # FFT dominant frequency
     peak_f = fft_summary["peak_frequency_hz"]
     shaft_freq = rpm / 60.0
-    lines.append(f"Dominant frequency: {peak_f:.1f} Hz (shaft: {shaft_freq:.1f} Hz).")
+    lines.append(
+        STATEMENTS["diagnosis_dominant_frequency"].format(
+            peak_hz=peak_f, shaft_hz=shaft_freq
+        )
+    )
 
     # A strongest line at a shaft order is reported as a measurement, with the
     # windows the earlier fault sentences used. It adds no evidence point and
@@ -692,14 +660,12 @@ def _synthesize_diagnosis(
 
     if bearing_faults:
         lines.append(pipeline_statement(bearing_faults))
-        if counts_as_finding(bearing_faults["claim"]):
-            evidence_points += 1.0
         recommendations.extend(claim_actions(bearing_faults))
     elif bearing_check["status"] == "not_computed":
         lines.append(
-            f"Bearing analysis: not computed. {bearing_check['reason']} No "
-            f"bearing check ran, so this diagnosis says nothing about the "
-            f"condition of the bearing."
+            STATEMENTS["diagnosis_bearing_not_computed"].format(
+                reason=bearing_check["reason"]
+            )
         )
         recommendations.append(bearing_check["remedy"])
 
@@ -708,34 +674,19 @@ def _synthesize_diagnosis(
         health = anomaly["overall_health"]
         ratio = anomaly["anomaly_ratio"]
         lines.append(
-            f"Anomaly detection: {health} " f"({ratio * 100:.1f}% anomalous segments)."
+            STATEMENTS["diagnosis_anomaly"].format(health=health, ratio_pct=ratio * 100)
         )
         if health == "Faulty":
-            evidence_points += 1.0
-            recommendations.append(
-                "Anomaly model flagged signal as faulty — investigate root cause."
-            )
+            recommendations.append(STATEMENTS["diagnosis_action_anomaly_faulty"])
         elif health == "Suspicious":
-            evidence_points += 0.5
-            recommendations.append(
-                "Anomaly model detected suspicious patterns — increase monitoring frequency."
-            )
+            recommendations.append(STATEMENTS["diagnosis_action_anomaly_suspicious"])
 
-    # Overall evidence strength from the points above; severity alone stays below "strong".
-    if evidence_points == 0.0:
-        evidence_strength = "none"
-    elif evidence_points < 2.0:
-        evidence_strength = "weak"
-    elif evidence_points < 3.0:
-        evidence_strength = "moderate"
-    else:
-        evidence_strength = "strong"
-
+    evidence_strength = score_evidence_strength(iso_severity, bearing_faults, anomaly)
     lines.append(aggregate_statement(evidence_strength))
 
     # Default recommendation if none generated
     if not recommendations:
-        recommendations.append("Continue routine monitoring per maintenance schedule.")
+        recommendations.append(STATEMENTS["diagnosis_action_default"])
 
     diagnosis_text = " ".join(lines)
 

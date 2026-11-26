@@ -1,8 +1,11 @@
 """ISO 13374 Block 6 — server-authored advisory.
 
 Every evaluative sentence a report shows a human is written *here*, by the
-server that computed the numbers. Renderers place these strings; they never
-compose their own.
+server that computed the numbers, from the closed lists of
+:mod:`.statements` and :mod:`..diagnostics.bearing_claims`. Renderers place
+these strings; they never compose their own. The evidence-strength grade of one
+acquisition is scored here too (:func:`score_evidence_strength`), for the
+diagnosis pipeline and for this payload alike.
 
 This exists because the previous arrangement let the caller author report
 content (see ``generate_diagnostic_report_docx``'s ``sections`` argument).
@@ -45,6 +48,7 @@ from ..diagnostics.bearing_claims import (
     WITHHELD,
     claim_actions,
     counted_lines_statements,
+    counts_as_finding,
     emphasised_candidates,
     envelope_delta_statement,
     evidence_disagreement_statement,
@@ -53,6 +57,7 @@ from ..diagnostics.bearing_claims import (
     state_badge,
 )
 from .recommendations import generate_recommendations
+from .statements import STATEMENTS
 
 #: Block status vocabulary. ``ASSESSED`` means the block reached a verdict;
 #: ``REFUSED`` means the engine declined to answer and said why; ``ABSENT``
@@ -82,7 +87,10 @@ _BEARING_ACTION_URGENCY = "medium"
 #: computed, which is the failure mode this module exists to prevent.
 _REQUIRED_KEYS = ("signal_id", "iso_severity", "fft_summary", "stft_summary")
 
-_ACCEPTABLE_ZONES = ("A", "B")
+#: ISO zones that are no evidence of a problem: no evidence points and no zone
+#: action in the diagnosis, no elevated-zone verdict, and the only zones an
+#: indicator disagreement is named against.
+ACCEPTABLE_ZONES = ("A", "B")
 
 #: Which baseline delta leads the comparison sentence, most specific first.
 #: Chosen by what the movement MEANS, not by magnitude: the three deltas are
@@ -93,6 +101,24 @@ _HEADLINE_ORDER = ("envelope_magnitude", "rms_velocity", "anomaly_ratio")
 
 #: Anomaly-model verdicts that flag a departure from the learned pattern.
 _ANOMALY_FLAGS = ("Faulty", "Suspicious")
+
+#: Points each finding of one acquisition adds to its evidence strength.
+#: Elevated broadband vibration is direct physical evidence of a problem but is
+#: not corroborated on its own; a bearing claim counts once; the anomaly model
+#: counts its own verdict. Changing a weight changes a statistical decision
+#: rule, not a wording.
+EVIDENCE_POINTS = {
+    "iso_zone_c": 1.0,
+    "iso_zone_d": 2.0,
+    "bearing_finding": 1.0,
+    "anomaly_faulty": 1.0,
+    "anomaly_suspicious": 0.5,
+}
+
+#: The grades above "none", each with the points it stays below; at or above
+#: the last bound the grade is "strong". Severity alone (zone D, 2 points)
+#: therefore stays below "strong".
+EVIDENCE_GRADE_BOUNDS = (("weak", 2.0), ("moderate", 3.0))
 
 
 # ---------------------------------------------------------------------------
@@ -105,7 +131,7 @@ def _build_iso_block(iso: dict) -> dict:
     if iso.get("status") == "refused":
         return {
             "status": REFUSED,
-            "statement": (f"ISO severity was not assessed. {iso['reason']}"),
+            "statement": STATEMENTS["report_iso_refused"].format(reason=iso["reason"]),
             "reason": iso["reason"],
             "remedy": iso["remedy"],
             "standard_note": None,
@@ -118,11 +144,17 @@ def _build_iso_block(iso: dict) -> dict:
     boundaries = iso.get("boundaries", {})
 
     statement = (
-        f"ISO 20816-3: RMS velocity {rms:.2f} mm/s places this machine in "
-        f"Zone {zone} ({severity}) for machine group "
-        f"{iso.get('machine_group')} on a {iso.get('support_type')} support. "
-        f"{description}"
-    ).strip()
+        STATEMENTS["report_iso_assessed"]
+        .format(
+            rms_velocity=rms,
+            zone=zone,
+            severity=severity,
+            machine_group=iso.get("machine_group"),
+            support_type=iso.get("support_type"),
+            description=description,
+        )
+        .strip()
+    )
 
     return {
         "status": ASSESSED,
@@ -159,10 +191,8 @@ def _build_bearing_block(
     if bearing_check and bearing_check.get("status") == "not_computed":
         return {
             "status": REFUSED,
-            "statement": (
-                f"Bearing characteristic-frequency matching was not computed. "
-                f"{bearing_check['reason']} No bearing check ran, so this "
-                f"report says nothing about the condition of the bearing."
+            "statement": STATEMENTS["report_bearing_not_computed"].format(
+                reason=bearing_check["reason"]
             ),
             "reason": bearing_check["reason"],
             "remedy": bearing_check["remedy"],
@@ -173,18 +203,8 @@ def _build_bearing_block(
     if not bearing_faults:
         return {
             "status": ABSENT,
-            "statement": (
-                "Bearing characteristic-frequency matching was not attempted: "
-                "no bearing designation was supplied for this signal, so BPFO, "
-                "BPFI, BSF and FTF could not be computed. Without it, a "
-                "spectral peak cannot be attributed to a specific bearing "
-                "element."
-            ),
-            "remedy": (
-                "Re-run generate_diagnostic_report with bearing_id set to the "
-                "bearing's designation (search_bearing_catalog lists the "
-                "designations the bearing catalog holds)."
-            ),
+            "statement": STATEMENTS["report_bearing_absent"],
+            "remedy": STATEMENTS["report_bearing_absent_remedy"],
             "rows": [],
         }
 
@@ -234,31 +254,24 @@ def _build_anomaly_block(anomaly: Optional[dict]) -> dict:
     if not anomaly:
         return {
             "status": ABSENT,
-            "statement": (
-                "No anomaly-model verdict is available for this signal: no "
-                "trained model was found. The pattern-level check that would "
-                "corroborate or contradict the severity reading is therefore "
-                "missing from this assessment."
-            ),
-            "remedy": (
-                "Train an anomaly model on healthy signals from this machine, "
-                "then re-run the diagnosis."
-            ),
+            "statement": STATEMENTS["report_anomaly_absent"],
+            "remedy": STATEMENTS["report_anomaly_absent_remedy"],
         }
 
     health = anomaly["overall_health"]
     ratio = anomaly["anomaly_ratio"]
     segments = anomaly.get("num_segments")
     counted = (
-        f"{round(ratio * segments)} of {segments} segments"
+        STATEMENTS["report_anomaly_segments_counted"].format(
+            count=round(ratio * segments), segments=segments
+        )
         if segments
-        else f"{ratio * 100:.1f}% of segments"
+        else STATEMENTS["report_anomaly_segments_share"].format(ratio_pct=ratio * 100)
     )
     return {
         "status": ASSESSED,
-        "statement": (
-            f"Anomaly model verdict: {health} — {counted} "
-            f"({ratio * 100:.1f}%) fall outside the learned healthy pattern."
+        "statement": STATEMENTS["report_anomaly"].format(
+            health=health, counted=counted, ratio_pct=ratio * 100
         ),
         "overall_health": health,
         "anomaly_ratio": ratio,
@@ -279,11 +292,7 @@ def _build_energy_block(stft_summary: dict) -> dict:
     if not bands:
         return {
             "status": ABSENT,
-            "statement": (
-                "No spectral energy distribution is available: the STFT band "
-                "breakdown was not computed, so the frequency region carrying "
-                "the signal's energy cannot be named."
-            ),
+            "statement": STATEMENTS["report_energy_absent"],
             "bands": {},
         }
 
@@ -297,17 +306,81 @@ def _build_energy_block(stft_summary: dict) -> dict:
         # can each dominate a band, so the statement names no source. A unit
         # change (g to m/s2) scales every band alike; a different measured
         # quantity (acceleration versus velocity) can reorder them.
-        "statement": (
-            f"The largest share of STFT energy is in the {dominant} band "
-            f"({share:.0f}% of the total). This percentage describes the "
-            f"measured signal and does not identify a fault. The relative "
-            f"distribution across frequency bands can change with the measured "
-            f"physical quantity (for example, acceleration versus velocity)."
-        ),
+        "statement": STATEMENTS["report_energy"].format(band=dominant, share=share),
         "bands": dict(bands),
         "dominant_band": dominant,
         "dominant_share_pct": round(share, 1),
     }
+
+
+# ---------------------------------------------------------------------------
+# Evidence strength
+# ---------------------------------------------------------------------------
+
+
+def score_evidence_strength(
+    iso_severity: dict,
+    bearing_faults: Optional[dict],
+    anomaly: Optional[dict],
+) -> str:
+    """Grade the evidence of one acquisition: "none", "weak", "moderate" or "strong".
+
+    The grade counts the findings of the analyses that ran, with the points of
+    ``EVIDENCE_POINTS``:
+
+    - ISO severity: zone C and zone D add their points; zones A and B add
+      none. A zone outside A to C counts as zone D. A refused ISO block
+      (undeclared unit, insufficient sampling rate) adds nothing: no verdict,
+      no points.
+    - Bearing claim (:mod:`..diagnostics.bearing_claims`): one finding when
+      ``counts_as_finding`` holds for the claim (single-spectrum evidence, or
+      qualified from an indicated or several-types outcome); a withheld claim
+      and one held back as inconclusive add nothing. A bearing check that was
+      not computed adds nothing.
+    - Anomaly model: a "Faulty" or "Suspicious" verdict adds its points.
+    - A strongest spectral line at 1x or 2x shaft speed adds nothing: a
+      shaft-rate line is expected on a rotating machine and identifies no
+      fault.
+
+    Zero points grade "none"; otherwise the first grade of
+    ``EVIDENCE_GRADE_BOUNDS`` whose bound the points stay below, else
+    "strong". A quiet machine with no findings therefore grades "none", and
+    severity alone never grades "strong". The grade is never a probability and
+    never names or confirms a fault type.
+
+    Args:
+        iso_severity: The pipeline's ISO block, assessed (with ``zone``) or
+            refused (``status: "refused"``).
+        bearing_faults: The bearing check result with its ``claim``, or None
+            when no check ran.
+        anomaly: The anomaly model's result with ``overall_health``, or None
+            when no verdict exists.
+
+    Returns:
+        The categorical grade.
+    """
+    points = 0.0
+    if iso_severity.get("status") != "refused":
+        zone = iso_severity["zone"]
+        if zone == "C":
+            points += EVIDENCE_POINTS["iso_zone_c"]
+        elif zone not in ACCEPTABLE_ZONES:
+            points += EVIDENCE_POINTS["iso_zone_d"]
+    if bearing_faults and counts_as_finding(bearing_faults["claim"]):
+        points += EVIDENCE_POINTS["bearing_finding"]
+    if anomaly:
+        health = anomaly["overall_health"]
+        if health == "Faulty":
+            points += EVIDENCE_POINTS["anomaly_faulty"]
+        elif health == "Suspicious":
+            points += EVIDENCE_POINTS["anomaly_suspicious"]
+
+    if points == 0.0:
+        return "none"
+    for grade, bound in EVIDENCE_GRADE_BOUNDS:
+        if points < bound:
+            return grade
+    return "strong"
 
 
 # ---------------------------------------------------------------------------
@@ -348,7 +421,7 @@ def _build_verdict(
         if claim["level"] == WITHHELD:
             if (
                 iso_block["status"] == ASSESSED
-                and iso_block["zone"] not in _ACCEPTABLE_ZONES
+                and iso_block["zone"] not in ACCEPTABLE_ZONES
             ):
                 statement += " " + CLAIM_SENTENCES["verdict_zone_elevated"].format(
                     zone=iso_block["zone"]
@@ -361,43 +434,31 @@ def _build_verdict(
     if not_computed:
         bearing_id = bearing_block.get("bearing_id")
         headline = (
-            "No bearing fault verdict was reached, because characteristic-"
-            "frequency matching was not computed"
-            + (f" for bearing {bearing_id!r}." if bearing_id else ".")
+            STATEMENTS["report_verdict_not_computed_for_bearing"].format(
+                bearing_id=bearing_id
+            )
+            if bearing_id
+            else STATEMENTS["report_verdict_not_computed"]
         )
     else:
-        headline = (
-            "No bearing fault verdict was reached, because characteristic-"
-            "frequency matching was not attempted."
-        )
+        headline = STATEMENTS["report_verdict_not_attempted"]
 
     # A bearing named but never checked cannot be ruled out as the source.
-    unchecked = (
-        ", and the bearing was not checked, so it cannot be excluded as the source."
-    )
-    if iso_block["status"] == ASSESSED and iso_block["zone"] not in _ACCEPTABLE_ZONES:
+    unchecked = STATEMENTS["report_verdict_tail_unchecked"]
+    if iso_block["status"] == ASSESSED and iso_block["zone"] not in ACCEPTABLE_ZONES:
         tail = (
-            unchecked
-            if not_computed
-            else ", so a non-bearing source should be considered."
+            unchecked if not_computed else STATEMENTS["report_verdict_tail_non_bearing"]
         )
-        headline += (
-            f" Broadband vibration is nonetheless elevated "
-            f"(Zone {iso_block['zone']}){tail}"
+        headline += STATEMENTS["report_verdict_zone_elevated"].format(
+            zone=iso_block["zone"], tail=tail
         )
     elif _anomaly_flagged(anomaly_block):
         tail = (
             unchecked
             if not_computed
-            else (
-                ", so a source outside the bearing's characteristic frequencies "
-                "should be considered."
-            )
+            else STATEMENTS["report_verdict_tail_outside_bearing"]
         )
-        headline += (
-            " The anomaly model nonetheless flags this signal as departing "
-            f"from the learned healthy pattern{tail}"
-        )
+        headline += STATEMENTS["report_verdict_anomaly_flag"].format(tail=tail)
 
     return {"statement": headline, "fault_canonical": None, "fault_acronym": ""}
 
@@ -430,7 +491,7 @@ def _build_evidence(
 
     peak = diagnosis.get("fft_summary", {}).get("peak_frequency_hz")
     if peak is not None:
-        statements.append(f"Dominant frequency in the raw spectrum: {peak:.1f} Hz.")
+        statements.append(STATEMENTS["report_dominant_frequency"].format(peak_hz=peak))
 
     return {
         "strength": diagnosis.get("evidence_strength", "none"),
@@ -461,7 +522,7 @@ def _build_disagreements(
     if iso_block["status"] != ASSESSED:
         return []
     zone = iso_block["zone"]
-    if zone not in _ACCEPTABLE_ZONES:
+    if zone not in ACCEPTABLE_ZONES:
         return []
 
     entries: list[dict] = []
@@ -473,8 +534,10 @@ def _build_disagreements(
         entries.append(
             {
                 "statement": evidence_disagreement_statement(bearing_faults, zone),
-                "governing_indicator": "single-spectrum envelope evidence",
-                "deferring_indicator": f"ISO zone {zone}",
+                "governing_indicator": STATEMENTS["report_indicator_single_spectrum"],
+                "deferring_indicator": STATEMENTS["report_indicator_zone"].format(
+                    zone=zone
+                ),
             }
         )
     if _anomaly_flagged(anomaly_block):
@@ -485,8 +548,10 @@ def _build_disagreements(
                     health=anomaly_block["overall_health"],
                     ratio_pct=anomaly_block["anomaly_ratio"] * 100,
                 ),
-                "governing_indicator": "anomaly model",
-                "deferring_indicator": f"ISO zone {zone}",
+                "governing_indicator": STATEMENTS["report_indicator_anomaly_model"],
+                "deferring_indicator": STATEMENTS["report_indicator_zone"].format(
+                    zone=zone
+                ),
             }
         )
     return entries
@@ -526,16 +591,18 @@ def _build_recommendations(
     if iso_block["status"] == REFUSED:
         recommendations.append(
             _refusal_recommendation(
-                iso_block, "The severity verdict is unavailable until this is resolved."
+                iso_block, STATEMENTS["report_description_iso_refused"]
             )
         )
     else:
         zone = iso_block["zone"]
         severity = iso_block.get("severity_level")
         motivation = (
-            f"ISO Zone {zone} is classified as {severity.lower()}."
+            STATEMENTS["report_motivation_zone_severity"].format(
+                zone=zone, severity=severity.lower()
+            )
             if severity
-            else f"ISO Zone {zone}."
+            else STATEMENTS["report_motivation_zone"].format(zone=zone)
         )
         for entry in generate_recommendations(severity_zone=zone):
             recommendations.append(
@@ -562,8 +629,7 @@ def _build_recommendations(
     if bearing_block["status"] == REFUSED:
         recommendations.append(
             _refusal_recommendation(
-                bearing_block,
-                "The bearing check is unavailable until this is resolved.",
+                bearing_block, STATEMENTS["report_description_bearing_refused"]
             )
         )
 
@@ -572,10 +638,7 @@ def _build_recommendations(
             {
                 "action": anomaly_block["remedy"],
                 "urgency": "low",
-                "description": (
-                    "Pattern-level corroboration is unavailable without a "
-                    "trained model."
-                ),
+                "description": STATEMENTS["report_description_anomaly_absent"],
                 "motivation": anomaly_block["statement"],
                 "evidence": [anomaly_block["statement"]],
             }
@@ -601,16 +664,8 @@ def build_baseline_comparison(
     if not baseline:
         return {
             "status": ABSENT,
-            "statement": (
-                "No healthy baseline was supplied for this machine, so the "
-                "readings below are absolute rather than relative. Whether "
-                "this condition is new, stable, or worsening cannot be "
-                "determined from a single acquisition."
-            ),
-            "remedy": (
-                "Re-run the diagnosis with a baseline signal id from the same "
-                "machine in a known-good state."
-            ),
+            "statement": STATEMENTS["report_baseline_absent"],
+            "remedy": STATEMENTS["report_baseline_absent_remedy"],
             "deltas": [],
         }
 
@@ -618,15 +673,10 @@ def build_baseline_comparison(
     if incompatible:
         return {
             "status": REFUSED,
-            "statement": (
-                f"Baseline comparison was refused: {incompatible} A delta "
-                f"between measurements taken under different conditions "
-                f"would look like a change in machine condition."
+            "statement": STATEMENTS["report_baseline_refused"].format(
+                reason=incompatible
             ),
-            "remedy": (
-                "Supply a baseline acquired from the same measurement point "
-                "under the same declared conditions."
-            ),
+            "remedy": STATEMENTS["report_baseline_refused_remedy"],
             "deltas": [],
         }
 
@@ -642,25 +692,17 @@ def build_baseline_comparison(
     if not deltas:
         return {
             "status": ABSENT,
-            "statement": (
-                f"A baseline was supplied ({baseline.get('signal_id')}), but "
-                f"no indicator could be compared: the two diagnoses share no "
-                f"assessed block. Whether this condition is new, stable, or "
-                f"worsening cannot be determined."
+            "statement": STATEMENTS["report_baseline_nothing_compared"].format(
+                baseline_id=baseline.get("signal_id")
             ),
-            "remedy": (
-                "Ensure both signals declare their unit so the severity and "
-                "anomaly blocks are assessed rather than refused."
-            ),
+            "remedy": STATEMENTS["report_baseline_nothing_compared_remedy"],
             "deltas": [],
         }
 
     moved = [d for d in deltas if d["direction"] != "unchanged"]
     if not moved:
-        statement = (
-            f"Compared with baseline {baseline.get('signal_id')}: no "
-            f"measurable change in any compared indicator. The condition "
-            f"described above is stable, not developing."
+        statement = STATEMENTS["report_baseline_unchanged"].format(
+            baseline_id=baseline.get("signal_id")
         )
     else:
         lead = min(_HEADLINE_ORDER.index(d["indicator"]) for d in moved)
@@ -669,10 +711,11 @@ def build_baseline_comparison(
             for d in moved
             if _HEADLINE_ORDER.index(d["indicator"]) == lead
         )
-        statement = (
-            f"Compared with baseline {baseline.get('signal_id')}: "
-            f"{len(moved)} of {len(deltas)} indicators moved. "
-            f"{headline}"
+        statement = STATEMENTS["report_baseline_moved"].format(
+            baseline_id=baseline.get("signal_id"),
+            moved=len(moved),
+            total=len(deltas),
+            headline=headline,
         )
 
     return {
@@ -695,17 +738,15 @@ def _baseline_incompatibility(diagnosis: dict, baseline: dict) -> str:
         signal_unit = signal_iso.get("original_unit")
         baseline_unit = baseline_iso.get("original_unit")
         if signal_unit != baseline_unit:
-            return (
-                f"the signal declares its unit as '{signal_unit}' while the "
-                f"baseline declares '{baseline_unit}'."
+            return STATEMENTS["report_baseline_unit_mismatch"].format(
+                signal_unit=signal_unit, baseline_unit=baseline_unit
             )
 
     signal_bearing = diagnosis.get("bearing_id")
     baseline_bearing = baseline.get("bearing_id")
     if signal_bearing and baseline_bearing and signal_bearing != baseline_bearing:
-        return (
-            f"the signal was analysed against bearing '{signal_bearing}' and "
-            f"the baseline against '{baseline_bearing}'."
+        return STATEMENTS["report_baseline_bearing_mismatch"].format(
+            signal_bearing=signal_bearing, baseline_bearing=baseline_bearing
         )
 
     return ""
@@ -731,14 +772,10 @@ def _rms_delta(diagnosis: dict, baseline: dict) -> Optional[dict]:
     delta = now - then
     direction = _direction(delta, 0.005)
     if direction == "unchanged":
-        statement = (
-            f"RMS velocity is unchanged against baseline "
-            f"({now:.2f} mm/s, was {then:.2f} mm/s)."
-        )
+        statement = STATEMENTS["report_delta_rms_unchanged"].format(now=now, then=then)
     else:
-        statement = (
-            f"RMS velocity is {abs(delta):.2f} mm/s {direction} than baseline "
-            f"({now:.2f} mm/s, was {then:.2f} mm/s)."
+        statement = STATEMENTS["report_delta_rms_moved"].format(
+            delta=abs(delta), direction=direction, now=now, then=then
         )
     return {
         "indicator": "rms_velocity",
@@ -762,15 +799,12 @@ def _anomaly_delta(diagnosis: dict, baseline: dict) -> Optional[dict]:
     delta = now - then
     direction = _direction(delta, 0.05)
     if direction == "unchanged":
-        statement = (
-            f"The share of anomalous segments is unchanged against baseline "
-            f"({now:.0f}%, was {then:.0f}%) — a difference of under one "
-            f"percentage point."
+        statement = STATEMENTS["report_delta_anomaly_unchanged"].format(
+            now=now, then=then
         )
     else:
-        statement = (
-            f"The share of anomalous segments is {abs(delta):.0f} percentage "
-            f"points {direction} than baseline ({now:.0f}%, was {then:.0f}%)."
+        statement = STATEMENTS["report_delta_anomaly_moved"].format(
+            delta=abs(delta), direction=direction, now=now, then=then
         )
     return {
         "indicator": "anomaly_ratio",
