@@ -15,6 +15,10 @@
     {
       "version": "1.4.3",
       "digest": "4f406bec1169dbabe2c58fc11c4530db2d661ae5e6dc5aa2ca3ba10ea8b8c38a"
+    },
+    {
+      "version": "1.5.0",
+      "digest": "87015f8ed7131df420ab7241a090c64e935b465914b98f4a66a81ceaf575aace"
     }
   ]
 }

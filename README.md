@@ -158,7 +158,7 @@ The project includes a **plugin for Claude Code** with domain-specific skills th
   <img src="assets/plugin.gif" alt="Animated demo: adding the predictive-maintenance marketplace, installing the plugin and opening its page, which lists its skills and agents" width="720">
 </p>
 
-The plugin adds **9 skills** that activate automatically based on context (bearing-diagnosis, gear-diagnosis, quick-screening, report-generation, anomaly-detection, signal-management, documentation-search, prognostics, experimental shaft-order-evidence), **2 agents** that run multi-step diagnostic workflows end-to-end and hand you the evidence (diagnostic-pipeline, signal-explorer), and **3 commands** for quick entry points (`/pm-diagnose`, `/pm-screen`, `/pm-report`).
+The plugin adds **9 skills** that activate automatically based on context (bearing-diagnosis, gear-diagnosis, quick-screening, report-generation, anomaly-detection, signal-management, documentation-search, prognostics, experimental shaft-order-evidence), **2 agents** (diagnostic-pipeline, which runs the multi-step diagnostic workflow end-to-end and hands you the evidence, and signal-explorer, deprecated now that signal comparison runs in the report-generation skill), and **3 commands** for quick entry points (`/pm-diagnose`, `/pm-screen`, `/pm-report`).
 
 Full skill, agent, and command reference: [Plugin README](plugin/README.md).
 

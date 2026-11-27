@@ -1,57 +1,14 @@
 ---
 description: Generate a diagnostic report for a vibration signal
-argument-hint: "[signal_id] [report_type: fft|envelope|iso|comparison|pca|docx|full]"
-allowed-tools:
-  - Read
-  - Bash
+argument-hint: "[signal_id] [report_type: fft|envelope|iso|comparison|pca|docx|full|pdf]"
 ---
 
-Generate a diagnostic report for the specified signal.
+Run the report-generation skill of this plugin
+(`predictive-maintenance:report-generation`) for the signal and the report type
+the user named.
 
-Parse the arguments:
-- First argument: signal_id (or a file path to load first)
-- Second argument (optional): report type. Defaults to "full".
-
-If no arguments are provided, call `list_signals(scope="memory")` and ask the
-user which signal and report type they want. Load files first with
-`load_signal(filepath="<file>", signal_unit="g")` (declare the unit only if
-known; raw binary `.bin`/`.raw`/`.dat` files also need `sample_format` and
-`sampling_rate`, or a companion `<stem>_metadata.json`).
-
-Report types:
-- **fft**: `generate_fft_report(signal_id="<id>", max_freq=5000, num_peaks=15)`
-- **envelope**: `generate_envelope_report(signal_id="<id>", filter_low=500, filter_high=5000)`
-- **iso**: `generate_iso_report(signal_id="<id>", machine_group=<group>, support_type="<support type>")`
-  (pass the group and support type as the user states them; when they were
-  not stated, leave them out and say that the zone uses the default group 2
-  / rigid)
-- **comparison**: `generate_feature_comparison_report(signal_groups={"baseline": ["baseline_1"], "test": ["fault_1"]})`
-  (signal_groups maps a group label to a list of signal_ids — ask which
-  signals belong to which group)
-- **pca**: `generate_pca_visualization_report(model_name="anomaly_model", test_signal_ids=["<id>"])`
-  (requires a model trained via train_anomaly_model — ask for the model name)
-- **docx**: `generate_diagnostic_report_docx(signal_id="<id>", sections={"Summary": "..."})`
-- **full**: generate FFT + envelope + ISO + DOCX reports in sequence
-
-For ISO reports the signal must have a DECLARED unit — if the assessment is
-refused, confirm the unit with the user and re-load with
-`load_signal(filepath="<file>", signal_unit="mm/s", overwrite=True)`.
-
-After generation, report the file paths and key findings from each report.
-Report filenames are timestamped; `list_html_reports()` lists everything
-generated so far.
-
-`bearing_matches` and `bearing_assessment` are not the bearing evidence:
-report the claim of `check_bearing_faults`, and with a server whose check
-returns no `claim`, relay neither.
-
-If a `check_bearing_faults` result, or a non-null `bearing_faults` block of a
-`diagnose_vibration` result, has no `claim` field, the server predates the
-bearing claim: infer or relay no bearing fault type or bearing assessment
-from it (its `overall_assessment`, `most_likely_fault`, `fault_checks`,
-bearing sentence or Bearing recommendations), and tell the user that this
-bearing guidance needs a server whose `check_bearing_faults` returns
-`claim`. The `evidence_strength` of such a `diagnose_vibration` result, and
-its "Fault evidence strength" sentence, also count the bearing finding, so
-neither is relayed; results that do not rest on the bearing check, such as
-the ISO 20816-3 zone and its action, are relayed as usual.
+The first argument is a signal_id or a file path; the second, optional, is the
+report type, and a missing report type means a full report. Without a signal,
+the skill's own signal check applies. Follow that skill's workflow, relay rules
+and reporting exactly. This command adds no step, threshold, verdict or
+recommendation of its own.

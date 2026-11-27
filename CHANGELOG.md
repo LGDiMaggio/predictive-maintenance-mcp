@@ -753,6 +753,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tuning, when the training windows give the specificity check, that the
   PCA report plots only the test segments and needs the model's own
   segmentation, and which true labels the report accepts.
+- **Plugin 1.5.0: the plugin workflows relay what the server writes.** The
+  bearing-diagnosis and quick-screening skills no longer apply screening
+  bands, health classes, actions or follow-up intervals of their own: they
+  report the statistics as the numbers the server returns and a refused
+  assessment with its reason and remedy, and the screening card shows
+  the ISO 20816-3 zone with its description and the zone action the server
+  returns. A full or PDF
+  report, and the diagnostic-pipeline agent's final document, come from
+  `generate_diagnostic_report`, whose sentences are relayed verbatim; when
+  that report and `diagnose_vibration` disagree, the agent says so instead of
+  choosing between them. The agent runs on the session's model and no longer
+  lists steps that none of its tools performs. `/pm-diagnose`, `/pm-screen`
+  and `/pm-report` hand over to one skill each and pre-approve no tool. The
+  prognostics skill no longer suggests a lower onset threshold or an urgency
+  relative to a maintenance window. Plugin version 1.5.0.
+- **The signal-explorer agent is deprecated.** It now only points to the
+  report-generation skill, which runs the signal comparison without the
+  assessment, character and outlier labels the agent added. It will be
+  removed in a later plugin release.
 
 ### Fixed
 - **Signals sampled at 1002 Hz or less no longer fail with a misleading band-edge message.** At these rates the

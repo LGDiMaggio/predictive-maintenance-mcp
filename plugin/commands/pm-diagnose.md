@@ -1,74 +1,12 @@
 ---
 description: Start a bearing fault diagnosis workflow on a vibration signal
 argument-hint: "[signal_id or file_path]"
-allowed-tools:
-  - Read
-  - Bash
 ---
 
-Run the bearing fault diagnosis workflow on the specified signal.
+Run the bearing-diagnosis skill of this plugin
+(`predictive-maintenance:bearing-diagnosis`) on the signal the user named.
 
-If the user provided a signal_id or file path as argument, use it directly.
-Otherwise, call `list_signals(scope="memory")` to show loaded signals (and
-`list_signals(scope="disk")` for loadable files) and ask the user to choose.
-
-Follow the bearing-diagnosis skill workflow:
-1. Load/verify the signal: `load_signal(filepath="<file>", signal_unit="g")`
-   (declare the unit only if known; ask, never guess; raw binary
-   `.bin`/`.raw`/`.dat` files also need `sample_format` and `sampling_rate`, or
-   a companion `<stem>_metadata.json`), then
-   `get_signal_info(signal_id="<id>")`. Values in angle brackets below are
-   placeholders, not your machine's values: fill them only from what
-   `get_signal_info` reports or from what the user states (`rpm` in
-   revolutions per minute), and ask when neither gives them
-2. Statistical screening: `analyze_statistics(signal_id="<id>")`
-3. FFT analysis: `analyze_fft(signal_id="<id>")`
-4. Bearing characteristic frequencies: ask for the bearing designation if
-   unknown, then `search_bearing_catalog(bearing_id="<bearing designation>")` or
-   `calculate_bearing_characteristic_frequencies(num_balls=<n>, ball_diameter_mm=<mm>, pitch_diameter_mm=<mm>, rpm=<rpm>)`
-5. Envelope line test (the bearing evidence): `check_bearing_faults(signal_id="<id>", rpm=<rpm>, bearing_id="<bearing designation>")`,
-   or `frequencies=<reference frequencies>` in place of `bearing_id` when the
-   frequencies come from the signal's declaration or from the user
-6. ISO 20816-3 severity: `assess_severity(signal_id="<id>", machine_group=<group>, support_type="<support type>")`;
-   pass the group and support type as the user states them, and when they
-   were not stated, leave them out and say that the zone uses the default
-   group 2 / rigid
-7. Reports: `generate_envelope_report(signal_id="<id>", rpm=<rpm>)` with the
-   same shaft speed as step 5, passing `rpm` only when the connected server's
-   schema for this tool lists it (if it does not list `rpm`, omit it, and do
-   not say that the report used that speed or performed the shaft-order and
-   sideband checks that a speed enables) + `generate_fft_report(signal_id="<id>")`, optionally
-   `generate_diagnostic_report_docx(signal_id="<id>", sections={"Summary": "..."})`.
-   The envelope report's `bearing_matches` and `bearing_assessment` are not
-   the bearing evidence: report the claim of `check_bearing_faults`, and with
-   a server whose check returns no `claim`, relay neither.
-
-Present a concise summary at the end: the bearing claim in the server's words
-(`claim.level`, with `overall_assessment` quoted verbatim), never your own
-matching of envelope peaks; the outcome as returned (`no_indication`,
-`inconclusive`, `indicated` or `several_types`); the ISO zone; and only the
-actions the tools return or the workflow lists. `claim.level`, not `outcome`,
-decides whether a fault type is named: single one out only at
-`single_spectrum_evidence`, as envelope evidence of one spectrum, never as a
-confirmed fault. `outcome_reason` and `next_step` describe the evidence
-outcome before the claim: when `claim.level` is not
-`single_spectrum_evidence`, do not relay them to name a fault type or a
-single element. A single-spectrum indication asks for confirmation, never a
-replacement, and `no_indication` is not evidence that the bearing is free of
-defects. If a `check_bearing_faults` result, or a non-null `bearing_faults`
-block of a `diagnose_vibration` result, has no `claim` field, the server
-predates the bearing claim: infer or relay no bearing fault type or bearing
-assessment from it (its `overall_assessment`, `most_likely_fault`,
-`fault_checks`, bearing sentence or Bearing recommendations), and tell the
-user that this bearing guidance needs a server whose `check_bearing_faults`
-returns `claim`. The `evidence_strength` of such a `diagnose_vibration`
-result, and its "Fault evidence strength" sentence, also count the bearing
-finding, so neither is relayed; results that do not rest on the bearing
-check, such as the ISO 20816-3 zone and its action, are relayed as usual.
-A null `bearing_faults` block is not a clean bearing check: when a bearing was
-given, the check did not run, and the result says nothing about the bearing.
-When the result has a `bearing_check` block, quote its `status`, and its
-`reason` and `remedy` when the status is `not_computed`; only `assessed` says
-anything about the bearing.
-Use cautious language: the result supports the engineer's decision, it does
-not replace it.
+Pass the argument, a signal_id or a file path, to the skill as the signal to
+diagnose; without an argument, the skill's own signal discovery step applies.
+Follow that skill's workflow, relay rules and reporting exactly. This command
+adds no step, threshold, verdict or recommendation of its own.

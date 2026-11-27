@@ -1,19 +1,21 @@
 ---
 name: report-generation
 description: >
-  Generate professional diagnostic reports (HTML, DOCX) for vibration analysis
-  using the predictive-maintenance-mcp server. Use this skill when the user says
+  Generate diagnostic reports (the server-written report in HTML or PDF, report
+  files, DOCX) and multi-signal comparisons for vibration analysis using the
+  predictive-maintenance-mcp server. Use this skill when the user says
   "generate report", "create report", "export report", "diagnostic report",
   "save analysis", "create PDF", "archive results", "full documentation",
-  "DOCX report", "HTML report", "comparison report", or "PCA report".
+  "DOCX report", "HTML report", "comparison report", "PCA report", "compare
+  these signals", or "explore these signals".
 ---
 
 # Report Generation
 
 Orchestrate predictive-maintenance-mcp tools to produce professional diagnostic
-reports. Supports time-domain plots, FFT spectrum, envelope analysis,
-ISO 20816-3 evaluation, feature comparison, PCA visualization, and full DOCX
-documents.
+reports. Supports the server-written diagnostic report, time-domain plots,
+FFT spectrum, envelope analysis, ISO 20816-3 evaluation, feature comparison,
+PCA visualization, and DOCX documents.
 
 **Prerequisite**: The `predictive-maintenance-mcp` MCP server must be connected.
 
@@ -21,6 +23,7 @@ documents.
 
 | Report Type | Tool | When to Use |
 |---|---|---|
+| Diagnostic report (HTML, PDF) | `generate_diagnostic_report()` | Full, comprehensive or PDF report; the server writes every sentence |
 | Time-domain plot | `plot_signal()` | Waveform inspection |
 | FFT Spectrum | `generate_fft_report()` | Frequency content inspection |
 | Envelope Analysis | `generate_envelope_report()` | Bearing fault frequency detection |
@@ -33,8 +36,9 @@ documents.
 
 ### Step 1 — Determine Report Type
 
-Ask the user or infer from context which report(s) are needed. For a "full" or
-"comprehensive" request, generate multiple reports in sequence.
+Ask the user or infer from context which report(s) are needed. A "full",
+"comprehensive" or "PDF" request is the diagnostic report of Step 5. A request
+to compare or explore several signals is the Multi-Signal Comparison below.
 
 ### Step 2 — Verify Signal Availability
 
@@ -94,11 +98,8 @@ the ISO 20816-3 zone and its action, are relayed as usual.
   with `load_signal(filepath="<file>", signal_unit="mm/s", overwrite=True)`
   after confirming the unit with the user.
 
-**Feature comparison** (signal_groups maps a label to a list of signal_ids):
-`generate_feature_comparison_report(signal_groups={"baseline": ["baseline_1"], "faulty": ["OuterRaceFault_1"]}, features_to_plot=["rms", "kurtosis"])`
-
-**PCA visualization** (requires a model trained via train_anomaly_model):
-`generate_pca_visualization_report(model_name="anomaly_model", test_signal_ids=["<id>"])`
+**Feature comparison and PCA visualization**: see Multi-Signal Comparison
+below.
 
 **Full DOCX** (sections maps section titles to content):
 `generate_diagnostic_report_docx(signal_id="<id>", title="Pump P-101 diagnostic", sections={"Summary": "...", "Findings": "..."})`
@@ -122,15 +123,57 @@ Report filenames are timestamped — consecutive runs never overwrite each
 other. Call `list_html_reports()` to list all generated reports, or
 `list_html_reports(file_name="<report>.html")` for one report's details.
 
-### Step 5 — Composite Reports (Optional)
+### Step 5: Full, Comprehensive or PDF Report
 
-For "full" or "comprehensive" requests, generate in sequence:
-1. FFT spectrum report
-2. Envelope analysis report
-3. ISO 20816-3 report
-4. Full DOCX report (synthesizes everything)
+For a "full", "comprehensive" or "PDF" request, call
+`generate_diagnostic_report(signal_id="<id>", rpm=<rpm>, bearing_id="<bearing designation>", formats=["html"])`:
+one document whose every sentence the server writes.
 
-Provide a combined summary referencing all report paths.
+- `formats` takes "html", "pdf" or both. A PDF needs the server's optional
+  PDF extra; when the server refuses it, relay its message.
+- `rpm` is required. Pass `bearing_id` only when a bearing designation is
+  known, `baseline_signal_id` only when the user names a stored signal of the
+  same machine in a known-good state, and `machine_group` and `support_type`
+  as the user states them: `generate_diagnostic_report` does not read a
+  declared measurement point. When they were not stated, leave them out and
+  say that the zone uses the default group 2 / rigid.
+- Relay its `statements` verbatim and in order, its `verdict` and
+  `recommendations` as returned, and the paths in `files`. Add no sentence,
+  zone, confidence or fault type of your own to them; when the result does
+  not answer a question, say so.
+- A result without a `bearing_check` field comes from a server that predates
+  the bearing claim: relay none of its bearing sentences, its `verdict`, its
+  bearing recommendations or its evidence strength, and say that this bearing
+  guidance needs a server whose `check_bearing_faults` returns `claim`. Its
+  other statements, such as the ISO 20816-3 zone, are relayed as usual.
+
+## Multi-Signal Comparison
+
+For a request to compare or explore several signals:
+
+1. Load every signal in one batch, which is atomic:
+   `load_signal(filepath=["<file A>", "<file B>", "<file C>"])`, adding
+   `signal_unit` only when the user states it (raw binary files also need
+   `sample_format` and `sampling_rate`, or a companion
+   `<stem>_metadata.json`)
+2. Call `analyze_statistics(signal_id="<id>")` for each signal
+3. Call `generate_feature_comparison_report(signal_groups={"<group name>": ["<id>", "<id>"], "<other group name>": ["<id>"]}, features_to_plot=["rms", "kurtosis", "crest_factor"])`.
+   `signal_groups` maps a group name to the signal_ids in it. The group names
+   are the user's: ask which signals belong together, and never name a group
+   after a condition the tools did not establish
+4. Only when a trained anomaly model exists and the user names it, add
+   `generate_pca_visualization_report(model_name="<model name>", test_signal_ids=["<id>", "<id>"])`.
+   It segments each signal with the model's training `segment_duration` and
+   `overlap_ratio`, and its `true_labels`, when the user supplies them, take
+   only the labels its description lists. Training a model is a step of the
+   anomaly-detection skill: suggest it to the user, and do not train one
+   yourself in this workflow
+
+Report each feature's values per signal, and their range across the signals,
+as the numbers the tools return, with the report paths. Label no signal and
+no group by its values (such as normal, impulsive, tonal or outlier), and do
+not single out a signal as different from the others: the comparison report
+shows the values for the engineer to judge.
 
 ## Important Notes
 

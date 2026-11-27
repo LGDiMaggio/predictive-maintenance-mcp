@@ -39,15 +39,15 @@ rest on the bearing check, such as the ISO 20816-3 zone, as usual.
 
 ### MCP server name for the agents
 
-The two agents call the server's tools by name, as
-`mcp__predictive-maintenance__<tool>`, so they reach them only when the server
+The diagnostic-pipeline agent calls the server's tools by name, as
+`mcp__predictive-maintenance__<tool>`, so it reaches them only when the server
 is registered under the name `predictive-maintenance`, the name the
 installation instructions use (register it under that name in Claude Code
 too). Under any other name the agents cannot call the server's
 tools and say so; skills and commands, which run in the main conversation, are
 not affected. Each agent lists in the `tools:` field of its file only the
-server tools its workflow uses (19 for diagnostic-pipeline, 10 for
-signal-explorer); other server tools, such as `clear_signals` or
+server tools its workflow uses (21 for diagnostic-pipeline, none for the
+deprecated signal-explorer); other server tools, such as `clear_signals` or
 `train_anomaly_model`, are not available to the agents. Some listed tools
 change state: `load_signal` stores signals in the server's memory, where
 `overwrite=True` replaces the signal with the same id, and, for a file whose
@@ -55,9 +55,12 @@ companion declares an asset and measurement point, adds the measurement with
 its declared unit, sampling rate and raw-format settings to the append-only
 asset ledger (a re-load with changed settings adds a superseding entry; the
 earlier one stays in the history); the report tools write new files under
-`reports/`. Both agents also keep Read, Glob, Grep and Bash; their
-instructions limit Bash to inspecting files. Claude Code asks before each
-tool call according to your permission settings.
+`reports/`. The diagnostic-pipeline agent also keeps Read, Glob, Grep and
+Bash; its instructions limit Bash to inspecting files. The signal-explorer
+agent is deprecated and will be removed in a later release: it runs no
+analysis, keeps only Read, and points to the signal comparison of the
+report-generation skill. Claude Code asks before each tool call according to
+your permission settings, and the commands pre-approve no tool.
 
 ### Skills (9)
 
@@ -68,7 +71,7 @@ Skills activate automatically when Claude detects relevant context.
 | **bearing-diagnosis** | "diagnose bearing", "outer race fault" | Full bearing fault diagnostic workflow |
 | **gear-diagnosis** | "gear fault", "gear mesh frequency" | Gear fault detection via spectral analysis |
 | **quick-screening** | "quick check", "is this machine healthy" | Fast health screening (<30s) |
-| **report-generation** | "generate report", "create PDF" | Professional HTML/DOCX report generation |
+| **report-generation** | "generate report", "create PDF", "compare these signals" | Server-written diagnostic report (HTML, PDF), report files and multi-signal comparison |
 | **anomaly-detection** | "train model", "detect anomalies" | ML-based anomaly detection (SVM, LOF) |
 | **signal-management** | "load signal", "generate test signal" | Signal loading, generation, cache management |
 | **documentation-search** | "search manual", "look up bearing" | RAG search across manuals and catalogs |
@@ -82,11 +85,11 @@ Agents run autonomously for complex, multi-step tasks.
 | Agent | When to Use | Description |
 |---|---|---|
 | **diagnostic-pipeline** | "Run a full diagnostic on this signal" | Complete ISO 13374 pipeline: load -> analyze -> diagnose -> report |
-| **signal-explorer** | "Explore these signals and compare them" | Signal characterization, comparison, and outlier detection |
+| **signal-explorer** | Deprecated, removed in a later release | Points to the report-generation skill, which now runs the signal comparison |
 
 ### Commands (3)
 
-Quick entry points for common workflows.
+Quick entry points for common workflows. Each command hands over to one skill.
 
 | Command | Usage | Description |
 |---|---|---|

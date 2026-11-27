@@ -19,7 +19,9 @@ from test_documented_calls import REPO_ROOT, extract_calls
 SERVER = "predictive-maintenance"
 PREFIX = f"mcp__{SERVER}__"
 BUILT_INS = ["Read", "Glob", "Grep", "Bash"]
-AGENTS = ("plugin/agents/diagnostic-pipeline.md", "plugin/agents/signal-explorer.md")
+#: Agents that run a workflow. The deprecated signal-explorer stub calls no
+#: tool; tests/test_plugin_executability.py holds its shape.
+AGENTS = ("plugin/agents/diagnostic-pipeline.md",)
 INVENTORY = frozenset(
     json.loads(
         (REPO_ROOT / "tests" / "fixtures" / "tool_inventory.json").read_text(
@@ -125,7 +127,9 @@ def test_the_permission_guard_fails_on_mutations(agent, case):
     assert tool_violations(mutated), f"{case}: the guard stayed green"
 
 
-def test_signal_explorer_does_not_train_a_model_itself():
-    flat = re.sub(r"\s+", " ", _text("plugin/agents/signal-explorer.md")).lower()
+def test_the_signal_comparison_does_not_train_a_model_itself():
+    flat = re.sub(
+        r"\s+", " ", _text("plugin/skills/report-generation/SKILL.md")
+    ).lower()
     assert "do not train one yourself" in flat
     assert "train one first" not in flat

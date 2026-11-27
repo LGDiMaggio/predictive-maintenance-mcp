@@ -11,7 +11,7 @@ description: >
 
 # Quick Vibration Screening
 
-Fast health status assessment for rotating machinery. Produces a screening
+Fast vibration screening for rotating machinery. Produces a screening
 card in under 30 seconds with clear next-step recommendations. Screening
 informs the engineer's decision — it is never a diagnosis by itself.
 
@@ -40,6 +40,9 @@ Report as bullet points:
 - **Kurtosis**: excess kurtosis (Fisher convention)
 - **Peak-to-Peak**: overall vibration range
 
+Report them as the numbers returned. They are screening context only: they
+identify no fault and are not a health verdict.
+
 ### Step 3 — FFT Snapshot
 
 Call `analyze_fft(signal_id="<id>")`.
@@ -60,8 +63,10 @@ Call `assess_severity(signal_id="<id>", machine_group=<group>, support_type="<su
 
 Report:
 - RMS velocity in mm/s
-- Zone: A / B / C / D
-- Severity description
+- The zone (A, B, C or D) with its `zone_description`, as returned
+
+If the assessment is refused, relay its reason and remedy as returned, and
+give no zone, zone action or verdict in its place.
 
 Notes:
 - Pass machine_group (1 = large >300 kW, 2 = medium 15-300 kW) and
@@ -76,37 +81,43 @@ Notes:
 
 ### Step 5 — Summary Card
 
-Format the output as a concise screening card:
+Format the output as a concise screening card, with every value as the tools
+return it:
 
 ```
 VIBRATION HEALTH SCREENING
 ===========================
 Signal: {signal_id}
-Overall: {Healthy / Monitor / Suspicious / Critical}
 
 Key Indicators:
   RMS: {value}  |  CF: {value}  |  Kurt: {value}
-  ISO Zone: {zone} ({severity})
+  ISO Zone: {zone} ({zone_description}), or the refusal's reason and remedy
 
-Recommendation:
-  {appropriate next step}
+Zone action:
+  {the output of generate_maintenance_recommendations}
+
+Next steps:
+  {the next steps below that apply}
 ```
 
-**Decision logic:**
+For the zone action, call `generate_maintenance_recommendations(severity_zone="C")`
+with the zone letter the assessment returned, and relay its output as
+returned. Pass no `fault_types`: a screening establishes no fault. A refused
+assessment gives no zone: skip the call.
 
-| ISO Zone | Kurtosis | Verdict | Recommendation |
-|----------|----------|---------|----------------|
-| A | < 1 | Healthy | No immediate concerns. Schedule routine monitoring. |
-| B | 1–3 | Monitor | Elevated indicators. Schedule follow-up in 2–4 weeks. |
-| C | 3–6 | Suspicious | Consider detailed bearing analysis (bearing-diagnosis skill). |
-| D | > 6 | Critical | Immediate detailed analysis recommended. |
+Next steps:
+- A bearing question, or a bearing designation the user gives: the
+  bearing-diagnosis skill
+- A question about unbalance, misalignment or looseness: the optional
+  shaft-order-evidence skill (Step 3)
 
 ## Important Notes
 
 - This is a SCREENING tool, NOT a diagnostic tool
 - Never make definitive fault claims from screening alone
-- Always recommend targeted analysis for Suspicious/Critical results
-- Use cautious language: "indicators suggest", not "confirmed fault"; a line at
+- Suggest targeted analysis only as the next steps of Step 5 give it
+- Use cautious language ("indicators suggest"): a screening result is not a
+  confirmed fault, and a line at
   1x or 2x attributes no unbalance, misalignment or looseness; they may be
   named as possible explanations next to the others (Step 3)
 - The screening supports the engineer's judgment; it does not replace it

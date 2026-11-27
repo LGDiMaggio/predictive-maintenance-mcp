@@ -56,23 +56,10 @@ If the sampling rate is missing, STOP and ask the user — do not guess.
 
 Call `analyze_statistics(signal_id="<id>")`.
 
-Evaluate screening flags (excess kurtosis, Fisher convention):
-
-| Indicator | Threshold | Meaning |
-|-----------|-----------|---------|
-| Kurtosis > 0 | Mild | Non-Gaussian content (possible impulses) |
-| Kurtosis > 3 | Moderate | Significant impulsive content |
-| Kurtosis > 6 | Severe | Strong impulsiveness |
-| Crest Factor > 4 | Mild | Impulsiveness present |
-| Crest Factor > 6 | Strong | Strong impulsiveness |
-
-These flags are screening only: they name no source and never raise the
-bearing claim of Step 5.
-
-**Decision gate**: If Kurtosis < 0 AND Crest Factor < 3, the signal shows no
-impulsive content. Report "No impulsive content in time-domain screening; the
-bearing is not assessed by it" and ask whether to continue anyway: the
-envelope line test of Step 5 can still find lines that screening misses.
+Report RMS, crest factor and kurtosis (excess, Fisher convention) as the
+numbers returned. They are screening context only: they name no fault type
+or source, are not a health verdict, never raise the bearing claim of Step 5
+and never stop the workflow. Low values do not rule out a bearing defect.
 
 ### Step 3: Spectral Analysis (Block 2)
 
@@ -166,9 +153,10 @@ Call `assess_severity(signal_id="<id>", machine_group=<group>, support_type="<su
   support type, leave it out and say that the zone uses the default group 2 /
   rigid.
 - Report the zone (A/B/C/D) and RMS velocity in mm/s.
-- If the verdict is refused because no unit is declared, re-load with
-  `load_signal(filepath="<file>", signal_unit="g", overwrite=True)` after
-  confirming the unit with the user.
+- If the assessment is refused, relay its reason and remedy as returned, and
+  give no zone in its place. When the refusal is for an undeclared unit,
+  re-load with `load_signal(filepath="<file>", signal_unit="g", overwrite=True)`
+  after confirming the unit with the user.
 - Severity is machine-level context, NOT bearing-specific evidence.
 
 **One-call alternative**: `diagnose_vibration(signal_id="<id>")`
