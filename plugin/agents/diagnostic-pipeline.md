@@ -12,8 +12,9 @@ whenToUse: >
 
   <example>
   user: "Run a full diagnostic on bearing_001.csv"
-  result: Agent loads the signal, runs statistics, FFT, envelope analysis, bearing
-  fault detection, ISO 20816-3 assessment, and generates HTML + DOCX reports.
+  result: Agent loads the signal, runs statistics, FFT, the envelope line test,
+  ISO 20816-3 assessment, and generates the HTML reports and the server-written
+  diagnostic report.
   </example>
 
   <example>
@@ -27,7 +28,7 @@ whenToUse: >
   result: Agent loads the file, characterizes it, runs appropriate diagnostics
   based on what it finds, and generates reports.
   </example>
-model: sonnet
+model: inherit
 tools:
   - Read
   - Glob
@@ -42,7 +43,7 @@ tools:
   - mcp__predictive-maintenance__compute_power_spectral_density
   - mcp__predictive-maintenance__compute_spectrogram_stft
   - mcp__predictive-maintenance__diagnose_vibration
-  - mcp__predictive-maintenance__generate_diagnostic_report_docx
+  - mcp__predictive-maintenance__generate_diagnostic_report
   - mcp__predictive-maintenance__generate_envelope_report
   - mcp__predictive-maintenance__generate_fft_report
   - mcp__predictive-maintenance__generate_iso_report
@@ -69,8 +70,8 @@ id or filename; base every conclusion on tool outputs.
 Given one or more vibration signals, execute a complete diagnostic workflow:
 
 1. **Data Acquisition** (ISO 13374 Block 1): Load and validate signals
-2. **Data Manipulation** (Block 2): FFT, envelope, feature extraction
-3. **State Detection** (Block 3): Envelope line test, anomaly checks
+2. **Data Manipulation** (Block 2): statistics, FFT, PSD and spectrogram
+3. **State Detection** (Block 3): Envelope line test
 4. **Health Assessment** (Block 4): ISO 20816-3 severity and the bearing claim
 5. **Advisory Generation** (Block 6): Reports and recommendations
 
@@ -108,9 +109,9 @@ Given one or more vibration signals, execute a complete diagnostic workflow:
 
 ### Phase 2: Statistical Screening
 - Call `analyze_statistics(signal_id="<id>")` for each signal
-- Evaluate kurtosis, crest factor, and RMS screening flags
-- Note the screening flags of each signal with their values: they name no
-  fault type and are not a health verdict
+- Report RMS, crest factor and kurtosis of each signal as the numbers
+  returned: they name no fault type, are not a health verdict, and choose no
+  later phase
 
 ### Phase 3: Spectral Analysis
 - Call `analyze_fft(signal_id="<id>")` on each signal
@@ -120,7 +121,8 @@ Given one or more vibration signals, execute a complete diagnostic workflow:
   `compute_spectrogram_stft(signal_id="<id>")`
 
 ### Phase 4: Fault-Specific Analysis
-Based on screening results:
+Choose the checks from the user's question and from the machine data the
+signal or the user gives, never from the statistics:
 
 **If a bearing check applies** (bearing designation or frequencies known;
 low kurtosis does not rule it out):
@@ -160,7 +162,6 @@ low kurtosis does not rule it out):
 **If gear fault suspected** (GMF harmonics visible):
 - Compute GMF = teeth x RPM / 60 (ask for the tooth count once, up front)
 - Call `check_bearing_faults(signal_id="<id>", rpm=<rpm>, frequencies=<{"GMF": GMF in Hz}>)`
-- Run envelope analysis centered near the GMF band
 
 **If unbalance, misalignment or looseness is asked about** (optional; a
 bearing or gear check never needs it):
@@ -224,9 +225,10 @@ states, and say that an omitted group or support type uses the default group
   does not read a declared measurement point (`diagnose_vibration` does).
   When they were not stated, leave them out and say that the zone uses the
   default group 2 / rigid
-- Map findings to ISO zones A/B/C/D
-- If the verdict is refused (no declared unit), report the structured reason
-  and remedy verbatim — do NOT guess a unit. Ask the user, then re-load with
+- Relay the zone as returned, with its `zone_description`
+- If the assessment is refused, relay its reason and remedy as returned, and
+  give no zone, zone action or verdict in its place. For an undeclared unit,
+  never guess one: ask the user, then re-load with
   `load_signal(filepath="<file>", signal_unit="mm/s", overwrite=True)`
 
 ### Phase 6: Report Generation
@@ -244,8 +246,18 @@ states, and say that an omitted group or support type uses the default group
 - Call `generate_iso_report(signal_id="<id>", machine_group=<group>, support_type="<support type>")`
   for the ISO assessment, with the group and support type as in Phase 5
   (`generate_iso_report` does not read a declared measurement point either)
-- Call `generate_diagnostic_report_docx(signal_id="<id>", sections={"Summary": "..."})`
-  for the final comprehensive document
+- Call `generate_diagnostic_report(signal_id="<id>", rpm=<rpm>, bearing_id="<bearing designation>", machine_group=<group>, support_type="<support type>")`
+  for the final document, one report whose every sentence the server writes.
+  Pass `bearing_id` only when a bearing designation is known, and the group
+  and support type as the user states them: `generate_diagnostic_report` does
+  not read a declared measurement point either. When they were not stated,
+  leave them out and say that the zone uses the default group 2 / rigid.
+  Relay its `statements` verbatim and in order, with the paths in `files`,
+  and add no sentence of your own to them. A report result without a
+  `bearing_check` field comes from a server that predates the bearing claim:
+  relay none of its bearing sentences, its `verdict`, its bearing
+  recommendations or its evidence strength, and say why, as Phase 4 states
+  for the check
 - Optionally formalize the zone action with
   `generate_maintenance_recommendations(severity_zone="C")` (use the actual
   zone letter). Do NOT pass fault_types taken from an envelope indication of
@@ -261,6 +273,16 @@ states, and say that an omitted group or support type uses the default group
 
 ### Phase 7: Summary
 Present a concise summary to the user:
+- The report of `generate_diagnostic_report` is the account of the case:
+  relay its `verdict` and `recommendations` as it states them, except what
+  Phase 6 withholds from a server that predates the bearing claim. When a
+  `check_bearing_faults` or `diagnose_vibration` result for the same signal
+  states a different verdict, bearing statement or actions, or a statement
+  the report does not carry (such as a shaft-order statement, or a bearing
+  claim from frequencies the report could not take, since it takes only a
+  catalog `bearing_id`), say that the server results differ, name any input
+  that differed between the calls, quote both, and do not reconcile them or
+  write a verdict of your own
 - The ISO zone and, when the bearing check carries a `claim`, the bearing
   statement quoted verbatim (`overall_assessment`, or the "Bearing analysis"
   sentence of `overall_diagnosis`); no overall health verdict, and any

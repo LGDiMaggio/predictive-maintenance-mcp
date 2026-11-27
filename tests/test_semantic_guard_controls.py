@@ -48,6 +48,8 @@ from _semantic_guards import (
     verdict_vocabulary,
 )
 
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
+
 
 def _copy(relative: str, tmp_path: Path) -> Path:
     target = tmp_path / Path(relative).name
@@ -360,12 +362,13 @@ class TestVerdictVocabulary:
         assert any(re.search(rf"\b{label}\b", text) for label in VERDICT_LABELS)
         assert verdict_vocabulary(text, "s.md") == []
 
-    def test_mutation_on_the_screening_command(self, tmp_path):
-        """On a copy of the real /pm-screen command the guard reports the four
-        arrow verdicts of its decision logic (audit A-F5); replacing them with
-        projections of server fields removes every report. Not a tripwire:
-        the real file is not required to be clean."""
-        text = _copy("commands/pm-screen.md", tmp_path).read_text(encoding="utf-8")
+    def test_mutation_on_the_screening_command(self):
+        """On a frozen copy of the /pm-screen command as it stood before it
+        handed over to the screening skill, the guard reports the four arrow
+        verdicts of its decision logic (audit A-F5); replacing them with
+        projections of server fields removes every report. The real plugin
+        text is held by tests/test_plugin_verdict_vocabulary.py."""
+        text = (FIXTURES / "plugin_frozen" / "pm-screen.md").read_text(encoding="utf-8")
         arrows = [v for v in verdict_vocabulary(text, "cmd") if "arrow-verdict" in v]
         require(
             len(arrows) == 4,

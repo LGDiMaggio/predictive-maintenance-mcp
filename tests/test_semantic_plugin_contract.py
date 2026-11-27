@@ -73,7 +73,6 @@ POINT_RESOLVED = {"machine_group", "support_type", "rpm", "bearing_id"}
 FALLBACK_SURFACES = (
     "skills/documentation-search/SKILL.md",
     "skills/report-generation/SKILL.md",
-    "commands/pm-report.md",
 )
 
 #: The paragraph that tells a model the server predates the bearing claim.

@@ -58,9 +58,9 @@ Parameters:
 - `feature_name`: `"rms"` (default), `"kurtosis"`, `"crest_factor"`,
   `"range"` (peak-to-peak), ...
 - `segment_duration` (default 0.1 s) and `overlap_ratio` (default 0.5)
-- `onset_threshold_sigma`: baseline standard deviations that trigger onset
-  detection (default 3.0; lower to 2.0 for more sensitivity, with more false
-  positives)
+- `onset_threshold_sigma`: baseline standard deviations above the baseline
+  mean that trigger onset detection, a finite number greater than 0 (default
+  3.0); pass another value only when the user states one
 
 Feature guidance:
 
@@ -194,7 +194,7 @@ recording's signal id, the value computed from it and its declared unit, so
 the user can check which value came from which recording.
 
 Report: trend significance (p-value), fit quality, RUL with its time unit,
-observation horizon, and urgency relative to the next maintenance window.
+and observation horizon.
 
 ## Workflow C: Indicator Projection (not a prognosis; unreleased)
 

@@ -56,7 +56,43 @@ ISO_JUSTIFIED = (
 )
 ISO_UNIT_ALONE = "A mm/s unit alone does not establish that"
 
-ISO_TOOLS = {"assess_severity", "generate_iso_report", "diagnose_vibration"}
+#: generate_diagnostic_report takes machine_group and support_type with the
+#: default group 2 / rigid and reads no declared point, like the ISO tools.
+ISO_TOOLS = {
+    "assess_severity",
+    "generate_iso_report",
+    "diagnose_vibration",
+    "generate_diagnostic_report",
+}
+
+#: The files that make each pinned kind of call. The commands hand over to one
+#: skill each and carry none; a file that starts or stops making the call must
+#: be listed or removed here, so a lost call site cannot pass unnoticed.
+ISO_CALL_SITES = [
+    "agents/diagnostic-pipeline.md",
+    "skills/bearing-diagnosis/SKILL.md",
+    "skills/gear-diagnosis/SKILL.md",
+    "skills/quick-screening/SKILL.md",
+    "skills/report-generation/SKILL.md",
+]
+PLACEHOLDER_SITES = [
+    "agents/diagnostic-pipeline.md",
+    "skills/bearing-diagnosis/SKILL.md",
+    "skills/documentation-search/SKILL.md",
+    "skills/gear-diagnosis/SKILL.md",
+    "skills/report-generation/SKILL.md",
+]
+ENVELOPE_SPEED_SITES = [
+    "agents/diagnostic-pipeline.md",
+    "skills/bearing-diagnosis/SKILL.md",
+    "skills/report-generation/SKILL.md",
+]
+FALLBACK_SITES = [
+    "agents/diagnostic-pipeline.md",
+    "skills/bearing-diagnosis/SKILL.md",
+    "skills/documentation-search/SKILL.md",
+    "skills/report-generation/SKILL.md",
+]
 
 
 def _plugin() -> dict[str, str]:
@@ -78,7 +114,6 @@ def _missing(sources: list[str], phrase: str) -> list[str]:
 def test_every_bearing_workflow_carries_the_null_block_clause():
     sources = [
         "skills/bearing-diagnosis/SKILL.md",
-        "commands/pm-diagnose.md",
         "agents/diagnostic-pipeline.md",
     ]
     assert _missing(sources, NULL_BLOCK) == []
@@ -86,7 +121,7 @@ def test_every_bearing_workflow_carries_the_null_block_clause():
 
 def test_every_iso_call_site_discloses_the_default_group():
     sources = _calling(ISO_TOOLS)
-    assert len(sources) >= 7, sources
+    assert sources == ISO_CALL_SITES
     assert _missing(sources, DEFAULT_GROUP) == []
 
 
@@ -110,7 +145,7 @@ def test_prognostics_names_the_server_iso_band_twice():
 
 def test_every_file_with_placeholders_says_what_they_are():
     sources = sorted(s for s, t in _plugin().items() if "<rpm>" in t)
-    assert len(sources) >= 6, sources
+    assert sources == PLACEHOLDER_SITES
     assert _missing(sources, PLACEHOLDERS) == []
 
 
@@ -120,7 +155,7 @@ def test_every_envelope_report_speed_is_schema_conditional():
         for s, t in _plugin().items()
         if "generate_envelope_report" in t and "rpm=<rpm>" in t
     )
-    assert len(sources) >= 4, sources
+    assert sources == ENVELOPE_SPEED_SITES
     assert _missing(sources, ENVELOPE_SCHEMA) == []
     assert _missing(sources, ENVELOPE_NO_CLAIM) == []
 
@@ -134,7 +169,7 @@ def test_the_fallback_appears_at_most_once_per_file():
     """Audit A-F15: one copy of the claim-less fallback per surface."""
     counts = {s: flat(t).count(flat(FALLBACK)) for s, t in _plugin().items()}
     assert {s: n for s, n in counts.items() if n > 1} == {}
-    assert sum(counts.values()) >= 6, counts
+    assert sorted(s for s, n in counts.items() if n) == FALLBACK_SITES
 
 
 def test_every_skill_declares_its_folder_as_name():
